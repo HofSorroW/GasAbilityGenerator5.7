@@ -3721,11 +3721,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetInventoryComponent
+            class: NarrativeCharacter
           position: [3000, -50]
         - id: GiveItem
           type: CallFunction
           properties:
             function: GiveItem
+            class: NarrativeInventoryComponent
           position: [3000, 0]
         - id: SetWeaponRef
           type: VariableSet
@@ -3736,6 +3738,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: WieldWeapon
+            class: EquipmentComponent
           position: [3600, 0]
         - id: EndAbility_Success
           type: CallFunction
@@ -3775,6 +3778,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: UnwieldWeapon
+            class: EquipmentComponent
           position: [1200, 500]
         - id: GetPlayerRef_End
           type: VariableGet
@@ -3785,11 +3789,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetInventoryComponent
+            class: NarrativeCharacter
           position: [1500, 450]
         - id: RemoveItem
           type: CallFunction
           properties:
             function: RemoveItem
+            class: NarrativeInventoryComponent
           position: [1500, 500]
         - id: GetFatherRef_End
           type: VariableGet
@@ -4001,11 +4007,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetInventoryComponent
+            class: NarrativeCharacter
           position: [3000, -50]
         - id: GiveItem
           type: CallFunction
           properties:
             function: GiveItem
+            class: NarrativeInventoryComponent
           position: [3000, 0]
         - id: SetWeaponRef
           type: VariableSet
@@ -4016,6 +4024,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: WieldWeapon
+            class: EquipmentComponent
           position: [3600, 0]
         - id: EndAbility_Success
           type: CallFunction
@@ -4055,6 +4064,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: UnwieldWeapon
+            class: EquipmentComponent
           position: [1200, 500]
         - id: GetPlayerRef_End
           type: VariableGet
@@ -4065,11 +4075,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetInventoryComponent
+            class: NarrativeCharacter
           position: [1500, 450]
         - id: RemoveItem
           type: CallFunction
           properties:
             function: RemoveItem
+            class: NarrativeInventoryComponent
           position: [1500, 500]
         - id: GetFatherRef_End
           type: VariableGet
@@ -4180,7 +4192,7 @@ gameplay_abilities:
           to: [EnableCollision, Target]
 
 # ============================================================================
-# EQUIPPABLE ITEMS (5)
+# EQUIPPABLE ITEMS (9)
 # ============================================================================
 equippable_items:
   - name: EI_FatherCrawlerForm
@@ -4250,6 +4262,21 @@ equippable_items:
     abilities_to_grant:
       - GA_FatherSword
     equipment_modifier_ge: GE_SwordState
+
+  # Weapon Items - use Narrative Pro weapon classes (v2.6.8)
+  - name: BP_FatherRifleWeapon
+    folder: FatherCompanion/Weapons
+    parent_class: RangedWeaponItem
+    display_name: Father Rifle
+    description: Transform your father companion into a bio-organic rifle. Fires high-energy projectiles with precision accuracy.
+    equipment_slot: Narrative.Equipment.Slot.Weapon_Back
+
+  - name: BP_FatherSwordWeapon
+    folder: FatherCompanion/Weapons
+    parent_class: MeleeWeaponItem
+    display_name: Father Sword
+    description: Transform your father companion into a bio-organic blade. Devastating melee attacks with increased reach.
+    equipment_slot: Narrative.Equipment.Slot.Weapon_Back
 
 # ============================================================================
 # BLACKBOARDS (2)
