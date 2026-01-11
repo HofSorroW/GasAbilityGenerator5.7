@@ -331,3 +331,83 @@ Location: `Plugins/NarrativePro22B57/`
 ### Plugin Dependencies
 
 GameplayAbilities, EnhancedInput, CommonUI, MotionWarping, MassGameplay, MassCrowd, MassAI, ChaosVehicles, PoseSearch, and more.
+
+---
+
+## Important Reference Patterns
+
+### Gameplay Tag Hierarchies (CRITICAL)
+
+**Authoritative Source:** `DefaultGameplayTags_FatherCompanion_v4_0.ini`
+
+All Father-specific state tags use `Father.State.*` format (NOT `State.Father.*`):
+
+| Tag | Purpose |
+|-----|---------|
+| `Father.State.Alive` | Required for form activation |
+| `Father.State.Attached` | Father attached to player |
+| `Father.State.Dormant` | Post-sacrifice dormant state |
+| `Father.State.Transitioning` | Blocks form change during 5s VFX |
+| `Father.State.SymbioteLocked` | Blocks form change during 30s Symbiote |
+| `Father.State.Attacking` | Currently executing attack |
+| `Father.State.Dashing` | Dash in progress |
+| `Father.State.Deployed` | Engineer turret mode active |
+
+**Separate `State.*` tags are Narrative Pro built-ins:**
+- `State.Invulnerable` - Blocks all damage (Narrative Pro)
+- `State.Invisible` - Character invisible (Narrative Pro)
+
+**Other Father tag hierarchies (174 total):**
+- `Ability.Father.*` (24 tags) - Ability identifiers
+- `Cooldown.Father.*` (9 tags) - Cooldown tracking
+- `Effect.Father.*` (29 tags) - Active effects
+- `Father.Form.*` (6 tags) - Form identifiers
+- `Father.Dome.*` (4 tags) - Dome system states
+- `GameplayCue.Father.*` (6 tags) - VFX/SFX triggers
+- `GameplayEvent.Father.*` (6 tags) - Event triggers
+- `Data.*` (10 tags) - SetByCaller damage/duration values
+
+### Replication Patterns (GAS Multiplayer)
+
+**Net Execution Policy by Ability Owner:**
+
+| Owner | Policy | Reason |
+|-------|--------|--------|
+| Player input abilities | **Local Predicted** | Responsive feel, client prediction |
+| NPC/AI owned abilities | **Server Only** | AI runs on server, no prediction needed |
+| Cross-actor grants | **Server Only** | Server authority for multi-actor ops |
+| Visual-only abilities | **Server Initiated** | Visual feedback with server start |
+
+**ASC Replication Mode:**
+
+| Character Type | Mode | Reason |
+|----------------|------|--------|
+| Player | **Mixed** | Full state for owner, minimal for others |
+| NPC (Father) | **Minimal** | Reduced bandwidth, server handles logic |
+
+**Variable Replication Conditions:**
+
+| Condition | Use For |
+|-----------|---------|
+| **Initial Only** | Set once at spawn (OwnerPlayer) |
+| **None** (with RepNotify) | All clients must see (CurrentForm, IsAttached) |
+| **Not Replicated** | GA-local variables (effect handles) |
+
+### Parent Class Matrix
+
+| Asset Type | Parent Class |
+|------------|--------------|
+| Most GA_* | NarrativeGameplayAbility |
+| GA_FatherAttack | GA_Melee_Unarmed |
+| NPCs (BP_Father*, enemies) | NarrativeNPCCharacter |
+| Form equipment items | EquippableItem |
+| Weapons | RangedWeaponItem, MeleeWeaponItem |
+| Projectiles | NarrativeProjectile |
+| Equipment modifiers | GE_EquipmentModifier |
+| Activities | NarrativeActivityBase or BPA_* children |
+| Goals | NPCGoalItem, NPCGoalGenerator |
+| Widgets | UserWidget |
+| Narrative Events | NarrativeEvent |
+| BT Services | BTService_BlueprintBase |
+| Gameplay Cues (burst) | GameplayCueNotify_Burst, _BurstLatent |
+| Gameplay Cues (persistent) | AGameplayCueNotify_Actor |
