@@ -149,6 +149,33 @@ Executed all action items from the consistency report.
 
 ---
 
+## Fixed: Additional Net Execution Policy Issues
+
+### Issues Found (from Technical Reference Section 7)
+| Ability | Owner | Was | Should Be |
+|---------|-------|-----|-----------|
+| GA_StealthField | Player | ServerOnly | LocalPredicted |
+| GA_Backstab | Player | ServerOnly | LocalPredicted |
+| GA_ProtectiveDome | Player | ServerOnly | LocalPredicted |
+| GA_DomeBurst | Player | ServerOnly | LocalPredicted |
+
+### Fixes Applied
+All player-owned action abilities now correctly use `LocalPredicted`:
+- GA_StealthField (player-owned toggle)
+- GA_Backstab (player default passive)
+- GA_ProtectiveDome (player-owned toggle)
+- GA_DomeBurst (player-owned instant)
+
+### Final Validation Summary
+| Ability Type | Owner | Net Execution Policy |
+|--------------|-------|---------------------|
+| Form abilities (Crawler, Armor, etc.) | Father NPC | ServerOnly ✓ |
+| AI combat (Attack, Laser, Mark) | Father NPC | ServerOnly ✓ |
+| Player actions (Dash, Sprint, Stealth, Dome, Burst, Backstab) | Player | LocalPredicted ✓ |
+| NPC passives (ProximityStrike) | Father NPC | ServerOnly ✓ |
+
+---
+
 ## Potential Future Tasks
 - Test Niagara generator with sample manifest
 - Update GasAbilityGenerator.uplugin with plugin dependencies (to fix build warnings)

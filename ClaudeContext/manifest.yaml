@@ -2325,12 +2325,12 @@ gameplay_abilities:
   # ACTION ABILITIES (9)
   # ---------------------------------------------------------------------------
   
-  # GA_ProtectiveDome - Armor Passive Damage Absorption
+  # GA_ProtectiveDome - Armor Passive Damage Absorption (player-owned toggle)
   - name: GA_ProtectiveDome
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
-    net_execution_policy: ServerOnly
+    net_execution_policy: LocalPredicted
     tags:
       ability_tags:
         - Ability.Father.ProtectiveDome
@@ -2464,12 +2464,12 @@ gameplay_abilities:
         - from: [GetDomeHandle, DomeAbsorptionHandle]
           to: [RemoveGE, Handle]
 
-  # GA_DomeBurst - Armor Active AOE Damage
+  # GA_DomeBurst - Armor Active AOE Damage (player-owned instant)
   - name: GA_DomeBurst
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
-    net_execution_policy: ServerOnly
+    net_execution_policy: LocalPredicted
     cooldown_gameplay_effect_class: GE_DomeBurstCooldown
     tags:
       ability_tags:
@@ -2974,12 +2974,12 @@ gameplay_abilities:
         - from: [GetOrigSpeed, OriginalMaxWalkSpeed]
           to: [RestoreSpeed, NewMaxWalkSpeed]
 
-  # GA_StealthField - Exoskeleton Stealth Invisibility
+  # GA_StealthField - Exoskeleton Stealth Invisibility (player-owned toggle)
   - name: GA_StealthField
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
-    net_execution_policy: ServerOnly
+    net_execution_policy: LocalPredicted
     cooldown_gameplay_effect_class: GE_StealthCooldown
     tags:
       ability_tags:
@@ -3147,12 +3147,12 @@ gameplay_abilities:
         - from: [GetStealthHandle, StealthEffectHandle]
           to: [RemoveGE, Handle]
 
-  # GA_Backstab - Exoskeleton Passive Backstab Damage
+  # GA_Backstab - Player Default Passive Backstab Damage
   - name: GA_Backstab
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
-    net_execution_policy: ServerOnly
+    net_execution_policy: LocalPredicted
     tags:
       ability_tags:
         - Ability.Father.Backstab
