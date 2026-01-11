@@ -1869,8 +1869,8 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 			continue;
 		}
 
-		// New material function item
-		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		// New material function item - v2.6.13: only if not in a subsection
+		if (!bInInputs && !bInOutputs && !bInExpressions && !bInConnections && TrimmedLine.StartsWith(TEXT("- name:")))
 		{
 			// Save all pending from previous item
 			if (bInInput && !CurrentInput.Name.IsEmpty()) CurrentDef.Inputs.Add(CurrentInput);
@@ -3658,8 +3658,8 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			continue;
 		}
 
-		// New item entry
-		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		// New item entry - v2.6.13: only if not in user_parameters subsection
+		if (!bInUserParameters && TrimmedLine.StartsWith(TEXT("- name:")))
 		{
 			// Save any pending user parameter
 			if (bInUserParameters && !CurrentUserParam.Name.IsEmpty())
