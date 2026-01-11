@@ -19,7 +19,7 @@ UGasAbilityGeneratorCommandlet::UGasAbilityGeneratorCommandlet()
 int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 {
 	LogMessage(TEXT("========================================"));
-	LogMessage(TEXT("GasAbilityGenerator Commandlet v2.5.7"));
+	LogMessage(TEXT("GasAbilityGenerator Commandlet v2.6.7"));
 	LogMessage(TEXT("========================================"));
 
 	// Parse command line parameters
@@ -176,6 +176,30 @@ void UGasAbilityGeneratorCommandlet::GenerateTags(const FManifestData& ManifestD
 	LogMessage(TEXT(""));
 }
 
+// v2.6.7: Helper lambda to process generation results
+static auto ProcessResult = [](UGasAbilityGeneratorCommandlet* Self, FGenerationResult& Result,
+	FGenerationSummary& Summary, TSet<FString>& GeneratedAssets)
+{
+	Summary.AddResult(Result);
+
+	// Track generated/existing assets for dependency resolution
+	if (Result.Status == EGenerationStatus::New || Result.Status == EGenerationStatus::Skipped)
+	{
+		GeneratedAssets.Add(Result.AssetName);
+	}
+
+	const TCHAR* StatusStr = TEXT("FAIL");
+	switch (Result.Status)
+	{
+	case EGenerationStatus::New: StatusStr = TEXT("NEW"); break;
+	case EGenerationStatus::Skipped: StatusStr = TEXT("SKIP"); break;
+	case EGenerationStatus::Deferred: StatusStr = TEXT("DEFER"); break;
+	case EGenerationStatus::Failed: StatusStr = TEXT("FAIL"); break;
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] [%s] %s"), StatusStr, *Result.AssetName);
+};
+
 void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& ManifestData)
 {
 	LogMessage(TEXT("--- Generating Assets ---"));
@@ -183,11 +207,15 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	FGeneratorBase::SetActiveManifest(&ManifestData);
 	FGenerationSummary Summary;
 
+	// v2.6.7: Clear tracking for this run
+	GeneratedAssets.Empty();
+	DeferredAssets.Empty();
+
 	// PHASE 1: No Dependencies - Enumerations
 	for (const auto& Definition : ManifestData.Enumerations)
 	{
 		FGenerationResult Result = FEnumerationGenerator::Generate(Definition);
-		Summary.AddResult(Result);
+		ProcessResult(this, Result, Summary, GeneratedAssets);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -459,6 +487,12 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
+	// v2.6.7: Process deferred assets (retry mechanism)
+	if (DeferredAssets.Num() > 0)
+	{
+		ProcessDeferredAssets(ManifestData);
+	}
+
 	FGeneratorBase::ClearActiveManifest();
 
 	LogMessage(TEXT(""));
@@ -466,7 +500,8 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	LogMessage(FString::Printf(TEXT("New: %d"), Summary.NewCount));
 	LogMessage(FString::Printf(TEXT("Skipped: %d"), Summary.SkippedCount));
 	LogMessage(FString::Printf(TEXT("Failed: %d"), Summary.FailedCount));
-	LogMessage(FString::Printf(TEXT("Total: %d"), Summary.NewCount + Summary.SkippedCount + Summary.FailedCount));
+	LogMessage(FString::Printf(TEXT("Deferred: %d"), Summary.DeferredCount));
+	LogMessage(FString::Printf(TEXT("Total: %d"), Summary.NewCount + Summary.SkippedCount + Summary.FailedCount + Summary.DeferredCount));
 }
 
 void UGasAbilityGeneratorCommandlet::LogMessage(const FString& Message)
@@ -479,4 +514,140 @@ void UGasAbilityGeneratorCommandlet::LogError(const FString& Message)
 {
 	UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] %s"), *Message);
 	LogMessages.Add(FString::Printf(TEXT("ERROR: %s"), *Message));
+}
+
+// v2.6.7: Process deferred assets with retry mechanism
+void UGasAbilityGeneratorCommandlet::ProcessDeferredAssets(const FManifestData& ManifestData)
+{
+	if (DeferredAssets.Num() == 0)
+	{
+		return;
+	}
+
+	LogMessage(TEXT(""));
+	LogMessage(TEXT("--- Processing Deferred Assets ---"));
+	LogMessage(FString::Printf(TEXT("%d asset(s) deferred due to missing dependencies"), DeferredAssets.Num()));
+
+	int32 Pass = 0;
+	int32 ResolvedThisPass = 0;
+
+	do
+	{
+		Pass++;
+		ResolvedThisPass = 0;
+		LogMessage(FString::Printf(TEXT("Retry pass %d..."), Pass));
+
+		TArray<FDeferredAsset> StillDeferred;
+
+		for (FDeferredAsset& Deferred : DeferredAssets)
+		{
+			// Check if dependency is now resolved
+			if (IsDependencyResolved(Deferred.MissingDependency, Deferred.MissingDependencyType))
+			{
+				FGenerationResult Result;
+				if (TryGenerateDeferredAsset(Deferred, ManifestData, Result))
+				{
+					LogMessage(FString::Printf(TEXT("[RETRY-OK] %s (dependency %s now available)"),
+						*Deferred.AssetName, *Deferred.MissingDependency));
+					GeneratedAssets.Add(Deferred.AssetName);
+					ResolvedThisPass++;
+				}
+				else
+				{
+					// Still failed after retry
+					Deferred.RetryCount++;
+					if (Deferred.RetryCount < MaxRetryAttempts)
+					{
+						StillDeferred.Add(Deferred);
+					}
+					else
+					{
+						LogError(FString::Printf(TEXT("[RETRY-FAIL] %s - max retries exceeded: %s"),
+							*Deferred.AssetName, *Result.Message));
+					}
+				}
+			}
+			else
+			{
+				// Dependency still not resolved
+				Deferred.RetryCount++;
+				if (Deferred.RetryCount < MaxRetryAttempts)
+				{
+					StillDeferred.Add(Deferred);
+				}
+				else
+				{
+					LogError(FString::Printf(TEXT("[UNRESOLVED] %s - dependency %s not found in manifest"),
+						*Deferred.AssetName, *Deferred.MissingDependency));
+				}
+			}
+		}
+
+		DeferredAssets = StillDeferred;
+
+	} while (ResolvedThisPass > 0 && DeferredAssets.Num() > 0 && Pass < MaxRetryAttempts);
+
+	if (DeferredAssets.Num() > 0)
+	{
+		LogMessage(FString::Printf(TEXT("%d asset(s) could not be resolved after %d passes"),
+			DeferredAssets.Num(), Pass));
+	}
+	else
+	{
+		LogMessage(TEXT("All deferred assets resolved successfully"));
+	}
+}
+
+// v2.6.7: Check if a dependency has been generated
+bool UGasAbilityGeneratorCommandlet::IsDependencyResolved(const FString& DependencyName, const FString& DependencyType) const
+{
+	// Check if it was generated in this session
+	if (GeneratedAssets.Contains(DependencyName))
+	{
+		return true;
+	}
+
+	// Check if it exists on disk (may have been generated in a previous run)
+	// This uses the generator base to check disk existence
+	return false; // For now, only check session-generated assets
+}
+
+// v2.6.7: Try to generate a deferred asset
+bool UGasAbilityGeneratorCommandlet::TryGenerateDeferredAsset(const FDeferredAsset& Deferred,
+	const FManifestData& ManifestData, FGenerationResult& OutResult)
+{
+	// Route to appropriate generator based on asset type
+	if (Deferred.AssetType == TEXT("ActorBlueprint"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.ActorBlueprints.Num())
+		{
+			OutResult = FActorBlueprintGenerator::Generate(
+				ManifestData.ActorBlueprints[Deferred.DefinitionIndex],
+				ManifestData.ProjectRoot, &ManifestData);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	else if (Deferred.AssetType == TEXT("GameplayAbility"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.GameplayAbilities.Num())
+		{
+			OutResult = FGameplayAbilityGenerator::Generate(
+				ManifestData.GameplayAbilities[Deferred.DefinitionIndex],
+				ManifestData.ProjectRoot);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	else if (Deferred.AssetType == TEXT("GameplayEffect"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.GameplayEffects.Num())
+		{
+			OutResult = FGameplayEffectGenerator::Generate(
+				ManifestData.GameplayEffects[Deferred.DefinitionIndex]);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+
+	OutResult = FGenerationResult(Deferred.AssetName, EGenerationStatus::Failed,
+		FString::Printf(TEXT("Unknown asset type: %s"), *Deferred.AssetType));
+	return false;
 }

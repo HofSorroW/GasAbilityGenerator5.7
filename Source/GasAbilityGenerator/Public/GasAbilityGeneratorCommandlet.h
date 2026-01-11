@@ -7,6 +7,29 @@
 #include "Commandlets/Commandlet.h"
 #include "GasAbilityGeneratorCommandlet.generated.h"
 
+// Forward declarations
+struct FManifestData;
+struct FGenerationResult;
+
+/**
+ * v2.6.7: Deferred asset info for retry mechanism
+ */
+struct FDeferredAsset
+{
+	FString AssetName;
+	FString AssetType;  // "ActorBlueprint", "GameplayAbility", "GameplayEffect", etc.
+	FString MissingDependency;
+	FString MissingDependencyType;
+	int32 DefinitionIndex;  // Index in the manifest array for this asset type
+	int32 RetryCount = 0;
+
+	FDeferredAsset() : DefinitionIndex(-1) {}
+	FDeferredAsset(const FString& InName, const FString& InType, const FString& InMissingDep,
+		const FString& InMissingDepType, int32 InIndex)
+		: AssetName(InName), AssetType(InType), MissingDependency(InMissingDep)
+		, MissingDependencyType(InMissingDepType), DefinitionIndex(InIndex) {}
+};
+
 /**
  * Commandlet to generate assets from a YAML manifest without opening the editor UI.
  *
@@ -19,6 +42,8 @@
  *   -assets           : Generate assets
  *   -all              : Generate both tags and assets (default)
  *   -output=<path>    : Output log file path (optional)
+ *
+ * v2.6.7: Automatic dependency resolution with retry mechanism
  */
 UCLASS()
 class GASABILITYGENERATOR_API UGasAbilityGeneratorCommandlet : public UCommandlet
@@ -31,11 +56,22 @@ public:
 	virtual int32 Main(const FString& Params) override;
 
 private:
-	void GenerateTags(const struct FManifestData& ManifestData);
-	void GenerateAssets(const struct FManifestData& ManifestData);
+	void GenerateTags(const FManifestData& ManifestData);
+	void GenerateAssets(const FManifestData& ManifestData);
+
+	// v2.6.7: Retry deferred assets
+	void ProcessDeferredAssets(const FManifestData& ManifestData);
+	bool TryGenerateDeferredAsset(const FDeferredAsset& Deferred, const FManifestData& ManifestData, FGenerationResult& OutResult);
+	bool IsDependencyResolved(const FString& DependencyName, const FString& DependencyType) const;
+
 	void LogMessage(const FString& Message);
 	void LogError(const FString& Message);
 
 	FString OutputLogPath;
 	TArray<FString> LogMessages;
+
+	// v2.6.7: Deferred asset tracking
+	TArray<FDeferredAsset> DeferredAssets;
+	TSet<FString> GeneratedAssets;  // Track successfully generated assets for dependency checking
+	static constexpr int32 MaxRetryAttempts = 3;
 };

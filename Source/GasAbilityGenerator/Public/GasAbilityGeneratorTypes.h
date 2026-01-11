@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.6
+// GasAbilityGenerator v2.6.7
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.7: Deferred asset retry mechanism for dependency resolution
 // v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
 // v2.6.5: Added Niagara System generator
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
@@ -21,7 +22,8 @@ enum class EGenerationStatus : uint8
 {
 	New,      // Asset created successfully
 	Skipped,  // Asset already exists (not overwritten)
-	Failed    // Generation error occurred
+	Failed,   // Generation error occurred
+	Deferred  // v2.6.7: Deferred due to missing dependency (will retry)
 };
 
 /**
@@ -34,6 +36,11 @@ struct FGenerationResult
 	FString Message;
 	FString Category;  // For grouping in results dialog
 
+	// v2.6.7: Dependency tracking for retry mechanism
+	FString MissingDependency;      // Name of the missing asset (e.g., "BP_FatherCompanion")
+	FString MissingDependencyType;  // Type of missing asset (e.g., "ActorBlueprint")
+	int32 RetryCount = 0;           // Number of retry attempts
+
 	FGenerationResult() = default;
 
 	FGenerationResult(const FString& InName, EGenerationStatus InStatus, const FString& InMessage = TEXT(""))
@@ -41,6 +48,19 @@ struct FGenerationResult
 		, Status(InStatus)
 		, Message(InMessage)
 	{}
+
+	// v2.6.7: Constructor with dependency info
+	FGenerationResult(const FString& InName, EGenerationStatus InStatus, const FString& InMessage,
+		const FString& InMissingDep, const FString& InMissingDepType)
+		: AssetName(InName)
+		, Status(InStatus)
+		, Message(InMessage)
+		, MissingDependency(InMissingDep)
+		, MissingDependencyType(InMissingDepType)
+	{}
+
+	// v2.6.7: Check if this result can be retried
+	bool CanRetry() const { return Status == EGenerationStatus::Deferred && !MissingDependency.IsEmpty(); }
 
 	// Helper to determine category from asset name prefix
 	void DetermineCategory()
@@ -81,6 +101,7 @@ struct FGenerationSummary
 	int32 NewCount = 0;
 	int32 SkippedCount = 0;
 	int32 FailedCount = 0;
+	int32 DeferredCount = 0;  // v2.6.7: Track deferred assets
 
 	void AddResult(const FGenerationResult& Result)
 	{
@@ -97,10 +118,27 @@ struct FGenerationSummary
 		case EGenerationStatus::Failed:
 			FailedCount++;
 			break;
+		case EGenerationStatus::Deferred:
+			DeferredCount++;
+			break;
 		}
 	}
 
-	int32 GetTotal() const { return NewCount + SkippedCount + FailedCount; }
+	int32 GetTotal() const { return NewCount + SkippedCount + FailedCount + DeferredCount; }
+
+	// v2.6.7: Get all deferred results that can be retried
+	TArray<FGenerationResult> GetDeferredResults() const
+	{
+		TArray<FGenerationResult> Deferred;
+		for (const auto& Result : Results)
+		{
+			if (Result.CanRetry())
+			{
+				Deferred.Add(Result);
+			}
+		}
+		return Deferred;
+	}
 
 	void Reset()
 	{
@@ -108,6 +146,7 @@ struct FGenerationSummary
 		NewCount = 0;
 		SkippedCount = 0;
 		FailedCount = 0;
+		DeferredCount = 0;
 	}
 };
 
