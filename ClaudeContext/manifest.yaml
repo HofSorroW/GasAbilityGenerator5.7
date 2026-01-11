@@ -3724,10 +3724,10 @@ gameplay_abilities:
             function: GetInventoryComponent
             class: NarrativeCharacter
           position: [3000, -50]
-        - id: GiveItem
+        - id: AddWeaponToInventory
           type: CallFunction
           properties:
-            function: GiveItem
+            function: TryAddItemFromClass
             class: NarrativeInventoryComponent
           position: [3000, 0]
         - id: SetWeaponRef
@@ -3738,8 +3738,8 @@ gameplay_abilities:
         - id: WieldWeapon
           type: CallFunction
           properties:
-            function: WieldWeapon
-            class: EquipmentComponent
+            function: WieldInSlot
+            class: WeaponItem
           position: [3600, 0]
         - id: EndAbility_Success
           type: CallFunction
@@ -3775,11 +3775,11 @@ gameplay_abilities:
         - id: Branch_WeaponValid
           type: Branch
           position: [900, 500]
-        - id: UnwieldWeapon
+        - id: UnequipWeapon
           type: CallFunction
           properties:
-            function: UnwieldWeapon
-            class: EquipmentComponent
+            function: UnequipItem
+            class: EquippableItem
           position: [1200, 500]
         - id: GetPlayerRef_End
           type: VariableGet
@@ -3835,8 +3835,8 @@ gameplay_abilities:
         - from: [HideFather, Exec]
           to: [DisableCollision, Exec]
         - from: [DisableCollision, Exec]
-          to: [GiveItem, Exec]
-        - from: [GiveItem, Exec]
+          to: [AddWeaponToInventory, Exec]
+        - from: [AddWeaponToInventory, Exec]
           to: [SetWeaponRef, Exec]
         - from: [SetWeaponRef, Exec]
           to: [WieldWeapon, Exec]
@@ -3864,13 +3864,13 @@ gameplay_abilities:
         - from: [SetPlayerRef, PlayerRef]
           to: [GetInventory, Target]
         - from: [GetInventory, ReturnValue]
-          to: [GiveItem, Target]
-        - from: [GiveItem, ReturnValue]
+          to: [AddWeaponToInventory, Target]
+        # Note: TryAddItemFromClass returns FItemAddResult - need Break struct node to get Stacks[0]
+        - from: [AddWeaponToInventory, ReturnValue]
           to: [SetWeaponRef, WeaponRef]
-        - from: [SetPlayerRef, PlayerRef]
-          to: [WieldWeapon, Target]
+        # WieldInSlot is called on the weapon itself
         - from: [SetWeaponRef, WeaponRef]
-          to: [WieldWeapon, Weapon]
+          to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [Branch_WasCancelled, Exec]
@@ -3881,8 +3881,8 @@ gameplay_abilities:
         - from: [IsValid_Weapon, Exec]
           to: [Branch_WeaponValid, Exec]
         - from: [Branch_WeaponValid, then]
-          to: [UnwieldWeapon, Exec]
-        - from: [UnwieldWeapon, Exec]
+          to: [UnequipWeapon, Exec]
+        - from: [UnequipWeapon, Exec]
           to: [RemoveItem, Exec]
         - from: [RemoveItem, Exec]
           to: [ShowFather, Exec]
@@ -3893,8 +3893,9 @@ gameplay_abilities:
           to: [IsValid_Weapon, Object]
         - from: [IsValid_Weapon, ReturnValue]
           to: [Branch_WeaponValid, Condition]
-        - from: [GetPlayerRef_End, PlayerRef]
-          to: [UnwieldWeapon, Target]
+        # UnequipItem is called on the weapon itself
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [UnequipWeapon, Target]
         - from: [GetPlayerRef_End, PlayerRef]
           to: [GetInventory_End, Target]
         - from: [GetInventory_End, ReturnValue]
@@ -4010,10 +4011,10 @@ gameplay_abilities:
             function: GetInventoryComponent
             class: NarrativeCharacter
           position: [3000, -50]
-        - id: GiveItem
+        - id: AddWeaponToInventory
           type: CallFunction
           properties:
-            function: GiveItem
+            function: TryAddItemFromClass
             class: NarrativeInventoryComponent
           position: [3000, 0]
         - id: SetWeaponRef
@@ -4024,8 +4025,8 @@ gameplay_abilities:
         - id: WieldWeapon
           type: CallFunction
           properties:
-            function: WieldWeapon
-            class: EquipmentComponent
+            function: WieldInSlot
+            class: WeaponItem
           position: [3600, 0]
         - id: EndAbility_Success
           type: CallFunction
@@ -4061,11 +4062,11 @@ gameplay_abilities:
         - id: Branch_WeaponValid
           type: Branch
           position: [900, 500]
-        - id: UnwieldWeapon
+        - id: UnequipWeapon
           type: CallFunction
           properties:
-            function: UnwieldWeapon
-            class: EquipmentComponent
+            function: UnequipItem
+            class: EquippableItem
           position: [1200, 500]
         - id: GetPlayerRef_End
           type: VariableGet
@@ -4121,8 +4122,8 @@ gameplay_abilities:
         - from: [HideFather, Exec]
           to: [DisableCollision, Exec]
         - from: [DisableCollision, Exec]
-          to: [GiveItem, Exec]
-        - from: [GiveItem, Exec]
+          to: [AddWeaponToInventory, Exec]
+        - from: [AddWeaponToInventory, Exec]
           to: [SetWeaponRef, Exec]
         - from: [SetWeaponRef, Exec]
           to: [WieldWeapon, Exec]
@@ -4150,13 +4151,13 @@ gameplay_abilities:
         - from: [SetPlayerRef, PlayerRef]
           to: [GetInventory, Target]
         - from: [GetInventory, ReturnValue]
-          to: [GiveItem, Target]
-        - from: [GiveItem, ReturnValue]
+          to: [AddWeaponToInventory, Target]
+        # Note: TryAddItemFromClass returns FItemAddResult - need Break struct node to get Stacks[0]
+        - from: [AddWeaponToInventory, ReturnValue]
           to: [SetWeaponRef, WeaponRef]
-        - from: [SetPlayerRef, PlayerRef]
-          to: [WieldWeapon, Target]
+        # WieldInSlot is called on the weapon itself
         - from: [SetWeaponRef, WeaponRef]
-          to: [WieldWeapon, Weapon]
+          to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [Branch_WasCancelled, Exec]
@@ -4167,8 +4168,8 @@ gameplay_abilities:
         - from: [IsValid_Weapon, Exec]
           to: [Branch_WeaponValid, Exec]
         - from: [Branch_WeaponValid, then]
-          to: [UnwieldWeapon, Exec]
-        - from: [UnwieldWeapon, Exec]
+          to: [UnequipWeapon, Exec]
+        - from: [UnequipWeapon, Exec]
           to: [RemoveItem, Exec]
         - from: [RemoveItem, Exec]
           to: [ShowFather, Exec]
@@ -4179,8 +4180,9 @@ gameplay_abilities:
           to: [IsValid_Weapon, Object]
         - from: [IsValid_Weapon, ReturnValue]
           to: [Branch_WeaponValid, Condition]
-        - from: [GetPlayerRef_End, PlayerRef]
-          to: [UnwieldWeapon, Target]
+        # UnequipItem is called on the weapon itself
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [UnequipWeapon, Target]
         - from: [GetPlayerRef_End, PlayerRef]
           to: [GetInventory_End, Target]
         - from: [GetInventory_End, ReturnValue]

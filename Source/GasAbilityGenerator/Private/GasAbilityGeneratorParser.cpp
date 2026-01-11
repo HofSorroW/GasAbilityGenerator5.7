@@ -1011,6 +1011,7 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				bInVariables = false;
 				bInEventGraph = false;
 				CurrentTagArray = ECurrentTagArray::None;
+				UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Entered tags section"), *CurrentDef.Name);
 			}
 			// v2.4.0: Parse variables subsection
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
@@ -1105,22 +1106,27 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				if (TrimmedLine.Equals(TEXT("ability_tags:")) || TrimmedLine.StartsWith(TEXT("ability_tags:")))
 				{
 					CurrentTagArray = ECurrentTagArray::AbilityTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to AbilityTags"), *CurrentDef.Name);
 				}
 				else if (TrimmedLine.Equals(TEXT("cancel_abilities_with_tag:")) || TrimmedLine.StartsWith(TEXT("cancel_abilities_with_tag:")))
 				{
 					CurrentTagArray = ECurrentTagArray::CancelAbilitiesWithTag;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to CancelAbilitiesWithTag"), *CurrentDef.Name);
 				}
 				else if (TrimmedLine.Equals(TEXT("activation_owned_tags:")) || TrimmedLine.StartsWith(TEXT("activation_owned_tags:")))
 				{
 					CurrentTagArray = ECurrentTagArray::ActivationOwnedTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to ActivationOwnedTags"), *CurrentDef.Name);
 				}
 				else if (TrimmedLine.Equals(TEXT("activation_required_tags:")) || TrimmedLine.StartsWith(TEXT("activation_required_tags:")))
 				{
 					CurrentTagArray = ECurrentTagArray::ActivationRequiredTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to ActivationRequiredTags"), *CurrentDef.Name);
 				}
 				else if (TrimmedLine.Equals(TEXT("activation_blocked_tags:")) || TrimmedLine.StartsWith(TEXT("activation_blocked_tags:")))
 				{
 					CurrentTagArray = ECurrentTagArray::ActivationBlockedTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to ActivationBlockedTags"), *CurrentDef.Name);
 				}
 				else if (TrimmedLine.StartsWith(TEXT("-")) && CurrentTagArray != ECurrentTagArray::None)
 				{
@@ -1138,6 +1144,7 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 
 					if (!TagValue.IsEmpty())
 					{
+						UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Adding tag '%s' to array %d"), *CurrentDef.Name, *TagValue, (int)CurrentTagArray);
 						switch (CurrentTagArray)
 						{
 						case ECurrentTagArray::AbilityTags:
@@ -1159,6 +1166,10 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 							break;
 						}
 					}
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: bInTags=true but line not matched: '%s' (CurrentTagArray=%d)"), *CurrentDef.Name, *TrimmedLine, (int)CurrentTagArray);
 				}
 			}
 		}
