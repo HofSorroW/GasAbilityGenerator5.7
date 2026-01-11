@@ -1855,7 +1855,7 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 			if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
 			if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
 			if (bInConnection && !CurrentConn.FromId.IsEmpty()) CurrentDef.Connections.Add(CurrentConn);
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("MF_")))
 			{
 				OutData.MaterialFunctions.Add(CurrentDef);
 			}
@@ -1877,7 +1877,7 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 			if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
 			if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
 			if (bInConnection && !CurrentConn.FromId.IsEmpty()) CurrentDef.Connections.Add(CurrentConn);
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("MF_")))
 			{
 				OutData.MaterialFunctions.Add(CurrentDef);
 			}
@@ -2061,7 +2061,7 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 	if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
 	if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
 	if (bInConnection && !CurrentConn.FromId.IsEmpty()) CurrentDef.Connections.Add(CurrentConn);
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("MF_")))
 	{
 		OutData.MaterialFunctions.Add(CurrentDef);
 	}
@@ -3644,7 +3644,7 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			{
 				CurrentDef.UserParameters.Add(CurrentUserParam);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("NS_")))
 			{
 				OutData.NiagaraSystems.Add(CurrentDef);
 			}
@@ -3667,7 +3667,7 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 				CurrentDef.UserParameters.Add(CurrentUserParam);
 			}
 			// Save previous system if any
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("NS_")))
 			{
 				OutData.NiagaraSystems.Add(CurrentDef);
 			}
@@ -3838,7 +3838,7 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 	}
 
 	// Save any remaining entry
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("NS_")))
 	{
 		OutData.NiagaraSystems.Add(CurrentDef);
 	}
