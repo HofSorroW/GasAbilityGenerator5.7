@@ -4620,13 +4620,57 @@ widget_blueprints:
         default: false
 
 # ============================================================================
-# NIAGARA SYSTEMS (1)
+# NIAGARA SYSTEMS (5) - v2.6.10 Enhanced with warmup, bounds, determinism
 # ============================================================================
 niagara_systems:
+  # Main Father companion floating energy orb VFX
+  - name: NS_FatherCompanion
+    folder: VFX
+    effect_type: ambient
+    fixed_bounds: true
+    bounds_min: -100, -100, -100
+    bounds_max: 100, 100, 100
+    warmup_time: 0.0
+    pooling: AutoRelease
+    max_pool_size: 5
+    # Composed of: NE_FatherCore, NE_FatherShell, NE_FatherParticles, NE_FatherAura, NE_FatherTrail
+    # User parameters: CoreScale, ShellScale, ParticleSpawnRate, AlertLevel, EmotionColor
+
+  # Form transition burst VFX
   - name: NS_FatherFormTransition
     folder: VFX
-    # Form transition VFX - spawned during 5s form change animation
-    # Used by GA_FatherExoskeleton, GA_FatherArmor, etc. during transitions
+    effect_type: burst
+    warmup_time: 0.0
+    pooling: AutoRelease
+    max_pool_size: 3
+    # Used during 5s form change animation
+
+  # Laser beam VFX for GA_FatherLaserShot
+  - name: NS_LaserBeam
+    folder: VFX
+    effect_type: beam
+    determinism: true
+    random_seed: 42
+    fixed_bounds: true
+    bounds_min: -500, -50, -50
+    bounds_max: 500, 50, 50
+
+  # Electric trap VFX for GA_FatherElectricTrap
+  - name: NS_ElectricTrap
+    folder: VFX
+    effect_type: ambient
+    fixed_bounds: true
+    bounds_min: -200, -200, -50
+    bounds_max: 200, 200, 50
+    warmup_time: 0.5
+
+  # Dome shield VFX for GA_ProtectiveDome
+  - name: NS_ProtectiveDome
+    folder: VFX
+    effect_type: ambient
+    fixed_bounds: true
+    bounds_min: -300, -300, -300
+    bounds_max: 300, 300, 300
 
 # ============================================================================
 # ANIMATION ASSETS (7)

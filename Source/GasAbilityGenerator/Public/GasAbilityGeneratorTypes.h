@@ -647,7 +647,8 @@ struct FManifestTaggedDialogueSetDefinition
 };
 
 /**
- * v2.6.5: Niagara System definition - creates UNiagaraSystem assets
+ * v2.6.10: Niagara System definition - creates UNiagaraSystem assets
+ * Enhanced with warmup, bounds, determinism, and effect type settings
  */
 struct FManifestNiagaraSystemDefinition
 {
@@ -655,6 +656,25 @@ struct FManifestNiagaraSystemDefinition
 	FString Folder;
 	FString TemplateSystem;     // Optional: System to copy from (e.g., NS_DefaultSprite)
 	TArray<FString> Emitters;   // Optional: Emitters to add to new system
+
+	// v2.6.10: Warmup settings
+	float WarmupTime = 0.0f;           // Warmup time in seconds before system becomes visible
+	int32 WarmupTickCount = 0;         // Number of ticks to process for warmup
+	float WarmupTickDelta = 0.0333f;   // Delta time per warmup tick (default ~30fps)
+
+	// v2.6.10: Bounds settings
+	bool bFixedBounds = false;         // Use fixed bounds instead of dynamic
+	FVector BoundsMin = FVector(-100.f);  // Min corner of fixed bounds
+	FVector BoundsMax = FVector(100.f);   // Max corner of fixed bounds
+
+	// v2.6.10: Determinism settings
+	bool bDeterminism = false;         // Enable deterministic simulation
+	int32 RandomSeed = 0;              // Random seed for deterministic mode
+
+	// v2.6.10: Effect type settings
+	FString EffectType;                // beam, burst, trail, ambient, impact, projectile
+	FString PoolingMethod;             // None, AutoRelease, ManualRelease, FreeInWorld
+	int32 MaxPoolSize = 0;             // Maximum pool size (0 = no pooling)
 };
 
 /**

@@ -1,5 +1,7 @@
-// GasAbilityGenerator v2.6.8
+// GasAbilityGenerator v2.6.10
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.10: Enhanced Niagara generator with warmup, bounds, determinism, and pooling settings
+// v2.6.9: Animation Notify generator, Narrative Pro path support for parent classes and abilities
 // v2.6.8: EquippableItemGenerator now uses ParentClass from manifest (RangedWeaponItem, MeleeWeaponItem support)
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
 // v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
@@ -5384,7 +5386,8 @@ FGenerationResult FTaggedDialogueSetGenerator::Generate(const FManifestTaggedDia
 }
 
 // ============================================================================
-// v2.6.5: Niagara System Generator
+// v2.6.10: Niagara System Generator (Enhanced)
+// Supports: warmup, fixed bounds, determinism, pooling, effect types
 // ============================================================================
 
 #include "NiagaraSystem.h"
@@ -5516,6 +5519,95 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	if (!NewSystem)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Niagara System"));
+	}
+
+	// v2.6.10: Apply warmup settings
+	if (Definition.WarmupTime > 0.0f)
+	{
+		NewSystem->SetWarmupTime(Definition.WarmupTime);
+		LogGeneration(FString::Printf(TEXT("  Set warmup time: %.2f seconds"), Definition.WarmupTime));
+	}
+	if (Definition.WarmupTickCount > 0)
+	{
+		// Access via reflection since WarmupTickCount may be protected
+		if (FIntProperty* TickCountProp = CastField<FIntProperty>(NewSystem->GetClass()->FindPropertyByName(TEXT("WarmupTickCount"))))
+		{
+			TickCountProp->SetPropertyValue_InContainer(NewSystem, Definition.WarmupTickCount);
+			LogGeneration(FString::Printf(TEXT("  Set warmup tick count: %d"), Definition.WarmupTickCount));
+		}
+	}
+	if (Definition.WarmupTickDelta != 0.0333f && Definition.WarmupTime > 0.0f)
+	{
+		if (FFloatProperty* TickDeltaProp = CastField<FFloatProperty>(NewSystem->GetClass()->FindPropertyByName(TEXT("WarmupTickDelta"))))
+		{
+			TickDeltaProp->SetPropertyValue_InContainer(NewSystem, Definition.WarmupTickDelta);
+			LogGeneration(FString::Printf(TEXT("  Set warmup tick delta: %.4f"), Definition.WarmupTickDelta));
+		}
+	}
+
+	// v2.6.10: Apply fixed bounds settings
+	if (Definition.bFixedBounds)
+	{
+		FBox Bounds(Definition.BoundsMin, Definition.BoundsMax);
+		NewSystem->SetFixedBounds(Bounds);
+
+		// Set the bFixedBounds flag via reflection
+		if (FBoolProperty* FixedBoundsProp = CastField<FBoolProperty>(NewSystem->GetClass()->FindPropertyByName(TEXT("bFixedBounds"))))
+		{
+			FixedBoundsProp->SetPropertyValue_InContainer(NewSystem, true);
+		}
+		LogGeneration(FString::Printf(TEXT("  Set fixed bounds: (%.1f,%.1f,%.1f) to (%.1f,%.1f,%.1f)"),
+			Definition.BoundsMin.X, Definition.BoundsMin.Y, Definition.BoundsMin.Z,
+			Definition.BoundsMax.X, Definition.BoundsMax.Y, Definition.BoundsMax.Z));
+	}
+
+	// v2.6.10: Apply determinism settings
+	if (Definition.bDeterminism)
+	{
+		if (FBoolProperty* DeterminismProp = CastField<FBoolProperty>(NewSystem->GetClass()->FindPropertyByName(TEXT("bDeterminism"))))
+		{
+			DeterminismProp->SetPropertyValue_InContainer(NewSystem, true);
+			LogGeneration(TEXT("  Enabled deterministic simulation"));
+		}
+		if (Definition.RandomSeed != 0)
+		{
+			if (FIntProperty* SeedProp = CastField<FIntProperty>(NewSystem->GetClass()->FindPropertyByName(TEXT("RandomSeed"))))
+			{
+				SeedProp->SetPropertyValue_InContainer(NewSystem, Definition.RandomSeed);
+				LogGeneration(FString::Printf(TEXT("  Set random seed: %d"), Definition.RandomSeed));
+			}
+		}
+	}
+
+	// v2.6.10: Apply pooling settings
+	if (Definition.MaxPoolSize > 0)
+	{
+		if (FIntProperty* PoolSizeProp = CastField<FIntProperty>(NewSystem->GetClass()->FindPropertyByName(TEXT("MaxPoolSize"))))
+		{
+			PoolSizeProp->SetPropertyValue_InContainer(NewSystem, Definition.MaxPoolSize);
+			LogGeneration(FString::Printf(TEXT("  Set max pool size: %d"), Definition.MaxPoolSize));
+		}
+	}
+	if (!Definition.PoolingMethod.IsEmpty())
+	{
+		// PoolingMethod is an enum - try to set via byte property
+		if (FByteProperty* PoolMethodProp = CastField<FByteProperty>(NewSystem->GetClass()->FindPropertyByName(TEXT("PoolingMethod"))))
+		{
+			int32 MethodValue = 0;
+			if (Definition.PoolingMethod.Equals(TEXT("None"), ESearchCase::IgnoreCase)) MethodValue = 0;
+			else if (Definition.PoolingMethod.Equals(TEXT("AutoRelease"), ESearchCase::IgnoreCase)) MethodValue = 1;
+			else if (Definition.PoolingMethod.Equals(TEXT("ManualRelease"), ESearchCase::IgnoreCase)) MethodValue = 2;
+			else if (Definition.PoolingMethod.Equals(TEXT("FreeInWorld"), ESearchCase::IgnoreCase)) MethodValue = 3;
+
+			PoolMethodProp->SetPropertyValue_InContainer(NewSystem, (uint8)MethodValue);
+			LogGeneration(FString::Printf(TEXT("  Set pooling method: %s"), *Definition.PoolingMethod));
+		}
+	}
+
+	// v2.6.10: Log effect type (informational - helps with organization)
+	if (!Definition.EffectType.IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("  Effect type: %s"), *Definition.EffectType));
 	}
 
 	// Request compilation

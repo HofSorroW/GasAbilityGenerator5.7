@@ -3211,7 +3211,7 @@ bool FGasAbilityGeneratorParser::ShouldExitSection(const FString& Line, int32 Se
 	return false;
 }
 
-// v2.6.5: Niagara System parser - creates UNiagaraSystem assets
+// v2.6.10: Niagara System parser - creates UNiagaraSystem assets with enhanced properties
 void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
@@ -3281,6 +3281,85 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 				{
 					CurrentDef.Emitters.Add(EmitterName);
 				}
+			}
+			// v2.6.10: Warmup settings
+			else if (TrimmedLine.StartsWith(TEXT("warmup_time:")))
+			{
+				CurrentDef.WarmupTime = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("warmup_tick_count:")))
+			{
+				CurrentDef.WarmupTickCount = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("warmup_tick_delta:")))
+			{
+				CurrentDef.WarmupTickDelta = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+			}
+			// v2.6.10: Bounds settings
+			else if (TrimmedLine.StartsWith(TEXT("fixed_bounds:")))
+			{
+				CurrentDef.bFixedBounds = GetLineValue(TrimmedLine).ToBool();
+				bInEmitters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("bounds_min:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				TArray<FString> Parts;
+				Value.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentDef.BoundsMin = FVector(
+						FCString::Atof(*Parts[0].TrimStartAndEnd()),
+						FCString::Atof(*Parts[1].TrimStartAndEnd()),
+						FCString::Atof(*Parts[2].TrimStartAndEnd())
+					);
+				}
+				bInEmitters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("bounds_max:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				TArray<FString> Parts;
+				Value.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentDef.BoundsMax = FVector(
+						FCString::Atof(*Parts[0].TrimStartAndEnd()),
+						FCString::Atof(*Parts[1].TrimStartAndEnd()),
+						FCString::Atof(*Parts[2].TrimStartAndEnd())
+					);
+				}
+				bInEmitters = false;
+			}
+			// v2.6.10: Determinism settings
+			else if (TrimmedLine.StartsWith(TEXT("determinism:")) || TrimmedLine.StartsWith(TEXT("deterministic:")))
+			{
+				CurrentDef.bDeterminism = GetLineValue(TrimmedLine).ToBool();
+				bInEmitters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("random_seed:")))
+			{
+				CurrentDef.RandomSeed = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+			}
+			// v2.6.10: Effect type settings
+			else if (TrimmedLine.StartsWith(TEXT("effect_type:")))
+			{
+				CurrentDef.EffectType = GetLineValue(TrimmedLine);
+				bInEmitters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("pooling_method:")) || TrimmedLine.StartsWith(TEXT("pooling:")))
+			{
+				CurrentDef.PoolingMethod = GetLineValue(TrimmedLine);
+				bInEmitters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("max_pool_size:")) || TrimmedLine.StartsWith(TEXT("pool_size:")))
+			{
+				CurrentDef.MaxPoolSize = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
 			}
 		}
 
