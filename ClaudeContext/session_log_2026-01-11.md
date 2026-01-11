@@ -708,4 +708,152 @@ niagara_systems:
 
 ---
 
-## Current Plugin Version: v2.6.11
+## Completed: Material and Material Function Generators (v2.6.12)
+
+### What Was Done
+Added Material Generator and Material Function Generator with full expression graph support. Materials and Material Functions can now be generated from YAML with shader node definitions and connections.
+
+### Files Modified (7 files, +1348 lines, -33 lines)
+
+1. **GasAbilityGeneratorTypes.h**
+   - Added `FManifestMaterialExpression` struct (id, type, name, default, pos, properties)
+   - Added `FManifestMaterialConnection` struct (from/to with output/input pins)
+   - Enhanced `FManifestMaterialDefinition` with Expressions and Connections arrays
+   - Added `FManifestMaterialFunctionInput` struct
+   - Added `FManifestMaterialFunctionOutput` struct
+   - Added `FManifestMaterialFunctionDefinition` struct
+   - Added `MaterialFunctions` to `FManifestData`
+   - Updated `BuildAssetWhitelist()` and `GetTotalAssetCount()`
+   - Added "MF_" category detection in `DetermineCategory()` (before M_)
+
+2. **GasAbilityGeneratorParser.h**
+   - Added `ParseMaterialFunctions()` declaration
+
+3. **GasAbilityGeneratorParser.cpp**
+   - Enhanced `ParseMaterials()` with expressions/connections subsection parsing (~200 lines)
+   - Added `ParseMaterialFunctions()` function (~240 lines)
+   - Added `material_functions:` section check in main parser
+
+4. **GasAbilityGeneratorGenerators.h**
+   - Enhanced `FMaterialGenerator` with `CreateExpression()` and `ConnectExpressions()` helpers
+   - Added `FMaterialFunctionGenerator` class with `CreateExpressionInFunction()` helper
+
+5. **GasAbilityGeneratorGenerators.cpp**
+   - Added includes for material expression types (~640 lines total)
+   - `CreateExpression()` supports: ScalarParam, VectorParam, Constant, Multiply, Add, Subtract, Divide, Power, Fresnel, OneMinus, Clamp, Lerp, Time, Sine, TexCoord, Panner
+   - `ConnectExpressions()` connects to Material outputs or between expressions
+   - Added `FMaterialFunctionGenerator::Generate()` and `CreateExpressionInFunction()`
+
+6. **GasAbilityGeneratorCommandlet.cpp**
+   - Added Material Functions generation loop
+
+7. **manifest.yaml**
+   - Added 4 VFX materials with expression graphs:
+     - M_FatherCore (additive, emissive with fresnel)
+     - M_FatherShell (translucent with opacity)
+     - M_FatherParticle (additive emissive)
+     - M_LaserGlow (additive emissive)
+   - Added 3 material functions:
+     - MF_EnergyPulse (animated pulse effect)
+     - MF_FresnelGlow (fresnel-based edge glow)
+     - MF_RadialGradient (radial gradient for spheres)
+
+### Supported Expression Types
+| Type | Description |
+|------|-------------|
+| ScalarParameter | Float parameter exposed to material instance |
+| VectorParameter | Color/vector parameter exposed to material instance |
+| Constant | Static float value |
+| Multiply | A * B |
+| Add | A + B |
+| Subtract | A - B |
+| Divide | A / B |
+| Power | Base ^ Exponent |
+| Fresnel | Edge highlight effect |
+| OneMinus | 1 - Input |
+| Clamp | Clamp value between min/max |
+| Lerp | Linear interpolation |
+| Time | Animated time value |
+| Sine | Sine wave |
+| TextureCoordinate | UV coordinates |
+| Panner | Animated UV panning |
+
+### Material Output Pins
+BaseColor, EmissiveColor, Metallic, Roughness, Opacity, OpacityMask, Normal, Specular, AmbientOcclusion
+
+### YAML Usage Example
+```yaml
+materials:
+  - name: M_FatherCore
+    folder: VFX
+    blend_mode: Additive
+    shading_model: Unlit
+    expressions:
+      - id: fresnel
+        type: Fresnel
+        pos_x: -300
+        pos_y: 0
+      - id: color
+        type: VectorParameter
+        name: CoreColor
+        default: 1.0, 0.6, 0.0, 1.0
+      - id: mult
+        type: Multiply
+    connections:
+      - from: fresnel
+        from_output: Result
+        to: mult
+        to_input: A
+      - from: color
+        from_output: RGB
+        to: mult
+        to_input: B
+      - from: mult
+        from_output: Result
+        to: Material
+        to_input: EmissiveColor
+
+material_functions:
+  - name: MF_EnergyPulse
+    folder: VFX/Functions
+    expose_to_library: true
+    inputs:
+      - name: Speed
+        type: float
+      - name: Intensity
+        type: float
+    outputs:
+      - name: Result
+        type: float
+    expressions:
+      - id: time
+        type: Time
+      - id: sine
+        type: Sine
+      - id: mult
+        type: Multiply
+    connections:
+      - from: time
+        to: sine
+        to_input: Input
+      - from: sine
+        to: mult
+        to_input: A
+      - from: mult
+        to_output: Result
+```
+
+### Build Status
+- **Result: Succeeded** (13.18 seconds)
+- Compiled with UE 5.7, Visual Studio 2022
+
+### Git Status
+- Commit: `8db8110` - "v2.6.12: Add Material and Material Function generators with expression graph support"
+- Pushed to: https://github.com/HofSorroW/GasAbilityGenerator5.7
+
+### Research Finding
+Niagara Emitters cannot be auto-generated programmatically - the module graph requires the visual Niagara Editor. Materials and Material Functions can be generated using UMaterialEditingLibrary and expression APIs.
+
+---
+
+## Current Plugin Version: v2.6.12
