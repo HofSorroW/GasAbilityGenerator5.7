@@ -1,0 +1,15 @@
+# Build artifacts
+Binaries/
+Intermediate/
+
+# Logs
+Tools/Logs/
+
+# IDE
+.vs/
+.vscode/
+*.sln
+*.suo
+
+# Claude Code local settings
+.claude/

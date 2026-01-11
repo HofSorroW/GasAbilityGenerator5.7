@@ -1,0 +1,4942 @@
+# Father Companion System - Complete Manifest
+# Version: 3.0.1
+# Engine: Unreal Engine 5.6
+# Plugin: Narrative Pro v2.2
+# Total Tags: 192
+# Total Assets: 143 (142 generated + 1 manual)
+# Event Graph Support: ENABLED
+# NPC Systems: Warden Husk, Guard Formation, Possessed Exploder, Support Buffer, Biomechanical Detachment, Gatherer Scout, Stalker Random Aggression
+
+project_root: /Game/FatherCompanion
+tags_ini_path: Config/DefaultGameplayTags.ini
+
+# ============================================================================
+# GAMEPLAY TAGS (179 total)
+# ============================================================================
+tags:
+  # Ability Tags (25)
+  - tag: Ability.Father.Armor
+    comment: Form activation ability
+  - tag: Ability.Father.Attack
+    comment: Crawler melee attack
+  - tag: Ability.Father.Backstab
+    comment: Passive backstab damage bonus
+  - tag: Ability.Father.Crawler
+    comment: Form activation ability
+  - tag: Ability.Father.DomeBurst
+    comment: Armor form active burst
+  - tag: Ability.Father.ElectricTrap
+    comment: Engineer electric web trap
+  - tag: Ability.Father.Engineer
+    comment: Form activation ability
+  - tag: Ability.Father.Engineer.ElectricTrap
+    comment: Hierarchical child - electric trap
+  - tag: Ability.Father.Engineer.TurretShoot
+    comment: Hierarchical child - turret shoot
+  - tag: Ability.Father.Exoskeleton
+    comment: Form activation ability
+  - tag: Ability.Father.Exoskeleton.Dash
+    comment: Hierarchical child - dash ability
+  - tag: Ability.Father.Exoskeleton.Sprint
+    comment: Hierarchical child - sprint ability
+  - tag: Ability.Father.LaserShot
+    comment: Crawler ranged laser attack
+  - tag: Ability.Father.Mark
+    comment: Enemy marking passive
+  - tag: Ability.Father.ProtectiveDome
+    comment: Armor dome passive
+  - tag: Ability.Father.ProximityStrike
+    comment: Symbiote proximity damage
+  - tag: Ability.Father.Rifle
+    comment: Rifle weapon form ability
+  - tag: Ability.Father.Sacrifice
+    comment: Emergency sacrifice passive
+  - tag: Ability.Father.StealthField
+    comment: Exoskeleton stealth ability
+  - tag: Ability.Father.Sword
+    comment: Sword weapon form ability
+  - tag: Ability.Father.Symbiote
+    comment: Form activation ability
+  - tag: Ability.Father.Symbiote.ProximityStrike
+    comment: Hierarchical child - proximity AOE damage
+  - tag: Ability.Father.TurretShoot
+    comment: Engineer turret auto-fire
+
+  # Action Tags (1)
+  - tag: Action.Attacking
+    comment: Generic attacking state
+
+  # AI Tags (8)
+  - tag: AI.Action.MarkEnemy
+    comment: AI behavior mark action
+  - tag: AI.Action.MeleeAttack
+    comment: AI behavior melee action
+  - tag: AI.Action.ShootLaser
+    comment: AI behavior laser action
+  - tag: AI.Action.ThrowElectricWeb
+    comment: AI behavior trap action
+  - tag: AI.Action.TurretShoot
+    comment: AI behavior turret action
+  - tag: AI.State.HasElectricWebTarget
+    comment: AI has valid trap target
+  - tag: AI.State.HasTarget
+    comment: AI has combat target
+  - tag: AI.State.InCombat
+    comment: AI is in combat state
+
+  # Character Tags (4)
+  - tag: Character.Enemy
+    comment: Character is enemy faction
+  - tag: Character.Marked
+    comment: Character is marked by father
+  - tag: Character.Player
+    comment: Character is player
+  - tag: Character.Father
+    comment: Character is father companion
+
+  # Companion Tags (7)
+  - tag: Companion.Slot.1
+    comment: Companion wheel slot 1
+  - tag: Companion.Slot.2
+    comment: Companion wheel slot 2
+  - tag: Companion.Slot.3
+    comment: Companion wheel slot 3
+  - tag: Companion.Slot.4
+    comment: Companion wheel slot 4
+  - tag: Companion.State.Selected
+    comment: Companion selected in wheel
+  - tag: Companion.State.TimeDilated
+    comment: Wheel time dilation active
+  - tag: Companion.State.WheelOpen
+    comment: Companion wheel is open
+
+  # Cooldown Tags (9)
+  - tag: Cooldown.Father.DomeBurst
+    comment: Dome burst cooldown
+  - tag: Cooldown.Father.ElectricTrap
+    comment: Electric trap cooldown
+  - tag: Cooldown.Father.Exoskeleton.Dash
+    comment: Dash ability cooldown
+  - tag: Cooldown.Father.FormChange
+    comment: Shared 15s form transition cooldown
+  - tag: Cooldown.Father.LaserShot
+    comment: Laser shot cooldown
+  - tag: Cooldown.Father.ProximityStrike
+    comment: Proximity strike cooldown
+  - tag: Cooldown.Father.Sacrifice
+    comment: Sacrifice ability cooldown
+  - tag: Cooldown.Father.StealthField
+    comment: Stealth field cooldown
+  - tag: Cooldown.Father.Symbiote
+    comment: Symbiote form cooldown
+
+  # Data Tags - SetByCaller (13)
+  - tag: Data.Backstab.DamageBonus
+    comment: SetByCaller backstab bonus
+  - tag: Data.Damage.DomeExplosion
+    comment: SetByCaller dome damage
+  - tag: Data.Damage.ElectricWeb
+    comment: SetByCaller trap damage
+  - tag: Data.Damage.ProximityStrike
+    comment: SetByCaller proximity damage
+  - tag: Data.Damage.Father
+    comment: SetByCaller father base damage
+  - tag: Data.Damage.Turret
+    comment: SetByCaller turret damage
+  - tag: Data.Dome.Damage
+    comment: SetByCaller dome burst damage
+  - tag: Data.Dome.Energy
+    comment: SetByCaller dome energy
+  - tag: Data.Duration
+    comment: SetByCaller effect duration
+  - tag: Data.Mark.DamageBonus
+    comment: SetByCaller mark bonus
+  - tag: Data.Mark.Duration
+    comment: SetByCaller mark duration
+  - tag: Data.Sacrifice.DormantDuration
+    comment: SetByCaller dormant time
+  - tag: Data.Symbiote.Duration
+    comment: SetByCaller symbiote duration
+
+  # Effect Tags (38)
+  - tag: Effect.Backstab
+    comment: Backstab damage effect
+  - tag: Effect.Backstab.Critical
+    comment: Critical backstab effect
+  - tag: Effect.Damage.Laser
+    comment: Laser damage effect
+  - tag: Effect.ElectricWeb.Damage
+    comment: Electric web damage
+  - tag: Effect.ElectricWeb.Root
+    comment: Electric web root effect
+  - tag: Effect.Knockback
+    comment: Knockback effect
+  - tag: Effect.Father.ArmorBoost
+    comment: Armor stat boost effect
+  - tag: Effect.Father.Damage
+    comment: Base father damage effect
+  - tag: Effect.Father.DashDamage
+    comment: Dash collision damage
+  - tag: Effect.Father.DashInvulnerability
+    comment: Dash i-frames effect
+  - tag: Effect.Father.DashKnockback
+    comment: Dash knockback effect
+  - tag: Effect.Father.DashSpeed
+    comment: Dash speed boost
+  - tag: Effect.Father.DomeAbsorption
+    comment: Dome damage absorption
+  - tag: Effect.Father.DomeBurst
+    comment: Dome burst damage effect
+  - tag: Effect.Father.DomeEnergy
+    comment: Dome energy modification
+  - tag: Effect.Father.FormState
+    comment: Base asset tag for all form state gameplay effects
+  - tag: Effect.Father.FormState.Armor
+    comment: Asset tag for GE_ArmorState effect
+  - tag: Effect.Father.FormState.Crawler
+    comment: Asset tag for GE_CrawlerState effect
+  - tag: Effect.Father.FormState.Engineer
+    comment: Asset tag for GE_EngineerState effect
+  - tag: Effect.Father.FormState.Exoskeleton
+    comment: Asset tag for GE_ExoskeletonState effect
+  - tag: Effect.Father.FormState.Symbiote
+    comment: Asset tag for GE_SymbioteState effect
+  - tag: Effect.Father.Mark
+    comment: Enemy mark effect
+  - tag: Effect.Father.ProximityDamage
+    comment: Proximity strike damage
+  - tag: Effect.Father.Recruited
+    comment: Asset tag for GE_GrantRecruitedTag effect
+  - tag: Effect.Father.SacrificeInvulnerability
+    comment: Sacrifice invulnerability effect
+  - tag: Effect.Father.SpeedBoost
+    comment: Generic speed boost
+  - tag: Effect.Father.SprintJump
+    comment: Sprint jump boost
+  - tag: Effect.Father.SprintPush
+    comment: Sprint enemy push
+  - tag: Effect.Father.SprintSpeed
+    comment: Sprint speed boost
+  - tag: Effect.Father.Stealth
+    comment: Stealth invisibility effect
+  - tag: Effect.Father.StealthDamageBonus
+    comment: Stealth damage bonus
+  - tag: Effect.Father.StealthSpeedReduction
+    comment: Stealth speed penalty
+  - tag: Effect.Father.SymbioteActive
+    comment: Symbiote form active effect
+  - tag: Effect.Father.SymbioteDuration
+    comment: Symbiote duration timer
+  - tag: Effect.Father.TransitionInvulnerability
+    comment: 5s invulnerability during form transition
+  - tag: Effect.Father.TurretDamage
+    comment: Turret shot damage
+  - tag: Effect.Father.TurretMode
+    comment: Turret mode state effect
+  - tag: Effect.Symbiote.StatBoost
+    comment: Gameplay Effect providing Symbiote stat boosts
+
+  # Event Tags (1)
+  - tag: Event.Combat.Backstab
+    comment: Backstab combat event
+
+  # GameplayCue Tags (7)
+  - tag: GameplayCue.Father.Backstab
+    comment: Backstab VFX/SFX cue
+  - tag: GameplayCue.Father.FormChange
+    comment: Form change VFX/SFX cue
+  - tag: GameplayCue.Father.Mark
+    comment: Enemy mark VFX/SFX cue
+  - tag: GameplayCue.Father.Reactivate
+    comment: Reactivation VFX/SFX cue
+  - tag: GameplayCue.Father.Sacrifice
+    comment: Sacrifice VFX/SFX cue
+  - tag: GameplayCue.Father.Sprint
+    comment: VFX and SFX for Exoskeleton sprint ability
+  - tag: GameplayCue.Father.Stealth
+    comment: Stealth VFX/SFX cue
+
+  # Form Tags (7)
+  - tag: Father.Form.Armor
+    comment: Father is in armor form (chest attachment)
+  - tag: Father.Form.Crawler
+    comment: Father is in crawler form (following)
+  - tag: Father.Form.Engineer
+    comment: Father is in engineer form (turret mode)
+  - tag: Father.Form.Exoskeleton
+    comment: Father is in exoskeleton form (back attachment)
+  - tag: Father.Form.Rifle
+    comment: Father is in rifle form (weapon)
+  - tag: Father.Form.Sword
+    comment: Father is in sword form (weapon)
+  - tag: Father.Form.Symbiote
+    comment: Father is in symbiote form (merged)
+
+  # Input Tags (8)
+  - tag: InputTag.Father.DomeBurst
+    comment: Input for dome burst ability
+  - tag: InputTag.Father.ElectricTrap
+    comment: Input for electric trap ability
+  - tag: InputTag.Father.FormWheel
+    comment: Input for form selection wheel
+  - tag: InputTag.Father.ProximityStrike
+    comment: Input for proximity strike ability
+  - tag: InputTag.Father.Sprint
+    comment: Input for exoskeleton sprint
+  - tag: InputTag.Father.Stealth
+    comment: Input for stealth field ability
+  - tag: InputTag.Father.TurretShoot
+    comment: Input for turret shoot ability
+  - tag: InputTag.Move
+    comment: Generic move input tag
+
+  # State Tags - Father (17)
+  - tag: Father.State.Attached
+    comment: Father is attached to player
+  - tag: Father.State.Attacking
+    comment: Father is attacking
+  - tag: Father.State.Dashing
+    comment: Father is dashing
+  - tag: Father.State.Detached
+    comment: Father is detached from player
+  - tag: Father.State.Dormant
+    comment: Father is dormant after sacrifice
+  - tag: Father.State.Marking
+    comment: Father is marking enemy
+  - tag: Father.State.Offline
+    comment: Father is offline
+  - tag: Father.State.ProximityActive
+    comment: Proximity strike is active
+  - tag: Father.State.Recruited
+    comment: Father is recruited by player
+  - tag: Father.State.Sacrificing
+    comment: Father is sacrificing
+  - tag: Father.State.Sprinting
+    comment: Father is sprinting
+  - tag: Father.State.Stealthed
+    comment: Father is stealthed
+  - tag: Father.State.SymbioteLocked
+    comment: Form changes locked during symbiote
+  - tag: Father.State.Transitioning
+    comment: Father is in form transition
+  - tag: Father.State.TurretActive
+    comment: Turret mode is active
+  - tag: Father.State.TurretDeployed
+    comment: Father deployed as turret
+
+  # Dome Tags (1)
+  - tag: Father.Dome.Active
+    comment: Protective dome is active
+
+  # State Tags - General (5)
+  - tag: State.Invulnerable
+    comment: Entity cannot take damage
+  - tag: State.BackstabReady
+    comment: Backstab conditions met
+  - tag: State.Rooted
+    comment: Entity cannot move
+  - tag: State.Invisible
+    comment: Entity is invisible
+  - tag: Player.State.Stealth
+    comment: Player stealth state
+
+  # Symbiote Tags (2)
+  - tag: Symbiote.Charge.Ready
+    comment: Symbiote charge at 100%
+  - tag: Symbiote.State.Merged
+    comment: Father merged with player
+
+  # Faction Tags (2)
+  - tag: Narrative.Factions.FatherCompanion
+    comment: Father companion faction
+  - tag: Narrative.Factions.Player
+    comment: Player faction
+
+  # Equipment Tags (1)
+  - tag: Narrative.Equipment.Slot.FatherForm
+    comment: Equipment slot for father form items
+
+# ============================================================================
+# INPUT ACTIONS (7)
+# ============================================================================
+input_actions:
+  - name: IA_FatherFormWheel
+    folder: Input
+    value_type: Bool
+    triggers:
+      - Pressed
+
+  - name: IA_FatherDomeBurst
+    folder: Input
+    value_type: Bool
+    triggers:
+      - Pressed
+
+  - name: IA_FatherStealth
+    folder: Input
+    value_type: Bool
+    triggers:
+      - Pressed
+
+  - name: IA_FatherSprint
+    folder: Input
+    value_type: Bool
+    triggers:
+      - Down
+
+  - name: IA_FatherProximityStrike
+    folder: Input
+    value_type: Bool
+    triggers:
+      - Pressed
+
+  - name: IA_FatherElectricTrap
+    folder: Input
+    value_type: Bool
+    triggers:
+      - Pressed
+
+  - name: IA_FatherTurretShoot
+    folder: Input
+    value_type: Bool
+    triggers:
+      - Down
+
+# ============================================================================
+# INPUT MAPPING CONTEXT (1)
+# ============================================================================
+input_mapping_contexts:
+  - name: IMC_FatherCompanion
+    folder: Input
+    mappings:
+      - action: IA_FatherFormWheel
+        key: T
+      - action: IA_FatherDomeBurst
+        key: Q
+      - action: IA_FatherStealth
+        key: E
+      - action: IA_FatherSprint
+        key: Q
+        modifiers:
+          - Hold
+      - action: IA_FatherProximityStrike
+        key: Q
+      - action: IA_FatherElectricTrap
+        key: Q
+      - action: IA_FatherTurretShoot
+        key: LeftMouseButton
+
+# ============================================================================
+# ENUMERATIONS (2)
+# ============================================================================
+enumerations:
+  - name: E_FatherForm
+    folder: Enums
+    values:
+      - Crawler
+      - Armor
+      - Exoskeleton
+      - Symbiote
+      - Engineer
+      - Offline
+
+  - name: E_DashDirection
+    folder: Enums
+    values:
+      - Forward
+      - Backward
+      - Left
+      - Right
+
+# ============================================================================
+# GAMEPLAY EFFECTS (30)
+# ============================================================================
+gameplay_effects:
+  # Form State Effects (7)
+  - name: GE_CrawlerState
+    folder: Effects/Forms
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Form.Crawler
+      - Father.State.Detached
+
+  - name: GE_ArmorState
+    folder: Effects/Forms
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Form.Armor
+      - Father.State.Attached
+
+  - name: GE_ExoskeletonState
+    folder: Effects/Forms
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Form.Exoskeleton
+      - Father.State.Attached
+
+  - name: GE_SymbioteState
+    folder: Effects/Forms
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Form.Symbiote
+      - Symbiote.State.Merged
+
+  - name: GE_EngineerState
+    folder: Effects/Forms
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Form.Engineer
+      - Father.State.TurretDeployed
+
+  - name: GE_RifleState
+    folder: Effects/Forms
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Form.Rifle
+      - Father.State.Wielded
+
+  - name: GE_SwordState
+    folder: Effects/Forms
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Form.Sword
+      - Father.State.Wielded
+
+  # Stat Boost Effects (3)
+  - name: GE_ArmorBoost
+    folder: Effects/Stats
+    duration_policy: Infinite
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.Armor
+        modifier_op: Additive
+        magnitude_type: SetByCaller
+        setbycaller_tag: Data.Father.ArmorBoost
+    asset_tag: Effect.Father.ArmorBoost
+
+  - name: GE_ExoskeletonSpeed
+    folder: Effects/Stats
+    duration_policy: Infinite
+    granted_tags:
+      - Father.State.SpeedBoosted
+    asset_tag: Effect.Father.SpeedBoost
+
+  - name: GE_SymbioteBoost
+    folder: Effects/Stats
+    duration_policy: Infinite
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.Damage
+        modifier_op: Additive
+        magnitude_type: ScalableFloat
+        magnitude_value: 25.0
+      - attribute: NarrativeAttributeSetBase.AttackSpeed
+        modifier_op: Additive
+        magnitude_type: ScalableFloat
+        magnitude_value: 0.3
+    granted_tags:
+      - Symbiote.State.Merged
+    asset_tag: Effect.Symbiote.StatBoost
+
+  # Cooldown Effects (8)
+  - name: GE_FormChangeCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 15.0
+    granted_tags:
+      - Cooldown.Father.FormChange
+
+  - name: GE_AttackCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 1.5
+    granted_tags:
+      - Cooldown.Father.Attack
+
+  - name: GE_LaserCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 3.0
+    granted_tags:
+      - Cooldown.Father.LaserShot
+
+  - name: GE_DomeBurstCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 12.0
+    granted_tags:
+      - Cooldown.Father.DomeBurst
+
+  - name: GE_ExoskeletonDashCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 4.0
+    granted_tags:
+      - Cooldown.Father.Exoskeleton.Dash
+
+  - name: GE_StealthCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 20.0
+    granted_tags:
+      - Cooldown.Father.StealthField
+
+  - name: GE_ProximityStrikeCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 8.0
+    granted_tags:
+      - Cooldown.Father.ProximityStrike
+
+  - name: GE_ElectricTrapCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 10.0
+    granted_tags:
+      - Cooldown.Father.ElectricTrap
+
+  - name: GE_TurretShootCooldown
+    folder: Effects/Cooldowns
+    duration_policy: HasDuration
+    duration_magnitude: 0.5
+    granted_tags:
+      - Cooldown.Father.TurretShoot
+
+  # Damage Effects (5)
+  - name: GE_FatherDamage
+    folder: Effects/Damage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    setbycaller_magnitudes:
+      - tag: Data.Damage.Father
+    asset_tag: Effect.Father.Damage
+
+  - name: GE_LaserDamage
+    folder: Effects/Damage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    setbycaller_magnitudes:
+      - tag: Data.Damage.Laser
+    asset_tag: Effect.Damage.Laser
+
+  - name: GE_DomeBurstDamage
+    folder: Effects/Damage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    setbycaller_magnitudes:
+      - tag: Data.Dome.Damage
+    asset_tag: Effect.Father.DomeBurst
+
+  - name: GE_ProximityDamage
+    folder: Effects/Damage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    setbycaller_magnitudes:
+      - tag: Data.Damage.ProximityStrike
+    asset_tag: Effect.Father.ProximityDamage
+
+  - name: GE_ElectricTrapDamage
+    folder: Effects/Damage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    setbycaller_magnitudes:
+      - tag: Data.Damage.ElectricWeb
+    asset_tag: Effect.ElectricWeb.Damage
+
+  # Utility Effects (7)
+  - name: GE_MarkEffect
+    folder: Effects/Utility
+    duration_policy: HasDuration
+    duration_setbycaller: Data.Mark.Duration
+    granted_tags:
+      - Character.Marked
+    asset_tag: Effect.Father.Mark
+
+  - name: GE_TransitionInvulnerability
+    folder: Effects/Utility
+    duration_policy: HasDuration
+    duration_magnitude: 5.0
+    granted_tags:
+      - State.Invulnerable
+      - Father.State.Transitioning
+
+  - name: GE_DashInvulnerability
+    folder: Effects/Utility
+    duration_policy: HasDuration
+    duration_magnitude: 0.3
+    granted_tags:
+      - State.Invulnerable
+      - Father.State.Dashing
+
+  - name: GE_SacrificeInvulnerability
+    folder: Effects/Utility
+    duration_policy: HasDuration
+    duration_magnitude: 10.0
+    granted_tags:
+      - State.Invulnerable
+
+  - name: GE_FatherOffline
+    folder: Effects/Utility
+    duration_policy: HasDuration
+    duration_setbycaller: Data.Sacrifice.DormantDuration
+    granted_tags:
+      - Father.State.Dormant
+      - Father.State.Offline
+
+  - name: GE_GrantRecruitedTag
+    folder: Effects/Utility
+    duration_policy: Infinite
+    granted_tags:
+      - Father.State.Recruited
+
+  - name: GE_SymbioteDuration
+    folder: Effects/Utility
+    duration_policy: HasDuration
+    duration_setbycaller: Data.Symbiote.Duration
+    granted_tags:
+      - Father.State.SymbioteLocked
+
+  - name: GE_StealthActive
+    folder: Effects/Utility
+    duration_policy: Infinite
+    granted_tags:
+      - Father.State.Stealthed
+      - State.Invisible
+      - Player.State.Stealth
+
+  - name: GE_DomeAbsorption
+    folder: Effects/Utility
+    duration_policy: Infinite
+    granted_tags:
+      - Father.Dome.Active
+
+  - name: GE_SprintSpeed
+    folder: Effects/Utility
+    duration_policy: Infinite
+    granted_tags:
+      - Father.State.Sprinting
+
+  - name: GE_ElectricTrapRoot
+    folder: Effects/Utility
+    duration_policy: HasDuration
+    duration_magnitude: 3.0
+    granted_tags:
+      - State.Rooted
+
+# ============================================================================
+# GAMEPLAY ABILITIES (18) - WITH EVENT GRAPH DEFINITIONS
+# ============================================================================
+gameplay_abilities:
+  # ---------------------------------------------------------------------------
+  # FORM ABILITIES (5)
+  # ---------------------------------------------------------------------------
+  
+  # GA_FatherCrawler - Detach and Follow Mode
+  - name: GA_FatherCrawler
+    folder: Abilities/Forms
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_FormChangeCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.Crawler
+      cancel_abilities_with_tag:
+        - Ability.Father.Armor
+        - Ability.Father.Exoskeleton
+        - Ability.Father.Symbiote
+        - Ability.Father.Engineer
+      activation_owned_tags:
+        - Father.Form.Crawler
+        - Father.State.Detached
+      activation_required_tags:
+        - Father.State.Recruited
+      activation_blocked_tags:
+        - Cooldown.Father.FormChange
+        - Father.State.Transitioning
+        - Father.State.SymbioteLocked
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: bIsFirstActivation
+        type: Bool
+        default_value: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetFirstActivation
+          type: VariableGet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [1100, 100]
+        - id: Branch_First
+          type: Branch
+          position: [1200, 0]
+        - id: SetCurrentForm
+          type: PropertySet
+          properties:
+            property_name: CurrentForm
+            target_class: BP_FatherCompanion
+          position: [1500, -100]
+        - id: SetIsAttached
+          type: PropertySet
+          properties:
+            property_name: IsAttached
+            target_class: BP_FatherCompanion
+          position: [1800, -100]
+        - id: SetFirstFalse
+          type: VariableSet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [2100, -100]
+        - id: EndAbility_First
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2400, -100]
+        - id: DetachFromActor
+          type: CallFunction
+          properties:
+            function: K2_DetachFromActor
+          position: [1500, 200]
+        - id: SetCurrentForm_Switch
+          type: PropertySet
+          properties:
+            property_name: CurrentForm
+            target_class: BP_FatherCompanion
+          position: [1800, 200]
+        - id: SetIsAttached_Switch
+          type: PropertySet
+          properties:
+            property_name: IsAttached
+            target_class: BP_FatherCompanion
+          position: [2100, 200]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [2400, 200]
+        - id: EndAbility_Switch
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2700, 200]
+      connections:
+        # Exec flow
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [Branch_First, Exec]
+        # Branch True path (first activation)
+        - from: [Branch_First, True]
+          to: [SetCurrentForm, Exec]
+        - from: [SetCurrentForm, Exec]
+          to: [SetIsAttached, Exec]
+        - from: [SetIsAttached, Exec]
+          to: [SetFirstFalse, Exec]
+        - from: [SetFirstFalse, Exec]
+          to: [EndAbility_First, Exec]
+        # Branch False path (form switch)
+        - from: [Branch_First, False]
+          to: [DetachFromActor, Exec]
+        - from: [DetachFromActor, Exec]
+          to: [SetCurrentForm_Switch, Exec]
+        - from: [SetCurrentForm_Switch, Exec]
+          to: [SetIsAttached_Switch, Exec]
+        - from: [SetIsAttached_Switch, Exec]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility_Switch, Exec]
+        # Data flow - Cast
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetCurrentForm, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetIsAttached, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [DetachFromActor, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetCurrentForm_Switch, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetIsAttached_Switch, Target]
+        # Data flow - Branch condition
+        - from: [GetFirstActivation, bIsFirstActivation]
+          to: [Branch_First, Condition]
+
+  # GA_FatherArmor - Attach to Player Chest
+  - name: GA_FatherArmor
+    folder: Abilities/Forms
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_FormChangeCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.Armor
+      cancel_abilities_with_tag:
+        - Ability.Father.Crawler
+        - Ability.Father.Exoskeleton
+        - Ability.Father.Symbiote
+        - Ability.Father.Engineer
+      activation_owned_tags:
+        - Father.Form.Armor
+        - Father.State.Attached
+      activation_required_tags:
+        - Father.State.Recruited
+      activation_blocked_tags:
+        - Cooldown.Father.FormChange
+        - Father.State.Transitioning
+        - Father.State.SymbioteLocked
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: OriginalWalkSpeed
+        type: Float
+        default_value: 0.0
+        instance_editable: true
+      - name: SpeedPenaltyMultiplier
+        type: Float
+        default_value: 0.85
+        instance_editable: true
+      - name: ChestSocketName
+        type: Name
+        default_value: FatherChestSocket
+        instance_editable: true
+    event_graph:
+      nodes:
+        # === ACTIVATION FLOW (Row Y=0 for exec, Y=-150 for pure getters) ===
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [400, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [800, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [1200, 0]
+        # Pure nodes - below main exec flow
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, -150]
+        - id: IsValid_Player
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [1500, -150]
+        - id: Branch_Valid
+          type: Branch
+          position: [1600, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [2000, 0]
+        # Pure getters for CharacterMovement chain
+        - id: GetCharMov
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [2000, -150]
+        - id: GetMaxSpeed
+          type: PropertyGet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [2300, -150]
+        - id: SetOrigSpeed
+          type: VariableSet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [2400, 0]
+        - id: GetPenalty
+          type: VariableGet
+          properties:
+            variable_name: SpeedPenaltyMultiplier
+          position: [2600, -150]
+        - id: MultiplySpeed
+          type: CallFunction
+          properties:
+            function: Multiply_FloatFloat
+            class: KismetMathLibrary
+          position: [2800, -150]
+        - id: SetMaxSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [2800, 0]
+        # Pure getters for attach
+        - id: GetMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [3000, -150]
+        - id: GetSocket
+          type: VariableGet
+          properties:
+            variable_name: ChestSocketName
+          position: [3000, -280]
+        - id: AttachToComponent
+          type: CallFunction
+          properties:
+            function: K2_AttachToComponent
+          position: [3200, 0]
+        - id: SetCurrentForm
+          type: PropertySet
+          properties:
+            property_name: CurrentForm
+            target_class: BP_FatherCompanion
+          position: [3600, 0]
+        - id: SetIsAttached
+          type: PropertySet
+          properties:
+            property_name: IsAttached
+            target_class: BP_FatherCompanion
+          position: [4000, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [4400, 0]
+        # === END ABILITY FLOW (Row Y=500) ===
+        # v2.5.5: Added bWasCancelled check - cleanup only runs when cancelled by form switch
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 500]
+        # Branch on bWasCancelled - only cleanup when cancelled by another form
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [300, 500]
+        # Pure getters for end flow (only used in TRUE path)
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [700, 350]
+        - id: IsValid_End
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [1000, 350]
+        - id: Branch_End
+          type: Branch
+          position: [700, 500]
+        - id: GetCharMov_End
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [1100, 350]
+        - id: GetOrigSpeed
+          type: VariableGet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [1400, 350]
+        - id: RestoreSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [1100, 500]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet/IsValid nodes)
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [Branch_Valid, Exec]
+        - from: [Branch_Valid, then]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [SetOrigSpeed, Exec]
+        - from: [SetOrigSpeed, Exec]
+          to: [SetMaxSpeed, Exec]
+        - from: [SetMaxSpeed, Exec]
+          to: [AttachToComponent, Exec]
+        - from: [AttachToComponent, Exec]
+          to: [SetCurrentForm, Exec]
+        - from: [SetCurrentForm, Exec]
+          to: [SetIsAttached, Exec]
+        - from: [SetIsAttached, Exec]
+          to: [CommitCooldown, Exec]
+        # Data flow - GetAvatarActor to Cast
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        # Data flow - Cast output to SetFatherRef INPUT and other destinations
+        # NOTE: VariableSet only has INPUT pins, use Cast output directly for all FatherRef usages
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [AttachToComponent, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetCurrentForm, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetIsAttached, Target]
+        # Data flow - GetOwnerPlayer to IsValid
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [IsValid_Player, Object]
+        # Data flow - IsValid result to Branch condition
+        - from: [IsValid_Player, ReturnValue]
+          to: [Branch_Valid, Condition]
+        # Data flow - OwnerPlayer to SetPlayerRef INPUT and other destinations
+        # NOTE: VariableSet only has INPUT pins, use GetOwnerPlayer output directly
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetCharMov, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetMesh, Target]
+        # Data flow - CharMov to GetMaxSpeed and SetMaxSpeed
+        - from: [GetCharMov, CharacterMovement]
+          to: [GetMaxSpeed, Target]
+        - from: [GetCharMov, CharacterMovement]
+          to: [SetMaxSpeed, Target]
+        # Data flow - MaxSpeed to SetOrigSpeed value and multiply
+        - from: [GetMaxSpeed, MaxWalkSpeed]
+          to: [SetOrigSpeed, OriginalWalkSpeed]
+        - from: [GetMaxSpeed, MaxWalkSpeed]
+          to: [MultiplySpeed, A]
+        # Data flow - Speed calculation
+        - from: [GetPenalty, SpeedPenaltyMultiplier]
+          to: [MultiplySpeed, B]
+        - from: [MultiplySpeed, ReturnValue]
+          to: [SetMaxSpeed, MaxWalkSpeed]
+        # Data flow - AttachToComponent inputs
+        - from: [GetMesh, Mesh]
+          to: [AttachToComponent, Parent]
+        - from: [GetSocket, ChestSocketName]
+          to: [AttachToComponent, SocketName]
+        # === END ABILITY FLOW ===
+        # v2.5.5: First check bWasCancelled - only cleanup when cancelled by form switch
+        - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        # TRUE path (was cancelled by form switch) - do cleanup
+        - from: [Branch_WasCancelled, then]
+          to: [Branch_End, Exec]
+        - from: [Branch_End, then]
+          to: [RestoreSpeed, Exec]
+        # FALSE path (normal end after setup) - skip cleanup (no connection needed)
+        # Data flow - PlayerRef to IsValid (pure nodes)
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [IsValid_End, Object]
+        - from: [IsValid_End, ReturnValue]
+          to: [Branch_End, Condition]
+        # Data flow - PlayerRef to GetCharMov_End (pure node)
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetCharMov_End, Target]
+        # Data flow - CharMov to RestoreSpeed target
+        - from: [GetCharMov_End, CharacterMovement]
+          to: [RestoreSpeed, Target]
+        # Data flow - Original speed to restore
+        - from: [GetOrigSpeed, OriginalWalkSpeed]
+          to: [RestoreSpeed, NewMaxWalkSpeed]
+
+  # GA_FatherExoskeleton - Attach to Player Back with Speed Boost
+  - name: GA_FatherExoskeleton
+    folder: Abilities/Forms
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_FormChangeCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.Exoskeleton
+      cancel_abilities_with_tag:
+        - Ability.Father.Crawler
+        - Ability.Father.Armor
+        - Ability.Father.Symbiote
+        - Ability.Father.Engineer
+      activation_owned_tags:
+        - Father.Form.Exoskeleton
+        - Father.State.Attached
+      activation_required_tags:
+        - Father.State.Recruited
+      activation_blocked_tags:
+        - Cooldown.Father.FormChange
+        - Father.State.Transitioning
+        - Father.State.SymbioteLocked
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: OriginalWalkSpeed
+        type: Float
+        default_value: 0.0
+        instance_editable: true
+      - name: OriginalJumpZVelocity
+        type: Float
+        default_value: 0.0
+        instance_editable: true
+      - name: SpeedBoostMultiplier
+        type: Float
+        default_value: 1.25
+        instance_editable: true
+      - name: JumpBoostMultiplier
+        type: Float
+        default_value: 1.3
+        instance_editable: true
+      - name: BackSocketName
+        type: Name
+        default_value: FatherBackSocket
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1500, 0]
+        - id: GetCharMov
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [1800, 0]
+        - id: GetMaxSpeed
+          type: PropertyGet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [2100, 0]
+        - id: SetOrigSpeed
+          type: VariableSet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [2400, 0]
+        - id: GetSpeedBoost
+          type: VariableGet
+          properties:
+            variable_name: SpeedBoostMultiplier
+          position: [2400, 100]
+        - id: MultiplySpeed
+          type: CallFunction
+          properties:
+            function: Multiply_FloatFloat
+            class: KismetMathLibrary
+          position: [2700, 0]
+        - id: SetMaxSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [3000, 0]
+        - id: GetMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [3000, 100]
+        - id: GetBackSocket
+          type: VariableGet
+          properties:
+            variable_name: BackSocketName
+          position: [3000, 200]
+        - id: AttachToComponent
+          type: CallFunction
+          properties:
+            function: K2_AttachToComponent
+          position: [3300, 0]
+        - id: SetCurrentForm
+          type: PropertySet
+          properties:
+            property_name: CurrentForm
+            target_class: BP_FatherCompanion
+          position: [3600, 0]
+        - id: SetIsAttached
+          type: PropertySet
+          properties:
+            property_name: IsAttached
+            target_class: BP_FatherCompanion
+          position: [3900, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [4200, 0]
+        # v2.5.5: Added bWasCancelled check - cleanup only runs when cancelled by form switch
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 400]
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [300, 400]
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [600, 400]
+        - id: GetCharMov_End
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [900, 400]
+        - id: GetOrigSpeed_End
+          type: VariableGet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [1200, 500]
+        - id: RestoreSpeed_End
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [1200, 400]
+      connections:
+        # Exec flow (skip pure nodes)
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [SetOrigSpeed, Exec]
+        - from: [SetOrigSpeed, Exec]
+          to: [SetMaxSpeed, Exec]
+        - from: [SetMaxSpeed, Exec]
+          to: [AttachToComponent, Exec]
+        - from: [AttachToComponent, Exec]
+          to: [SetCurrentForm, Exec]
+        - from: [SetCurrentForm, Exec]
+          to: [SetIsAttached, Exec]
+        - from: [SetIsAttached, Exec]
+          to: [CommitCooldown, Exec]
+        # Data flow - Cast
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [AttachToComponent, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetCurrentForm, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetIsAttached, Target]
+        # Data flow - Player
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetCharMov, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetMesh, Target]
+        # Data flow - CharMov
+        - from: [GetCharMov, CharacterMovement]
+          to: [GetMaxSpeed, Target]
+        - from: [GetCharMov, CharacterMovement]
+          to: [SetMaxSpeed, Target]
+        # Data flow - Speed
+        - from: [GetMaxSpeed, MaxWalkSpeed]
+          to: [SetOrigSpeed, OriginalWalkSpeed]
+        - from: [GetMaxSpeed, MaxWalkSpeed]
+          to: [MultiplySpeed, A]
+        - from: [GetSpeedBoost, SpeedBoostMultiplier]
+          to: [MultiplySpeed, B]
+        - from: [MultiplySpeed, ReturnValue]
+          to: [SetMaxSpeed, NewMaxWalkSpeed]
+        # Data flow - Attach
+        - from: [GetMesh, Mesh]
+          to: [AttachToComponent, Parent]
+        - from: [GetBackSocket, BackSocketName]
+          to: [AttachToComponent, SocketName]
+        # EndAbility flow - v2.5.5: check bWasCancelled first
+        - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        # TRUE path (was cancelled by form switch) - do cleanup
+        - from: [Branch_WasCancelled, then]
+          to: [RestoreSpeed_End, Exec]
+        # FALSE path (normal end) - skip cleanup (no connection needed)
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetCharMov_End, Target]
+        - from: [GetCharMov_End, CharacterMovement]
+          to: [RestoreSpeed_End, Target]
+        - from: [GetOrigSpeed_End, OriginalWalkSpeed]
+          to: [RestoreSpeed_End, NewMaxWalkSpeed]
+
+  # GA_FatherSymbiote - Merge with Player (Timed)
+  - name: GA_FatherSymbiote
+    folder: Abilities/Forms
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_FormChangeCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.Symbiote
+      cancel_abilities_with_tag:
+        - Ability.Father.Crawler
+        - Ability.Father.Armor
+        - Ability.Father.Exoskeleton
+        - Ability.Father.Engineer
+      activation_owned_tags:
+        - Father.Form.Symbiote
+        - Symbiote.State.Merged
+      activation_required_tags:
+        - Father.State.Recruited
+        - Symbiote.Charge.Ready
+      activation_blocked_tags:
+        - Cooldown.Father.FormChange
+        - Father.State.Transitioning
+        - Father.State.SymbioteLocked
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: SymbioteDuration
+        type: Float
+        default_value: 30.0
+        instance_editable: true
+      - name: DurationTimerHandle
+        type: TimerHandle
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1500, 0]
+        - id: HideFather
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [1800, 0]
+        - id: DisableCollision
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [2100, 0]
+        - id: SetCurrentForm
+          type: PropertySet
+          properties:
+            property_name: CurrentForm
+            target_class: BP_FatherCompanion
+          position: [2400, 0]
+        - id: SetIsAttached
+          type: PropertySet
+          properties:
+            property_name: IsAttached
+            target_class: BP_FatherCompanion
+          position: [2700, 0]
+        - id: GetDuration
+          type: VariableGet
+          properties:
+            variable_name: SymbioteDuration
+          position: [3000, 100]
+        - id: SetTimer
+          type: CallFunction
+          properties:
+            function: K2_SetTimerDelegate
+          position: [3000, 0]
+        - id: SetTimerHandle
+          type: VariableSet
+          properties:
+            variable_name: DurationTimerHandle
+          position: [3300, 0]
+        - id: CustomEvent_TimerExpired
+          type: CustomEvent
+          properties:
+            event_name: OnSymbioteTimerExpired
+          position: [0, 400]
+        - id: GetFatherRef_Timer
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [100, 500]
+        - id: GetPlayerRef_Timer
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [100, 600]
+        - id: ShowFather
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [300, 400]
+        - id: EnableCollision
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [600, 400]
+        - id: GetPlayerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [750, 500]
+        - id: TryActivateArmor
+          type: CallFunction
+          properties:
+            function: TryActivateAbilityByClass
+          position: [900, 400]
+        - id: EndAbility_Timer
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1200, 400]
+      connections:
+        # Exec flow (skip pure nodes)
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [HideFather, Exec]
+        - from: [HideFather, Exec]
+          to: [DisableCollision, Exec]
+        - from: [DisableCollision, Exec]
+          to: [SetCurrentForm, Exec]
+        - from: [SetCurrentForm, Exec]
+          to: [SetIsAttached, Exec]
+        - from: [SetIsAttached, Exec]
+          to: [SetTimer, Exec]
+        - from: [SetTimer, Exec]
+          to: [SetTimerHandle, Exec]
+        # Data flow - Cast
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [HideFather, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [DisableCollision, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetCurrentForm, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetIsAttached, Target]
+        # Data flow - Player
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        # Data flow - Timer
+        - from: [GetDuration, SymbioteDuration]
+          to: [SetTimer, Time]
+        - from: [SetTimer, ReturnValue]
+          to: [SetTimerHandle, DurationTimerHandle]
+        # Timer expired flow
+        - from: [CustomEvent_TimerExpired, Then]
+          to: [ShowFather, Exec]
+        - from: [ShowFather, Exec]
+          to: [EnableCollision, Exec]
+        - from: [EnableCollision, Exec]
+          to: [TryActivateArmor, Exec]
+        - from: [TryActivateArmor, Exec]
+          to: [EndAbility_Timer, Exec]
+        # Timer data flow
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [ShowFather, Target]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [EnableCollision, Target]
+        - from: [GetPlayerRef_Timer, PlayerRef]
+          to: [GetPlayerASC, Actor]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [TryActivateArmor, Target]
+
+  # GA_FatherEngineer - Deploy as Turret
+  - name: GA_FatherEngineer
+    folder: Abilities/Forms
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_FormChangeCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.Engineer
+      cancel_abilities_with_tag:
+        - Ability.Father.Crawler
+        - Ability.Father.Armor
+        - Ability.Father.Exoskeleton
+        - Ability.Father.Symbiote
+      activation_owned_tags:
+        - Father.Form.Engineer
+        - Father.State.TurretDeployed
+      activation_required_tags:
+        - Father.State.Recruited
+      activation_blocked_tags:
+        - Cooldown.Father.FormChange
+        - Father.State.Transitioning
+        - Father.State.SymbioteLocked
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: DeployLocation
+        type: Vector
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetFatherLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [1200, 0]
+        - id: SetDeployLocation
+          type: VariableSet
+          properties:
+            variable_name: DeployLocation
+          position: [1500, 0]
+        - id: SetCurrentForm
+          type: PropertySet
+          properties:
+            property_name: CurrentForm
+            target_class: BP_FatherCompanion
+          position: [1800, 0]
+        - id: SetIsAttached
+          type: PropertySet
+          properties:
+            property_name: IsAttached
+            target_class: BP_FatherCompanion
+          position: [2100, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [2400, 0]
+        # === END ABILITY FLOW ===
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 500]
+        # v2.5.5: Branch on bWasCancelled - only cleanup when cancelled by another form
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [300, 500]
+        # Pure getters for end flow (only used in TRUE path)
+        - id: GetFatherRef_End
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [600, 350]
+        - id: IsValid_Father_End
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [900, 350]
+        - id: Branch_Valid_End
+          type: Branch
+          position: [600, 500]
+        - id: SetIsDeployed_End
+          type: PropertySet
+          properties:
+            property_name: IsDeployed
+            target_class: BP_FatherCompanion
+          position: [900, 500]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [GetFatherLocation, Exec]
+        - from: [GetFatherLocation, Exec]
+          to: [SetDeployLocation, Exec]
+        - from: [SetDeployLocation, Exec]
+          to: [SetCurrentForm, Exec]
+        - from: [SetCurrentForm, Exec]
+          to: [SetIsAttached, Exec]
+        - from: [SetIsAttached, Exec]
+          to: [CommitCooldown, Exec]
+        # Data flow - Cast
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherLocation, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetCurrentForm, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetIsAttached, Target]
+        # Data flow - Location
+        - from: [GetFatherLocation, ReturnValue]
+          to: [SetDeployLocation, DeployLocation]
+        # === END ABILITY FLOW ===
+        # v2.5.5: First check bWasCancelled - only cleanup when cancelled by form switch
+        - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        # TRUE path (was cancelled by form switch) - do cleanup
+        - from: [Branch_WasCancelled, then]
+          to: [Branch_Valid_End, Exec]
+        - from: [Branch_Valid_End, then]
+          to: [SetIsDeployed_End, Exec]
+        # FALSE path (normal end after setup) - skip cleanup (no connection needed)
+        # Data flow - FatherRef to IsValid (pure nodes)
+        - from: [GetFatherRef_End, FatherRef]
+          to: [IsValid_Father_End, Object]
+        - from: [IsValid_Father_End, ReturnValue]
+          to: [Branch_Valid_End, Condition]
+        # Data flow - FatherRef to SetIsDeployed target
+        - from: [GetFatherRef_End, FatherRef]
+          to: [SetIsDeployed_End, Target]
+
+  # ---------------------------------------------------------------------------
+  # COMBAT ABILITIES (4)
+  # ---------------------------------------------------------------------------
+  
+  # GA_FatherAttack - Melee Attack
+  - name: GA_FatherAttack
+    folder: Abilities/Combat
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_AttackCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.Attack
+      activation_owned_tags:
+        - Father.State.Attacking
+      activation_required_tags:
+        - Father.Form.Crawler
+      activation_blocked_tags:
+        - Cooldown.Father.Attack
+        - Father.State.Transitioning
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: TargetEnemy
+        type: Object
+        class: Actor
+      - name: AttackDamage
+        type: Float
+        default_value: 25.0
+        instance_editable: true
+      - name: AttackMontage
+        type: Object
+        class: AnimMontage
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetMontage
+          type: VariableGet
+          properties:
+            variable_name: AttackMontage
+          position: [1200, 100]
+        - id: PlayMontage
+          type: CallFunction
+          properties:
+            function: PlayAnimMontage
+          position: [1200, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [1500, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1800, 0]
+      connections:
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [PlayMontage, Exec]
+        - from: [SetFatherRef, FatherRef]
+          to: [PlayMontage, Target]
+        - from: [GetMontage, AttackMontage]
+          to: [PlayMontage, MontageToPlay]
+        - from: [PlayMontage, Then]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+
+  # GA_FatherLaserShot - Ranged Laser Attack
+  - name: GA_FatherLaserShot
+    folder: Abilities/Combat
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_LaserCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.LaserShot
+      activation_owned_tags:
+        - Father.State.Attacking
+      activation_required_tags:
+        - Father.Form.Crawler
+      activation_blocked_tags:
+        - Cooldown.Father.LaserShot
+        - Father.State.Transitioning
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: ProjectileClass
+        type: Class
+        class: NarrativeProjectile
+        instance_editable: true
+      - name: LaserDamage
+        type: Float
+        default_value: 40.0
+        instance_editable: true
+      - name: MuzzleSocketName
+        type: Name
+        default_value: MuzzleSocket
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [1200, 0]
+        - id: GetSocketName
+          type: VariableGet
+          properties:
+            variable_name: MuzzleSocketName
+          position: [1200, 100]
+        - id: GetSocketLocation
+          type: CallFunction
+          properties:
+            function: GetSocketLocation
+          position: [1500, 0]
+        - id: GetSocketRotation
+          type: CallFunction
+          properties:
+            function: GetSocketRotation
+          position: [1500, 100]
+        - id: GetProjectileClass
+          type: VariableGet
+          properties:
+            variable_name: ProjectileClass
+          position: [1800, 100]
+        - id: SpawnProjectile
+          type: SpawnActor
+          properties:
+            actor_class_variable: ProjectileClass
+          position: [1800, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [2100, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2400, 0]
+      connections:
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [GetMesh, Exec]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetMesh, Target]
+        - from: [GetMesh, Mesh]
+          to: [GetSocketLocation, Target]
+        - from: [GetSocketName, MuzzleSocketName]
+          to: [GetSocketLocation, InSocketName]
+        - from: [GetMesh, Mesh]
+          to: [GetSocketRotation, Target]
+        - from: [GetSocketName, MuzzleSocketName]
+          to: [GetSocketRotation, InSocketName]
+        - from: [GetMesh, Exec]
+          to: [SpawnProjectile, Exec]
+        - from: [GetProjectileClass, ProjectileClass]
+          to: [SpawnProjectile, Class]
+        - from: [GetSocketLocation, ReturnValue]
+          to: [SpawnProjectile, SpawnTransform_Location]
+        - from: [GetSocketRotation, ReturnValue]
+          to: [SpawnProjectile, SpawnTransform_Rotation]
+        - from: [SpawnProjectile, Exec]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+
+  # GA_TurretShoot - Engineer Turret Auto-Fire
+  - name: GA_TurretShoot
+    folder: Abilities/Combat
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_TurretShootCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.TurretShoot
+        - Ability.Father.Engineer.TurretShoot
+      activation_owned_tags:
+        - Father.State.Attacking
+      activation_required_tags:
+        - Father.Form.Engineer
+        - Father.State.TurretDeployed
+      activation_blocked_tags:
+        - Cooldown.Father.TurretShoot
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: ProjectileClass
+        type: Class
+        class: NarrativeProjectile
+        instance_editable: true
+      - name: TurretDamage
+        type: Float
+        default_value: 15.0
+        instance_editable: true
+      - name: MuzzleSocketName
+        type: Name
+        default_value: TurretMuzzle
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [1200, 0]
+        - id: GetSocketName
+          type: VariableGet
+          properties:
+            variable_name: MuzzleSocketName
+          position: [1200, 100]
+        - id: GetSocketLocation
+          type: CallFunction
+          properties:
+            function: GetSocketLocation
+          position: [1500, 0]
+        - id: GetSocketRotation
+          type: CallFunction
+          properties:
+            function: GetSocketRotation
+          position: [1500, 100]
+        - id: GetProjectileClass
+          type: VariableGet
+          properties:
+            variable_name: ProjectileClass
+          position: [1800, 100]
+        - id: SpawnProjectile
+          type: SpawnActor
+          properties:
+            actor_class_variable: ProjectileClass
+          position: [1800, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [2100, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2400, 0]
+      connections:
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [GetMesh, Exec]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetMesh, Target]
+        - from: [GetMesh, Mesh]
+          to: [GetSocketLocation, Target]
+        - from: [GetSocketName, MuzzleSocketName]
+          to: [GetSocketLocation, InSocketName]
+        - from: [GetMesh, Mesh]
+          to: [GetSocketRotation, Target]
+        - from: [GetSocketName, MuzzleSocketName]
+          to: [GetSocketRotation, InSocketName]
+        - from: [GetMesh, Exec]
+          to: [SpawnProjectile, Exec]
+        - from: [GetProjectileClass, ProjectileClass]
+          to: [SpawnProjectile, Class]
+        - from: [GetSocketLocation, ReturnValue]
+          to: [SpawnProjectile, SpawnTransform_Location]
+        - from: [GetSocketRotation, ReturnValue]
+          to: [SpawnProjectile, SpawnTransform_Rotation]
+        - from: [SpawnProjectile, Exec]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+
+  # GA_FatherElectricTrap - Engineer Electric Web Trap
+  - name: GA_FatherElectricTrap
+    folder: Abilities/Combat
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_ElectricTrapCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.ElectricTrap
+        - Ability.Father.Engineer.ElectricTrap
+      activation_owned_tags:
+        - Father.State.Attacking
+      activation_required_tags:
+        - Father.Form.Engineer
+      activation_blocked_tags:
+        - Cooldown.Father.ElectricTrap
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: TrapClass
+        type: Class
+        class: Actor
+        instance_editable: true
+      - name: TrapDamage
+        type: Float
+        default_value: 30.0
+        instance_editable: true
+      - name: TrapDuration
+        type: Float
+        default_value: 10.0
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetActorLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [1200, 0]
+        - id: GetTrapClass
+          type: VariableGet
+          properties:
+            variable_name: TrapClass
+          position: [1500, 100]
+        - id: SpawnTrap
+          type: SpawnActor
+          properties:
+            actor_class_variable: TrapClass
+          position: [1500, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [1800, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2100, 0]
+      connections:
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [GetActorLocation, Exec]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetActorLocation, Target]
+        - from: [GetActorLocation, Exec]
+          to: [SpawnTrap, Exec]
+        - from: [GetTrapClass, TrapClass]
+          to: [SpawnTrap, Class]
+        - from: [GetActorLocation, ReturnValue]
+          to: [SpawnTrap, SpawnTransform_Location]
+        - from: [SpawnTrap, Exec]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+
+  # ---------------------------------------------------------------------------
+  # ACTION ABILITIES (9)
+  # ---------------------------------------------------------------------------
+  
+  # GA_ProtectiveDome - Armor Passive Damage Absorption
+  - name: GA_ProtectiveDome
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    tags:
+      ability_tags:
+        - Ability.Father.ProtectiveDome
+      activation_owned_tags:
+        - Father.Dome.Active
+      activation_required_tags:
+        - Father.Form.Armor
+      activation_blocked_tags:
+        - Father.State.Transitioning
+    variables:
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: DomeAbsorptionHandle
+        type: ActiveGameplayEffectHandle
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [900, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 0]
+        - id: GetPlayerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1500, 0]
+        - id: MakeGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingSpec
+          position: [1800, 0]
+        - id: ApplyGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToOwner
+            target_self: true
+          position: [2100, 0]
+        - id: SetDomeHandle
+          type: VariableSet
+          properties:
+            variable_name: DomeAbsorptionHandle
+          position: [2400, 0]
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 400]
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [300, 400]
+        - id: GetPlayerASC_End
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [600, 400]
+        - id: GetDomeHandle
+          type: VariableGet
+          properties:
+            variable_name: DomeAbsorptionHandle
+          position: [900, 500]
+        - id: RemoveGE
+          type: CallFunction
+          properties:
+            function: RemoveActiveGameplayEffect
+          position: [900, 400]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet/CallFunction nodes)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [ApplyGE, Exec]
+        - from: [ApplyGE, Exec]
+          to: [SetDomeHandle, Exec]
+        # Data flow
+        - from: [GetOwningActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerASC, Target]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [MakeGESpec, Target]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [ApplyGE, Target]
+        - from: [MakeGESpec, ReturnValue]
+          to: [ApplyGE, Spec]
+        - from: [ApplyGE, ReturnValue]
+          to: [SetDomeHandle, DomeAbsorptionHandle]
+        # === END ABILITY FLOW ===
+        - from: [Event_EndAbility, Then]
+          to: [RemoveGE, Exec]
+        # Data flow - End
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetPlayerASC_End, Target]
+        - from: [GetPlayerASC_End, ReturnValue]
+          to: [RemoveGE, Target]
+        - from: [GetDomeHandle, DomeAbsorptionHandle]
+          to: [RemoveGE, Handle]
+
+  # GA_DomeBurst - Armor Active AOE Damage
+  - name: GA_DomeBurst
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_DomeBurstCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.DomeBurst
+      activation_owned_tags:
+        - Father.State.Attacking
+      activation_required_tags:
+        - Father.Form.Armor
+        - Father.Dome.Active
+      activation_blocked_tags:
+        - Cooldown.Father.DomeBurst
+        - Father.State.Transitioning
+    variables:
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: BurstRadius
+        type: Float
+        default_value: 500.0
+        instance_editable: true
+      - name: BurstDamage
+        type: Float
+        default_value: 75.0
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [900, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 0]
+        - id: GetPlayerLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [1500, 0]
+        - id: GetRadius
+          type: VariableGet
+          properties:
+            variable_name: BurstRadius
+          position: [1800, 100]
+        - id: SphereOverlap
+          type: CallFunction
+          properties:
+            function: SphereOverlapActors
+          position: [1800, 0]
+        - id: ForEachActor
+          type: ForEachLoop
+          position: [2100, 0]
+        - id: HasTag
+          type: CallFunction
+          properties:
+            function: ActorHasTag
+          position: [2400, 0]
+        - id: Branch_Enemy
+          type: Branch
+          position: [2700, 0]
+        - id: GetEnemyASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [3000, 0]
+        - id: MakeGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingSpec
+          position: [3300, 0]
+        - id: GetDamage
+          type: VariableGet
+          properties:
+            variable_name: BurstDamage
+          position: [3300, 100]
+        - id: SetByCaller
+          type: CallFunction
+          properties:
+            function: AssignTagSetByCallerMagnitude
+          position: [3600, 0]
+        - id: ApplyGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToTarget
+            target_self: true
+          position: [3900, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [2100, 200]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2400, 200]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [SphereOverlap, Exec]
+        - from: [SphereOverlap, Exec]
+          to: [ForEachActor, Exec]
+        - from: [ForEachActor, LoopBody]
+          to: [HasTag, Exec]
+        - from: [HasTag, Exec]
+          to: [Branch_Enemy, Exec]
+        - from: [Branch_Enemy, then]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [SetByCaller, Exec]
+        - from: [SetByCaller, Exec]
+          to: [ApplyGE, Exec]
+        - from: [ForEachActor, Completed]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+        # Data flow
+        - from: [GetOwningActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerLocation, Target]
+        - from: [GetPlayerLocation, ReturnValue]
+          to: [SphereOverlap, SpherePos]
+        - from: [GetRadius, BurstRadius]
+          to: [SphereOverlap, SphereRadius]
+        - from: [SphereOverlap, OutActors]
+          to: [ForEachActor, Array]
+        - from: [ForEachActor, ArrayElement]
+          to: [HasTag, Target]
+        - from: [HasTag, ReturnValue]
+          to: [Branch_Enemy, Condition]
+        - from: [ForEachActor, ArrayElement]
+          to: [GetEnemyASC, Target]
+        - from: [GetEnemyASC, ReturnValue]
+          to: [ApplyGE, Target]
+        - from: [MakeGESpec, ReturnValue]
+          to: [SetByCaller, SpecHandle]
+        - from: [GetDamage, BurstDamage]
+          to: [SetByCaller, Magnitude]
+        - from: [SetByCaller, ReturnValue]
+          to: [ApplyGE, Spec]
+
+  # GA_FatherExoskeletonDash - Exoskeleton Dash with I-Frames
+  - name: GA_FatherExoskeletonDash
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: LocalPredicted
+    cooldown_gameplay_effect_class: GE_ExoskeletonDashCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.Exoskeleton.Dash
+      activation_owned_tags:
+        - Father.State.Dashing
+      activation_required_tags:
+        - Father.Form.Exoskeleton
+      activation_blocked_tags:
+        - Cooldown.Father.Exoskeleton.Dash
+        - Father.State.Transitioning
+        - Father.State.Dashing
+    variables:
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: DashDistance
+        type: Float
+        default_value: 800.0
+        instance_editable: true
+      - name: DashDuration
+        type: Float
+        default_value: 0.3
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [900, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 0]
+        - id: GetPlayerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1500, 0]
+        - id: MakeInvulnSpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingSpec
+          position: [1800, 0]
+        - id: ApplyInvuln
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToOwner
+            target_self: true
+          position: [2100, 0]
+        - id: GetForwardVector
+          type: CallFunction
+          properties:
+            function: GetActorForwardVector
+          position: [2400, 0]
+        - id: GetDistance
+          type: VariableGet
+          properties:
+            variable_name: DashDistance
+          position: [2400, 100]
+        - id: MultiplyVector
+          type: CallFunction
+          properties:
+            function: Multiply_VectorFloat
+          position: [2700, 0]
+        - id: LaunchCharacter
+          type: CallFunction
+          properties:
+            function: LaunchCharacter
+          position: [3000, 0]
+        - id: GetDuration
+          type: VariableGet
+          properties:
+            variable_name: DashDuration
+          position: [3000, 100]
+        - id: Delay
+          type: Delay
+          position: [3300, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [3600, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [3900, 0]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [MakeInvulnSpec, Exec]
+        - from: [MakeInvulnSpec, Exec]
+          to: [ApplyInvuln, Exec]
+        - from: [ApplyInvuln, Exec]
+          to: [LaunchCharacter, Exec]
+        - from: [LaunchCharacter, Exec]
+          to: [Delay, Exec]
+        - from: [Delay, Completed]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+        # Data flow
+        - from: [GetOwningActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerASC, Target]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetForwardVector, Target]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [LaunchCharacter, Target]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [MakeInvulnSpec, Target]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [ApplyInvuln, Target]
+        - from: [MakeInvulnSpec, ReturnValue]
+          to: [ApplyInvuln, Spec]
+        - from: [GetForwardVector, ReturnValue]
+          to: [MultiplyVector, A]
+        - from: [GetDistance, DashDistance]
+          to: [MultiplyVector, B]
+        - from: [MultiplyVector, ReturnValue]
+          to: [LaunchCharacter, LaunchVelocity]
+        - from: [GetDuration, DashDuration]
+          to: [Delay, Duration]
+
+  # GA_FatherExoskeletonSprint - Exoskeleton Sprint Speed Boost
+  - name: GA_FatherExoskeletonSprint
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: LocalPredicted
+    tags:
+      ability_tags:
+        - Ability.Father.Exoskeleton.Sprint
+      activation_owned_tags:
+        - Father.State.Sprinting
+      activation_required_tags:
+        - Father.Form.Exoskeleton
+      activation_blocked_tags:
+        - Father.State.Transitioning
+        - Father.State.Dashing
+    variables:
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: OriginalMaxWalkSpeed
+        type: Float
+        default_value: 0.0
+        instance_editable: true
+      - name: SprintSpeedMultiplier
+        type: Float
+        default_value: 1.5
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [900, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 0]
+        - id: GetCharMov
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [1500, 0]
+        - id: GetMaxSpeed
+          type: PropertyGet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [1800, 0]
+        - id: SetOrigSpeed
+          type: VariableSet
+          properties:
+            variable_name: OriginalMaxWalkSpeed
+          position: [2100, 0]
+        - id: GetMultiplier
+          type: VariableGet
+          properties:
+            variable_name: SprintSpeedMultiplier
+          position: [2100, 100]
+        - id: MultiplySpeed
+          type: CallFunction
+          properties:
+            function: Multiply_FloatFloat
+            class: KismetMathLibrary
+          position: [2400, 0]
+        - id: SetMaxSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [2700, 0]
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 400]
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [300, 400]
+        - id: GetCharMov_End
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [600, 400]
+        - id: GetOrigSpeed
+          type: VariableGet
+          properties:
+            variable_name: OriginalMaxWalkSpeed
+          position: [900, 500]
+        - id: RestoreSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [900, 400]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [SetOrigSpeed, Exec]
+        - from: [SetOrigSpeed, Exec]
+          to: [SetMaxSpeed, Exec]
+        # Data flow - Cast
+        - from: [GetOwningActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        # Data flow - PlayerRef
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetCharMov, Target]
+        # Data flow - CharacterMovement
+        - from: [GetCharMov, CharacterMovement]
+          to: [GetMaxSpeed, Target]
+        - from: [GetCharMov, CharacterMovement]
+          to: [SetMaxSpeed, Target]
+        # Data flow - Speed calculation
+        - from: [GetMaxSpeed, MaxWalkSpeed]
+          to: [SetOrigSpeed, OriginalMaxWalkSpeed]
+        - from: [GetMaxSpeed, MaxWalkSpeed]
+          to: [MultiplySpeed, A]
+        - from: [GetMultiplier, SprintSpeedMultiplier]
+          to: [MultiplySpeed, B]
+        - from: [MultiplySpeed, ReturnValue]
+          to: [SetMaxSpeed, NewMaxWalkSpeed]
+        # === END ABILITY FLOW ===
+        - from: [Event_EndAbility, Then]
+          to: [RestoreSpeed, Exec]
+        # Data flow - End
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetCharMov_End, Target]
+        - from: [GetCharMov_End, CharacterMovement]
+          to: [RestoreSpeed, Target]
+        - from: [GetOrigSpeed, OriginalMaxWalkSpeed]
+          to: [RestoreSpeed, NewMaxWalkSpeed]
+
+  # GA_StealthField - Exoskeleton Stealth Invisibility
+  - name: GA_StealthField
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_StealthCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.StealthField
+      activation_owned_tags:
+        - Father.State.Stealthed
+      activation_required_tags:
+        - Father.Form.Exoskeleton
+      activation_blocked_tags:
+        - Cooldown.Father.StealthField
+        - Father.State.Transitioning
+    variables:
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: StealthEffectHandle
+        type: ActiveGameplayEffectHandle
+      - name: StealthDuration
+        type: Float
+        default_value: 8.0
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [900, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 0]
+        - id: GetPlayerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1500, 0]
+        - id: MakeGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingSpec
+          position: [1800, 0]
+        - id: ApplyGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToOwner
+            target_self: true
+          position: [2100, 0]
+        - id: SetStealthHandle
+          type: VariableSet
+          properties:
+            variable_name: StealthEffectHandle
+          position: [2400, 0]
+        - id: GetDuration
+          type: VariableGet
+          properties:
+            variable_name: StealthDuration
+          position: [2700, 100]
+        - id: Delay
+          type: Delay
+          position: [2700, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [3000, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [3300, 0]
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 400]
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [300, 400]
+        - id: GetPlayerASC_End
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [600, 400]
+        - id: GetStealthHandle
+          type: VariableGet
+          properties:
+            variable_name: StealthEffectHandle
+          position: [900, 500]
+        - id: RemoveGE
+          type: CallFunction
+          properties:
+            function: RemoveActiveGameplayEffect
+          position: [900, 400]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [ApplyGE, Exec]
+        - from: [ApplyGE, Exec]
+          to: [SetStealthHandle, Exec]
+        - from: [SetStealthHandle, Exec]
+          to: [Delay, Exec]
+        - from: [Delay, Completed]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+        # Data flow
+        - from: [GetOwningActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerASC, Target]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [MakeGESpec, Target]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [ApplyGE, Target]
+        - from: [MakeGESpec, ReturnValue]
+          to: [ApplyGE, Spec]
+        - from: [ApplyGE, ReturnValue]
+          to: [SetStealthHandle, StealthEffectHandle]
+        - from: [GetDuration, StealthDuration]
+          to: [Delay, Duration]
+        # === END ABILITY FLOW ===
+        - from: [Event_EndAbility, Then]
+          to: [RemoveGE, Exec]
+        # Data flow - End
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetPlayerASC_End, Target]
+        - from: [GetPlayerASC_End, ReturnValue]
+          to: [RemoveGE, Target]
+        - from: [GetStealthHandle, StealthEffectHandle]
+          to: [RemoveGE, Handle]
+
+  # GA_Backstab - Exoskeleton Passive Backstab Damage
+  - name: GA_Backstab
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    tags:
+      ability_tags:
+        - Ability.Father.Backstab
+      activation_owned_tags:
+        - State.BackstabReady
+      activation_required_tags:
+        - Father.Form.Exoskeleton
+      activation_blocked_tags:
+        - Father.State.Transitioning
+    variables:
+      - name: BackstabDamageMultiplier
+        type: Float
+        default_value: 2.0
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: IsValid
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [600, 0]
+        - id: Branch_Valid
+          type: Branch
+          position: [900, 0]
+      connections:
+        # Exec flow (skip pure IsValid)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [Branch_Valid, Exec]
+        # Data flow
+        - from: [GetOwningActor, ReturnValue]
+          to: [IsValid, Object]
+        - from: [IsValid, ReturnValue]
+          to: [Branch_Valid, Condition]
+
+  # GA_ProximityStrike - Symbiote AOE Damage
+  - name: GA_ProximityStrike
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_ProximityStrikeCooldown
+    tags:
+      ability_tags:
+        - Ability.Father.ProximityStrike
+        - Ability.Father.Symbiote.ProximityStrike
+      activation_owned_tags:
+        - Father.State.ProximityActive
+      activation_required_tags:
+        - Father.Form.Symbiote
+      activation_blocked_tags:
+        - Cooldown.Father.ProximityStrike
+    variables:
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: ProximityRadius
+        type: Float
+        default_value: 400.0
+        instance_editable: true
+      - name: ProximityDamage
+        type: Float
+        default_value: 50.0
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [900, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 0]
+        - id: GetPlayerLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [1500, 0]
+        - id: GetRadius
+          type: VariableGet
+          properties:
+            variable_name: ProximityRadius
+          position: [1800, 100]
+        - id: SphereOverlap
+          type: CallFunction
+          properties:
+            function: SphereOverlapActors
+          position: [1800, 0]
+        - id: ForEachActor
+          type: ForEachLoop
+          position: [2100, 0]
+        - id: HasTag
+          type: CallFunction
+          properties:
+            function: ActorHasTag
+          position: [2400, 0]
+        - id: Branch_Enemy
+          type: Branch
+          position: [2700, 0]
+        - id: GetEnemyASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [3000, 0]
+        - id: MakeGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingSpec
+          position: [3300, 0]
+        - id: GetDamage
+          type: VariableGet
+          properties:
+            variable_name: ProximityDamage
+          position: [3300, 100]
+        - id: SetByCaller
+          type: CallFunction
+          properties:
+            function: AssignTagSetByCallerMagnitude
+          position: [3600, 0]
+        - id: ApplyGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToTarget
+            target_self: true
+          position: [3900, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [2100, 200]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2400, 200]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [SphereOverlap, Exec]
+        - from: [SphereOverlap, Exec]
+          to: [ForEachActor, Exec]
+        - from: [ForEachActor, LoopBody]
+          to: [HasTag, Exec]
+        - from: [HasTag, Exec]
+          to: [Branch_Enemy, Exec]
+        - from: [Branch_Enemy, then]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [SetByCaller, Exec]
+        - from: [SetByCaller, Exec]
+          to: [ApplyGE, Exec]
+        - from: [ForEachActor, Completed]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
+        # Data flow
+        - from: [GetOwningActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerLocation, Target]
+        - from: [GetPlayerLocation, ReturnValue]
+          to: [SphereOverlap, SpherePos]
+        - from: [GetRadius, ProximityRadius]
+          to: [SphereOverlap, SphereRadius]
+        - from: [SphereOverlap, OutActors]
+          to: [ForEachActor, Array]
+        - from: [ForEachActor, ArrayElement]
+          to: [HasTag, Target]
+        - from: [HasTag, ReturnValue]
+          to: [Branch_Enemy, Condition]
+        - from: [ForEachActor, ArrayElement]
+          to: [GetEnemyASC, Target]
+        - from: [GetEnemyASC, ReturnValue]
+          to: [ApplyGE, Target]
+        - from: [MakeGESpec, ReturnValue]
+          to: [SetByCaller, SpecHandle]
+        - from: [GetDamage, ProximityDamage]
+          to: [SetByCaller, Magnitude]
+        - from: [SetByCaller, ReturnValue]
+          to: [ApplyGE, Spec]
+
+  # GA_FatherMark - Mark Enemy for Bonus Damage
+  - name: GA_FatherMark
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    tags:
+      ability_tags:
+        - Ability.Father.Mark
+      activation_owned_tags:
+        - Father.State.Marking
+      activation_required_tags:
+        - Father.Form.Crawler
+      activation_blocked_tags:
+        - Father.State.Transitioning
+    variables:
+      - name: TargetEnemy
+        type: Object
+        class: Actor
+      - name: MarkDuration
+        type: Float
+        default_value: 10.0
+        instance_editable: true
+      - name: MarkDamageBonus
+        type: Float
+        default_value: 1.5
+        instance_editable: true
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetTarget
+          type: VariableGet
+          properties:
+            variable_name: TargetEnemy
+          position: [300, 0]
+        - id: IsValid
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [600, 0]
+        - id: Branch_Valid
+          type: Branch
+          position: [900, 0]
+        - id: GetEnemyASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1200, 0]
+        - id: MakeGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingSpec
+          position: [1500, 0]
+        - id: GetDuration
+          type: VariableGet
+          properties:
+            variable_name: MarkDuration
+          position: [1800, 100]
+        - id: SetDurationByCaller
+          type: CallFunction
+          properties:
+            function: AssignTagSetByCallerMagnitude
+          position: [1800, 0]
+        - id: ApplyGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToTarget
+            target_self: true
+          position: [2100, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2400, 0]
+        - id: EndAbility_Invalid
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1200, 200]
+      connections:
+        # Exec flow (skip pure IsValid and VariableGet)
+        - from: [Event_Activate, Then]
+          to: [Branch_Valid, Exec]
+        # Data flow
+        - from: [GetTarget, TargetEnemy]
+          to: [IsValid, Object]
+        - from: [IsValid, ReturnValue]
+          to: [Branch_Valid, Condition]
+        - from: [Branch_Valid, True]
+          to: [GetEnemyASC, Exec]
+        - from: [GetTarget, TargetEnemy]
+          to: [GetEnemyASC, Target]
+        - from: [GetEnemyASC, Exec]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [SetDurationByCaller, Exec]
+        - from: [MakeGESpec, ReturnValue]
+          to: [SetDurationByCaller, SpecHandle]
+        - from: [GetDuration, MarkDuration]
+          to: [SetDurationByCaller, Magnitude]
+        - from: [SetDurationByCaller, Exec]
+          to: [ApplyGE, Exec]
+        - from: [SetDurationByCaller, ReturnValue]
+          to: [ApplyGE, Spec]
+        - from: [GetEnemyASC, ReturnValue]
+          to: [ApplyGE, Target]
+        - from: [ApplyGE, Exec]
+          to: [EndAbility, Exec]
+        - from: [Branch_Valid, False]
+          to: [EndAbility_Invalid, Exec]
+
+  # GA_FatherSacrifice - Emergency Save with Dormant Period
+  - name: GA_FatherSacrifice
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    tags:
+      ability_tags:
+        - Ability.Father.Sacrifice
+      cancel_abilities_with_tag:
+        - Ability.Father.Crawler
+        - Ability.Father.Armor
+        - Ability.Father.Exoskeleton
+        - Ability.Father.Symbiote
+        - Ability.Father.Engineer
+      activation_owned_tags:
+        - Father.State.Sacrificing
+      activation_required_tags:
+        - Father.State.Recruited
+      activation_blocked_tags:
+        - Cooldown.Father.Sacrifice
+        - Father.State.Dormant
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: IsMonitoring
+        type: Bool
+        default_value: false
+      - name: InvulnerabilityDuration
+        type: Float
+        default_value: 10.0
+        instance_editable: true
+      - name: DormantDuration
+        type: Float
+        default_value: 60.0
+        instance_editable: true
+      - name: DormantTimerHandle
+        type: TimerHandle
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1500, 0]
+        - id: SetIsMonitoring
+          type: VariableSet
+          properties:
+            variable_name: IsMonitoring
+          position: [1800, 0]
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 400]
+        - id: ClearTimer
+          type: CallFunction
+          properties:
+            function: K2_ClearTimerHandle
+          position: [300, 400]
+        - id: GetTimerHandle
+          type: VariableGet
+          properties:
+            variable_name: DormantTimerHandle
+          position: [300, 500]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [SetIsMonitoring, Exec]
+        # Data flow
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        # === END ABILITY FLOW ===
+        - from: [Event_EndAbility, Then]
+          to: [ClearTimer, Exec]
+        # Data flow - End
+        - from: [GetTimerHandle, DormantTimerHandle]
+          to: [ClearTimer, Handle]
+
+  # GA_FatherRifle - Rifle Weapon Form
+  - name: GA_FatherRifle
+    folder: Abilities/Forms
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: LocalPredicted
+    tags:
+      ability_tags:
+        - Ability.Father.Rifle
+      cancel_abilities_with_tag:
+        - Ability.Father.Crawler
+        - Ability.Father.Armor
+        - Ability.Father.Exoskeleton
+        - Ability.Father.Symbiote
+        - Ability.Father.Engineer
+        - Ability.Father.Sword
+      activation_owned_tags:
+        - Father.Form.Rifle
+        - Father.State.Wielded
+      activation_required_tags:
+        - Father.State.Recruited
+      activation_blocked_tags:
+        - Father.Form.Rifle
+        - Father.State.Transitioning
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: WeaponRef
+        type: Object
+        class: WeaponItem
+    event_graph:
+      nodes:
+        # === ACTIVATION NODES ===
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, -50]
+        - id: IsValid_Player
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [1200, 50]
+        - id: Branch_Valid
+          type: Branch
+          position: [1500, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1800, 0]
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [2100, -50]
+        - id: ApplyRifleState
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToSelf
+            target_self: true
+          position: [2100, 0]
+        - id: HideFather
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [2400, 0]
+        - id: DisableCollision
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [2700, 0]
+        - id: GetInventory
+          type: CallFunction
+          properties:
+            function: GetInventoryComponent
+          position: [3000, -50]
+        - id: GiveItem
+          type: CallFunction
+          properties:
+            function: GiveItem
+          position: [3000, 0]
+        - id: SetWeaponRef
+          type: VariableSet
+          properties:
+            variable_name: WeaponRef
+          position: [3300, 0]
+        - id: WieldWeapon
+          type: CallFunction
+          properties:
+            function: WieldWeapon
+          position: [3600, 0]
+        - id: EndAbility_Success
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [3900, 0]
+        - id: EndAbility_Invalid
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1800, 200]
+        # === END ABILITY NODES ===
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 500]
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [300, 500]
+        - id: GetWeaponRef_End
+          type: VariableGet
+          properties:
+            variable_name: WeaponRef
+          position: [600, 450]
+        - id: IsValid_Weapon
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [600, 550]
+        - id: Branch_WeaponValid
+          type: Branch
+          position: [900, 500]
+        - id: UnwieldWeapon
+          type: CallFunction
+          properties:
+            function: UnwieldWeapon
+          position: [1200, 500]
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 600]
+        - id: GetInventory_End
+          type: CallFunction
+          properties:
+            function: GetInventoryComponent
+          position: [1500, 450]
+        - id: RemoveItem
+          type: CallFunction
+          properties:
+            function: RemoveItem
+          position: [1500, 500]
+        - id: GetFatherRef_End
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [1800, 400]
+        - id: ShowFather
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [1800, 500]
+        - id: EnableCollision
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [2100, 500]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only)
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [IsValid_Player, Exec]
+        - from: [IsValid_Player, Exec]
+          to: [Branch_Valid, Exec]
+        - from: [Branch_Valid, then]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [ApplyRifleState, Exec]
+        - from: [ApplyRifleState, Exec]
+          to: [HideFather, Exec]
+        - from: [HideFather, Exec]
+          to: [DisableCollision, Exec]
+        - from: [DisableCollision, Exec]
+          to: [GiveItem, Exec]
+        - from: [GiveItem, Exec]
+          to: [SetWeaponRef, Exec]
+        - from: [SetWeaponRef, Exec]
+          to: [WieldWeapon, Exec]
+        - from: [WieldWeapon, Exec]
+          to: [EndAbility_Success, Exec]
+        - from: [Branch_Valid, else]
+          to: [EndAbility_Invalid, Exec]
+        # Data flow - Activation
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [IsValid_Player, Object]
+        - from: [IsValid_Player, ReturnValue]
+          to: [Branch_Valid, Condition]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetFatherRef, FatherRef]
+          to: [HideFather, Target]
+        - from: [SetFatherRef, FatherRef]
+          to: [DisableCollision, Target]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetInventory, Target]
+        - from: [GetInventory, ReturnValue]
+          to: [GiveItem, Target]
+        - from: [GiveItem, ReturnValue]
+          to: [SetWeaponRef, WeaponRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [WieldWeapon, Target]
+        - from: [SetWeaponRef, WeaponRef]
+          to: [WieldWeapon, Weapon]
+        # === END ABILITY FLOW ===
+        - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        - from: [Branch_WasCancelled, then]
+          to: [IsValid_Weapon, Exec]
+        - from: [IsValid_Weapon, Exec]
+          to: [Branch_WeaponValid, Exec]
+        - from: [Branch_WeaponValid, then]
+          to: [UnwieldWeapon, Exec]
+        - from: [UnwieldWeapon, Exec]
+          to: [RemoveItem, Exec]
+        - from: [RemoveItem, Exec]
+          to: [ShowFather, Exec]
+        - from: [ShowFather, Exec]
+          to: [EnableCollision, Exec]
+        # Data flow - End
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [IsValid_Weapon, Object]
+        - from: [IsValid_Weapon, ReturnValue]
+          to: [Branch_WeaponValid, Condition]
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [UnwieldWeapon, Target]
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetInventory_End, Target]
+        - from: [GetInventory_End, ReturnValue]
+          to: [RemoveItem, Target]
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [RemoveItem, Item]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [ShowFather, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [EnableCollision, Target]
+
+  # GA_FatherSword - Sword Weapon Form
+  - name: GA_FatherSword
+    folder: Abilities/Forms
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: LocalPredicted
+    tags:
+      ability_tags:
+        - Ability.Father.Sword
+      cancel_abilities_with_tag:
+        - Ability.Father.Crawler
+        - Ability.Father.Armor
+        - Ability.Father.Exoskeleton
+        - Ability.Father.Symbiote
+        - Ability.Father.Engineer
+        - Ability.Father.Rifle
+      activation_owned_tags:
+        - Father.Form.Sword
+        - Father.State.Wielded
+      activation_required_tags:
+        - Father.State.Recruited
+      activation_blocked_tags:
+        - Father.Form.Sword
+        - Father.State.Transitioning
+    variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: WeaponRef
+        type: Object
+        class: WeaponItem
+    event_graph:
+      nodes:
+        # === ACTIVATION NODES ===
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [900, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, -50]
+        - id: IsValid_Player
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [1200, 50]
+        - id: Branch_Valid
+          type: Branch
+          position: [1500, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1800, 0]
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [2100, -50]
+        - id: ApplySwordState
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToSelf
+            target_self: true
+          position: [2100, 0]
+        - id: HideFather
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [2400, 0]
+        - id: DisableCollision
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [2700, 0]
+        - id: GetInventory
+          type: CallFunction
+          properties:
+            function: GetInventoryComponent
+          position: [3000, -50]
+        - id: GiveItem
+          type: CallFunction
+          properties:
+            function: GiveItem
+          position: [3000, 0]
+        - id: SetWeaponRef
+          type: VariableSet
+          properties:
+            variable_name: WeaponRef
+          position: [3300, 0]
+        - id: WieldWeapon
+          type: CallFunction
+          properties:
+            function: WieldWeapon
+          position: [3600, 0]
+        - id: EndAbility_Success
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [3900, 0]
+        - id: EndAbility_Invalid
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1800, 200]
+        # === END ABILITY NODES ===
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 500]
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [300, 500]
+        - id: GetWeaponRef_End
+          type: VariableGet
+          properties:
+            variable_name: WeaponRef
+          position: [600, 450]
+        - id: IsValid_Weapon
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [600, 550]
+        - id: Branch_WeaponValid
+          type: Branch
+          position: [900, 500]
+        - id: UnwieldWeapon
+          type: CallFunction
+          properties:
+            function: UnwieldWeapon
+          position: [1200, 500]
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 600]
+        - id: GetInventory_End
+          type: CallFunction
+          properties:
+            function: GetInventoryComponent
+          position: [1500, 450]
+        - id: RemoveItem
+          type: CallFunction
+          properties:
+            function: RemoveItem
+          position: [1500, 500]
+        - id: GetFatherRef_End
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [1800, 400]
+        - id: ShowFather
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [1800, 500]
+        - id: EnableCollision
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [2100, 500]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only)
+        - from: [Event_Activate, Then]
+          to: [GetAvatarActor, Exec]
+        - from: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
+          to: [IsValid_Player, Exec]
+        - from: [IsValid_Player, Exec]
+          to: [Branch_Valid, Exec]
+        - from: [Branch_Valid, then]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [ApplySwordState, Exec]
+        - from: [ApplySwordState, Exec]
+          to: [HideFather, Exec]
+        - from: [HideFather, Exec]
+          to: [DisableCollision, Exec]
+        - from: [DisableCollision, Exec]
+          to: [GiveItem, Exec]
+        - from: [GiveItem, Exec]
+          to: [SetWeaponRef, Exec]
+        - from: [SetWeaponRef, Exec]
+          to: [WieldWeapon, Exec]
+        - from: [WieldWeapon, Exec]
+          to: [EndAbility_Success, Exec]
+        - from: [Branch_Valid, else]
+          to: [EndAbility_Invalid, Exec]
+        # Data flow - Activation
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [IsValid_Player, Object]
+        - from: [IsValid_Player, ReturnValue]
+          to: [Branch_Valid, Condition]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetFatherRef, FatherRef]
+          to: [HideFather, Target]
+        - from: [SetFatherRef, FatherRef]
+          to: [DisableCollision, Target]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetInventory, Target]
+        - from: [GetInventory, ReturnValue]
+          to: [GiveItem, Target]
+        - from: [GiveItem, ReturnValue]
+          to: [SetWeaponRef, WeaponRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [WieldWeapon, Target]
+        - from: [SetWeaponRef, WeaponRef]
+          to: [WieldWeapon, Weapon]
+        # === END ABILITY FLOW ===
+        - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        - from: [Branch_WasCancelled, then]
+          to: [IsValid_Weapon, Exec]
+        - from: [IsValid_Weapon, Exec]
+          to: [Branch_WeaponValid, Exec]
+        - from: [Branch_WeaponValid, then]
+          to: [UnwieldWeapon, Exec]
+        - from: [UnwieldWeapon, Exec]
+          to: [RemoveItem, Exec]
+        - from: [RemoveItem, Exec]
+          to: [ShowFather, Exec]
+        - from: [ShowFather, Exec]
+          to: [EnableCollision, Exec]
+        # Data flow - End
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [IsValid_Weapon, Object]
+        - from: [IsValid_Weapon, ReturnValue]
+          to: [Branch_WeaponValid, Condition]
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [UnwieldWeapon, Target]
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetInventory_End, Target]
+        - from: [GetInventory_End, ReturnValue]
+          to: [RemoveItem, Target]
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [RemoveItem, Item]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [ShowFather, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [EnableCollision, Target]
+
+# ============================================================================
+# EQUIPPABLE ITEMS (5)
+# ============================================================================
+equippable_items:
+  - name: EI_FatherCrawlerForm
+    folder: Items/Forms
+    parent_class: EquippableItem
+    equipment_slot: Narrative.Equipment.Slot.FatherForm
+    abilities_to_grant:
+      - GA_FatherCrawler
+      - GA_FatherAttack
+      - GA_FatherLaserShot
+      - GA_FatherMark
+    equipment_modifier_ge: GE_CrawlerState
+
+  - name: EI_FatherArmorForm
+    folder: Items/Forms
+    parent_class: EquippableItem
+    equipment_slot: Narrative.Equipment.Slot.FatherForm
+    abilities_to_grant:
+      - GA_FatherArmor
+      - GA_ProtectiveDome
+      - GA_DomeBurst
+    equipment_modifier_ge: GE_ArmorState
+
+  - name: EI_FatherExoskeletonForm
+    folder: Items/Forms
+    parent_class: EquippableItem
+    equipment_slot: Narrative.Equipment.Slot.FatherForm
+    abilities_to_grant:
+      - GA_FatherExoskeleton
+      - GA_FatherExoskeletonDash
+      - GA_FatherExoskeletonSprint
+      - GA_StealthField
+      - GA_Backstab
+    equipment_modifier_ge: GE_ExoskeletonState
+
+  - name: EI_FatherSymbioteForm
+    folder: Items/Forms
+    parent_class: EquippableItem
+    equipment_slot: Narrative.Equipment.Slot.FatherForm
+    abilities_to_grant:
+      - GA_FatherSymbiote
+      - GA_ProximityStrike
+    equipment_modifier_ge: GE_SymbioteState
+
+  - name: EI_FatherEngineerForm
+    folder: Items/Forms
+    parent_class: EquippableItem
+    equipment_slot: Narrative.Equipment.Slot.FatherForm
+    abilities_to_grant:
+      - GA_FatherEngineer
+      - GA_TurretShoot
+      - GA_FatherElectricTrap
+    equipment_modifier_ge: GE_EngineerState
+
+  - name: EI_FatherRifleForm
+    folder: Items/Forms
+    parent_class: EquippableItem
+    equipment_slot: Narrative.Equipment.Slot.FatherForm
+    abilities_to_grant:
+      - GA_FatherRifle
+    equipment_modifier_ge: GE_RifleState
+
+  - name: EI_FatherSwordForm
+    folder: Items/Forms
+    parent_class: EquippableItem
+    equipment_slot: Narrative.Equipment.Slot.FatherForm
+    abilities_to_grant:
+      - GA_FatherSword
+    equipment_modifier_ge: GE_SwordState
+
+# ============================================================================
+# BLACKBOARDS (2)
+# ============================================================================
+blackboards:
+  - name: BB_FatherCompanion
+    folder: AI/Blackboards
+    keys:
+      - key_name: OwnerPlayer
+        key_type: Object
+        base_class: NarrativePlayerCharacter
+      - key_name: CurrentTarget
+        key_type: Object
+        base_class: Actor
+      - key_name: FollowDistance
+        key_type: Float
+        default_value: 300.0
+      - key_name: AttackRange
+        key_type: Float
+        default_value: 200.0
+      - key_name: IsInCombat
+        key_type: Bool
+      - key_name: CurrentForm
+        key_type: Enum
+        enum_type: E_FatherForm
+      - key_name: HomeLocation
+        key_type: Vector
+      - key_name: TargetLocation
+        key_type: Vector
+      - key_name: MarkTarget
+        key_type: Object
+        base_class: Actor
+
+  - name: BB_FatherEngineer
+    folder: AI/Blackboards
+    keys:
+      - key_name: TurretLocation
+        key_type: Vector
+      - key_name: CurrentTarget
+        key_type: Object
+        base_class: Actor
+      - key_name: TrapTarget
+        key_type: Object
+        base_class: Actor
+      - key_name: IsActive
+        key_type: Bool
+
+# ============================================================================
+# BEHAVIOR TREES (2)
+# ============================================================================
+behavior_trees:
+  - name: BT_FatherFollow
+    folder: AI/BehaviorTrees
+    blackboard: BB_FatherCompanion
+    root_type: Selector
+    description: Main father companion AI for following and combat
+
+  - name: BT_FatherEngineer
+    folder: AI/BehaviorTrees
+    blackboard: BB_FatherEngineer
+    root_type: Selector
+    description: Engineer turret mode AI for automated combat
+
+# ============================================================================
+# ACTIVITIES (1)
+# ============================================================================
+activities:
+  - name: BPA_FatherFollow
+    folder: AI/Activities
+    parent_class: NarrativeActivityBase
+    behavior_tree: BT_FatherFollow
+
+# ============================================================================
+# ABILITY CONFIGURATIONS (1)
+# ============================================================================
+ability_configurations:
+  - name: AC_FatherCompanion
+    folder: Configs
+    abilities:
+      - GA_FatherCrawler
+      - GA_FatherArmor
+      - GA_FatherExoskeleton
+      - GA_FatherSymbiote
+      - GA_FatherEngineer
+      - GA_FatherAttack
+      - GA_FatherLaserShot
+      - GA_FatherMark
+      - GA_FatherSacrifice
+
+# ============================================================================
+# ACTIVITY CONFIGURATIONS (1)
+# ============================================================================
+activity_configurations:
+  - name: ActConfig_FatherCompanion
+    folder: Configs
+    default_activity: BPA_FatherFollow
+    request_interval: 0.5
+
+# ============================================================================
+# NPC DEFINITIONS (1)
+# ============================================================================
+npc_definitions:
+  - name: NPCDef_FatherCompanion
+    folder: Configs
+    display_name: Father
+    character_class: BP_FatherCompanion
+    ability_configuration: AC_FatherCompanion
+    activity_configuration: ActConfig_FatherCompanion
+    faction: Narrative.Factions.FatherCompanion
+    friendly_factions:
+      - Narrative.Factions.Player
+
+# ============================================================================
+# CHARACTER DEFINITIONS (1)
+# ============================================================================
+character_definitions:
+  - name: CD_FatherCompanion
+    folder: Configs
+    display_name: Father Companion
+    npc_definition: NPCDef_FatherCompanion
+
+# ============================================================================
+# ITEM COLLECTIONS (1)
+# ============================================================================
+item_collections:
+  - name: IC_FatherForms
+    folder: Items
+    items:
+      - item: EI_FatherCrawlerForm
+        quantity: 1
+      - item: EI_FatherArmorForm
+        quantity: 1
+      - item: EI_FatherExoskeletonForm
+        quantity: 1
+      - item: EI_FatherSymbioteForm
+        quantity: 1
+      - item: EI_FatherEngineerForm
+        quantity: 1
+      - item: EI_FatherRifleForm
+        quantity: 1
+      - item: EI_FatherSwordForm
+        quantity: 1
+
+# ============================================================================
+# NARRATIVE EVENTS (2)
+# ============================================================================
+narrative_events:
+  - name: NE_FatherRecruited
+    folder: Events
+    parent_class: NarrativeEvent
+    event_tag: GameplayEvent.Father.Reactivated
+
+  - name: NE_FatherSacrificed
+    folder: Events
+    parent_class: NarrativeEvent
+    event_tag: GameplayEvent.Father.Sacrificed
+
+# ============================================================================
+# ACTOR BLUEPRINTS (4)
+# ============================================================================
+actor_blueprints:
+  - name: BP_FatherCompanion
+    folder: Characters
+    parent_class: NarrativeNPCCharacter
+    components:
+      - name: AbilitySystemComponent
+        type: NarrativeAbilitySystemComponent
+      - name: EquipmentComponent
+        type: EquipmentComponent
+      - name: InteractionComponent
+        type: NPCInteractionComponent
+    variables:
+      - name: OwnerPlayer
+        type: NarrativePlayerCharacter
+        replicated: true
+      - name: CurrentForm
+        type: E_FatherForm
+        default: Crawler
+        replicated: true
+      - name: IsAttached
+        type: Bool
+        default: false
+        replicated: true
+      - name: DomeEnergy
+        type: Float
+        default: 0.0
+        replicated: true
+      - name: SymbioteCharge
+        type: Float
+        default: 0.0
+        replicated: true
+
+  - name: BP_LaserProjectile
+    folder: Projectiles
+    parent_class: NarrativeProjectile
+    variables:
+      - name: Damage
+        type: Float
+        default: 25.0
+      - name: Speed
+        type: Float
+        default: 5000.0
+
+  - name: BP_TurretProjectile
+    folder: Projectiles
+    parent_class: NarrativeProjectile
+    variables:
+      - name: Damage
+        type: Float
+        default: 15.0
+      - name: Speed
+        type: Float
+        default: 3000.0
+
+  - name: BP_ElectricTrap
+    folder: Traps
+    parent_class: Actor
+    components:
+      - name: TriggerSphere
+        type: SphereComponent
+        radius: 150.0
+      - name: TrapMesh
+        type: StaticMeshComponent
+    variables:
+      - name: Damage
+        type: Float
+        default: 30.0
+      - name: RootDuration
+        type: Float
+        default: 3.0
+      - name: Lifetime
+        type: Float
+        default: 15.0
+
+# ============================================================================
+# WIDGET BLUEPRINTS (3)
+# ============================================================================
+widget_blueprints:
+  - name: WBP_MarkIndicator
+    folder: UI
+    parent_class: UserWidget
+    variables:
+      - name: TargetActor
+        type: Actor
+        instance_editable: true
+      - name: MarkDuration
+        type: Float
+        default: 5.0
+
+  - name: WBP_UltimatePanel
+    folder: UI
+    parent_class: UserWidget
+    variables:
+      - name: CurrentCharge
+        type: Float
+        default: 0.0
+        instance_editable: true
+      - name: MaxCharge
+        type: Float
+        default: 100.0
+
+  - name: WBP_FormWheel
+    folder: UI
+    parent_class: UserWidget
+    variables:
+      - name: SelectedSlot
+        type: Int
+        default: 0
+      - name: IsOpen
+        type: Bool
+        default: false
+
+# ============================================================================
+# ANIMATION ASSETS (7)
+# ============================================================================
+animation_montages:
+  - name: AM_FatherAttack
+    folder: Animations
+    skeleton: SK_FatherCompanion
+
+  - name: AM_FatherThrowWeb
+    folder: Animations
+    skeleton: SK_FatherCompanion
+
+  - name: AM_FatherSacrifice
+    folder: Animations
+    skeleton: SK_FatherCompanion
+
+  - name: AM_FatherReactivate
+    folder: Animations
+    skeleton: SK_FatherCompanion
+
+  - name: AM_FatherDetach
+    folder: Animations
+    skeleton: SK_FatherCompanion
+
+  - name: AM_FatherAttach
+    folder: Animations
+    skeleton: SK_FatherCompanion
+
+animation_notifies:
+  - name: NAS_FatherAttack
+    folder: Animations
+    montage: AM_FatherAttack
+
+# ============================================================================
+# MATERIALS (1)
+# ============================================================================
+materials:
+  - name: M_LaserGlow
+    folder: Materials
+    blend_mode: Additive
+    shading_model: Unlit
+    parameters:
+      - name: LaserColor
+        type: Vector
+        default: [1.0, 0.2, 0.2, 1.0]
+      - name: GlowIntensity
+        type: Scalar
+        default: 5.0
+
+# ============================================================================
+# DIALOGUE BLUEPRINTS (1)
+# ============================================================================
+dialogue_blueprints:
+  - name: DBP_FatherCompanion
+    folder: Dialogue
+    parent_class: DialogueBlueprint
+
+# ============================================================================
+# NPC SYSTEMS - WARDEN HUSK (Two-Phase Enemy)
+# ============================================================================
+warden_tags:
+  - tag: State.Warden.Husk
+    comment: Applied to husk entity
+  - tag: State.Warden.Core
+    comment: Applied to flying core
+  - tag: State.Warden.Ejecting
+    comment: During transition phase
+  - tag: Faction.Enemy.Warden
+    comment: Warden faction identifier
+  - tag: Ability.Warden.CoreLaser
+    comment: Laser attack ability
+  - tag: Cooldown.Warden.CoreLaser
+    comment: Laser cooldown tag
+  - tag: Effect.Damage.WardenLaser
+    comment: Laser damage type
+
+warden_gameplay_effects:
+  - name: GE_CoreLaserDamage
+    folder: Enemies/Warden/Effects
+    duration_policy: Instant
+
+  - name: GE_CoreLaserCooldown
+    folder: Enemies/Warden/Effects
+    duration_policy: HasDuration
+    duration_magnitude: 1.5
+    granted_tags:
+      - Cooldown.Warden.CoreLaser
+
+  - name: GE_WardenHuskAttributes
+    folder: Enemies/Warden/Effects
+    duration_policy: Instant
+
+  - name: GE_WardenCoreAttributes
+    folder: Enemies/Warden/Effects
+    duration_policy: Instant
+
+warden_actor_blueprints:
+  - name: BP_WardenHusk
+    folder: Enemies/Warden
+    parent_class: NarrativeNPCCharacter
+
+  - name: BP_WardenCore
+    folder: Enemies/Warden
+    parent_class: NarrativeNPCCharacter
+
+  - name: BP_CoreLaserProjectile
+    folder: Enemies/Warden
+    parent_class: NarrativeProjectile
+
+warden_materials:
+  - name: M_CoreLaserGlow
+    folder: Enemies/Warden/Materials
+    blend_mode: Additive
+    shading_model: Unlit
+
+warden_gameplay_abilities:
+  - name: GA_CoreLaser
+    folder: Enemies/Warden/Abilities
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    tags:
+      ability_tags:
+        - Ability.Warden.CoreLaser
+      activation_blocked_tags:
+        - Cooldown.Warden.CoreLaser
+
+# ============================================================================
+# NPC SYSTEMS - GUARD FORMATION
+# ============================================================================
+guard_formation_tags:
+  - tag: Narrative.State.NPC.Activity.FormationFollow
+    comment: NPC is following in formation
+
+guard_formation_blackboards:
+  - name: BB_FormationFollow
+    folder: AI/Blackboards
+    keys:
+      - key_name: SelfActor
+        key_type: Object
+        base_class: Actor
+      - key_name: FollowTarget
+        key_type: Object
+        base_class: Actor
+      - key_name: FormationOffset
+        key_type: Vector
+      - key_name: TargetLocation
+        key_type: Vector
+
+guard_formation_behavior_trees:
+  - name: BT_FormationFollow
+    folder: AI/BehaviorTrees
+    blackboard: BB_FormationFollow
+    root_type: Selector
+    description: Formation follow behavior
+
+guard_formation_activities:
+  - name: BPA_FormationFollow
+    folder: AI/Activities
+    parent_class: NarrativeActivityBase
+    behavior_tree: BT_FormationFollow
+
+  - name: BPA_Attack_Formation
+    folder: AI/Activities
+    parent_class: BPA_Attack_Melee
+
+guard_formation_bt_services:
+  - name: BTS_CalculateFormationPosition
+    folder: AI/Services
+    parent_class: BTService_BlueprintBase
+
+  - name: BTS_AdjustFormationSpeed
+    folder: AI/Services
+    parent_class: BTService_BlueprintBase
+
+guard_formation_goals:
+  - name: Goal_FormationFollow
+    folder: AI/Goals
+    parent_class: Goal_FollowCharacter
+
+# ============================================================================
+# NPC SYSTEMS - POSSESSED EXPLODER
+# ============================================================================
+possessed_exploder_tags:
+  - tag: State.Enemy.PossessedExploder
+    comment: NPC identifier
+  - tag: State.Enemy.Exploder.Alert
+    comment: Applied during alert state
+  - tag: Faction.Enemy.Possessed
+    comment: Possessed faction identifier
+  - tag: Effect.Enemy.ExplosionDamage
+    comment: Explosion damage effect tag
+  - tag: GameplayCue.Enemy.Exploder.Alert
+    comment: Alert VFX/SFX trigger
+  - tag: GameplayCue.Enemy.Exploder.Explosion
+    comment: Explosion VFX/SFX trigger
+
+possessed_exploder_gameplay_effects:
+  - name: GE_ExploderAttributes
+    folder: Enemies/Possessed/Effects
+    duration_policy: Instant
+
+  - name: GE_ExplosionDamage
+    folder: Enemies/Possessed/Effects
+    duration_policy: Instant
+
+possessed_exploder_actor_blueprints:
+  - name: BP_PossessedExploder
+    folder: Enemies/Possessed
+    parent_class: NarrativeNPCCharacter
+
+possessed_exploder_bt_services:
+  - name: BTS_CheckExplosionProximity
+    folder: AI/Services
+    parent_class: BTService_BlueprintBase
+
+possessed_exploder_behavior_trees:
+  - name: BT_Explode
+    folder: AI/BehaviorTrees
+    blackboard: BB_Attack
+    root_type: Selector
+    description: Suicide explosion behavior
+
+possessed_exploder_activities:
+  - name: BPA_Explode
+    folder: AI/Activities
+    parent_class: NarrativeActivityBase
+    behavior_tree: BT_Explode
+
+# ============================================================================
+# NPC SYSTEMS - SUPPORT BUFFER
+# ============================================================================
+support_buffer_tags:
+  - tag: State.NPC.SupportBuffer
+    comment: NPC identifier
+  - tag: State.NPC.Support.Healing
+    comment: Applied during heal action
+  - tag: Faction.Friendly.Support
+    comment: Support faction identifier
+  - tag: Effect.Support.Heal
+    comment: Heal effect tag
+  - tag: Effect.Support.SpeedBoost
+    comment: Speed boost effect tag
+  - tag: GameplayCue.Support.Heal
+    comment: Heal VFX/SFX trigger
+
+support_buffer_gameplay_effects:
+  - name: GE_SupporterAttributes
+    folder: NPCs/Support/Effects
+    duration_policy: Instant
+
+  - name: GE_SupportHeal
+    folder: NPCs/Support/Effects
+    duration_policy: Instant
+
+support_buffer_actor_blueprints:
+  - name: BP_SupportBuffer
+    folder: NPCs/Support
+    parent_class: NarrativeNPCCharacter
+
+support_buffer_bt_services:
+  - name: BTS_HealNearbyAllies
+    folder: AI/Services
+    parent_class: BTService_BlueprintBase
+
+support_buffer_behavior_trees:
+  - name: BT_SupportFollow
+    folder: AI/BehaviorTrees
+    blackboard: BB_FollowCharacter
+    root_type: Selector
+    description: Support follow with healing behavior
+
+support_buffer_activities:
+  - name: BPA_SupportFollow
+    folder: AI/Activities
+    parent_class: BPA_FollowCharacter
+    behavior_tree: BT_SupportFollow
+
+# ============================================================================
+# NPC SYSTEMS - BIOMECHANICAL DETACHMENT
+# ============================================================================
+biomech_tags:
+  - tag: State.Biomech.Host
+    comment: Applied to combined host entity
+  - tag: State.Biomech.Creature
+    comment: Applied to detached creature
+  - tag: State.Biomech.Detaching
+    comment: During transition phase
+  - tag: Faction.Enemy.Biomech
+    comment: Biomech faction identifier
+
+biomech_gameplay_effects:
+  - name: GE_BiomechHostAttributes
+    folder: Enemies/Biomech/Effects
+    duration_policy: Instant
+
+  - name: GE_BiomechCreatureAttributes
+    folder: Enemies/Biomech/Effects
+    duration_policy: Instant
+
+biomech_actor_blueprints:
+  - name: BP_BiomechHost
+    folder: Enemies/Biomech
+    parent_class: NarrativeNPCCharacter
+
+  - name: BP_BiomechCreature
+    folder: Enemies/Biomech
+    parent_class: NarrativeNPCCharacter
+
+# ============================================================================
+# NPC SYSTEMS - GATHERER SCOUT
+# ============================================================================
+gatherer_tags:
+  - tag: State.NPC.Alert.Signaling
+    comment: Applied during alert animation
+  - tag: Faction.Enemy.Gatherer
+    comment: Gatherer faction identifier
+  - tag: Faction.Enemy.Reinforcement
+    comment: Reinforcement faction identifier
+  - tag: Goal.Alert
+    comment: Goal type identifier
+
+gatherer_actor_blueprints:
+  - name: BP_GathererScout
+    folder: Enemies/Gatherer
+    parent_class: NarrativeNPCCharacter
+
+  - name: BP_Reinforcement
+    folder: Enemies/Gatherer
+    parent_class: NarrativeNPCCharacter
+
+gatherer_goals:
+  - name: Goal_Alert
+    folder: AI/Goals
+    parent_class: NPCGoalItem
+
+gatherer_goal_generators:
+  - name: GoalGenerator_Alert
+    folder: AI/GoalGenerators
+    parent_class: NPCGoalGenerator
+
+gatherer_activities:
+  - name: BPA_Alert
+    folder: AI/Activities
+    parent_class: NarrativeActivityBase
+
+  - name: BPA_Gather
+    folder: AI/Activities
+    parent_class: NarrativeActivityBase
+
+# ============================================================================
+# NPC SYSTEMS - STALKER RANDOM AGGRESSION
+# ============================================================================
+stalker_tags:
+  - tag: State.NPC.Returned.Following
+    comment: Applied during follow state
+  - tag: State.NPC.Returned.Bonded
+    comment: Applied when TalkCount > 0
+  - tag: State.NPC.Returned.Defending
+    comment: Applied while defending player
+  - tag: State.NPC.Returned.Aggressive
+    comment: Applied after attacking player
+  - tag: Narrative.TaggedDialogue.Returned.StartFollowing
+    comment: When follow begins
+  - tag: Narrative.TaggedDialogue.Returned.Following.First
+    comment: First talk (TalkCount = 1)
+  - tag: Narrative.TaggedDialogue.Returned.Following.Bonding
+    comment: TalkCount 2-3
+  - tag: Narrative.TaggedDialogue.Returned.Following.Deep
+    comment: TalkCount 4+
+  - tag: Narrative.TaggedDialogue.Returned.Defending
+    comment: When defending player
+  - tag: Narrative.TaggedDialogue.Returned.Attacking
+    comment: When attacking player
+  - tag: Narrative.TaggedDialogue.Returned.GivingUp
+    comment: When timeout expires
+
+stalker_actor_blueprints:
+  - name: BP_ReturnedStalker
+    folder: NPCs/Returned
+    parent_class: NarrativeNPCCharacter
+
+stalker_goal_generators:
+  - name: GoalGenerator_RandomAggression
+    folder: AI/GoalGenerators
+    parent_class: NPCGoalGenerator
+
+stalker_tagged_dialogue_sets:
+  - name: TaggedDialogueSet_Returned
+    folder: Dialogue/TaggedSets
+    dialogues:
+      - tag: Narrative.TaggedDialogue.Returned.StartFollowing
+        cooldown: 30.0
+        max_distance: 5000.0
+      - tag: Narrative.TaggedDialogue.Returned.Following.First
+        cooldown: 30.0
+        max_distance: 5000.0
+      - tag: Narrative.TaggedDialogue.Returned.Following.Bonding
+        cooldown: 30.0
+        max_distance: 5000.0
+      - tag: Narrative.TaggedDialogue.Returned.Following.Deep
+        cooldown: 30.0
+        max_distance: 5000.0
+      - tag: Narrative.TaggedDialogue.Returned.Defending
+        cooldown: 5.0
+        max_distance: 5000.0
+      - tag: Narrative.TaggedDialogue.Returned.Attacking
+        cooldown: 5.0
+        max_distance: 5000.0
+      - tag: Narrative.TaggedDialogue.Returned.GivingUp
+        cooldown: 30.0
+        max_distance: 5000.0
+
+# ============================================================================
+# END OF MANIFEST
+# ============================================================================

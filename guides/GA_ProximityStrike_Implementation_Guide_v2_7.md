@@ -1,0 +1,1062 @@
+# Father Companion - GA_ProximityStrike Implementation Guide
+## VERSION 2.7 - Blueprint Node Consistency Fixes
+## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+
+---
+
+## **DOCUMENT INFORMATION**
+
+| Field | Value |
+|-------|-------|
+| Ability Name | GA_ProximityStrike |
+| Ability Type | Passive AOE Damage |
+| Parent Class | NarrativeGameplayAbility |
+| Form | Symbiote (Full Body Merge) |
+| Input | None (Automatic - activated by GA_FatherSymbiote) |
+| Version | 2.7 |
+| Granting Method | EquippableItem (BP_FatherSymbioteForm) |
+| Activation Method | Explicit activation by GA_FatherSymbiote |
+
+---
+
+## **TABLE OF CONTENTS**
+
+1. [Introduction](#introduction)
+2. [Prerequisites](#prerequisites)
+3. [PHASE 1: Gameplay Tags Setup](#phase-1-gameplay-tags-setup)
+4. [PHASE 2: Create Gameplay Effects](#phase-2-create-gameplay-effects)
+5. [PHASE 3: Create GA_ProximityStrike Ability](#phase-3-create-ga_proximitystrike-ability)
+6. [PHASE 4: Implement Proximity Detection Logic](#phase-4-implement-proximity-detection-logic)
+7. [PHASE 5: Implement Damage Application Logic](#phase-5-implement-damage-application-logic)
+8. [PHASE 6: Implement Cleanup Logic](#phase-6-implement-cleanup-logic)
+9. [PHASE 7: Integration with BP_FatherSymbioteForm](#phase-7-integration-with-bp_fathersymbioteform)
+10. [PHASE 8: Update GA_FatherSymbiote for Activation](#phase-8-update-ga_fathersymbiote-for-activation)
+11. [Changelog](#changelog)
+
+---
+
+## **INTRODUCTION**
+
+### **Ability Overview**
+
+GA_ProximityStrike is a passive AOE damage ability that automatically damages all enemies within range while the player is in Symbiote form. The ability pulses damage at regular intervals, creating a devastating aura around the merged player-father entity.
+
+### **Key Features**
+
+- Passive Activation: Explicitly activated by GA_FatherSymbiote after form tags applied
+- AOE Damage: Damages all enemies within 350 unit radius
+- Rapid Ticks: Deals damage every 0.5 seconds
+- Unlimited Targets: No cap on simultaneous targets
+- Knockback: Small push effect on each tick
+- Form Restriction: Only active during Symbiote form
+- Proper Damage System: Uses NarrativeDamageExecCalc with SetByCaller for Armor/AttackRating scaling
+- Hierarchical Tag: Uses Ability.Father.Symbiote.ProximityStrike for blanket cancel support
+- Recruited Gate: Requires Father.State.Recruited for activation
+
+### **Symbiote Form Context**
+
+In Symbiote form, the father fully merges with the player body, creating a berserker state:
+- Requires 100% charge to activate (validated in GA_FatherSymbiote)
+- Limited duration (30 seconds)
+- All abilities enhance aggressive playstyle
+- Proximity Strike is the core damage engine
+
+### **Technical Specifications**
+
+| Parameter | Value |
+|-----------|-------|
+| Damage Per Tick | 40 (base, before scaling) |
+| Tick Rate | 0.5 seconds |
+| Damage Radius | 350 units |
+| Max Targets | Unlimited |
+| Knockback Force | 200 units |
+| Form Required | Symbiote |
+| State Required | Merged, Recruited |
+| Form Duration | 30 seconds |
+
+### **Damage Flow**
+
+| Step | Component | Action |
+|------|-----------|--------|
+| 1 | GA_FatherSymbiote | Activates GA_ProximityStrike after merge |
+| 2 | GA_ProximityStrike | Timer triggers DealProximityDamage |
+| 3 | Sphere Overlap | Detects enemies in radius |
+| 4 | Make Outgoing Spec | Creates GE spec with SetByCaller damage |
+| 5 | GE_ProximityDamage | Applied to each target |
+| 6 | NarrativeDamageExecCalc | Calculates final damage |
+| 7 | ExecCalc | Applies AttackRating multiplier |
+| 8 | ExecCalc | Applies target Armor reduction |
+| 9 | ExecCalc | Checks State.Invulnerable |
+| 10 | Attribute System | Modifies target Health |
+
+### **Activation Flow**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Player equips BP_FatherSymbioteForm | Parent:HandleEquip grants GA_ProximityStrike |
+| 2 | bActivateAbilityOnGranted = false | No auto-activation attempt |
+| 3 | BP_FatherSymbioteForm activates GA_FatherSymbiote | Form ability starts |
+| 4 | GA_FatherSymbiote applies Activation Owned Tags | Father.Form.Symbiote + Father.State.Merged present |
+| 5 | GA_FatherSymbiote calls TryActivateAbilityByClass | GA_ProximityStrike activation requested |
+| 6 | GA_ProximityStrike validates Activation Required Tags | Tags now present - activation succeeds |
+| 7 | ProximityStrike timer starts | AOE damage begins |
+
+### **Deactivation Flow (Blanket Cancel)**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Player switches form or Symbiote ends | New form ability activates |
+| 2 | New form has Cancel Abilities with Tag | Includes Ability.Father.Symbiote |
+| 3 | GA_ProximityStrike tag is Ability.Father.Symbiote.ProximityStrike | Child of cancelled parent tag |
+| 4 | GAS hierarchical tag matching | GA_ProximityStrike cancelled automatically |
+| 5 | Event OnEndAbility fires | Timer cleared, references cleared, cleanup complete |
+
+---
+
+## **PREREQUISITES**
+
+### **Required Before This Guide**
+
+| Requirement | Description | Reference |
+|-------------|-------------|-----------|
+| BP_FatherCompanion | Father character with NarrativeNPCCharacter parent | Father_Companion_System_Setup_Guide_v1_3 |
+| GA_FatherSymbiote | Symbiote form activation ability | GA_FatherSymbiote_Implementation_Guide_v2_9 |
+| BP_FatherSymbioteForm | EquippableItem for Symbiote form (PENDING) | Father_Companion_Forms_Implementation_Guide_v4_0, PHASE 6 |
+| Father.Form.Symbiote tag | Form identification tag | DefaultGameplayTags_FatherCompanion_v3_5.ini |
+| Father.State.Merged tag | Full body merge state tag | DefaultGameplayTags_FatherCompanion_v3_5.ini |
+| Father.State.Recruited tag | Father recruited by player | DefaultGameplayTags_FatherCompanion_v3_5.ini |
+| Player Character | Player with NarrativeAbilitySystemComponent | Narrative Pro default |
+
+### **Pending Prerequisites**
+
+BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companion_Forms_Implementation_Guide_v4_0, PHASE 6 before PHASE 7 of this guide can be completed.
+
+---
+
+## **PHASE 1: GAMEPLAY TAGS SETUP**
+
+### **Create Required Tags**
+
+| Tag Name | Purpose |
+|----------|---------|
+| Ability.Father.Symbiote.ProximityStrike | Father proximity AOE damage - Symbiote form passive |
+| Father.State.ProximityActive | Proximity strike aura is active |
+| Effect.Father.ProximityDamage | Target is being damaged by proximity aura |
+| Data.Damage.ProximityStrike | SetByCaller tag for proximity strike damage value |
+
+### **Verify Existing Tags**
+
+| Tag Name | Purpose |
+|----------|---------|
+| Father.Form.Symbiote | Father is in Symbiote/Berserker form |
+| Father.State.Merged | Father fully merged with player body |
+| Father.State.Recruited | Father recruited by player |
+
+---
+
+## **PHASE 2: CREATE GAMEPLAY EFFECTS**
+
+### **1) Create Effects Folder**
+
+#### 1.1) Navigate to Symbiote Folder
+   - 1.1.1) In Content Browser, go to `/Content/FatherCompanion/`
+   - 1.1.2) If **Symbiote** folder missing:
+      - 1.1.2.1) Right-click in Content Browser
+      - 1.1.2.2) Select **New Folder**
+      - 1.1.2.3) Name: `Symbiote`
+      - 1.1.2.4) Press **Enter**
+
+#### 1.2) Create Effects Subfolder
+   - 1.2.1) Double-click **Symbiote** folder to open
+   - 1.2.2) Right-click in Content Browser
+   - 1.2.3) Select **New Folder**
+   - 1.2.4) Name: `Effects`
+   - 1.2.5) Press **Enter**
+   - 1.2.6) Double-click **Effects** folder to open
+
+### **2) Create GE_ProximityDamage**
+
+#### 2.1) Create Gameplay Effect Asset
+   - 2.1.1) Right-click in `/Content/FatherCompanion/Symbiote/Effects/`
+   - 2.1.2) Select **Gameplay** -> **Gameplay Effect**
+   - 2.1.3) Name: `GE_ProximityDamage`
+   - 2.1.4) Press **Enter**
+   - 2.1.5) Double-click to open
+
+#### 2.2) Configure Duration Policy
+   - 2.2.1) Click **Class Defaults** button in toolbar
+   - 2.2.2) In Details panel, find **Gameplay Effect** section
+   - 2.2.3) Find **Duration Policy** dropdown
+   - 2.2.4) Select: `Instant`
+
+#### 2.3) Add Executions Component
+   - 2.3.1) In Details panel, find **Components** section
+   - 2.3.2) Click **+ (Plus)** button to add component
+   - 2.3.3) Search: `Executions`
+   - 2.3.4) Select: **ExecutionsGameplayEffectComponent**
+
+#### 2.4) Configure Damage Execution
+   - 2.4.1) Click Executions component to expand
+   - 2.4.2) Find **Execution Definitions** array
+   - 2.4.3) Click **+ (Plus)** to add element [0]
+   - 2.4.4) Expand element [0]
+   - 2.4.5) Find **Calculation Class** property
+   - 2.4.6) Click dropdown next to Calculation Class
+   - 2.4.7) Search: `NarrativeDamageExecCalc`
+   - 2.4.8) Select: **UNarrativeDamageExecCalc**
+
+#### 2.5) Configure SetByCaller Damage Modifier
+   - 2.5.1) In element [0], find **Calculation Modifiers** array
+   - 2.5.2) Click **+ (Plus)** to add modifier
+   - 2.5.3) Expand the modifier element
+   - 2.5.4) Configure Backing Capture Definition:
+      - 2.5.4.1) Find **Backing Capture Definition** section
+      - 2.5.4.2) **Capture Attribute**: Select `NarrativeAttributeSetBase.AttackDamage`
+      - 2.5.4.3) **Attribute Source**: `Source`
+   - 2.5.5) Configure Modifier Operation:
+      - 2.5.5.1) **Modifier Op**: `Override`
+   - 2.5.6) Configure SetByCaller Magnitude:
+      - 2.5.6.1) Find **Modifier Magnitude** section
+      - 2.5.6.2) **Magnitude Calculation Type**: Select `Set By Caller`
+      - 2.5.6.3) Expand **Set By Caller Magnitude** section
+      - 2.5.6.4) **Data Tag**: Click dropdown
+      - 2.5.6.5) Search: `Data.Damage.ProximityStrike`
+      - 2.5.6.6) Select: `Data.Damage.ProximityStrike`
+
+#### 2.6) Add Asset Tags Component
+   - 2.6.1) Click **+ (Plus)** in Components section
+   - 2.6.2) Search: `Asset Tags`
+   - 2.6.3) Select: **AssetTagsGameplayEffectComponent**
+
+#### 2.7) Configure Asset Tags
+   - 2.7.1) Click component to expand
+   - 2.7.2) Find **Added** section
+   - 2.7.3) Click **+ (Plus)**
+   - 2.7.4) Add tag: `Effect.Father.ProximityDamage`
+
+#### 2.8) Compile and Save
+   - 2.8.1) Click **Compile** button
+   - 2.8.2) Click **Save** button
+
+---
+
+## **PHASE 3: CREATE GA_PROXIMITYSTRIKE ABILITY**
+
+### **1) Create Abilities Folder**
+
+#### 1.1) Navigate to Symbiote Folder
+   - 1.1.1) In Content Browser, go to `/Content/FatherCompanion/Symbiote/`
+
+#### 1.2) Create Abilities Subfolder
+   - 1.2.1) If **Abilities** folder missing:
+      - 1.2.1.1) Right-click in Symbiote folder
+      - 1.2.1.2) Select **New Folder**
+      - 1.2.1.3) Name: `Abilities`
+      - 1.2.1.4) Press **Enter**
+   - 1.2.2) Double-click **Abilities** folder to open
+
+### **2) Create GA_ProximityStrike Blueprint**
+
+#### 2.1) Create Blueprint Class
+   - 2.1.1) Right-click in `/Content/FatherCompanion/Symbiote/Abilities/`
+   - 2.1.2) Select **Blueprint Class**
+   - 2.1.3) In **Pick Parent Class** dialog:
+      - 2.1.3.1) Click **All Classes** dropdown at bottom
+      - 2.1.3.2) In search bar, type: `NarrativeGameplayAbility`
+      - 2.1.3.3) Select **NarrativeGameplayAbility** from list
+      - 2.1.3.4) Click **Select** button
+   - 2.1.4) Name: `GA_ProximityStrike`
+   - 2.1.5) Press **Enter**
+   - 2.1.6) Double-click to open
+
+### **3) Configure Class Defaults**
+
+#### 3.1) Open Class Defaults Panel
+   - 3.1.1) Click **Class Defaults** button in Blueprint toolbar
+
+### **4) Configure Ability Tags**
+
+#### 4.1) Set Ability Tags (Hierarchical Tag)
+   - 4.1.1) In Details panel, find **Tags** category
+   - 4.1.2) Find **Ability Tags** property
+   - 4.1.3) Click arrow to expand
+   - 4.1.4) Under **Gameplay Tags**, click **+ (Plus)**
+   - 4.1.5) In tag picker, search: `Ability.Father.Symbiote.ProximityStrike`
+   - 4.1.6) Select the tag
+
+#### 4.2) Configure Activation Required Tags
+   - 4.2.1) Find **Activation Required Tags** property
+   - 4.2.2) Expand property
+   - 4.2.3) Under **Gameplay Tags**, click **+ (Plus)**
+   - 4.2.4) Add tag: `Father.Form.Symbiote`
+   - 4.2.5) Click **+ (Plus)** again
+   - 4.2.6) Add tag: `Father.State.Merged`
+   - 4.2.7) Click **+ (Plus)** again
+   - 4.2.8) Add tag: `Father.State.Recruited`
+
+#### 4.3) Configure Activation Owned Tags
+   - 4.3.1) Find **Activation Owned Tags** property
+   - 4.3.2) Expand property
+   - 4.3.3) Click **+ (Plus)**
+   - 4.3.4) Add tag: `Father.State.ProximityActive`
+
+#### 4.4) Configure Activation Blocked Tags
+   - 4.4.1) Find **Activation Blocked Tags** property
+   - 4.4.2) Expand property
+   - 4.4.3) Click **+ (Plus)**
+   - 4.4.4) Add tag: `Father.State.ProximityActive`
+
+### **5) Configure Replication Settings**
+
+#### 5.1) Set Instancing Policy
+   - 5.1.1) In Details panel, find **Ability** category
+   - 5.1.2) Find **Instancing Policy** dropdown
+   - 5.1.3) Select: `Instanced Per Actor`
+
+#### 5.2) Set Replication Policy
+   - 5.2.1) Find **Replication Policy** dropdown
+   - 5.2.2) Select: `Replicate`
+
+#### 5.3) Set Net Execution Policy
+   - 5.3.1) Find **Net Execution Policy** dropdown
+   - 5.3.2) Select: `Server Only`
+
+#### 5.4) Configure Additional Replication Settings
+   - 5.4.1) Find **Replicate Input Directly** checkbox
+   - 5.4.2) Ensure: Unchecked
+   - 5.4.3) Find **Server Respects Remote Ability Cancellation**
+   - 5.4.4) Ensure: Unchecked
+
+### **6) Configure Narrative Ability Settings**
+
+#### 6.1) Set InputTag to None
+   - 6.1.1) In Details panel, find **Narrative Ability** category
+   - 6.1.2) Find **Input Tag** property
+   - 6.1.3) Ensure InputTag is empty (no tag)
+
+#### 6.2) Disable Auto-Activation on Grant
+   - 6.2.1) Find **bActivateAbilityOnGranted** property
+   - 6.2.2) Uncheck the checkbox (set to false)
+
+### **7) Compile and Save**
+
+#### 7.1) Save Configuration
+   - 7.1.1) Click **Compile** button
+   - 7.1.2) Click **Save** button
+
+---
+
+## **PHASE 4: IMPLEMENT PROXIMITY DETECTION LOGIC**
+
+### **1) Create Ability Variables**
+
+#### 1.1) Open Event Graph
+   - 1.1.1) In GA_ProximityStrike Blueprint, click **Event Graph** tab
+
+#### 1.2) Create DamagePerTick Variable
+   - 1.2.1) In **My Blueprint** panel, click **+ (Plus)** next to Variables
+   - 1.2.2) Name: `DamagePerTick`
+   - 1.2.3) Press **Enter**
+   - 1.2.4) In Details panel:
+      - 1.2.4.1) **Variable Type**: `Float`
+      - 1.2.4.2) **Instance Editable**: Check
+   - 1.2.5) Click **Compile**
+   - 1.2.6) Set **Default Value**: `40.0`
+   - 1.2.7) Set **Category**: `Proximity Config`
+
+#### 1.3) Create TickRate Variable
+   - 1.3.1) Click **+ (Plus)** next to Variables
+   - 1.3.2) Name: `TickRate`
+   - 1.3.3) **Variable Type**: `Float`
+   - 1.3.4) **Instance Editable**: Check
+   - 1.3.5) Click **Compile**
+   - 1.3.6) Set **Default Value**: `0.5`
+   - 1.3.7) Set **Category**: `Proximity Config`
+
+#### 1.4) Create DamageRadius Variable
+   - 1.4.1) Click **+ (Plus)** next to Variables
+   - 1.4.2) Name: `DamageRadius`
+   - 1.4.3) **Variable Type**: `Float`
+   - 1.4.4) **Instance Editable**: Check
+   - 1.4.5) Click **Compile**
+   - 1.4.6) Set **Default Value**: `350.0`
+   - 1.4.7) Set **Category**: `Proximity Config`
+
+#### 1.5) Create KnockbackForce Variable
+   - 1.5.1) Click **+ (Plus)** next to Variables
+   - 1.5.2) Name: `KnockbackForce`
+   - 1.5.3) **Variable Type**: `Float`
+   - 1.5.4) **Instance Editable**: Check
+   - 1.5.5) Click **Compile**
+   - 1.5.6) Set **Default Value**: `200.0`
+   - 1.5.7) Set **Category**: `Proximity Config`
+
+#### 1.6) Create PlayerRef Variable
+   - 1.6.1) Click **+ (Plus)** next to Variables
+   - 1.6.2) Name: `PlayerRef`
+   - 1.6.3) **Variable Type**: `Actor` -> `Object Reference`
+   - 1.6.4) Click **Compile**
+   - 1.6.5) Set **Category**: `Runtime`
+
+#### 1.7) Create FatherRef Variable
+   - 1.7.1) Click **+ (Plus)** next to Variables
+   - 1.7.2) Name: `FatherRef`
+   - 1.7.3) **Variable Type**: `Actor` -> `Object Reference`
+   - 1.7.4) Click **Compile**
+   - 1.7.5) Set **Category**: `Runtime`
+
+#### 1.8) Create PlayerASC Variable
+   - 1.8.1) Click **+ (Plus)** next to Variables
+   - 1.8.2) Name: `PlayerASC`
+   - 1.8.3) **Variable Type**: Search `NarrativeAbilitySystemComponent`
+      - 1.8.3.1) Select: `NarrativeAbilitySystemComponent` -> `Object Reference`
+   - 1.8.4) Click **Compile**
+   - 1.8.5) Set **Category**: `Runtime`
+
+#### 1.9) Create DamageTimerHandle Variable
+   - 1.9.1) Click **+ (Plus)** next to Variables
+   - 1.9.2) Name: `DamageTimerHandle`
+   - 1.9.3) **Variable Type**: Search `Timer Handle`
+      - 1.9.3.1) Select: `Timer Handle` (structure type)
+   - 1.9.4) Click **Compile**
+   - 1.9.5) Set **Category**: `Runtime`
+
+#### 1.10) Create IsActive Variable
+   - 1.10.1) Click **+ (Plus)** next to Variables
+   - 1.10.2) Name: `IsActive`
+   - 1.10.3) **Variable Type**: `Boolean`
+   - 1.10.4) Click **Compile**
+   - 1.10.5) Set **Default Value**: Unchecked (false)
+   - 1.10.6) Set **Category**: `Runtime`
+
+### **2) Implement ActivateAbility Event**
+
+#### 2.1) Add Event ActivateAbility
+   - 2.1.1) Right-click in Event Graph empty space
+   - 2.1.2) In context menu search: `Event ActivateAbility`
+   - 2.1.3) Select **Event ActivateAbility** node
+
+#### 2.2) Get Avatar Actor (Father)
+   - 2.2.1) From **Event ActivateAbility** node:
+      - 2.2.1.1) Find **Actor Info** pin (structure pin)
+      - 2.2.1.2) Drag from Actor Info pin outward
+      - 2.2.1.3) In context menu search: `Get Avatar Actor from Actor Info`
+      - 2.2.1.4) Add **Get Avatar Actor from Actor Info** node
+
+#### 2.3) Cast to BP_FatherCompanion
+   - 2.3.1) From **Event ActivateAbility** execution pin:
+      - 2.3.1.1) Drag outward into empty space
+      - 2.3.1.2) Search: `Cast To BP_FatherCompanion`
+      - 2.3.1.3) Add **Cast To BP_FatherCompanion** node
+   - 2.3.2) Connect execution wire from Event to Cast input
+   - 2.3.3) For Cast **Object** input:
+      - 2.3.3.1) Connect **Return Value** from Get Avatar Actor node
+
+#### 2.4) Handle Cast Failure
+   - 2.4.1) From Cast **Cast Failed** execution pin:
+      - 2.4.1.1) Drag outward and search: `End Ability`
+      - 2.4.1.2) Add **End Ability** node
+   - 2.4.2) On End Ability node:
+      - 2.4.2.1) Find **Was Cancelled** checkbox
+      - 2.4.2.2) Set: Checked (true)
+
+#### 2.5) Store Father Reference
+   - 2.5.1) From Cast success execution pin:
+      - 2.5.1.1) Drag outward and search: `Set FatherRef`
+      - 2.5.1.2) Add **Set FatherRef** node
+   - 2.5.2) Connect execution
+   - 2.5.3) Connect **As BP Father Companion** to FatherRef value
+
+#### 2.6) Get Owner Player
+   - 2.6.1) From **As BP Father Companion** pin:
+      - 2.6.1.1) Drag outward and search: `Get Owner Player`
+      - 2.6.1.2) Add **Get Owner Player** node
+      - 2.6.1.3) Connect As BP Father Companion to Target
+
+#### 2.7) Store Player Reference
+   - 2.7.1) From Set FatherRef execution:
+      - 2.7.1.1) Drag outward and search: `Set PlayerRef`
+      - 2.7.1.2) Add **Set PlayerRef** node
+   - 2.7.2) Connect execution
+   - 2.7.3) Connect Get Owner Player **Return Value** to PlayerRef value
+
+#### 2.8) Validate Player Reference
+   - 2.8.1) From Set PlayerRef execution:
+      - 2.8.1.1) Drag **PlayerRef** variable getter into graph
+      - 2.8.1.2) Add **Is Valid** node
+      - 2.8.1.3) Connect PlayerRef to Is Valid input
+   - 2.8.2) From Is Valid output:
+      - 2.8.2.1) Add **Branch** node
+      - 2.8.2.2) Connect Is Valid **Return Value** to Branch **Condition**
+   - 2.8.3) From Branch **False** execution:
+      - 2.8.3.1) Add **End Ability** node
+      - 2.8.3.2) **Was Cancelled**: Checked (true)
+
+#### 2.9) Get Player ASC
+   - 2.9.1) From Branch **True** execution:
+      - 2.9.1.1) Drag **PlayerRef** variable getter into graph
+      - 2.9.1.2) From PlayerRef, add **Get Ability System Component** node
+
+#### 2.10) Cast to NarrativeAbilitySystemComponent
+   - 2.10.1) From Get Ability System Component **Return Value**:
+      - 2.10.1.1) Drag outward and search: `Cast To NarrativeAbilitySystemComponent`
+      - 2.10.1.2) Add **Cast To NarrativeAbilitySystemComponent** node
+   - 2.10.2) Connect execution from Branch True
+
+#### 2.11) Handle ASC Cast Failure
+   - 2.11.1) From Cast **Cast Failed** execution pin:
+      - 2.11.1.1) Add **End Ability** node
+      - 2.11.1.2) **Was Cancelled**: Checked (true)
+
+#### 2.12) Store PlayerASC
+   - 2.12.1) From Cast success execution:
+      - 2.12.1.1) Drag outward and search: `Set PlayerASC`
+      - 2.12.1.2) Add **Set PlayerASC** node
+   - 2.12.2) Connect **As Narrative Ability System Component** to PlayerASC value
+
+#### 2.13) Validate PlayerASC
+   - 2.13.1) From Set PlayerASC execution:
+      - 2.13.1.1) Drag **PlayerASC** variable getter into graph
+      - 2.13.1.2) Add **Is Valid** node
+      - 2.13.1.3) Add **Branch** node
+      - 2.13.1.4) Connect Is Valid Return Value to Branch Condition
+   - 2.13.2) From Branch **False** execution:
+      - 2.13.2.1) Add **End Ability** node
+      - 2.13.2.2) **Was Cancelled**: Checked (true)
+
+### **3) Start Damage Timer**
+
+#### 3.1) Set IsActive Flag
+   - 3.1.1) From Section 2.13 Branch **True** execution:
+      - 3.1.1.1) Drag outward and search: `Set IsActive`
+      - 3.1.1.2) Add **Set IsActive** node
+   - 3.1.2) Connect execution
+   - 3.1.3) Check **Is Active** (true)
+
+#### 3.2) Create Timer Function
+   - 3.2.1) From Set IsActive execution:
+      - 3.2.1.1) Drag outward and search: `Set Timer by Function Name`
+      - 3.2.1.2) Add **Set Timer by Function Name** node
+   - 3.2.2) Connect execution
+   - 3.2.3) Configure Timer node:
+      - 3.2.3.1) **Object**: Connect **Self** reference
+      - 3.2.3.2) **Function Name**: Type `DealProximityDamage`
+      - 3.2.3.3) **Time**: Connect **TickRate** getter
+      - 3.2.3.4) **Looping**: Checked (true)
+
+#### 3.3) Store Timer Handle
+   - 3.3.1) From Set Timer **Return Value** (Timer Handle):
+      - 3.3.1.1) Drag outward and search: `Set DamageTimerHandle`
+      - 3.3.1.2) Add **Set DamageTimerHandle** node
+   - 3.3.2) Connect Set Timer execution to Set DamageTimerHandle
+   - 3.3.3) Connect Timer Return Value to DamageTimerHandle value
+
+### **4) Compile and Save**
+
+#### 4.1) Save Progress
+   - 4.1.1) Click **Compile** button
+   - 4.1.2) Click **Save** button
+
+---
+
+## **PHASE 5: IMPLEMENT DAMAGE APPLICATION LOGIC**
+
+### **1) Create DealProximityDamage Function**
+
+#### 1.1) Create New Function
+   - 1.1.1) In **My Blueprint** panel, find **Functions** section
+   - 1.1.2) Click **+ (Plus)** next to Functions
+   - 1.1.3) Name: `DealProximityDamage`
+   - 1.1.4) Press **Enter**
+
+### **2) Check If Still Active**
+
+#### 2.1) Add Branch for Active Check
+   - 2.1.1) From function entry execution pin:
+      - 2.1.1.1) Drag outward and search: `Branch`
+      - 2.1.1.2) Add **Branch** node
+   - 2.1.2) Drag **IsActive** getter onto graph
+   - 2.1.3) Connect IsActive to Branch **Condition**
+   - 2.1.4) From Branch **False**: Leave disconnected (abort if not active)
+
+### **3) Validate Player Reference**
+
+#### 3.1) Check Player Valid
+   - 3.1.1) From Branch **True** execution:
+      - 3.1.1.1) Drag **PlayerRef** getter onto graph
+      - 3.1.1.2) Add **Is Valid** node
+      - 3.1.1.3) Add **Branch** node
+   - 3.1.2) Connect PlayerRef to Is Valid input
+   - 3.1.3) Connect Is Valid Return Value to Branch Condition
+   - 3.1.4) From Branch **False**: Leave disconnected
+
+### **4) Get Player Location**
+
+#### 4.1) Get Actor Location
+   - 4.1.1) From Section 3.1 Branch **True** execution:
+      - 4.1.1.1) Drag **PlayerRef** getter onto graph
+      - 4.1.1.2) From PlayerRef, add **Get Actor Location** node
+
+### **5) Find Enemies in Range**
+
+#### 5.1) Create Sphere Overlap
+   - 5.1.1) From Get Actor Location node (continue execution flow):
+      - 5.1.1.1) Drag outward and search: `Sphere Overlap Actors`
+      - 5.1.1.2) Add **Sphere Overlap Actors** node
+   - 5.1.2) Connect execution
+   - 5.1.3) Configure Sphere Overlap:
+      - 5.1.3.1) **World Context Object**: Right-click on pin, select **Get a Reference to Self**
+      - 5.1.3.2) **Sphere Pos**: Connect Get Actor Location **Return Value**
+      - 5.1.3.3) **Sphere Radius**: Connect **DamageRadius** getter
+      - 5.1.3.4) **Object Types**: Click to add:
+         - 5.1.3.4.1) Add `Pawn`
+      - 5.1.3.5) **Actor Class Filter**: Select `Character`
+      - 5.1.3.6) **Actors to Ignore**: Create array with:
+         - 5.1.3.6.1) **PlayerRef** (ignore self)
+         - 5.1.3.6.2) **FatherRef** (ignore father)
+
+### **6) Loop Through Detected Actors**
+
+#### 6.1) Add For Each Loop
+   - 6.1.1) From Sphere Overlap execution:
+      - 6.1.1.1) Drag outward and search: `For Each Loop`
+      - 6.1.1.2) Add **For Each Loop** node
+   - 6.1.2) Connect execution
+   - 6.1.3) Connect Sphere Overlap **Out Actors** array to For Each **Array** input
+
+### **7) Get Source ASC for Effect Application**
+
+#### 7.1) Get Father ASC (Source)
+   - 7.1.1) Drag **FatherRef** getter onto graph
+   - 7.1.2) From FatherRef:
+      - 7.1.2.1) Drag outward and search: `Get Ability System Component`
+      - 7.1.2.2) Add **Get Ability System Component** node
+
+### **8) Apply Damage with SetByCaller**
+
+#### 8.1) Get Target ASC
+   - 8.1.1) From For Each **Array Element** pin:
+      - 8.1.1.1) Drag outward and search: `Get Ability System Component`
+      - 8.1.1.2) Add **Get Ability System Component** node (Target)
+
+#### 8.2) Validate Target Has ASC
+   - 8.2.1) From For Each **Loop Body** execution:
+      - 8.2.1.1) Add **Is Valid** node
+      - 8.2.1.2) Add **Branch** node
+   - 8.2.2) Connect Target ASC Return Value to Is Valid input
+   - 8.2.3) Connect Is Valid Return Value to Branch Condition
+   - 8.2.4) From Branch **False**: Leave disconnected (skip actor)
+
+#### 8.3) Make Outgoing Gameplay Effect Spec
+   - 8.3.1) From Branch **True** execution:
+      - 8.3.1.1) Drag outward and search: `Make Outgoing Spec`
+      - 8.3.1.2) Add **Make Outgoing Spec** node
+   - 8.3.2) Connect execution
+   - 8.3.3) Configure:
+      - 8.3.3.1) **Target**: Connect Father ASC (Source from step 7.1)
+      - 8.3.3.2) **Gameplay Effect Class**: Select `GE_ProximityDamage`
+      - 8.3.3.3) **Level**: `1.0`
+
+#### 8.4) Assign SetByCaller Damage Value
+   - 8.4.1) From Make Outgoing Spec execution:
+      - 8.4.1.1) Drag from **Return Value** (Spec Handle)
+      - 8.4.1.2) Search: `Assign Tag Set By Caller Magnitude`
+      - 8.4.1.3) Add **Assign Tag Set By Caller Magnitude** node
+   - 8.4.2) Connect execution
+   - 8.4.3) Configure:
+      - 8.4.3.1) **Spec Handle**: Already connected from Make Outgoing Spec
+      - 8.4.3.2) **Data Tag**: Click dropdown, search and select `Data.Damage.ProximityStrike`
+      - 8.4.3.3) **Magnitude**: Connect **DamagePerTick** getter
+
+#### 8.5) Apply Gameplay Effect Spec to Target
+   - 8.5.1) From Assign Tag Set By Caller execution:
+      - 8.5.1.1) Drag outward and search: `Apply Gameplay Effect Spec to Target`
+      - 8.5.1.2) Add **Apply Gameplay Effect Spec to Target** node
+   - 8.5.2) Connect execution
+   - 8.5.3) Configure:
+      - 8.5.3.1) **Target**: Connect Target ASC (from step 8.1)
+      - 8.5.3.2) **Spec Handle**: Connect from Assign Tag Set By Caller **Return Value**
+
+### **9) Apply Knockback to Each Enemy**
+
+#### 9.1) Calculate Knockback Direction
+   - 9.1.1) From For Each **Array Element** pin:
+      - 9.1.1.1) Drag outward and search: `Get Actor Location`
+      - 9.1.1.2) Add **Get Actor Location** node (for enemy position)
+
+#### 9.2) Calculate Direction Away from Player
+   - 9.2.1) Add **Vector - Vector** (Subtract) node
+   - 9.2.2) Connect:
+      - 9.2.2.1) Enemy Location to **A** input
+      - 9.2.2.2) Player Location (from step 4.1) to **B** input
+
+#### 9.3) Normalize Direction
+   - 9.3.1) From Subtract Return Value:
+      - 9.3.1.1) Drag outward and search: `Normalize`
+      - 9.3.1.2) Add **Normalize** node
+
+#### 9.4) Scale by Knockback Force
+   - 9.4.1) Add **Vector * Float** (Multiply) node
+   - 9.4.2) Connect:
+      - 9.4.2.1) Normalize Return Value to vector input
+      - 9.4.2.2) **KnockbackForce** getter to float input
+
+#### 9.4) Cast to Character (Required)
+   - 9.4.1) From For Each **Array Element**:
+      - 9.4.1.1) Drag outward and search: `Cast To Character`
+      - 9.4.1.2) Add **Cast To Character** node
+   - 9.4.2) Array Element is AActor* but Launch Character requires ACharacter*
+
+#### 9.5) Apply Knockback Impulse
+   - 9.5.1) From Apply Gameplay Effect Spec execution:
+      - 9.5.1.1) Connect to Cast To Character execution input
+   - 9.5.2) From Cast success execution pin:
+      - 9.5.2.1) Search: `Launch Character`
+      - 9.5.2.2) Add **Launch Character** node
+   - 9.5.3) Configure:
+      - 9.5.3.1) **Target**: Connect **As Character** pin from Cast node
+      - 9.5.3.2) **Launch Velocity**: Connect scaled knockback direction
+      - 9.5.3.3) **XY Override**: Unchecked
+      - 9.5.3.4) **Z Override**: Unchecked
+
+### **10) Compile and Save**
+
+#### 10.1) Save Function
+   - 10.1.1) Click **Compile** button
+   - 10.1.2) Click **Save** button
+
+---
+
+## **PHASE 6: IMPLEMENT CLEANUP LOGIC**
+
+### **1) Return to Event Graph**
+
+#### 1.1) Open Event Graph
+   - 1.1.1) Click **Event Graph** tab
+
+### **2) Add Event OnEndAbility**
+
+#### 2.1) Add Event Node
+   - 2.1.1) Right-click in Event Graph
+   - 2.1.2) Search: `Event On End Ability`
+   - 2.1.3) Add **Event OnEndAbility** node
+
+### **3) Set IsActive to False**
+
+#### 3.1) Clear Active Flag
+   - 3.1.1) From Event OnEndAbility execution:
+      - 3.1.1.1) Drag outward and search: `Set IsActive`
+      - 3.1.1.2) Add **Set IsActive** node
+   - 3.1.2) Connect execution
+   - 3.1.3) Uncheck **Is Active** (false)
+
+### **4) Clear Timer**
+
+#### 4.1) Clear and Invalidate Timer
+   - 4.1.1) From Set IsActive execution:
+      - 4.1.1.1) Drag outward and search: `Clear and Invalidate Timer by Handle`
+      - 4.1.1.2) Add **Clear and Invalidate Timer by Handle** node
+   - 4.1.2) Connect execution
+   - 4.1.3) Connect **DamageTimerHandle** getter to Handle input
+
+### **5) Clear References**
+
+#### 5.1) Clear PlayerRef
+   - 5.1.1) From Clear Timer execution:
+      - 5.1.1.1) Drag outward and search: `Set PlayerRef`
+      - 5.1.1.2) Add **Set PlayerRef** node
+   - 5.1.2) Connect execution
+   - 5.1.3) Leave value as **None** (default null)
+
+#### 5.2) Clear FatherRef
+   - 5.2.1) From Set PlayerRef execution:
+      - 5.2.1.1) Drag outward and search: `Set FatherRef`
+      - 5.2.1.2) Add **Set FatherRef** node
+   - 5.2.2) Connect execution
+   - 5.2.3) Leave value as **None** (default null)
+
+#### 5.3) Clear PlayerASC
+   - 5.3.1) From Set FatherRef execution:
+      - 5.3.1.1) Drag outward and search: `Set PlayerASC`
+      - 5.3.1.2) Add **Set PlayerASC** node
+   - 5.3.2) Connect execution
+   - 5.3.3) Leave value as **None** (default null)
+
+### **6) Compile and Save**
+
+#### 6.1) Save All Changes
+   - 6.1.1) Click **Compile** button
+   - 6.1.2) Click **Save** button
+
+---
+
+## **PHASE 7: INTEGRATION WITH BP_FATHERSYMBIOTEFORM**
+
+### **1) Open Symbiote EquippableItem**
+
+#### 1.1) Navigate to EquippableItem
+   - 1.1.1) In Content Browser, go to `/Content/FatherCompanion/Forms/`
+   - 1.1.2) Locate **BP_FatherSymbioteForm**
+   - 1.1.3) Double-click to open
+
+### **2) Add GA_ProximityStrike to Abilities Array**
+
+#### 2.1) Open Class Defaults
+   - 2.1.1) Click **Class Defaults** button in toolbar
+
+#### 2.2) Find Abilities Property
+   - 2.2.1) In Details panel, find **Abilities** category
+   - 2.2.2) Locate **Abilities** array property
+   - 2.2.3) Click arrow to expand array
+
+#### 2.3) Add New Ability Entry
+   - 2.3.1) Click **+ (Plus)** button next to array name
+   - 2.3.2) New element appears in array
+   - 2.3.3) Expand the new element
+
+#### 2.4) Configure Ability Entry
+   - 2.4.1) Find **Ability Class** dropdown
+   - 2.4.2) Click dropdown
+   - 2.4.3) Search: `GA_ProximityStrike`
+   - 2.4.4) Select: **GA_ProximityStrike**
+
+### **3) Compile and Save**
+
+#### 3.1) Compile Blueprint
+   - 3.1.1) Click **Compile** button in toolbar
+
+#### 3.2) Save Blueprint
+   - 3.2.1) Click **Save** button in toolbar
+
+---
+
+## **PHASE 8: UPDATE GA_FATHERSYMBIOTE FOR ACTIVATION**
+
+### **1) Open GA_FatherSymbiote**
+
+#### 1.1) Navigate to Ability
+   - 1.1.1) In Content Browser, go to `/Content/FatherCompanion/Symbiote/Abilities/`
+   - 1.1.2) Locate **GA_FatherSymbiote**
+   - 1.1.3) Double-click to open
+
+### **2) Add ProximityStrike Activation**
+
+#### 2.1) Find End of Merge Logic
+   - 2.1.1) In Event Graph, locate the last node after merge completes
+   - 2.1.2) This is after all state variables set and effects applied
+
+#### 2.2) Add Try Activate Ability By Class Node
+   - 2.2.1) From last merge logic execution:
+      - 2.2.1.1) Drag outward and search: `Try Activate Ability By Class`
+      - 2.2.1.2) Add **Try Activate Ability By Class** node
+   - 2.2.2) Connect execution
+
+#### 2.3) Configure Activation
+   - 2.3.1) Find **Ability Class** dropdown
+   - 2.3.2) Click dropdown
+   - 2.3.3) Search: `GA_ProximityStrike`
+   - 2.3.4) Select: **GA_ProximityStrike**
+   - 2.3.5) **Allow Remote Activation**: Unchecked (false)
+
+### **3) Compile and Save**
+
+#### 3.1) Compile Blueprint
+   - 3.1.1) Click **Compile** button
+
+#### 3.2) Save Blueprint
+   - 3.2.1) Click **Save** button
+
+---
+
+## **CHANGELOG**
+
+### **VERSION 2.7 - Blueprint Node Consistency Fixes**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Sphere Overlap | Added World Context Object connection (required pin) |
+| Cast to Character | Made Cast to Character explicitly required before Launch Character with proper execution flow (Array Element is AActor*, Launch Character requires ACharacter*) |
+
+---
+
+### **VERSION 2.6 - Reference Updates**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Narrative Pro | Updated version reference from v2.1 to v2.2 |
+
+---
+
+### **VERSION 2.5 - Tag Creation Simplification**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Tag Creation | Simplified PHASE 1 - replaced detailed step-by-step instructions with simple tag list table |
+
+---
+
+### **VERSION 2.3 - Technical Reference v4.5 Alignment**
+
+**Release Date:** December 2025
+
+| Change Type | Description |
+|-------------|-------------|
+| Father.State.Recruited | Added to Activation Required Tags (3 elements total: Symbiote, Merged, Recruited) |
+| PlayerASC Variable | Added NarrativeAbilitySystemComponent reference for validation (PHASE 4, Section 1.8) |
+| PlayerRef Validation | Added Branch node with early exit pattern after storing reference (PHASE 4, Section 2.8) |
+| PlayerASC Validation | Added Get ASC -> Cast to NarrativeASC -> Store -> Validate pattern (PHASE 4, Sections 2.9-2.13) |
+| Reference Clearing | Added Set PlayerRef/FatherRef/PlayerASC to None in OnEndAbility (PHASE 6, Section 5) |
+| Event OnEndAbility | Replaced Event On Ability Ended with Event OnEndAbility for consistency (PHASE 6, Section 2) |
+| Form Duration | Updated from 15 to 30 seconds per system design document |
+| Quick Reference | Updated with Handle Variables table, EndAbility Cleanup Flow, Related Documents |
+| Related Documents | Updated version references (v4.5, v3.5, v1.3) |
+
+---
+
+### **VERSION 2.2 - Activation Method and SetByCaller Pattern**
+
+**Release Date:** November 2025
+
+| Change Type | Description |
+|-------------|-------------|
+| Ability Tag Structure | Changed from Ability.Father.ProximityStrike to Ability.Father.Symbiote.ProximityStrike |
+| Activation Method | Changed from bActivateAbilityOnGranted = true to false with explicit activation |
+| Net Execution Policy | Changed from Local Predicted to Server Only |
+| Damage Pattern | Changed from Scalable Float to SetByCaller with Data.Damage.ProximityStrike tag |
+| PHASE 8 Added | Documents TryActivateAbilityByClass integration in GA_FatherSymbiote |
+| Activation/Deactivation Flows | Added tables documenting complete lifecycle |
+| SetByCaller Data Tag | Changed from Data.Damage.Proximity to Data.Damage.ProximityStrike |
+
+---
+
+### **VERSION 2.1 - Damage System Correction**
+
+**Release Date:** November 2025
+
+| Change Type | Description |
+|-------------|-------------|
+| Damage System | Fixed to use NarrativeDamageExecCalc |
+| Cancelled Ability References | Removed |
+| Granting Method | Updated to EquippableItem |
+| bActivateAbilityOnGranted | Added configuration |
+| Instance Editable | Added to config variables |
+| UTF-8 Cleanup | Replaced special characters with ASCII equivalents |
+| GE_ProximityKnockback | Removed |
+| Damage Flow | Added table |
+
+---
+
+### **VERSION 2.0 - Symbiote Form Implementation**
+
+**Release Date:** 2025
+
+| Change Type | Description |
+|-------------|-------------|
+| Initial Implementation | Created for Symbiote form (full body merge berserker state) |
+| Passive Activation | Enabled |
+| AOE Damage | Every 0.5 seconds |
+| Damage Per Tick | 40 (base) |
+| Damage Radius | 350 units |
+| Max Targets | Unlimited |
+| Knockback Effect | On each tick |
+
+---
+
+## **QUICK REFERENCE**
+
+### **Tag Configuration Summary**
+
+| Property | Tags |
+|----------|------|
+| Ability Tags | `Ability.Father.Symbiote.ProximityStrike` |
+| Activation Required | `Father.Form.Symbiote`, `Father.State.Merged`, `Father.State.Recruited` |
+| Activation Owned | `Father.State.ProximityActive` |
+| Activation Blocked | `Father.State.ProximityActive` |
+| InputTag | None (passive) |
+
+### **Variable Summary**
+
+| Variable | Type | Category | Instance Editable | Default | Purpose |
+|----------|------|----------|-------------------|---------|---------|
+| DamagePerTick | Float | Proximity Config | Yes | 40.0 | Base damage per tick (SetByCaller) |
+| TickRate | Float | Proximity Config | Yes | 0.5 | Seconds between damage ticks |
+| DamageRadius | Float | Proximity Config | Yes | 350.0 | AOE radius in units |
+| KnockbackForce | Float | Proximity Config | Yes | 200.0 | Push force on enemies |
+| PlayerRef | Actor Ref | Runtime | No | None | Merged player reference |
+| FatherRef | Actor Ref | Runtime | No | None | Father companion reference |
+| PlayerASC | NarrativeAbilitySystemComponent Ref | Runtime | No | None | Player ASC for validation |
+| DamageTimerHandle | Timer Handle | Runtime | No | None | Looping timer reference |
+| IsActive | Boolean | Runtime | No | false | Ability active state |
+
+### **Gameplay Effect Summary**
+
+| Effect | Type | Execution Class | SetByCaller Tag |
+|--------|------|-----------------|-----------------|
+| GE_ProximityDamage | Instant | NarrativeDamageExecCalc | Data.Damage.ProximityStrike |
+
+### **Damage Calculation**
+
+| Parameter | Value |
+|-----------|-------|
+| Base Damage Per Tick | 40 (from DamagePerTick variable) |
+| Tick Rate | 0.5 seconds |
+| Ticks Per Second | 2 |
+| Base DPS (per enemy) | 80 |
+| Total Duration | 30 seconds |
+| Total Ticks | 60 |
+| Total Base Damage (per enemy) | 2,400 |
+| Actual Damage | (DamagePerTick * AttackMultiplier) / DefenseMultiplier |
+
+### **Replication Summary**
+
+| Property | Value |
+|----------|-------|
+| Instancing Policy | Instanced Per Actor |
+| Replication Policy | Replicate |
+| Net Execution Policy | Server Only |
+| bActivateAbilityOnGranted | false |
+
+### **Blanket Cancel Integration**
+
+| Form Ability | Cancel Abilities with Tag | Cancels GA_ProximityStrike? |
+|--------------|---------------------------|----------------------------|
+| GA_FatherCrawler | Ability.Father.Symbiote | Yes (hierarchical match) |
+| GA_FatherArmor | Ability.Father.Symbiote | Yes (hierarchical match) |
+| GA_FatherExoskeleton | Ability.Father.Symbiote | Yes (hierarchical match) |
+| GA_FatherEngineer | Ability.Father.Symbiote | Yes (hierarchical match) |
+
+### **EndAbility Cleanup Flow**
+
+| Step | Action |
+|------|--------|
+| 1 | Event OnEndAbility fires |
+| 2 | Set IsActive to false |
+| 3 | Clear and Invalidate Timer by Handle (DamageTimerHandle) |
+| 4 | Set PlayerRef to None |
+| 5 | Set FatherRef to None |
+| 6 | Set PlayerASC to None |
+
+### **Related Documents**
+
+| Document | Version | Purpose |
+|----------|---------|---------|
+| Father_Companion_Technical_Reference | v4.5 | Cross-actor patterns, cleanup architecture |
+| DefaultGameplayTags_FatherCompanion | v3.5 | Tag definitions |
+| Father_Companion_System_Setup_Guide | v1.3 | BP_FatherCompanion setup |
+| GA_FatherSymbiote_Implementation_Guide | v2.9 | Form ability that activates ProximityStrike |
+
+---
+
+**END OF GA_PROXIMITYSTRIKE IMPLEMENTATION GUIDE v2.7**
+
+**Symbiote Form - Berserker AOE Damage Aura**
+
+**Unreal Engine 5.6 + Narrative Pro v2.2**
+
+**Blueprint-Only Implementation**

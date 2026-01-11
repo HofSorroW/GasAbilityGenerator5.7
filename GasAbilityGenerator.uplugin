@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 263,
+	"VersionName": "2.6.3",
+	"FriendlyName": "GAS Ability Generator",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v2.6.3: Tags configured on existing GA assets during SKIP.",
+	"Category": "Editor",
+	"CreatedBy": "Erdem - Second Chance RPG",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "GasAbilityGenerator",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
