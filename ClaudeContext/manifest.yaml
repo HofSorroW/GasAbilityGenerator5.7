@@ -1842,10 +1842,10 @@ gameplay_abilities:
   # COMBAT ABILITIES (4)
   # ---------------------------------------------------------------------------
   
-  # GA_FatherAttack - Melee Attack
+  # GA_FatherAttack - Melee Attack (uses GA_Melee_Unarmed for motion warping)
   - name: GA_FatherAttack
     folder: Abilities/Combat
-    parent_class: NarrativeGameplayAbility
+    parent_class: GA_Melee_Unarmed
     instancing_policy: InstancedPerActor
     net_execution_policy: ServerOnly
     cooldown_gameplay_effect_class: GE_AttackCooldown
@@ -3619,12 +3619,12 @@ gameplay_abilities:
         - from: [GetTimerHandle, DormantTimerHandle]
           to: [ClearTimer, Handle]
 
-  # GA_FatherRifle - Rifle Weapon Form
+  # GA_FatherRifle - Rifle Weapon Form (NPC-owned form ability)
   - name: GA_FatherRifle
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
-    net_execution_policy: LocalPredicted
+    net_execution_policy: ServerOnly
     tags:
       ability_tags:
         - Ability.Father.Rifle
@@ -3905,12 +3905,12 @@ gameplay_abilities:
         - from: [GetFatherRef_End, FatherRef]
           to: [EnableCollision, Target]
 
-  # GA_FatherSword - Sword Weapon Form
+  # GA_FatherSword - Sword Weapon Form (NPC-owned form ability)
   - name: GA_FatherSword
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
-    net_execution_policy: LocalPredicted
+    net_execution_policy: ServerOnly
     tags:
       ability_tags:
         - Ability.Father.Sword

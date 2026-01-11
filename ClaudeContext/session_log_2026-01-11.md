@@ -130,6 +130,25 @@ Executed all action items from the consistency report.
 
 ---
 
+## Fixed: Manifest Consistency with Technical Reference
+
+### Issues Found
+1. **GA_FatherAttack** - Had wrong parent class `NarrativeGameplayAbility`, should be `GA_Melee_Unarmed` (for motion warping support)
+2. **GA_FatherRifle** - Had `LocalPredicted`, should be `ServerOnly` (NPC-owned form ability)
+3. **GA_FatherSword** - Had `LocalPredicted`, should be `ServerOnly` (NPC-owned form ability)
+
+### Fixes Applied
+- Changed GA_FatherAttack parent_class: `NarrativeGameplayAbility` → `GA_Melee_Unarmed`
+- Changed GA_FatherRifle net_execution_policy: `LocalPredicted` → `ServerOnly`
+- Changed GA_FatherSword net_execution_policy: `LocalPredicted` → `ServerOnly`
+
+### Validation
+- All form abilities (NPC-owned) now use `ServerOnly`
+- All player action abilities (Dash, Sprint) correctly use `LocalPredicted`
+- GA_FatherAttack now inherits from GA_Melee_Unarmed for motion warping
+
+---
+
 ## Potential Future Tasks
 - Test Niagara generator with sample manifest
 - Update GasAbilityGenerator.uplugin with plugin dependencies (to fix build warnings)
