@@ -2,7 +2,7 @@
 # Version: 3.0.1
 # Engine: Unreal Engine 5.6
 # Plugin: Narrative Pro v2.2
-# Total Tags: 192
+# Total Tags: 198
 # Total Assets: 143 (142 generated + 1 manual)
 # Event Graph Support: ENABLED
 # NPC Systems: Warden Husk, Guard Formation, Possessed Exploder, Support Buffer, Biomechanical Detachment, Gatherer Scout, Stalker Random Aggression
@@ -240,7 +240,7 @@ tags:
   - tag: Event.Combat.Backstab
     comment: Backstab combat event
 
-  # GameplayCue Tags (7)
+  # GameplayCue Tags (13)
   - tag: GameplayCue.Father.Backstab
     comment: Backstab VFX/SFX cue
   - tag: GameplayCue.Father.FormChange
@@ -255,6 +255,18 @@ tags:
     comment: VFX and SFX for Exoskeleton sprint ability
   - tag: GameplayCue.Father.Stealth
     comment: Stealth VFX/SFX cue
+  - tag: GameplayCue.Father.TakeDamage
+    comment: Base father damage feedback VFX
+  - tag: GameplayCue.Father.Attack.Hit
+    comment: Attack impact VFX/SFX
+  - tag: GameplayCue.Father.ProximityStrike
+    comment: Symbiote aura pulse VFX
+  - tag: GameplayCue.Father.ElectricTrap
+    comment: Engineer trap field VFX
+  - tag: GameplayCue.Father.TurretFire
+    comment: Engineer turret muzzle flash VFX
+  - tag: GameplayCue.Father.Death
+    comment: Death effect VFX/SFX
 
   # Form Tags (7)
   - tag: Father.Form.Armor
@@ -4548,6 +4560,15 @@ widget_blueprints:
       - name: IsOpen
         type: Bool
         default: false
+
+# ============================================================================
+# NIAGARA SYSTEMS (1)
+# ============================================================================
+niagara_systems:
+  - name: NS_FatherFormTransition
+    folder: VFX
+    # Form transition VFX - spawned during 5s form change animation
+    # Used by GA_FatherExoskeleton, GA_FatherArmor, etc. during transitions
 
 # ============================================================================
 # ANIMATION ASSETS (7)
