@@ -5165,20 +5165,23 @@ warden_actor_blueprints:
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Log spawn (HandleDeath override needed for Core spawn)
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
+            parameters:
+              InString: "WardenHusk Active - HandleDeath spawns Core"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [PrintReady, Exec]
 
   - name: BP_WardenCore
     folder: Enemies/Warden
@@ -5191,21 +5194,28 @@ warden_actor_blueprints:
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
+        - id: SelfRef
+          type: Self
+          position: [100, 100]
         - id: GetCharMovement
           type: PropertyGet
           properties:
             property_name: CharacterMovement
             target_class: Character
-          position: [200, 0]
+          position: [300, 0]
         - id: SetMovementMode
           type: CallFunction
           properties:
             function: SetMovementMode
             class: CharacterMovementComponent
-          position: [500, 0]
+            parameters:
+              NewMovementMode: Flying
+          position: [600, 0]
       connections:
         - from: [Event_BeginPlay, Then]
           to: [SetMovementMode, Exec]
+        - from: [SelfRef, Self]
+          to: [GetCharMovement, Target]
         - from: [GetCharMovement, CharacterMovement]
           to: [SetMovementMode, Target]
 
@@ -5322,21 +5332,28 @@ possessed_exploder_actor_blueprints:
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
+        - id: SelfRef
+          type: Self
+          position: [100, 100]
         - id: GetCharMovement
           type: PropertyGet
           properties:
             property_name: CharacterMovement
             target_class: Character
-          position: [200, 0]
+          position: [300, 0]
         - id: SetMovementMode
           type: CallFunction
           properties:
             function: SetMovementMode
             class: CharacterMovementComponent
-          position: [500, 0]
+            parameters:
+              NewMovementMode: Flying
+          position: [600, 0]
       connections:
         - from: [Event_BeginPlay, Then]
           to: [SetMovementMode, Exec]
+        - from: [SelfRef, Self]
+          to: [GetCharMovement, Target]
         - from: [GetCharMovement, CharacterMovement]
           to: [SetMovementMode, Target]
 
@@ -5390,20 +5407,23 @@ support_buffer_actor_blueprints:
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Log spawn (healing via BTS_HealNearbyAllies service)
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
+            parameters:
+              InString: "SupportBuffer Active - Healing via service"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [PrintReady, Exec]
 
 support_buffer_bt_services:
   - name: BTS_HealNearbyAllies
@@ -5451,40 +5471,46 @@ biomech_actor_blueprints:
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Log spawn (HandleDeath override needed for Creature spawn)
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
+            parameters:
+              InString: "BiomechHost Active - HandleDeath spawns Creature"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [PrintReady, Exec]
 
   - name: BP_BiomechCreature
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Log spawn (spawned from BiomechHost death)
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
+            parameters:
+              InString: "BiomechCreature Detached - Combat mode"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [PrintReady, Exec]
 
 # ============================================================================
 # NPC SYSTEMS - GATHERER SCOUT
@@ -5505,40 +5531,46 @@ gatherer_actor_blueprints:
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Log spawn (alert behavior via GoalGenerator_Alert)
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
+            parameters:
+              InString: "GathererScout Active - Alert via GoalGenerator"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [PrintReady, Exec]
 
   - name: BP_Reinforcement
     folder: Enemies/Gatherer
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Log spawn (spawned by GathererScout alert)
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
+            parameters:
+              InString: "Reinforcement Deployed - Moving to alert location"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [PrintReady, Exec]
 
 gatherer_goals:
   - name: Goal_Alert
@@ -5592,20 +5624,23 @@ stalker_actor_blueprints:
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Log spawn (behavior via GoalGenerator_RandomAggression)
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
+            parameters:
+              InString: "ReturnedStalker Active - Random aggression mode"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [PrintReady, Exec]
 
 stalker_goal_generators:
   - name: GoalGenerator_RandomAggression
