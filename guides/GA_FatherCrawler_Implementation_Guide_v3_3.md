@@ -89,7 +89,7 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
 |-----------|--------|--------|
 | Armor | Select Crawler in T wheel | GA_FatherCrawler activates, cancels GA_FatherArmor |
 | Exoskeleton | Select Crawler in T wheel | GA_FatherCrawler activates, cancels GA_FatherExoskeleton |
-| Symbiote | Not allowed during 30s lock | State.Father.SymbioteLocked blocks activation |
+| Symbiote | Not allowed during 30s lock | Father.State.SymbioteLocked blocks activation |
 | Engineer | Select Crawler in T wheel | GA_FatherCrawler activates, cancels GA_FatherEngineer |
 
 ### **Crawler Activation Flow (Initial Spawn)**
@@ -115,7 +115,7 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
 | 3 | If blocked: nothing happens, no cooldown | - |
 | 4 | If allowed: GA_FatherCrawler activates | - |
 | 5 | Activation Owned Tags granted | Father.Form.Crawler, Father.State.Detached |
-| 6 | Add State.Father.Transitioning tag | - |
+| 6 | Add Father.State.Transitioning tag | - |
 | 7 | Apply GE_Invulnerable to father | - |
 | 8 | Cancel Abilities with Tag cancels old form | - |
 | 9 | Old form EndAbility restores stats | Instant |
@@ -123,7 +123,7 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
 | 11 | Wait for VFX duration | 5s |
 | 12 | Detach father from player | - |
 | 13 | Set CurrentForm = Crawler, IsAttached = False | - |
-| 14 | Remove State.Father.Transitioning tag | - |
+| 14 | Remove Father.State.Transitioning tag | - |
 | 15 | Remove GE_Invulnerable | - |
 | 16 | Apply Cooldown.Father.FormChange (15s) | - |
 | 17 | End Ability | - |
@@ -159,8 +159,8 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
 | Father.Form.Crawler | State | Activation Owned Tag |
 | Father.State.Detached | State | Activation Owned Tag |
 | Father.State.Alive | State | Activation required tag |
-| State.Father.Transitioning | State | Activation blocked tag (during 5s VFX) |
-| State.Father.SymbioteLocked | State | Activation blocked tag (during 30s Symbiote) |
+| Father.State.Transitioning | State | Activation blocked tag (during 5s VFX) |
+| Father.State.SymbioteLocked | State | Activation blocked tag (during 30s Symbiote) |
 | Cooldown.Father.FormChange | Cooldown | 15s shared form cooldown |
 
 ### **Required Effects**
@@ -186,8 +186,8 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
 |----------|---------|
 | Ability.Father.Crawler | Father default crawler form ability - follow and attack mode |
 | Father.State.Alive | Father is alive and can change forms |
-| State.Father.Transitioning | Father is in form transition animation (5s) |
-| State.Father.SymbioteLocked | Form changes blocked during 30s Symbiote duration |
+| Father.State.Transitioning | Father is in form transition animation (5s) |
+| Father.State.SymbioteLocked | Form changes blocked during 30s Symbiote duration |
 | Cooldown.Father.FormChange | 15s shared cooldown for form changes |
 
 ### **Verify Existing Tags**
@@ -197,7 +197,7 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
 | Father.Form.Crawler | Father is in Crawler form |
 | Father.State.Detached | Father is detached from player |
 | Father.State.Recruited | Father must be recruited (Activation Required) |
-| State.Father.Dormant | Blocked after sacrifice |
+| Father.State.Dormant | Blocked after sacrifice |
 
 ---
 
@@ -293,9 +293,9 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
    - 5.1.2) Click **+** next to array 3 times (for 3 tags)
 
 #### 5.2) Add Blocked Tags
-   - 5.2.1) First element: `State.Father.Dormant`
-   - 5.2.2) Second element: `State.Father.Transitioning`
-   - 5.2.3) Third element: `State.Father.SymbioteLocked`
+   - 5.2.1) First element: `Father.State.Dormant`
+   - 5.2.2) Second element: `Father.State.Transitioning`
+   - 5.2.3) Third element: `Father.State.SymbioteLocked`
 
 ### **6) Configure Activation Owned Tags**
 
@@ -488,7 +488,7 @@ This section covers the extended logic when switching TO Crawler from another fo
    - 2.2.1) Drag from **Get Ability System Component** -> **Return Value**
    - 2.2.2) Search: `Add Loose Gameplay Tag`
    - 2.2.3) Select node
-   - 2.2.4) In **Gameplay Tag** field, set: `State.Father.Transitioning`
+   - 2.2.4) In **Gameplay Tag** field, set: `Father.State.Transitioning`
 
 ### **3) Apply Invulnerability**
 
@@ -576,7 +576,7 @@ This section covers the extended logic when switching TO Crawler from another fo
    - 9.1.2) Search: `Remove Loose Gameplay Tag`
    - 9.1.3) Select node
    - 9.1.4) Connect ASC to **Target**
-   - 9.1.5) Set **Gameplay Tag**: `State.Father.Transitioning`
+   - 9.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
 
 ### **10) Remove Invulnerability**
 
@@ -698,9 +698,9 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 | **Activation Owned** | Father.State.Detached | Attachment state tag |
 | **Activation Required** | Father.State.Alive | Father must be alive |
 | **Activation Required** | Father.State.Recruited | Father must be recruited |
-| **Activation Blocked** | State.Father.Dormant | Blocked after sacrifice |
-| **Activation Blocked** | State.Father.Transitioning | Blocked during 5s transition |
-| **Activation Blocked** | State.Father.SymbioteLocked | Blocked during 30s Symbiote |
+| **Activation Blocked** | Father.State.Dormant | Blocked after sacrifice |
+| **Activation Blocked** | Father.State.Transitioning | Blocked during 5s transition |
+| **Activation Blocked** | Father.State.SymbioteLocked | Blocked during 30s Symbiote |
 | **Cancel Tag** | Ability.Father.Armor | Cancels Armor form |
 | **Cancel Tag** | Ability.Father.Exoskeleton | Cancels Exoskeleton form |
 | **Cancel Tag** | Ability.Father.Symbiote | Cancels Symbiote form |
@@ -719,7 +719,7 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 | **Input Tag** | None (empty) |
 | **Ability Tags** | Ability.Father.Crawler |
 | **Activation Required Tags** | Father.State.Alive, Father.State.Recruited |
-| **Activation Blocked Tags** | State.Father.Dormant, State.Father.Transitioning, State.Father.SymbioteLocked |
+| **Activation Blocked Tags** | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
 | **Activation Owned Tags** | Father.Form.Crawler, Father.State.Detached |
 | **Cancel Abilities with Tag** | Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Symbiote, Ability.Father.Engineer |
 
@@ -749,7 +749,7 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 | Step | Node | Purpose |
 |------|------|---------|
 | 1-4 | Same as Initial Spawn | Get references, check branch |
-| 5 | Add Loose Gameplay Tag | Add State.Father.Transitioning |
+| 5 | Add Loose Gameplay Tag | Add Father.State.Transitioning |
 | 6 | Apply GE_Invulnerable | Father invulnerable during transition |
 | 7 | Spawn System Attached | Spawn NS_FatherFormTransition VFX |
 | 8 | Delay (5.0s) | Wait for VFX duration |
@@ -757,7 +757,7 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 | 10 | Set Actor Location | Move father behind player |
 | 11 | Set Current Form (Crawler) | Update form variable |
 | 12 | Set Is Attached (false) | Update attachment variable |
-| 13 | Remove Loose Gameplay Tag | Remove State.Father.Transitioning |
+| 13 | Remove Loose Gameplay Tag | Remove Father.State.Transitioning |
 | 14 | Remove GE with Tags | Remove GE_Invulnerable |
 | 15 | Apply GE_FormChangeCooldown | Apply 15s cooldown |
 | 16 | End Ability | Complete ability lifecycle |

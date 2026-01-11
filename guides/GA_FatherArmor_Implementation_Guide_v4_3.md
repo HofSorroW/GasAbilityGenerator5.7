@@ -250,7 +250,7 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| OriginalWalkSpeed | Float | 0.0 | No |
+| OriginalMaxWalkSpeed | Float | 0.0 | No |
 | SpeedPenaltyMultiplier | Float | 0.85 | Yes |
 | ChestSocketName | Name | FatherChestSocket | Yes |
 | bIsFirstActivation | Boolean | True | No |
@@ -454,22 +454,22 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 #### 6.3) Store Original Speed in Variable
 
 ##### 6.3.1) Add Set Variable Node
-   - 6.3.1.1) In **My Blueprint** panel, find **OriginalWalkSpeed** variable
+   - 6.3.1.1) In **My Blueprint** panel, find **OriginalMaxWalkSpeed** variable
    - 6.3.1.2) Hold **Ctrl** key and drag variable to graph
-   - 6.3.1.3) Setter node appears (SET OriginalWalkSpeed)
+   - 6.3.1.3) Setter node appears (SET OriginalMaxWalkSpeed)
    - 6.3.1.4) Position to right of Get Character Movement
 
 ##### 6.3.2) Connect Setter Node
    - 6.3.2.1) From Get Character Movement execution pin
-   - 6.3.2.2) Drag wire to SET OriginalWalkSpeed execution input
+   - 6.3.2.2) Drag wire to SET OriginalMaxWalkSpeed execution input
    - 6.3.2.3) Release to connect execution flow
    - 6.3.2.4) From Get Max Walk Speed **Return Value** pin
-   - 6.3.2.5) Drag wire to SET OriginalWalkSpeed input pin
+   - 6.3.2.5) Drag wire to SET OriginalMaxWalkSpeed input pin
    - 6.3.2.6) Release to connect data flow
 
 ##### 6.3.3) Verify Setter Node Structure
    - 6.3.3.1) White execution input pin (connected to Get Character Movement)
-   - 6.3.3.2) Green **OriginalWalkSpeed** input pin (connected to Get Max Walk Speed)
+   - 6.3.3.2) Green **OriginalMaxWalkSpeed** input pin (connected to Get Max Walk Speed)
    - 6.3.3.3) White execution output pin on right
    - 6.3.3.4) Green output pin (outputs stored value)
 
@@ -478,19 +478,19 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 #### 7.1) Calculate Reduced Speed
 
 ##### 7.1.1) Get Original Speed Variable
-   - 7.1.1.1) In **My Blueprint** panel, find **OriginalWalkSpeed** variable
+   - 7.1.1.1) In **My Blueprint** panel, find **OriginalMaxWalkSpeed** variable
    - 7.1.1.2) Drag variable to graph (without Ctrl for getter)
-   - 7.1.1.3) Getter node appears (GET OriginalWalkSpeed)
+   - 7.1.1.3) Getter node appears (GET OriginalMaxWalkSpeed)
    - 7.1.1.4) Position below SET node
 
 ##### 7.1.2) Create Multiply Node
-   - 7.1.2.1) From GET OriginalWalkSpeed output pin (green)
+   - 7.1.2.1) From GET OriginalMaxWalkSpeed output pin (green)
    - 7.1.2.2) Drag wire to empty space on right
    - 7.1.2.3) Release to open context menu
    - 7.1.2.4) In search box, type: `* float`
    - 7.1.2.5) Select **float * float** (Multiply)
    - 7.1.2.6) Multiply node appears
-   - 7.1.2.7) First input auto-connected to OriginalWalkSpeed
+   - 7.1.2.7) First input auto-connected to OriginalMaxWalkSpeed
 
 ##### 7.1.3) Get Penalty Multiplier Variable
    - 7.1.3.1) In **My Blueprint** panel, find **SpeedPenaltyMultiplier** variable
@@ -501,12 +501,12 @@ Before implementing GA_FatherArmor, ensure the following are complete:
    - 7.1.4.1) From GET SpeedPenaltyMultiplier output pin
    - 7.1.4.2) Drag wire to multiply node second input pin
    - 7.1.4.3) Release to connect
-   - 7.1.4.4) Multiply node now calculates: OriginalWalkSpeed * 0.85
+   - 7.1.4.4) Multiply node now calculates: OriginalMaxWalkSpeed * 0.85
 
 #### 7.2) Set New Walk Speed
 
 ##### 7.2.1) Create Set Max Walk Speed Node
-   - 7.2.1.1) From SET OriginalWalkSpeed execution output pin
+   - 7.2.1.1) From SET OriginalMaxWalkSpeed execution output pin
    - 7.2.1.2) Drag connection wire to right
    - 7.2.1.3) Release to open context menu
    - 7.2.1.4) In search box, type: `Set Max Walk Speed`
@@ -525,7 +525,7 @@ Before implementing GA_FatherArmor, ensure the following are complete:
    - 7.2.3.4) New speed value now connected (85% of original)
 
 ##### 7.2.4) Verify Set Max Walk Speed Structure
-   - 7.2.4.1) White execution input pin (connected to SET OriginalWalkSpeed)
+   - 7.2.4.1) White execution input pin (connected to SET OriginalMaxWalkSpeed)
    - 7.2.4.2) Blue **Target** pin (connected to Character Movement)
    - 7.2.4.3) Green **Max Walk Speed** pin (connected to multiply result)
    - 7.2.4.4) White execution output pin on right
@@ -771,7 +771,7 @@ This section covers the extended logic when switching TO Armor from another form
    - 1.2.1) Drag from **Get Ability System Component** -> **Return Value**
    - 1.2.2) Search: `Add Loose Gameplay Tag`
    - 1.2.3) Select node
-   - 1.2.4) In **Gameplay Tag** field, set: `State.Father.Transitioning`
+   - 1.2.4) In **Gameplay Tag** field, set: `Father.State.Transitioning`
 
 ### **2) Apply Invulnerability**
 
@@ -824,14 +824,14 @@ This section covers the extended logic when switching TO Armor from another form
    - 6.2.3) Select node
 
 #### 6.3) Store in Variable
-   - 6.3.1) Drag **OriginalWalkSpeed** variable into graph (SET)
-   - 6.3.2) Connect **Get Max Walk Speed** -> **Return Value** to **OriginalWalkSpeed**
+   - 6.3.1) Drag **OriginalMaxWalkSpeed** variable into graph (SET)
+   - 6.3.2) Connect **Get Max Walk Speed** -> **Return Value** to **OriginalMaxWalkSpeed**
 
 ### **7) Apply Movement Speed Penalty**
 
 #### 7.1) Calculate Reduced Speed
    - 7.1.1) Add **Multiply (Float * Float)** node
-   - 7.1.2) Connect **OriginalWalkSpeed** to first input
+   - 7.1.2) Connect **OriginalMaxWalkSpeed** to first input
    - 7.1.3) Connect **SpeedPenaltyMultiplier** variable to second input (0.85)
 
 #### 7.2) Set New Walk Speed
@@ -880,7 +880,7 @@ Stat bonuses (+50 Armor) are handled automatically by BP_FatherArmorForm Equippa
    - 11.1.2) Search: `Remove Loose Gameplay Tag`
    - 11.1.3) Select node
    - 11.1.4) Connect Father ASC to **Target**
-   - 11.1.5) Set **Gameplay Tag**: `State.Father.Transitioning`
+   - 11.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
 
 ### **12) Remove Invulnerability**
 
@@ -1048,16 +1048,16 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 #### 4.2) Validate Original Speed Before Restoration
 
 ##### 4.2.1) Get Original Speed Variable
-   - 4.2.1.1) In My Blueprint panel, find **OriginalWalkSpeed** variable
+   - 4.2.1.1) In My Blueprint panel, find **OriginalMaxWalkSpeed** variable
    - 4.2.1.2) Drag to graph (getter node)
    - 4.2.1.3) Position to right of Get Character Movement node
 
 ##### 4.2.2) Add Greater Than Comparison
-   - 4.2.2.1) From GET OriginalWalkSpeed output pin
+   - 4.2.2.1) From GET OriginalMaxWalkSpeed output pin
    - 4.2.2.2) Drag wire to empty space
    - 4.2.2.3) Release and search: `> float`
    - 4.2.2.4) Select **float > float** (Greater Than) node
-   - 4.2.2.5) First input auto-connected to OriginalWalkSpeed
+   - 4.2.2.5) First input auto-connected to OriginalMaxWalkSpeed
    - 4.2.2.6) In second input pin, type: `0.0`
 
 ##### 4.2.3) Add Branch Node
@@ -1077,10 +1077,10 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
    - 4.3.1.5) Connect Get Character Movement **Return Value** to **Target** pin
 
 ##### 4.3.2) Connect Original Speed
-   - 4.3.2.1) From GET OriginalWalkSpeed output pin
+   - 4.3.2.1) From GET OriginalMaxWalkSpeed output pin
    - 4.3.2.2) Drag wire to Set Max Walk Speed **Max Walk Speed** input pin
    - 4.3.2.3) Release to connect
-   - 4.3.2.4) Player speed restored only if OriginalWalkSpeed was stored (> 0)
+   - 4.3.2.4) Player speed restored only if OriginalMaxWalkSpeed was stored (> 0)
 
 ### **5) Form Tags Auto-Removed by Ability Lifecycle**
 
@@ -1143,7 +1143,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 | Cancel Abilities with Tag | Ability.Father.Crawler, Exoskeleton, Symbiote, Engineer |
 | Activation Owned Tags | Father.Form.Armor, Father.State.Attached |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Armor, State.Father.Dormant, State.Father.Transitioning, State.Father.SymbioteLocked |
+| Activation Blocked Tags | Father.Form.Armor, Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
 | Input Tag | `Narrative.Input.Father.FormChange` |
 
 ### **Form State Architecture**
@@ -1160,7 +1160,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
-| OriginalWalkSpeed | Float | 0.0 | Stores player speed for restoration |
+| OriginalMaxWalkSpeed | Float | 0.0 | Stores player speed for restoration |
 | SpeedPenaltyMultiplier | Float | 0.85 | Movement penalty multiplier (15% reduction) |
 | ChestSocketName | Name | FatherChestSocket | Attachment socket on player skeleton |
 | bIsFirstActivation | Boolean | True | Tracks initial spawn vs form switch |

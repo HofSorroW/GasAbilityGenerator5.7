@@ -181,9 +181,9 @@ GE_TurretMode modifies MaxHealth to 500 when deploying as turret.
 | Cooldown.Father.Engineer | Post-recall cooldown |
 | Father.State.Alive | Father must be alive (Activation Required) |
 | Father.State.Recruited | Father must be recruited (Activation Required) |
-| State.Father.Dormant | Blocked after sacrifice |
-| State.Father.Transitioning | Blocked during 5s transition |
-| State.Father.SymbioteLocked | Blocked during 30s Symbiote |
+| Father.State.Dormant | Blocked after sacrifice |
+| Father.State.Transitioning | Blocked during 5s transition |
+| Father.State.SymbioteLocked | Blocked during 30s Symbiote |
 | Cooldown.Father.FormChange | 15s shared form cooldown |
 
 ---
@@ -329,7 +329,7 @@ This effect sets the father's MaxHealth and Health to turret values using native
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Symbiote |
 | Activation Owned Tags | Father.Form.Engineer, Father.State.Deployed |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Engineer, State.Father.Dormant, State.Father.Transitioning, State.Father.SymbioteLocked |
+| Activation Blocked Tags | Father.Form.Engineer, Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
 
 ### **5) Configure Replication Settings**
 
@@ -776,7 +776,7 @@ This phase handles switching TO Engineer form from another form via the T wheel.
       - 1.2.1.1) Drag outward and search: `Add Loose Gameplay Tag`
       - 1.2.1.2) Add **Add Loose Gameplay Tag** node
    - 1.2.2) Connect ASC Return Value to Target
-   - 1.2.3) **Gameplay Tag**: `State.Father.Transitioning`
+   - 1.2.3) **Gameplay Tag**: `Father.State.Transitioning`
 
 ### **2) Apply Invulnerability**
 
@@ -838,7 +838,7 @@ This phase handles switching TO Engineer form from another form via the T wheel.
       - 7.1.1.1) Drag outward and search: `Remove Loose Gameplay Tag`
       - 7.1.1.2) Add **Remove Loose Gameplay Tag** node
    - 7.1.2) Connect ASC to Target
-   - 7.1.3) **Gameplay Tag**: `State.Father.Transitioning`
+   - 7.1.3) **Gameplay Tag**: `Father.State.Transitioning`
 
 ### **8) Remove Invulnerability**
 
@@ -1243,7 +1243,7 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 | Cancel Abilities with Tag | `Ability.Father.Crawler`, `Ability.Father.Armor`, `Ability.Father.Exoskeleton`, `Ability.Father.Symbiote` |
 | Activation Owned Tags | `Father.Form.Engineer`, `Father.State.Deployed` |
 | Activation Required | `Father.State.Alive`, `Father.State.Recruited` |
-| Activation Blocked | `Father.Form.Engineer`, `State.Father.Dormant`, `State.Father.Transitioning`, `State.Father.SymbioteLocked` |
+| Activation Blocked | `Father.Form.Engineer`, `Father.State.Dormant`, `Father.State.Transitioning`, `Father.State.SymbioteLocked` |
 | Cooldown Gameplay Effect Class | `GE_FormChangeCooldown` |
 | InputTag | `Narrative.Input.Father.FormChange` |
 

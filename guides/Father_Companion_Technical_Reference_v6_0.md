@@ -350,7 +350,7 @@
 | Transition Animation | 5s Niagara VFX during form change |
 | Father Invulnerability | State.Invulnerable during 5s transition |
 | Form Activation Tags | Required: Father.State.Alive, Blocked: Transitioning, SymbioteLocked, Dormant |
-| Symbiote Lock | State.Father.SymbioteLocked blocks T wheel during 30s |
+| Symbiote Lock | Father.State.SymbioteLocked blocks T wheel during 30s |
 | Symbiote Auto-Return | Returns to Armor form (not Crawler) after 30s |
 | Document References | Updated to v1_6 Design Doc, v3_3 GameplayTags |
 
@@ -1610,9 +1610,9 @@ State Tags (v4.1 Additions):
 | Tag | Purpose |
 |-----|---------|
 | Father.State.Alive | Required for form activation (applied at spawn, default true) |
-| State.Father.Dormant | Blocks form activation after GA_FatherSacrifice |
-| State.Father.Transitioning | Blocks form activation during 5s VFX transition |
-| State.Father.SymbioteLocked | Blocks form activation during 30s Symbiote duration |
+| Father.State.Dormant | Blocks form activation after GA_FatherSacrifice |
+| Father.State.Transitioning | Blocks form activation during 5s VFX transition |
+| Father.State.SymbioteLocked | Blocks form activation during 30s Symbiote duration |
 
 Cooldown Tags:
 
@@ -2525,19 +2525,19 @@ Symbiote form has fixed 30 second duration with form wheel lock:
 | Step | Action |
 |------|--------|
 | 1 | GA_FatherSymbiote activates |
-| 2 | Apply State.Father.Transitioning tag |
+| 2 | Apply Father.State.Transitioning tag |
 | 3 | Apply GE_Invulnerable |
 | 4 | Cancel old form ability |
 | 5 | Spawn transition VFX, wait 5s |
 | 6 | Apply stat boosts to player |
-| 7 | Remove State.Father.Transitioning tag |
+| 7 | Remove Father.State.Transitioning tag |
 | 8 | Remove GE_Invulnerable |
 | 9 | CommitAbilityCooldown (applies Cooldown.Father.FormChange 15s) |
-| 10 | Add State.Father.SymbioteLocked tag |
+| 10 | Add Father.State.SymbioteLocked tag |
 | 11 | Start 30 second timer |
 | 12 | Ability stays active (does NOT end) |
 | 13 | Timer completes after 30 seconds |
-| 14 | Remove State.Father.SymbioteLocked tag |
+| 14 | Remove Father.State.SymbioteLocked tag |
 | 15 | Auto-activate GA_FatherArmor |
 | 16 | GA_FatherArmor cancels GA_FatherSymbiote |
 | 17 | EndAbility restores player stats |
@@ -2550,7 +2550,7 @@ Symbiote form has fixed 30 second duration with form wheel lock:
 | Other T Wheel Items | Still usable |
 | Auto-Return Destination | Armor form (not Crawler) |
 | Early Exit | Not allowed (player cannot exit early) |
-| Lock Tag | State.Father.SymbioteLocked |
+| Lock Tag | Father.State.SymbioteLocked |
 
 ### 19.6) Form Cooldown Implementation (Built-in System)
 
@@ -2598,7 +2598,7 @@ Example: Armor to Exoskeleton
 | 2 | Player | Selects Exoskeleton |
 | 3 | Form Wheel | Confirms selection, activates GA_FatherExoskeleton |
 | 4 | GA_FatherExoskeleton | GAS checks Activation Required/Blocked Tags |
-| 5 | GA_FatherExoskeleton | Adds State.Father.Transitioning tag |
+| 5 | GA_FatherExoskeleton | Adds Father.State.Transitioning tag |
 | 6 | GA_FatherExoskeleton | Applies GE_Invulnerable to father |
 | 7 | GA_FatherExoskeleton | Cancel Abilities With Tag cancels GA_FatherArmor |
 | 8 | GA_FatherArmor | EndAbility fires (bWasCancelled = true) |
@@ -2610,7 +2610,7 @@ Example: Armor to Exoskeleton
 | 14 | GA_FatherExoskeleton | Stores current player speed |
 | 15 | GA_FatherExoskeleton | Applies GE_ExoskeletonSpeed (+50% speed, +30% jump, +10 attack) |
 | 16 | GA_FatherExoskeleton | Sets CurrentForm = Exoskeleton |
-| 17 | GA_FatherExoskeleton | Removes State.Father.Transitioning tag |
+| 17 | GA_FatherExoskeleton | Removes Father.State.Transitioning tag |
 | 18 | GA_FatherExoskeleton | Removes GE_Invulnerable |
 | 19 | GA_FatherExoskeleton | Calls CommitAbilityCooldown (applies GE_FormChangeCooldown 15s) |
 | 20 | GA_FatherExoskeleton | Ends ability |
@@ -2633,7 +2633,7 @@ All form abilities use these tags:
 | Tag Type | Tags |
 |----------|------|
 | Activation Required | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked | State.Father.Dormant, State.Father.Transitioning, State.Father.SymbioteLocked |
+| Activation Blocked | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
 | Cooldown Gameplay Effect Class | GE_FormChangeCooldown (grants Cooldown.Father.FormChange) |
 
 ### 19.8) Cancel Abilities With Tag Configuration

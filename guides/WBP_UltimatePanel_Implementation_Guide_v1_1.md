@@ -1,11 +1,11 @@
 # WBP_UltimatePanel - Ultimate Abilities HUD Implementation Guide
 ## Father Companion with Gameplay Ability System
-## For Unreal Engine 5.6 + Narrative Pro Plugin v2.1
+## For Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 **Version:** 1.1
 **Date:** January 2026
 **Engine:** Unreal Engine 5.6
-**Plugin:** Narrative Pro v2.1
+**Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Widget Type:** User Widget (UMG)
 
@@ -1042,4 +1042,4 @@ Arc positions for 4 icons in 90-degree span (bottom-left corner):
 
 **END OF WBP_ULTIMATEPANEL IMPLEMENTATION GUIDE VERSION 1.1**
 
-**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.1**
+**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.2**

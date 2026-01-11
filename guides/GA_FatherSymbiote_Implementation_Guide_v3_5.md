@@ -3,7 +3,7 @@
 
 **Document Purpose**: Complete step-by-step guide for implementing the ultimate Symbiote ability for the father companion system using Narrative Pro v2.2 and Unreal Engine 5.6. This ability transforms the father into a full-body symbiote covering the player, providing massive stat boosts for 30 seconds after accumulating damage equal to the level-scaled threshold.
 
-**System Overview**: The Symbiote ability is a powerful ultimate that requires charging through combat. The player and father together must deal damage equal to the threshold (scaled by player level via FC_UltimateThreshold curve) to charge the ability. Player damage counts 100%, father damage counts 50%. Once charged, activating the ability via Form Wheel (Z key) covers the player in a full-body father symbiote for 30 seconds, granting +50% movement speed, +30% jump height, +100 Attack Rating, infinite stamina, and a proximity aura that damages nearby enemies (40 damage per 0.5s within 350 units). During the 30-second duration, the player cannot switch forms (Z wheel locked via State.Father.SymbioteLocked tag). After duration expires, the father auto-returns to Armor form. After use, the ability enters a 120-second cooldown. Charge resets on player death.
+**System Overview**: The Symbiote ability is a powerful ultimate that requires charging through combat. The player and father together must deal damage equal to the threshold (scaled by player level via FC_UltimateThreshold curve) to charge the ability. Player damage counts 100%, father damage counts 50%. Once charged, activating the ability via Form Wheel (Z key) covers the player in a full-body father symbiote for 30 seconds, granting +50% movement speed, +30% jump height, +100 Attack Rating, infinite stamina, and a proximity aura that damages nearby enemies (40 damage per 0.5s within 350 units). During the 30-second duration, the player cannot switch forms (Z wheel locked via Father.State.SymbioteLocked tag). After duration expires, the father auto-returns to Armor form. After use, the ability enters a 120-second cooldown. Charge resets on player death.
 
 ---
 
@@ -110,7 +110,7 @@ GA_FatherSymbiote does NOT need to apply stat modifiers. See Father_Companion_Sy
 | Duration Policy | Has Duration |
 | Duration Magnitude -> Scalable Float Magnitude | 30.0 |
 | Components | Grant Tags to Target Actor |
-| Add Tags -> Add to Inherited [0] | State.Father.SymbioteLocked |
+| Add Tags -> Add to Inherited [0] | Father.State.SymbioteLocked |
 
 #### 8.3) Compile and Save
 

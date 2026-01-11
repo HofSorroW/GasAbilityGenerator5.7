@@ -58,7 +58,7 @@ This guide provides step-by-step instructions for implementing GA_FatherExoskele
 | 1 | Player | Opens T wheel, selects Exoskeleton |
 | 2 | GA_FatherExoskeleton | Activates, cancels current form ability |
 | 3 | GA_FatherExoskeleton | Checks bIsFirstActivation |
-| 4 | GA_FatherExoskeleton (False) | Adds State.Father.Transitioning tag |
+| 4 | GA_FatherExoskeleton (False) | Adds Father.State.Transitioning tag |
 | 5 | GA_FatherExoskeleton | Applies GE_Invulnerable to father |
 | 6 | GA_FatherExoskeleton | Spawns NS_FatherFormTransition VFX |
 | 7 | GA_FatherExoskeleton | Delays 5 seconds |
@@ -69,7 +69,7 @@ This guide provides step-by-step instructions for implementing GA_FatherExoskele
 | 12 | GA_FatherExoskeleton | Applies +50% speed, +30% jump |
 | 13 | GA_FatherExoskeleton | Attaches father to player back |
 | 14 | GA_FatherExoskeleton | Sets CurrentForm = Exoskeleton |
-| 15 | GA_FatherExoskeleton | Removes State.Father.Transitioning tag |
+| 15 | GA_FatherExoskeleton | Removes Father.State.Transitioning tag |
 | 16 | GA_FatherExoskeleton | Removes GE_Invulnerable |
 | 17 | GA_FatherExoskeleton | Applies GE_FormChangeCooldown (15s) |
 | 18 | GA_FatherExoskeleton | Sets bIsFirstActivation = False |
@@ -115,9 +115,9 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Activation Required | Father.State.Alive | Father must be alive |
 | Activation Required | Father.State.Recruited | Father must be recruited |
 | Activation Blocked | Father.Form.Exoskeleton | Prevents re-activation |
-| Activation Blocked | State.Father.Dormant | Blocked when dormant |
-| Activation Blocked | State.Father.Transitioning | Blocked during 5s VFX |
-| Activation Blocked | State.Father.SymbioteLocked | Blocked during Symbiote 30s |
+| Activation Blocked | Father.State.Dormant | Blocked when dormant |
+| Activation Blocked | Father.State.Transitioning | Blocked during 5s VFX |
+| Activation Blocked | Father.State.SymbioteLocked | Blocked during Symbiote 30s |
 | Cooldown Gameplay Effect Class | GE_FormChangeCooldown | 15s cooldown (GAS built-in) |
 | Cancel Abilities with Tag | Ability.Father.Crawler | Cancel Crawler form |
 | Cancel Abilities with Tag | Ability.Father.Armor | Cancel Armor form |
@@ -173,7 +173,7 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Step | Node | Purpose |
 |------|------|---------|
 | 1 | Branch False | Form switch detected |
-| 2 | Add Loose Gameplay Tag | Add State.Father.Transitioning |
+| 2 | Add Loose Gameplay Tag | Add Father.State.Transitioning |
 | 3 | Apply GE_Invulnerable | Father invulnerable during transition |
 | 4 | Spawn System Attached | Spawn NS_FatherFormTransition VFX |
 | 5 | Delay 5s | Wait for transition |
@@ -183,7 +183,7 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | 9 | Apply speed/jump boost | Modify CharacterMovement |
 | 10 | Attach to player back | Physical attachment |
 | 11 | Set CurrentForm = Exoskeleton | Update state |
-| 12 | Remove Loose Gameplay Tag | Remove State.Father.Transitioning |
+| 12 | Remove Loose Gameplay Tag | Remove Father.State.Transitioning |
 | 13 | Remove GE with Tags | Remove GE_Invulnerable |
 | 14 | Apply GE_FormChangeCooldown | Apply 15s cooldown |
 | 15 | End Ability | Clean lifecycle |
@@ -210,9 +210,9 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Father.State.Attached | Attachment state (Activation Owned Tag) |
 | Father.State.Alive | Required for activation |
 | Father.State.Recruited | Recruitment requirement |
-| State.Father.Dormant | Blocks activation |
-| State.Father.Transitioning | Blocks during 5s VFX |
-| State.Father.SymbioteLocked | Blocks during Symbiote 30s |
+| Father.State.Dormant | Blocks activation |
+| Father.State.Transitioning | Blocks during 5s VFX |
+| Father.State.SymbioteLocked | Blocks during Symbiote 30s |
 | Cooldown.Father.FormChange | Shared 15s cooldown between form changes |
 | Ability.Father.Crawler | Cancel Abilities with Tag |
 | Ability.Father.Armor | Cancel Abilities with Tag |
@@ -260,7 +260,7 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Activation Owned Tags | Father.Form.Exoskeleton, Father.State.Attached |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Symbiote, Ability.Father.Engineer |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Exoskeleton, State.Father.Dormant, State.Father.Transitioning, State.Father.SymbioteLocked |
+| Activation Blocked Tags | Father.Form.Exoskeleton, Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
 
 ### 3.3) Configure Instancing and Replication
 
@@ -608,7 +608,7 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 7.2.1.3) Search: Add Loose Gameplay Tag
 7.2.1.4) Select node
 7.2.1.5) Connect ASC Return Value to Target
-7.2.1.6) Gameplay Tag: State.Father.Transitioning
+7.2.1.6) Gameplay Tag: Father.State.Transitioning
 
 ### 7.3) Apply Invulnerability
 
@@ -732,7 +732,7 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 7.12.1.3) Search: Remove Loose Gameplay Tag
 7.12.1.4) Select node
 7.12.1.5) Connect ASC to Target
-7.12.1.6) Gameplay Tag: State.Father.Transitioning
+7.12.1.6) Gameplay Tag: Father.State.Transitioning
 
 ### 7.13) Remove Invulnerability
 

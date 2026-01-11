@@ -1,6 +1,6 @@
 # Father Companion - WBP_MarkIndicator Widget Implementation Guide
 ## VERSION 1.0 - Enemy Mark Indicator Above Head (Always Visible Through Walls)
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.1
+## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 ---
 
@@ -422,4 +422,4 @@ WBP_MarkIndicator is a simple visual indicator displayed above marked enemies. W
 
 **END OF IMPLEMENTATION GUIDE**
 
-**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.1**
+**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.2**
