@@ -1936,8 +1936,8 @@ gameplay_abilities:
         - from: [SetFatherRef, FatherRef]
           to: [PlayMontage, Target]
         - from: [GetMontage, AttackMontage]
-          to: [PlayMontage, MontageToPlay]
-        - from: [PlayMontage, Then]
+          to: [PlayMontage, AnimMontage]
+        - from: [PlayMontage, Exec]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
@@ -2384,13 +2384,13 @@ gameplay_abilities:
         - id: MakeGESpec
           type: CallFunction
           properties:
-            function: MakeOutgoingSpec
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
           position: [1800, 0]
         - id: ApplyGE
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
+            function: BP_ApplyGameplayEffectSpecToSelf
           position: [2100, 0]
         - id: SetDomeHandle
           type: VariableSet
@@ -2446,8 +2446,7 @@ gameplay_abilities:
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
           to: [GetPlayerASC, Actor]
-        - from: [GetPlayerASC, ReturnValue]
-          to: [MakeGESpec, Target]
+        # BP_ApplyGameplayEffectSpecToSelf is called on the player's ASC
         - from: [GetPlayerASC, ReturnValue]
           to: [ApplyGE, Target]
         - from: [MakeGESpec, ReturnValue]
@@ -2558,7 +2557,8 @@ gameplay_abilities:
         - id: MakeGESpec
           type: CallFunction
           properties:
-            function: MakeOutgoingSpec
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
           position: [3300, 0]
         - id: GetDamage
           type: VariableGet
@@ -2573,8 +2573,7 @@ gameplay_abilities:
         - id: ApplyGE
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToTarget
-            target_self: true
+            function: BP_ApplyGameplayEffectSpecToTarget
           position: [3900, 0]
         - id: CommitCooldown
           type: CallFunction
@@ -2712,13 +2711,13 @@ gameplay_abilities:
         - id: MakeInvulnSpec
           type: CallFunction
           properties:
-            function: MakeOutgoingSpec
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
           position: [1800, 0]
         - id: ApplyInvuln
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
+            function: BP_ApplyGameplayEffectSpecToSelf
           position: [2100, 0]
         - id: GetForwardVector
           type: CallFunction
@@ -2777,7 +2776,7 @@ gameplay_abilities:
           to: [LaunchCharacter, Exec]
         - from: [LaunchCharacter, Exec]
           to: [Delay, Exec]
-        - from: [Delay, Completed]
+        - from: [Delay, then]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
@@ -2789,13 +2788,12 @@ gameplay_abilities:
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
-          to: [GetPlayerASC, Target]
+          to: [GetPlayerASC, Actor]
         - from: [SetPlayerRef, PlayerRef]
           to: [GetForwardVector, Target]
         - from: [SetPlayerRef, PlayerRef]
           to: [LaunchCharacter, Target]
-        - from: [GetPlayerASC, ReturnValue]
-          to: [MakeInvulnSpec, Target]
+        # BP_ApplyGameplayEffectSpecToSelf is called on the player's ASC
         - from: [GetPlayerASC, ReturnValue]
           to: [ApplyInvuln, Target]
         - from: [MakeInvulnSpec, ReturnValue]
@@ -3039,13 +3037,13 @@ gameplay_abilities:
         - id: MakeGESpec
           type: CallFunction
           properties:
-            function: MakeOutgoingSpec
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
           position: [1800, 0]
         - id: ApplyGE
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
+            function: BP_ApplyGameplayEffectSpecToSelf
           position: [2100, 0]
         - id: SetStealthHandle
           type: VariableSet
@@ -3114,7 +3112,7 @@ gameplay_abilities:
           to: [SetStealthHandle, Exec]
         - from: [SetStealthHandle, Exec]
           to: [Delay, Exec]
-        - from: [Delay, Completed]
+        - from: [Delay, then]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
@@ -3126,9 +3124,8 @@ gameplay_abilities:
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
-          to: [GetPlayerASC, Target]
-        - from: [GetPlayerASC, ReturnValue]
-          to: [MakeGESpec, Target]
+          to: [GetPlayerASC, Actor]
+        # BP_ApplyGameplayEffectSpecToSelf is called on the player's ASC
         - from: [GetPlayerASC, ReturnValue]
           to: [ApplyGE, Target]
         - from: [MakeGESpec, ReturnValue]
@@ -3142,7 +3139,7 @@ gameplay_abilities:
           to: [RemoveGE, Exec]
         # Data flow - End
         - from: [GetPlayerRef_End, PlayerRef]
-          to: [GetPlayerASC_End, Target]
+          to: [GetPlayerASC_End, Actor]
         - from: [GetPlayerASC_End, ReturnValue]
           to: [RemoveGE, Target]
         - from: [GetStealthHandle, StealthEffectHandle]
@@ -3293,7 +3290,8 @@ gameplay_abilities:
         - id: MakeGESpec
           type: CallFunction
           properties:
-            function: MakeOutgoingSpec
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
           position: [3300, 0]
         - id: GetDamage
           type: VariableGet
@@ -3308,8 +3306,7 @@ gameplay_abilities:
         - id: ApplyGE
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToTarget
-            target_self: true
+            function: BP_ApplyGameplayEffectSpecToTarget
           position: [3900, 0]
         - id: CommitCooldown
           type: CallFunction
@@ -3435,7 +3432,8 @@ gameplay_abilities:
         - id: MakeGESpec
           type: CallFunction
           properties:
-            function: MakeOutgoingSpec
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
           position: [1500, 0]
         - id: GetDuration
           type: VariableGet
@@ -3450,8 +3448,7 @@ gameplay_abilities:
         - id: ApplyGE
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToTarget
-            target_self: true
+            function: BP_ApplyGameplayEffectSpecToTarget
           position: [2100, 0]
         - id: EndAbility
           type: CallFunction
@@ -3648,15 +3645,11 @@ gameplay_abilities:
       - name: FatherRef
         type: Object
         class: BP_FatherCompanion
-      - name: PlayerRef
-        type: Object
-        class: NarrativePlayerCharacter
-      - name: WeaponRef
-        type: Object
-        class: WeaponItem
     event_graph:
       nodes:
         # === ACTIVATION NODES ===
+        # Note: Weapon spawning/wielding requires struct breaking which generator doesn't support.
+        # This simplified version hides Father. Add weapon logic manually in editor.
         - id: Event_Activate
           type: Event
           properties:
@@ -3678,144 +3671,45 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
-        - id: GetOwnerPlayer
-          type: PropertyGet
-          properties:
-            property_name: OwnerPlayer
-            target_class: BP_FatherCompanion
-          position: [1200, -50]
-        - id: IsValid_Player
-          type: CallFunction
-          properties:
-            function: IsValid
-          position: [1200, 50]
-        - id: Branch_Valid
-          type: Branch
-          position: [1500, 0]
-        - id: SetPlayerRef
-          type: VariableSet
-          properties:
-            variable_name: PlayerRef
-          position: [1800, 0]
-        - id: GetFatherASC
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-          position: [2100, -50]
-        - id: ApplyRifleState
-          type: CallFunction
-          properties:
-            function: BP_ApplyGameplayEffectToSelf
-            target_self: true
-          position: [2100, 0]
         - id: HideFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [2400, 0]
+          position: [1200, 0]
         - id: DisableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [2700, 0]
-        - id: GetInventory
-          type: CallFunction
-          properties:
-            function: GetInventoryComponent
-            class: NarrativeCharacter
-          position: [3000, -50]
-        - id: AddWeaponToInventory
-          type: CallFunction
-          properties:
-            function: TryAddItemFromClass
-            class: NarrativeInventoryComponent
-          position: [3000, 0]
-        - id: SetWeaponRef
-          type: VariableSet
-          properties:
-            variable_name: WeaponRef
-          position: [3300, 0]
-        - id: WieldWeapon
-          type: CallFunction
-          properties:
-            function: WieldInSlot
-            class: WeaponItem
-          position: [3600, 0]
+          position: [1500, 0]
         - id: EndAbility_Success
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [3900, 0]
-        - id: EndAbility_Invalid
-          type: CallFunction
-          properties:
-            function: K2_EndAbility
-            target_self: true
-          position: [1800, 200]
+          position: [1800, 0]
         # === END ABILITY NODES ===
         - id: Event_EndAbility
           type: Event
           properties:
             event_name: K2_OnEndAbility
-          position: [0, 500]
-        - id: Branch_WasCancelled
-          type: Branch
-          position: [300, 500]
-        - id: GetWeaponRef_End
-          type: VariableGet
-          properties:
-            variable_name: WeaponRef
-          position: [600, 450]
-        - id: IsValid_Weapon
-          type: CallFunction
-          properties:
-            function: IsValid
-          position: [600, 550]
-        - id: Branch_WeaponValid
-          type: Branch
-          position: [900, 500]
-        - id: UnequipWeapon
-          type: CallFunction
-          properties:
-            function: UnequipItem
-            class: EquippableItem
-          position: [1200, 500]
-        - id: GetPlayerRef_End
-          type: VariableGet
-          properties:
-            variable_name: PlayerRef
-          position: [1200, 600]
-        - id: GetInventory_End
-          type: CallFunction
-          properties:
-            function: GetInventoryComponent
-            class: NarrativeCharacter
-          position: [1500, 450]
-        - id: RemoveItem
-          type: CallFunction
-          properties:
-            function: RemoveItem
-            class: NarrativeInventoryComponent
-          position: [1500, 500]
+          position: [0, 300]
         - id: GetFatherRef_End
           type: VariableGet
           properties:
             variable_name: FatherRef
-          position: [1800, 400]
+          position: [300, 300]
         - id: ShowFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [1800, 500]
+          position: [600, 300]
         - id: EnableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [2100, 500]
+          position: [900, 300]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only)
         - from: [Event_Activate, Then]
           to: [GetAvatarActor, Exec]
         - from: [GetAvatarActor, Exec]
@@ -3823,85 +3717,26 @@ gameplay_abilities:
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
-          to: [IsValid_Player, Exec]
-        - from: [IsValid_Player, Exec]
-          to: [Branch_Valid, Exec]
-        - from: [Branch_Valid, then]
-          to: [SetPlayerRef, Exec]
-        - from: [SetPlayerRef, Exec]
-          to: [ApplyRifleState, Exec]
-        - from: [ApplyRifleState, Exec]
           to: [HideFather, Exec]
         - from: [HideFather, Exec]
           to: [DisableCollision, Exec]
         - from: [DisableCollision, Exec]
-          to: [AddWeaponToInventory, Exec]
-        - from: [AddWeaponToInventory, Exec]
-          to: [SetWeaponRef, Exec]
-        - from: [SetWeaponRef, Exec]
-          to: [WieldWeapon, Exec]
-        - from: [WieldWeapon, Exec]
           to: [EndAbility_Success, Exec]
-        - from: [Branch_Valid, else]
-          to: [EndAbility_Invalid, Exec]
         # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
-        - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetOwnerPlayer, Target]
-        - from: [GetOwnerPlayer, OwnerPlayer]
-          to: [IsValid_Player, Object]
-        - from: [IsValid_Player, ReturnValue]
-          to: [Branch_Valid, Condition]
-        - from: [GetOwnerPlayer, OwnerPlayer]
-          to: [SetPlayerRef, PlayerRef]
         - from: [SetFatherRef, FatherRef]
           to: [HideFather, Target]
         - from: [SetFatherRef, FatherRef]
           to: [DisableCollision, Target]
-        - from: [SetPlayerRef, PlayerRef]
-          to: [GetInventory, Target]
-        - from: [GetInventory, ReturnValue]
-          to: [AddWeaponToInventory, Target]
-        # Note: TryAddItemFromClass returns FItemAddResult - need Break struct node to get Stacks[0]
-        - from: [AddWeaponToInventory, ReturnValue]
-          to: [SetWeaponRef, WeaponRef]
-        # WieldInSlot is called on the weapon itself
-        - from: [SetWeaponRef, WeaponRef]
-          to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
-          to: [Branch_WasCancelled, Exec]
-        - from: [Event_EndAbility, bWasCancelled]
-          to: [Branch_WasCancelled, Condition]
-        - from: [Branch_WasCancelled, then]
-          to: [IsValid_Weapon, Exec]
-        - from: [IsValid_Weapon, Exec]
-          to: [Branch_WeaponValid, Exec]
-        - from: [Branch_WeaponValid, then]
-          to: [UnequipWeapon, Exec]
-        - from: [UnequipWeapon, Exec]
-          to: [RemoveItem, Exec]
-        - from: [RemoveItem, Exec]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
         # Data flow - End
-        - from: [GetWeaponRef_End, WeaponRef]
-          to: [IsValid_Weapon, Object]
-        - from: [IsValid_Weapon, ReturnValue]
-          to: [Branch_WeaponValid, Condition]
-        # UnequipItem is called on the weapon itself
-        - from: [GetWeaponRef_End, WeaponRef]
-          to: [UnequipWeapon, Target]
-        - from: [GetPlayerRef_End, PlayerRef]
-          to: [GetInventory_End, Target]
-        - from: [GetInventory_End, ReturnValue]
-          to: [RemoveItem, Target]
-        - from: [GetWeaponRef_End, WeaponRef]
-          to: [RemoveItem, Item]
         - from: [GetFatherRef_End, FatherRef]
           to: [ShowFather, Target]
         - from: [GetFatherRef_End, FatherRef]
@@ -3935,15 +3770,11 @@ gameplay_abilities:
       - name: FatherRef
         type: Object
         class: BP_FatherCompanion
-      - name: PlayerRef
-        type: Object
-        class: NarrativePlayerCharacter
-      - name: WeaponRef
-        type: Object
-        class: WeaponItem
     event_graph:
       nodes:
         # === ACTIVATION NODES ===
+        # Note: Weapon spawning/wielding requires struct breaking which generator doesn't support.
+        # This simplified version hides Father. Add weapon logic manually in editor.
         - id: Event_Activate
           type: Event
           properties:
@@ -3965,144 +3796,45 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
-        - id: GetOwnerPlayer
-          type: PropertyGet
-          properties:
-            property_name: OwnerPlayer
-            target_class: BP_FatherCompanion
-          position: [1200, -50]
-        - id: IsValid_Player
-          type: CallFunction
-          properties:
-            function: IsValid
-          position: [1200, 50]
-        - id: Branch_Valid
-          type: Branch
-          position: [1500, 0]
-        - id: SetPlayerRef
-          type: VariableSet
-          properties:
-            variable_name: PlayerRef
-          position: [1800, 0]
-        - id: GetFatherASC
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-          position: [2100, -50]
-        - id: ApplySwordState
-          type: CallFunction
-          properties:
-            function: BP_ApplyGameplayEffectToSelf
-            target_self: true
-          position: [2100, 0]
         - id: HideFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [2400, 0]
+          position: [1200, 0]
         - id: DisableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [2700, 0]
-        - id: GetInventory
-          type: CallFunction
-          properties:
-            function: GetInventoryComponent
-            class: NarrativeCharacter
-          position: [3000, -50]
-        - id: AddWeaponToInventory
-          type: CallFunction
-          properties:
-            function: TryAddItemFromClass
-            class: NarrativeInventoryComponent
-          position: [3000, 0]
-        - id: SetWeaponRef
-          type: VariableSet
-          properties:
-            variable_name: WeaponRef
-          position: [3300, 0]
-        - id: WieldWeapon
-          type: CallFunction
-          properties:
-            function: WieldInSlot
-            class: WeaponItem
-          position: [3600, 0]
+          position: [1500, 0]
         - id: EndAbility_Success
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [3900, 0]
-        - id: EndAbility_Invalid
-          type: CallFunction
-          properties:
-            function: K2_EndAbility
-            target_self: true
-          position: [1800, 200]
+          position: [1800, 0]
         # === END ABILITY NODES ===
         - id: Event_EndAbility
           type: Event
           properties:
             event_name: K2_OnEndAbility
-          position: [0, 500]
-        - id: Branch_WasCancelled
-          type: Branch
-          position: [300, 500]
-        - id: GetWeaponRef_End
-          type: VariableGet
-          properties:
-            variable_name: WeaponRef
-          position: [600, 450]
-        - id: IsValid_Weapon
-          type: CallFunction
-          properties:
-            function: IsValid
-          position: [600, 550]
-        - id: Branch_WeaponValid
-          type: Branch
-          position: [900, 500]
-        - id: UnequipWeapon
-          type: CallFunction
-          properties:
-            function: UnequipItem
-            class: EquippableItem
-          position: [1200, 500]
-        - id: GetPlayerRef_End
-          type: VariableGet
-          properties:
-            variable_name: PlayerRef
-          position: [1200, 600]
-        - id: GetInventory_End
-          type: CallFunction
-          properties:
-            function: GetInventoryComponent
-            class: NarrativeCharacter
-          position: [1500, 450]
-        - id: RemoveItem
-          type: CallFunction
-          properties:
-            function: RemoveItem
-            class: NarrativeInventoryComponent
-          position: [1500, 500]
+          position: [0, 300]
         - id: GetFatherRef_End
           type: VariableGet
           properties:
             variable_name: FatherRef
-          position: [1800, 400]
+          position: [300, 300]
         - id: ShowFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [1800, 500]
+          position: [600, 300]
         - id: EnableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [2100, 500]
+          position: [900, 300]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only)
         - from: [Event_Activate, Then]
           to: [GetAvatarActor, Exec]
         - from: [GetAvatarActor, Exec]
@@ -4110,85 +3842,26 @@ gameplay_abilities:
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
-          to: [IsValid_Player, Exec]
-        - from: [IsValid_Player, Exec]
-          to: [Branch_Valid, Exec]
-        - from: [Branch_Valid, then]
-          to: [SetPlayerRef, Exec]
-        - from: [SetPlayerRef, Exec]
-          to: [ApplySwordState, Exec]
-        - from: [ApplySwordState, Exec]
           to: [HideFather, Exec]
         - from: [HideFather, Exec]
           to: [DisableCollision, Exec]
         - from: [DisableCollision, Exec]
-          to: [AddWeaponToInventory, Exec]
-        - from: [AddWeaponToInventory, Exec]
-          to: [SetWeaponRef, Exec]
-        - from: [SetWeaponRef, Exec]
-          to: [WieldWeapon, Exec]
-        - from: [WieldWeapon, Exec]
           to: [EndAbility_Success, Exec]
-        - from: [Branch_Valid, else]
-          to: [EndAbility_Invalid, Exec]
         # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
-        - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetOwnerPlayer, Target]
-        - from: [GetOwnerPlayer, OwnerPlayer]
-          to: [IsValid_Player, Object]
-        - from: [IsValid_Player, ReturnValue]
-          to: [Branch_Valid, Condition]
-        - from: [GetOwnerPlayer, OwnerPlayer]
-          to: [SetPlayerRef, PlayerRef]
         - from: [SetFatherRef, FatherRef]
           to: [HideFather, Target]
         - from: [SetFatherRef, FatherRef]
           to: [DisableCollision, Target]
-        - from: [SetPlayerRef, PlayerRef]
-          to: [GetInventory, Target]
-        - from: [GetInventory, ReturnValue]
-          to: [AddWeaponToInventory, Target]
-        # Note: TryAddItemFromClass returns FItemAddResult - need Break struct node to get Stacks[0]
-        - from: [AddWeaponToInventory, ReturnValue]
-          to: [SetWeaponRef, WeaponRef]
-        # WieldInSlot is called on the weapon itself
-        - from: [SetWeaponRef, WeaponRef]
-          to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
-          to: [Branch_WasCancelled, Exec]
-        - from: [Event_EndAbility, bWasCancelled]
-          to: [Branch_WasCancelled, Condition]
-        - from: [Branch_WasCancelled, then]
-          to: [IsValid_Weapon, Exec]
-        - from: [IsValid_Weapon, Exec]
-          to: [Branch_WeaponValid, Exec]
-        - from: [Branch_WeaponValid, then]
-          to: [UnequipWeapon, Exec]
-        - from: [UnequipWeapon, Exec]
-          to: [RemoveItem, Exec]
-        - from: [RemoveItem, Exec]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
         # Data flow - End
-        - from: [GetWeaponRef_End, WeaponRef]
-          to: [IsValid_Weapon, Object]
-        - from: [IsValid_Weapon, ReturnValue]
-          to: [Branch_WeaponValid, Condition]
-        # UnequipItem is called on the weapon itself
-        - from: [GetWeaponRef_End, WeaponRef]
-          to: [UnequipWeapon, Target]
-        - from: [GetPlayerRef_End, PlayerRef]
-          to: [GetInventory_End, Target]
-        - from: [GetInventory_End, ReturnValue]
-          to: [RemoveItem, Target]
-        - from: [GetWeaponRef_End, WeaponRef]
-          to: [RemoveItem, Item]
         - from: [GetFatherRef_End, FatherRef]
           to: [ShowFather, Target]
         - from: [GetFatherRef_End, FatherRef]
@@ -4539,6 +4212,10 @@ actor_blueprints:
       - name: SymbioteCharge
         type: Float
         default: 0.0
+        replicated: true
+      - name: IsDeployed
+        type: Bool
+        default: false
         replicated: true
 
   - name: BP_LaserProjectile

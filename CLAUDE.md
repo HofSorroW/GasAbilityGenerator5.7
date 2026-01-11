@@ -102,7 +102,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v2.6.5)
+## GasAbilityGenerator Plugin (v2.6.11)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -360,6 +360,10 @@ When looking for classes/enums, the plugin searches:
 - Write C++ in implementation guides
 - Use attribute-based movement speed (use CharacterMovement directly)
 - Spawn spider from player BeginPlay (use NPCSpawner system)
+- Change parent classes from what's defined in the Technical Reference or Parent Class Matrix
+  - Parent classes are intentional (e.g., GA_Melee_Unarmed provides motion warping)
+  - Generator warnings about missing parent classes are acceptable if the class exists in Narrative Pro
+  - The generator may not resolve plugin paths, but the class will work at runtime
 
 ### Father Companion Forms
 
@@ -371,6 +375,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v2.6.11 - Force scan NarrativePro plugin content for Blueprint parent class resolution in commandlet mode
 - v2.6.5 - Niagara System generator
 - v2.6.3 - Tags configured on existing GA assets during SKIP
 - v2.6.2 - Gameplay ability tag/policy configuration via reflection

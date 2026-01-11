@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.10
+// GasAbilityGenerator v2.6.11
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.11: Force scan NarrativePro plugin content in commandlet mode for parent class resolution
 // v2.6.10: Enhanced Niagara generator with warmup, bounds, determinism, and pooling settings
 // v2.6.9: Animation Notify generator, Narrative Pro path support for parent classes and abilities
 // v2.6.8: EquippableItemGenerator now uses ParentClass from manifest (RangedWeaponItem, MeleeWeaponItem support)
@@ -540,6 +541,20 @@ FString FGeneratorBase::GetContentPath()
 UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 {
 	// v2.4.1: Enhanced class finding with Blueprint support
+	// v2.6.11: Force scan Narrative Pro plugin content for commandlet mode
+
+	// Static flag to ensure we only scan once per session
+	static bool bNarrativeProScanned = false;
+	if (!bNarrativeProScanned)
+	{
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+		// Scan NarrativePro plugin content paths to ensure Blueprint parent classes are discoverable
+		TArray<FString> NarrativeProPaths;
+		NarrativeProPaths.Add(TEXT("/NarrativePro/"));
+		AssetRegistryModule.Get().ScanPathsSynchronous(NarrativeProPaths, true);
+		bNarrativeProScanned = true;
+		UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] Scanned NarrativePro content paths for parent class resolution"));
+	}
 
 	// First check if it's a Blueprint class name (starts with BP_, WBP_, etc.)
 	bool bIsBlueprintClass = ClassName.StartsWith(TEXT("BP_")) ||
@@ -566,24 +581,29 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 			}
 		}
 
-		// Also try common Blueprint paths
+		// Also try common Blueprint paths - load Blueprint asset and get GeneratedClass
 		TArray<FString> BlueprintSearchPaths;
 		FString Root = GetProjectRoot();  // v2.5.0: Use auto-detected project root
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Blueprints/%s.%s_C"), *Root, *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Characters/%s.%s_C"), *Root, *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Actors/%s.%s_C"), *Root, *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/Game/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Blueprints/%s.%s"), *Root, *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Characters/%s.%s"), *Root, *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Actors/%s.%s"), *Root, *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/Game/%s.%s"), *ClassName, *ClassName));
 		// v2.6.9: Add Narrative Pro paths for parent class lookup
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/%s.%s_C"), *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/%s.%s"), *ClassName, *ClassName));
+		// v2.6.11: Add more NarrativePro paths for common parent classes
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *ClassName, *ClassName));
 
 		for (const FString& Path : BlueprintSearchPaths)
 		{
-			UClass* FoundClass = LoadObject<UClass>(nullptr, *Path);
-			if (FoundClass)
+			// v2.6.11: Load Blueprint asset first, then get GeneratedClass
+			UBlueprint* LoadedBP = LoadObject<UBlueprint>(nullptr, *Path);
+			if (LoadedBP && LoadedBP->GeneratedClass)
 			{
-				return FoundClass;
+				UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] Found Blueprint parent class '%s' at path: %s"), *ClassName, *Path);
+				return LoadedBP->GeneratedClass;
 			}
 		}
 	}
