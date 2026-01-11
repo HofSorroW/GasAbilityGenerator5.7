@@ -1,5 +1,8 @@
-// GasAbilityGenerator v2.7.0
+// GasAbilityGenerator v2.7.5
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.7.5: Added K2_ClearTimerHandle to deprecated function remapping
+//         - Added STABLE SECTION markers for critical code protection
+//         - Manifest fixes: GetOwnASC for ASC Target, MakeTransform for SpawnActor
 // v2.7.4: Comprehensive pre-generation validation with specific error detection
 //         - Detects multiple exec connections from same output pin (use Sequence node)
 //         - Detects missing ASC Target connections (ApplyGameplayEffectToTarget etc)
@@ -3216,6 +3219,10 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		}
 	}
 
+	// ============================================================
+	// STABLE SECTION: Post-Generation Validation v2.7.5
+	// Verified: 2026-01-11 - DO NOT MODIFY WITHOUT TESTING
+	// ============================================================
 	// v2.7.4: Enhanced post-generation validation with specific error detection
 	int32 UnconnectedInputPins = 0;
 	int32 UnconnectedExecOutputPins = 0;
@@ -3406,6 +3413,9 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		LogGeneration(FString::Printf(TEXT("  TOTAL VALIDATION ERRORS: %d"), TotalErrors));
 	}
 
+	// ============================================================
+	// END STABLE SECTION: Post-Generation Validation
+	// ============================================================
 	if (UnconnectedInputPins > 0)
 	{
 		LogGeneration(FString::Printf(TEXT("  VALIDATION: %d potentially unconnected input pin(s) detected"),
@@ -3687,6 +3697,10 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("IsEquipped"), UEquippableItem::StaticClass());
 	}
 
+	// ============================================================
+	// STABLE SECTION: Deprecated Function Remapping v2.7.5
+	// Verified: 2026-01-11 - DO NOT MODIFY WITHOUT TESTING
+	// ============================================================
 	// v2.7.4: Deprecated function remapping table - auto-replace old functions with new versions
 	static TMap<FString, FString> DeprecatedFunctionRemapping;
 	if (DeprecatedFunctionRemapping.Num() == 0)
@@ -3695,8 +3709,12 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		DeprecatedFunctionRemapping.Add(TEXT("ClearTimerByHandle"), TEXT("K2_ClearAndInvalidateTimerHandle"));
 		DeprecatedFunctionRemapping.Add(TEXT("K2_ClearTimer"), TEXT("K2_ClearAndInvalidateTimerHandle"));
 		DeprecatedFunctionRemapping.Add(TEXT("ClearTimer"), TEXT("K2_ClearAndInvalidateTimerHandle"));
+		DeprecatedFunctionRemapping.Add(TEXT("K2_ClearTimerHandle"), TEXT("K2_ClearAndInvalidateTimerHandle"));
 		LogGeneration(TEXT("Initialized deprecated function remapping table"));
 	}
+	// ============================================================
+	// END STABLE SECTION: Deprecated Function Remapping
+	// ============================================================
 
 	// Determine the function owner class
 	UClass* FunctionOwner = nullptr;

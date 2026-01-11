@@ -1843,10 +1843,10 @@ gameplay_abilities:
   # COMBAT ABILITIES (4)
   # ---------------------------------------------------------------------------
   
-  # GA_FatherAttack - Melee Attack (uses GA_Melee_Unarmed for motion warping)
+  # GA_FatherAttack - Melee Attack (NarrativeGameplayAbility for custom logic)
   - name: GA_FatherAttack
     folder: Abilities/Combat
-    parent_class: GA_Melee_Unarmed
+    parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
     net_execution_policy: ServerOnly
     cooldown_gameplay_effect_class: GE_AttackCooldown
@@ -2019,6 +2019,11 @@ gameplay_abilities:
           properties:
             function: GetSocketRotation
           position: [1500, 100]
+        - id: MakeSpawnTransform
+          type: CallFunction
+          properties:
+            function: MakeTransform
+          position: [1650, 50]
         - id: GetProjectileClass
           type: VariableGet
           properties:
@@ -2069,9 +2074,11 @@ gameplay_abilities:
         - from: [GetProjectileClass, ProjectileClass]
           to: [SpawnProjectile, Class]
         - from: [GetSocketLocation, ReturnValue]
-          to: [SpawnProjectile, SpawnTransform_Location]
+          to: [MakeSpawnTransform, Location]
         - from: [GetSocketRotation, ReturnValue]
-          to: [SpawnProjectile, SpawnTransform_Rotation]
+          to: [MakeSpawnTransform, Rotation]
+        - from: [MakeSpawnTransform, ReturnValue]
+          to: [SpawnProjectile, SpawnTransform]
         - from: [SpawnProjectile, Exec]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
@@ -2155,6 +2162,11 @@ gameplay_abilities:
           properties:
             function: GetSocketRotation
           position: [1500, 100]
+        - id: MakeSpawnTransform
+          type: CallFunction
+          properties:
+            function: MakeTransform
+          position: [1650, 50]
         - id: GetProjectileClass
           type: VariableGet
           properties:
@@ -2205,9 +2217,11 @@ gameplay_abilities:
         - from: [GetProjectileClass, ProjectileClass]
           to: [SpawnProjectile, Class]
         - from: [GetSocketLocation, ReturnValue]
-          to: [SpawnProjectile, SpawnTransform_Location]
+          to: [MakeSpawnTransform, Location]
         - from: [GetSocketRotation, ReturnValue]
-          to: [SpawnProjectile, SpawnTransform_Rotation]
+          to: [MakeSpawnTransform, Rotation]
+        - from: [MakeSpawnTransform, ReturnValue]
+          to: [SpawnProjectile, SpawnTransform]
         - from: [SpawnProjectile, Exec]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
@@ -2274,6 +2288,11 @@ gameplay_abilities:
           properties:
             function: K2_GetActorLocation
           position: [1200, 0]
+        - id: MakeSpawnTransform
+          type: CallFunction
+          properties:
+            function: MakeTransform
+          position: [1350, 0]
         - id: GetTrapClass
           type: VariableGet
           properties:
@@ -2316,7 +2335,9 @@ gameplay_abilities:
         - from: [GetTrapClass, TrapClass]
           to: [SpawnTrap, Class]
         - from: [GetActorLocation, ReturnValue]
-          to: [SpawnTrap, SpawnTransform_Location]
+          to: [MakeSpawnTransform, Location]
+        - from: [MakeSpawnTransform, ReturnValue]
+          to: [SpawnTrap, SpawnTransform]
         - from: [SpawnTrap, Exec]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
@@ -2533,6 +2554,19 @@ gameplay_abilities:
           properties:
             variable_name: BurstRadius
           position: [1800, 100]
+        - id: MakeObjectTypes
+          type: MakeArray
+          properties:
+            array_type: byte
+            values:
+              - ObjectTypeQuery3
+          position: [1600, 150]
+        - id: MakeActorsToIgnore
+          type: MakeArray
+          properties:
+            array_type: object
+            class: Actor
+          position: [1600, 200]
         - id: SphereOverlap
           type: CallFunction
           properties:
@@ -2554,6 +2588,12 @@ gameplay_abilities:
           properties:
             function: GetAbilitySystemComponent
           position: [3000, 0]
+        - id: GetOwnASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponentFromActorInfo
+            target_self: true
+          position: [3000, 150]
         - id: MakeGESpec
           type: CallFunction
           properties:
@@ -2627,6 +2667,10 @@ gameplay_abilities:
           to: [SphereOverlap, SpherePos]
         - from: [GetRadius, BurstRadius]
           to: [SphereOverlap, SphereRadius]
+        - from: [MakeObjectTypes, Array]
+          to: [SphereOverlap, ObjectTypes]
+        - from: [MakeActorsToIgnore, Array]
+          to: [SphereOverlap, ActorsToIgnore]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
         - from: [ForEachActor, ArrayElement]
@@ -2637,6 +2681,8 @@ gameplay_abilities:
           to: [GetEnemyASC, Actor]
         - from: [GetEnemyASC, ReturnValue]
           to: [ApplyGE, Target]
+        - from: [GetOwnASC, ReturnValue]
+          to: [ApplyGE, self]
         - from: [MakeGESpec, ReturnValue]
           to: [SetByCaller, SpecHandle]
         - from: [GetDamage, BurstDamage]
@@ -3266,6 +3312,19 @@ gameplay_abilities:
           properties:
             variable_name: ProximityRadius
           position: [1800, 100]
+        - id: MakeObjectTypes
+          type: MakeArray
+          properties:
+            array_type: byte
+            values:
+              - ObjectTypeQuery3
+          position: [1600, 150]
+        - id: MakeActorsToIgnore
+          type: MakeArray
+          properties:
+            array_type: object
+            class: Actor
+          position: [1600, 200]
         - id: SphereOverlap
           type: CallFunction
           properties:
@@ -3287,6 +3346,12 @@ gameplay_abilities:
           properties:
             function: GetAbilitySystemComponent
           position: [3000, 0]
+        - id: GetOwnASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponentFromActorInfo
+            target_self: true
+          position: [3000, 150]
         - id: MakeGESpec
           type: CallFunction
           properties:
@@ -3360,6 +3425,10 @@ gameplay_abilities:
           to: [SphereOverlap, SpherePos]
         - from: [GetRadius, ProximityRadius]
           to: [SphereOverlap, SphereRadius]
+        - from: [MakeObjectTypes, Array]
+          to: [SphereOverlap, ObjectTypes]
+        - from: [MakeActorsToIgnore, Array]
+          to: [SphereOverlap, ActorsToIgnore]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
         - from: [ForEachActor, ArrayElement]
@@ -3367,7 +3436,9 @@ gameplay_abilities:
         - from: [HasTag, ReturnValue]
           to: [Branch_Enemy, Condition]
         - from: [ForEachActor, ArrayElement]
-          to: [GetEnemyASC, Target]
+          to: [GetEnemyASC, Actor]
+        - from: [GetOwnASC, ReturnValue]
+          to: [ApplyGE, self]
         - from: [GetEnemyASC, ReturnValue]
           to: [ApplyGE, Target]
         - from: [MakeGESpec, ReturnValue]
@@ -3429,6 +3500,12 @@ gameplay_abilities:
           properties:
             function: GetAbilitySystemComponent
           position: [1200, 0]
+        - id: GetOwnASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponentFromActorInfo
+            target_self: true
+          position: [1200, 100]
         - id: MakeGESpec
           type: CallFunction
           properties:
@@ -3491,6 +3568,8 @@ gameplay_abilities:
           to: [ApplyGE, Spec]
         - from: [GetEnemyASC, ReturnValue]
           to: [ApplyGE, Target]
+        - from: [GetOwnASC, ReturnValue]
+          to: [ApplyGE, self]
 
   # GA_FatherSacrifice - Emergency Save with Dormant Period
   - name: GA_FatherSacrifice
