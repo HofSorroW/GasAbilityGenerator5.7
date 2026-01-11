@@ -176,6 +176,36 @@ All player-owned action abilities now correctly use `LocalPredicted`:
 
 ---
 
+## Fixed: Duplicate Tag Granting in GE_*State Effects
+
+### Issue Identified
+GE_*State effects (GE_CrawlerState, GE_ArmorState, etc.) had `granted_tags` that duplicated tags already granted by GA `activation_owned_tags`.
+
+### Tech Ref Section 58.8 Pattern
+| Form | Equipment Effect GE | Components | Form Tags From |
+|------|---------------------|------------|----------------|
+| Armor | GE_EquipmentModifier_FatherArmor | 0 elements | GA Activation Owned Tags |
+
+"Grant form tags via Components? NO - Prevents duplicate with Activation Owned Tags"
+
+### Fix Applied
+Removed `granted_tags` from all 7 Form State Effects:
+- GE_CrawlerState (was: Father.Form.Crawler, Father.State.Detached)
+- GE_ArmorState (was: Father.Form.Armor, Father.State.Attached)
+- GE_ExoskeletonState (was: Father.Form.Exoskeleton, Father.State.Attached)
+- GE_SymbioteState (was: Father.Form.Symbiote, Symbiote.State.Merged)
+- GE_EngineerState (was: Father.Form.Engineer, Father.State.TurretDeployed)
+- GE_RifleState (was: Father.Form.Rifle, Father.State.Wielded)
+- GE_SwordState (was: Father.Form.Sword, Father.State.Wielded)
+
+### Tags Now Come From
+GA `activation_owned_tags` (single source of truth):
+- GA_FatherCrawler → Father.Form.Crawler, Father.State.Detached
+- GA_FatherArmor → Father.Form.Armor, Father.State.Attached
+- etc.
+
+---
+
 ## Potential Future Tasks
 - Test Niagara generator with sample manifest
 - Update GasAbilityGenerator.uplugin with plugin dependencies (to fix build warnings)

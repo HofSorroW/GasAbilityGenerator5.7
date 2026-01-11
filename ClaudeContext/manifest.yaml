@@ -464,55 +464,35 @@ enumerations:
 # GAMEPLAY EFFECTS (30)
 # ============================================================================
 gameplay_effects:
-  # Form State Effects (7)
+  # Form State Effects (7) - NO granted_tags per Tech Ref Section 58.8
+  # Form tags come from GA Activation Owned Tags to prevent duplicate tag granting
   - name: GE_CrawlerState
     folder: Effects/Forms
     duration_policy: Infinite
-    granted_tags:
-      - Father.Form.Crawler
-      - Father.State.Detached
 
   - name: GE_ArmorState
     folder: Effects/Forms
     duration_policy: Infinite
-    granted_tags:
-      - Father.Form.Armor
-      - Father.State.Attached
 
   - name: GE_ExoskeletonState
     folder: Effects/Forms
     duration_policy: Infinite
-    granted_tags:
-      - Father.Form.Exoskeleton
-      - Father.State.Attached
 
   - name: GE_SymbioteState
     folder: Effects/Forms
     duration_policy: Infinite
-    granted_tags:
-      - Father.Form.Symbiote
-      - Symbiote.State.Merged
 
   - name: GE_EngineerState
     folder: Effects/Forms
     duration_policy: Infinite
-    granted_tags:
-      - Father.Form.Engineer
-      - Father.State.TurretDeployed
 
   - name: GE_RifleState
     folder: Effects/Forms
     duration_policy: Infinite
-    granted_tags:
-      - Father.Form.Rifle
-      - Father.State.Wielded
 
   - name: GE_SwordState
     folder: Effects/Forms
     duration_policy: Infinite
-    granted_tags:
-      - Father.Form.Sword
-      - Father.State.Wielded
 
   # Stat Boost Effects (3)
   - name: GE_ArmorBoost
