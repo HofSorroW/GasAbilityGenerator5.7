@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.5.0
+// GasAbilityGenerator v2.6.5
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.5: Added Niagara System generator
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
 // v2.4.0: Added inline event graph and variables support for gameplay abilities
 // v2.3.0: Added 12 new asset type definitions with dependency-based generation order
@@ -65,6 +66,7 @@ struct FGenerationResult
 		else if (AssetName.StartsWith(TEXT("FC_"))) Category = TEXT("Float Curves");
 		else if (AssetName.StartsWith(TEXT("AM_"))) Category = TEXT("Animation Montages");
 		else if (AssetName.StartsWith(TEXT("NAS_"))) Category = TEXT("Animation Notifies");
+		else if (AssetName.StartsWith(TEXT("NS_"))) Category = TEXT("Niagara Systems");
 		else Category = TEXT("Other");
 	}
 };
@@ -605,6 +607,17 @@ struct FManifestTaggedDialogueSetDefinition
 };
 
 /**
+ * v2.6.5: Niagara System definition - creates UNiagaraSystem assets
+ */
+struct FManifestNiagaraSystemDefinition
+{
+	FString Name;
+	FString Folder;
+	FString TemplateSystem;     // Optional: System to copy from (e.g., NS_DefaultSprite)
+	TArray<FString> Emitters;   // Optional: Emitters to add to new system
+};
+
+/**
  * Parsed manifest data
  */
 struct FManifestData
@@ -638,6 +651,7 @@ struct FManifestData
 	TArray<FManifestNPCDefinitionDefinition> NPCDefinitions;
 	TArray<FManifestCharacterDefinitionDefinition> CharacterDefinitions;
 	TArray<FManifestTaggedDialogueSetDefinition> TaggedDialogueSets;
+	TArray<FManifestNiagaraSystemDefinition> NiagaraSystems;  // v2.6.5: Niagara VFX systems
 
 	// Cached whitelist of all asset names for validation
 	mutable TSet<FString> AssetWhitelist;
@@ -674,6 +688,7 @@ struct FManifestData
 		for (const auto& Def : NPCDefinitions) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : CharacterDefinitions) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TaggedDialogueSets) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : NiagaraSystems) AssetWhitelist.Add(Def.Name);
 
 		bWhitelistBuilt = true;
 	}
@@ -754,6 +769,7 @@ struct FManifestData
 		Total += NarrativeEvents.Num();
 		Total += NPCDefinitions.Num();
 		Total += CharacterDefinitions.Num();
+		Total += NiagaraSystems.Num();
 
 		return Total;
 	}

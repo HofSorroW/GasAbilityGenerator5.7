@@ -179,6 +179,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseTaggedDialogueSets(Lines, i, OutData);
 		}
+		// v2.6.5: Niagara System generation
+		else if (IsSectionHeader(TrimmedLine, TEXT("niagara_systems:")))
+		{
+			ParseNiagaraSystems(Lines, i, OutData);
+		}
 		// v2.5.6: NPC System Extensions - Support for suffix-based section names
 		// Any section ending with _tags: gets parsed as tags
 		else if (TrimmedLine.EndsWith(TEXT("_tags:")) && !TrimmedLine.StartsWith(TEXT("-")))
@@ -3204,4 +3209,87 @@ bool FGasAbilityGeneratorParser::ShouldExitSection(const FString& Line, int32 Se
 	}
 	
 	return false;
+}
+
+// v2.6.5: Niagara System parser - creates UNiagaraSystem assets
+void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestNiagaraSystemDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInEmitters = false;
+	int32 EmittersIndent = -1;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.NiagaraSystems.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// New item entry
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save previous if any
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.NiagaraSystems.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestNiagaraSystemDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInEmitters = false;
+			EmittersIndent = -1;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("template_system:")) || TrimmedLine.StartsWith(TEXT("template:")))
+			{
+				CurrentDef.TemplateSystem = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("emitters:")))
+			{
+				bInEmitters = true;
+				EmittersIndent = CurrentIndent;
+			}
+			else if (bInEmitters && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString EmitterName = TrimmedLine.Mid(1).TrimStart();
+				if (!EmitterName.IsEmpty())
+				{
+					CurrentDef.Emitters.Add(EmitterName);
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save any remaining entry
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.NiagaraSystems.Add(CurrentDef);
+	}
 }

@@ -27,7 +27,10 @@ public class GasAbilityGenerator : ModuleRules
 			"GameplayTasks",
 			"AIModule",
 			"NavigationSystem",
-			"EnhancedInput"
+			"EnhancedInput",
+
+			// v2.6.5: Niagara VFX system generation
+			"Niagara"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
@@ -63,7 +66,10 @@ public class GasAbilityGenerator : ModuleRules
 			
 			// JSON/YAML parsing
 			"Json",
-			"JsonUtilities"
+			"JsonUtilities",
+
+			// v2.6.5: Niagara editor for system creation
+			"NiagaraEditor"
 		});
 
 		// Enable exceptions for YAML parsing

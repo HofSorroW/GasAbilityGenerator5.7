@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.0
+// GasAbilityGenerator v2.6.5
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.5: Added Niagara System generator
 // v2.6.0: MAJOR AUTOMATION ENHANCEMENT - Maximized automation for all generators:
 //         - Blackboard: Now creates keys from manifest (Bool, Int, Float, Vector, Object, etc.)
 //         - Animation Montage: Now loads skeleton and creates montage with sections
@@ -5072,6 +5073,160 @@ FGenerationResult FTaggedDialogueSetGenerator::Generate(const FManifestTaggedDia
 
 	LogGeneration(FString::Printf(TEXT("Created Tagged Dialogue Set: %s with %d dialogues"),
 		*Definition.Name, Definition.Dialogues.Num()));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.DetermineCategory();
+	return Result;
+}
+
+// ============================================================================
+// v2.6.5: Niagara System Generator
+// ============================================================================
+
+#include "NiagaraSystem.h"
+#include "NiagaraEmitter.h"
+#include "NiagaraSystemFactoryNew.h"
+#include "NiagaraEditorUtilities.h"
+
+FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystemDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("VFX/NiagaraSystems") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Niagara System"), Result))
+	{
+		return Result;
+	}
+
+	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Niagara System"), Result))
+	{
+		return Result;
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UNiagaraSystem* NewSystem = nullptr;
+
+	// Option 1: Copy from template system
+	if (!Definition.TemplateSystem.IsEmpty())
+	{
+		// Try to find template system
+		FString TemplatePath = Definition.TemplateSystem;
+		if (!TemplatePath.Contains(TEXT("/")))
+		{
+			// Search common locations
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("%s/VFX/%s"), *GetProjectRoot(), *Definition.TemplateSystem),
+				FString::Printf(TEXT("%s/VFX/NiagaraSystems/%s"), *GetProjectRoot(), *Definition.TemplateSystem),
+				FString::Printf(TEXT("/Game/VFX/%s"), *Definition.TemplateSystem),
+				FString::Printf(TEXT("/Engine/Niagara/Templates/%s"), *Definition.TemplateSystem)
+			};
+
+			for (const FString& SearchPath : SearchPaths)
+			{
+				UNiagaraSystem* TemplateSystem = LoadObject<UNiagaraSystem>(nullptr, *SearchPath);
+				if (TemplateSystem)
+				{
+					TemplatePath = SearchPath;
+					break;
+				}
+			}
+		}
+
+		UNiagaraSystem* TemplateSystem = LoadObject<UNiagaraSystem>(nullptr, *TemplatePath);
+		if (TemplateSystem)
+		{
+			if (!TemplateSystem->IsReadyToRun())
+			{
+				TemplateSystem->WaitForCompilationComplete();
+			}
+
+			NewSystem = Cast<UNiagaraSystem>(StaticDuplicateObject(TemplateSystem, Package, *Definition.Name, RF_Public | RF_Standalone));
+			if (NewSystem)
+			{
+				NewSystem->TemplateAssetDescription = FText();
+				NewSystem->Category = FText();
+				LogGeneration(FString::Printf(TEXT("  Created from template: %s"), *TemplatePath));
+			}
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  WARNING: Template system not found: %s"), *Definition.TemplateSystem));
+		}
+	}
+
+	// Option 2: Create empty system and add emitters
+	if (!NewSystem)
+	{
+		NewSystem = NewObject<UNiagaraSystem>(Package, UNiagaraSystem::StaticClass(), *Definition.Name, RF_Public | RF_Standalone | RF_Transactional);
+		if (NewSystem)
+		{
+			// Initialize the system with default scripts
+			UNiagaraSystemFactoryNew::InitializeSystem(NewSystem, true);
+
+			// Add emitters if specified
+			for (const FString& EmitterName : Definition.Emitters)
+			{
+				FString EmitterPath = EmitterName;
+				if (!EmitterPath.Contains(TEXT("/")))
+				{
+					// Search common locations
+					TArray<FString> SearchPaths = {
+						FString::Printf(TEXT("%s/VFX/Emitters/%s"), *GetProjectRoot(), *EmitterName),
+						FString::Printf(TEXT("%s/VFX/%s"), *GetProjectRoot(), *EmitterName),
+						FString::Printf(TEXT("/Game/VFX/Emitters/%s"), *EmitterName),
+						FString::Printf(TEXT("/Engine/Niagara/Templates/Emitters/%s"), *EmitterName)
+					};
+
+					for (const FString& SearchPath : SearchPaths)
+					{
+						UNiagaraEmitter* TestEmitter = LoadObject<UNiagaraEmitter>(nullptr, *SearchPath);
+						if (TestEmitter)
+						{
+							EmitterPath = SearchPath;
+							break;
+						}
+					}
+				}
+
+				UNiagaraEmitter* Emitter = LoadObject<UNiagaraEmitter>(nullptr, *EmitterPath);
+				if (Emitter)
+				{
+					FVersionedNiagaraEmitter VersionedEmitter(Emitter, Emitter->GetExposedVersion().VersionGuid);
+					FNiagaraEditorUtilities::AddEmitterToSystem(*NewSystem, *Emitter, VersionedEmitter.Version);
+					LogGeneration(FString::Printf(TEXT("  Added emitter: %s"), *EmitterPath));
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  WARNING: Emitter not found: %s"), *EmitterName));
+				}
+			}
+		}
+	}
+
+	if (!NewSystem)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Niagara System"));
+	}
+
+	// Request compilation
+	NewSystem->RequestCompile(false);
+
+	// Mark dirty and register
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(NewSystem);
+
+	// Save the package
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, NewSystem, *PackageFileName, SaveArgs);
+
+	LogGeneration(FString::Printf(TEXT("Created Niagara System: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
 	return Result;

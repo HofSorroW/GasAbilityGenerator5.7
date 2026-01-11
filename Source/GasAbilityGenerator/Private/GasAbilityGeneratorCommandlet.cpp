@@ -448,6 +448,17 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
+	// v2.6.5: Niagara Systems
+	for (const auto& Definition : ManifestData.NiagaraSystems)
+	{
+		FGenerationResult Result = FNiagaraSystemGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	FGeneratorBase::ClearActiveManifest();
 
 	LogMessage(TEXT(""));

@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.5.0
+// GasAbilityGenerator v2.6.5
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.5: Added Niagara System generator
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
 // v2.4.0: Added inline event graph and variables support for gameplay ability generation
 // v2.3.0: Added 12 new asset type generators with dependency-based generation order
@@ -404,4 +405,11 @@ class GASABILITYGENERATOR_API FTaggedDialogueSetGenerator : public FGeneratorBas
 {
 public:
 	static FGenerationResult Generate(const FManifestTaggedDialogueSetDefinition& Definition);
+};
+
+// v2.6.5: Niagara System Generator - creates UNiagaraSystem assets
+class GASABILITYGENERATOR_API FNiagaraSystemGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestNiagaraSystemDefinition& Definition);
 };

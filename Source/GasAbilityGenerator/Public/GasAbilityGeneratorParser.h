@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.5.0
+// GasAbilityGenerator v2.6.5
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.5: Added Niagara System parser
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
 // v2.4.0: Added inline event graph and variables parsing for gameplay abilities
 // v2.3.0: Added 12 new asset type parsers with dependency-based generation order
@@ -64,6 +65,7 @@ private:
 	static void ParseNPCDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseCharacterDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseTaggedDialogueSets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseNiagaraSystems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v2.6.5
 
 	// v2.2.0: Event graph helper parsers
 	static void ParseGraphNodes(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);
