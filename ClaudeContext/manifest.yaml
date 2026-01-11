@@ -3783,11 +3783,16 @@ gameplay_abilities:
             function: GetComponentByClass
             class: NarrativeInventoryComponent
           position: [900, 650]
+        - id: CastToInventoryEnd
+          type: DynamicCast
+          properties:
+            target_class: NarrativeInventoryComponent
+          position: [1200, 650]
         - id: RemoveWeapon
           type: CallFunction
           properties:
             function: RemoveItem
-          position: [1200, 650]
+          position: [1500, 650]
       connections:
         # === ACTIVATION FLOW ===
         - from: [Event_Activate, Then]
@@ -3847,6 +3852,10 @@ gameplay_abilities:
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
         - from: [EnableCollision, Exec]
+          to: [GetInventoryEnd, Exec]
+        - from: [GetInventoryEnd, Exec]
+          to: [CastToInventoryEnd, Exec]
+        - from: [CastToInventoryEnd, Exec]
           to: [RemoveWeapon, Exec]
         # Data flow - End
         - from: [GetFatherRef_End, FatherRef]
@@ -3858,6 +3867,8 @@ gameplay_abilities:
         - from: [GetPlayerEnd, OwnerPlayer]
           to: [GetInventoryEnd, Target]
         - from: [GetInventoryEnd, ReturnValue]
+          to: [CastToInventoryEnd, Object]
+        - from: [CastToInventoryEnd, AsNarrative Inventory]
           to: [RemoveWeapon, Target]
         - from: [GetWeaponRef_End, WeaponRef]
           to: [RemoveWeapon, Item]
@@ -4028,11 +4039,16 @@ gameplay_abilities:
             function: GetComponentByClass
             class: NarrativeInventoryComponent
           position: [900, 650]
+        - id: CastToInventoryEnd
+          type: DynamicCast
+          properties:
+            target_class: NarrativeInventoryComponent
+          position: [1200, 650]
         - id: RemoveWeapon
           type: CallFunction
           properties:
             function: RemoveItem
-          position: [1200, 650]
+          position: [1500, 650]
       connections:
         # === ACTIVATION FLOW ===
         - from: [Event_Activate, Then]
@@ -4092,6 +4108,10 @@ gameplay_abilities:
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
         - from: [EnableCollision, Exec]
+          to: [GetInventoryEnd, Exec]
+        - from: [GetInventoryEnd, Exec]
+          to: [CastToInventoryEnd, Exec]
+        - from: [CastToInventoryEnd, Exec]
           to: [RemoveWeapon, Exec]
         # Data flow - End
         - from: [GetFatherRef_End, FatherRef]
@@ -4103,6 +4123,8 @@ gameplay_abilities:
         - from: [GetPlayerEnd, OwnerPlayer]
           to: [GetInventoryEnd, Target]
         - from: [GetInventoryEnd, ReturnValue]
+          to: [CastToInventoryEnd, Object]
+        - from: [CastToInventoryEnd, AsNarrative Inventory]
           to: [RemoveWeapon, Target]
         - from: [GetWeaponRef_End, WeaponRef]
           to: [RemoveWeapon, Item]
