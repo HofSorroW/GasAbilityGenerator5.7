@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 265,
-	"VersionName": "2.6.5",
+	"Version": 266,
+	"VersionName": "2.6.6",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v2.6.5: Niagara System generator.",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v2.6.6: GE assets as Blueprints for cooldown compatibility.",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",

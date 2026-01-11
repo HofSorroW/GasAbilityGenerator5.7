@@ -1096,12 +1096,30 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
 	}
 
-	// v2.3.0 FIX: Create UGameplayEffect directly as a DataAsset instead of Blueprint
-	// This ensures properties persist correctly since GEs are data-driven, not logic-driven
-	UGameplayEffect* Effect = NewObject<UGameplayEffect>(Package, *Definition.Name, RF_Public | RF_Standalone);
+	// v2.6.6 FIX: Create GE as Blueprint class instead of data asset
+	// This allows GEs to be used as CooldownGameplayEffectClass (requires TSubclassOf<UGameplayEffect>)
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = UGameplayEffect::StaticClass();
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(),
+		Package,
+		FName(*Definition.Name),
+		RF_Public | RF_Standalone,
+		nullptr,
+		GWarn
+	));
+
+	if (!Blueprint || !Blueprint->GeneratedClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Gameplay Effect Blueprint"));
+	}
+
+	// Get the CDO to configure properties
+	UGameplayEffect* Effect = Cast<UGameplayEffect>(Blueprint->GeneratedClass->GetDefaultObject());
 	if (!Effect)
 	{
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Gameplay Effect"));
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to get Gameplay Effect CDO"));
 	}
 
 	// Configure duration policy
@@ -1267,17 +1285,20 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		}
 	}
 
+	// v2.6.6: Compile Blueprint before saving to ensure GeneratedClass is valid
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
 	// Mark dirty and register
 	Package->MarkPackageDirty();
-	FAssetRegistryModule::AssetCreated(Effect);
+	FAssetRegistryModule::AssetCreated(Blueprint);
 
 	// Save package
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	UPackage::SavePackage(Package, Effect, *PackageFileName, SaveArgs);
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
 
-	LogGeneration(FString::Printf(TEXT("Created Gameplay Effect: %s (Duration: %s, Modifiers: %d, Tags: %d)"),
+	LogGeneration(FString::Printf(TEXT("Created Gameplay Effect Blueprint: %s (Duration: %s, Modifiers: %d, Tags: %d)"),
 		*Definition.Name, *Definition.DurationPolicy, Definition.Modifiers.Num(), Definition.GrantedTags.Num()));
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));

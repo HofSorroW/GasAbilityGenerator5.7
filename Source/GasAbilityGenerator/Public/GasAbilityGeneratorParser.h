@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.5
+// GasAbilityGenerator v2.6.6
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.6: Version bump (GE Blueprint change in Generators.cpp)
 // v2.6.5: Added Niagara System parser
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
 // v2.4.0: Added inline event graph and variables parsing for gameplay abilities
