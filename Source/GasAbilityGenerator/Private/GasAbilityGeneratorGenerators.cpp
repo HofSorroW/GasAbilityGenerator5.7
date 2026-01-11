@@ -4410,6 +4410,81 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		return Result;
 	}
 
+	// v2.6.9: Check dependencies BEFORE creating asset (deferred handling)
+	// Check equipment_modifier_ge dependency
+	UClass* EquipmentEffectClass = nullptr;
+	if (!Definition.EquipmentModifierGE.IsEmpty())
+	{
+		FString GEPath = Definition.EquipmentModifierGE;
+		if (!GEPath.Contains(TEXT("/")))
+		{
+			// Try Blueprint GE path first (v2.6.6 creates GEs as Blueprints)
+			GEPath = FString::Printf(TEXT("%s/Effects/Forms/%s.%s_C"), *GetProjectRoot(), *Definition.EquipmentModifierGE, *Definition.EquipmentModifierGE);
+		}
+		EquipmentEffectClass = LoadObject<UClass>(nullptr, *GEPath);
+		if (!EquipmentEffectClass)
+		{
+			// Try without _C suffix
+			GEPath = FString::Printf(TEXT("%s/Effects/Forms/%s"), *GetProjectRoot(), *Definition.EquipmentModifierGE);
+			EquipmentEffectClass = LoadObject<UClass>(nullptr, *GEPath);
+		}
+		if (!EquipmentEffectClass)
+		{
+			// Try generic Effects folder
+			GEPath = FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *Definition.EquipmentModifierGE, *Definition.EquipmentModifierGE);
+			EquipmentEffectClass = LoadObject<UClass>(nullptr, *GEPath);
+		}
+		if (!EquipmentEffectClass)
+		{
+			LogGeneration(FString::Printf(TEXT("  Deferring: equipment_modifier_ge '%s' not found yet"), *Definition.EquipmentModifierGE));
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+				FString::Printf(TEXT("Missing dependency: %s"), *Definition.EquipmentModifierGE));
+			Result.MissingDependency = Definition.EquipmentModifierGE;
+			Result.MissingDependencyType = TEXT("GameplayEffect");
+			Result.DetermineCategory();
+			return Result;
+		}
+	}
+
+	// Check abilities_to_grant dependencies
+	TArray<UClass*> AbilityClasses;
+	for (const FString& AbilityName : Definition.AbilitiesToGrant)
+	{
+		FString AbilityPath = AbilityName;
+		if (!AbilityPath.Contains(TEXT("/")))
+		{
+			AbilityPath = FString::Printf(TEXT("%s/Abilities/Forms/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName);
+		}
+		UClass* AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
+		if (!AbilityClass)
+		{
+			// Try other ability folders
+			AbilityPath = FString::Printf(TEXT("%s/Abilities/Actions/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName);
+			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
+		}
+		if (!AbilityClass)
+		{
+			AbilityPath = FString::Printf(TEXT("%s/Abilities/Combat/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName);
+			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
+		}
+		if (!AbilityClass)
+		{
+			AbilityPath = FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName);
+			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
+		}
+		if (!AbilityClass)
+		{
+			LogGeneration(FString::Printf(TEXT("  Deferring: ability '%s' not found yet"), *AbilityName));
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+				FString::Printf(TEXT("Missing dependency: %s"), *AbilityName));
+			Result.MissingDependency = AbilityName;
+			Result.MissingDependencyType = TEXT("GameplayAbility");
+			Result.DetermineCategory();
+			return Result;
+		}
+		AbilityClasses.Add(AbilityClass);
+	}
+
 	// v2.6.8: Use ParentClass from manifest (supports RangedWeaponItem, MeleeWeaponItem, etc.)
 	UClass* ParentClass = nullptr;
 	if (!Definition.ParentClass.IsEmpty())
