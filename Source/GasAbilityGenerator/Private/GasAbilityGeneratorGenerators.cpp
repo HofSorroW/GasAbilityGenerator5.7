@@ -72,6 +72,9 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/Skeleton.h"
+// v2.6.9: Animation notify types
+#include "Animation/AnimNotifies/AnimNotify.h"
+#include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Engine/SkeletalMesh.h"
 #include "Materials/Material.h"
 #include "Misc/FileHelper.h"
@@ -4278,7 +4281,7 @@ FGenerationResult FAnimationMontageGenerator::Generate(const FManifestAnimationM
 	return Result;
 }
 
-// v2.3.0: Animation Notify Generator (placeholder)
+// v2.6.9: Animation Notify Generator (creates Blueprint with UAnimNotifyState parent)
 FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNotifyDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Animations/Notifies") : Definition.Folder;
@@ -4295,10 +4298,64 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 		return Result;
 	}
 
-	LogGeneration(FString::Printf(TEXT("Animation Notify '%s' - create manually in editor"), *Definition.Name));
+	// Determine parent class - use NotifyClass from manifest or default to UAnimNotifyState
+	UClass* ParentClass = nullptr;
+	if (!Definition.NotifyClass.IsEmpty())
+	{
+		ParentClass = FindParentClass(Definition.NotifyClass);
+	}
+	if (!ParentClass)
+	{
+		// Default to UAnimNotifyState for notify states (NAS_*)
+		if (Definition.Name.StartsWith(TEXT("NAS_")))
+		{
+			ParentClass = UAnimNotifyState::StaticClass();
+		}
+		else
+		{
+			// Default to UAnimNotify for simple notifies (AN_*)
+			ParentClass = UAnimNotify::StaticClass();
+		}
+	}
 
-	Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-		TEXT("Animation Notifies require manual creation"));
+	if (!ParentClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Could not find parent class for Animation Notify"));
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+		ParentClass,
+		Package,
+		*Definition.Name,
+		BPTYPE_Normal,
+		UBlueprint::StaticClass(),
+		UBlueprintGeneratedClass::StaticClass()
+	);
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Animation Notify Blueprint"));
+	}
+
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	FAssetRegistryModule::AssetCreated(Blueprint);
+	Package->MarkPackageDirty();
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	LogGeneration(FString::Printf(TEXT("Created Animation Notify: %s (Parent: %s)"), *Definition.Name, *ParentClass->GetName()));
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
+		FString::Printf(TEXT("Created at %s"), *AssetPath));
 	Result.DetermineCategory();
 	return Result;
 }
