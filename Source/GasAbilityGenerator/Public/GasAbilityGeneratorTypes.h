@@ -647,8 +647,20 @@ struct FManifestTaggedDialogueSetDefinition
 };
 
 /**
+ * v2.6.11: Niagara User Parameter definition
+ * Represents a user-exposed parameter in a Niagara System
+ */
+struct FManifestNiagaraUserParameter
+{
+	FString Name;           // Parameter name (e.g., CoreScale, AlertLevel)
+	FString Type;           // float, int, bool, vector, color, linear_color
+	FString DefaultValue;   // Default value as string (parsed based on type)
+};
+
+/**
  * v2.6.10: Niagara System definition - creates UNiagaraSystem assets
  * Enhanced with warmup, bounds, determinism, and effect type settings
+ * v2.6.11: Added user parameters support
  */
 struct FManifestNiagaraSystemDefinition
 {
@@ -675,6 +687,9 @@ struct FManifestNiagaraSystemDefinition
 	FString EffectType;                // beam, burst, trail, ambient, impact, projectile
 	FString PoolingMethod;             // None, AutoRelease, ManualRelease, FreeInWorld
 	int32 MaxPoolSize = 0;             // Maximum pool size (0 = no pooling)
+
+	// v2.6.11: User parameters
+	TArray<FManifestNiagaraUserParameter> UserParameters;  // User-exposed parameters
 };
 
 /**

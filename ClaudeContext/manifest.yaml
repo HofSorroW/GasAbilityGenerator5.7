@@ -4620,10 +4620,11 @@ widget_blueprints:
         default: false
 
 # ============================================================================
-# NIAGARA SYSTEMS (5) - v2.6.10 Enhanced with warmup, bounds, determinism
+# NIAGARA SYSTEMS (7) - v2.6.11 Enhanced with user parameters
 # ============================================================================
 niagara_systems:
   # Main Father companion floating energy orb VFX
+  # Composed of: NE_FatherCore, NE_FatherShell, NE_FatherParticles, NE_FatherAura, NE_FatherTrail
   - name: NS_FatherCompanion
     folder: VFX
     effect_type: ambient
@@ -4633,17 +4634,37 @@ niagara_systems:
     warmup_time: 0.0
     pooling: AutoRelease
     max_pool_size: 5
-    # Composed of: NE_FatherCore, NE_FatherShell, NE_FatherParticles, NE_FatherAura, NE_FatherTrail
-    # User parameters: CoreScale, ShellScale, ParticleSpawnRate, AlertLevel, EmotionColor
+    user_parameters:
+      - name: CoreScale
+        type: float
+        default: 1.0
+      - name: ShellScale
+        type: float
+        default: 1.0
+      - name: ParticleSpawnRate
+        type: float
+        default: 10.0
+      - name: AlertLevel
+        type: float
+        default: 0.0
+      - name: EmotionColor
+        type: linear_color
+        default: 1.0, 0.8, 0.4, 1.0
 
-  # Form transition burst VFX
+  # Form transition burst VFX - used during 5s form change animation
   - name: NS_FatherFormTransition
     folder: VFX
     effect_type: burst
     warmup_time: 0.0
     pooling: AutoRelease
     max_pool_size: 3
-    # Used during 5s form change animation
+    user_parameters:
+      - name: TransitionIntensity
+        type: float
+        default: 1.0
+      - name: BurstColor
+        type: linear_color
+        default: 0.5, 0.8, 1.0, 1.0
 
   # Laser beam VFX for GA_FatherLaserShot
   - name: NS_LaserBeam
@@ -4654,6 +4675,19 @@ niagara_systems:
     fixed_bounds: true
     bounds_min: -500, -50, -50
     bounds_max: 500, 50, 50
+    user_parameters:
+      - name: BeamWidth
+        type: float
+        default: 5.0
+      - name: BeamLength
+        type: float
+        default: 1500.0
+      - name: BeamColor
+        type: linear_color
+        default: 1.0, 0.2, 0.2, 1.0
+      - name: BeamIntensity
+        type: float
+        default: 10.0
 
   # Electric trap VFX for GA_FatherElectricTrap
   - name: NS_ElectricTrap
@@ -4663,8 +4697,62 @@ niagara_systems:
     bounds_min: -200, -200, -50
     bounds_max: 200, 200, 50
     warmup_time: 0.5
+    user_parameters:
+      - name: TrapRadius
+        type: float
+        default: 150.0
+      - name: ArcCount
+        type: int
+        default: 8
+      - name: ElectricColor
+        type: linear_color
+        default: 0.3, 0.6, 1.0, 1.0
+      - name: ArcIntensity
+        type: float
+        default: 5.0
 
-  # Dome shield VFX for GA_ProtectiveDome
+  # Dome shield VFX for GA_ProtectiveDome (spherical particle shield)
+  - name: NS_DomeShield
+    folder: VFX
+    effect_type: ambient
+    fixed_bounds: true
+    bounds_min: -300, -300, -300
+    bounds_max: 300, 300, 300
+    user_parameters:
+      - name: DomeRadius
+        type: float
+        default: 250.0
+      - name: ShieldOpacity
+        type: float
+        default: 0.5
+      - name: ShieldColor
+        type: linear_color
+        default: 0.2, 0.6, 1.0, 0.8
+      - name: PulseSpeed
+        type: float
+        default: 1.0
+
+  # Dome burst VFX for GA_DomeBurst (expansion ring burst effect)
+  - name: NS_DomeBurst
+    folder: VFX
+    effect_type: burst
+    pooling: AutoRelease
+    max_pool_size: 5
+    user_parameters:
+      - name: BurstRadius
+        type: float
+        default: 500.0
+      - name: BurstSpeed
+        type: float
+        default: 1000.0
+      - name: BurstColor
+        type: linear_color
+        default: 1.0, 0.8, 0.2, 1.0
+      - name: BurstDamageIntensity
+        type: float
+        default: 1.0
+
+  # Legacy dome VFX (renamed for clarity)
   - name: NS_ProtectiveDome
     folder: VFX
     effect_type: ambient

@@ -5394,6 +5394,8 @@ FGenerationResult FTaggedDialogueSetGenerator::Generate(const FManifestTaggedDia
 #include "NiagaraEmitter.h"
 #include "NiagaraSystemFactoryNew.h"
 #include "NiagaraEditorUtilities.h"
+#include "NiagaraTypes.h"
+#include "NiagaraParameterStore.h"
 
 FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystemDefinition& Definition)
 {
@@ -5608,6 +5610,131 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	if (!Definition.EffectType.IsEmpty())
 	{
 		LogGeneration(FString::Printf(TEXT("  Effect type: %s"), *Definition.EffectType));
+	}
+
+	// v2.6.11: Add user parameters
+	if (Definition.UserParameters.Num() > 0)
+	{
+		FNiagaraUserRedirectionParameterStore& UserParams = NewSystem->GetExposedParameters();
+
+		for (const FManifestNiagaraUserParameter& UserParam : Definition.UserParameters)
+		{
+			FString ParamType = UserParam.Type.ToLower();
+			FName ParamName = *FString::Printf(TEXT("User.%s"), *UserParam.Name);
+
+			if (ParamType == TEXT("float"))
+			{
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetFloatDef(), ParamName);
+				float DefaultValue = FCString::Atof(*UserParam.DefaultValue);
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+				LogGeneration(FString::Printf(TEXT("  Added user parameter: %s (float) = %.2f"), *UserParam.Name, DefaultValue));
+			}
+			else if (ParamType == TEXT("int") || ParamType == TEXT("int32"))
+			{
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetIntDef(), ParamName);
+				int32 DefaultValue = FCString::Atoi(*UserParam.DefaultValue);
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+				LogGeneration(FString::Printf(TEXT("  Added user parameter: %s (int) = %d"), *UserParam.Name, DefaultValue));
+			}
+			else if (ParamType == TEXT("bool"))
+			{
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetBoolDef(), ParamName);
+				bool DefaultValue = UserParam.DefaultValue.ToBool();
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+				LogGeneration(FString::Printf(TEXT("  Added user parameter: %s (bool) = %s"), *UserParam.Name, DefaultValue ? TEXT("true") : TEXT("false")));
+			}
+			else if (ParamType == TEXT("vector") || ParamType == TEXT("vector3") || ParamType == TEXT("fvector"))
+			{
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetVec3Def(), ParamName);
+				TArray<FString> Parts;
+				UserParam.DefaultValue.ParseIntoArray(Parts, TEXT(","));
+				FVector DefaultValue = FVector::ZeroVector;
+				if (Parts.Num() >= 3)
+				{
+					DefaultValue = FVector(
+						FCString::Atof(*Parts[0].TrimStartAndEnd()),
+						FCString::Atof(*Parts[1].TrimStartAndEnd()),
+						FCString::Atof(*Parts[2].TrimStartAndEnd())
+					);
+				}
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+				LogGeneration(FString::Printf(TEXT("  Added user parameter: %s (vector) = (%.2f,%.2f,%.2f)"),
+					*UserParam.Name, DefaultValue.X, DefaultValue.Y, DefaultValue.Z));
+			}
+			else if (ParamType == TEXT("color") || ParamType == TEXT("linear_color") || ParamType == TEXT("linearcolor") || ParamType == TEXT("flinearcolor"))
+			{
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetColorDef(), ParamName);
+				TArray<FString> Parts;
+				UserParam.DefaultValue.ParseIntoArray(Parts, TEXT(","));
+				FLinearColor DefaultValue = FLinearColor::White;
+				if (Parts.Num() >= 3)
+				{
+					DefaultValue.R = FCString::Atof(*Parts[0].TrimStartAndEnd());
+					DefaultValue.G = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					DefaultValue.B = FCString::Atof(*Parts[2].TrimStartAndEnd());
+					if (Parts.Num() >= 4)
+					{
+						DefaultValue.A = FCString::Atof(*Parts[3].TrimStartAndEnd());
+					}
+				}
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+				LogGeneration(FString::Printf(TEXT("  Added user parameter: %s (color) = (%.2f,%.2f,%.2f,%.2f)"),
+					*UserParam.Name, DefaultValue.R, DefaultValue.G, DefaultValue.B, DefaultValue.A));
+			}
+			else if (ParamType == TEXT("vector2") || ParamType == TEXT("vector2d") || ParamType == TEXT("fvector2d"))
+			{
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetVec2Def(), ParamName);
+				TArray<FString> Parts;
+				UserParam.DefaultValue.ParseIntoArray(Parts, TEXT(","));
+				FVector2D DefaultValue = FVector2D::ZeroVector;
+				if (Parts.Num() >= 2)
+				{
+					DefaultValue = FVector2D(
+						FCString::Atof(*Parts[0].TrimStartAndEnd()),
+						FCString::Atof(*Parts[1].TrimStartAndEnd())
+					);
+				}
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+				LogGeneration(FString::Printf(TEXT("  Added user parameter: %s (vector2) = (%.2f,%.2f)"),
+					*UserParam.Name, DefaultValue.X, DefaultValue.Y));
+			}
+			else if (ParamType == TEXT("vector4") || ParamType == TEXT("fvector4"))
+			{
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetVec4Def(), ParamName);
+				TArray<FString> Parts;
+				UserParam.DefaultValue.ParseIntoArray(Parts, TEXT(","));
+				FVector4 DefaultValue = FVector4::Zero();
+				if (Parts.Num() >= 4)
+				{
+					DefaultValue = FVector4(
+						FCString::Atof(*Parts[0].TrimStartAndEnd()),
+						FCString::Atof(*Parts[1].TrimStartAndEnd()),
+						FCString::Atof(*Parts[2].TrimStartAndEnd()),
+						FCString::Atof(*Parts[3].TrimStartAndEnd())
+					);
+				}
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+				LogGeneration(FString::Printf(TEXT("  Added user parameter: %s (vector4) = (%.2f,%.2f,%.2f,%.2f)"),
+					*UserParam.Name, DefaultValue.X, DefaultValue.Y, DefaultValue.Z, DefaultValue.W));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("  WARNING: Unknown parameter type '%s' for %s, defaulting to float"), *ParamType, *UserParam.Name));
+				FNiagaraVariable Var(FNiagaraTypeDefinition::GetFloatDef(), ParamName);
+				float DefaultValue = FCString::Atof(*UserParam.DefaultValue);
+				Var.SetValue(DefaultValue);
+				UserParams.AddParameter(Var, true);
+			}
+		}
+
+		LogGeneration(FString::Printf(TEXT("  Added %d user parameters"), Definition.UserParameters.Num()));
 	}
 
 	// Request compilation

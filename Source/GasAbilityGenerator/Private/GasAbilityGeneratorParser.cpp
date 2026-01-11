@@ -3212,6 +3212,7 @@ bool FGasAbilityGeneratorParser::ShouldExitSection(const FString& Line, int32 Se
 }
 
 // v2.6.10: Niagara System parser - creates UNiagaraSystem assets with enhanced properties
+// v2.6.11: Added user_parameters parsing support
 void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
@@ -3220,7 +3221,10 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 	FManifestNiagaraSystemDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInEmitters = false;
+	bool bInUserParameters = false;
+	FManifestNiagaraUserParameter CurrentUserParam;
 	int32 EmittersIndent = -1;
+	int32 UserParamsIndent = -1;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3230,6 +3234,11 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// Save any pending user parameter
+			if (bInUserParameters && !CurrentUserParam.Name.IsEmpty())
+			{
+				CurrentDef.UserParameters.Add(CurrentUserParam);
+			}
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NiagaraSystems.Add(CurrentDef);
@@ -3247,7 +3256,12 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 		// New item entry
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			// Save previous if any
+			// Save any pending user parameter
+			if (bInUserParameters && !CurrentUserParam.Name.IsEmpty())
+			{
+				CurrentDef.UserParameters.Add(CurrentUserParam);
+			}
+			// Save previous system if any
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NiagaraSystems.Add(CurrentDef);
@@ -3257,24 +3271,32 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
 			bInEmitters = false;
+			bInUserParameters = false;
+			CurrentUserParam = FManifestNiagaraUserParameter();
 			EmittersIndent = -1;
+			UserParamsIndent = -1;
 		}
 		else if (bInItem)
 		{
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("template_system:")) || TrimmedLine.StartsWith(TEXT("template:")))
 			{
 				CurrentDef.TemplateSystem = GetLineValue(TrimmedLine);
+				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("emitters:")))
 			{
 				bInEmitters = true;
+				bInUserParameters = false;
 				EmittersIndent = CurrentIndent;
 			}
-			else if (bInEmitters && TrimmedLine.StartsWith(TEXT("-")))
+			else if (bInEmitters && TrimmedLine.StartsWith(TEXT("-")) && !bInUserParameters)
 			{
 				FString EmitterName = TrimmedLine.Mid(1).TrimStart();
 				if (!EmitterName.IsEmpty())
@@ -3282,27 +3304,58 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 					CurrentDef.Emitters.Add(EmitterName);
 				}
 			}
+			// v2.6.11: User parameters section
+			else if (TrimmedLine.StartsWith(TEXT("user_parameters:")))
+			{
+				bInUserParameters = true;
+				bInEmitters = false;
+				UserParamsIndent = CurrentIndent;
+				CurrentUserParam = FManifestNiagaraUserParameter();
+			}
+			// v2.6.11: User parameter item
+			else if (bInUserParameters && TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				// Save previous parameter if any
+				if (!CurrentUserParam.Name.IsEmpty())
+				{
+					CurrentDef.UserParameters.Add(CurrentUserParam);
+				}
+				CurrentUserParam = FManifestNiagaraUserParameter();
+				CurrentUserParam.Name = GetLineValue(TrimmedLine.Mid(2));
+			}
+			else if (bInUserParameters && TrimmedLine.StartsWith(TEXT("type:")))
+			{
+				CurrentUserParam.Type = GetLineValue(TrimmedLine);
+			}
+			else if (bInUserParameters && (TrimmedLine.StartsWith(TEXT("default:")) || TrimmedLine.StartsWith(TEXT("default_value:"))))
+			{
+				CurrentUserParam.DefaultValue = GetLineValue(TrimmedLine);
+			}
 			// v2.6.10: Warmup settings
 			else if (TrimmedLine.StartsWith(TEXT("warmup_time:")))
 			{
 				CurrentDef.WarmupTime = FCString::Atof(*GetLineValue(TrimmedLine));
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("warmup_tick_count:")))
 			{
 				CurrentDef.WarmupTickCount = FCString::Atoi(*GetLineValue(TrimmedLine));
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("warmup_tick_delta:")))
 			{
 				CurrentDef.WarmupTickDelta = FCString::Atof(*GetLineValue(TrimmedLine));
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			// v2.6.10: Bounds settings
 			else if (TrimmedLine.StartsWith(TEXT("fixed_bounds:")))
 			{
 				CurrentDef.bFixedBounds = GetLineValue(TrimmedLine).ToBool();
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("bounds_min:")))
 			{
@@ -3318,6 +3371,7 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 					);
 				}
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("bounds_max:")))
 			{
@@ -3333,37 +3387,49 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 					);
 				}
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			// v2.6.10: Determinism settings
 			else if (TrimmedLine.StartsWith(TEXT("determinism:")) || TrimmedLine.StartsWith(TEXT("deterministic:")))
 			{
 				CurrentDef.bDeterminism = GetLineValue(TrimmedLine).ToBool();
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("random_seed:")))
 			{
 				CurrentDef.RandomSeed = FCString::Atoi(*GetLineValue(TrimmedLine));
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			// v2.6.10: Effect type settings
 			else if (TrimmedLine.StartsWith(TEXT("effect_type:")))
 			{
 				CurrentDef.EffectType = GetLineValue(TrimmedLine);
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("pooling_method:")) || TrimmedLine.StartsWith(TEXT("pooling:")))
 			{
 				CurrentDef.PoolingMethod = GetLineValue(TrimmedLine);
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("max_pool_size:")) || TrimmedLine.StartsWith(TEXT("pool_size:")))
 			{
 				CurrentDef.MaxPoolSize = FCString::Atoi(*GetLineValue(TrimmedLine));
 				bInEmitters = false;
+				bInUserParameters = false;
 			}
 		}
 
 		LineIndex++;
+	}
+
+	// v2.6.11: Save any pending user parameter before exiting
+	if (bInUserParameters && !CurrentUserParam.Name.IsEmpty())
+	{
+		CurrentDef.UserParameters.Add(CurrentUserParam);
 	}
 
 	// Save any remaining entry
