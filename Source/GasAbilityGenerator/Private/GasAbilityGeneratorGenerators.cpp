@@ -568,6 +568,10 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Characters/%s.%s_C"), *Root, *ClassName, *ClassName));
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Actors/%s.%s_C"), *Root, *ClassName, *ClassName));
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("/Game/%s.%s_C"), *ClassName, *ClassName));
+		// v2.6.9: Add Narrative Pro paths for parent class lookup
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/%s.%s_C"), *ClassName, *ClassName));
 
 		for (const FString& Path : BlueprintSearchPaths)
 		{
@@ -4470,6 +4474,22 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		if (!AbilityClass)
 		{
 			AbilityPath = FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName);
+			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
+		}
+		// v2.6.9: Try Narrative Pro paths for abilities/activities
+		if (!AbilityClass)
+		{
+			AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *AbilityName, *AbilityName);
+			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
+		}
+		if (!AbilityClass)
+		{
+			AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/%s/%s.%s_C"), *AbilityName, *AbilityName, *AbilityName);
+			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
+		}
+		if (!AbilityClass)
+		{
+			AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *AbilityName, *AbilityName);
 			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
 		}
 		if (!AbilityClass)

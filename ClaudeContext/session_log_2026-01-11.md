@@ -383,3 +383,161 @@ Created: `CONSISTENCY_REPORT_2026-01-11.md` (336 lines)
 3. **MEDIUM:** Rename OriginalWalkSpeed → OriginalMaxWalkSpeed in GA_FatherArmor
 4. **LOW:** Update widget guide versions to v2.2
 5. **LOW:** Standardize BBKey_ prefix for blackboard keys
+
+---
+
+## Completed: v2.6.9 Deferred Handling for EquippableItemGenerator
+
+### What Was Done
+Added pre-generation dependency checking to EquippableItemGenerator to support the commandlet's retry mechanism.
+
+### Problem Addressed
+EquippableItems reference:
+- `equipment_modifier_ge` - The GE that applies form stat modifiers
+- `abilities_to_grant` - Abilities the equipped item grants
+
+Without checking these dependencies first, generation could fail if the referenced assets weren't created yet.
+
+### Solution Implemented
+Added v2.6.9 code block in `FEquippableItemGenerator::Generate()` that:
+
+1. **Checks equipment_modifier_ge dependency BEFORE creating asset**
+   - Tries multiple paths: Blueprint GE, standard GE, common folders
+   - Returns `Deferred` status if not found
+
+2. **Checks all abilities_to_grant dependencies**
+   - Tries multiple paths per ability
+   - Returns `Deferred` status if any ability not found
+   - Stores found class references for later use
+
+### Code Added (75 lines in GasAbilityGeneratorGenerators.cpp)
+```cpp
+// v2.6.9: Check dependencies BEFORE creating asset (deferred handling)
+// Check equipment_modifier_ge dependency
+UClass* EquipmentEffectClass = nullptr;
+if (!Definition.EquipmentModifierGE.IsEmpty())
+{
+    // Try multiple paths to find the GE...
+    if (!EquipmentEffectClass)
+    {
+        Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred, ...);
+        Result.MissingDependency = Definition.EquipmentModifierGE;
+        Result.MissingDependencyType = TEXT("GameplayEffect");
+        return Result;
+    }
+}
+
+// Check abilities_to_grant dependencies
+TArray<UClass*> AbilityClasses;
+for (const FString& AbilityName : Definition.AbilitiesToGrant)
+{
+    // Try multiple paths to find the ability...
+    if (!AbilityClass)
+    {
+        Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred, ...);
+        Result.MissingDependency = AbilityName;
+        Result.MissingDependencyType = TEXT("GameplayAbility");
+        return Result;
+    }
+    AbilityClasses.Add(AbilityClass);
+}
+```
+
+### Build Status
+- **Result: Succeeded** (12.75 seconds)
+- Compiled with UE 5.7, Visual Studio 2022
+
+### Git Status
+- Commit: `d314dfb` - "v2.6.9: Add deferred handling to EquippableItemGenerator"
+- Pushed to: https://github.com/HofSorroW/GasAbilityGenerator5.7
+
+### Benefit
+When generating from scratch, the commandlet's retry mechanism will:
+1. Attempt EquippableItem generation
+2. If dependencies missing → return Deferred
+3. Generate dependencies (GEs, GAs)
+4. Retry EquippableItems → succeed
+
+This ensures correct generation order without manual manifest reordering.
+
+---
+
+## Current Plugin Version: v2.6.9
+
+### Test Results (Generation from Scratch)
+
+**Summary:**
+- New: 143
+- Skipped: 0
+- Failed: 2
+- Deferred: 1
+
+**Deferred Asset Log:**
+```
+[GasAbilityGenerator] Deferring: ability 'GA_FatherAttack' not found yet
+```
+
+An EquippableItem that references GA_FatherAttack in `abilities_to_grant` was correctly deferred. The retry mechanism attempted to generate it after other assets, but it remained deferred because GA_FatherAttack itself failed (parent class `GA_Melee_Unarmed` not found in project).
+
+**Conclusion:** v2.6.9 deferred handling is working correctly. The deferred system:
+1. Detected missing GA_FatherAttack dependency
+2. Returned Deferred status instead of creating incomplete asset
+3. Attempted retry after other assets were generated
+
+The remaining deferred count is expected since GA_FatherAttack requires a parent class (GA_Melee_Unarmed) that doesn't exist in the project yet.
+
+---
+
+## Updated: v2.6.9 Complete Deferred Handling (Final)
+
+### Changes Made
+
+**1. EquippableItemGenerator (GasAbilityGeneratorGenerators.cpp)**
+- Added pre-check for `equipment_modifier_ge` dependency
+- Added pre-check for `abilities_to_grant` dependencies
+- Returns `Deferred` status if any dependency not found
+- Uses pre-loaded class references when setting CDO properties
+- **Removed:** "EquipmentEffect will need manual setup" message
+- **Removed:** "Ability will need manual setup" message
+
+**2. ActivityGenerator (GasAbilityGeneratorGenerators.cpp)**
+- Added pre-check for `BehaviorTree` dependency
+- Returns `Deferred` status if BT not found
+- Uses pre-loaded BT when setting CDO property
+- **Removed:** "BehaviorTree will need manual setup" message
+
+**3. NPCDefinitionGenerator (GasAbilityGeneratorGenerators.cpp)**
+- Added pre-check for `AbilityConfiguration` dependency
+- Added `Configs/` to search paths (where AC assets are generated)
+- Returns `Deferred` status if AC not found
+- Uses pre-loaded AbilityConfig when setting property
+- **Removed:** "AbilityConfiguration will need manual setup" message
+
+**4. Commandlet (GasAbilityGeneratorCommandlet.cpp)**
+- Added deferred handling for EquippableItems section
+- Added deferred handling for Activities section
+- Added deferred handling for NPCDefinitions section
+- Added retry handlers for all three new asset types
+- All deferred assets now show `[DEFER]` instead of `[FAIL]`
+
+### Test Results (Final)
+```
+New: 143 (first pass) + 1 (retry) = 144 total
+Skipped: 0 (clean generation)
+Failed: 2 (animation notify + GA_FatherAttack missing parent)
+Deferred: 1 (EI_FatherCrawlerForm - waiting for GA_FatherAttack)
+```
+
+**Note:** The one remaining deferred asset (`EI_FatherCrawlerForm`) cannot be resolved because it depends on `GA_FatherAttack`, which itself fails due to missing parent class `GA_Melee_Unarmed`. This is expected behavior - the deferred system correctly identifies unresolvable dependencies.
+
+### Git Status
+- Commit: `ad23a94` - "v2.6.9: Complete deferred handling for all generators"
+- Pushed to: https://github.com/HofSorroW/GasAbilityGenerator5.7
+
+### Files Modified
+1. GasAbilityGeneratorGenerators.cpp (+85 lines, -87 lines)
+2. GasAbilityGeneratorCommandlet.cpp (+139 lines, -26 lines)
+
+---
+
+## Current Plugin Version: v2.6.9
