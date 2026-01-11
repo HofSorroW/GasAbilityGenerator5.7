@@ -411,3 +411,29 @@ All Father-specific state tags use `Father.State.*` format (NOT `State.Father.*`
 | BT Services | BTService_BlueprintBase |
 | Gameplay Cues (burst) | GameplayCueNotify_Burst, _BurstLatent |
 | Gameplay Cues (persistent) | AGameplayCueNotify_Actor |
+
+### Manifest Validation (January 2026)
+
+**Net Execution Policy - Validated Assignments:**
+
+| Policy | Abilities (manifest.yaml) |
+|--------|---------------------------|
+| **ServerOnly** | GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer, GA_FatherRifle, GA_FatherSword, GA_FatherAttack, GA_FatherLaserShot, GA_FatherMark, GA_FatherSacrifice, GA_TurretShoot, GA_FatherElectricTrap, GA_ProximityStrike, GA_CoreLaser |
+| **LocalPredicted** | GA_FatherExoskeletonDash, GA_FatherExoskeletonSprint, GA_StealthField, GA_Backstab, GA_ProtectiveDome, GA_DomeBurst |
+
+**Parent Class - Validated Assignments:**
+
+| Parent Class | Assets (manifest.yaml) |
+|--------------|------------------------|
+| GA_Melee_Unarmed | GA_FatherAttack |
+| NarrativeGameplayAbility | All other GA_* abilities |
+| EquippableItem | EI_FatherCrawlerForm, EI_FatherArmorForm, EI_FatherExoskeletonForm, EI_FatherSymbioteForm, EI_FatherEngineerForm, EI_FatherRifleForm, EI_FatherSwordForm |
+| RangedWeaponItem | BP_FatherRifleWeapon |
+| MeleeWeaponItem | BP_FatherSwordWeapon |
+| NarrativeNPCCharacter | BP_FatherCompanion, BP_WardenHusk, BP_WardenCore, BP_PossessedExploder, BP_SupportBuffer, BP_BiomechHost, BP_BiomechCreature, BP_GathererScout, BP_Reinforcement, BP_ReturnedStalker |
+| NarrativeProjectile | BP_LaserProjectile, BP_TurretProjectile, BP_CoreLaserProjectile |
+| UserWidget | WBP_MarkIndicator, WBP_UltimatePanel, WBP_FormWheel |
+| BTService_BlueprintBase | BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, BTS_CheckExplosionProximity, BTS_HealNearbyAllies |
+| NarrativeActivityBase | BPA_FatherFollow, BPA_FormationFollow, BPA_Explode, BPA_Alert, BPA_Gather |
+| NPCGoalItem | Goal_Alert |
+| NPCGoalGenerator | GoalGenerator_Alert, GoalGenerator_RandomAggression |
