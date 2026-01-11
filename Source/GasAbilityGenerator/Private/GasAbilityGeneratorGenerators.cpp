@@ -1,5 +1,8 @@
-// GasAbilityGenerator v2.6.5
+// GasAbilityGenerator v2.6.8
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.8: EquippableItemGenerator now uses ParentClass from manifest (RangedWeaponItem, MeleeWeaponItem support)
+// v2.6.7: Deferred asset retry mechanism for dependency resolution
+// v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
 // v2.6.5: Added Niagara System generator
 // v2.6.0: MAJOR AUTOMATION ENHANCEMENT - Maximized automation for all generators:
 //         - Blackboard: Now creates keys from manifest (Bool, Int, Float, Vector, Object, etc.)
@@ -2925,6 +2928,9 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("GetAllActorsOfClass"), UGameplayStatics::StaticClass());
 		WellKnownFunctions.Add(TEXT("GetPlayerCharacter"), UGameplayStatics::StaticClass());
 		WellKnownFunctions.Add(TEXT("GetPlayerPawn"), UGameplayStatics::StaticClass());
+
+		// Note: Narrative Pro functions (GetInventoryComponent, RemoveItem, WieldWeapon, etc.)
+		// should use the "class" property in manifest.yaml to specify function owner class
 	}
 
 	// Determine the function owner class
@@ -4387,6 +4393,7 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 }
 
 // v2.6.0: Equippable Item Generator - sets slots, effect, and abilities on CDO
+// v2.6.8: Fixed to use ParentClass from manifest for RangedWeaponItem, MeleeWeaponItem, etc.
 FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableItemDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Items") : Definition.Folder;
@@ -4403,8 +4410,21 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		return Result;
 	}
 
-	// Find UEquippableItem class
-	UClass* ParentClass = UEquippableItem::StaticClass();
+	// v2.6.8: Use ParentClass from manifest (supports RangedWeaponItem, MeleeWeaponItem, etc.)
+	UClass* ParentClass = nullptr;
+	if (!Definition.ParentClass.IsEmpty())
+	{
+		ParentClass = FindParentClass(Definition.ParentClass);
+		if (ParentClass)
+		{
+			LogGeneration(FString::Printf(TEXT("Using parent class: %s"), *Definition.ParentClass));
+		}
+	}
+	// Fallback to UEquippableItem if no parent specified or not found
+	if (!ParentClass)
+	{
+		ParentClass = UEquippableItem::StaticClass();
+	}
 	if (!ParentClass)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("UEquippableItem class not found"));
