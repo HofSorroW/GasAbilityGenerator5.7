@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v2.6.5) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v2.6.9) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -56,6 +56,16 @@ Never copy files to temp locations (like `C:/Temp/`) to work around path issues.
 
 # Wrong - copying to temp as workaround
 cp manifest.yaml C:/Temp/manifest.yaml  # DO NOT DO THIS
+```
+
+### Delete Asset Folder Before Regeneration
+When any changes are made to the GasAbilityGenerator plugin code (generators, commandlet, parser), delete the asset folder before running the generator again. The Asset Registry caches existing assets and will skip regeneration otherwise.
+```bash
+# Delete before regenerating
+rm -rf "/c/Unreal Projects/NP22B57/Content/FatherCompanion"
+
+# Then run the generator
+UnrealEditor-Cmd.exe ... -run=GasAbilityGenerator ...
 ```
 
 ### Non-Asset Entries Must Be Nested
