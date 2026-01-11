@@ -643,4 +643,69 @@ Deferred: 0
 
 ---
 
-## Current Plugin Version: v2.6.9
+## Completed: Niagara User Parameters Support (v2.6.11)
+
+### What Was Done
+Added user parameters support for Niagara Systems generator, enabling runtime-controllable particle system properties.
+
+### Files Modified
+
+1. **GasAbilityGeneratorTypes.h**
+   - Added `FManifestNiagaraUserParameter` struct with Name, Type, DefaultValue
+   - Added `UserParameters` array to `FManifestNiagaraSystemDefinition`
+
+2. **GasAbilityGeneratorParser.cpp**
+   - Added `user_parameters:` section parsing in `ParseNiagaraSystems()`
+   - Supports nested parameter definitions with type and default values
+
+3. **GasAbilityGeneratorGenerators.cpp**
+   - Added includes for `NiagaraTypes.h` and `NiagaraParameterStore.h`
+   - Added user parameters generation via `FNiagaraUserRedirectionParameterStore`
+   - Supported types: float, int, bool, vector, vector2, vector4, linear_color
+
+4. **manifest.yaml**
+   - Updated to 7 Niagara systems with user parameters:
+     - NS_FatherCompanion: 5 params (CoreScale, ShellScale, ParticleSpawnRate, AlertLevel, EmotionColor)
+     - NS_FatherFormTransition: 2 params (TransitionIntensity, BurstColor)
+     - NS_LaserBeam: 4 params (BeamWidth, BeamLength, BeamColor, BeamIntensity)
+     - NS_ElectricTrap: 4 params (TrapRadius, ArcCount, ElectricColor, ArcIntensity)
+     - NS_DomeShield: 4 params (DomeRadius, ShieldOpacity, ShieldColor, PulseSpeed)
+     - NS_DomeBurst: 4 params (BurstRadius, BurstSpeed, BurstColor, BurstDamageIntensity)
+     - NS_ProtectiveDome: Legacy system
+
+### YAML Usage Example
+```yaml
+niagara_systems:
+  - name: NS_FatherCompanion
+    folder: VFX
+    user_parameters:
+      - name: CoreScale
+        type: float
+        default: 1.0
+      - name: EmotionColor
+        type: linear_color
+        default: 1.0, 0.8, 0.4, 1.0
+```
+
+### Supported Parameter Types
+| Type | Description | Default Format |
+|------|-------------|----------------|
+| float | Single float value | `1.0` |
+| int | Integer value | `8` |
+| bool | Boolean | `true` / `false` |
+| vector | FVector (3D) | `1.0, 2.0, 3.0` |
+| vector2 | FVector2D | `1.0, 2.0` |
+| vector4 | FVector4 | `1.0, 2.0, 3.0, 4.0` |
+| linear_color | FLinearColor | `1.0, 0.8, 0.4, 1.0` |
+
+### Build Status
+- **Result: Succeeded** (12.49 seconds)
+- Compiled with UE 5.7, Visual Studio 2022
+
+### Git Status
+- Commit: `04f05b0` - "v2.6.11: Add Niagara user parameters support"
+- Pushed to: https://github.com/HofSorroW/GasAbilityGenerator5.7
+
+---
+
+## Current Plugin Version: v2.6.11
