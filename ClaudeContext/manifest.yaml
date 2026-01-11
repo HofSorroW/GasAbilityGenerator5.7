@@ -464,34 +464,43 @@ enumerations:
 # GAMEPLAY EFFECTS (30)
 # ============================================================================
 gameplay_effects:
-  # Form State Effects (7) - NO granted_tags per Tech Ref Section 58.8
+  # Form Equipment Modifier Effects (7) - Per Tech Doc Section 58.7
+  # Child GEs of GE_EquipmentModifier with 0 Components (no granted_tags)
   # Form tags come from GA Activation Owned Tags to prevent duplicate tag granting
-  - name: GE_CrawlerState
+  # Stats applied via SetByCaller from EquippableItem equipment_effect_values
+  - name: GE_EquipmentModifier_FatherCrawler
     folder: Effects/Forms
+    parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
-  - name: GE_ArmorState
+  - name: GE_EquipmentModifier_FatherArmor
     folder: Effects/Forms
+    parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
-  - name: GE_ExoskeletonState
+  - name: GE_EquipmentModifier_FatherExoskeleton
     folder: Effects/Forms
+    parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
-  - name: GE_SymbioteState
+  - name: GE_EquipmentModifier_FatherSymbiote
     folder: Effects/Forms
+    parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
-  - name: GE_EngineerState
+  - name: GE_EquipmentModifier_FatherEngineer
     folder: Effects/Forms
+    parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
-  - name: GE_RifleState
+  - name: GE_EquipmentModifier_FatherRifle
     folder: Effects/Forms
+    parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
-  - name: GE_SwordState
+  - name: GE_EquipmentModifier_FatherSword
     folder: Effects/Forms
+    parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
   # Stat Boost Effects (3)
@@ -4187,6 +4196,7 @@ gameplay_abilities:
 # EQUIPPABLE ITEMS (9)
 # ============================================================================
 equippable_items:
+  # Per Tech Doc Section 58.5, 58.10, 58.11: Dual Entry System + Activities to Grant
   - name: EI_FatherCrawlerForm
     folder: Items/Forms
     parent_class: EquippableItem
@@ -4196,7 +4206,17 @@ equippable_items:
       - GA_FatherAttack
       - GA_FatherLaserShot
       - GA_FatherMark
-    equipment_modifier_ge: GE_CrawlerState
+    activities_to_grant:  # Per Section 58.11
+      - BPA_FollowCharacter
+    equipment_modifier_ge: GE_EquipmentModifier_FatherCrawler
+    # Dual Entry System (Section 58.10): equipment_effect_values + rating properties
+    equipment_effect_values:
+      SetByCaller.Armor: 0.0
+      SetByCaller.AttackRating: 0.0
+      SetByCaller.StealthRating: 0.0
+    armor_rating: 0.0
+    attack_rating: 0.0
+    stealth_rating: 0.0
 
   - name: EI_FatherArmorForm
     folder: Items/Forms
@@ -4206,7 +4226,15 @@ equippable_items:
       - GA_FatherArmor
       - GA_ProtectiveDome
       - GA_DomeBurst
-    equipment_modifier_ge: GE_ArmorState
+    equipment_modifier_ge: GE_EquipmentModifier_FatherArmor
+    # Per Section 58.5: Armor +50
+    equipment_effect_values:
+      SetByCaller.Armor: 50.0
+      SetByCaller.AttackRating: 0.0
+      SetByCaller.StealthRating: 0.0
+    armor_rating: 50.0
+    attack_rating: 0.0
+    stealth_rating: 0.0
 
   - name: EI_FatherExoskeletonForm
     folder: Items/Forms
@@ -4218,7 +4246,15 @@ equippable_items:
       - GA_FatherExoskeletonSprint
       - GA_StealthField
       - GA_Backstab
-    equipment_modifier_ge: GE_ExoskeletonState
+    equipment_modifier_ge: GE_EquipmentModifier_FatherExoskeleton
+    # Per Section 58.5: AttackRating +10 (speed/jump via CharacterMovement)
+    equipment_effect_values:
+      SetByCaller.Armor: 0.0
+      SetByCaller.AttackRating: 10.0
+      SetByCaller.StealthRating: 0.0
+    armor_rating: 0.0
+    attack_rating: 10.0
+    stealth_rating: 0.0
 
   - name: EI_FatherSymbioteForm
     folder: Items/Forms
@@ -4227,7 +4263,15 @@ equippable_items:
     abilities_to_grant:
       - GA_FatherSymbiote
       - GA_ProximityStrike
-    equipment_modifier_ge: GE_SymbioteState
+    equipment_modifier_ge: GE_EquipmentModifier_FatherSymbiote
+    # Per Section 58.5: AttackRating +100
+    equipment_effect_values:
+      SetByCaller.Armor: 0.0
+      SetByCaller.AttackRating: 100.0
+      SetByCaller.StealthRating: 0.0
+    armor_rating: 0.0
+    attack_rating: 100.0
+    stealth_rating: 0.0
 
   - name: EI_FatherEngineerForm
     folder: Items/Forms
@@ -4237,7 +4281,15 @@ equippable_items:
       - GA_FatherEngineer
       - GA_TurretShoot
       - GA_FatherElectricTrap
-    equipment_modifier_ge: GE_EngineerState
+    equipment_modifier_ge: GE_EquipmentModifier_FatherEngineer
+    # Per Section 58.5: No stat bonuses (turret mode)
+    equipment_effect_values:
+      SetByCaller.Armor: 0.0
+      SetByCaller.AttackRating: 0.0
+      SetByCaller.StealthRating: 0.0
+    armor_rating: 0.0
+    attack_rating: 0.0
+    stealth_rating: 0.0
 
   - name: EI_FatherRifleForm
     folder: Items/Forms
@@ -4245,7 +4297,14 @@ equippable_items:
     equipment_slot: Narrative.Equipment.Slot.FatherForm
     abilities_to_grant:
       - GA_FatherRifle
-    equipment_modifier_ge: GE_RifleState
+    equipment_modifier_ge: GE_EquipmentModifier_FatherRifle
+    equipment_effect_values:
+      SetByCaller.Armor: 0.0
+      SetByCaller.AttackRating: 15.0
+      SetByCaller.StealthRating: 0.0
+    armor_rating: 0.0
+    attack_rating: 15.0
+    stealth_rating: 0.0
 
   - name: EI_FatherSwordForm
     folder: Items/Forms
@@ -4253,7 +4312,14 @@ equippable_items:
     equipment_slot: Narrative.Equipment.Slot.FatherForm
     abilities_to_grant:
       - GA_FatherSword
-    equipment_modifier_ge: GE_SwordState
+    equipment_modifier_ge: GE_EquipmentModifier_FatherSword
+    equipment_effect_values:
+      SetByCaller.Armor: 0.0
+      SetByCaller.AttackRating: 25.0
+      SetByCaller.StealthRating: 0.0
+    armor_rating: 0.0
+    attack_rating: 25.0
+    stealth_rating: 0.0
 
   # Weapon Items - use Narrative Pro weapon classes (v2.6.8)
   - name: BP_FatherRifleWeapon
@@ -4345,6 +4411,7 @@ activities:
 # ABILITY CONFIGURATIONS (1)
 # ============================================================================
 ability_configurations:
+  # Per Tech Doc Section 57.7: AC_FatherCompanion_Default pattern (matches AC_NPC_Default)
   - name: AC_FatherCompanion
     folder: Configs
     abilities:
@@ -4357,15 +4424,26 @@ ability_configurations:
       - GA_FatherLaserShot
       - GA_FatherMark
       - GA_FatherSacrifice
+      - GA_Death  # Per Tech Doc Section 57.1: "Same as AC_NPC_Default - ADD THIS"
 
 # ============================================================================
 # ACTIVITY CONFIGURATIONS (1)
 # ============================================================================
 activity_configurations:
+  # Per Tech Doc Section 57.8: ActConfig_FatherCompanion pattern (matches AC_RunAndGun)
   - name: ActConfig_FatherCompanion
     folder: Configs
     default_activity: BPA_FatherFollow
     request_interval: 0.5
+    activities:
+      - BPA_Attack_Melee              # Crawler melee combat
+      - BPA_Attack_RangedCrouching_Strafe  # Laser shot (mobile)
+      - BPA_Attack_RangedStand_Stationary  # Turret shoot (stationary)
+      - BPA_FollowCharacter           # Follow player
+      - BPA_Idle                      # Default idle
+      - BPA_FatherFollow              # Custom father follow (Section 55.15)
+    goal_generators:
+      - GoalGenerator_Attack          # Auto-target hostiles (Section 57.9)
 
 # ============================================================================
 # NPC DEFINITIONS (1)

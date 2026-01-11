@@ -206,6 +206,79 @@ GA `activation_owned_tags` (single source of truth):
 
 ---
 
+## Completed: Tech Doc Alignment (Section 57, 58)
+
+### What Was Done
+Comprehensive alignment of manifest.yaml with Technical Reference v6.0 patterns.
+
+### 1. AC_FatherCompanion - Added GA_Death (Section 57.7)
+Per Tech Doc: "GA_Death | YES - Same as AC_NPC_Default | ADD THIS"
+```yaml
+abilities:
+  - GA_FatherCrawler through GA_FatherSacrifice
+  - GA_Death  # NEW - matches AC_NPC_Default pattern
+```
+
+### 2. ActConfig_FatherCompanion - Added Activities & GoalGenerators (Section 57.8)
+```yaml
+activities:
+  - BPA_Attack_Melee
+  - BPA_Attack_RangedCrouching_Strafe
+  - BPA_Attack_RangedStand_Stationary
+  - BPA_FollowCharacter
+  - BPA_Idle
+  - BPA_FatherFollow
+goal_generators:
+  - GoalGenerator_Attack
+```
+
+### 3. GE Naming Pattern - Child GE Pattern (Section 58.7)
+Renamed GE_*State → GE_EquipmentModifier_Father*:
+| Old Name | New Name |
+|----------|----------|
+| GE_CrawlerState | GE_EquipmentModifier_FatherCrawler |
+| GE_ArmorState | GE_EquipmentModifier_FatherArmor |
+| GE_ExoskeletonState | GE_EquipmentModifier_FatherExoskeleton |
+| GE_SymbioteState | GE_EquipmentModifier_FatherSymbiote |
+| GE_EngineerState | GE_EquipmentModifier_FatherEngineer |
+| GE_RifleState | GE_EquipmentModifier_FatherRifle |
+| GE_SwordState | GE_EquipmentModifier_FatherSword |
+
+All now have `parent_class: GE_EquipmentModifier` for proper inheritance.
+
+### 4. EquippableItems - Dual Entry System (Section 58.10)
+Added to all form items:
+- `equipment_effect_values` map (SetByCaller tags)
+- Rating properties (armor_rating, attack_rating, stealth_rating)
+
+Per Section 58.5 Father Form Stat Mapping:
+| Form | Armor | AttackRating | StealthRating |
+|------|-------|--------------|---------------|
+| Crawler | 0.0 | 0.0 | 0.0 |
+| Armor | 50.0 | 0.0 | 0.0 |
+| Exoskeleton | 0.0 | 10.0 | 0.0 |
+| Symbiote | 0.0 | 100.0 | 0.0 |
+| Engineer | 0.0 | 0.0 | 0.0 |
+| Rifle | 0.0 | 15.0 | 0.0 |
+| Sword | 0.0 | 25.0 | 0.0 |
+
+### 5. EI_FatherCrawlerForm - Activities to Grant (Section 58.11)
+```yaml
+activities_to_grant:
+  - BPA_FollowCharacter
+```
+
+### Alignment Summary
+| Category | Status |
+|----------|--------|
+| Ability Configuration | 10/10 aligned (GA_Death added) |
+| Activity Configuration | FULLY ALIGNED (activities + goal_generators) |
+| GE Naming Pattern | FULLY ALIGNED (child GE pattern) |
+| Dual Entry System | FULLY ALIGNED (equipment_effect_values + ratings) |
+| Activities to Grant | FULLY ALIGNED |
+
+---
+
 ## Potential Future Tasks
 - Test Niagara generator with sample manifest
 - Update GasAbilityGenerator.uplugin with plugin dependencies (to fix build warnings)
