@@ -4794,20 +4794,257 @@ animation_notifies:
     montage: AM_FatherAttack
 
 # ============================================================================
-# MATERIALS (1)
+# MATERIALS (4) - v2.6.12 Enhanced with expression graphs
 # ============================================================================
 materials:
-  - name: M_LaserGlow
-    folder: Materials
+  # Core energy orb material for Father companion
+  - name: M_FatherCore
+    folder: Materials/VFX
     blend_mode: Additive
     shading_model: Unlit
-    parameters:
-      - name: LaserColor
-        type: Vector
-        default: [1.0, 0.2, 0.2, 1.0]
-      - name: GlowIntensity
-        type: Scalar
+    two_sided: true
+    expressions:
+      - id: core_color
+        type: VectorParam
+        name: CoreColor
+        default: 1.0, 0.8, 0.4, 1.0
+        pos_x: -400
+        pos_y: 0
+      - id: intensity
+        type: ScalarParam
+        name: Intensity
         default: 5.0
+        pos_x: -400
+        pos_y: 100
+      - id: fresnel
+        type: Fresnel
+        pos_x: -200
+        pos_y: 200
+        properties:
+          exponent: 3.0
+      - id: mul_fresnel
+        type: Multiply
+        pos_x: 0
+        pos_y: 0
+      - id: mul_intensity
+        type: Multiply
+        pos_x: 200
+        pos_y: 0
+    connections:
+      - from: core_color
+        from_output: RGB
+        to: mul_fresnel
+        to_input: A
+      - from: fresnel
+        from_output: Result
+        to: mul_fresnel
+        to_input: B
+      - from: mul_fresnel
+        from_output: Result
+        to: mul_intensity
+        to_input: A
+      - from: intensity
+        from_output: Result
+        to: mul_intensity
+        to_input: B
+      - from: mul_intensity
+        from_output: Result
+        to: Material
+        to_input: EmissiveColor
+
+  # Outer shell material for Father companion
+  - name: M_FatherShell
+    folder: Materials/VFX
+    blend_mode: Translucent
+    shading_model: DefaultLit
+    two_sided: true
+    expressions:
+      - id: shell_color
+        type: VectorParam
+        name: ShellColor
+        default: 0.5, 0.8, 1.0, 0.3
+        pos_x: -300
+        pos_y: 0
+      - id: opacity
+        type: ScalarParam
+        name: ShellOpacity
+        default: 0.3
+        pos_x: -300
+        pos_y: 100
+      - id: fresnel
+        type: Fresnel
+        pos_x: -150
+        pos_y: 200
+        properties:
+          exponent: 2.0
+    connections:
+      - from: shell_color
+        from_output: RGB
+        to: Material
+        to_input: BaseColor
+      - from: fresnel
+        from_output: Result
+        to: Material
+        to_input: Opacity
+
+  # Particle trail material
+  - name: M_FatherParticle
+    folder: Materials/VFX
+    blend_mode: Additive
+    shading_model: Unlit
+    two_sided: true
+    expressions:
+      - id: particle_color
+        type: VectorParam
+        name: ParticleColor
+        default: 1.0, 0.9, 0.5, 1.0
+        pos_x: -300
+        pos_y: 0
+      - id: intensity
+        type: ScalarParam
+        name: ParticleIntensity
+        default: 2.0
+        pos_x: -300
+        pos_y: 100
+      - id: mul
+        type: Multiply
+        pos_x: 0
+        pos_y: 0
+    connections:
+      - from: particle_color
+        from_output: RGB
+        to: mul
+        to_input: A
+      - from: intensity
+        from_output: Result
+        to: mul
+        to_input: B
+      - from: mul
+        from_output: Result
+        to: Material
+        to_input: EmissiveColor
+
+  # Laser beam material
+  - name: M_LaserGlow
+    folder: Materials/VFX
+    blend_mode: Additive
+    shading_model: Unlit
+    expressions:
+      - id: laser_color
+        type: VectorParam
+        name: LaserColor
+        default: 1.0, 0.2, 0.2, 1.0
+        pos_x: -400
+        pos_y: 0
+      - id: glow_intensity
+        type: ScalarParam
+        name: GlowIntensity
+        default: 10.0
+        pos_x: -400
+        pos_y: 100
+      - id: mul
+        type: Multiply
+        pos_x: -100
+        pos_y: 0
+    connections:
+      - from: laser_color
+        from_output: RGB
+        to: mul
+        to_input: A
+      - from: glow_intensity
+        from_output: Result
+        to: mul
+        to_input: B
+      - from: mul
+        from_output: Result
+        to: Material
+        to_input: EmissiveColor
+
+# ============================================================================
+# MATERIAL FUNCTIONS (3) - v2.6.12 VFX helper functions
+# ============================================================================
+material_functions:
+  # Animated energy pulse effect
+  - name: MF_EnergyPulse
+    folder: Materials/Functions
+    description: Generates animated energy pulse effect
+    expose_to_library: true
+    inputs:
+      - name: Speed
+        type: float
+        default: 1.0
+        sort_priority: 0
+      - name: Amplitude
+        type: float
+        default: 0.5
+        sort_priority: 1
+    outputs:
+      - name: Pulse
+        type: float
+        sort_priority: 0
+    expressions:
+      - id: time
+        type: Time
+        pos_x: -200
+        pos_y: 0
+      - id: sine
+        type: Sine
+        pos_x: 0
+        pos_y: 0
+
+  # Fresnel-based glow effect
+  - name: MF_FresnelGlow
+    folder: Materials/Functions
+    description: Fresnel-based edge glow effect
+    expose_to_library: true
+    inputs:
+      - name: Exponent
+        type: float
+        default: 3.0
+        sort_priority: 0
+      - name: GlowColor
+        type: float3
+        default: 1.0, 0.8, 0.4
+        sort_priority: 1
+    outputs:
+      - name: GlowResult
+        type: float3
+        sort_priority: 0
+    expressions:
+      - id: fresnel
+        type: Fresnel
+        pos_x: -100
+        pos_y: 0
+        properties:
+          exponent: 3.0
+      - id: mul
+        type: Multiply
+        pos_x: 100
+        pos_y: 0
+
+  # Radial gradient for dome/sphere effects
+  - name: MF_RadialGradient
+    folder: Materials/Functions
+    description: Radial gradient for spherical effects
+    expose_to_library: true
+    inputs:
+      - name: Center
+        type: float2
+        default: 0.5, 0.5
+        sort_priority: 0
+      - name: Falloff
+        type: float
+        default: 1.0
+        sort_priority: 1
+    outputs:
+      - name: Gradient
+        type: float
+        sort_priority: 0
+    expressions:
+      - id: texcoord
+        type: TexCoord
+        pos_x: -200
+        pos_y: 0
 
 # ============================================================================
 # DIALOGUE BLUEPRINTS (1)

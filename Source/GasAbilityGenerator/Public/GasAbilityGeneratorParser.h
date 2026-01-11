@@ -51,6 +51,7 @@ private:
 	static void ParseBlackboards(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseBehaviorTrees(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseMaterials(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseMaterialFunctions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v2.6.12
 	static void ParseEventGraphs(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 
 	// v2.3.0: New asset type parsers

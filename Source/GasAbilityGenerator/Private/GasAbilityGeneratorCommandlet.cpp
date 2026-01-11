@@ -411,6 +411,17 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
+	// v2.6.12: Material Functions
+	for (const auto& Definition : ManifestData.MaterialFunctions)
+	{
+		FGenerationResult Result = FMaterialFunctionGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	// Tagged Dialogue Sets
 	for (const auto& Definition : ManifestData.TaggedDialogueSets)
 	{

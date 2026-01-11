@@ -207,12 +207,31 @@ public:
 };
 
 /**
- * Material Generator
+ * v2.6.12: Enhanced Material Generator with expression graph support
  */
 class GASABILITYGENERATOR_API FMaterialGenerator : public FGeneratorBase
 {
 public:
 	static FGenerationResult Generate(const FManifestMaterialDefinition& Definition);
+
+private:
+	// v2.6.12: Helper to create material expression by type
+	static UMaterialExpression* CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef);
+	// v2.6.12: Helper to connect expressions
+	static bool ConnectExpressions(UMaterial* Material, const TMap<FString, UMaterialExpression*>& ExpressionMap, const FManifestMaterialConnection& Connection);
+};
+
+/**
+ * v2.6.12: Material Function Generator
+ */
+class GASABILITYGENERATOR_API FMaterialFunctionGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestMaterialFunctionDefinition& Definition);
+
+private:
+	// v2.6.12: Helper to create material expression in function
+	static UMaterialExpression* CreateExpressionInFunction(UMaterialFunction* MaterialFunction, const FManifestMaterialExpression& ExprDef);
 };
 
 /**

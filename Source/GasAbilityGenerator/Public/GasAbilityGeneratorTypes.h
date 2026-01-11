@@ -74,6 +74,7 @@ struct FGenerationResult
 		else if (AssetName.StartsWith(TEXT("DBP_"))) Category = TEXT("Dialogue Blueprints");
 		else if (AssetName.StartsWith(TEXT("BB_"))) Category = TEXT("Blackboards");
 		else if (AssetName.StartsWith(TEXT("BT_"))) Category = TEXT("Behavior Trees");
+		else if (AssetName.StartsWith(TEXT("MF_"))) Category = TEXT("Material Functions");  // v2.6.12: Must check before M_
 		else if (AssetName.StartsWith(TEXT("M_"))) Category = TEXT("Materials");
 		else if (AssetName.StartsWith(TEXT("AC_"))) Category = TEXT("Ability Configurations");
 		else if (AssetName.StartsWith(TEXT("ActConfig_"))) Category = TEXT("Activity Configurations");
@@ -365,15 +366,81 @@ struct FManifestBehaviorTreeDefinition
 };
 
 /**
- * Material definition
+ * v2.6.12: Material Expression (node in material graph)
+ */
+struct FManifestMaterialExpression
+{
+	FString Id;              // Unique identifier for this node (e.g., "tex_diffuse", "param_color")
+	FString Type;            // Expression type: TextureSample, ScalarParameter, VectorParameter, Multiply, Add, Fresnel, etc.
+	FString Name;            // Display name (for parameters)
+	FString DefaultValue;    // Default value as string (parsed based on type)
+	int32 PosX = 0;          // Node position X in graph
+	int32 PosY = 0;          // Node position Y in graph
+	TMap<FString, FString> Properties;  // Additional properties (e.g., Texture path, Exponent, etc.)
+};
+
+/**
+ * v2.6.12: Material Connection (link between expressions or to material output)
+ */
+struct FManifestMaterialConnection
+{
+	FString FromId;          // Source expression ID
+	FString FromOutput;      // Source output pin name (e.g., "RGB", "R", "Result")
+	FString ToId;            // Target expression ID or "Material" for material outputs
+	FString ToInput;         // Target input pin name (e.g., "A", "B", "BaseColor", "Emissive")
+};
+
+/**
+ * v2.6.12: Enhanced Material definition with expression graph support
  */
 struct FManifestMaterialDefinition
 {
 	FString Name;
 	FString Folder;
-	FString BlendMode = TEXT("Opaque");
-	FString ShadingModel = TEXT("DefaultLit");
-	TMap<FString, FString> Parameters;
+	FString BlendMode = TEXT("Opaque");           // Opaque, Masked, Translucent, Additive, Modulate
+	FString ShadingModel = TEXT("DefaultLit");    // DefaultLit, Unlit, Subsurface, etc.
+	bool bTwoSided = false;                       // Two-sided rendering
+	TMap<FString, FString> Parameters;            // Legacy simple parameters
+
+	// v2.6.12: Expression graph
+	TArray<FManifestMaterialExpression> Expressions;   // Nodes in the material graph
+	TArray<FManifestMaterialConnection> Connections;   // Connections between nodes
+};
+
+/**
+ * v2.6.12: Material Function Input definition
+ */
+struct FManifestMaterialFunctionInput
+{
+	FString Name;            // Input name
+	FString Type;            // float, float2, float3, float4, texture2d
+	FString DefaultValue;    // Default value
+	int32 SortPriority = 0;  // Order in input list
+};
+
+/**
+ * v2.6.12: Material Function Output definition
+ */
+struct FManifestMaterialFunctionOutput
+{
+	FString Name;            // Output name
+	FString Type;            // float, float2, float3, float4
+	int32 SortPriority = 0;  // Order in output list
+};
+
+/**
+ * v2.6.12: Material Function definition
+ */
+struct FManifestMaterialFunctionDefinition
+{
+	FString Name;
+	FString Folder;
+	FString Description;                              // Function description
+	bool bExposeToLibrary = true;                     // Show in material function library
+	TArray<FManifestMaterialFunctionInput> Inputs;    // Function inputs
+	TArray<FManifestMaterialFunctionOutput> Outputs;  // Function outputs
+	TArray<FManifestMaterialExpression> Expressions;  // Internal expression nodes
+	TArray<FManifestMaterialConnection> Connections;  // Internal connections
 };
 
 // ============================================================================
@@ -727,6 +794,7 @@ struct FManifestData
 	TArray<FManifestCharacterDefinitionDefinition> CharacterDefinitions;
 	TArray<FManifestTaggedDialogueSetDefinition> TaggedDialogueSets;
 	TArray<FManifestNiagaraSystemDefinition> NiagaraSystems;  // v2.6.5: Niagara VFX systems
+	TArray<FManifestMaterialFunctionDefinition> MaterialFunctions;  // v2.6.12: Material functions
 
 	// Cached whitelist of all asset names for validation
 	mutable TSet<FString> AssetWhitelist;
@@ -764,6 +832,7 @@ struct FManifestData
 		for (const auto& Def : CharacterDefinitions) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TaggedDialogueSets) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : NiagaraSystems) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : MaterialFunctions) AssetWhitelist.Add(Def.Name);  // v2.6.12
 
 		bWhitelistBuilt = true;
 	}
@@ -845,6 +914,7 @@ struct FManifestData
 		Total += NPCDefinitions.Num();
 		Total += CharacterDefinitions.Num();
 		Total += NiagaraSystems.Num();
+		Total += MaterialFunctions.Num();  // v2.6.12
 
 		return Total;
 	}

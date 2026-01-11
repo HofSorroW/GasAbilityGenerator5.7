@@ -2110,8 +2110,300 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 }
 
 // ============================================================================
-// FMaterialGenerator Implementation
+// FMaterialGenerator Implementation (v2.6.12: Enhanced with expression graph)
 // ============================================================================
+
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionConstant4Vector.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionDivide.h"
+#include "Materials/MaterialExpressionPower.h"
+#include "Materials/MaterialExpressionFresnel.h"
+#include "Materials/MaterialExpressionOneMinus.h"
+#include "Materials/MaterialExpressionClamp.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
+#include "Materials/MaterialExpressionTime.h"
+#include "Materials/MaterialExpressionSine.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionPanner.h"
+#include "Materials/MaterialFunction.h"
+#include "Materials/MaterialExpressionFunctionInput.h"
+#include "Materials/MaterialExpressionFunctionOutput.h"
+#include "Factories/MaterialFactoryNew.h"
+#include "Factories/MaterialFunctionFactoryNew.h"
+
+// v2.6.12: Helper to create material expression by type
+UMaterialExpression* FMaterialGenerator::CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef)
+{
+	UMaterialExpression* Expression = nullptr;
+	FString TypeLower = ExprDef.Type.ToLower();
+
+	// Scalar Parameter
+	if (TypeLower == TEXT("scalarparam") || TypeLower == TEXT("scalarparameter") || TypeLower == TEXT("float_param"))
+	{
+		UMaterialExpressionScalarParameter* ScalarParam = NewObject<UMaterialExpressionScalarParameter>(Material);
+		ScalarParam->ParameterName = *ExprDef.Name;
+		ScalarParam->DefaultValue = FCString::Atof(*ExprDef.DefaultValue);
+		Expression = ScalarParam;
+	}
+	// Vector Parameter
+	else if (TypeLower == TEXT("vectorparam") || TypeLower == TEXT("vectorparameter") || TypeLower == TEXT("color_param"))
+	{
+		UMaterialExpressionVectorParameter* VectorParam = NewObject<UMaterialExpressionVectorParameter>(Material);
+		VectorParam->ParameterName = *ExprDef.Name;
+		TArray<FString> Parts;
+		ExprDef.DefaultValue.ParseIntoArray(Parts, TEXT(","));
+		if (Parts.Num() >= 3)
+		{
+			VectorParam->DefaultValue = FLinearColor(
+				FCString::Atof(*Parts[0].TrimStartAndEnd()),
+				FCString::Atof(*Parts[1].TrimStartAndEnd()),
+				FCString::Atof(*Parts[2].TrimStartAndEnd()),
+				Parts.Num() >= 4 ? FCString::Atof(*Parts[3].TrimStartAndEnd()) : 1.0f
+			);
+		}
+		Expression = VectorParam;
+	}
+	// Constant
+	else if (TypeLower == TEXT("constant") || TypeLower == TEXT("scalar"))
+	{
+		UMaterialExpressionConstant* Constant = NewObject<UMaterialExpressionConstant>(Material);
+		Constant->R = FCString::Atof(*ExprDef.DefaultValue);
+		Expression = Constant;
+	}
+	// Constant3Vector
+	else if (TypeLower == TEXT("constant3vector") || TypeLower == TEXT("vector3"))
+	{
+		UMaterialExpressionConstant3Vector* Vec3 = NewObject<UMaterialExpressionConstant3Vector>(Material);
+		TArray<FString> Parts;
+		ExprDef.DefaultValue.ParseIntoArray(Parts, TEXT(","));
+		if (Parts.Num() >= 3)
+		{
+			Vec3->Constant = FLinearColor(
+				FCString::Atof(*Parts[0].TrimStartAndEnd()),
+				FCString::Atof(*Parts[1].TrimStartAndEnd()),
+				FCString::Atof(*Parts[2].TrimStartAndEnd())
+			);
+		}
+		Expression = Vec3;
+	}
+	// Multiply
+	else if (TypeLower == TEXT("multiply") || TypeLower == TEXT("mul"))
+	{
+		Expression = NewObject<UMaterialExpressionMultiply>(Material);
+	}
+	// Add
+	else if (TypeLower == TEXT("add"))
+	{
+		Expression = NewObject<UMaterialExpressionAdd>(Material);
+	}
+	// Subtract
+	else if (TypeLower == TEXT("subtract") || TypeLower == TEXT("sub"))
+	{
+		Expression = NewObject<UMaterialExpressionSubtract>(Material);
+	}
+	// Divide
+	else if (TypeLower == TEXT("divide") || TypeLower == TEXT("div"))
+	{
+		Expression = NewObject<UMaterialExpressionDivide>(Material);
+	}
+	// Power
+	else if (TypeLower == TEXT("power") || TypeLower == TEXT("pow"))
+	{
+		UMaterialExpressionPower* Power = NewObject<UMaterialExpressionPower>(Material);
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			Power->ConstExponent = FCString::Atof(*ExprDef.DefaultValue);
+		}
+		Expression = Power;
+	}
+	// Fresnel
+	else if (TypeLower == TEXT("fresnel"))
+	{
+		UMaterialExpressionFresnel* Fresnel = NewObject<UMaterialExpressionFresnel>(Material);
+		if (ExprDef.Properties.Contains(TEXT("exponent")))
+		{
+			Fresnel->Exponent = FCString::Atof(*ExprDef.Properties[TEXT("exponent")]);
+		}
+		if (ExprDef.Properties.Contains(TEXT("base_reflect_fraction")))
+		{
+			Fresnel->BaseReflectFraction = FCString::Atof(*ExprDef.Properties[TEXT("base_reflect_fraction")]);
+		}
+		Expression = Fresnel;
+	}
+	// OneMinus
+	else if (TypeLower == TEXT("oneminus") || TypeLower == TEXT("one_minus"))
+	{
+		Expression = NewObject<UMaterialExpressionOneMinus>(Material);
+	}
+	// Clamp
+	else if (TypeLower == TEXT("clamp"))
+	{
+		Expression = NewObject<UMaterialExpressionClamp>(Material);
+	}
+	// Lerp
+	else if (TypeLower == TEXT("lerp") || TypeLower == TEXT("linearinterpolate"))
+	{
+		Expression = NewObject<UMaterialExpressionLinearInterpolate>(Material);
+	}
+	// Time
+	else if (TypeLower == TEXT("time"))
+	{
+		Expression = NewObject<UMaterialExpressionTime>(Material);
+	}
+	// Sine
+	else if (TypeLower == TEXT("sine") || TypeLower == TEXT("sin"))
+	{
+		Expression = NewObject<UMaterialExpressionSine>(Material);
+	}
+	// TexCoord
+	else if (TypeLower == TEXT("texcoord") || TypeLower == TEXT("texturecoordinate"))
+	{
+		UMaterialExpressionTextureCoordinate* TexCoord = NewObject<UMaterialExpressionTextureCoordinate>(Material);
+		if (ExprDef.Properties.Contains(TEXT("tiling_u")))
+		{
+			TexCoord->UTiling = FCString::Atof(*ExprDef.Properties[TEXT("tiling_u")]);
+		}
+		if (ExprDef.Properties.Contains(TEXT("tiling_v")))
+		{
+			TexCoord->VTiling = FCString::Atof(*ExprDef.Properties[TEXT("tiling_v")]);
+		}
+		Expression = TexCoord;
+	}
+	// Panner
+	else if (TypeLower == TEXT("panner"))
+	{
+		UMaterialExpressionPanner* Panner = NewObject<UMaterialExpressionPanner>(Material);
+		if (ExprDef.Properties.Contains(TEXT("speed_x")))
+		{
+			Panner->SpeedX = FCString::Atof(*ExprDef.Properties[TEXT("speed_x")]);
+		}
+		if (ExprDef.Properties.Contains(TEXT("speed_y")))
+		{
+			Panner->SpeedY = FCString::Atof(*ExprDef.Properties[TEXT("speed_y")]);
+		}
+		Expression = Panner;
+	}
+
+	if (Expression)
+	{
+		Expression->MaterialExpressionEditorX = ExprDef.PosX;
+		Expression->MaterialExpressionEditorY = ExprDef.PosY;
+		Material->GetExpressionCollection().AddExpression(Expression);
+	}
+
+	return Expression;
+}
+
+// v2.6.12: Helper to connect expressions
+bool FMaterialGenerator::ConnectExpressions(UMaterial* Material, const TMap<FString, UMaterialExpression*>& ExpressionMap, const FManifestMaterialConnection& Connection)
+{
+	UMaterialExpression* FromExpr = ExpressionMap.FindRef(Connection.FromId);
+	if (!FromExpr) return false;
+
+	// Find output index
+	int32 OutputIndex = 0;
+	FString FromOutput = Connection.FromOutput.ToLower();
+	if (FromOutput == TEXT("r") || FromOutput == TEXT("x")) OutputIndex = 1;
+	else if (FromOutput == TEXT("g") || FromOutput == TEXT("y")) OutputIndex = 2;
+	else if (FromOutput == TEXT("b") || FromOutput == TEXT("z")) OutputIndex = 3;
+	else if (FromOutput == TEXT("a") || FromOutput == TEXT("w")) OutputIndex = 4;
+
+	// Connect to material output or another expression
+	if (Connection.ToId.Equals(TEXT("Material"), ESearchCase::IgnoreCase))
+	{
+		FString ToInput = Connection.ToInput.ToLower();
+		FExpressionInput* MaterialInput = nullptr;
+
+		if (ToInput == TEXT("basecolor") || ToInput == TEXT("base_color"))
+			MaterialInput = &Material->GetEditorOnlyData()->BaseColor;
+		else if (ToInput == TEXT("metallic"))
+			MaterialInput = &Material->GetEditorOnlyData()->Metallic;
+		else if (ToInput == TEXT("roughness"))
+			MaterialInput = &Material->GetEditorOnlyData()->Roughness;
+		else if (ToInput == TEXT("emissivecolor") || ToInput == TEXT("emissive"))
+			MaterialInput = &Material->GetEditorOnlyData()->EmissiveColor;
+		else if (ToInput == TEXT("opacity"))
+			MaterialInput = &Material->GetEditorOnlyData()->Opacity;
+		else if (ToInput == TEXT("normal"))
+			MaterialInput = &Material->GetEditorOnlyData()->Normal;
+
+		if (MaterialInput)
+		{
+			MaterialInput->Connect(OutputIndex, FromExpr);
+			return true;
+		}
+	}
+	else
+	{
+		UMaterialExpression* ToExpr = ExpressionMap.FindRef(Connection.ToId);
+		if (ToExpr)
+		{
+			FString ToInput = Connection.ToInput.ToLower();
+			// Find input by name - this is expression-specific
+			// For now support common inputs
+			if (ToInput == TEXT("a") && ToExpr->IsA<UMaterialExpressionMultiply>())
+			{
+				Cast<UMaterialExpressionMultiply>(ToExpr)->A.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("b") && ToExpr->IsA<UMaterialExpressionMultiply>())
+			{
+				Cast<UMaterialExpressionMultiply>(ToExpr)->B.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("a") && ToExpr->IsA<UMaterialExpressionAdd>())
+			{
+				Cast<UMaterialExpressionAdd>(ToExpr)->A.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("b") && ToExpr->IsA<UMaterialExpressionAdd>())
+			{
+				Cast<UMaterialExpressionAdd>(ToExpr)->B.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("base") && ToExpr->IsA<UMaterialExpressionPower>())
+			{
+				Cast<UMaterialExpressionPower>(ToExpr)->Base.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("exponent") && ToExpr->IsA<UMaterialExpressionPower>())
+			{
+				Cast<UMaterialExpressionPower>(ToExpr)->Exponent.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("input") && ToExpr->IsA<UMaterialExpressionOneMinus>())
+			{
+				Cast<UMaterialExpressionOneMinus>(ToExpr)->Input.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("a") && ToExpr->IsA<UMaterialExpressionLinearInterpolate>())
+			{
+				Cast<UMaterialExpressionLinearInterpolate>(ToExpr)->A.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("b") && ToExpr->IsA<UMaterialExpressionLinearInterpolate>())
+			{
+				Cast<UMaterialExpressionLinearInterpolate>(ToExpr)->B.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+			else if (ToInput == TEXT("alpha") && ToExpr->IsA<UMaterialExpressionLinearInterpolate>())
+			{
+				Cast<UMaterialExpressionLinearInterpolate>(ToExpr)->Alpha.Connect(OutputIndex, FromExpr);
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
 
 FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition& Definition)
 {
@@ -2130,7 +2422,7 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 	{
 		return Result;
 	}
-	
+
 	// Create package
 	FString PackagePath = AssetPath;
 	UPackage* Package = CreatePackage(*PackagePath);
@@ -2138,44 +2430,324 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
 	}
-	
+
 	// Create material
 	UMaterial* Material = NewObject<UMaterial>(Package, *Definition.Name, RF_Public | RF_Standalone);
 	if (!Material)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Material"));
 	}
-	
+
 	// Configure blend mode
-	if (Definition.BlendMode == TEXT("Translucent"))
+	if (Definition.BlendMode.Equals(TEXT("Translucent"), ESearchCase::IgnoreCase))
 	{
 		Material->BlendMode = BLEND_Translucent;
 	}
-	else if (Definition.BlendMode == TEXT("Masked"))
+	else if (Definition.BlendMode.Equals(TEXT("Masked"), ESearchCase::IgnoreCase))
 	{
 		Material->BlendMode = BLEND_Masked;
 	}
-	else if (Definition.BlendMode == TEXT("Additive"))
+	else if (Definition.BlendMode.Equals(TEXT("Additive"), ESearchCase::IgnoreCase))
 	{
 		Material->BlendMode = BLEND_Additive;
+	}
+	else if (Definition.BlendMode.Equals(TEXT("Modulate"), ESearchCase::IgnoreCase))
+	{
+		Material->BlendMode = BLEND_Modulate;
 	}
 	else
 	{
 		Material->BlendMode = BLEND_Opaque;
 	}
-	
+
+	// Configure shading model
+	if (Definition.ShadingModel.Equals(TEXT("Unlit"), ESearchCase::IgnoreCase))
+	{
+		Material->SetShadingModel(MSM_Unlit);
+	}
+	else if (Definition.ShadingModel.Equals(TEXT("Subsurface"), ESearchCase::IgnoreCase))
+	{
+		Material->SetShadingModel(MSM_Subsurface);
+	}
+
+	// v2.6.12: Two-sided
+	if (Definition.bTwoSided)
+	{
+		Material->TwoSided = true;
+	}
+
+	// v2.6.12: Create expressions
+	TMap<FString, UMaterialExpression*> ExpressionMap;
+	for (const FManifestMaterialExpression& ExprDef : Definition.Expressions)
+	{
+		UMaterialExpression* Expr = CreateExpression(Material, ExprDef);
+		if (Expr)
+		{
+			ExpressionMap.Add(ExprDef.Id, Expr);
+			LogGeneration(FString::Printf(TEXT("  Created expression: %s (%s)"), *ExprDef.Id, *ExprDef.Type));
+		}
+	}
+
+	// v2.6.12: Create connections
+	for (const FManifestMaterialConnection& Conn : Definition.Connections)
+	{
+		if (ConnectExpressions(Material, ExpressionMap, Conn))
+		{
+			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"), *Conn.FromId, *Conn.FromOutput, *Conn.ToId, *Conn.ToInput));
+		}
+	}
+
 	// Mark dirty and register
+	Material->PreEditChange(nullptr);
+	Material->PostEditChange();
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Material);
-	
+
 	// Save package
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, Material, *PackageFileName, SaveArgs);
-	
-	LogGeneration(FString::Printf(TEXT("Created Material: %s"), *Definition.Name));
-	
+
+	LogGeneration(FString::Printf(TEXT("Created Material: %s (%d expressions, %d connections)"),
+		*Definition.Name, Definition.Expressions.Num(), Definition.Connections.Num()));
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.DetermineCategory();
+	return Result;
+}
+
+// ============================================================================
+// FMaterialFunctionGenerator Implementation (v2.6.12)
+// ============================================================================
+
+UMaterialExpression* FMaterialFunctionGenerator::CreateExpressionInFunction(UMaterialFunction* MaterialFunction, const FManifestMaterialExpression& ExprDef)
+{
+	// Similar to FMaterialGenerator::CreateExpression but creates in MaterialFunction context
+	UMaterialExpression* Expression = nullptr;
+	FString TypeLower = ExprDef.Type.ToLower();
+
+	// Function Input
+	if (TypeLower == TEXT("functioninput") || TypeLower == TEXT("input"))
+	{
+		UMaterialExpressionFunctionInput* Input = NewObject<UMaterialExpressionFunctionInput>(MaterialFunction);
+		Input->InputName = *ExprDef.Name;
+		// Set input type based on property
+		if (ExprDef.Properties.Contains(TEXT("input_type")))
+		{
+			FString InputType = ExprDef.Properties[TEXT("input_type")].ToLower();
+			if (InputType == TEXT("scalar") || InputType == TEXT("float"))
+				Input->InputType = FunctionInput_Scalar;
+			else if (InputType == TEXT("vector2"))
+				Input->InputType = FunctionInput_Vector2;
+			else if (InputType == TEXT("vector3"))
+				Input->InputType = FunctionInput_Vector3;
+			else if (InputType == TEXT("vector4"))
+				Input->InputType = FunctionInput_Vector4;
+		}
+		Expression = Input;
+	}
+	// Function Output
+	else if (TypeLower == TEXT("functionoutput") || TypeLower == TEXT("output"))
+	{
+		UMaterialExpressionFunctionOutput* Output = NewObject<UMaterialExpressionFunctionOutput>(MaterialFunction);
+		Output->OutputName = *ExprDef.Name;
+		Expression = Output;
+	}
+	// Scalar Parameter
+	else if (TypeLower == TEXT("scalarparam") || TypeLower == TEXT("scalarparameter"))
+	{
+		UMaterialExpressionScalarParameter* ScalarParam = NewObject<UMaterialExpressionScalarParameter>(MaterialFunction);
+		ScalarParam->ParameterName = *ExprDef.Name;
+		ScalarParam->DefaultValue = FCString::Atof(*ExprDef.DefaultValue);
+		Expression = ScalarParam;
+	}
+	// Constant
+	else if (TypeLower == TEXT("constant") || TypeLower == TEXT("scalar"))
+	{
+		UMaterialExpressionConstant* Constant = NewObject<UMaterialExpressionConstant>(MaterialFunction);
+		Constant->R = FCString::Atof(*ExprDef.DefaultValue);
+		Expression = Constant;
+	}
+	// Multiply
+	else if (TypeLower == TEXT("multiply") || TypeLower == TEXT("mul"))
+	{
+		Expression = NewObject<UMaterialExpressionMultiply>(MaterialFunction);
+	}
+	// Add
+	else if (TypeLower == TEXT("add"))
+	{
+		Expression = NewObject<UMaterialExpressionAdd>(MaterialFunction);
+	}
+	// Power
+	else if (TypeLower == TEXT("power") || TypeLower == TEXT("pow"))
+	{
+		UMaterialExpressionPower* Power = NewObject<UMaterialExpressionPower>(MaterialFunction);
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			Power->ConstExponent = FCString::Atof(*ExprDef.DefaultValue);
+		}
+		Expression = Power;
+	}
+	// Fresnel
+	else if (TypeLower == TEXT("fresnel"))
+	{
+		UMaterialExpressionFresnel* Fresnel = NewObject<UMaterialExpressionFresnel>(MaterialFunction);
+		if (ExprDef.Properties.Contains(TEXT("exponent")))
+		{
+			Fresnel->Exponent = FCString::Atof(*ExprDef.Properties[TEXT("exponent")]);
+		}
+		Expression = Fresnel;
+	}
+	// Sine
+	else if (TypeLower == TEXT("sine") || TypeLower == TEXT("sin"))
+	{
+		Expression = NewObject<UMaterialExpressionSine>(MaterialFunction);
+	}
+	// Time
+	else if (TypeLower == TEXT("time"))
+	{
+		Expression = NewObject<UMaterialExpressionTime>(MaterialFunction);
+	}
+	// Panner
+	else if (TypeLower == TEXT("panner"))
+	{
+		UMaterialExpressionPanner* Panner = NewObject<UMaterialExpressionPanner>(MaterialFunction);
+		if (ExprDef.Properties.Contains(TEXT("speed_x")))
+		{
+			Panner->SpeedX = FCString::Atof(*ExprDef.Properties[TEXT("speed_x")]);
+		}
+		if (ExprDef.Properties.Contains(TEXT("speed_y")))
+		{
+			Panner->SpeedY = FCString::Atof(*ExprDef.Properties[TEXT("speed_y")]);
+		}
+		Expression = Panner;
+	}
+
+	if (Expression)
+	{
+		Expression->MaterialExpressionEditorX = ExprDef.PosX;
+		Expression->MaterialExpressionEditorY = ExprDef.PosY;
+		Expression->Function = MaterialFunction;
+		MaterialFunction->GetExpressionCollection().AddExpression(Expression);
+	}
+
+	return Expression;
+}
+
+FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFunctionDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Materials/Functions") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	// Validate against manifest
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Material Function"), Result))
+	{
+		return Result;
+	}
+
+	// Check existence
+	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Material Function"), Result))
+	{
+		return Result;
+	}
+
+	// Create package
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	// Create material function
+	UMaterialFunction* MaterialFunction = NewObject<UMaterialFunction>(Package, *Definition.Name, RF_Public | RF_Standalone);
+	if (!MaterialFunction)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Material Function"));
+	}
+
+	// Set description
+	if (!Definition.Description.IsEmpty())
+	{
+		MaterialFunction->Description = Definition.Description;
+	}
+
+	// Set expose to library
+	MaterialFunction->bExposeToLibrary = Definition.bExposeToLibrary;
+
+	// Create expressions
+	TMap<FString, UMaterialExpression*> ExpressionMap;
+
+	// Create function inputs first
+	for (const FManifestMaterialFunctionInput& InputDef : Definition.Inputs)
+	{
+		UMaterialExpressionFunctionInput* Input = NewObject<UMaterialExpressionFunctionInput>(MaterialFunction);
+		Input->InputName = *InputDef.Name;
+		Input->SortPriority = InputDef.SortPriority;
+		Input->Function = MaterialFunction;
+
+		// Set input type
+		FString InputType = InputDef.Type.ToLower();
+		if (InputType == TEXT("float") || InputType == TEXT("scalar"))
+			Input->InputType = FunctionInput_Scalar;
+		else if (InputType == TEXT("float2") || InputType == TEXT("vector2"))
+			Input->InputType = FunctionInput_Vector2;
+		else if (InputType == TEXT("float3") || InputType == TEXT("vector3"))
+			Input->InputType = FunctionInput_Vector3;
+		else if (InputType == TEXT("float4") || InputType == TEXT("vector4"))
+			Input->InputType = FunctionInput_Vector4;
+
+		MaterialFunction->GetExpressionCollection().AddExpression(Input);
+		ExpressionMap.Add(InputDef.Name, Input);
+		LogGeneration(FString::Printf(TEXT("  Created input: %s (%s)"), *InputDef.Name, *InputDef.Type));
+	}
+
+	// Create function outputs
+	for (const FManifestMaterialFunctionOutput& OutputDef : Definition.Outputs)
+	{
+		UMaterialExpressionFunctionOutput* Output = NewObject<UMaterialExpressionFunctionOutput>(MaterialFunction);
+		Output->OutputName = *OutputDef.Name;
+		Output->SortPriority = OutputDef.SortPriority;
+		Output->Function = MaterialFunction;
+		MaterialFunction->GetExpressionCollection().AddExpression(Output);
+		ExpressionMap.Add(OutputDef.Name, Output);
+		LogGeneration(FString::Printf(TEXT("  Created output: %s"), *OutputDef.Name));
+	}
+
+	// Create other expressions
+	for (const FManifestMaterialExpression& ExprDef : Definition.Expressions)
+	{
+		UMaterialExpression* Expr = CreateExpressionInFunction(MaterialFunction, ExprDef);
+		if (Expr)
+		{
+			ExpressionMap.Add(ExprDef.Id, Expr);
+			LogGeneration(FString::Printf(TEXT("  Created expression: %s (%s)"), *ExprDef.Id, *ExprDef.Type));
+		}
+	}
+
+	// Create connections (simplified - function outputs have different connection API)
+	// For now, log that connections need manual setup for complex cases
+	if (Definition.Connections.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Note: %d connections defined - complex connections may need manual setup"), Definition.Connections.Num()));
+	}
+
+	// Mark dirty and register
+	MaterialFunction->PreEditChange(nullptr);
+	MaterialFunction->PostEditChange();
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(MaterialFunction);
+
+	// Save package
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, MaterialFunction, *PackageFileName, SaveArgs);
+
+	LogGeneration(FString::Printf(TEXT("Created Material Function: %s (%d inputs, %d outputs)"),
+		*Definition.Name, Definition.Inputs.Num(), Definition.Outputs.Num()));
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;

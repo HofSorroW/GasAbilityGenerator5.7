@@ -121,6 +121,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseMaterials(Lines, i, OutData);
 		}
+		// v2.6.12: Parse material_functions section
+		else if (IsSectionHeader(TrimmedLine, TEXT("material_functions:")))
+		{
+			ParseMaterialFunctions(Lines, i, OutData);
+		}
 		// v2.2.0: Parse event_graphs section
 		else if (IsSectionHeader(TrimmedLine, TEXT("event_graphs:")))
 		{
@@ -1598,21 +1603,39 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 	}
 }
 
+// v2.6.12: Enhanced material parser with expression graph support
 void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
 	LineIndex++;
-	
+
 	FManifestMaterialDefinition CurrentDef;
+	FManifestMaterialExpression CurrentExpr;
+	FManifestMaterialConnection CurrentConn;
 	bool bInItem = false;
-	
+	bool bInExpressions = false;
+	bool bInConnections = false;
+	bool bInExpression = false;
+	bool bInConnection = false;
+	bool bInProperties = false;
+
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
 		FString TrimmedLine = Line.TrimStart();
-		
+		int32 CurrentIndent = GetIndentLevel(Line);
+
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// Save pending expression/connection
+			if (bInExpression && !CurrentExpr.Id.IsEmpty())
+			{
+				CurrentDef.Expressions.Add(CurrentExpr);
+			}
+			if (bInConnection && !CurrentConn.FromId.IsEmpty())
+			{
+				CurrentDef.Connections.Add(CurrentConn);
+			}
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.Materials.Add(CurrentDef);
@@ -1620,15 +1643,25 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 			LineIndex--;
 			return;
 		}
-		
+
 		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
 		{
 			LineIndex++;
 			continue;
 		}
-		
+
+		// New material item
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// Save pending expression/connection
+			if (bInExpression && !CurrentExpr.Id.IsEmpty())
+			{
+				CurrentDef.Expressions.Add(CurrentExpr);
+			}
+			if (bInConnection && !CurrentConn.FromId.IsEmpty())
+			{
+				CurrentDef.Connections.Add(CurrentConn);
+			}
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.Materials.Add(CurrentDef);
@@ -1636,29 +1669,401 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 			CurrentDef = FManifestMaterialDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			bInExpressions = false;
+			bInConnections = false;
+			bInExpression = false;
+			bInConnection = false;
+			bInProperties = false;
 		}
 		else if (bInItem)
 		{
+			// Material properties
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInExpressions = false;
+				bInConnections = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("blend_mode:")))
 			{
 				CurrentDef.BlendMode = GetLineValue(TrimmedLine);
+				bInExpressions = false;
+				bInConnections = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("shading_model:")))
 			{
 				CurrentDef.ShadingModel = GetLineValue(TrimmedLine);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("two_sided:")))
+			{
+				CurrentDef.bTwoSided = GetLineValue(TrimmedLine).ToBool();
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			// v2.6.12: Expressions section
+			else if (TrimmedLine.StartsWith(TEXT("expressions:")))
+			{
+				bInExpressions = true;
+				bInConnections = false;
+				bInExpression = false;
+				bInProperties = false;
+				CurrentExpr = FManifestMaterialExpression();
+			}
+			// v2.6.12: Connections section
+			else if (TrimmedLine.StartsWith(TEXT("connections:")))
+			{
+				// Save pending expression
+				if (bInExpression && !CurrentExpr.Id.IsEmpty())
+				{
+					CurrentDef.Expressions.Add(CurrentExpr);
+				}
+				bInExpressions = false;
+				bInConnections = true;
+				bInExpression = false;
+				bInConnection = false;
+				bInProperties = false;
+				CurrentConn = FManifestMaterialConnection();
+			}
+			// Expression item
+			else if (bInExpressions && TrimmedLine.StartsWith(TEXT("- id:")))
+			{
+				// Save previous expression
+				if (bInExpression && !CurrentExpr.Id.IsEmpty())
+				{
+					CurrentDef.Expressions.Add(CurrentExpr);
+				}
+				CurrentExpr = FManifestMaterialExpression();
+				CurrentExpr.Id = GetLineValue(TrimmedLine.Mid(2));
+				bInExpression = true;
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("type:")))
+			{
+				CurrentExpr.Type = GetLineValue(TrimmedLine);
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("name:")))
+			{
+				CurrentExpr.Name = GetLineValue(TrimmedLine);
+				bInProperties = false;
+			}
+			else if (bInExpression && (TrimmedLine.StartsWith(TEXT("default:")) || TrimmedLine.StartsWith(TEXT("default_value:"))))
+			{
+				CurrentExpr.DefaultValue = GetLineValue(TrimmedLine);
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("pos_x:")))
+			{
+				CurrentExpr.PosX = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("pos_y:")))
+			{
+				CurrentExpr.PosY = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("properties:")))
+			{
+				bInProperties = true;
+			}
+			else if (bInExpression && bInProperties && TrimmedLine.Contains(TEXT(":")))
+			{
+				// Parse property key:value
+				int32 ColonIdx;
+				TrimmedLine.FindChar(TEXT(':'), ColonIdx);
+				FString Key = TrimmedLine.Left(ColonIdx).TrimStartAndEnd();
+				FString Value = TrimmedLine.Mid(ColonIdx + 1).TrimStartAndEnd();
+				CurrentExpr.Properties.Add(Key, Value);
+			}
+			// Connection item
+			else if (bInConnections && TrimmedLine.StartsWith(TEXT("- from:")))
+			{
+				// Save previous connection
+				if (bInConnection && !CurrentConn.FromId.IsEmpty())
+				{
+					CurrentDef.Connections.Add(CurrentConn);
+				}
+				CurrentConn = FManifestMaterialConnection();
+				CurrentConn.FromId = GetLineValue(TrimmedLine.Mid(2));
+				bInConnection = true;
+			}
+			else if (bInConnection && TrimmedLine.StartsWith(TEXT("from_output:")))
+			{
+				CurrentConn.FromOutput = GetLineValue(TrimmedLine);
+			}
+			else if (bInConnection && TrimmedLine.StartsWith(TEXT("to:")))
+			{
+				CurrentConn.ToId = GetLineValue(TrimmedLine);
+			}
+			else if (bInConnection && TrimmedLine.StartsWith(TEXT("to_input:")))
+			{
+				CurrentConn.ToInput = GetLineValue(TrimmedLine);
 			}
 		}
-		
+
 		LineIndex++;
 	}
-	
+
+	// Save any pending items
+	if (bInExpression && !CurrentExpr.Id.IsEmpty())
+	{
+		CurrentDef.Expressions.Add(CurrentExpr);
+	}
+	if (bInConnection && !CurrentConn.FromId.IsEmpty())
+	{
+		CurrentDef.Connections.Add(CurrentConn);
+	}
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.Materials.Add(CurrentDef);
+	}
+}
+
+// v2.6.12: Parse material_functions section
+void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestMaterialFunctionDefinition CurrentDef;
+	FManifestMaterialFunctionInput CurrentInput;
+	FManifestMaterialFunctionOutput CurrentOutput;
+	FManifestMaterialExpression CurrentExpr;
+	FManifestMaterialConnection CurrentConn;
+	bool bInItem = false;
+	bool bInInputs = false;
+	bool bInOutputs = false;
+	bool bInExpressions = false;
+	bool bInConnections = false;
+	bool bInInput = false;
+	bool bInOutput = false;
+	bool bInExpression = false;
+	bool bInConnection = false;
+	bool bInProperties = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			// Save all pending items
+			if (bInInput && !CurrentInput.Name.IsEmpty()) CurrentDef.Inputs.Add(CurrentInput);
+			if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
+			if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
+			if (bInConnection && !CurrentConn.FromId.IsEmpty()) CurrentDef.Connections.Add(CurrentConn);
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.MaterialFunctions.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// New material function item
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save all pending from previous item
+			if (bInInput && !CurrentInput.Name.IsEmpty()) CurrentDef.Inputs.Add(CurrentInput);
+			if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
+			if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
+			if (bInConnection && !CurrentConn.FromId.IsEmpty()) CurrentDef.Connections.Add(CurrentConn);
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.MaterialFunctions.Add(CurrentDef);
+			}
+			CurrentDef = FManifestMaterialFunctionDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInInputs = false;
+			bInOutputs = false;
+			bInExpressions = false;
+			bInConnections = false;
+			bInInput = false;
+			bInOutput = false;
+			bInExpression = false;
+			bInConnection = false;
+			bInProperties = false;
+		}
+		else if (bInItem)
+		{
+			// Function properties
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInInputs = false; bInOutputs = false; bInExpressions = false; bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("description:")))
+			{
+				CurrentDef.Description = GetLineValue(TrimmedLine);
+				bInInputs = false; bInOutputs = false; bInExpressions = false; bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("expose_to_library:")))
+			{
+				CurrentDef.bExposeToLibrary = GetLineValue(TrimmedLine).ToBool();
+				bInInputs = false; bInOutputs = false; bInExpressions = false; bInConnections = false;
+			}
+			// Inputs section
+			else if (TrimmedLine.StartsWith(TEXT("inputs:")))
+			{
+				bInInputs = true;
+				bInOutputs = false; bInExpressions = false; bInConnections = false;
+				bInInput = false;
+				CurrentInput = FManifestMaterialFunctionInput();
+			}
+			// Outputs section
+			else if (TrimmedLine.StartsWith(TEXT("outputs:")))
+			{
+				if (bInInput && !CurrentInput.Name.IsEmpty()) CurrentDef.Inputs.Add(CurrentInput);
+				bInInputs = false;
+				bInOutputs = true;
+				bInExpressions = false; bInConnections = false;
+				bInInput = false; bInOutput = false;
+				CurrentOutput = FManifestMaterialFunctionOutput();
+			}
+			// Expressions section
+			else if (TrimmedLine.StartsWith(TEXT("expressions:")))
+			{
+				if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
+				bInInputs = false; bInOutputs = false;
+				bInExpressions = true;
+				bInConnections = false;
+				bInOutput = false; bInExpression = false;
+				CurrentExpr = FManifestMaterialExpression();
+			}
+			// Connections section
+			else if (TrimmedLine.StartsWith(TEXT("connections:")))
+			{
+				if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
+				bInInputs = false; bInOutputs = false; bInExpressions = false;
+				bInConnections = true;
+				bInExpression = false; bInConnection = false;
+				CurrentConn = FManifestMaterialConnection();
+			}
+			// Input item
+			else if (bInInputs && TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				if (bInInput && !CurrentInput.Name.IsEmpty()) CurrentDef.Inputs.Add(CurrentInput);
+				CurrentInput = FManifestMaterialFunctionInput();
+				CurrentInput.Name = GetLineValue(TrimmedLine.Mid(2));
+				bInInput = true;
+			}
+			else if (bInInput && TrimmedLine.StartsWith(TEXT("type:")))
+			{
+				CurrentInput.Type = GetLineValue(TrimmedLine);
+			}
+			else if (bInInput && (TrimmedLine.StartsWith(TEXT("default:")) || TrimmedLine.StartsWith(TEXT("default_value:"))))
+			{
+				CurrentInput.DefaultValue = GetLineValue(TrimmedLine);
+			}
+			else if (bInInput && TrimmedLine.StartsWith(TEXT("sort_priority:")))
+			{
+				CurrentInput.SortPriority = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			// Output item
+			else if (bInOutputs && TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
+				CurrentOutput = FManifestMaterialFunctionOutput();
+				CurrentOutput.Name = GetLineValue(TrimmedLine.Mid(2));
+				bInOutput = true;
+			}
+			else if (bInOutput && TrimmedLine.StartsWith(TEXT("type:")))
+			{
+				CurrentOutput.Type = GetLineValue(TrimmedLine);
+			}
+			else if (bInOutput && TrimmedLine.StartsWith(TEXT("sort_priority:")))
+			{
+				CurrentOutput.SortPriority = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			// Expression item (same as materials)
+			else if (bInExpressions && TrimmedLine.StartsWith(TEXT("- id:")))
+			{
+				if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
+				CurrentExpr = FManifestMaterialExpression();
+				CurrentExpr.Id = GetLineValue(TrimmedLine.Mid(2));
+				bInExpression = true;
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("type:")))
+			{
+				CurrentExpr.Type = GetLineValue(TrimmedLine);
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("name:")))
+			{
+				CurrentExpr.Name = GetLineValue(TrimmedLine);
+				bInProperties = false;
+			}
+			else if (bInExpression && (TrimmedLine.StartsWith(TEXT("default:")) || TrimmedLine.StartsWith(TEXT("default_value:"))))
+			{
+				CurrentExpr.DefaultValue = GetLineValue(TrimmedLine);
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("pos_x:")))
+			{
+				CurrentExpr.PosX = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("pos_y:")))
+			{
+				CurrentExpr.PosY = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("properties:")))
+			{
+				bInProperties = true;
+			}
+			else if (bInExpression && bInProperties && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonIdx;
+				TrimmedLine.FindChar(TEXT(':'), ColonIdx);
+				FString Key = TrimmedLine.Left(ColonIdx).TrimStartAndEnd();
+				FString Value = TrimmedLine.Mid(ColonIdx + 1).TrimStartAndEnd();
+				CurrentExpr.Properties.Add(Key, Value);
+			}
+			// Connection item (same as materials)
+			else if (bInConnections && TrimmedLine.StartsWith(TEXT("- from:")))
+			{
+				if (bInConnection && !CurrentConn.FromId.IsEmpty()) CurrentDef.Connections.Add(CurrentConn);
+				CurrentConn = FManifestMaterialConnection();
+				CurrentConn.FromId = GetLineValue(TrimmedLine.Mid(2));
+				bInConnection = true;
+			}
+			else if (bInConnection && TrimmedLine.StartsWith(TEXT("from_output:")))
+			{
+				CurrentConn.FromOutput = GetLineValue(TrimmedLine);
+			}
+			else if (bInConnection && TrimmedLine.StartsWith(TEXT("to:")))
+			{
+				CurrentConn.ToId = GetLineValue(TrimmedLine);
+			}
+			else if (bInConnection && TrimmedLine.StartsWith(TEXT("to_input:")))
+			{
+				CurrentConn.ToInput = GetLineValue(TrimmedLine);
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save any pending items
+	if (bInInput && !CurrentInput.Name.IsEmpty()) CurrentDef.Inputs.Add(CurrentInput);
+	if (bInOutput && !CurrentOutput.Name.IsEmpty()) CurrentDef.Outputs.Add(CurrentOutput);
+	if (bInExpression && !CurrentExpr.Id.IsEmpty()) CurrentDef.Expressions.Add(CurrentExpr);
+	if (bInConnection && !CurrentConn.FromId.IsEmpty()) CurrentDef.Connections.Add(CurrentConn);
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.MaterialFunctions.Add(CurrentDef);
 	}
 }
 
