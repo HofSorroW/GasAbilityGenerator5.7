@@ -3618,6 +3618,7 @@ gameplay_abilities:
           to: [ClearTimer, Handle]
 
   # GA_FatherRifle - Rifle Weapon Form (NPC-owned form ability)
+  # v2.7.0: Full Narrative Pro item flow with BreakStruct/GetArrayItem
   - name: GA_FatherRifle
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -3645,11 +3646,12 @@ gameplay_abilities:
       - name: FatherRef
         type: Object
         class: BP_FatherCompanion
+      - name: WeaponRef
+        type: Object
+        class: WeaponItem
     event_graph:
       nodes:
         # === ACTIVATION NODES ===
-        # Note: Weapon spawning/wielding requires struct breaking which generator doesn't support.
-        # This simplified version hides Father. Add weapon logic manually in editor.
         - id: Event_Activate
           type: Event
           properties:
@@ -3681,33 +3683,111 @@ gameplay_abilities:
           properties:
             function: SetActorEnableCollision
           position: [1500, 0]
+        # Get player and inventory
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, 150]
+        - id: GetInventory
+          type: CallFunction
+          properties:
+            function: GetComponentByClass
+            class: NarrativeInventoryComponent
+          position: [1500, 150]
+        - id: CastToInventory
+          type: DynamicCast
+          properties:
+            target_class: NarrativeInventoryComponent
+          position: [1800, 150]
+        # Add weapon item to player inventory
+        - id: TryAddWeapon
+          type: CallFunction
+          properties:
+            function: TryAddItemFromClass
+            class: BP_FatherRifleWeapon
+            quantity: 1
+          position: [2100, 150]
+        # Break FItemAddResult struct to get Stacks array
+        - id: BreakItemResult
+          type: BreakStruct
+          properties:
+            struct_type: FItemAddResult
+          position: [2400, 150]
+        # Get first item from Stacks array (index 0)
+        - id: GetFirstStack
+          type: GetArrayItem
+          properties:
+            index: 0
+          position: [2700, 150]
+        # Cast to WeaponItem and wield
+        - id: CastToWeapon
+          type: DynamicCast
+          properties:
+            target_class: WeaponItem
+          position: [3000, 150]
+        - id: SetWeaponRef
+          type: VariableSet
+          properties:
+            variable_name: WeaponRef
+          position: [3300, 150]
+        - id: WieldWeapon
+          type: CallFunction
+          properties:
+            function: WieldInSlot
+            slot_tag: Narrative.Equipment.WieldSlot.MainHand
+          position: [3600, 150]
         - id: EndAbility_Success
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [1800, 0]
+          position: [3900, 150]
         # === END ABILITY NODES ===
         - id: Event_EndAbility
           type: Event
           properties:
             event_name: K2_OnEndAbility
-          position: [0, 300]
+          position: [0, 500]
         - id: GetFatherRef_End
           type: VariableGet
           properties:
             variable_name: FatherRef
-          position: [300, 300]
+          position: [300, 500]
         - id: ShowFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [600, 300]
+          position: [600, 500]
         - id: EnableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [900, 300]
+          position: [900, 500]
+        # Remove weapon from player
+        - id: GetWeaponRef_End
+          type: VariableGet
+          properties:
+            variable_name: WeaponRef
+          position: [300, 650]
+        - id: GetPlayerEnd
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [600, 650]
+        - id: GetInventoryEnd
+          type: CallFunction
+          properties:
+            function: GetComponentByClass
+            class: NarrativeInventoryComponent
+          position: [900, 650]
+        - id: RemoveWeapon
+          type: CallFunction
+          properties:
+            function: RemoveItem
+          position: [1200, 650]
       connections:
         # === ACTIVATION FLOW ===
         - from: [Event_Activate, Then]
@@ -3721,6 +3801,18 @@ gameplay_abilities:
         - from: [HideFather, Exec]
           to: [DisableCollision, Exec]
         - from: [DisableCollision, Exec]
+          to: [GetInventory, Exec]
+        - from: [GetInventory, Exec]
+          to: [CastToInventory, Exec]
+        - from: [CastToInventory, Exec]
+          to: [TryAddWeapon, Exec]
+        - from: [TryAddWeapon, Exec]
+          to: [CastToWeapon, Exec]
+        - from: [CastToWeapon, Exec]
+          to: [SetWeaponRef, Exec]
+        - from: [SetWeaponRef, Exec]
+          to: [WieldWeapon, Exec]
+        - from: [WieldWeapon, Exec]
           to: [EndAbility_Success, Exec]
         # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
@@ -3731,18 +3823,47 @@ gameplay_abilities:
           to: [HideFather, Target]
         - from: [SetFatherRef, FatherRef]
           to: [DisableCollision, Target]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetInventory, Target]
+        - from: [GetInventory, ReturnValue]
+          to: [CastToInventory, Object]
+        - from: [CastToInventory, AsNarrativeInventoryComponent]
+          to: [TryAddWeapon, Target]
+        - from: [TryAddWeapon, ReturnValue]
+          to: [BreakItemResult, In]
+        - from: [BreakItemResult, Stacks]
+          to: [GetFirstStack, Array]
+        - from: [GetFirstStack, Item]
+          to: [CastToWeapon, Object]
+        - from: [CastToWeapon, AsWeaponItem]
+          to: [SetWeaponRef, WeaponRef]
+        - from: [SetWeaponRef, WeaponRef]
+          to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
+        - from: [EnableCollision, Exec]
+          to: [RemoveWeapon, Exec]
         # Data flow - End
         - from: [GetFatherRef_End, FatherRef]
           to: [ShowFather, Target]
         - from: [GetFatherRef_End, FatherRef]
           to: [EnableCollision, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [GetPlayerEnd, Target]
+        - from: [GetPlayerEnd, OwnerPlayer]
+          to: [GetInventoryEnd, Target]
+        - from: [GetInventoryEnd, ReturnValue]
+          to: [RemoveWeapon, Target]
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [RemoveWeapon, Item]
 
   # GA_FatherSword - Sword Weapon Form (NPC-owned form ability)
+  # v2.7.0: Full Narrative Pro item flow with BreakStruct/GetArrayItem
   - name: GA_FatherSword
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -3770,11 +3891,12 @@ gameplay_abilities:
       - name: FatherRef
         type: Object
         class: BP_FatherCompanion
+      - name: WeaponRef
+        type: Object
+        class: WeaponItem
     event_graph:
       nodes:
         # === ACTIVATION NODES ===
-        # Note: Weapon spawning/wielding requires struct breaking which generator doesn't support.
-        # This simplified version hides Father. Add weapon logic manually in editor.
         - id: Event_Activate
           type: Event
           properties:
@@ -3806,33 +3928,111 @@ gameplay_abilities:
           properties:
             function: SetActorEnableCollision
           position: [1500, 0]
+        # Get player and inventory
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, 150]
+        - id: GetInventory
+          type: CallFunction
+          properties:
+            function: GetComponentByClass
+            class: NarrativeInventoryComponent
+          position: [1500, 150]
+        - id: CastToInventory
+          type: DynamicCast
+          properties:
+            target_class: NarrativeInventoryComponent
+          position: [1800, 150]
+        # Add weapon item to player inventory
+        - id: TryAddWeapon
+          type: CallFunction
+          properties:
+            function: TryAddItemFromClass
+            class: BP_FatherSwordWeapon
+            quantity: 1
+          position: [2100, 150]
+        # Break FItemAddResult struct to get Stacks array
+        - id: BreakItemResult
+          type: BreakStruct
+          properties:
+            struct_type: FItemAddResult
+          position: [2400, 150]
+        # Get first item from Stacks array (index 0)
+        - id: GetFirstStack
+          type: GetArrayItem
+          properties:
+            index: 0
+          position: [2700, 150]
+        # Cast to WeaponItem and wield
+        - id: CastToWeapon
+          type: DynamicCast
+          properties:
+            target_class: WeaponItem
+          position: [3000, 150]
+        - id: SetWeaponRef
+          type: VariableSet
+          properties:
+            variable_name: WeaponRef
+          position: [3300, 150]
+        - id: WieldWeapon
+          type: CallFunction
+          properties:
+            function: WieldInSlot
+            slot_tag: Narrative.Equipment.WieldSlot.MainHand
+          position: [3600, 150]
         - id: EndAbility_Success
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [1800, 0]
+          position: [3900, 150]
         # === END ABILITY NODES ===
         - id: Event_EndAbility
           type: Event
           properties:
             event_name: K2_OnEndAbility
-          position: [0, 300]
+          position: [0, 500]
         - id: GetFatherRef_End
           type: VariableGet
           properties:
             variable_name: FatherRef
-          position: [300, 300]
+          position: [300, 500]
         - id: ShowFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [600, 300]
+          position: [600, 500]
         - id: EnableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [900, 300]
+          position: [900, 500]
+        # Remove weapon from player
+        - id: GetWeaponRef_End
+          type: VariableGet
+          properties:
+            variable_name: WeaponRef
+          position: [300, 650]
+        - id: GetPlayerEnd
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [600, 650]
+        - id: GetInventoryEnd
+          type: CallFunction
+          properties:
+            function: GetComponentByClass
+            class: NarrativeInventoryComponent
+          position: [900, 650]
+        - id: RemoveWeapon
+          type: CallFunction
+          properties:
+            function: RemoveItem
+          position: [1200, 650]
       connections:
         # === ACTIVATION FLOW ===
         - from: [Event_Activate, Then]
@@ -3846,6 +4046,18 @@ gameplay_abilities:
         - from: [HideFather, Exec]
           to: [DisableCollision, Exec]
         - from: [DisableCollision, Exec]
+          to: [GetInventory, Exec]
+        - from: [GetInventory, Exec]
+          to: [CastToInventory, Exec]
+        - from: [CastToInventory, Exec]
+          to: [TryAddWeapon, Exec]
+        - from: [TryAddWeapon, Exec]
+          to: [CastToWeapon, Exec]
+        - from: [CastToWeapon, Exec]
+          to: [SetWeaponRef, Exec]
+        - from: [SetWeaponRef, Exec]
+          to: [WieldWeapon, Exec]
+        - from: [WieldWeapon, Exec]
           to: [EndAbility_Success, Exec]
         # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
@@ -3856,16 +4068,44 @@ gameplay_abilities:
           to: [HideFather, Target]
         - from: [SetFatherRef, FatherRef]
           to: [DisableCollision, Target]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetInventory, Target]
+        - from: [GetInventory, ReturnValue]
+          to: [CastToInventory, Object]
+        - from: [CastToInventory, AsNarrativeInventoryComponent]
+          to: [TryAddWeapon, Target]
+        - from: [TryAddWeapon, ReturnValue]
+          to: [BreakItemResult, In]
+        - from: [BreakItemResult, Stacks]
+          to: [GetFirstStack, Array]
+        - from: [GetFirstStack, Item]
+          to: [CastToWeapon, Object]
+        - from: [CastToWeapon, AsWeaponItem]
+          to: [SetWeaponRef, WeaponRef]
+        - from: [SetWeaponRef, WeaponRef]
+          to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
+        - from: [EnableCollision, Exec]
+          to: [RemoveWeapon, Exec]
         # Data flow - End
         - from: [GetFatherRef_End, FatherRef]
           to: [ShowFather, Target]
         - from: [GetFatherRef_End, FatherRef]
           to: [EnableCollision, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [GetPlayerEnd, Target]
+        - from: [GetPlayerEnd, OwnerPlayer]
+          to: [GetInventoryEnd, Target]
+        - from: [GetInventoryEnd, ReturnValue]
+          to: [RemoveWeapon, Target]
+        - from: [GetWeaponRef_End, WeaponRef]
+          to: [RemoveWeapon, Item]
 
 # ============================================================================
 # EQUIPPABLE ITEMS (9)
