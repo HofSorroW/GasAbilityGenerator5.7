@@ -1,0 +1,21 @@
+# Set default behavior to automatically normalize line endings
+* text=auto eol=crlf
+
+# Explicitly declare text files for CRLF (Windows)
+*.cpp text eol=crlf
+*.h text eol=crlf
+*.cs text eol=crlf
+*.md text eol=crlf
+*.yaml text eol=crlf
+*.yml text eol=crlf
+*.ini text eol=crlf
+*.txt text eol=crlf
+*.json text eol=crlf
+
+# Binary files
+*.uasset binary
+*.umap binary
+*.png binary
+*.jpg binary
+*.exe binary
+*.dll binary
