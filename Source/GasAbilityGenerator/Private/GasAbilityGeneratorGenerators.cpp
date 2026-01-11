@@ -1,5 +1,11 @@
 // GasAbilityGenerator v2.7.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.7.4: Comprehensive pre-generation validation with specific error detection
+//         - Detects multiple exec connections from same output pin (use Sequence node)
+//         - Detects missing ASC Target connections (ApplyGameplayEffectToTarget etc)
+//         - Detects unconnected array inputs (Object Types needs MakeArray)
+//         - Detects missing Actor pin connections when self is not Actor
+//         - Auto-remaps deprecated functions (ClearTimerByHandle -> K2_ClearAndInvalidateTimerHandle)
 // v2.7.3: Enhanced pin connection validation with detailed type logging
 //         - Shows full type info including class names (e.g., object<NarrativeInventoryComponent>)
 //         - Fails connection at generation time when types are incompatible (CONNECT_RESPONSE_DISALLOW)
@@ -3210,10 +3216,19 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		}
 	}
 
-	// v2.5.2: Post-generation validation - check for unconnected required pins
+	// v2.7.4: Enhanced post-generation validation with specific error detection
 	int32 UnconnectedInputPins = 0;
 	int32 UnconnectedExecOutputPins = 0;
+	int32 MultipleExecConnections = 0;
+	int32 ASCTargetErrors = 0;
+	int32 ArrayInputErrors = 0;
+	int32 ActorPinErrors = 0;
 	LogGeneration(TEXT("  --- Pin Connection Validation ---"));
+
+	// Get Blueprint parent class to check if self is Actor/ASC
+	UClass* BlueprintParentClass = Blueprint->ParentClass;
+	bool bSelfIsActor = BlueprintParentClass && BlueprintParentClass->IsChildOf(AActor::StaticClass());
+	bool bSelfIsASC = BlueprintParentClass && BlueprintParentClass->IsChildOf(UAbilitySystemComponent::StaticClass());
 
 	for (const auto& NodePair : NodeMap)
 	{
@@ -3229,6 +3244,22 @@ bool FEventGraphGenerator::GenerateEventGraph(
 			// Skip hidden pins
 			if (Pin->bHidden) continue;
 
+			FString PinNameStr = Pin->PinName.ToString();
+			FString PinCategory = Pin->PinType.PinCategory.ToString();
+
+			// v2.7.4: Check for multiple exec connections from same output (ERROR - causes <Unnamed> error)
+			if (Pin->Direction == EGPD_Output && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+			{
+				if (Pin->LinkedTo.Num() > 1)
+				{
+					UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] MULTIPLE EXEC ERROR: [%s].%s has %d connections (max 1 allowed)"),
+						*NodeId, *PinNameStr, Pin->LinkedTo.Num());
+					LogGeneration(FString::Printf(TEXT("    ERROR: [%s].%s exec output has %d connections - only 1 allowed! Use Sequence node for multiple paths."),
+						*NodeId, *PinNameStr, Pin->LinkedTo.Num()));
+					MultipleExecConnections++;
+				}
+			}
+
 			// Check unconnected input pins (potential issues)
 			if (Pin->Direction == EGPD_Input && Pin->LinkedTo.Num() == 0)
 			{
@@ -3237,7 +3268,6 @@ bool FEventGraphGenerator::GenerateEventGraph(
 				bool bHasDefaultValue = !Pin->DefaultValue.IsEmpty() || !Pin->DefaultTextValue.IsEmpty() || Pin->DefaultObject != nullptr;
 
 				// v2.6.4: Skip "self" pins on CallFunction nodes - these are implicit for target_self functions
-				FString PinNameStr = Pin->PinName.ToString();
 				bool bIsSelfPin = PinNameStr.Equals(TEXT("self"), ESearchCase::IgnoreCase) ||
 				                  PinNameStr.Equals(UEdGraphSchema_K2::PN_Self.ToString(), ESearchCase::IgnoreCase);
 				if (bIsSelfPin)
@@ -3246,11 +3276,62 @@ bool FEventGraphGenerator::GenerateEventGraph(
 					continue;
 				}
 
-				// Log significant unconnected pins
+				// v2.7.4: Check for ASC Target pins that need connection
+				if (PinNameStr.Equals(TEXT("Target"), ESearchCase::IgnoreCase) && !bHasDefaultValue)
+				{
+					// Check if the pin expects AbilitySystemComponent
+					FString SubCategoryName;
+					if (Pin->PinType.PinSubCategoryObject.IsValid())
+					{
+						SubCategoryName = Pin->PinType.PinSubCategoryObject->GetName();
+					}
+					if (SubCategoryName.Contains(TEXT("AbilitySystem")) ||
+					    (PinCategory == TEXT("object") && !bSelfIsASC))
+					{
+						// This might be an ASC function Target - check the node type
+						if (UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node))
+						{
+							FString FuncName = CallNode->GetFunctionName().ToString();
+							if (FuncName.Contains(TEXT("GameplayEffect")) ||
+							    FuncName.Contains(TEXT("GameplayAbility")) ||
+							    FuncName.Contains(TEXT("SendGameplayEvent")) ||
+							    FuncName.Contains(TEXT("AbilitySystem")))
+							{
+								UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] ASC TARGET ERROR: [%s].Target needs AbilitySystemComponent connection"),
+									*NodeId);
+								LogGeneration(FString::Printf(TEXT("    ERROR: [%s].Target requires AbilitySystemComponent - use GetAbilitySystemComponent on actor first"),
+									*NodeId));
+								ASCTargetErrors++;
+							}
+						}
+					}
+				}
+
+				// v2.7.4: Check for Actor pins that need connection when self is not Actor
+				if (PinNameStr.Equals(TEXT("Actor"), ESearchCase::IgnoreCase) &&
+				    PinCategory == TEXT("object") && !bHasDefaultValue && !bSelfIsActor)
+				{
+					UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] ACTOR PIN ERROR: [%s].Actor needs connection (self is not Actor)"),
+						*NodeId);
+					LogGeneration(FString::Printf(TEXT("    ERROR: [%s].Actor needs connection - blueprint is not an Actor, must connect GetAvatarActorFromActorInfo or similar"),
+						*NodeId));
+					ActorPinErrors++;
+				}
+
+				// v2.7.4: Check for array input pins that need MakeArray node
+				if (Pin->PinType.IsArray() && !bHasDefaultValue)
+				{
+					UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] ARRAY INPUT ERROR: [%s].%s is an array and needs MakeArray node connection"),
+						*NodeId, *PinNameStr);
+					LogGeneration(FString::Printf(TEXT("    ERROR: [%s].%s is an array input - must connect a MakeArray node (e.g., for ObjectTypes)"),
+						*NodeId, *PinNameStr));
+					ArrayInputErrors++;
+				}
+
+				// Log other significant unconnected pins
 				if (!bIsExecPin && !bHasDefaultValue && !Pin->PinType.PinCategory.IsNone())
 				{
 					// Only warn about object/struct pins that likely need connections
-					FString PinCategory = Pin->PinType.PinCategory.ToString();
 					if (PinCategory == TEXT("object") || PinCategory == TEXT("struct") ||
 					    PinNameStr.Contains(TEXT("Parent")) ||
 					    PinNameStr.Contains(TEXT("Socket")) ||
@@ -3269,7 +3350,6 @@ bool FEventGraphGenerator::GenerateEventGraph(
 				if (Pin->LinkedTo.Num() == 0)
 				{
 					// Don't warn about False branches or CastFailed - those are often intentionally unconnected
-					FString PinNameStr = Pin->PinName.ToString();
 					if (!PinNameStr.Equals(TEXT("False"), ESearchCase::IgnoreCase) &&
 					    !PinNameStr.Contains(TEXT("Failed"), ESearchCase::IgnoreCase) &&
 					    !PinNameStr.Equals(TEXT("Completed"), ESearchCase::IgnoreCase))
@@ -3294,6 +3374,37 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		*GraphDefinition.Name,
 		NodesCreated, NodesCreated + NodesFailed,
 		ConnectionsCreated, ConnectionsCreated + ConnectionsFailed));
+
+	// v2.7.4: Enhanced error reporting
+	int32 TotalErrors = MultipleExecConnections + ASCTargetErrors + ArrayInputErrors + ActorPinErrors;
+	if (TotalErrors > 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] VALIDATION ERRORS in %s:"), *GraphDefinition.Name);
+		LogGeneration(TEXT("  --- VALIDATION ERRORS ---"));
+
+		if (MultipleExecConnections > 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   - Multiple exec connections: %d (use Sequence node)"), MultipleExecConnections);
+			LogGeneration(FString::Printf(TEXT("    - EXEC ERROR: %d pin(s) have multiple connections - use Sequence node instead"), MultipleExecConnections));
+		}
+		if (ASCTargetErrors > 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   - ASC Target missing: %d (connect GetAbilitySystemComponent)"), ASCTargetErrors);
+			LogGeneration(FString::Printf(TEXT("    - ASC ERROR: %d Target pin(s) need AbilitySystemComponent connection"), ASCTargetErrors));
+		}
+		if (ArrayInputErrors > 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   - Array inputs missing: %d (connect MakeArray node)"), ArrayInputErrors);
+			LogGeneration(FString::Printf(TEXT("    - ARRAY ERROR: %d array input pin(s) need MakeArray node connection"), ArrayInputErrors));
+		}
+		if (ActorPinErrors > 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   - Actor pins missing: %d (connect GetAvatarActor)"), ActorPinErrors);
+			LogGeneration(FString::Printf(TEXT("    - ACTOR ERROR: %d Actor pin(s) need connection (self is not Actor)"), ActorPinErrors));
+		}
+
+		LogGeneration(FString::Printf(TEXT("  TOTAL VALIDATION ERRORS: %d"), TotalErrors));
+	}
 
 	if (UnconnectedInputPins > 0)
 	{
@@ -3576,12 +3687,33 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("IsEquipped"), UEquippableItem::StaticClass());
 	}
 
+	// v2.7.4: Deprecated function remapping table - auto-replace old functions with new versions
+	static TMap<FString, FString> DeprecatedFunctionRemapping;
+	if (DeprecatedFunctionRemapping.Num() == 0)
+	{
+		// Timer functions
+		DeprecatedFunctionRemapping.Add(TEXT("ClearTimerByHandle"), TEXT("K2_ClearAndInvalidateTimerHandle"));
+		DeprecatedFunctionRemapping.Add(TEXT("K2_ClearTimer"), TEXT("K2_ClearAndInvalidateTimerHandle"));
+		DeprecatedFunctionRemapping.Add(TEXT("ClearTimer"), TEXT("K2_ClearAndInvalidateTimerHandle"));
+		LogGeneration(TEXT("Initialized deprecated function remapping table"));
+	}
+
 	// Determine the function owner class
 	UClass* FunctionOwner = nullptr;
 	const FString* ClassNamePtr = NodeDef.Properties.Find(TEXT("class"));
 
 	// v2.4.3: First check the well-known functions table
 	FString FunctionNameStr = FunctionName.ToString();
+
+	// v2.7.4: Check for deprecated function and remap if needed
+	if (FString* RemappedName = DeprecatedFunctionRemapping.Find(FunctionNameStr))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GasAbilityGenerator] DEPRECATED FUNCTION: '%s' -> using '%s' instead"),
+			*FunctionNameStr, **RemappedName);
+		LogGeneration(FString::Printf(TEXT("  NOTE: Remapping deprecated '%s' to '%s'"), *FunctionNameStr, **RemappedName));
+		FunctionNameStr = *RemappedName;
+		FunctionName = FName(**RemappedName);
+	}
 
 	// v2.4.4: Try multiple name variants (original, K2_, BP_)
 	TArray<FString> FunctionNameVariants;
