@@ -261,10 +261,28 @@ struct FMissingDependencyInfo
 
 /**
  * Event Graph Generator - creates Blueprint nodes and connections from definitions
+ * v2.7.7: Added pre-generation validation
  */
 class GASABILITYGENERATOR_API FEventGraphGenerator : public FGeneratorBase
 {
 public:
+	/**
+	 * v2.7.7: Pre-generation validation for event graph definitions
+	 * Returns true if validation passes, logs errors for issues found
+	 */
+	static bool ValidateEventGraph(
+		const FManifestEventGraphDefinition& GraphDefinition,
+		const FString& ContextName,
+		TArray<FString>& OutErrors);
+
+	/**
+	 * v2.7.7: Validate actor blueprint event graph before generation
+	 * Checks for NPC blueprints that should have event graphs
+	 */
+	static bool ValidateActorBlueprintEventGraph(
+		const FManifestActorBlueprintDefinition& Definition,
+		TArray<FString>& OutErrors);
+
 	/**
 	 * Generate event graph nodes and connections in a Blueprint
 	 */

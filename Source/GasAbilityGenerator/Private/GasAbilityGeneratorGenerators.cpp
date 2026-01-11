@@ -1594,6 +1594,25 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		return Result;
 	}
 
+	// v2.7.7: Pre-generation validation for event graphs
+	TArray<FString> ValidationErrors;
+	if (!FEventGraphGenerator::ValidateActorBlueprintEventGraph(Definition, ValidationErrors))
+	{
+		for (const FString& Error : ValidationErrors)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] PRE-GEN VALIDATION: %s"), *Error);
+			LogGeneration(FString::Printf(TEXT("  PRE-GEN ERROR: %s"), *Error));
+		}
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Pre-generation validation failed: %d errors"), ValidationErrors.Num()));
+	}
+	// Log warnings (validation returned true but may have warnings)
+	for (const FString& Warning : ValidationErrors)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[GasAbilityGenerator] PRE-GEN WARNING: %s"), *Warning);
+		LogGeneration(FString::Printf(TEXT("  PRE-GEN WARNING: %s"), *Warning));
+	}
+
 	// v2.0.9 FIX: Check existence and return SKIPPED if exists
 	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Actor Blueprint"), Result))
 	{
@@ -2956,6 +2975,151 @@ void FEventGraphGenerator::AddMissingDependency(const FString& Name, const FStri
 	}
 	MissingDependencies.Add(FMissingDependencyInfo(Name, Type, Context));
 	LogGeneration(FString::Printf(TEXT("  Missing dependency detected: %s (%s) - %s"), *Name, *Type, *Context));
+}
+
+// ============================================================================
+// v2.7.7: Pre-generation validation for event graphs
+// ============================================================================
+
+bool FEventGraphGenerator::ValidateEventGraph(
+	const FManifestEventGraphDefinition& GraphDefinition,
+	const FString& ContextName,
+	TArray<FString>& OutErrors)
+{
+	bool bValid = true;
+
+	// Check for empty graph
+	if (GraphDefinition.Nodes.Num() == 0)
+	{
+		OutErrors.Add(FString::Printf(TEXT("[%s] Event graph has no nodes defined"), *ContextName));
+		bValid = false;
+	}
+
+	// Build set of valid node IDs
+	TSet<FString> NodeIds;
+	TSet<FString> DuplicateIds;
+	for (const FManifestGraphNodeDefinition& Node : GraphDefinition.Nodes)
+	{
+		if (Node.Id.IsEmpty())
+		{
+			OutErrors.Add(FString::Printf(TEXT("[%s] Node has empty ID"), *ContextName));
+			bValid = false;
+			continue;
+		}
+
+		if (NodeIds.Contains(Node.Id))
+		{
+			if (!DuplicateIds.Contains(Node.Id))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] Duplicate node ID: %s"), *ContextName, *Node.Id));
+				DuplicateIds.Add(Node.Id);
+				bValid = false;
+			}
+		}
+		else
+		{
+			NodeIds.Add(Node.Id);
+		}
+
+		// Check required properties based on node type
+		if (Node.Type == TEXT("Event"))
+		{
+			if (!Node.Properties.Contains(TEXT("event_name")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] Event node '%s' missing event_name property"), *ContextName, *Node.Id));
+				bValid = false;
+			}
+		}
+		else if (Node.Type == TEXT("CallFunction"))
+		{
+			if (!Node.Properties.Contains(TEXT("function")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] CallFunction node '%s' missing function property"), *ContextName, *Node.Id));
+				bValid = false;
+			}
+		}
+		else if (Node.Type == TEXT("DynamicCast"))
+		{
+			if (!Node.Properties.Contains(TEXT("target_class")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] DynamicCast node '%s' missing target_class property"), *ContextName, *Node.Id));
+				bValid = false;
+			}
+		}
+		else if (Node.Type == TEXT("VariableGet") || Node.Type == TEXT("VariableSet"))
+		{
+			if (!Node.Properties.Contains(TEXT("variable_name")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] Variable node '%s' missing variable_name property"), *ContextName, *Node.Id));
+				bValid = false;
+			}
+		}
+	}
+
+	// Validate connections reference existing nodes
+	for (const FManifestGraphConnectionDefinition& Connection : GraphDefinition.Connections)
+	{
+		if (!NodeIds.Contains(Connection.From.NodeId))
+		{
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection references unknown source node: %s"), 
+				*ContextName, *Connection.From.NodeId));
+			bValid = false;
+		}
+		if (!NodeIds.Contains(Connection.To.NodeId))
+		{
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection references unknown target node: %s"), 
+				*ContextName, *Connection.To.NodeId));
+			bValid = false;
+		}
+		if (Connection.From.PinName.IsEmpty())
+		{
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection from %s has empty pin name"), 
+				*ContextName, *Connection.From.NodeId));
+			bValid = false;
+		}
+		if (Connection.To.PinName.IsEmpty())
+		{
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection to %s has empty pin name"), 
+				*ContextName, *Connection.To.NodeId));
+			bValid = false;
+		}
+	}
+
+	return bValid;
+}
+
+bool FEventGraphGenerator::ValidateActorBlueprintEventGraph(
+	const FManifestActorBlueprintDefinition& Definition,
+	TArray<FString>& OutErrors)
+{
+	bool bValid = true;
+
+	// Check if this is an NPC blueprint that should have an event graph
+	if (Definition.ParentClass == TEXT("NarrativeNPCCharacter"))
+	{
+		if (!Definition.bHasInlineEventGraph && Definition.EventGraphName.IsEmpty())
+		{
+			OutErrors.Add(FString::Printf(TEXT("[%s] NPC blueprint (NarrativeNPCCharacter) has no event_graph defined - consider adding BeginPlay/EndPlay logic"), 
+				*Definition.Name));
+			// This is a warning, not an error - don't set bValid = false
+		}
+	}
+
+	// If has inline event graph, validate it
+	if (Definition.bHasInlineEventGraph)
+	{
+		FManifestEventGraphDefinition GraphDef;
+		GraphDef.Name = Definition.EventGraphName;
+		GraphDef.Nodes = Definition.EventGraphNodes;
+		GraphDef.Connections = Definition.EventGraphConnections;
+
+		if (!ValidateEventGraph(GraphDef, Definition.Name, OutErrors))
+		{
+			bValid = false;
+		}
+	}
+
+	return bValid;
 }
 
 bool FEventGraphGenerator::GenerateEventGraph(
