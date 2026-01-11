@@ -301,6 +301,7 @@ struct FManifestActorComponentDefinition
 
 /**
  * Actor blueprint definition
+ * v2.7.6: Added inline event graph support (bHasInlineEventGraph, EventGraphNodes, EventGraphConnections)
  */
 struct FManifestActorBlueprintDefinition
 {
@@ -309,7 +310,13 @@ struct FManifestActorBlueprintDefinition
 	FString Folder;
 	TArray<FManifestActorComponentDefinition> Components;
 	TArray<FManifestActorVariableDefinition> Variables;
+	// Event graph - can be reference or inline
 	FString EventGraphName;  // Reference to event_graphs section
+	bool bHasInlineEventGraph = false;
+
+	// Inline event graph data (populated during parsing, used during generation)
+	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
+	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
 };
 
 /**
@@ -333,7 +340,13 @@ struct FManifestWidgetBlueprintDefinition
 	FString ParentClass = TEXT("UserWidget");
 	FString Folder;
 	TArray<FManifestWidgetVariableDefinition> Variables;
+	// Event graph - can be reference or inline
 	FString EventGraphName;  // Reference to event_graphs section
+	bool bHasInlineEventGraph = false;
+
+	// Inline event graph data (populated during parsing, used during generation)
+	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
+	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
 };
 
 /**

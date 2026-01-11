@@ -1742,10 +1742,47 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		}
 	}
 
-	// v2.2.0: Generate event graph if specified
-	if (!Definition.EventGraphName.IsEmpty() && ManifestData)
+	// v2.7.6: Generate inline event graph if defined (takes priority over referenced)
+	if (Definition.bHasInlineEventGraph && Definition.EventGraphNodes.Num() > 0)
 	{
-		// v2.6.7: Clear any previous missing dependencies before generation
+		FEventGraphGenerator::ClearMissingDependencies();
+
+		// Build a temporary graph definition from the stored arrays
+		FManifestEventGraphDefinition GraphDef;
+		GraphDef.Name = Definition.EventGraphName;
+		GraphDef.Nodes = Definition.EventGraphNodes;
+		GraphDef.Connections = Definition.EventGraphConnections;
+
+		if (FEventGraphGenerator::GenerateEventGraph(Blueprint, GraphDef, ProjectRoot))
+		{
+			LogGeneration(FString::Printf(TEXT("  Generated inline event graph with %d nodes"), Definition.EventGraphNodes.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("  Warning: Failed to generate inline event graph"));
+		}
+
+		if (FEventGraphGenerator::HasMissingDependencies())
+		{
+			const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+			const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+			LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
+				*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+				FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+			Result.MissingDependency = FirstMissing.DependencyName;
+			Result.MissingDependencyType = FirstMissing.DependencyType;
+			Result.DetermineCategory();
+
+			FEventGraphGenerator::ClearMissingDependencies();
+			return Result;
+		}
+	}
+	// v2.2.0: Fall back to referenced event graph lookup
+	else if (!Definition.EventGraphName.IsEmpty() && ManifestData)
+	{
 		FEventGraphGenerator::ClearMissingDependencies();
 
 		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraphName);
@@ -1760,7 +1797,6 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 				LogGeneration(FString::Printf(TEXT("  Failed to apply event graph: %s"), *Definition.EventGraphName));
 			}
 
-			// v2.6.7: Check for missing dependencies and return Deferred status if any
 			if (FEventGraphGenerator::HasMissingDependencies())
 			{
 				const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
@@ -1769,7 +1805,6 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 				LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
 					*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
 
-				// Don't save incomplete asset - return Deferred so we can retry after dependency is created
 				Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
 					FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
 				Result.MissingDependency = FirstMissing.DependencyName;

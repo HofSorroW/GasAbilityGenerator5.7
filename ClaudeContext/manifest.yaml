@@ -4558,6 +4558,86 @@ actor_blueprints:
         type: Bool
         default: false
         replicated: true
+    event_graph:
+      nodes:
+        # BeginPlay - Spawn companion VFX
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: GetMesh
+          type: CallFunction
+          properties:
+            function: GetMesh
+            target_self: true
+          position: [300, 0]
+        - id: SpawnCompanionVFX
+          type: CallFunction
+          properties:
+            function: SpawnSystemAttached
+            class: NiagaraFunctionLibrary
+          position: [600, 0]
+        # EndPlay - Safety net cleanup
+        - id: Event_EndPlay
+          type: Event
+          properties:
+            event_name: ReceiveEndPlay
+          position: [0, 400]
+        - id: HasAuthority
+          type: CallFunction
+          properties:
+            function: HasAuthority
+            target_self: true
+          position: [300, 400]
+        - id: Branch_Authority
+          type: Branch
+          position: [600, 400]
+        - id: IsValid_Owner
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [900, 400]
+        - id: GetOwnerVar
+          type: VariableGet
+          properties:
+            variable_name: OwnerPlayer
+          position: [900, 500]
+        - id: Branch_ValidOwner
+          type: Branch
+          position: [1200, 400]
+        - id: PrintCleanup
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [1500, 400]
+      connections:
+        # BeginPlay flow
+        - from: [Event_BeginPlay, Then]
+          to: [GetMesh, Exec]
+        - from: [GetMesh, Exec]
+          to: [SpawnCompanionVFX, Exec]
+        - from: [GetMesh, ReturnValue]
+          to: [SpawnCompanionVFX, AttachToComponent]
+        # EndPlay flow
+        - from: [Event_EndPlay, Then]
+          to: [HasAuthority, Exec]
+        - from: [HasAuthority, Exec]
+          to: [Branch_Authority, Exec]
+        - from: [HasAuthority, ReturnValue]
+          to: [Branch_Authority, Condition]
+        - from: [Branch_Authority, True]
+          to: [IsValid_Owner, Exec]
+        - from: [GetOwnerVar, OwnerPlayer]
+          to: [IsValid_Owner, Object]
+        - from: [IsValid_Owner, Exec]
+          to: [Branch_ValidOwner, Exec]
+        - from: [IsValid_Owner, ReturnValue]
+          to: [Branch_ValidOwner, Condition]
+        - from: [Branch_ValidOwner, True]
+          to: [PrintCleanup, Exec]
 
   - name: BP_LaserProjectile
     folder: Projectiles

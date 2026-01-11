@@ -880,7 +880,7 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	bool bInItem = false;
 	bool bInTags = false;
 	bool bInVariables = false;
-	bool bInEventGraph = false;
+	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
 
@@ -1197,6 +1197,7 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 	FManifestActorBlueprintDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInVariables = false;
+	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
 	bool bInComponents = false;
 	int32 ItemIndent = -1;      // v2.1.7: Track blueprint item indent level
 	int32 VariablesIndent = 0;
@@ -1294,19 +1295,59 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
 			}
-			// v2.2.0: Parse event_graph reference
-			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			// v2.7.6: Parse inline event_graph subsection (like GA abilities)
+			else if (TrimmedLine.Equals(TEXT("event_graph:")) || TrimmedLine.StartsWith(TEXT("event_graph:")))
 			{
-				CurrentDef.EventGraphName = GetLineValue(TrimmedLine);
+				// Save pending variable/component before switching sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInComponents && !CurrentComp.Name.IsEmpty())
+				{
+					CurrentDef.Components.Add(CurrentComp);
+					CurrentComp = FManifestActorComponentDefinition();
+				}
+				bInEventGraph = true;
+				bInVariables = false;
+				bInComponents = false;
+				CurrentDef.bHasInlineEventGraph = true;
+				CurrentDef.EventGraphName = CurrentDef.Name + TEXT("_EventGraph");
+			}
+			else if (bInEventGraph)
+			{
+				// Parse nodes and connections subsections within event_graph
+				if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
+				{
+					int32 NodesIndent = CurrentIndent;
+					LineIndex++;
+					FManifestEventGraphDefinition TempGraph;
+					ParseGraphNodes(Lines, LineIndex, NodesIndent, TempGraph);
+					CurrentDef.EventGraphNodes = MoveTemp(TempGraph.Nodes);
+					continue;
+				}
+				else if (TrimmedLine.Equals(TEXT("connections:")) || TrimmedLine.StartsWith(TEXT("connections:")))
+				{
+					int32 ConnectionsIndent = CurrentIndent;
+					LineIndex++;
+					FManifestEventGraphDefinition TempGraph;
+					ParseGraphConnections(Lines, LineIndex, ConnectionsIndent, TempGraph);
+					CurrentDef.EventGraphConnections = MoveTemp(TempGraph.Connections);
+					continue;
+				}
+
 			}
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
+				bInEventGraph = false;
 				bInVariables = true;
 				bInComponents = false;
 				VariablesIndent = CurrentIndent;
 			}
 			else if (TrimmedLine.Equals(TEXT("components:")) || TrimmedLine.StartsWith(TEXT("components:")))
 			{
+				bInEventGraph = false;
 				// Save pending variable before switching to components
 				if (bInVariables && !CurrentVar.Name.IsEmpty())
 				{
@@ -1395,6 +1436,7 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 	FManifestWidgetBlueprintDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInVariables = false;
+	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
 	int32 ItemIndent = -1;      // v2.1.7: Track widget item indent level
 	int32 VariablesIndent = 0;
 	FManifestWidgetVariableDefinition CurrentVar;
@@ -2672,6 +2714,7 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	FManifestDialogueBlueprintDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInVariables = false;
+	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
 
