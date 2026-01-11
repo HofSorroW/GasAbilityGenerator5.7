@@ -1,5 +1,9 @@
 // GasAbilityGenerator v2.7.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.7.3: Enhanced pin connection validation with detailed type logging
+//         - Shows full type info including class names (e.g., object<NarrativeInventoryComponent>)
+//         - Fails connection at generation time when types are incompatible (CONNECT_RESPONSE_DISALLOW)
+//         - UE_LOG errors for pin type mismatches to catch issues before Blueprint compile
 // v2.7.0: BreakStruct, MakeArray, GetArrayItem node support for weapon form implementation
 // v2.6.11: Force scan NarrativePro plugin content in commandlet mode for parent class resolution
 // v2.6.10: Enhanced Niagara generator with warmup, bounds, determinism, and pooling settings
@@ -4505,28 +4509,87 @@ bool FEventGraphGenerator::ConnectPins(
 		return false;
 	}
 
-	// v2.5.2: Enhanced connection with validation and detailed logging
-	LogGeneration(FString::Printf(TEXT("    Attempting connection: %s.%s [%s] -> %s.%s [%s]"),
-		*Connection.From.NodeId, *FromPin->PinName.ToString(), *FromPin->PinType.PinCategory.ToString(),
-		*Connection.To.NodeId, *ToPin->PinName.ToString(), *ToPin->PinType.PinCategory.ToString()));
+	// v2.7.3: Helper lambda to get full pin type description including class names
+	auto GetPinTypeDescription = [](UEdGraphPin* Pin) -> FString
+	{
+		if (!Pin) return TEXT("null");
+
+		FString TypeDesc = Pin->PinType.PinCategory.ToString();
+
+		// For object types, include the actual class name
+		if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object ||
+		    Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class ||
+		    Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Interface ||
+		    Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject ||
+		    Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
+		{
+			if (Pin->PinType.PinSubCategoryObject.IsValid())
+			{
+				TypeDesc += FString::Printf(TEXT("<%s>"), *Pin->PinType.PinSubCategoryObject->GetName());
+			}
+			else if (!Pin->PinType.PinSubCategory.IsNone())
+			{
+				TypeDesc += FString::Printf(TEXT("<%s>"), *Pin->PinType.PinSubCategory.ToString());
+			}
+		}
+
+		// Show if it's a reference or array
+		if (Pin->PinType.bIsReference) TypeDesc += TEXT("&");
+		if (Pin->PinType.IsArray()) TypeDesc += TEXT("[]");
+
+		return TypeDesc;
+	};
+
+	// v2.7.3: Enhanced connection logging with full type information
+	FString FromTypeDesc = GetPinTypeDescription(FromPin);
+	FString ToTypeDesc = GetPinTypeDescription(ToPin);
+
+	LogGeneration(FString::Printf(TEXT("    Connecting: %s.%s [%s] -> %s.%s [%s]"),
+		*Connection.From.NodeId, *FromPin->PinName.ToString(), *FromTypeDesc,
+		*Connection.To.NodeId, *ToPin->PinName.ToString(), *ToTypeDesc));
 
 	// Check if pins are already connected
 	if (FromPin->LinkedTo.Contains(ToPin))
 	{
-		LogGeneration(TEXT("    Pins already connected"));
+		LogGeneration(TEXT("      Already connected"));
 		return true;
 	}
 
-	// Check pin type compatibility before connecting
+	// v2.7.3: Check pin type compatibility BEFORE attempting connection
 	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 	if (K2Schema)
 	{
 		FPinConnectionResponse Response = K2Schema->CanCreateConnection(FromPin, ToPin);
-		if (Response.Response != CONNECT_RESPONSE_MAKE)
+
+		// v2.7.3: Detailed handling based on response type
+		if (Response.Response == CONNECT_RESPONSE_DISALLOW)
 		{
-			LogGeneration(FString::Printf(TEXT("    WARNING: Pin types may not be compatible: %s"),
-				*Response.Message.ToString()));
-			// Still try to connect - sometimes it works despite warnings
+			// This is a hard error - types are incompatible
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] PIN TYPE ERROR: %s.%s -> %s.%s"),
+				*Connection.From.NodeId, *Connection.From.PinName,
+				*Connection.To.NodeId, *Connection.To.PinName);
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   From: %s [%s]"),
+				*FromPin->PinName.ToString(), *FromTypeDesc);
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   To: %s [%s]"),
+				*ToPin->PinName.ToString(), *ToTypeDesc);
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   Reason: %s"),
+				*Response.Message.ToString());
+
+			LogGeneration(FString::Printf(TEXT("      ERROR: Can't connect pins - %s"), *Response.Message.ToString()));
+			LogGeneration(FString::Printf(TEXT("        '%s' is not compatible with '%s'"), *FromTypeDesc, *ToTypeDesc));
+			return false;
+		}
+		else if (Response.Response == CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE)
+		{
+			// Needs conversion - log as warning but allow
+			LogGeneration(FString::Printf(TEXT("      NOTE: Connection requires conversion: %s"), *Response.Message.ToString()));
+		}
+		else if (Response.Response == CONNECT_RESPONSE_BREAK_OTHERS_A ||
+		         Response.Response == CONNECT_RESPONSE_BREAK_OTHERS_B ||
+		         Response.Response == CONNECT_RESPONSE_BREAK_OTHERS_AB)
+		{
+			// Will break other connections - log it
+			LogGeneration(FString::Printf(TEXT("      NOTE: Will break existing connections: %s"), *Response.Message.ToString()));
 		}
 	}
 
@@ -4537,9 +4600,10 @@ bool FEventGraphGenerator::ConnectPins(
 	bool bConnectionSuccess = FromPin->LinkedTo.Contains(ToPin);
 	if (!bConnectionSuccess)
 	{
-		LogGeneration(FString::Printf(TEXT("    ERROR: Connection was NOT established between %s.%s and %s.%s"),
-			*Connection.From.NodeId, *FromPin->PinName.ToString(),
-			*Connection.To.NodeId, *ToPin->PinName.ToString()));
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] CONNECTION FAILED: %s.%s [%s] -> %s.%s [%s]"),
+			*Connection.From.NodeId, *FromPin->PinName.ToString(), *FromTypeDesc,
+			*Connection.To.NodeId, *ToPin->PinName.ToString(), *ToTypeDesc);
+		LogGeneration(FString::Printf(TEXT("      ERROR: MakeLinkTo failed - connection not established")));
 		return false;
 	}
 
