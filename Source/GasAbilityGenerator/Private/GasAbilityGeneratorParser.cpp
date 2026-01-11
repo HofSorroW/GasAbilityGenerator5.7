@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.5.6
+// GasAbilityGenerator v2.6.14
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.14: Prefix validation for all asset types (E_, IA_, IMC_, GE_, GA_, BP_, WBP_, BB_, BT_, M_, MF_, NS_, etc.)
 // v2.5.6: Added NPC system extensions - suffix-based section names (_tags, _gameplay_effects, etc.)
 // v2.3.0: Added 12 new asset type parsers with dependency-based generation order
 // v2.2.0: Added event graph parsing support
@@ -431,7 +432,8 @@ void FGasAbilityGeneratorParser::ParseEnumerations(const TArray<FString>& Lines,
 		
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if E_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("E_")))
 			{
 				OutData.Enumerations.Add(CurrentDef);
 			}
@@ -454,8 +456,8 @@ void FGasAbilityGeneratorParser::ParseEnumerations(const TArray<FString>& Lines,
 		
 		if (bIsNewEnumItem)
 		{
-			// Save current enum and start new one
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// Save current enum and start new one - v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("E_")))
 			{
 				OutData.Enumerations.Add(CurrentDef);
 			}
@@ -504,7 +506,7 @@ void FGasAbilityGeneratorParser::ParseEnumerations(const TArray<FString>& Lines,
 		LineIndex++;
 	}
 	
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("E_")))
 	{
 		OutData.Enumerations.Add(CurrentDef);
 	}
@@ -525,23 +527,25 @@ void FGasAbilityGeneratorParser::ParseInputActions(const TArray<FString>& Lines,
 		
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if IA_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("IA_")))
 			{
 				OutData.InputActions.Add(CurrentDef);
 			}
 			LineIndex--;
 			return;
 		}
-		
+
 		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
 		{
 			LineIndex++;
 			continue;
 		}
-		
+
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("IA_")))
 			{
 				OutData.InputActions.Add(CurrentDef);
 			}
@@ -564,7 +568,7 @@ void FGasAbilityGeneratorParser::ParseInputActions(const TArray<FString>& Lines,
 		LineIndex++;
 	}
 	
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("IA_")))
 	{
 		OutData.InputActions.Add(CurrentDef);
 	}
@@ -585,23 +589,25 @@ void FGasAbilityGeneratorParser::ParseInputMappingContexts(const TArray<FString>
 		
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if IMC_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("IMC_")))
 			{
 				OutData.InputMappingContexts.Add(CurrentDef);
 			}
 			LineIndex--;
 			return;
 		}
-		
+
 		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
 		{
 			LineIndex++;
 			continue;
 		}
-		
+
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("IMC_")))
 			{
 				OutData.InputMappingContexts.Add(CurrentDef);
 			}
@@ -609,11 +615,11 @@ void FGasAbilityGeneratorParser::ParseInputMappingContexts(const TArray<FString>
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
 		}
-		
+
 		LineIndex++;
 	}
-	
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("IMC_")))
 	{
 		OutData.InputMappingContexts.Add(CurrentDef);
 	}
@@ -647,7 +653,8 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 			{
 				CurrentDef.Modifiers.Add(CurrentModifier);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if GE_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GE_")))
 			{
 				OutData.GameplayEffects.Add(CurrentDef);
 			}
@@ -670,8 +677,8 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 				CurrentDef.Modifiers.Add(CurrentModifier);
 				CurrentModifier = FManifestModifierDefinition();
 			}
-			// Save current GE
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// Save current GE - v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GE_")))
 			{
 				OutData.GameplayEffects.Add(CurrentDef);
 			}
@@ -856,7 +863,7 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 	{
 		CurrentDef.Modifiers.Add(CurrentModifier);
 	}
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GE_")))
 	{
 		OutData.GameplayEffects.Add(CurrentDef);
 	}
@@ -894,7 +901,8 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			{
 				CurrentDef.Variables.Add(CurrentVar);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if GA_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
 			{
 				OutData.GameplayAbilities.Add(CurrentDef);
 			}
@@ -928,8 +936,8 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			bInEventGraph = false;
 			CurrentTagArray = ECurrentTagArray::None;
 
-			// Save current ability and start new one
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// Save current ability and start new one - v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
 			{
 				OutData.GameplayAbilities.Add(CurrentDef);
 			}
@@ -1163,7 +1171,7 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	{
 		CurrentDef.Variables.Add(CurrentVar);
 	}
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
 	{
 		OutData.GameplayAbilities.Add(CurrentDef);
 	}
@@ -1201,7 +1209,11 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 			{
 				CurrentDef.Components.Add(CurrentComp);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - valid prefixes: BP_, BTS_, BPA_, Goal_, GoalGenerator_
+			if (bInItem && !CurrentDef.Name.IsEmpty() &&
+				(CurrentDef.Name.StartsWith(TEXT("BP_")) || CurrentDef.Name.StartsWith(TEXT("BTS_")) ||
+				 CurrentDef.Name.StartsWith(TEXT("BPA_")) || CurrentDef.Name.StartsWith(TEXT("Goal_")) ||
+				 CurrentDef.Name.StartsWith(TEXT("GoalGenerator_"))))
 			{
 				OutData.ActorBlueprints.Add(CurrentDef);
 			}
@@ -1239,9 +1251,12 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 			}
 			bInVariables = false;
 			bInComponents = false;
-			
-			// Save current blueprint and start new one
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+
+			// Save current blueprint and start new one - v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() &&
+				(CurrentDef.Name.StartsWith(TEXT("BP_")) || CurrentDef.Name.StartsWith(TEXT("BTS_")) ||
+				 CurrentDef.Name.StartsWith(TEXT("BPA_")) || CurrentDef.Name.StartsWith(TEXT("Goal_")) ||
+				 CurrentDef.Name.StartsWith(TEXT("GoalGenerator_"))))
 			{
 				OutData.ActorBlueprints.Add(CurrentDef);
 			}
@@ -1350,7 +1365,11 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 	{
 		CurrentDef.Components.Add(CurrentComp);
 	}
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - valid prefixes: BP_, BTS_, BPA_, Goal_, GoalGenerator_
+	if (bInItem && !CurrentDef.Name.IsEmpty() &&
+		(CurrentDef.Name.StartsWith(TEXT("BP_")) || CurrentDef.Name.StartsWith(TEXT("BTS_")) ||
+		 CurrentDef.Name.StartsWith(TEXT("BPA_")) || CurrentDef.Name.StartsWith(TEXT("Goal_")) ||
+		 CurrentDef.Name.StartsWith(TEXT("GoalGenerator_"))))
 	{
 		OutData.ActorBlueprints.Add(CurrentDef);
 	}
@@ -1381,27 +1400,28 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 			{
 				CurrentDef.Variables.Add(CurrentVar);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if WBP_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("WBP_")))
 			{
 				OutData.WidgetBlueprints.Add(CurrentDef);
 			}
 			LineIndex--;
 			return;
 		}
-		
+
 		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
 		{
 			LineIndex++;
 			continue;
 		}
-		
+
 		// v2.1.7 FIX: Check if this is a new widget item by comparing indent level
 		bool bIsNewWidgetItem = false;
 		if (TrimmedLine.StartsWith(TEXT("- name:")) && ItemIndent >= 0 && CurrentIndent <= ItemIndent)
 		{
 			bIsNewWidgetItem = true;
 		}
-		
+
 		// If we detect a new widget item, close current subsections
 		if (bIsNewWidgetItem)
 		{
@@ -1411,9 +1431,9 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 				CurrentVar = FManifestWidgetVariableDefinition();
 			}
 			bInVariables = false;
-			
-			// Save current widget and start new one
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+
+			// Save current widget and start new one - v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("WBP_")))
 			{
 				OutData.WidgetBlueprints.Add(CurrentDef);
 			}
@@ -1488,7 +1508,8 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 	{
 		CurrentDef.Variables.Add(CurrentVar);
 	}
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - only add if WBP_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("WBP_")))
 	{
 		OutData.WidgetBlueprints.Add(CurrentDef);
 	}
@@ -1509,23 +1530,25 @@ void FGasAbilityGeneratorParser::ParseBlackboards(const TArray<FString>& Lines, 
 		
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if BB_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BB_")))
 			{
 				OutData.Blackboards.Add(CurrentDef);
 			}
 			LineIndex--;
 			return;
 		}
-		
+
 		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
 		{
 			LineIndex++;
 			continue;
 		}
-		
+
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BB_")))
 			{
 				OutData.Blackboards.Add(CurrentDef);
 			}
@@ -1533,11 +1556,12 @@ void FGasAbilityGeneratorParser::ParseBlackboards(const TArray<FString>& Lines, 
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
 		}
-		
+
 		LineIndex++;
 	}
-	
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+
+	// v2.6.14: Prefix validation - only add if BB_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BB_")))
 	{
 		OutData.Blackboards.Add(CurrentDef);
 	}
@@ -1558,23 +1582,25 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 		
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if BT_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BT_")))
 			{
 				OutData.BehaviorTrees.Add(CurrentDef);
 			}
 			LineIndex--;
 			return;
 		}
-		
+
 		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
 		{
 			LineIndex++;
 			continue;
 		}
-		
+
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BT_")))
 			{
 				OutData.BehaviorTrees.Add(CurrentDef);
 			}
@@ -1593,11 +1619,12 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
 			}
 		}
-		
+
 		LineIndex++;
 	}
-	
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+
+	// v2.6.14: Prefix validation - only add if BT_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BT_")))
 	{
 		OutData.BehaviorTrees.Add(CurrentDef);
 	}
@@ -1636,7 +1663,8 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 			{
 				CurrentDef.Connections.Add(CurrentConn);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if M_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("M_")))
 			{
 				OutData.Materials.Add(CurrentDef);
 			}
@@ -1662,7 +1690,8 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 			{
 				CurrentDef.Connections.Add(CurrentConn);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("M_")))
 			{
 				OutData.Materials.Add(CurrentDef);
 			}
@@ -1815,7 +1844,8 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 	{
 		CurrentDef.Connections.Add(CurrentConn);
 	}
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - only add if M_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("M_")))
 	{
 		OutData.Materials.Add(CurrentDef);
 	}
@@ -2412,7 +2442,8 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if FC_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("FC_")))
 			{
 				OutData.FloatCurves.Add(CurrentDef);
 			}
@@ -2428,7 +2459,8 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("FC_")))
 			{
 				OutData.FloatCurves.Add(CurrentDef);
 			}
@@ -2466,7 +2498,8 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 		LineIndex++;
 	}
 
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - only add if FC_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("FC_")))
 	{
 		OutData.FloatCurves.Add(CurrentDef);
 	}
@@ -2488,7 +2521,8 @@ void FGasAbilityGeneratorParser::ParseAnimationMontages(const TArray<FString>& L
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if AM_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("AM_")))
 			{
 				OutData.AnimationMontages.Add(CurrentDef);
 			}
@@ -2504,7 +2538,8 @@ void FGasAbilityGeneratorParser::ParseAnimationMontages(const TArray<FString>& L
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("AM_")))
 			{
 				OutData.AnimationMontages.Add(CurrentDef);
 			}
@@ -2545,7 +2580,8 @@ void FGasAbilityGeneratorParser::ParseAnimationMontages(const TArray<FString>& L
 		LineIndex++;
 	}
 
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - only add if AM_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("AM_")))
 	{
 		OutData.AnimationMontages.Add(CurrentDef);
 	}
@@ -2566,7 +2602,9 @@ void FGasAbilityGeneratorParser::ParseAnimationNotifies(const TArray<FString>& L
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - valid prefixes: AN_, NAS_
+			if (bInItem && !CurrentDef.Name.IsEmpty() &&
+				(CurrentDef.Name.StartsWith(TEXT("AN_")) || CurrentDef.Name.StartsWith(TEXT("NAS_"))))
 			{
 				OutData.AnimationNotifies.Add(CurrentDef);
 			}
@@ -2582,7 +2620,9 @@ void FGasAbilityGeneratorParser::ParseAnimationNotifies(const TArray<FString>& L
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() &&
+				(CurrentDef.Name.StartsWith(TEXT("AN_")) || CurrentDef.Name.StartsWith(TEXT("NAS_"))))
 			{
 				OutData.AnimationNotifies.Add(CurrentDef);
 			}
@@ -2605,7 +2645,9 @@ void FGasAbilityGeneratorParser::ParseAnimationNotifies(const TArray<FString>& L
 		LineIndex++;
 	}
 
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - valid prefixes: AN_, NAS_
+	if (bInItem && !CurrentDef.Name.IsEmpty() &&
+		(CurrentDef.Name.StartsWith(TEXT("AN_")) || CurrentDef.Name.StartsWith(TEXT("NAS_"))))
 	{
 		OutData.AnimationNotifies.Add(CurrentDef);
 	}
@@ -2634,7 +2676,8 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			{
 				CurrentDef.Variables.Add(CurrentVar);
 			}
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if DBP_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
 			{
 				OutData.DialogueBlueprints.Add(CurrentDef);
 			}
@@ -2663,7 +2706,8 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			}
 			bInVariables = false;
 
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
 			{
 				OutData.DialogueBlueprints.Add(CurrentDef);
 			}
@@ -2725,7 +2769,8 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	{
 		CurrentDef.Variables.Add(CurrentVar);
 	}
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - only add if DBP_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
 	{
 		OutData.DialogueBlueprints.Add(CurrentDef);
 	}
@@ -2747,7 +2792,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if EI_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
 			{
 				OutData.EquippableItems.Add(CurrentDef);
 			}
@@ -2763,7 +2809,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
 			{
 				OutData.EquippableItems.Add(CurrentDef);
 			}
@@ -2820,7 +2867,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 		LineIndex++;
 	}
 
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - only add if EI_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
 	{
 		OutData.EquippableItems.Add(CurrentDef);
 	}
@@ -2841,7 +2889,8 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation - only add if BPA_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPA_")))
 			{
 				OutData.Activities.Add(CurrentDef);
 			}
@@ -2857,7 +2906,8 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
+			// v2.6.14: Prefix validation
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPA_")))
 			{
 				OutData.Activities.Add(CurrentDef);
 			}
@@ -2888,7 +2938,8 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 		LineIndex++;
 	}
 
-	if (bInItem && !CurrentDef.Name.IsEmpty())
+	// v2.6.14: Prefix validation - only add if BPA_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPA_")))
 	{
 		OutData.Activities.Add(CurrentDef);
 	}

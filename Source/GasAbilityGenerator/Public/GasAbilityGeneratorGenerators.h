@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.8
+// GasAbilityGenerator v2.6.14
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.14: Prefix validation for all asset types (E_, IA_, GA_, BP_, WBP_, M_, MF_, NS_, etc.)
 // v2.6.8: EquippableItemGenerator now uses ParentClass from manifest (RangedWeaponItem, MeleeWeaponItem support)
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
 // v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility

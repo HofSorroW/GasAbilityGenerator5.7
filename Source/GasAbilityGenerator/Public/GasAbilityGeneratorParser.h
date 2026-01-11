@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.7
+// GasAbilityGenerator v2.6.14
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.6.14: Prefix validation for all asset types as secondary safeguard against parser bugs
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
 // v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
 // v2.6.5: Added Niagara System parser
