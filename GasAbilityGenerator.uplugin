@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 263,
-	"VersionName": "2.6.3",
+	"Version": 265,
+	"VersionName": "2.6.5",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v2.6.3: Tags configured on existing GA assets during SKIP.",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v2.6.5: Niagara System generator.",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",
@@ -19,6 +19,20 @@
 			"Name": "GasAbilityGenerator",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "GameplayAbilities",
+			"Enabled": true
+		},
+		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		},
+		{
+			"Name": "Niagara",
+			"Enabled": true
 		}
 	]
 }
