@@ -5185,20 +5185,29 @@ warden_actor_blueprints:
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Set Flying movement mode for hovering behavior
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: GetCharMovement
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [200, 0]
+        - id: SetMovementMode
           type: CallFunction
           properties:
-            function: PrintString
-            class: KismetSystemLibrary
-          position: [300, 0]
+            function: SetMovementMode
+            class: CharacterMovementComponent
+          position: [500, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [SetMovementMode, Exec]
+        - from: [GetCharMovement, CharacterMovement]
+          to: [SetMovementMode, Target]
 
   - name: BP_CoreLaserProjectile
     folder: Enemies/Warden
@@ -5307,20 +5316,29 @@ possessed_exploder_actor_blueprints:
     parent_class: NarrativeNPCCharacter
     event_graph:
       nodes:
+        # BeginPlay - Set Flying movement mode for hovering behavior
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintSpawned
+        - id: GetCharMovement
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [200, 0]
+        - id: SetMovementMode
           type: CallFunction
           properties:
-            function: PrintString
-            class: KismetSystemLibrary
-          position: [300, 0]
+            function: SetMovementMode
+            class: CharacterMovementComponent
+          position: [500, 0]
       connections:
         - from: [Event_BeginPlay, Then]
-          to: [PrintSpawned, Exec]
+          to: [SetMovementMode, Exec]
+        - from: [GetCharMovement, CharacterMovement]
+          to: [SetMovementMode, Target]
 
 possessed_exploder_bt_services:
   - name: BTS_CheckExplosionProximity
