@@ -455,26 +455,76 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
-	// v2.6.0: Equippable Items
-	for (const auto& Definition : ManifestData.EquippableItems)
+	// v2.6.0: Equippable Items (v2.6.9: with deferred handling)
+	for (int32 i = 0; i < ManifestData.EquippableItems.Num(); ++i)
 	{
+		const auto& Definition = ManifestData.EquippableItems[i];
 		FGenerationResult Result = FEquippableItemGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
+
+		// v2.6.9: Handle deferred assets
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
+		{
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("EquippableItem");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
+		}
 	}
 
-	// v2.6.0: Activities
-	for (const auto& Definition : ManifestData.Activities)
+	// v2.6.0: Activities (v2.6.9: with deferred handling)
+	for (int32 i = 0; i < ManifestData.Activities.Num(); ++i)
 	{
+		const auto& Definition = ManifestData.Activities[i];
 		FGenerationResult Result = FActivityGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
+
+		// v2.6.9: Handle deferred assets
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
+		{
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("Activity");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
+		}
 	}
 
 	// v2.6.0: Ability Configurations
@@ -521,15 +571,40 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
-	// v2.6.0: NPC Definitions
-	for (const auto& Definition : ManifestData.NPCDefinitions)
+	// v2.6.0: NPC Definitions (v2.6.9: with deferred handling)
+	for (int32 i = 0; i < ManifestData.NPCDefinitions.Num(); ++i)
 	{
+		const auto& Definition = ManifestData.NPCDefinitions[i];
 		FGenerationResult Result = FNPCDefinitionGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
+
+		// v2.6.9: Handle deferred assets
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
+		{
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("NPCDefinition");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
+		}
 	}
 
 	// v2.6.0: Character Definitions
@@ -719,6 +794,36 @@ bool UGasAbilityGeneratorCommandlet::TryGenerateDeferredAsset(const FDeferredAss
 		{
 			OutResult = FWidgetBlueprintGenerator::Generate(
 				ManifestData.WidgetBlueprints[Deferred.DefinitionIndex], &ManifestData);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	// v2.6.9: EquippableItem retry handling
+	else if (Deferred.AssetType == TEXT("EquippableItem"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.EquippableItems.Num())
+		{
+			OutResult = FEquippableItemGenerator::Generate(
+				ManifestData.EquippableItems[Deferred.DefinitionIndex]);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	// v2.6.9: Activity retry handling
+	else if (Deferred.AssetType == TEXT("Activity"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.Activities.Num())
+		{
+			OutResult = FActivityGenerator::Generate(
+				ManifestData.Activities[Deferred.DefinitionIndex]);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	// v2.6.9: NPCDefinition retry handling
+	else if (Deferred.AssetType == TEXT("NPCDefinition"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.NPCDefinitions.Num())
+		{
+			OutResult = FNPCDefinitionGenerator::Generate(
+				ManifestData.NPCDefinitions[Deferred.DefinitionIndex]);
 			return OutResult.Status == EGenerationStatus::New;
 		}
 	}

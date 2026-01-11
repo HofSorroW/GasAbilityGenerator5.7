@@ -4556,49 +4556,25 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
-			// Set equipment effect using reflection
-			if (!Definition.EquipmentModifierGE.IsEmpty())
+			// v2.6.9: Use pre-loaded EquipmentEffectClass from deferred check
+			if (EquipmentEffectClass)
 			{
-				FString GEPath = Definition.EquipmentModifierGE;
-				if (!GEPath.Contains(TEXT("/")))
+				FClassProperty* EffectProperty = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("EquipmentEffect")));
+				if (EffectProperty)
 				{
-					GEPath = FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *Definition.EquipmentModifierGE, *Definition.EquipmentModifierGE);
-				}
-				UClass* GEClass = LoadObject<UClass>(nullptr, *GEPath);
-				if (!GEClass)
-				{
-					GEPath = FString::Printf(TEXT("%s/Effects/%s"), *GetProjectRoot(), *Definition.EquipmentModifierGE);
-					GEClass = LoadObject<UClass>(nullptr, *GEPath);
-				}
-				if (GEClass && GEClass->IsChildOf(UGameplayEffect::StaticClass()))
-				{
-					FClassProperty* EffectProperty = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("EquipmentEffect")));
-					if (EffectProperty)
-					{
-						EffectProperty->SetObjectPropertyValue_InContainer(CDO, GEClass);
-						LogGeneration(FString::Printf(TEXT("  Set EquipmentEffect: %s"), *GEClass->GetName()));
-					}
-				}
-				else
-				{
-					LogGeneration(FString::Printf(TEXT("  INFO: EquipmentEffect '%s' will need manual setup"), *Definition.EquipmentModifierGE));
+					EffectProperty->SetObjectPropertyValue_InContainer(CDO, EquipmentEffectClass);
+					LogGeneration(FString::Printf(TEXT("  Set EquipmentEffect: %s"), *EquipmentEffectClass->GetName()));
 				}
 			}
 
-			// Set abilities using reflection
-			FArrayProperty* AbilitiesProperty = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("EquipmentAbilities")));
-			if (AbilitiesProperty)
+			// v2.6.9: Use pre-loaded AbilityClasses from deferred check
+			if (AbilityClasses.Num() > 0)
 			{
-				FScriptArrayHelper ArrayHelper(AbilitiesProperty, AbilitiesProperty->ContainerPtrToValuePtr<void>(CDO));
-				for (const FString& AbilityName : Definition.AbilitiesToGrant)
+				FArrayProperty* AbilitiesProperty = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("EquipmentAbilities")));
+				if (AbilitiesProperty)
 				{
-					FString AbilityPath = AbilityName;
-					if (!AbilityPath.Contains(TEXT("/")))
-					{
-						AbilityPath = FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName);
-					}
-					UClass* AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
-					if (AbilityClass)
+					FScriptArrayHelper ArrayHelper(AbilitiesProperty, AbilitiesProperty->ContainerPtrToValuePtr<void>(CDO));
+					for (UClass* AbilityClass : AbilityClasses)
 					{
 						int32 NewIndex = ArrayHelper.AddValue();
 						FClassProperty* InnerProp = CastField<FClassProperty>(AbilitiesProperty->Inner);
@@ -4607,10 +4583,6 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 							InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), AbilityClass);
 							LogGeneration(FString::Printf(TEXT("  Added ability: %s"), *AbilityClass->GetName()));
 						}
-					}
-					else
-					{
-						LogGeneration(FString::Printf(TEXT("  INFO: Ability '%s' will need manual setup"), *AbilityName));
 					}
 				}
 			}
@@ -4637,6 +4609,7 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 }
 
 // v2.6.0: Activity Generator - sets BehaviourTree on CDO
+// v2.6.9: Added deferred handling for BehaviorTree dependency
 FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("AI/Activities") : Definition.Folder;
@@ -4651,6 +4624,42 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Activity"), Result))
 	{
 		return Result;
+	}
+
+	// v2.6.9: Check BehaviorTree dependency BEFORE creating asset
+	UBehaviorTree* PreloadedBT = nullptr;
+	if (!Definition.BehaviorTree.IsEmpty())
+	{
+		// Try direct path first
+		PreloadedBT = LoadObject<UBehaviorTree>(nullptr, *Definition.BehaviorTree);
+
+		// Try common paths if not found
+		if (!PreloadedBT)
+		{
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("%s/AI/BehaviorTrees/%s"), *GetProjectRoot(), *Definition.BehaviorTree),
+				FString::Printf(TEXT("%s/AI/%s"), *GetProjectRoot(), *Definition.BehaviorTree),
+				FString::Printf(TEXT("/Game/AI/BehaviorTrees/%s"), *Definition.BehaviorTree)
+			};
+
+			for (const FString& SearchPath : SearchPaths)
+			{
+				PreloadedBT = LoadObject<UBehaviorTree>(nullptr, *SearchPath);
+				if (PreloadedBT) break;
+			}
+		}
+
+		// If still not found, defer
+		if (!PreloadedBT)
+		{
+			LogGeneration(FString::Printf(TEXT("  Deferring: BehaviorTree '%s' not found yet"), *Definition.BehaviorTree));
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+				FString::Printf(TEXT("Missing dependency: %s"), *Definition.BehaviorTree));
+			Result.MissingDependency = Definition.BehaviorTree;
+			Result.MissingDependencyType = TEXT("BehaviorTree");
+			Result.DetermineCategory();
+			return Result;
+		}
 	}
 
 	// Find UNPCActivity class
@@ -4682,50 +4691,19 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 	// Compile blueprint first
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
-	// v2.6.0: Set BehaviourTree on the CDO using reflection (property is protected)
-	if (Blueprint->GeneratedClass && !Definition.BehaviorTree.IsEmpty())
+	// v2.6.9: Use pre-loaded BehaviorTree from deferred check
+	if (Blueprint->GeneratedClass && PreloadedBT)
 	{
 		UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
 		if (CDO)
 		{
-			// Try to load the behavior tree
-			FString BTPath = Definition.BehaviorTree;
-			UBehaviorTree* BT = nullptr;
-
-			// Try direct path first
-			BT = LoadObject<UBehaviorTree>(nullptr, *BTPath);
-
-			// Try common paths if not found
-			if (!BT)
+			// Use reflection to set the protected BehaviourTree property
+			FObjectProperty* BTProperty = CastField<FObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BehaviourTree")));
+			if (BTProperty)
 			{
-				TArray<FString> SearchPaths = {
-					FString::Printf(TEXT("%s/AI/BehaviorTrees/%s"), *GetProjectRoot(), *Definition.BehaviorTree),
-					FString::Printf(TEXT("%s/AI/%s"), *GetProjectRoot(), *Definition.BehaviorTree),
-					FString::Printf(TEXT("/Game/AI/BehaviorTrees/%s"), *Definition.BehaviorTree)
-				};
-
-				for (const FString& SearchPath : SearchPaths)
-				{
-					BT = LoadObject<UBehaviorTree>(nullptr, *SearchPath);
-					if (BT) break;
-				}
+				BTProperty->SetObjectPropertyValue_InContainer(CDO, PreloadedBT);
+				LogGeneration(FString::Printf(TEXT("  Set BehaviourTree: %s"), *PreloadedBT->GetName()));
 			}
-
-			if (BT)
-			{
-				// Use reflection to set the protected BehaviourTree property
-				FObjectProperty* BTProperty = CastField<FObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BehaviourTree")));
-				if (BTProperty)
-				{
-					BTProperty->SetObjectPropertyValue_InContainer(CDO, BT);
-					LogGeneration(FString::Printf(TEXT("  Set BehaviourTree: %s"), *BT->GetName()));
-				}
-			}
-			else
-			{
-				LogGeneration(FString::Printf(TEXT("  INFO: BehaviorTree '%s' will need manual setup"), *Definition.BehaviorTree));
-			}
-
 			CDO->MarkPackageDirty();
 		}
 	}
@@ -5018,6 +4996,7 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 }
 
 // v2.3.0: NPC Definition Generator - creates UNPCDefinition data assets
+// v2.6.9: Added deferred handling for AbilityConfiguration dependency
 FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinitionDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("NPCs/Definitions") : Definition.Folder;
@@ -5032,6 +5011,46 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("NPC Definition"), Result))
 	{
 		return Result;
+	}
+
+	// v2.6.9: Check AbilityConfiguration dependency BEFORE creating asset
+	UAbilityConfiguration* PreloadedAbilityConfig = nullptr;
+	if (!Definition.AbilityConfiguration.IsEmpty())
+	{
+		FString ConfigPath = Definition.AbilityConfiguration;
+		if (!ConfigPath.Contains(TEXT("/")))
+		{
+			ConfigPath = FString::Printf(TEXT("%s/GAS/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration);
+		}
+		PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *ConfigPath);
+
+		// Try alternate paths
+		if (!PreloadedAbilityConfig)
+		{
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("%s/Configs/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration),
+				FString::Printf(TEXT("%s/Abilities/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration),
+				FString::Printf(TEXT("%s/AI/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration)
+			};
+
+			for (const FString& SearchPath : SearchPaths)
+			{
+				PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *SearchPath);
+				if (PreloadedAbilityConfig) break;
+			}
+		}
+
+		// If still not found, defer
+		if (!PreloadedAbilityConfig)
+		{
+			LogGeneration(FString::Printf(TEXT("  Deferring: AbilityConfiguration '%s' not found yet"), *Definition.AbilityConfiguration));
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+				FString::Printf(TEXT("Missing dependency: %s"), *Definition.AbilityConfiguration));
+			Result.MissingDependency = Definition.AbilityConfiguration;
+			Result.MissingDependencyType = TEXT("AbilityConfiguration");
+			Result.DetermineCategory();
+			return Result;
+		}
 	}
 
 	UPackage* Package = CreatePackage(*AssetPath);
@@ -5088,24 +5107,11 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 		LogGeneration(FString::Printf(TEXT("  Set ActivityConfiguration: %s"), *ConfigPath));
 	}
 
-	// v2.6.0: Set AbilityConfiguration if specified
-	if (!Definition.AbilityConfiguration.IsEmpty())
+	// v2.6.9: Use pre-loaded AbilityConfiguration from deferred check
+	if (PreloadedAbilityConfig)
 	{
-		FString ConfigPath = Definition.AbilityConfiguration;
-		if (!ConfigPath.Contains(TEXT("/")))
-		{
-			ConfigPath = FString::Printf(TEXT("%s/GAS/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration);
-		}
-		UAbilityConfiguration* AbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *ConfigPath);
-		if (AbilityConfig)
-		{
-			NPCDef->AbilityConfiguration = AbilityConfig;
-			LogGeneration(FString::Printf(TEXT("  Set AbilityConfiguration: %s"), *AbilityConfig->GetName()));
-		}
-		else
-		{
-			LogGeneration(FString::Printf(TEXT("  INFO: AbilityConfiguration '%s' not found, will need manual setup"), *Definition.AbilityConfiguration));
-		}
+		NPCDef->AbilityConfiguration = PreloadedAbilityConfig;
+		LogGeneration(FString::Printf(TEXT("  Set AbilityConfiguration: %s"), *PreloadedAbilityConfig->GetName()));
 	}
 
 	Package->MarkPackageDirty();
