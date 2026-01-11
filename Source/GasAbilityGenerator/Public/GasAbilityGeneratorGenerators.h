@@ -224,6 +224,20 @@ public:
 };
 
 /**
+ * v2.6.7: Missing dependency info for deferred generation
+ */
+struct FMissingDependencyInfo
+{
+	FString DependencyName;  // e.g., "BP_FatherCompanion"
+	FString DependencyType;  // e.g., "ActorBlueprint"
+	FString Context;         // e.g., "PropertyGet node 'GetOwnerPlayer'"
+
+	FMissingDependencyInfo() = default;
+	FMissingDependencyInfo(const FString& InName, const FString& InType, const FString& InContext)
+		: DependencyName(InName), DependencyType(InType), Context(InContext) {}
+};
+
+/**
  * Event Graph Generator - creates Blueprint nodes and connections from definitions
  */
 class GASABILITYGENERATOR_API FEventGraphGenerator : public FGeneratorBase
@@ -244,7 +258,16 @@ public:
 		const FManifestData& ManifestData,
 		const FString& GraphName);
 
+	// v2.6.7: Missing dependency tracking for deferred generation
+	static const TArray<FMissingDependencyInfo>& GetMissingDependencies() { return MissingDependencies; }
+	static bool HasMissingDependencies() { return MissingDependencies.Num() > 0; }
+	static void ClearMissingDependencies() { MissingDependencies.Empty(); }
+
 private:
+	// v2.6.7: Track missing dependencies during event graph generation
+	static TArray<FMissingDependencyInfo> MissingDependencies;
+	static void AddMissingDependency(const FString& Name, const FString& Type, const FString& Context);
+
 	static UK2Node* CreateEventNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef,

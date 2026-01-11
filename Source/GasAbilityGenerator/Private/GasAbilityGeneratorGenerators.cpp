@@ -1449,6 +1449,9 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	// v2.4.0: Generate inline event graph if defined
 	if (Definition.bHasInlineEventGraph && Definition.EventGraphNodes.Num() > 0)
 	{
+		// v2.6.7: Clear any previous missing dependencies before generation
+		FEventGraphGenerator::ClearMissingDependencies();
+
 		// Build a temporary graph definition from the stored arrays
 		FManifestEventGraphDefinition GraphDef;
 		GraphDef.Name = Definition.EventGraphName;
@@ -1462,6 +1465,26 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		else
 		{
 			LogGeneration(TEXT("  Warning: Failed to generate event graph"));
+		}
+
+		// v2.6.7: Check for missing dependencies and return Deferred status if any
+		if (FEventGraphGenerator::HasMissingDependencies())
+		{
+			const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+			const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+			LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
+				*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
+
+			// Don't save incomplete asset - return Deferred so we can retry after dependency is created
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+				FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+			Result.MissingDependency = FirstMissing.DependencyName;
+			Result.MissingDependencyType = FirstMissing.DependencyType;
+			Result.DetermineCategory();
+
+			FEventGraphGenerator::ClearMissingDependencies();
+			return Result;
 		}
 	}
 
@@ -1668,6 +1691,9 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	// v2.2.0: Generate event graph if specified
 	if (!Definition.EventGraphName.IsEmpty() && ManifestData)
 	{
+		// v2.6.7: Clear any previous missing dependencies before generation
+		FEventGraphGenerator::ClearMissingDependencies();
+
 		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraphName);
 		if (GraphDef)
 		{
@@ -1678,6 +1704,26 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 			else
 			{
 				LogGeneration(FString::Printf(TEXT("  Failed to apply event graph: %s"), *Definition.EventGraphName));
+			}
+
+			// v2.6.7: Check for missing dependencies and return Deferred status if any
+			if (FEventGraphGenerator::HasMissingDependencies())
+			{
+				const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+				const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+				LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
+					*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
+
+				// Don't save incomplete asset - return Deferred so we can retry after dependency is created
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+					FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+				Result.MissingDependency = FirstMissing.DependencyName;
+				Result.MissingDependencyType = FirstMissing.DependencyType;
+				Result.DetermineCategory();
+
+				FEventGraphGenerator::ClearMissingDependencies();
+				return Result;
 			}
 		}
 		else
@@ -1803,6 +1849,9 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 	// v2.2.0: Generate event graph if specified
 	if (!Definition.EventGraphName.IsEmpty() && ManifestData)
 	{
+		// v2.6.7: Clear any previous missing dependencies before generation
+		FEventGraphGenerator::ClearMissingDependencies();
+
 		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraphName);
 		if (GraphDef)
 		{
@@ -1813,6 +1862,26 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 			else
 			{
 				LogGeneration(FString::Printf(TEXT("  Failed to apply event graph: %s"), *Definition.EventGraphName));
+			}
+
+			// v2.6.7: Check for missing dependencies and return Deferred status if any
+			if (FEventGraphGenerator::HasMissingDependencies())
+			{
+				const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+				const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+				LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
+					*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
+
+				// Don't save incomplete asset - return Deferred so we can retry after dependency is created
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+					FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+				Result.MissingDependency = FirstMissing.DependencyName;
+				Result.MissingDependencyType = FirstMissing.DependencyType;
+				Result.DetermineCategory();
+
+				FEventGraphGenerator::ClearMissingDependencies();
+				return Result;
 			}
 		}
 		else
@@ -2210,11 +2279,32 @@ FGenerationSummary FTagGenerator::GenerateTags(const TArray<FString>& Tags, cons
 // v2.2.0: FEventGraphGenerator Implementation
 // ============================================================================
 
+// v2.6.7: Static member for tracking missing dependencies
+TArray<FMissingDependencyInfo> FEventGraphGenerator::MissingDependencies;
+
+// v2.6.7: Add a missing dependency to the tracking list
+void FEventGraphGenerator::AddMissingDependency(const FString& Name, const FString& Type, const FString& Context)
+{
+	// Avoid duplicates
+	for (const auto& Dep : MissingDependencies)
+	{
+		if (Dep.DependencyName == Name && Dep.DependencyType == Type)
+		{
+			return;
+		}
+	}
+	MissingDependencies.Add(FMissingDependencyInfo(Name, Type, Context));
+	LogGeneration(FString::Printf(TEXT("  Missing dependency detected: %s (%s) - %s"), *Name, *Type, *Context));
+}
+
 bool FEventGraphGenerator::GenerateEventGraph(
 	UBlueprint* Blueprint,
 	const FManifestEventGraphDefinition& GraphDefinition,
 	const FString& ProjectRoot)
 {
+	// v2.6.7: Clear missing dependencies at start of each generation
+	ClearMissingDependencies();
+
 	if (!Blueprint)
 	{
 		LogGeneration(TEXT("EventGraph generation failed: Blueprint is null"));
@@ -3227,6 +3317,13 @@ UK2Node* FEventGraphGenerator::CreatePropertyGetNode(
 	if (!TargetClass)
 	{
 		LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Could not find class '%s'"), *NodeDef.Id, **TargetClassPtr));
+		// v2.6.7: Track missing dependency for deferred generation
+		FString DepType = TEXT("ActorBlueprint");
+		if (TargetClassPtr->StartsWith(TEXT("WBP_"))) DepType = TEXT("WidgetBlueprint");
+		else if (TargetClassPtr->StartsWith(TEXT("GE_"))) DepType = TEXT("GameplayEffect");
+		else if (TargetClassPtr->StartsWith(TEXT("GA_"))) DepType = TEXT("GameplayAbility");
+		AddMissingDependency(*TargetClassPtr, DepType,
+			FString::Printf(TEXT("PropertyGet node '%s'"), *NodeDef.Id));
 		return nullptr;
 	}
 
@@ -3237,6 +3334,9 @@ UK2Node* FEventGraphGenerator::CreatePropertyGetNode(
 	{
 		LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Property '%s' not found on class '%s'"),
 			*NodeDef.Id, **PropertyNamePtr, *TargetClass->GetName()));
+		// v2.6.7: Property missing on existing class - this could mean the class needs regeneration
+		AddMissingDependency(*TargetClassPtr, TEXT("ActorBlueprint"),
+			FString::Printf(TEXT("Property '%s' missing on class - may need regeneration"), **PropertyNamePtr));
 		return nullptr;
 	}
 
@@ -3443,6 +3543,12 @@ UK2Node* FEventGraphGenerator::CreateDynamicCastNode(
 	{
 		LogGeneration(FString::Printf(TEXT("Warning: DynamicCast node '%s' could not find target class '%s'. Cast may not work correctly."),
 			*NodeDef.Id, **TargetClassPtr));
+		// v2.6.7: Track missing dependency for deferred generation
+		FString DepType = TEXT("ActorBlueprint");
+		if (TargetClassPtr->StartsWith(TEXT("BP_"))) DepType = TEXT("ActorBlueprint");
+		else if (TargetClassPtr->StartsWith(TEXT("WBP_"))) DepType = TEXT("WidgetBlueprint");
+		AddMissingDependency(*TargetClassPtr, DepType,
+			FString::Printf(TEXT("DynamicCast node '%s'"), *NodeDef.Id));
 		// Still create the node, pins will be created but cast won't work until class is found
 	}
 

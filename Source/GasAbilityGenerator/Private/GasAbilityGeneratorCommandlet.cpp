@@ -271,44 +271,111 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	}
 
 	// PHASE 3: Blueprint Assets - Actor Blueprints (before abilities that reference them)
-	for (const auto& Definition : ManifestData.ActorBlueprints)
+	for (int32 i = 0; i < ManifestData.ActorBlueprints.Num(); ++i)
 	{
+		const auto& Definition = ManifestData.ActorBlueprints[i];
 		FGenerationResult Result = FActorBlueprintGenerator::Generate(Definition, ManifestData.ProjectRoot, &ManifestData);
 		Summary.AddResult(Result);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
-		if (Result.Status == EGenerationStatus::Failed)
+
+		// v2.6.7: Handle deferred assets
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
 		{
-			LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("ActorBlueprint");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
 		}
 	}
 
 	// Gameplay Abilities (after actor blueprints they may reference)
-	for (const auto& Definition : ManifestData.GameplayAbilities)
+	for (int32 i = 0; i < ManifestData.GameplayAbilities.Num(); ++i)
 	{
+		const auto& Definition = ManifestData.GameplayAbilities[i];
 		FGenerationResult Result = FGameplayAbilityGenerator::Generate(Definition, ManifestData.ProjectRoot);
 		Summary.AddResult(Result);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
-		if (Result.Status == EGenerationStatus::Failed)
+
+		// v2.6.7: Handle deferred assets
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
 		{
-			LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("GameplayAbility");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
 		}
 	}
 
 	// Widget Blueprints
-	for (const auto& Definition : ManifestData.WidgetBlueprints)
+	for (int32 i = 0; i < ManifestData.WidgetBlueprints.Num(); ++i)
 	{
+		const auto& Definition = ManifestData.WidgetBlueprints[i];
 		FGenerationResult Result = FWidgetBlueprintGenerator::Generate(Definition, &ManifestData);
 		Summary.AddResult(Result);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
+
+		// v2.6.7: Handle deferred assets
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
+		{
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("WidgetBlueprint");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
+		}
 	}
 
 	// Blackboards
@@ -643,6 +710,15 @@ bool UGasAbilityGeneratorCommandlet::TryGenerateDeferredAsset(const FDeferredAss
 		{
 			OutResult = FGameplayEffectGenerator::Generate(
 				ManifestData.GameplayEffects[Deferred.DefinitionIndex]);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	else if (Deferred.AssetType == TEXT("WidgetBlueprint"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.WidgetBlueprints.Num())
+		{
+			OutResult = FWidgetBlueprintGenerator::Generate(
+				ManifestData.WidgetBlueprints[Deferred.DefinitionIndex], &ManifestData);
 			return OutResult.Status == EGenerationStatus::New;
 		}
 	}
