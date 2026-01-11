@@ -133,6 +133,11 @@
 #include "AbilitySystemComponent.h"
 #include "Misc/App.h"  // v2.5.0: For FApp::GetProjectName()
 
+// v2.7.0: Narrative Pro includes for WellKnownFunctions table
+#include "Items/InventoryComponent.h"
+#include "Items/WeaponItem.h"
+#include "Items/EquippableItem.h"
+
 // v2.1.9: Static member initialization for manifest validation
 const FManifestData* FGeneratorBase::ActiveManifest = nullptr;
 
@@ -3549,8 +3554,22 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("GetPlayerCharacter"), UGameplayStatics::StaticClass());
 		WellKnownFunctions.Add(TEXT("GetPlayerPawn"), UGameplayStatics::StaticClass());
 
-		// Note: Narrative Pro functions (GetInventoryComponent, RemoveItem, WieldWeapon, etc.)
-		// should use the "class" property in manifest.yaml to specify function owner class
+		// v2.7.0: Narrative Pro Inventory functions
+		WellKnownFunctions.Add(TEXT("TryAddItemFromClass"), UNarrativeInventoryComponent::StaticClass());
+		WellKnownFunctions.Add(TEXT("RemoveItem"), UNarrativeInventoryComponent::StaticClass());
+		WellKnownFunctions.Add(TEXT("ConsumeItem"), UNarrativeInventoryComponent::StaticClass());
+		WellKnownFunctions.Add(TEXT("FindItemOfClass"), UNarrativeInventoryComponent::StaticClass());
+		WellKnownFunctions.Add(TEXT("GetTotalQuantityOfItem"), UNarrativeInventoryComponent::StaticClass());
+
+		// v2.7.0: Narrative Pro Weapon functions
+		WellKnownFunctions.Add(TEXT("WieldInSlot"), UWeaponItem::StaticClass());
+		WellKnownFunctions.Add(TEXT("IsWielded"), UWeaponItem::StaticClass());
+		WellKnownFunctions.Add(TEXT("IsHolstered"), UWeaponItem::StaticClass());
+
+		// v2.7.0: Narrative Pro Equipment functions
+		WellKnownFunctions.Add(TEXT("EquipItem"), UEquippableItem::StaticClass());
+		WellKnownFunctions.Add(TEXT("UnequipItem"), UEquippableItem::StaticClass());
+		WellKnownFunctions.Add(TEXT("IsEquipped"), UEquippableItem::StaticClass());
 	}
 
 	// Determine the function owner class
@@ -4046,8 +4065,31 @@ UK2Node* FEventGraphGenerator::CreateBreakStructNode(
 		return nullptr;
 	}
 
-	// Find the struct
-	UScriptStruct* Struct = FindObject<UScriptStruct>(nullptr, **StructTypePtr);
+	// Find the struct - try multiple lookup methods
+	UScriptStruct* Struct = nullptr;
+
+	// v2.7.0: Well-known structs lookup table (USTRUCTs use StaticStruct(), not FindObject)
+	static TMap<FString, UScriptStruct*> WellKnownStructs;
+	if (WellKnownStructs.Num() == 0)
+	{
+		// Narrative Pro structs
+		WellKnownStructs.Add(TEXT("FItemAddResult"), FItemAddResult::StaticStruct());
+		// Add more structs as needed
+		LogGeneration(TEXT("BreakStruct: Initialized well-known structs table"));
+	}
+
+	// First check well-known structs (most reliable for USTRUCTs)
+	if (UScriptStruct** FoundStruct = WellKnownStructs.Find(*StructTypePtr))
+	{
+		Struct = *FoundStruct;
+		LogGeneration(FString::Printf(TEXT("BreakStruct: Found struct '%s' in well-known table"), *Struct->GetName()));
+	}
+
+	// Fallback: try FindObject methods
+	if (!Struct)
+	{
+		Struct = FindObject<UScriptStruct>(nullptr, **StructTypePtr);
+	}
 	if (!Struct)
 	{
 		// Try with /Script/ prefix variants
@@ -4055,12 +4097,14 @@ UK2Node* FEventGraphGenerator::CreateBreakStructNode(
 		StructSearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), **StructTypePtr));
 		StructSearchPaths.Add(FString::Printf(TEXT("/Script/Engine.%s"), **StructTypePtr));
 		StructSearchPaths.Add(FString::Printf(TEXT("/Script/CoreUObject.%s"), **StructTypePtr));
+		StructSearchPaths.Add(FString::Printf(TEXT("/Script/GameplayAbilities.%s"), **StructTypePtr));
 
 		for (const FString& Path : StructSearchPaths)
 		{
 			Struct = FindObject<UScriptStruct>(nullptr, *Path);
 			if (Struct)
 			{
+				LogGeneration(FString::Printf(TEXT("BreakStruct: Found struct at path '%s'"), *Path));
 				break;
 			}
 		}
@@ -4804,11 +4848,10 @@ void FEventGraphGenerator::AutoLayoutNodes(
 // v2.3.0: Narrative Pro includes for data asset generation
 #include "AI/NPCDefinition.h"
 #include "Character/CharacterDefinition.h"
-#include "Items/InventoryComponent.h"  // Contains UItemCollection
+// Note: InventoryComponent, WeaponItem, EquippableItem moved to top of file for WellKnownFunctions
 #include "GAS/AbilityConfiguration.h"
 #include "AI/Activities/NPCActivityConfiguration.h"
 #include "AI/Activities/NPCActivity.h"
-#include "Items/EquippableItem.h"
 #include "Items/NarrativeItem.h"
 #include "Tales/NarrativeEvent.h"
 #include "Tales/Dialogue.h"
