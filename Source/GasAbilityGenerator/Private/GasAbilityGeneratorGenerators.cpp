@@ -131,6 +131,7 @@
 #include "K2Node_BreakStruct.h"  // v2.7.0: BreakStruct support
 #include "K2Node_MakeArray.h"  // v2.7.0: MakeArray support
 #include "K2Node_GetArrayItem.h"  // v2.7.0: GetArrayItem support
+#include "K2Node_Self.h"  // v2.7.8: Self reference support
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -3245,6 +3246,11 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		{
 			CreatedNode = CreateGetArrayItemNode(EventGraph, NodeDef);
 		}
+		// v2.7.8: Self - reference to the blueprint self
+		else if (NodeDef.Type.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSelfNode(EventGraph, NodeDef);
+		}
 		else
 		{
 			LogGeneration(FString::Printf(TEXT("Unknown node type '%s' for node '%s'"),
@@ -4526,6 +4532,23 @@ UK2Node* FEventGraphGenerator::CreateGetArrayItemNode(
 	LogGeneration(FString::Printf(TEXT("GetArrayItem node '%s': Created"), *NodeDef.Id));
 
 	return GetItemNode;
+}
+
+// v2.7.8: Self - reference to the blueprint self
+UK2Node* FEventGraphGenerator::CreateSelfNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(Graph);
+	Graph->AddNode(SelfNode, false, false);
+
+	SelfNode->CreateNewGuid();
+	SelfNode->PostPlacedNewNode();
+	SelfNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("Self node '%s': Created"), *NodeDef.Id));
+
+	return SelfNode;
 }
 
 UK2Node* FEventGraphGenerator::CreateSequenceNode(

@@ -387,6 +387,11 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v2.7.8: Self - reference to the blueprint self
+	static UK2Node* CreateSelfNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
 	static bool ConnectPins(
 		const TMap<FString, UK2Node*>& NodeMap,
 		const FManifestGraphConnectionDefinition& Connection);
