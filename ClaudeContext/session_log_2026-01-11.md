@@ -540,4 +540,107 @@ Deferred: 1 (EI_FatherCrawlerForm - waiting for GA_FatherAttack)
 
 ---
 
+## Completed: v2.6.9 Narrative Pro Path Support
+
+### What Was Done
+Added Narrative Pro plugin paths to parent class and ability lookup functions.
+
+### Problem Addressed
+1. **GA_FatherAttack** couldn't find parent class `GA_Melee_Unarmed` (Narrative Pro asset)
+2. **EI_FatherCrawlerForm** couldn't find `BPA_FollowCharacter` in abilities_to_grant (Narrative Pro asset)
+
+### Solution Implemented
+
+**1. FindParentClass - Added Narrative Pro paths (GasAbilityGeneratorGenerators.cpp:571-574)**
+```cpp
+// v2.6.9: Add Narrative Pro paths for parent class lookup
+BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/%s.%s_C"), *ClassName, *ClassName));
+BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *ClassName, *ClassName));
+BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/%s.%s_C"), *ClassName, *ClassName));
+```
+
+**2. EquippableItemGenerator - Added Narrative Pro ability paths (GasAbilityGeneratorGenerators.cpp:4479-4494)**
+```cpp
+// v2.6.9: Try Narrative Pro paths for abilities/activities
+AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *AbilityName, *AbilityName);
+AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/%s/%s.%s_C"), *AbilityName, *AbilityName, *AbilityName);
+AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *AbilityName, *AbilityName);
+```
+
+### Git Status
+- Commit: `0c06c9f` - "v2.6.9: Add Narrative Pro path support for parent class and ability lookup"
+- Pushed to: https://github.com/HofSorroW/GasAbilityGenerator5.7
+
+---
+
+## Completed: v2.6.9 Animation Notify Generator
+
+### What Was Done
+Updated AnimationNotifyGenerator to create Blueprint assets instead of failing with "requires manual creation".
+
+### Problem Addressed
+- NAS_FatherAttack always showed [FAIL] with message "Animation Notifies require manual creation"
+- Animation Notify States are subclasses of UAnimNotifyState - can be created as Blueprints
+
+### Solution Implemented
+Full generator implementation (GasAbilityGeneratorGenerators.cpp:4281-4361):
+
+```cpp
+// v2.6.9: Animation Notify Generator (creates Blueprint with UAnimNotifyState parent)
+// - NAS_* prefix → UAnimNotifyState parent
+// - AN_* prefix → UAnimNotify parent
+// - Supports custom notify_class from manifest
+```
+
+### Added Include
+```cpp
+// v2.6.9: Animation notify types
+#include "Animation/AnimNotifies/AnimNotify.h"
+#include "Animation/AnimNotifies/AnimNotifyState.h"
+```
+
+### Git Status
+- Commit: `fb0c92e` - "v2.6.9: Add Animation Notify generator"
+- Pushed to: https://github.com/HofSorroW/GasAbilityGenerator5.7
+
+---
+
+## Updated: CLAUDE.md - Asset Folder Deletion Rule
+
+### What Was Done
+Added new rule to CLAUDE.md about deleting asset folder before regeneration.
+
+### Rule Added
+```markdown
+### Delete Asset Folder Before Regeneration
+When any changes are made to the GasAbilityGenerator plugin code (generators, commandlet, parser),
+delete the asset folder before running the generator again. The Asset Registry caches existing
+assets and will skip regeneration otherwise.
+```
+
+### Git Status
+- Commit: `bfeaa59` - "Update CLAUDE.md: Add asset folder deletion rule, bump to v2.6.9"
+- Pushed to: https://github.com/HofSorroW/GasAbilityGenerator5.7
+
+---
+
+## Final Test Results (v2.6.9)
+
+### Generation Summary
+```
+New: 146
+Failed: 0
+Deferred: 0
+```
+
+### All Issues Resolved
+| Issue | Status |
+|-------|--------|
+| GA_FatherAttack parent class not found | FIXED - Narrative Pro paths added |
+| EI_FatherCrawlerForm deferred for BPA_FollowCharacter | FIXED - Narrative Pro AI paths added |
+| NAS_FatherAttack always failing | FIXED - Now creates Blueprint |
+| "Manual setup" messages appearing | FIXED - All removed |
+
+---
+
 ## Current Plugin Version: v2.6.9
