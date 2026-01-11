@@ -5163,10 +5163,42 @@ warden_actor_blueprints:
   - name: BP_WardenHusk
     folder: Enemies/Warden
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
   - name: BP_WardenCore
     folder: Enemies/Warden
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
   - name: BP_CoreLaserProjectile
     folder: Enemies/Warden
@@ -5273,6 +5305,22 @@ possessed_exploder_actor_blueprints:
   - name: BP_PossessedExploder
     folder: Enemies/Possessed
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
 possessed_exploder_bt_services:
   - name: BTS_CheckExplosionProximity
@@ -5322,6 +5370,22 @@ support_buffer_actor_blueprints:
   - name: BP_SupportBuffer
     folder: NPCs/Support
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
 support_buffer_bt_services:
   - name: BTS_HealNearbyAllies
@@ -5367,10 +5431,42 @@ biomech_actor_blueprints:
   - name: BP_BiomechHost
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
   - name: BP_BiomechCreature
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
 # ============================================================================
 # NPC SYSTEMS - GATHERER SCOUT
@@ -5389,10 +5485,42 @@ gatherer_actor_blueprints:
   - name: BP_GathererScout
     folder: Enemies/Gatherer
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
   - name: BP_Reinforcement
     folder: Enemies/Gatherer
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
 gatherer_goals:
   - name: Goal_Alert
@@ -5444,6 +5572,22 @@ stalker_actor_blueprints:
   - name: BP_ReturnedStalker
     folder: NPCs/Returned
     parent_class: NarrativeNPCCharacter
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintSpawned
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintSpawned, Exec]
 
 stalker_goal_generators:
   - name: GoalGenerator_RandomAggression
