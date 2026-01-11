@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.11
+// GasAbilityGenerator v2.7.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.7.0: BreakStruct, MakeArray, GetArrayItem node support for weapon form implementation
 // v2.6.11: Force scan NarrativePro plugin content in commandlet mode for parent class resolution
 // v2.6.10: Enhanced Niagara generator with warmup, bounds, determinism, and pooling settings
 // v2.6.9: Animation Notify generator, Narrative Pro path support for parent classes and abilities
@@ -114,6 +115,9 @@
 #include "K2Node_DynamicCast.h"
 #include "K2Node_MacroInstance.h"  // v2.4.0: ForEachLoop support
 #include "K2Node_SpawnActorFromClass.h"  // v2.4.0: SpawnActor support
+#include "K2Node_BreakStruct.h"  // v2.7.0: BreakStruct support
+#include "K2Node_MakeArray.h"  // v2.7.0: MakeArray support
+#include "K2Node_GetArrayItem.h"  // v2.7.0: GetArrayItem support
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -3009,6 +3013,21 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		{
 			CreatedNode = CreatePropertySetNode(EventGraph, NodeDef, Blueprint);
 		}
+		// v2.7.0: BreakStruct - break a struct into individual members
+		else if (NodeDef.Type.Equals(TEXT("BreakStruct"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateBreakStructNode(EventGraph, NodeDef);
+		}
+		// v2.7.0: MakeArray - create an array from individual elements
+		else if (NodeDef.Type.Equals(TEXT("MakeArray"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeArrayNode(EventGraph, NodeDef);
+		}
+		// v2.7.0: GetArrayItem - access an element at a specific index
+		else if (NodeDef.Type.Equals(TEXT("GetArrayItem"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateGetArrayItemNode(EventGraph, NodeDef);
+		}
 		else
 		{
 			LogGeneration(FString::Printf(TEXT("Unknown node type '%s' for node '%s'"),
@@ -4013,6 +4032,103 @@ UK2Node* FEventGraphGenerator::CreatePropertySetNode(
 		*NodeDef.Id, **PropertyNamePtr, *TargetClass->GetName()));
 
 	return SetNode;
+}
+
+// v2.7.0: BreakStruct - break a struct into individual member pins
+UK2Node* FEventGraphGenerator::CreateBreakStructNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	const FString* StructTypePtr = NodeDef.Properties.Find(TEXT("struct_type"));
+	if (!StructTypePtr || StructTypePtr->IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("BreakStruct node '%s' missing struct_type property"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Find the struct
+	UScriptStruct* Struct = FindObject<UScriptStruct>(nullptr, **StructTypePtr);
+	if (!Struct)
+	{
+		// Try with /Script/ prefix variants
+		TArray<FString> StructSearchPaths;
+		StructSearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), **StructTypePtr));
+		StructSearchPaths.Add(FString::Printf(TEXT("/Script/Engine.%s"), **StructTypePtr));
+		StructSearchPaths.Add(FString::Printf(TEXT("/Script/CoreUObject.%s"), **StructTypePtr));
+
+		for (const FString& Path : StructSearchPaths)
+		{
+			Struct = FindObject<UScriptStruct>(nullptr, *Path);
+			if (Struct)
+			{
+				break;
+			}
+		}
+	}
+
+	if (!Struct)
+	{
+		LogGeneration(FString::Printf(TEXT("BreakStruct node '%s': Could not find struct '%s'"), *NodeDef.Id, **StructTypePtr));
+		return nullptr;
+	}
+
+	// Note: CanBeBroken check removed due to linker issues - let node creation handle validation
+
+	UK2Node_BreakStruct* BreakNode = NewObject<UK2Node_BreakStruct>(Graph);
+	BreakNode->StructType = Struct;
+	Graph->AddNode(BreakNode, false, false);
+	BreakNode->CreateNewGuid();
+	BreakNode->PostPlacedNewNode();
+	BreakNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("BreakStruct node '%s': Created for struct '%s'"), *NodeDef.Id, *Struct->GetName()));
+
+	return BreakNode;
+}
+
+// v2.7.0: MakeArray - create an array from individual elements
+UK2Node* FEventGraphGenerator::CreateMakeArrayNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_MakeArray* ArrayNode = NewObject<UK2Node_MakeArray>(Graph);
+	Graph->AddNode(ArrayNode, false, false);
+
+	// Get number of inputs (default 1)
+	const FString* NumInputsPtr = NodeDef.Properties.Find(TEXT("num_inputs"));
+	if (NumInputsPtr)
+	{
+		ArrayNode->NumInputs = FCString::Atoi(**NumInputsPtr);
+	}
+	else
+	{
+		ArrayNode->NumInputs = 1;
+	}
+
+	ArrayNode->CreateNewGuid();
+	ArrayNode->PostPlacedNewNode();
+	ArrayNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("MakeArray node '%s': Created with %d inputs"), *NodeDef.Id, ArrayNode->NumInputs));
+
+	return ArrayNode;
+}
+
+// v2.7.0: GetArrayItem - access an element at a specific index
+UK2Node* FEventGraphGenerator::CreateGetArrayItemNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_GetArrayItem* GetItemNode = NewObject<UK2Node_GetArrayItem>(Graph);
+	Graph->AddNode(GetItemNode, false, false);
+
+	GetItemNode->CreateNewGuid();
+	GetItemNode->PostPlacedNewNode();
+	GetItemNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("GetArrayItem node '%s': Created"), *NodeDef.Id));
+
+	return GetItemNode;
 }
 
 UK2Node* FEventGraphGenerator::CreateSequenceNode(
