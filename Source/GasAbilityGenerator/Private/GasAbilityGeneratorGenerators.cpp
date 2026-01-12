@@ -8956,6 +8956,36 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 		LogGeneration(FString::Printf(TEXT("  Set %d DefaultFactions"), NPCDef->DefaultFactions.Num()));
 	}
 
+	// v3.6: Set ActivitySchedules array (TArray<TSoftObjectPtr<UNPCActivitySchedule>>)
+	if (Definition.ActivitySchedules.Num() > 0)
+	{
+		FArrayProperty* SchedulesProperty = CastField<FArrayProperty>(NPCDef->GetClass()->FindPropertyByName(TEXT("ActivitySchedules")));
+		if (SchedulesProperty)
+		{
+			FScriptArrayHelper ArrayHelper(SchedulesProperty, SchedulesProperty->ContainerPtrToValuePtr<void>(NPCDef));
+			for (const FString& SchedulePath : Definition.ActivitySchedules)
+			{
+				FString FullPath = SchedulePath;
+				if (!FullPath.Contains(TEXT("/")))
+				{
+					FullPath = FString::Printf(TEXT("%s/AI/Schedules/%s"), *GetProjectRoot(), *SchedulePath);
+				}
+				FSoftObjectPath SoftPath(FullPath);
+				int32 NewIndex = ArrayHelper.AddValue();
+				FSoftObjectPtr* SoftPtr = reinterpret_cast<FSoftObjectPtr*>(ArrayHelper.GetRawPtr(NewIndex));
+				if (SoftPtr)
+				{
+					*SoftPtr = FSoftObjectPtr(SoftPath);
+					LogGeneration(FString::Printf(TEXT("  Added ActivitySchedule: %s"), *SchedulePath));
+				}
+			}
+		}
+		else
+		{
+			LogGeneration(TEXT("  [WARNING] ActivitySchedules property not found on UNPCDefinition"));
+		}
+	}
+
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(NPCDef);
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.5) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.6) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -456,7 +456,7 @@ character_definitions:
       - TS_MerchantCombat
     ability_configuration: AC_Merchant            # FObjectProperty
 
-# v3.3: NPCDefinition with full property support
+# v3.6: NPCDefinition with full property support
 npc_definitions:
   - name: NPCDef_Blacksmith
     folder: NPCs/Definitions
@@ -483,6 +483,10 @@ npc_definitions:
     default_owned_tags: [State.Invulnerable]      # Array or single value
     default_factions: [Narrative.Factions.Friendly, Narrative.Factions.Town]
     attack_priority: 0.5                          # Low priority target
+    # v3.6: Activity schedules (NPC daily routines)
+    activity_schedules:                           # TArray<TSoftObjectPtr<UNPCActivitySchedule>>
+      - Schedule_BlacksmithDay
+      - Schedule_BlacksmithNight
 
 # v3.3: EquippableItem with full property support
 equippable_items:
@@ -673,6 +677,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.6 - NPCDefinition ActivitySchedules: NPCDefinition (NPCDef_) gains ActivitySchedules array support (TArray<TSoftObjectPtr<UNPCActivitySchedule>>) for defining NPC daily routines. Also adds YAML list parsing support for DefaultOwnedTags, DefaultFactions, and ActivitySchedules arrays in npc_definitions.
 - v3.5 - CharacterDefinition & DialogueBlueprint Enhancement: CharacterDefinition (CD_) gains full property support - DefaultOwnedTags/DefaultFactions now properly populate FGameplayTagContainer from arrays, added DefaultAppearance (TSoftObjectPtr), TriggerSets (array via FScriptArrayHelper reflection), AbilityConfiguration (FObjectProperty). DialogueBlueprint gains 3 additional UDialogue properties - DefaultHeadBoneName (FName), DialogueBlendOutTime (float), bAdjustPlayerTransform (bool). Both CD_ and DBP_ upgraded to High automation level.
 - v3.4 - WeaponItem Property Support: EquippableItem generator now supports full WeaponItem/MeleeWeaponItem/RangedWeaponItem property chain when using those parent classes. New properties: WeaponVisualClass (TSoftClassPtr), WeaponHand (EWeaponHandRule enum), WeaponAbilities/MainhandAbilities/OffhandAbilities arrays (TSubclassOf<UGameplayAbility>), bPawnFollowsControlRotation, bPawnOrientsRotationToMovement, AttackDamage, HeavyAttackDamageMultiplier, bAllowManualReload, RequiredAmmo, bBotsConsumeAmmo, BotAttackRange, ClipSize, AimFOVPct, BaseSpreadDegrees, MaxSpreadDegrees, SpreadFireBump, SpreadDecreaseSpeed. Enables complete weapon definition from YAML.
 - v3.3 - NPCDefinition, EquippableItem & Activity Enhancement: NPCDefinition gains full CharacterDefinition property support (Dialogue, TaggedDialogueSet, vendor properties, inherited properties). EquippableItem gains full NarrativeItem property support (DisplayName, Description, AttackRating, ArmorRating, StealthRating, Weight, BaseValue, BaseScore, ItemTags, bStackable, MaxStackSize, UseRechargeDuration, Thumbnail). Activity gains full NarrativeActivityBase/NPCActivity property support (ActivityName, OwnedTags, BlockTags, RequireTags, SupportedGoalType, bIsInterruptable, bSaveActivity). EI_, NPCDef_, and BPA_ upgraded to High automation level.

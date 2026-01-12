@@ -4204,6 +4204,10 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 
 	FManifestNPCDefinitionDefinition CurrentDef;
 	bool bInItem = false;
+	// v3.6: Array parsing states
+	bool bInOwnedTags = false;
+	bool bInFactions = false;
+	bool bInActivitySchedules = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -4235,6 +4239,10 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 			CurrentDef = FManifestNPCDefinitionDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			// v3.6: Reset array parsing states
+			bInOwnedTags = false;
+			bInFactions = false;
+			bInActivitySchedules = false;
 		}
 		else if (bInItem)
 		{
@@ -4339,6 +4347,9 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 				{
 					CurrentDef.DefaultOwnedTags.Add(TagsValue);
 				}
+				bInOwnedTags = true;
+				bInFactions = false;
+				bInActivitySchedules = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("default_factions:")))
 			{
@@ -4362,6 +4373,63 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 				{
 					CurrentDef.DefaultFactions.Add(FactionsValue);
 				}
+				bInFactions = true;
+				bInOwnedTags = false;
+				bInActivitySchedules = false;
+			}
+			// v3.6: Activity schedules array
+			else if (TrimmedLine.StartsWith(TEXT("activity_schedules:")))
+			{
+				// Parse inline array [Schedule1, Schedule2] or start YAML list
+				FString SchedulesValue = GetLineValue(TrimmedLine);
+				if (SchedulesValue.StartsWith(TEXT("[")) && SchedulesValue.EndsWith(TEXT("]")))
+				{
+					SchedulesValue = SchedulesValue.Mid(1, SchedulesValue.Len() - 2);
+					TArray<FString> Schedules;
+					SchedulesValue.ParseIntoArray(Schedules, TEXT(","));
+					for (FString& Schedule : Schedules)
+					{
+						Schedule = Schedule.TrimStartAndEnd();
+						if (!Schedule.IsEmpty())
+						{
+							CurrentDef.ActivitySchedules.Add(Schedule);
+						}
+					}
+				}
+				else if (!SchedulesValue.IsEmpty())
+				{
+					CurrentDef.ActivitySchedules.Add(SchedulesValue);
+				}
+				bInActivitySchedules = true;
+				bInOwnedTags = false;
+				bInFactions = false;
+			}
+			// v3.6: Handle YAML list items for arrays
+			else if (TrimmedLine.StartsWith(TEXT("- ")) && !TrimmedLine.Contains(TEXT(":")))
+			{
+				FString ItemValue = TrimmedLine.Mid(2).TrimStartAndEnd();
+				if (!ItemValue.IsEmpty())
+				{
+					if (bInActivitySchedules)
+					{
+						CurrentDef.ActivitySchedules.Add(ItemValue);
+					}
+					else if (bInOwnedTags)
+					{
+						CurrentDef.DefaultOwnedTags.Add(ItemValue);
+					}
+					else if (bInFactions)
+					{
+						CurrentDef.DefaultFactions.Add(ItemValue);
+					}
+				}
+			}
+			else
+			{
+				// Any other property resets array parsing state
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInActivitySchedules = false;
 			}
 		}
 

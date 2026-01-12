@@ -1836,7 +1836,10 @@ struct FManifestNPCDefinitionDefinition
 	TArray<FString> DefaultFactions;     // FGameplayTagContainer - Faction tags
 	float AttackPriority = 1.0f;         // AI targeting priority
 
-	/** v3.3: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.6: Activity schedule support
+	TArray<FString> ActivitySchedules;   // TArray<TSoftObjectPtr<UNPCActivitySchedule>>
+
+	/** v3.6: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1877,6 +1880,12 @@ struct FManifestNPCDefinitionDefinition
 		for (const FString& Faction : DefaultFactions)
 		{
 			Hash ^= GetTypeHash(Faction);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		// v3.6: Hash activity schedules
+		for (const FString& Schedule : ActivitySchedules)
+		{
+			Hash ^= GetTypeHash(Schedule);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
 		return Hash;
