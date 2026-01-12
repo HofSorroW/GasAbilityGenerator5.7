@@ -3279,6 +3279,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	FManifestEquippableItemDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInAbilities = false;
+	bool bInItemTags = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3313,6 +3314,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
 			bInAbilities = false;
+			bInItemTags = false;
 		}
 		else if (bInItem)
 		{
@@ -3340,9 +3342,71 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			{
 				CurrentDef.EquipmentModifierGE = GetLineValue(TrimmedLine);
 			}
+			// v3.3: EquippableItem stat properties
+			else if (TrimmedLine.StartsWith(TEXT("attack_rating:")))
+			{
+				CurrentDef.AttackRating = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("armor_rating:")))
+			{
+				CurrentDef.ArmorRating = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("stealth_rating:")))
+			{
+				CurrentDef.StealthRating = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// v3.3: NarrativeItem base properties
+			else if (TrimmedLine.StartsWith(TEXT("thumbnail:")))
+			{
+				CurrentDef.Thumbnail = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("weight:")))
+			{
+				CurrentDef.Weight = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("base_value:")))
+			{
+				CurrentDef.BaseValue = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("base_score:")))
+			{
+				CurrentDef.BaseScore = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("stackable:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bStackable = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("max_stack_size:")))
+			{
+				CurrentDef.MaxStackSize = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("use_recharge_duration:")))
+			{
+				CurrentDef.UseRechargeDuration = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.Equals(TEXT("item_tags:")) || TrimmedLine.StartsWith(TEXT("item_tags:")))
+			{
+				bInAbilities = false; // Reset abilities parsing state
+				bInItemTags = true;
+			}
 			else if (TrimmedLine.Equals(TEXT("abilities_to_grant:")) || TrimmedLine.StartsWith(TEXT("abilities_to_grant:")))
 			{
 				bInAbilities = true;
+				bInItemTags = false;
+			}
+			else if (bInItemTags && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Tag = TrimmedLine.Mid(1).TrimStart();
+				if (Tag.Len() >= 2 && ((Tag.StartsWith(TEXT("\"")) && Tag.EndsWith(TEXT("\""))) ||
+					(Tag.StartsWith(TEXT("'")) && Tag.EndsWith(TEXT("'")))))
+				{
+					Tag = Tag.Mid(1, Tag.Len() - 2);
+				}
+				if (!Tag.IsEmpty())
+				{
+					CurrentDef.ItemTags.Add(Tag);
+				}
 			}
 			else if (bInAbilities && TrimmedLine.StartsWith(TEXT("-")))
 			{
@@ -3376,6 +3440,10 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 
 	FManifestActivityDefinition CurrentDef;
 	bool bInItem = false;
+	// v3.3: Tag array parsing states
+	bool bInOwnedTags = false;
+	bool bInBlockTags = false;
+	bool bInRequireTags = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3409,6 +3477,9 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 			CurrentDef = FManifestActivityDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			bInOwnedTags = false;
+			bInBlockTags = false;
+			bInRequireTags = false;
 		}
 		else if (bInItem)
 		{
@@ -3427,6 +3498,68 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 			else if (TrimmedLine.StartsWith(TEXT("description:")))
 			{
 				CurrentDef.Description = GetLineValue(TrimmedLine);
+			}
+			// v3.3: NarrativeActivityBase properties
+			else if (TrimmedLine.StartsWith(TEXT("activity_name:")))
+			{
+				CurrentDef.ActivityName = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("supported_goal_type:")))
+			{
+				CurrentDef.SupportedGoalType = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("is_interruptable:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bIsInterruptable = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("save_activity:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bSaveActivity = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+			}
+			// v3.3: Tag array sections
+			else if (TrimmedLine.Equals(TEXT("owned_tags:")) || TrimmedLine.StartsWith(TEXT("owned_tags:")))
+			{
+				bInOwnedTags = true;
+				bInBlockTags = false;
+				bInRequireTags = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("block_tags:")) || TrimmedLine.StartsWith(TEXT("block_tags:")))
+			{
+				bInOwnedTags = false;
+				bInBlockTags = true;
+				bInRequireTags = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("require_tags:")) || TrimmedLine.StartsWith(TEXT("require_tags:")))
+			{
+				bInOwnedTags = false;
+				bInBlockTags = false;
+				bInRequireTags = true;
+			}
+			else if ((bInOwnedTags || bInBlockTags || bInRequireTags) && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Tag = TrimmedLine.Mid(1).TrimStart();
+				if (Tag.Len() >= 2 && ((Tag.StartsWith(TEXT("\"")) && Tag.EndsWith(TEXT("\""))) ||
+					(Tag.StartsWith(TEXT("'")) && Tag.EndsWith(TEXT("'")))))
+				{
+					Tag = Tag.Mid(1, Tag.Len() - 2);
+				}
+				if (!Tag.IsEmpty())
+				{
+					if (bInOwnedTags)
+					{
+						CurrentDef.OwnedTags.Add(Tag);
+					}
+					else if (bInBlockTags)
+					{
+						CurrentDef.BlockTags.Add(Tag);
+					}
+					else if (bInRequireTags)
+					{
+						CurrentDef.RequireTags.Add(Tag);
+					}
+				}
 			}
 		}
 
@@ -3983,6 +4116,91 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 			else if (TrimmedLine.StartsWith(TEXT("is_vendor:")))
 			{
 				CurrentDef.bIsVendor = GetLineValue(TrimmedLine).ToBool();
+			}
+			// v3.3: Dialogue properties
+			else if (TrimmedLine.StartsWith(TEXT("dialogue:")))
+			{
+				CurrentDef.Dialogue = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("tagged_dialogue_set:")))
+			{
+				CurrentDef.TaggedDialogueSet = GetLineValue(TrimmedLine);
+			}
+			// v3.3: Vendor properties
+			else if (TrimmedLine.StartsWith(TEXT("trading_currency:")))
+			{
+				CurrentDef.TradingCurrency = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("buy_item_percentage:")))
+			{
+				CurrentDef.BuyItemPercentage = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("sell_item_percentage:")))
+			{
+				CurrentDef.SellItemPercentage = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("shop_name:")))
+			{
+				CurrentDef.ShopFriendlyName = GetLineValue(TrimmedLine);
+			}
+			// v3.3: CharacterDefinition inherited properties
+			else if (TrimmedLine.StartsWith(TEXT("default_appearance:")))
+			{
+				CurrentDef.DefaultAppearance = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("default_currency:")))
+			{
+				CurrentDef.DefaultCurrency = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("attack_priority:")))
+			{
+				CurrentDef.AttackPriority = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("default_owned_tags:")))
+			{
+				// Parse inline array [Tag1, Tag2] or single value
+				FString TagsValue = GetLineValue(TrimmedLine);
+				if (TagsValue.StartsWith(TEXT("[")) && TagsValue.EndsWith(TEXT("]")))
+				{
+					TagsValue = TagsValue.Mid(1, TagsValue.Len() - 2);
+					TArray<FString> Tags;
+					TagsValue.ParseIntoArray(Tags, TEXT(","));
+					for (FString& Tag : Tags)
+					{
+						Tag = Tag.TrimStartAndEnd();
+						if (!Tag.IsEmpty())
+						{
+							CurrentDef.DefaultOwnedTags.Add(Tag);
+						}
+					}
+				}
+				else if (!TagsValue.IsEmpty())
+				{
+					CurrentDef.DefaultOwnedTags.Add(TagsValue);
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("default_factions:")))
+			{
+				// Parse inline array [Faction1, Faction2] or single value
+				FString FactionsValue = GetLineValue(TrimmedLine);
+				if (FactionsValue.StartsWith(TEXT("[")) && FactionsValue.EndsWith(TEXT("]")))
+				{
+					FactionsValue = FactionsValue.Mid(1, FactionsValue.Len() - 2);
+					TArray<FString> Factions;
+					FactionsValue.ParseIntoArray(Factions, TEXT(","));
+					for (FString& Faction : Factions)
+					{
+						Faction = Faction.TrimStartAndEnd();
+						if (!Faction.IsEmpty())
+						{
+							CurrentDef.DefaultFactions.Add(Faction);
+						}
+					}
+				}
+				else if (!FactionsValue.IsEmpty())
+				{
+					CurrentDef.DefaultFactions.Add(FactionsValue);
+				}
 			}
 		}
 

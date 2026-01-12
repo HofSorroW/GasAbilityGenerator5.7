@@ -1,5 +1,11 @@
-// GasAbilityGenerator v3.0
+// GasAbilityGenerator v3.3
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.3: NPCDefinition, EquippableItem & Activity Enhancement:
+//       NPCDefinition: Dialogue, TaggedDialogueSet, vendor properties, inherited properties
+//       EquippableItem: DisplayName, Description, AttackRating, ArmorRating, StealthRating,
+//         Weight, BaseValue, BaseScore, ItemTags, bStackable, MaxStackSize, UseRechargeDuration, Thumbnail
+//       Activity: ActivityName, OwnedTags, BlockTags, RequireTags, SupportedGoalType,
+//         bIsInterruptable, bSaveActivity
 // v3.0: Regen/Diff Safety System - Universal metadata tracking, dry run mode, hash-based change detection
 //       StoreAssetMetadata/GetAssetMetadata, CheckExistsWithMetadata, ComputeBlueprintOutputHash
 // v2.9.1: FX Validation System - Template integrity checking, descriptor validation,
@@ -130,7 +136,9 @@
 #include "Items/InventoryComponent.h"  // Contains UItemCollection
 #include "AI/NPCDefinition.h"
 #include "Character/CharacterDefinition.h"
+#include "Character/CharacterAppearance.h"  // v3.3: UCharacterAppearanceBase for NPCDefinition
 #include "Tales/TaggedDialogueSet.h"
+#include "Tales/Dialogue.h"  // v3.3: UDialogue for NPCDefinition
 #include "NiagaraSystem.h"
 
 // v2.3.0: Component includes for Actor Blueprint generation
@@ -7484,6 +7492,142 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
+			// v3.3: Set EquippableItem stat properties
+			if (Definition.AttackRating != 0.0f)
+			{
+				FFloatProperty* AttackProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("AttackRating")));
+				if (AttackProp)
+				{
+					AttackProp->SetPropertyValue_InContainer(CDO, Definition.AttackRating);
+					LogGeneration(FString::Printf(TEXT("  Set AttackRating: %.2f"), Definition.AttackRating));
+				}
+			}
+			if (Definition.ArmorRating != 0.0f)
+			{
+				FFloatProperty* ArmorProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("ArmorRating")));
+				if (ArmorProp)
+				{
+					ArmorProp->SetPropertyValue_InContainer(CDO, Definition.ArmorRating);
+					LogGeneration(FString::Printf(TEXT("  Set ArmorRating: %.2f"), Definition.ArmorRating));
+				}
+			}
+			if (Definition.StealthRating != 0.0f)
+			{
+				FFloatProperty* StealthProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("StealthRating")));
+				if (StealthProp)
+				{
+					StealthProp->SetPropertyValue_InContainer(CDO, Definition.StealthRating);
+					LogGeneration(FString::Printf(TEXT("  Set StealthRating: %.2f"), Definition.StealthRating));
+				}
+			}
+
+			// v3.3: Set NarrativeItem base properties
+			if (!Definition.DisplayName.IsEmpty())
+			{
+				FTextProperty* DisplayNameProp = CastField<FTextProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DisplayName")));
+				if (DisplayNameProp)
+				{
+					DisplayNameProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.DisplayName));
+					LogGeneration(FString::Printf(TEXT("  Set DisplayName: %s"), *Definition.DisplayName));
+				}
+			}
+			if (!Definition.Description.IsEmpty())
+			{
+				FTextProperty* DescProp = CastField<FTextProperty>(CDO->GetClass()->FindPropertyByName(TEXT("Description")));
+				if (DescProp)
+				{
+					DescProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.Description));
+					LogGeneration(FString::Printf(TEXT("  Set Description: %s"), *Definition.Description));
+				}
+			}
+			if (Definition.Weight != 0.0f)
+			{
+				FFloatProperty* WeightProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("Weight")));
+				if (WeightProp)
+				{
+					WeightProp->SetPropertyValue_InContainer(CDO, Definition.Weight);
+					LogGeneration(FString::Printf(TEXT("  Set Weight: %.2f"), Definition.Weight));
+				}
+			}
+			if (Definition.BaseValue != 0)
+			{
+				FIntProperty* ValueProp = CastField<FIntProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BaseValue")));
+				if (ValueProp)
+				{
+					ValueProp->SetPropertyValue_InContainer(CDO, Definition.BaseValue);
+					LogGeneration(FString::Printf(TEXT("  Set BaseValue: %d"), Definition.BaseValue));
+				}
+			}
+			if (Definition.BaseScore != 0.0f)
+			{
+				FFloatProperty* ScoreProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BaseScore")));
+				if (ScoreProp)
+				{
+					ScoreProp->SetPropertyValue_InContainer(CDO, Definition.BaseScore);
+					LogGeneration(FString::Printf(TEXT("  Set BaseScore: %.2f"), Definition.BaseScore));
+				}
+			}
+			if (Definition.UseRechargeDuration != 0.0f)
+			{
+				FFloatProperty* RechargeProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("UseRechargeDuration")));
+				if (RechargeProp)
+				{
+					RechargeProp->SetPropertyValue_InContainer(CDO, Definition.UseRechargeDuration);
+					LogGeneration(FString::Printf(TEXT("  Set UseRechargeDuration: %.2f"), Definition.UseRechargeDuration));
+				}
+			}
+			// bStackable and MaxStackSize
+			if (Definition.bStackable)
+			{
+				FBoolProperty* StackableProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bStackable")));
+				if (StackableProp)
+				{
+					StackableProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bStackable: true"));
+				}
+				if (Definition.MaxStackSize > 1)
+				{
+					FIntProperty* MaxStackProp = CastField<FIntProperty>(CDO->GetClass()->FindPropertyByName(TEXT("MaxStackSize")));
+					if (MaxStackProp)
+					{
+						MaxStackProp->SetPropertyValue_InContainer(CDO, Definition.MaxStackSize);
+						LogGeneration(FString::Printf(TEXT("  Set MaxStackSize: %d"), Definition.MaxStackSize));
+					}
+				}
+			}
+			// ItemTags
+			if (Definition.ItemTags.Num() > 0)
+			{
+				FStructProperty* ItemTagsProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("ItemTags")));
+				if (ItemTagsProp)
+				{
+					FGameplayTagContainer* TagContainer = ItemTagsProp->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (TagContainer)
+					{
+						for (const FString& TagString : Definition.ItemTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+							if (Tag.IsValid())
+							{
+								TagContainer->AddTag(Tag);
+								LogGeneration(FString::Printf(TEXT("  Added ItemTag: %s"), *TagString));
+							}
+						}
+					}
+				}
+			}
+			// Thumbnail (TSoftObjectPtr<UTexture2D>)
+			if (!Definition.Thumbnail.IsEmpty())
+			{
+				FSoftObjectProperty* ThumbnailProp = CastField<FSoftObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("Thumbnail")));
+				if (ThumbnailProp)
+				{
+					FSoftObjectPtr SoftPtr(FSoftObjectPath(Definition.Thumbnail));
+					ThumbnailProp->SetPropertyValue_InContainer(CDO, SoftPtr);
+					LogGeneration(FString::Printf(TEXT("  Set Thumbnail: %s"), *Definition.Thumbnail));
+				}
+			}
+
 			CDO->MarkPackageDirty();
 		}
 	}
@@ -7594,18 +7738,132 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
 	// v2.6.9: Use pre-loaded BehaviorTree from deferred check
-	if (Blueprint->GeneratedClass && PreloadedBT)
+	if (Blueprint->GeneratedClass)
 	{
 		UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
 		if (CDO)
 		{
-			// Use reflection to set the protected BehaviourTree property
-			FObjectProperty* BTProperty = CastField<FObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BehaviourTree")));
-			if (BTProperty)
+			// Set BehaviourTree
+			if (PreloadedBT)
 			{
-				BTProperty->SetObjectPropertyValue_InContainer(CDO, PreloadedBT);
-				LogGeneration(FString::Printf(TEXT("  Set BehaviourTree: %s"), *PreloadedBT->GetName()));
+				FObjectProperty* BTProperty = CastField<FObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BehaviourTree")));
+				if (BTProperty)
+				{
+					BTProperty->SetObjectPropertyValue_InContainer(CDO, PreloadedBT);
+					LogGeneration(FString::Printf(TEXT("  Set BehaviourTree: %s"), *PreloadedBT->GetName()));
+				}
 			}
+
+			// v3.3: Set NarrativeActivityBase properties
+			if (!Definition.ActivityName.IsEmpty())
+			{
+				FTextProperty* NameProp = CastField<FTextProperty>(CDO->GetClass()->FindPropertyByName(TEXT("ActivityName")));
+				if (NameProp)
+				{
+					NameProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.ActivityName));
+					LogGeneration(FString::Printf(TEXT("  Set ActivityName: %s"), *Definition.ActivityName));
+				}
+			}
+			// OwnedTags
+			if (Definition.OwnedTags.Num() > 0)
+			{
+				FStructProperty* TagsProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("OwnedTags")));
+				if (TagsProp)
+				{
+					FGameplayTagContainer* TagContainer = TagsProp->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (TagContainer)
+					{
+						for (const FString& TagString : Definition.OwnedTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+							if (Tag.IsValid())
+							{
+								TagContainer->AddTag(Tag);
+								LogGeneration(FString::Printf(TEXT("  Added OwnedTag: %s"), *TagString));
+							}
+						}
+					}
+				}
+			}
+			// BlockTags
+			if (Definition.BlockTags.Num() > 0)
+			{
+				FStructProperty* TagsProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BlockTags")));
+				if (TagsProp)
+				{
+					FGameplayTagContainer* TagContainer = TagsProp->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (TagContainer)
+					{
+						for (const FString& TagString : Definition.BlockTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+							if (Tag.IsValid())
+							{
+								TagContainer->AddTag(Tag);
+								LogGeneration(FString::Printf(TEXT("  Added BlockTag: %s"), *TagString));
+							}
+						}
+					}
+				}
+			}
+			// RequireTags
+			if (Definition.RequireTags.Num() > 0)
+			{
+				FStructProperty* TagsProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("RequireTags")));
+				if (TagsProp)
+				{
+					FGameplayTagContainer* TagContainer = TagsProp->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (TagContainer)
+					{
+						for (const FString& TagString : Definition.RequireTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+							if (Tag.IsValid())
+							{
+								TagContainer->AddTag(Tag);
+								LogGeneration(FString::Printf(TEXT("  Added RequireTag: %s"), *TagString));
+							}
+						}
+					}
+				}
+			}
+
+			// v3.3: Set NPCActivity properties
+			// SupportedGoalType
+			if (!Definition.SupportedGoalType.IsEmpty())
+			{
+				UClass* GoalClass = FindParentClass(Definition.SupportedGoalType);
+				if (GoalClass)
+				{
+					FClassProperty* GoalProp = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("SupportedGoalType")));
+					if (GoalProp)
+					{
+						GoalProp->SetObjectPropertyValue_InContainer(CDO, GoalClass);
+						LogGeneration(FString::Printf(TEXT("  Set SupportedGoalType: %s"), *Definition.SupportedGoalType));
+					}
+				}
+			}
+			// bIsInterruptable (default is true, only set if false)
+			if (!Definition.bIsInterruptable)
+			{
+				FBoolProperty* InterruptProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bIsInterruptable")));
+				if (InterruptProp)
+				{
+					InterruptProp->SetPropertyValue_InContainer(CDO, false);
+					LogGeneration(TEXT("  Set bIsInterruptable: false"));
+				}
+			}
+			// bSaveActivity
+			if (Definition.bSaveActivity)
+			{
+				FBoolProperty* SaveProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bSaveActivity")));
+				if (SaveProp)
+				{
+					SaveProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bSaveActivity: true"));
+				}
+			}
+
 			CDO->MarkPackageDirty();
 		}
 	}
@@ -8261,6 +8519,100 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	{
 		NPCDef->AbilityConfiguration = PreloadedAbilityConfig;
 		LogGeneration(FString::Printf(TEXT("  Set AbilityConfiguration: %s"), *PreloadedAbilityConfig->GetName()));
+	}
+
+	// v3.3: Set Dialogue via TSoftClassPtr
+	if (!Definition.Dialogue.IsEmpty())
+	{
+		FString DialoguePath = Definition.Dialogue;
+		if (!DialoguePath.Contains(TEXT("/")))
+		{
+			DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s_C"), *GetProjectRoot(), *Definition.Dialogue, *Definition.Dialogue);
+		}
+		else if (!DialoguePath.EndsWith(TEXT("_C")))
+		{
+			DialoguePath = DialoguePath + TEXT("_C");
+		}
+		NPCDef->Dialogue = TSoftClassPtr<UDialogue>(FSoftObjectPath(DialoguePath));
+		LogGeneration(FString::Printf(TEXT("  Set Dialogue: %s"), *DialoguePath));
+	}
+
+	// v3.3: Set TaggedDialogueSet via TSoftObjectPtr
+	if (!Definition.TaggedDialogueSet.IsEmpty())
+	{
+		FString TDSPath = Definition.TaggedDialogueSet;
+		if (!TDSPath.Contains(TEXT("/")))
+		{
+			TDSPath = FString::Printf(TEXT("%s/Dialogues/%s"), *GetProjectRoot(), *Definition.TaggedDialogueSet);
+		}
+		NPCDef->TaggedDialogueSet = TSoftObjectPtr<UTaggedDialogueSet>(FSoftObjectPath(TDSPath));
+		LogGeneration(FString::Printf(TEXT("  Set TaggedDialogueSet: %s"), *TDSPath));
+	}
+
+	// v3.3: Set vendor properties
+	if (Definition.bIsVendor)
+	{
+		NPCDef->TradingCurrency = Definition.TradingCurrency;
+		NPCDef->BuyItemPercentage = Definition.BuyItemPercentage;
+		NPCDef->SellItemPercentage = Definition.SellItemPercentage;
+		if (!Definition.ShopFriendlyName.IsEmpty())
+		{
+			NPCDef->ShopFriendlyName = FText::FromString(Definition.ShopFriendlyName);
+		}
+		LogGeneration(FString::Printf(TEXT("  Vendor config: Currency=%d, Buy=%.1f%%, Sell=%.1f%%"),
+			Definition.TradingCurrency, Definition.BuyItemPercentage * 100.f, Definition.SellItemPercentage * 100.f));
+	}
+
+	// v3.3: Set CharacterDefinition inherited properties
+	NPCDef->DefaultCurrency = Definition.DefaultCurrency;
+	NPCDef->AttackPriority = Definition.AttackPriority;
+
+	// v3.3: Set DefaultAppearance via TSoftObjectPtr
+	if (!Definition.DefaultAppearance.IsEmpty())
+	{
+		FString AppearancePath = Definition.DefaultAppearance;
+		if (!AppearancePath.Contains(TEXT("/")))
+		{
+			AppearancePath = FString::Printf(TEXT("%s/Appearances/%s"), *GetProjectRoot(), *Definition.DefaultAppearance);
+		}
+		NPCDef->DefaultAppearance = TSoftObjectPtr<UCharacterAppearanceBase>(FSoftObjectPath(AppearancePath));
+		LogGeneration(FString::Printf(TEXT("  Set DefaultAppearance: %s"), *AppearancePath));
+	}
+
+	// v3.3: Set DefaultOwnedTags
+	if (Definition.DefaultOwnedTags.Num() > 0)
+	{
+		for (const FString& TagString : Definition.DefaultOwnedTags)
+		{
+			FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+			if (Tag.IsValid())
+			{
+				NPCDef->DefaultOwnedTags.AddTag(Tag);
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("  [WARNING] Tag not found: %s"), *TagString));
+			}
+		}
+		LogGeneration(FString::Printf(TEXT("  Set %d DefaultOwnedTags"), NPCDef->DefaultOwnedTags.Num()));
+	}
+
+	// v3.3: Set DefaultFactions
+	if (Definition.DefaultFactions.Num() > 0)
+	{
+		for (const FString& FactionString : Definition.DefaultFactions)
+		{
+			FGameplayTag Faction = FGameplayTag::RequestGameplayTag(FName(*FactionString), false);
+			if (Faction.IsValid())
+			{
+				NPCDef->DefaultFactions.AddTag(Faction);
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("  [WARNING] Faction tag not found: %s"), *FactionString));
+			}
+		}
+		LogGeneration(FString::Printf(TEXT("  Set %d DefaultFactions"), NPCDef->DefaultFactions.Num()));
 	}
 
 	Package->MarkPackageDirty();

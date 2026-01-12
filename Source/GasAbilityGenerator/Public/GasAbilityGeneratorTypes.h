@@ -1426,6 +1426,10 @@ struct FManifestDialogueBlueprintDefinition
 /**
  * Equippable item definition
  */
+/**
+ * Equippable item definition
+ * v3.3: Enhanced with full NarrativeItem + EquippableItem property support
+ */
 struct FManifestEquippableItemDefinition
 {
 	FString Name;
@@ -1437,7 +1441,22 @@ struct FManifestEquippableItemDefinition
 	FString EquipmentModifierGE;
 	TArray<FString> AbilitiesToGrant;
 
-	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.3: EquippableItem stat properties
+	float AttackRating = 0.0f;           // Bonus attack damage
+	float ArmorRating = 0.0f;            // Damage reduction
+	float StealthRating = 0.0f;          // Stealth bonus
+
+	// v3.3: NarrativeItem properties
+	FString Thumbnail;                   // TSoftObjectPtr<UTexture2D> - inventory icon
+	float Weight = 0.0f;                 // Item weight in kg
+	int32 BaseValue = 0;                 // Gold/currency value
+	float BaseScore = 0.0f;              // AI priority score
+	TArray<FString> ItemTags;            // FGameplayTagContainer - item categorization
+	bool bStackable = false;             // Can stack in inventory
+	int32 MaxStackSize = 1;              // Max stack size (if stackable)
+	float UseRechargeDuration = 0.0f;    // Cooldown between uses
+
+	/** v3.3: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1452,12 +1471,37 @@ struct FManifestEquippableItemDefinition
 			Hash ^= GetTypeHash(Ability);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
+
+		// v3.3: Hash new properties
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttackRating * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ArmorRating * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(StealthRating * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(Thumbnail);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Weight * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(BaseValue);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(BaseScore * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= (bStackable ? 1ULL : 0ULL);
+		Hash ^= static_cast<uint64>(MaxStackSize) << 4;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(UseRechargeDuration * 100.f)) << 12;
+		for (const FString& Tag : ItemTags)
+		{
+			Hash ^= GetTypeHash(Tag);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
 		return Hash;
 	}
 };
 
 /**
  * Activity definition
+ * v3.3: Added NarrativeActivityBase and NPCActivity properties
  */
 struct FManifestActivityDefinition
 {
@@ -1467,7 +1511,18 @@ struct FManifestActivityDefinition
 	FString BehaviorTree;
 	FString Description;
 
-	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.3: NarrativeActivityBase properties
+	FString ActivityName;                // FText - Display name for activity
+	TArray<FString> OwnedTags;           // Tags granted when activity starts
+	TArray<FString> BlockTags;           // Tags that block activity from running
+	TArray<FString> RequireTags;         // Tags required before running
+
+	// v3.3: NPCActivity properties
+	FString SupportedGoalType;           // TSubclassOf<UNPCGoalItem> - Goal class this activity supports
+	bool bIsInterruptable = true;        // Whether activity can be interrupted
+	bool bSaveActivity = false;          // Whether activity should be saved to disk
+
+	/** v3.3: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1475,6 +1530,27 @@ struct FManifestActivityDefinition
 		Hash ^= GetTypeHash(ParentClass) << 4;
 		Hash ^= GetTypeHash(BehaviorTree) << 8;
 		Hash ^= GetTypeHash(Description) << 12;
+
+		// v3.3: Hash new properties
+		Hash ^= GetTypeHash(ActivityName) << 16;
+		Hash ^= GetTypeHash(SupportedGoalType) << 20;
+		Hash ^= (bIsInterruptable ? 1ULL : 0ULL) << 24;
+		Hash ^= (bSaveActivity ? 1ULL : 0ULL) << 25;
+		for (const FString& Tag : OwnedTags)
+		{
+			Hash ^= GetTypeHash(Tag);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Tag : BlockTags)
+		{
+			Hash ^= GetTypeHash(Tag);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const FString& Tag : RequireTags)
+		{
+			Hash ^= GetTypeHash(Tag);
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
 		return Hash;
 	}
 };
@@ -1650,6 +1726,7 @@ struct FManifestNarrativeEventDefinition
 
 /**
  * NPC definition - maps to UNPCDefinition data asset
+ * v3.3: Enhanced with full Narrative Pro property support
  */
 struct FManifestNPCDefinitionDefinition
 {
@@ -1665,7 +1742,24 @@ struct FManifestNPCDefinitionDefinition
 	bool bAllowMultipleInstances = true;
 	bool bIsVendor = false;
 
-	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.3: Dialogue properties
+	FString Dialogue;                    // TSoftClassPtr<UDialogue> - main NPC dialogue
+	FString TaggedDialogueSet;           // TSoftObjectPtr<UTaggedDialogueSet> - bark dialogues
+
+	// v3.3: Vendor properties (when bIsVendor = true)
+	int32 TradingCurrency = 0;           // Starting vendor gold
+	float BuyItemPercentage = 0.5f;      // Percentage of value vendor pays
+	float SellItemPercentage = 1.5f;     // Percentage of value vendor charges
+	FString ShopFriendlyName;            // Display name for shop UI
+
+	// v3.3: CharacterDefinition inherited properties
+	FString DefaultAppearance;           // TSoftObjectPtr<UCharacterAppearanceBase>
+	int32 DefaultCurrency = 0;           // Starting character gold
+	TArray<FString> DefaultOwnedTags;    // FGameplayTagContainer - State tags
+	TArray<FString> DefaultFactions;     // FGameplayTagContainer - Faction tags
+	float AttackPriority = 1.0f;         // AI targeting priority
+
+	/** v3.3: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1679,6 +1773,35 @@ struct FManifestNPCDefinitionDefinition
 		Hash ^= static_cast<uint64>(MaxLevel) << 32;
 		Hash ^= (bAllowMultipleInstances ? 1ULL : 0ULL) << 40;
 		Hash ^= (bIsVendor ? 1ULL : 0ULL) << 41;
+
+		// v3.3: Hash new properties (using rotation to avoid overflow)
+		Hash ^= GetTypeHash(Dialogue);
+		Hash = (Hash << 7) | (Hash >> 57);
+		Hash ^= GetTypeHash(TaggedDialogueSet);
+		Hash = (Hash << 7) | (Hash >> 57);
+		Hash ^= static_cast<uint64>(TradingCurrency);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(BuyItemPercentage * 1000.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(SellItemPercentage * 1000.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(ShopFriendlyName);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(DefaultAppearance);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(DefaultCurrency);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttackPriority * 1000.f));
+		for (const FString& Tag : DefaultOwnedTags)
+		{
+			Hash ^= GetTypeHash(Tag);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Faction : DefaultFactions)
+		{
+			Hash ^= GetTypeHash(Faction);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
 		return Hash;
 	}
 };

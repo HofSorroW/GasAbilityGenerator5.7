@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.2) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.3) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -431,6 +431,82 @@ dialogue_blueprints:
       - npc_definition: NPCDef_Father
         node_color: "#FF6600"
         owned_tags: [Father.State.Speaking]
+
+# v3.3: NPCDefinition with full property support
+npc_definitions:
+  - name: NPCDef_Blacksmith
+    folder: NPCs/Definitions
+    npc_id: Blacksmith_01
+    npc_name: Garrett the Blacksmith
+    npc_blueprint: BP_Blacksmith                  # TSoftClassPtr<ANarrativeNPCCharacter>
+    ability_configuration: AC_Blacksmith
+    activity_configuration: ActConfig_Blacksmith
+    min_level: 1
+    max_level: 10
+    allow_multiple_instances: false
+    # v3.3: Dialogue properties
+    dialogue: DBP_BlacksmithDialogue              # Main conversation dialogue
+    tagged_dialogue_set: TDS_BlacksmithBarks     # Contextual barks
+    # v3.3: Vendor properties
+    is_vendor: true
+    trading_currency: 500                         # Starting gold
+    buy_item_percentage: 0.5                      # Pays 50% of item value
+    sell_item_percentage: 1.5                     # Charges 150% of item value
+    shop_name: "Garrett's Forge"
+    # v3.3: CharacterDefinition properties
+    default_appearance: Appearance_Blacksmith
+    default_currency: 100
+    default_owned_tags: [State.Invulnerable]      # Array or single value
+    default_factions: [Narrative.Factions.Friendly, Narrative.Factions.Town]
+    attack_priority: 0.5                          # Low priority target
+
+# v3.3: EquippableItem with full property support
+equippable_items:
+  - name: EI_DragonbaneArmor
+    folder: Items/Equipment
+    parent_class: EquippableItem
+    display_name: "Dragonbane Armor"
+    description: "Forged from dragon scales, this armor provides exceptional protection against fire."
+    equipment_slot: Narrative.Equipment.Slot.Chest
+    equipment_modifier_ge: GE_DragonbaneArmorStats
+    # v3.3: EquippableItem stat properties
+    attack_rating: 5.0                            # Bonus attack damage
+    armor_rating: 25.0                            # Damage reduction
+    stealth_rating: -10.0                         # Stealth penalty (heavy armor)
+    # v3.3: NarrativeItem properties
+    thumbnail: "/Game/UI/Icons/T_DragonbaneArmor"
+    weight: 15.0                                  # Weight in kg
+    base_value: 500                               # Gold value
+    base_score: 75.0                              # AI priority score
+    stackable: false
+    max_stack_size: 1
+    use_recharge_duration: 0.0
+    item_tags:
+      - Item.Armor.Heavy
+      - Item.Element.Fire.Resistant
+    abilities_to_grant:
+      - GA_FireResistance
+
+# v3.3: Activity with full property support
+activities:
+  - name: BPA_PatrolRoute
+    folder: AI/Activities
+    parent_class: NarrativeActivityBase
+    behavior_tree: BT_Patrol
+    activity_name: "Patrol Route"
+    description: "NPC patrols a predefined route"
+    # v3.3: NarrativeActivityBase tag properties
+    owned_tags:
+      - State.Patrolling
+    block_tags:
+      - State.InCombat
+      - State.Fleeing
+    require_tags:
+      - State.Alive
+    # v3.3: NPCActivity properties
+    supported_goal_type: Goal_Patrol                # TSubclassOf<UNPCGoalItem>
+    is_interruptable: true                          # Can be interrupted by higher priority activities
+    save_activity: false                            # Don't persist across saves
 ```
 
 ### Event Graph Generation
@@ -540,6 +616,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.3 - NPCDefinition, EquippableItem & Activity Enhancement: NPCDefinition gains full CharacterDefinition property support (Dialogue, TaggedDialogueSet, vendor properties, inherited properties). EquippableItem gains full NarrativeItem property support (DisplayName, Description, AttackRating, ArmorRating, StealthRating, Weight, BaseValue, BaseScore, ItemTags, bStackable, MaxStackSize, UseRechargeDuration, Thumbnail). Activity gains full NarrativeActivityBase/NPCActivity property support (ActivityName, OwnedTags, BlockTags, RequireTags, SupportedGoalType, bIsInterruptable, bSaveActivity). EI_, NPCDef_, and BPA_ upgraded to High automation level.
 - v3.2 - NE_ & DBP_ Enhancements: NarrativeEvent now sets EventRuntime/EventFilter/PartyEventPolicy/bRefireOnLoad via reflection, DialogueBlueprint sets bFreeMovement/bUnskippable/bCanBeExited/bShowCinematicBars/bAutoRotateSpeakers/bAutoStopMovement/Priority/EndDialogueDist via reflection, both types upgraded from Stub to Medium automation level
 - v3.1.1 - Robustness Fixes: Commandlet exit code returns non-zero on failures (CI/CD support), dedicated LogGasAbilityGenerator log category, try/catch for YAML parsing exceptions, UGeneratorMetadataRegistry fallback for UDataAsset/UBlueprint/UNiagaraSystem (which don't support IInterface_AssetUserData in UE5.7)
 - v3.1 - TSubclassOf Resolution & BT Node Trees: AbilityConfiguration now populates DefaultAbilities/StartupEffects/DefaultAttributes via LoadClass<>, ActivityConfiguration populates DefaultActivities/GoalGenerators, BehaviorTree creates root composite node (Selector/Sequence) and populates Children with tasks/decorators/services

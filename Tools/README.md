@@ -4,22 +4,22 @@
 
 ### Build Plugin
 ```bash
-powershell -File "C:\Unreal Projects\NP22Beta\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action build
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action build
 ```
 
 ### Run Editor
 ```bash
-powershell -File "C:\Unreal Projects\NP22Beta\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action run
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action run
 ```
 
 ### Get Generation Logs (after closing editor)
 ```bash
-powershell -File "C:\Unreal Projects\NP22Beta\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action logs
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action logs
 ```
 
 ### Full Cycle (build + run)
 ```bash
-powershell -File "C:\Unreal Projects\NP22Beta\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action full
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action full
 ```
 
 ## Workflow
@@ -37,7 +37,7 @@ powershell -File "C:\Unreal Projects\NP22Beta\Plugins\GasAbilityGenerator\Tools\
 
 - `Tools/Logs/ubt_latest.log` - Latest UBT build output
 - `Tools/Logs/generation_latest.log` - Latest asset generation logs
-- `%LOCALAPPDATA%\UnrealEngine\5.6\Saved\Logs\NP22Beta.log` - Full UE log
+- `%LOCALAPPDATA%\UnrealEngine\5.7\Saved\Logs\NP22B57.log` - Full UE log
 
 ## Error Format
 
