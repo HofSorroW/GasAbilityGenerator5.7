@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.8.3
+// GasAbilityGenerator v3.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.0: Regen/Diff Safety System - metadata tracking, dry run mode, hash-based change detection
 // v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 // v2.8.2: CallFunction parameter defaults - applies "param.*" properties to function input pins
 // v2.7.0: Added BreakStruct, MakeArray, GetArrayItem node support for weapon form implementation
@@ -19,6 +20,7 @@
 
 #include "CoreMinimal.h"
 #include "GasAbilityGeneratorTypes.h"
+#include "GasAbilityGeneratorMetadata.h"
 
 // Forward declarations
 class UBlueprint;
@@ -166,6 +168,110 @@ public:
 	static bool HandleValidationResult(const FPreValidationResult& Validation,
 		const FString& AssetName, FGenerationResult& OutResult);
 
+	// ====================================================================
+	// v3.0: Regen/Diff Safety - Metadata and Dry Run Support
+	// ====================================================================
+
+	/**
+	 * Store generator metadata on an asset for regeneration tracking
+	 * @param Asset The generated asset (UBlueprint, UDataAsset, etc.)
+	 * @param Metadata The metadata to store
+	 */
+	static void StoreAssetMetadata(UObject* Asset, const FGeneratorMetadata& Metadata);
+
+	/**
+	 * Retrieve generator metadata from an asset
+	 * @param Asset The asset to query
+	 * @return Pointer to metadata if found, nullptr otherwise
+	 */
+	static UGeneratorAssetMetadata* GetAssetMetadata(UObject* Asset);
+
+	/**
+	 * Compute output hash for a Blueprint asset (for manual edit detection)
+	 * Hashes node count, node types, variable count, and connection count
+	 * @param Blueprint The blueprint to hash
+	 * @return Output hash value
+	 */
+	static uint64 ComputeBlueprintOutputHash(UBlueprint* Blueprint);
+
+	/**
+	 * Compute output hash for a DataAsset (for manual edit detection)
+	 * @param DataAsset The data asset to hash
+	 * @return Output hash value
+	 */
+	static uint64 ComputeDataAssetOutputHash(UObject* DataAsset);
+
+	/**
+	 * Enable/disable dry run mode
+	 * In dry run mode, generators compute what would happen without making changes
+	 */
+	static void SetDryRunMode(bool bEnabled);
+
+	/**
+	 * Check if dry run mode is active
+	 */
+	static bool IsDryRunMode();
+
+	/**
+	 * Enable/disable force regeneration mode
+	 * In force mode, generators overwrite even if conflicts are detected
+	 */
+	static void SetForceMode(bool bEnabled);
+
+	/**
+	 * Check if force regeneration mode is active
+	 */
+	static bool IsForceMode();
+
+	/**
+	 * Get the accumulated dry run results
+	 */
+	static const FDryRunSummary& GetDryRunSummary();
+
+	/**
+	 * Add a dry run result to the summary
+	 */
+	static void AddDryRunResult(const FDryRunResult& Result);
+
+	/**
+	 * Clear accumulated dry run results
+	 */
+	static void ClearDryRunSummary();
+
+	/**
+	 * Set the manifest path for metadata tracking
+	 */
+	static void SetManifestPath(const FString& Path);
+
+	/**
+	 * Get the current manifest path
+	 */
+	static const FString& GetManifestPath();
+
+	/**
+	 * v3.0: Enhanced existence check with metadata-aware logic
+	 * - If asset doesn't exist: returns false (will create)
+	 * - If asset exists with no metadata: returns true (skip - likely manual)
+	 * - If asset exists with matching hash: returns true (skip - no changes)
+	 * - If asset exists with changed hash but no manual edits: returns false (will modify)
+	 * - If asset exists with changed hash AND manual edits: returns true (conflict - skip unless force)
+	 *
+	 * @param AssetPath Path to check
+	 * @param AssetName Name of the asset
+	 * @param AssetType Type for logging
+	 * @param InputHash Hash of current manifest definition
+	 * @param OutResult Result to populate
+	 * @param OutDryRunStatus Optional dry run status for preview
+	 * @return true if should skip generation, false if should proceed
+	 */
+	static bool CheckExistsWithMetadata(
+		const FString& AssetPath,
+		const FString& AssetName,
+		const FString& AssetType,
+		uint64 InputHash,
+		FGenerationResult& OutResult,
+		EDryRunStatus* OutDryRunStatus = nullptr);
+
 protected:
 	/**
 	 * Log generation message to editor output
@@ -174,6 +280,12 @@ protected:
 
 private:
 	static const FManifestData* ActiveManifest;
+
+	// v3.0: Dry run and force mode state
+	static bool bDryRunMode;
+	static bool bForceMode;
+	static FDryRunSummary DryRunSummary;
+	static FString CurrentManifestPath;
 };
 
 /**

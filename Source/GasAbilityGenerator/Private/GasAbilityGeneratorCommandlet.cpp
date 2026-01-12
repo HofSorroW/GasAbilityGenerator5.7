@@ -19,7 +19,7 @@ UGasAbilityGeneratorCommandlet::UGasAbilityGeneratorCommandlet()
 int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 {
 	LogMessage(TEXT("========================================"));
-	LogMessage(TEXT("GasAbilityGenerator Commandlet v2.8.4"));
+	LogMessage(TEXT("GasAbilityGenerator Commandlet v3.0"));
 	LogMessage(TEXT("========================================"));
 
 	// Parse command line parameters
@@ -73,6 +73,25 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		LogMessage(FString::Printf(TEXT("Output log: %s"), *OutputLogPath));
 	}
 
+	// v3.0: Dry run and force mode flags
+	bool bDryRun = Switches.Contains(TEXT("dryrun")) || Switches.Contains(TEXT("dry-run"));
+	bool bForce = Switches.Contains(TEXT("force"));
+
+	if (bDryRun)
+	{
+		FGeneratorBase::SetDryRunMode(true);
+		LogMessage(TEXT("MODE: Dry Run (preview only, no changes will be made)"));
+	}
+
+	if (bForce)
+	{
+		FGeneratorBase::SetForceMode(true);
+		LogMessage(TEXT("MODE: Force (will overwrite even on conflicts)"));
+	}
+
+	// v3.0: Set manifest path for metadata tracking
+	FGeneratorBase::SetManifestPath(ManifestPath);
+
 	// Determine what to generate
 	bool bGenerateTags = Switches.Contains(TEXT("tags")) || Switches.Contains(TEXT("all"));
 	bool bGenerateAssets = Switches.Contains(TEXT("assets")) || Switches.Contains(TEXT("all"));
@@ -86,6 +105,8 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 
 	LogMessage(FString::Printf(TEXT("Generate Tags: %s"), bGenerateTags ? TEXT("YES") : TEXT("NO")));
 	LogMessage(FString::Printf(TEXT("Generate Assets: %s"), bGenerateAssets ? TEXT("YES") : TEXT("NO")));
+	LogMessage(FString::Printf(TEXT("Dry Run: %s"), bDryRun ? TEXT("YES") : TEXT("NO")));
+	LogMessage(FString::Printf(TEXT("Force: %s"), bForce ? TEXT("YES") : TEXT("NO")));
 	LogMessage(TEXT(""));
 
 	// Read manifest file
@@ -126,6 +147,77 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 	{
 		GenerateAssets(ManifestData);
 	}
+
+	// v3.0: Print dry run summary if in dry run mode
+	if (FGeneratorBase::IsDryRunMode())
+	{
+		LogMessage(TEXT(""));
+		LogMessage(TEXT("========================================"));
+		LogMessage(TEXT("DRY RUN REPORT"));
+		LogMessage(TEXT("========================================"));
+
+		const FDryRunSummary& Summary = FGeneratorBase::GetDryRunSummary();
+		LogMessage(Summary.GetSummary());
+
+		if (Summary.CreateCount > 0)
+		{
+			LogMessage(TEXT(""));
+			LogMessage(FString::Printf(TEXT("--- CREATE (%d new assets) ---"), Summary.CreateCount));
+			for (const FDryRunResult& Result : Summary.GetResultsByStatus(EDryRunStatus::WillCreate))
+			{
+				LogMessage(Result.ToString());
+			}
+		}
+
+		if (Summary.ModifyCount > 0)
+		{
+			LogMessage(TEXT(""));
+			LogMessage(FString::Printf(TEXT("--- MODIFY (%d manifest changes, no manual edits) ---"), Summary.ModifyCount));
+			for (const FDryRunResult& Result : Summary.GetResultsByStatus(EDryRunStatus::WillModify))
+			{
+				LogMessage(Result.ToString());
+			}
+		}
+
+		if (Summary.ConflictCount > 0)
+		{
+			LogMessage(TEXT(""));
+			LogMessage(FString::Printf(TEXT("--- CONFLICTS (%d require attention) ---"), Summary.ConflictCount));
+			for (const FDryRunResult& Result : Summary.GetResultsByStatus(EDryRunStatus::Conflicted))
+			{
+				LogMessage(Result.ToString());
+				LogMessage(FString::Printf(TEXT("  Input hash: stored=%llu, current=%llu"),
+					Result.StoredInputHash, Result.CurrentInputHash));
+				LogMessage(FString::Printf(TEXT("  Output hash: stored=%llu, current=%llu"),
+					Result.StoredOutputHash, Result.CurrentOutputHash));
+				LogMessage(TEXT("  Action: Use --force to override, or resolve manually"));
+			}
+		}
+
+		if (Summary.SkipCount > 0)
+		{
+			LogMessage(TEXT(""));
+			LogMessage(FString::Printf(TEXT("--- SKIP (%d unchanged) ---"), Summary.SkipCount));
+			// Only show first 10 skipped to avoid cluttering output
+			int32 SkipShown = 0;
+			for (const FDryRunResult& Result : Summary.GetResultsByStatus(EDryRunStatus::WillSkip))
+			{
+				if (SkipShown++ < 10)
+				{
+					LogMessage(Result.ToString());
+				}
+			}
+			if (Summary.SkipCount > 10)
+			{
+				LogMessage(FString::Printf(TEXT("... and %d more skipped assets"), Summary.SkipCount - 10));
+			}
+		}
+	}
+
+	// v3.0: Cleanup dry run and force modes
+	FGeneratorBase::SetDryRunMode(false);
+	FGeneratorBase::SetForceMode(false);
+	FGeneratorBase::ClearDryRunSummary();
 
 	// Save output log if specified
 	if (!OutputLogPath.IsEmpty())

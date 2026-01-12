@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.5.0
+// GasAbilityGenerator v3.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.0: Added Dry Run and Force checkboxes for metadata-aware regeneration
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
 // v2.3.0: Added 12 new asset type generators with dependency-based generation order
 // v2.2.0: Added manifest validation - only creates assets listed in manifest whitelist
@@ -10,6 +11,7 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SBox.h"
@@ -39,7 +41,7 @@ void SGasAbilityGeneratorWindow::Construct(const FArguments& InArgs)
 		.Padding(10, 10, 10, 5)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("Title", "GAS Ability Generator v2.5.4"))
+			.Text(LOCTEXT("Title", "GAS Ability Generator v3.0"))
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
 		]
 
@@ -91,6 +93,63 @@ void SGasAbilityGeneratorWindow::Construct(const FArguments& InArgs)
 		.Padding(10, 5)
 		[
 			SNew(SSeparator)
+		]
+
+		// v3.0: Options Row (Dry Run / Force)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(10, 5)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0, 0, 20, 0)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SAssignNew(DryRunCheckbox, SCheckBox)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4, 0, 0, 0)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("DryRun", "Dry Run (Preview Only)"))
+					.ToolTipText(LOCTEXT("DryRunTooltip", "Preview what would be created, modified, or skipped without making changes"))
+				]
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SAssignNew(ForceCheckbox, SCheckBox)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4, 0, 0, 0)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("Force", "Force Regenerate"))
+					.ToolTipText(LOCTEXT("ForceTooltip", "Regenerate all assets even if they were manually edited (overwrite conflicts)"))
+				]
+			]
 		]
 
 		// Buttons
@@ -396,7 +455,29 @@ void SGasAbilityGeneratorWindow::GenerateTags()
 
 void SGasAbilityGeneratorWindow::GenerateAssets()
 {
+	// v3.0: Check dry run and force modes from checkboxes
+	bool bDryRun = DryRunCheckbox.IsValid() && DryRunCheckbox->IsChecked();
+	bool bForce = ForceCheckbox.IsValid() && ForceCheckbox->IsChecked();
+
+	if (bDryRun)
+	{
+		AppendLog(TEXT("=== DRY RUN MODE - No changes will be made ==="));
+	}
+	else if (bForce)
+	{
+		AppendLog(TEXT("=== FORCE MODE - Will overwrite conflicted assets ==="));
+	}
+
 	AppendLog(TEXT("Starting asset generation..."));
+
+	// v3.0: Set modes before generation
+	FGeneratorBase::SetDryRunMode(bDryRun);
+	FGeneratorBase::SetForceMode(bForce);
+	FGeneratorBase::ClearDryRunSummary();
+
+	// Set manifest path for metadata tracking
+	FString ManifestPath = FPaths::Combine(GuidesFolderPath, TEXT("manifest.yaml"));
+	FGeneratorBase::SetManifestPath(ManifestPath);
 
 	FGeneratorBase::SetActiveManifest(&ManifestData);
 	AppendLog(FString::Printf(TEXT("Manifest validation enabled: %d assets whitelisted"),
@@ -658,9 +739,21 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 
 	FGeneratorBase::ClearActiveManifest();
 
-	UpdateStatus(TEXT("Generation complete. Refresh Content Browser."));
+	// v3.0: Show appropriate results dialog based on mode
+	if (bDryRun)
+	{
+		UpdateStatus(TEXT("Dry run complete. No changes made."));
+		ShowDryRunResultsDialog(FGeneratorBase::GetDryRunSummary());
+	}
+	else
+	{
+		UpdateStatus(TEXT("Generation complete. Refresh Content Browser."));
+		ShowResultsDialog(Summary);
+	}
 
-	ShowResultsDialog(Summary);
+	// v3.0: Clean up modes
+	FGeneratorBase::SetDryRunMode(false);
+	FGeneratorBase::SetForceMode(false);
 }
 
 void SGasAbilityGeneratorWindow::ShowResultsDialog(const FGenerationSummary& Summary)
@@ -668,7 +761,7 @@ void SGasAbilityGeneratorWindow::ShowResultsDialog(const FGenerationSummary& Sum
 	FString ResultsMessage = FString::Printf(
 		TEXT("GAS ABILITY GENERATOR RESULTS\n")
 		TEXT("=============================\n\n")
-		TEXT("Plugin Version: 2.5.0\n\n")
+		TEXT("Plugin Version: 3.0\n\n")
 		TEXT("SUMMARY:\n")
 		TEXT("  NEW:     %d assets created\n")
 		TEXT("  SKIPPED: %d assets (already exist)\n")
@@ -742,6 +835,100 @@ void SGasAbilityGeneratorWindow::UpdateStatus(const FString& Status)
 	{
 		StatusText->SetText(FText::FromString(Status));
 	}
+}
+
+void SGasAbilityGeneratorWindow::ShowDryRunResultsDialog(const FDryRunSummary& DryRunSummary)
+{
+	// Format the dry run report similar to commandlet output
+	FString ResultsMessage = FString::Printf(
+		TEXT("========================================\n")
+		TEXT("GasAbilityGenerator Dry Run Report\n")
+		TEXT("========================================\n")
+		TEXT("SUMMARY: %d CREATE, %d MODIFY, %d SKIP, %d CONFLICT\n\n"),
+		DryRunSummary.CreateCount,
+		DryRunSummary.ModifyCount,
+		DryRunSummary.SkipCount,
+		DryRunSummary.ConflictCount
+	);
+
+	// CREATE section
+	if (DryRunSummary.CreateCount > 0)
+	{
+		ResultsMessage += FString::Printf(TEXT("--- CREATE (%d new assets) ---\n"), DryRunSummary.CreateCount);
+		for (const FDryRunResult& Result : DryRunSummary.Results)
+		{
+			if (Result.Status == EDryRunStatus::WillCreate)
+			{
+				ResultsMessage += FString::Printf(TEXT("[CREATE] %s\n"), *Result.AssetName);
+			}
+		}
+		ResultsMessage += TEXT("\n");
+	}
+
+	// MODIFY section
+	if (DryRunSummary.ModifyCount > 0)
+	{
+		ResultsMessage += FString::Printf(TEXT("--- MODIFY (%d manifest changes, no manual edits) ---\n"), DryRunSummary.ModifyCount);
+		for (const FDryRunResult& Result : DryRunSummary.Results)
+		{
+			if (Result.Status == EDryRunStatus::WillModify)
+			{
+				ResultsMessage += FString::Printf(TEXT("[MODIFY] %s"), *Result.AssetName);
+				if (!Result.Reason.IsEmpty())
+				{
+					ResultsMessage += FString::Printf(TEXT(" - %s"), *Result.Reason);
+				}
+				ResultsMessage += TEXT("\n");
+			}
+		}
+		ResultsMessage += TEXT("\n");
+	}
+
+	// CONFLICT section
+	if (DryRunSummary.ConflictCount > 0)
+	{
+		ResultsMessage += FString::Printf(TEXT("--- CONFLICTS (%d require attention) ---\n"), DryRunSummary.ConflictCount);
+		for (const FDryRunResult& Result : DryRunSummary.Results)
+		{
+			if (Result.Status == EDryRunStatus::Conflicted)
+			{
+				ResultsMessage += FString::Printf(TEXT("[CONFLICT] %s\n"), *Result.AssetName);
+				if (!Result.Reason.IsEmpty())
+				{
+					ResultsMessage += FString::Printf(TEXT("  Reason: %s\n"), *Result.Reason);
+				}
+				ResultsMessage += TEXT("  Action: Use Force Regenerate to overwrite or resolve manually\n");
+			}
+		}
+		ResultsMessage += TEXT("\n");
+	}
+
+	// SKIP section (abbreviated if many)
+	if (DryRunSummary.SkipCount > 0)
+	{
+		ResultsMessage += FString::Printf(TEXT("--- SKIP (%d unchanged) ---\n"), DryRunSummary.SkipCount);
+		int32 SkipShown = 0;
+		const int32 MaxSkipToShow = 10;
+		for (const FDryRunResult& Result : DryRunSummary.Results)
+		{
+			if (Result.Status == EDryRunStatus::WillSkip)
+			{
+				if (SkipShown < MaxSkipToShow)
+				{
+					ResultsMessage += FString::Printf(TEXT("[SKIP] %s - No changes\n"), *Result.AssetName);
+					SkipShown++;
+				}
+			}
+		}
+		if (DryRunSummary.SkipCount > MaxSkipToShow)
+		{
+			ResultsMessage += FString::Printf(TEXT("... and %d more unchanged assets\n"), DryRunSummary.SkipCount - MaxSkipToShow);
+		}
+	}
+
+	AppendLog(ResultsMessage);
+
+	UE_LOG(LogTemp, Log, TEXT("\n%s"), *ResultsMessage);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -1,5 +1,7 @@
-// GasAbilityGenerator v2.9.1
+// GasAbilityGenerator v3.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.0: Regen/Diff Safety System - Universal metadata tracking, dry run mode, hash-based change detection
+//       StoreAssetMetadata/GetAssetMetadata, CheckExistsWithMetadata, ComputeBlueprintOutputHash
 // v2.9.1: FX Validation System - Template integrity checking, descriptor validation,
 //         regeneration safety with metadata tracking and hash comparison
 // v2.9.0: Data-driven FX architecture - FXDescriptor for Niagara User param binding
@@ -167,6 +169,12 @@
 // v2.1.9: Static member initialization for manifest validation
 const FManifestData* FGeneratorBase::ActiveManifest = nullptr;
 
+// v3.0: Static member initialization for dry run and force mode
+bool FGeneratorBase::bDryRunMode = false;
+bool FGeneratorBase::bForceMode = false;
+FDryRunSummary FGeneratorBase::DryRunSummary;
+FString FGeneratorBase::CurrentManifestPath;
+
 // v2.1.8: Global variable to track project root for enum lookups
 static FString GCurrentProjectRoot = TEXT("");
 
@@ -278,24 +286,65 @@ bool FGeneratorBase::CheckExistsAndPopulateResult(
 	const FString& AssetType,
 	FGenerationResult& OutResult)
 {
-	// Check disk first
-	if (DoesAssetExistOnDisk(AssetPath))
+	bool bExists = DoesAssetExistOnDisk(AssetPath) || IsAssetInMemory(AssetPath);
+
+	// v3.0: In dry run mode, add results and always return true to skip actual generation
+	if (IsDryRunMode())
 	{
-		LogGeneration(FString::Printf(TEXT("Skipping existing %s (on disk): %s"), *AssetType, *AssetName));
-		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped, TEXT("Already exists on disk"));
+		FDryRunResult DryRunResult;
+		DryRunResult.AssetName = AssetName;
+		DryRunResult.AssetPath = AssetPath;
+		DryRunResult.GeneratorId = AssetType;
+
+		if (bExists)
+		{
+			if (IsForceMode())
+			{
+				// Force mode - will regenerate even though it exists
+				DryRunResult.Status = EDryRunStatus::WillModify;
+				DryRunResult.Reason = TEXT("Force regeneration");
+				LogGeneration(FString::Printf(TEXT("[DRY RUN] MODIFY %s: %s - Force regeneration"), *AssetType, *AssetName));
+			}
+			else
+			{
+				// Asset exists - will skip (no metadata check in basic mode)
+				DryRunResult.Status = EDryRunStatus::WillSkip;
+				DryRunResult.Reason = TEXT("Already exists");
+				LogGeneration(FString::Printf(TEXT("[DRY RUN] SKIP %s: %s - Already exists"), *AssetType, *AssetName));
+			}
+		}
+		else
+		{
+			// Asset doesn't exist - will create
+			DryRunResult.Status = EDryRunStatus::WillCreate;
+			DryRunResult.Reason = TEXT("New asset");
+			LogGeneration(FString::Printf(TEXT("[DRY RUN] CREATE %s: %s"), *AssetType, *AssetName));
+		}
+
+		AddDryRunResult(DryRunResult);
+
+		// In dry run mode, always skip actual generation
+		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped, TEXT("Dry run mode"));
+		OutResult.DetermineCategory();
+		return true;
+	}
+
+	// v3.0: In force mode, regenerate even if asset exists
+	if (IsForceMode() && bExists)
+	{
+		LogGeneration(FString::Printf(TEXT("[FORCE] Regenerating %s: %s"), *AssetType, *AssetName));
+		return false; // Don't skip - regenerate
+	}
+
+	// Normal mode - check existence and skip if exists
+	if (bExists)
+	{
+		LogGeneration(FString::Printf(TEXT("Skipping existing %s: %s"), *AssetType, *AssetName));
+		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped, TEXT("Already exists"));
 		OutResult.DetermineCategory();
 		return true; // Asset exists, should skip
 	}
-	
-	// Check memory
-	if (IsAssetInMemory(AssetPath))
-	{
-		LogGeneration(FString::Printf(TEXT("Skipping existing %s (in memory): %s"), *AssetType, *AssetName));
-		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped, TEXT("Already loaded in memory"));
-		OutResult.DetermineCategory();
-		return true; // Asset exists, should skip
-	}
-	
+
 	return false; // Asset doesn't exist, should generate
 }
 
@@ -436,6 +485,333 @@ bool FGeneratorBase::HandleValidationResult(const FPreValidationResult& Validati
 	}
 
 	return true;
+}
+
+// ============================================================================
+// v3.0: Regen/Diff Safety - Metadata and Dry Run Implementation
+// ============================================================================
+
+void FGeneratorBase::StoreAssetMetadata(UObject* Asset, const FGeneratorMetadata& Metadata)
+{
+	GeneratorMetadataHelpers::SetMetadata(Asset, Metadata);
+}
+
+UGeneratorAssetMetadata* FGeneratorBase::GetAssetMetadata(UObject* Asset)
+{
+	return GeneratorMetadataHelpers::GetMetadata(Asset);
+}
+
+uint64 FGeneratorBase::ComputeBlueprintOutputHash(UBlueprint* Blueprint)
+{
+	if (!Blueprint)
+	{
+		return 0;
+	}
+
+	uint64 Hash = 0;
+
+	// Hash basic Blueprint info
+	Hash ^= GetTypeHash(Blueprint->GetName());
+	Hash ^= GetTypeHash(Blueprint->ParentClass ? Blueprint->ParentClass->GetName() : TEXT("None")) << 8;
+
+	// Hash new variable count
+	Hash ^= static_cast<uint64>(Blueprint->NewVariables.Num()) << 16;
+
+	// Hash each variable name and type
+	for (const FBPVariableDescription& Var : Blueprint->NewVariables)
+	{
+		Hash ^= GetTypeHash(Var.VarName.ToString());
+		Hash ^= GetTypeHash(Var.VarType.PinCategory.ToString()) << 4;
+		Hash = (Hash << 3) | (Hash >> 61);
+	}
+
+	// Hash graphs
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (!Graph) continue;
+
+		// Hash node count
+		Hash ^= static_cast<uint64>(Graph->Nodes.Num()) << 24;
+
+		// Hash each node's class name
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (!Node) continue;
+			Hash ^= GetTypeHash(Node->GetClass()->GetName());
+			Hash = (Hash << 5) | (Hash >> 59);
+
+			// Hash pin count
+			Hash ^= static_cast<uint64>(Node->Pins.Num()) << 8;
+		}
+	}
+
+	return Hash;
+}
+
+uint64 FGeneratorBase::ComputeDataAssetOutputHash(UObject* DataAsset)
+{
+	if (!DataAsset)
+	{
+		return 0;
+	}
+
+	uint64 Hash = 0;
+
+	// Hash basic info
+	Hash ^= GetTypeHash(DataAsset->GetName());
+	Hash ^= GetTypeHash(DataAsset->GetClass()->GetName()) << 8;
+
+	// Hash property count for the class
+	int32 PropertyCount = 0;
+	for (TFieldIterator<FProperty> PropIt(DataAsset->GetClass()); PropIt; ++PropIt)
+	{
+		PropertyCount++;
+	}
+	Hash ^= static_cast<uint64>(PropertyCount) << 16;
+
+	return Hash;
+}
+
+void FGeneratorBase::SetDryRunMode(bool bEnabled)
+{
+	bDryRunMode = bEnabled;
+	if (bEnabled)
+	{
+		ClearDryRunSummary();
+		LogGeneration(TEXT("Dry run mode enabled - no assets will be modified"));
+	}
+	else
+	{
+		LogGeneration(TEXT("Dry run mode disabled"));
+	}
+}
+
+bool FGeneratorBase::IsDryRunMode()
+{
+	return bDryRunMode;
+}
+
+void FGeneratorBase::SetForceMode(bool bEnabled)
+{
+	bForceMode = bEnabled;
+	if (bEnabled)
+	{
+		LogGeneration(TEXT("Force mode enabled - will overwrite even on conflicts"));
+	}
+	else
+	{
+		LogGeneration(TEXT("Force mode disabled"));
+	}
+}
+
+bool FGeneratorBase::IsForceMode()
+{
+	return bForceMode;
+}
+
+const FDryRunSummary& FGeneratorBase::GetDryRunSummary()
+{
+	return DryRunSummary;
+}
+
+void FGeneratorBase::AddDryRunResult(const FDryRunResult& Result)
+{
+	DryRunSummary.AddResult(Result);
+	LogGeneration(Result.ToString());
+}
+
+void FGeneratorBase::ClearDryRunSummary()
+{
+	DryRunSummary.Reset();
+}
+
+void FGeneratorBase::SetManifestPath(const FString& Path)
+{
+	CurrentManifestPath = Path;
+}
+
+const FString& FGeneratorBase::GetManifestPath()
+{
+	return CurrentManifestPath;
+}
+
+bool FGeneratorBase::CheckExistsWithMetadata(
+	const FString& AssetPath,
+	const FString& AssetName,
+	const FString& AssetType,
+	uint64 InputHash,
+	FGenerationResult& OutResult,
+	EDryRunStatus* OutDryRunStatus)
+{
+	// First check if asset exists at all
+	bool bExistsOnDisk = DoesAssetExistOnDisk(AssetPath);
+	bool bExistsInMemory = IsAssetInMemory(AssetPath);
+
+	// Asset doesn't exist - will create
+	if (!bExistsOnDisk && !bExistsInMemory)
+	{
+		if (OutDryRunStatus)
+		{
+			*OutDryRunStatus = EDryRunStatus::WillCreate;
+		}
+
+		if (IsDryRunMode())
+		{
+			FDryRunResult Result(AssetName, EDryRunStatus::WillCreate, TEXT("New asset"));
+			Result.AssetPath = AssetPath;
+			Result.CurrentInputHash = InputHash;
+			AddDryRunResult(Result);
+
+			OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped,
+				TEXT("[DRY RUN] Would create new asset"));
+			OutResult.DetermineCategory();
+			return true; // Skip in dry run mode
+		}
+
+		return false; // Proceed with generation
+	}
+
+	// Asset exists - check metadata
+	UObject* ExistingAsset = nullptr;
+
+	// Try to load the asset to check metadata
+	FString FullAssetPath = AssetPath + TEXT(".") + FPackageName::GetShortName(AssetPath);
+	ExistingAsset = StaticLoadObject(UObject::StaticClass(), nullptr, *FullAssetPath);
+
+	if (!ExistingAsset)
+	{
+		// Can't load asset to check metadata - use legacy behavior (skip)
+		if (OutDryRunStatus)
+		{
+			*OutDryRunStatus = EDryRunStatus::WillSkip;
+		}
+
+		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped,
+			FString::Printf(TEXT("[%s] %s already exists (couldn't verify metadata)"), *AssetType, *AssetName));
+		OutResult.DetermineCategory();
+		return true;
+	}
+
+	// Check for existing metadata
+	UGeneratorAssetMetadata* Metadata = GetAssetMetadata(ExistingAsset);
+
+	if (!Metadata)
+	{
+		// No metadata - asset exists but wasn't generated by us
+		// Skip to avoid overwriting manual assets
+		if (OutDryRunStatus)
+		{
+			*OutDryRunStatus = EDryRunStatus::WillSkip;
+		}
+
+		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped,
+			FString::Printf(TEXT("[%s] %s exists without generator metadata (likely manual)"), *AssetType, *AssetName));
+		OutResult.DetermineCategory();
+		return true;
+	}
+
+	// Has metadata - compare hashes
+	bool bInputChanged = Metadata->HasInputChanged(InputHash);
+
+	// Compute current output hash for manual edit detection
+	uint64 CurrentOutputHash = 0;
+	if (UBlueprint* Blueprint = Cast<UBlueprint>(ExistingAsset))
+	{
+		CurrentOutputHash = ComputeBlueprintOutputHash(Blueprint);
+	}
+	else
+	{
+		CurrentOutputHash = ComputeDataAssetOutputHash(ExistingAsset);
+	}
+
+	bool bOutputChanged = Metadata->HasOutputChanged(CurrentOutputHash);
+
+	// Determine status
+	EDryRunStatus Status;
+	FString Reason;
+
+	if (!bInputChanged && !bOutputChanged)
+	{
+		// Nothing changed - skip
+		Status = EDryRunStatus::WillSkip;
+		Reason = TEXT("No changes (hashes match)");
+	}
+	else if (bInputChanged && !bOutputChanged)
+	{
+		// Only manifest changed - safe to regenerate
+		Status = EDryRunStatus::WillModify;
+		Reason = TEXT("Manifest changed, no manual edits");
+	}
+	else if (bInputChanged && bOutputChanged)
+	{
+		// Both changed - conflict
+		Status = EDryRunStatus::Conflicted;
+		Reason = TEXT("CONFLICT: Both manifest AND asset changed");
+	}
+	else // !bInputChanged && bOutputChanged
+	{
+		// Only asset edited, manifest unchanged - skip to preserve edits
+		Status = EDryRunStatus::WillSkip;
+		Reason = TEXT("Asset was manually edited (manifest unchanged)");
+	}
+
+	if (OutDryRunStatus)
+	{
+		*OutDryRunStatus = Status;
+	}
+
+	// Handle based on status
+	if (IsDryRunMode())
+	{
+		FDryRunResult Result(AssetName, Status, Reason);
+		Result.AssetPath = AssetPath;
+		Result.StoredInputHash = static_cast<uint64>(Metadata->InputHash);
+		Result.CurrentInputHash = InputHash;
+		Result.StoredOutputHash = static_cast<uint64>(Metadata->OutputHash);
+		Result.CurrentOutputHash = CurrentOutputHash;
+		AddDryRunResult(Result);
+
+		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped,
+			FString::Printf(TEXT("[DRY RUN] %s"), *Reason));
+		OutResult.DetermineCategory();
+		return true; // Skip in dry run mode
+	}
+
+	// Actual generation mode
+	switch (Status)
+	{
+	case EDryRunStatus::WillCreate:
+		// Shouldn't happen here, but proceed
+		return false;
+
+	case EDryRunStatus::WillModify:
+		// Safe to regenerate
+		LogGeneration(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *Reason));
+		return false; // Proceed with generation
+
+	case EDryRunStatus::WillSkip:
+		OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped,
+			FString::Printf(TEXT("[%s] %s - %s"), *AssetType, *AssetName, *Reason));
+		OutResult.DetermineCategory();
+		return true;
+
+	case EDryRunStatus::Conflicted:
+		if (IsForceMode())
+		{
+			LogGeneration(FString::Printf(TEXT("[FORCE] %s - Overwriting despite conflict"), *AssetName));
+			return false; // Force regeneration
+		}
+		else
+		{
+			OutResult = FGenerationResult(AssetName, EGenerationStatus::Skipped,
+				FString::Printf(TEXT("[CONFLICT] %s - %s. Use --force to override"), *AssetName, *Reason));
+			OutResult.DetermineCategory();
+			return true;
+		}
+
+	default:
+		return false;
+	}
 }
 
 // v2.6.2: Helper function to configure gameplay ability tags on CDO

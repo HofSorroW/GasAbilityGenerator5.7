@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v2.9.1) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.0) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -37,6 +37,21 @@ Generate assets from command line without launching the editor UI:
 "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "C:\Unreal Projects\NP22B57\NP22B57.uproject" -run=GasAbilityGenerator -manifest="C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\ClaudeContext\manifest.yaml"
 ```
 
+### v3.0 Commandlet Flags
+
+| Flag | Description |
+|------|-------------|
+| `-dryrun` | Preview what would be created/modified/skipped without making changes |
+| `-force` | Regenerate all assets even if they were manually edited (override conflicts) |
+
+```bash
+# Preview changes without generating
+... -run=GasAbilityGenerator -manifest="..." -dryrun
+
+# Force regeneration of all assets
+... -run=GasAbilityGenerator -manifest="..." -force
+```
+
 ## Automation Workflow
 
 PowerShell automation scripts in `Tools/`:
@@ -53,9 +68,15 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 
 # Full cycle (build + run)
 powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action full
+
+# Headless commandlet generation (no editor UI)
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action generate
+
+# Full automated cycle (build + commandlet generation)
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action cycle
 ```
 
-**Development Cycle:**
+**Development Cycle (Editor UI):**
 1. Edit source files
 2. Run `build` action
 3. If errors → read errors, fix, goto step 2
@@ -65,12 +86,19 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 7. Run `logs` action to check results
 8. If errors → read logs, fix, goto step 1
 
+**Headless Cycle (No Editor UI):**
+1. Edit source files
+2. Run `cycle` action (builds + generates via commandlet)
+3. If build errors → fix and repeat
+4. Check `Tools/Logs/commandlet_output.log` for generation results
+
 ## Log File Locations
 
 | Log File | Path | Purpose |
 |----------|------|---------|
 | UBT Build | `Tools/Logs/ubt_latest.log` | Latest Unreal Build Tool output |
-| Generation | `Tools/Logs/generation_latest.log` | Latest asset generation results |
+| Generation | `Tools/Logs/generation_latest.log` | Latest asset generation results (editor UI) |
+| Commandlet | `Tools/Logs/commandlet_output.log` | Headless generation results (cycle/generate actions) |
 | Full UE Log | `%LOCALAPPDATA%\UnrealEngine\5.7\Saved\Logs\NP22B57.log` | Complete Unreal Editor log |
 
 **Build error format:**
@@ -423,6 +451,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.0 - Regen/Diff Safety System: Per-asset metadata via UAssetUserData, input/output hash change detection, --dryrun preview mode, --force conflict override, universal SkipIfModified policy
 - v2.9.1 - FX Validation System: Template integrity validation, descriptor-to-system validation, regeneration safety with metadata tracking and descriptor hashing
 - v2.9.0 - Data-driven FX architecture: FManifestFXDescriptor for Niagara User param binding, template duplication workflow
 - v2.8.4 - Whitelist-based verification system with duplicate detection for fresh generations

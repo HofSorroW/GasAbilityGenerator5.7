@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.5.0
+// GasAbilityGenerator v3.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.0: Added Dry Run and Force checkboxes for metadata-aware regeneration
 
 #pragma once
 
@@ -11,9 +12,11 @@
 class SMultiLineEditableTextBox;
 class SButton;
 class STextBlock;
+class SCheckBox;
 
 /**
  * Main UI Window for GAS Ability Generator
+ * v3.0: Added Dry Run and Force checkboxes for metadata-aware regeneration
  * v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
  * v2.1.8: Added enumeration generation before blueprints to fix enum variable types
  * v2.0.9: Implements generation guard to prevent duplicate passes
@@ -39,6 +42,10 @@ private:
 	TSharedPtr<SButton> GenerateAssetsButton;
 	TSharedPtr<SButton> CopyLogButton;
 
+	// v3.0: Dry Run / Force mode checkboxes
+	TSharedPtr<SCheckBox> DryRunCheckbox;
+	TSharedPtr<SCheckBox> ForceCheckbox;
+
 	// State
 	FString GuidesFolderPath;
 	FManifestData ManifestData;
@@ -63,6 +70,7 @@ private:
 	void ClearLog();
 	void UpdateStatus(const FString& Status);
 	void ShowResultsDialog(const FGenerationSummary& Summary);
+	void ShowDryRunResultsDialog(const FDryRunSummary& DryRunSummary);
 
 	// Generation Functions
 	void GenerateTags();

@@ -1,5 +1,7 @@
-// GasAbilityGenerator v2.9.1
+// GasAbilityGenerator v3.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.0: Regen/Diff Safety System - FGeneratorMetadata, EDryRunStatus, FDryRunResult, FDryRunSummary
+//       Universal ComputeHash() on all FManifest*Definition structs for change detection
 // v2.9.1: FX Validation System - FFXValidationError, FFXExpectedParam, FFXGeneratorMetadata
 //         Template integrity validation, descriptor hashing for regeneration safety
 // v2.9.0: Data-driven FX architecture - FManifestFXDescriptor for Niagara User param binding
@@ -335,6 +337,19 @@ struct FManifestEnumerationDefinition
 	FString Name;
 	FString Folder;
 	TArray<FString> Values;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		for (const FString& Val : Values)
+		{
+			Hash ^= GetTypeHash(Val);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -345,6 +360,15 @@ struct FManifestInputActionDefinition
 	FString Name;
 	FString ValueType = TEXT("Boolean");  // Boolean, Axis1D, Axis2D, Axis3D
 	FString TriggerType = TEXT("Pressed"); // Pressed, Released, Down, Started, Triggered
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ValueType) << 8;
+		Hash ^= GetTypeHash(TriggerType) << 16;
+		return Hash;
+	}
 };
 
 /**
@@ -356,6 +380,24 @@ struct FManifestInputMappingBinding
 	FString Key;
 	TArray<FString> Modifiers;
 	TArray<FString> Triggers;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(ActionName);
+		Hash ^= GetTypeHash(Key) << 8;
+		for (const FString& Mod : Modifiers)
+		{
+			Hash ^= GetTypeHash(Mod);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Trig : Triggers)
+		{
+			Hash ^= GetTypeHash(Trig);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -365,6 +407,18 @@ struct FManifestInputMappingContextDefinition
 {
 	FString Name;
 	TArray<FManifestInputMappingBinding> Bindings;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		for (const auto& Binding : Bindings)
+		{
+			Hash ^= Binding.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -377,6 +431,17 @@ struct FManifestModifierDefinition
 	FString MagnitudeType = TEXT("ScalableFloat");  // ScalableFloat, SetByCaller
 	float ScalableFloatValue = 0.0f;
 	FString SetByCallerTag;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Attribute);
+		Hash ^= GetTypeHash(Operation) << 4;
+		Hash ^= GetTypeHash(MagnitudeType) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ScalableFloatValue * 1000.f)) << 12;
+		Hash ^= GetTypeHash(SetByCallerTag) << 20;
+		return Hash;
+	}
 };
 
 /**
@@ -386,6 +451,18 @@ struct FManifestGEComponentDefinition
 {
 	FString ComponentClass;
 	TMap<FString, FString> Properties;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(ComponentClass);
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -407,6 +484,39 @@ struct FManifestGameplayEffectDefinition
 	FString StackingType;
 	TArray<FString> ExecutionClasses;
 	TArray<FString> SetByCallerTags;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(DurationPolicy) << 4;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(DurationMagnitude * 1000.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Period * 1000.f)) << 16;
+		Hash ^= (bExecutePeriodicOnApplication ? 1ULL : 0ULL) << 24;
+		Hash ^= static_cast<uint64>(StackLimitCount) << 28;
+		Hash ^= static_cast<uint64>(GetTypeHash(StackingType)) << 32;
+
+		// Tags
+		for (const FString& Tag : GrantedTags) Hash ^= GetTypeHash(Tag);
+		for (const FString& Tag : RemoveGameplayEffectsWithTags) Hash ^= GetTypeHash(Tag) << 2;
+		for (const FString& Tag : SetByCallerTags) Hash ^= GetTypeHash(Tag) << 4;
+		for (const FString& Exec : ExecutionClasses) Hash ^= GetTypeHash(Exec) << 6;
+
+		// Modifiers and Components
+		for (const auto& Mod : Modifiers)
+		{
+			Hash ^= Mod.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Comp : Components)
+		{
+			Hash ^= Comp.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		return Hash;
+	}
 };
 
 /**
@@ -419,6 +529,18 @@ struct FManifestAbilityTagsDefinition
 	TArray<FString> ActivationOwnedTags;
 	TArray<FString> ActivationRequiredTags;
 	TArray<FString> ActivationBlockedTags;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = 0;
+		for (const FString& Tag : AbilityTags) Hash ^= GetTypeHash(Tag);
+		for (const FString& Tag : CancelAbilitiesWithTag) Hash ^= GetTypeHash(Tag) << 4;
+		for (const FString& Tag : ActivationOwnedTags) Hash ^= GetTypeHash(Tag) << 8;
+		for (const FString& Tag : ActivationRequiredTags) Hash ^= GetTypeHash(Tag) << 12;
+		for (const FString& Tag : ActivationBlockedTags) Hash ^= GetTypeHash(Tag) << 16;
+		return Hash;
+	}
 };
 
 /**
@@ -432,224 +554,22 @@ struct FManifestActorVariableDefinition
 	FString DefaultValue;
 	bool bReplicated = false;
 	bool bInstanceEditable = false;
-};
 
-// Forward declarations for event graph types
-struct FManifestGraphPinReference;
-struct FManifestGraphNodeDefinition;
-struct FManifestGraphConnectionDefinition;
-struct FManifestEventGraphDefinition;
-
-/**
- * Gameplay ability definition
- */
-struct FManifestGameplayAbilityDefinition
-{
-	FString Name;
-	FString ParentClass = TEXT("GameplayAbility");
-	FString Folder;
-	FString InstancingPolicy = TEXT("InstancedPerActor");
-	FString NetExecutionPolicy = TEXT("ServerOnly");
-	FString CooldownGameplayEffectClass;
-	FManifestAbilityTagsDefinition Tags;
-
-	// Variables defined on the ability Blueprint
-	TArray<FManifestActorVariableDefinition> Variables;
-
-	// Inline event graph - stored by name, looked up from EventGraphs array
-	FString EventGraphName;
-	bool bHasInlineEventGraph = false;
-
-	// Inline event graph data (populated during parsing, used during generation)
-	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
-	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
-};
-
-/**
- * Actor blueprint component definition
- */
-struct FManifestActorComponentDefinition
-{
-	FString Name;
-	FString Type;
-	TMap<FString, FString> Properties;
-};
-
-/**
- * Function override definition
- * v2.8.3: Used for overriding parent class functions (e.g., HandleDeath)
- */
-struct FManifestFunctionOverrideDefinition
-{
-	FString FunctionName;  // Name of function to override (e.g., "HandleDeath")
-	TArray<FManifestGraphNodeDefinition> Nodes;
-	TArray<FManifestGraphConnectionDefinition> Connections;
-	bool bCallParent = true;  // Whether to call parent implementation
-};
-
-/**
- * Actor blueprint definition
- * v2.8.3: Added function_overrides for overriding parent class functions (HandleDeath, etc.)
- * v2.7.6: Added inline event graph support (bHasInlineEventGraph, EventGraphNodes, EventGraphConnections)
- */
-struct FManifestActorBlueprintDefinition
-{
-	FString Name;
-	FString ParentClass = TEXT("Actor");
-	FString Folder;
-	TArray<FManifestActorComponentDefinition> Components;
-	TArray<FManifestActorVariableDefinition> Variables;
-	// Event graph - can be reference or inline
-	FString EventGraphName;  // Reference to event_graphs section
-	bool bHasInlineEventGraph = false;
-
-	// Inline event graph data (populated during parsing, used during generation)
-	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
-	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
-
-	// v2.8.3: Function overrides for parent class functions
-	TArray<FManifestFunctionOverrideDefinition> FunctionOverrides;
-};
-
-/**
- * Widget blueprint variable definition
- */
-struct FManifestWidgetVariableDefinition
-{
-	FString Name;
-	FString Type;
-	FString DefaultValue;
-	bool bInstanceEditable = false;
-	bool bExposeOnSpawn = false;
-};
-
-/**
- * Widget blueprint definition
- */
-struct FManifestWidgetBlueprintDefinition
-{
-	FString Name;
-	FString ParentClass = TEXT("UserWidget");
-	FString Folder;
-	TArray<FManifestWidgetVariableDefinition> Variables;
-	// Event graph - can be reference or inline
-	FString EventGraphName;  // Reference to event_graphs section
-	bool bHasInlineEventGraph = false;
-
-	// Inline event graph data (populated during parsing, used during generation)
-	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
-	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
-};
-
-/**
- * Blackboard key definition
- */
-struct FManifestBlackboardKeyDefinition
-{
-	FString Name;
-	FString Type;  // Bool, Int, Float, String, Name, Vector, Rotator, Object, Class, Enum
-	bool bInstanceSynced = false;
-};
-
-/**
- * Blackboard definition
- */
-struct FManifestBlackboardDefinition
-{
-	FString Name;
-	TArray<FManifestBlackboardKeyDefinition> Keys;
-};
-
-/**
- * Behavior tree definition
- */
-struct FManifestBehaviorTreeDefinition
-{
-	FString Name;
-	FString BlackboardAsset;
-	FString Folder;
-};
-
-/**
- * v2.6.12: Material Expression (node in material graph)
- */
-struct FManifestMaterialExpression
-{
-	FString Id;              // Unique identifier for this node (e.g., "tex_diffuse", "param_color")
-	FString Type;            // Expression type: TextureSample, ScalarParameter, VectorParameter, Multiply, Add, Fresnel, etc.
-	FString Name;            // Display name (for parameters)
-	FString DefaultValue;    // Default value as string (parsed based on type)
-	int32 PosX = 0;          // Node position X in graph
-	int32 PosY = 0;          // Node position Y in graph
-	TMap<FString, FString> Properties;  // Additional properties (e.g., Texture path, Exponent, etc.)
-};
-
-/**
- * v2.6.12: Material Connection (link between expressions or to material output)
- */
-struct FManifestMaterialConnection
-{
-	FString FromId;          // Source expression ID
-	FString FromOutput;      // Source output pin name (e.g., "RGB", "R", "Result")
-	FString ToId;            // Target expression ID or "Material" for material outputs
-	FString ToInput;         // Target input pin name (e.g., "A", "B", "BaseColor", "Emissive")
-};
-
-/**
- * v2.6.12: Enhanced Material definition with expression graph support
- */
-struct FManifestMaterialDefinition
-{
-	FString Name;
-	FString Folder;
-	FString BlendMode = TEXT("Opaque");           // Opaque, Masked, Translucent, Additive, Modulate
-	FString ShadingModel = TEXT("DefaultLit");    // DefaultLit, Unlit, Subsurface, etc.
-	bool bTwoSided = false;                       // Two-sided rendering
-	TMap<FString, FString> Parameters;            // Legacy simple parameters
-
-	// v2.6.12: Expression graph
-	TArray<FManifestMaterialExpression> Expressions;   // Nodes in the material graph
-	TArray<FManifestMaterialConnection> Connections;   // Connections between nodes
-};
-
-/**
- * v2.6.12: Material Function Input definition
- */
-struct FManifestMaterialFunctionInput
-{
-	FString Name;            // Input name
-	FString Type;            // float, float2, float3, float4, texture2d
-	FString DefaultValue;    // Default value
-	int32 SortPriority = 0;  // Order in input list
-};
-
-/**
- * v2.6.12: Material Function Output definition
- */
-struct FManifestMaterialFunctionOutput
-{
-	FString Name;            // Output name
-	FString Type;            // float, float2, float3, float4
-	int32 SortPriority = 0;  // Order in output list
-};
-
-/**
- * v2.6.12: Material Function definition
- */
-struct FManifestMaterialFunctionDefinition
-{
-	FString Name;
-	FString Folder;
-	FString Description;                              // Function description
-	bool bExposeToLibrary = true;                     // Show in material function library
-	TArray<FManifestMaterialFunctionInput> Inputs;    // Function inputs
-	TArray<FManifestMaterialFunctionOutput> Outputs;  // Function outputs
-	TArray<FManifestMaterialExpression> Expressions;  // Internal expression nodes
-	TArray<FManifestMaterialConnection> Connections;  // Internal connections
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(Class) << 8;
+		Hash ^= GetTypeHash(DefaultValue) << 12;
+		Hash ^= (bReplicated ? 1ULL : 0ULL) << 16;
+		Hash ^= (bInstanceEditable ? 1ULL : 0ULL) << 17;
+		return Hash;
+	}
 };
 
 // ============================================================================
-// Event Graph Definitions
+// Event Graph Type Definitions (moved before structs that use them)
 // ============================================================================
 
 /**
@@ -666,6 +586,12 @@ struct FManifestGraphPinReference
 		: NodeId(InNodeId)
 		, PinName(InPinName)
 	{}
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		return GetTypeHash(NodeId) ^ (GetTypeHash(PinName) << 16);
+	}
 };
 
 /**
@@ -706,6 +632,20 @@ struct FManifestGraphNodeDefinition
 
 	// Type-specific properties (key-value pairs)
 	TMap<FString, FString> Properties;
+
+	/** v3.0: Compute hash for change detection (excludes position - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Type) << 8;
+		// NOTE: PositionX, PositionY, bHasPosition are excluded - presentational only
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -715,6 +655,12 @@ struct FManifestGraphConnectionDefinition
 {
 	FManifestGraphPinReference From;
 	FManifestGraphPinReference To;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		return From.ComputeHash() ^ (To.ComputeHash() << 32);
+	}
 };
 
 /**
@@ -733,6 +679,515 @@ struct FManifestEventGraphDefinition
 
 	// All connections between nodes
 	TArray<FManifestGraphConnectionDefinition> Connections;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Description) << 8;
+		for (const auto& Node : Nodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61); // Rotate to avoid position-dependence
+		}
+		for (const auto& Conn : Connections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59); // Rotate
+		}
+		return Hash;
+	}
+};
+
+// ============================================================================
+
+/**
+ * Gameplay ability definition
+ */
+struct FManifestGameplayAbilityDefinition
+{
+	FString Name;
+	FString ParentClass = TEXT("GameplayAbility");
+	FString Folder;
+	FString InstancingPolicy = TEXT("InstancedPerActor");
+	FString NetExecutionPolicy = TEXT("ServerOnly");
+	FString CooldownGameplayEffectClass;
+	FManifestAbilityTagsDefinition Tags;
+
+	// Variables defined on the ability Blueprint
+	TArray<FManifestActorVariableDefinition> Variables;
+
+	// Inline event graph - stored by name, looked up from EventGraphs array
+	FString EventGraphName;
+	bool bHasInlineEventGraph = false;
+
+	// Inline event graph data (populated during parsing, used during generation)
+	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
+	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(InstancingPolicy) << 8;
+		Hash ^= GetTypeHash(NetExecutionPolicy) << 12;
+		Hash ^= GetTypeHash(CooldownGameplayEffectClass) << 16;
+		Hash ^= Tags.ComputeHash() << 20;
+
+		// Variables
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+
+		// Event graph
+		Hash ^= GetTypeHash(EventGraphName) << 24;
+		Hash ^= (bHasInlineEventGraph ? 1ULL : 0ULL) << 28;
+
+		for (const auto& Node : EventGraphNodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& Conn : EventGraphConnections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+
+		return Hash;
+	}
+};
+
+/**
+ * Actor blueprint component definition
+ */
+struct FManifestActorComponentDefinition
+{
+	FString Name;
+	FString Type;
+	TMap<FString, FString> Properties;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 8;
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+		}
+		return Hash;
+	}
+};
+
+/**
+ * Function override definition
+ * v2.8.3: Used for overriding parent class functions (e.g., HandleDeath)
+ */
+struct FManifestFunctionOverrideDefinition
+{
+	FString FunctionName;  // Name of function to override (e.g., "HandleDeath")
+	TArray<FManifestGraphNodeDefinition> Nodes;
+	TArray<FManifestGraphConnectionDefinition> Connections;
+	bool bCallParent = true;  // Whether to call parent implementation
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(FunctionName);
+		Hash ^= (bCallParent ? 1ULL : 0ULL) << 8;
+		for (const auto& Node : Nodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Conn : Connections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * Actor blueprint definition
+ * v2.8.3: Added function_overrides for overriding parent class functions (HandleDeath, etc.)
+ * v2.7.6: Added inline event graph support (bHasInlineEventGraph, EventGraphNodes, EventGraphConnections)
+ */
+struct FManifestActorBlueprintDefinition
+{
+	FString Name;
+	FString ParentClass = TEXT("Actor");
+	FString Folder;
+	TArray<FManifestActorComponentDefinition> Components;
+	TArray<FManifestActorVariableDefinition> Variables;
+	// Event graph - can be reference or inline
+	FString EventGraphName;  // Reference to event_graphs section
+	bool bHasInlineEventGraph = false;
+
+	// Inline event graph data (populated during parsing, used during generation)
+	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
+	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
+
+	// v2.8.3: Function overrides for parent class functions
+	TArray<FManifestFunctionOverrideDefinition> FunctionOverrides;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		// NOTE: Folder excluded - presentational only
+
+		// Components
+		for (const auto& Comp : Components)
+		{
+			Hash ^= Comp.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+
+		// Variables
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		// Event graph
+		Hash ^= GetTypeHash(EventGraphName) << 8;
+		Hash ^= (bHasInlineEventGraph ? 1ULL : 0ULL) << 12;
+
+		for (const auto& Node : EventGraphNodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		for (const auto& Conn : EventGraphConnections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 11) | (Hash >> 53);
+		}
+
+		// Function overrides
+		for (const auto& Override : FunctionOverrides)
+		{
+			Hash ^= Override.ComputeHash();
+			Hash = (Hash << 13) | (Hash >> 51);
+		}
+
+		return Hash;
+	}
+};
+
+/**
+ * Widget blueprint variable definition
+ */
+struct FManifestWidgetVariableDefinition
+{
+	FString Name;
+	FString Type;
+	FString DefaultValue;
+	bool bInstanceEditable = false;
+	bool bExposeOnSpawn = false;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(DefaultValue) << 8;
+		Hash ^= (bInstanceEditable ? 1ULL : 0ULL) << 12;
+		Hash ^= (bExposeOnSpawn ? 1ULL : 0ULL) << 13;
+		return Hash;
+	}
+};
+
+/**
+ * Widget blueprint definition
+ */
+struct FManifestWidgetBlueprintDefinition
+{
+	FString Name;
+	FString ParentClass = TEXT("UserWidget");
+	FString Folder;
+	TArray<FManifestWidgetVariableDefinition> Variables;
+	// Event graph - can be reference or inline
+	FString EventGraphName;  // Reference to event_graphs section
+	bool bHasInlineEventGraph = false;
+
+	// Inline event graph data (populated during parsing, used during generation)
+	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
+	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		// NOTE: Folder excluded - presentational only
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		Hash ^= GetTypeHash(EventGraphName) << 8;
+		Hash ^= (bHasInlineEventGraph ? 1ULL : 0ULL) << 12;
+		for (const auto& Node : EventGraphNodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& Conn : EventGraphConnections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * Blackboard key definition
+ */
+struct FManifestBlackboardKeyDefinition
+{
+	FString Name;
+	FString Type;  // Bool, Int, Float, String, Name, Vector, Rotator, Object, Class, Enum
+	bool bInstanceSynced = false;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 8;
+		Hash ^= (bInstanceSynced ? 1ULL : 0ULL) << 16;
+		return Hash;
+	}
+};
+
+/**
+ * Blackboard definition
+ */
+struct FManifestBlackboardDefinition
+{
+	FString Name;
+	TArray<FManifestBlackboardKeyDefinition> Keys;
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		for (const auto& Key : Keys)
+		{
+			Hash ^= Key.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * Behavior tree definition
+ */
+struct FManifestBehaviorTreeDefinition
+{
+	FString Name;
+	FString BlackboardAsset;
+	FString Folder;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(BlackboardAsset) << 8;
+		// NOTE: Folder excluded - presentational only
+		return Hash;
+	}
+};
+
+/**
+ * v2.6.12: Material Expression (node in material graph)
+ */
+struct FManifestMaterialExpression
+{
+	FString Id;              // Unique identifier for this node (e.g., "tex_diffuse", "param_color")
+	FString Type;            // Expression type: TextureSample, ScalarParameter, VectorParameter, Multiply, Add, Fresnel, etc.
+	FString Name;            // Display name (for parameters)
+	FString DefaultValue;    // Default value as string (parsed based on type)
+	int32 PosX = 0;          // Node position X in graph
+	int32 PosY = 0;          // Node position Y in graph
+	TMap<FString, FString> Properties;  // Additional properties (e.g., Texture path, Exponent, etc.)
+
+	/** v3.0: Compute hash for change detection (excludes PosX, PosY - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(Name) << 8;
+		Hash ^= GetTypeHash(DefaultValue) << 12;
+		// NOTE: PosX, PosY excluded - presentational only
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v2.6.12: Material Connection (link between expressions or to material output)
+ */
+struct FManifestMaterialConnection
+{
+	FString FromId;          // Source expression ID
+	FString FromOutput;      // Source output pin name (e.g., "RGB", "R", "Result")
+	FString ToId;            // Target expression ID or "Material" for material outputs
+	FString ToInput;         // Target input pin name (e.g., "A", "B", "BaseColor", "Emissive")
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(FromId);
+		Hash ^= GetTypeHash(FromOutput) << 4;
+		Hash ^= GetTypeHash(ToId) << 8;
+		Hash ^= GetTypeHash(ToInput) << 12;
+		return Hash;
+	}
+};
+
+/**
+ * v2.6.12: Enhanced Material definition with expression graph support
+ */
+struct FManifestMaterialDefinition
+{
+	FString Name;
+	FString Folder;
+	FString BlendMode = TEXT("Opaque");           // Opaque, Masked, Translucent, Additive, Modulate
+	FString ShadingModel = TEXT("DefaultLit");    // DefaultLit, Unlit, Subsurface, etc.
+	bool bTwoSided = false;                       // Two-sided rendering
+	TMap<FString, FString> Parameters;            // Legacy simple parameters
+
+	// v2.6.12: Expression graph
+	TArray<FManifestMaterialExpression> Expressions;   // Nodes in the material graph
+	TArray<FManifestMaterialConnection> Connections;   // Connections between nodes
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(BlendMode) << 4;
+		Hash ^= GetTypeHash(ShadingModel) << 8;
+		Hash ^= (bTwoSided ? 1ULL : 0ULL) << 12;
+		for (const auto& Param : Parameters)
+		{
+			Hash ^= GetTypeHash(Param.Key);
+			Hash ^= GetTypeHash(Param.Value) << 4;
+		}
+		for (const auto& Expr : Expressions)
+		{
+			Hash ^= Expr.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Conn : Connections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v2.6.12: Material Function Input definition
+ */
+struct FManifestMaterialFunctionInput
+{
+	FString Name;            // Input name
+	FString Type;            // float, float2, float3, float4, texture2d
+	FString DefaultValue;    // Default value
+	int32 SortPriority = 0;  // Order in input list
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(DefaultValue) << 8;
+		Hash ^= static_cast<uint64>(SortPriority) << 12;
+		return Hash;
+	}
+};
+
+/**
+ * v2.6.12: Material Function Output definition
+ */
+struct FManifestMaterialFunctionOutput
+{
+	FString Name;            // Output name
+	FString Type;            // float, float2, float3, float4
+	int32 SortPriority = 0;  // Order in output list
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= static_cast<uint64>(SortPriority) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v2.6.12: Material Function definition
+ */
+struct FManifestMaterialFunctionDefinition
+{
+	FString Name;
+	FString Folder;
+	FString Description;                              // Function description
+	bool bExposeToLibrary = true;                     // Show in material function library
+	TArray<FManifestMaterialFunctionInput> Inputs;    // Function inputs
+	TArray<FManifestMaterialFunctionOutput> Outputs;  // Function outputs
+	TArray<FManifestMaterialExpression> Expressions;  // Internal expression nodes
+	TArray<FManifestMaterialConnection> Connections;  // Internal connections
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(Description) << 4;
+		Hash ^= (bExposeToLibrary ? 1ULL : 0ULL) << 8;
+		for (const auto& In : Inputs)
+		{
+			Hash ^= In.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Out : Outputs)
+		{
+			Hash ^= Out.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& Expr : Expressions)
+		{
+			Hash ^= Expr.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		for (const auto& Conn : Connections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 11) | (Hash >> 53);
+		}
+		return Hash;
+	}
 };
 
 // ============================================================================
@@ -747,6 +1202,20 @@ struct FManifestFloatCurveDefinition
 	FString Name;
 	FString Folder;
 	TArray<TPair<float, float>> Keys;  // Time, Value pairs
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		for (const auto& Key : Keys)
+		{
+			Hash ^= static_cast<uint64>(FMath::RoundToInt(Key.Key * 1000.f));
+			Hash ^= static_cast<uint64>(FMath::RoundToInt(Key.Value * 1000.f)) << 32;
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -758,6 +1227,20 @@ struct FManifestAnimationMontageDefinition
 	FString Folder;
 	FString Skeleton;
 	TArray<FString> Sections;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(Skeleton) << 8;
+		for (const FString& Section : Sections)
+		{
+			Hash ^= GetTypeHash(Section);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -768,6 +1251,15 @@ struct FManifestAnimationNotifyDefinition
 	FString Name;
 	FString Folder;
 	FString NotifyClass;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(NotifyClass) << 8;
+		return Hash;
+	}
 };
 
 /**
@@ -780,6 +1272,21 @@ struct FManifestDialogueBlueprintDefinition
 	FString Folder;
 	TArray<FManifestActorVariableDefinition> Variables;
 	FString EventGraphName;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		// NOTE: Folder excluded - presentational only
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		Hash ^= GetTypeHash(EventGraphName) << 8;
+		return Hash;
+	}
 };
 
 /**
@@ -795,6 +1302,24 @@ struct FManifestEquippableItemDefinition
 	FString EquipmentSlot;
 	FString EquipmentModifierGE;
 	TArray<FString> AbilitiesToGrant;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		Hash ^= GetTypeHash(DisplayName) << 8;
+		Hash ^= GetTypeHash(Description) << 12;
+		Hash ^= GetTypeHash(EquipmentSlot) << 16;
+		Hash ^= GetTypeHash(EquipmentModifierGE) << 20;
+		for (const FString& Ability : AbilitiesToGrant)
+		{
+			Hash ^= GetTypeHash(Ability);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -807,6 +1332,17 @@ struct FManifestActivityDefinition
 	FString ParentClass;
 	FString BehaviorTree;
 	FString Description;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		Hash ^= GetTypeHash(BehaviorTree) << 8;
+		Hash ^= GetTypeHash(Description) << 12;
+		return Hash;
+	}
 };
 
 /**
@@ -817,6 +1353,19 @@ struct FManifestAbilityConfigurationDefinition
 	FString Name;
 	FString Folder;
 	TArray<FString> Abilities;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		for (const FString& Ability : Abilities)
+		{
+			Hash ^= GetTypeHash(Ability);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -829,6 +1378,21 @@ struct FManifestActivityConfigurationDefinition
 	float RescoreInterval = 1.0f;
 	FString DefaultActivity;
 	TArray<FString> Activities;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(RescoreInterval * 1000.f)) << 8;
+		Hash ^= GetTypeHash(DefaultActivity) << 16;
+		for (const FString& Activity : Activities)
+		{
+			Hash ^= GetTypeHash(Activity);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -838,6 +1402,14 @@ struct FManifestItemWithQuantity
 {
 	FString ItemClass;       // Item class path or name
 	int32 Quantity = 1;      // Quantity of this item
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(ItemClass);
+		Hash ^= static_cast<uint64>(Quantity) << 32;
+		return Hash;
+	}
 };
 
 /**
@@ -849,6 +1421,24 @@ struct FManifestItemCollectionDefinition
 	FString Folder;
 	TArray<FString> Items;                        // Simple item names (legacy support)
 	TArray<FManifestItemWithQuantity> ItemsWithQuantity;  // v2.6.0: Items with quantities
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		for (const FString& Item : Items)
+		{
+			Hash ^= GetTypeHash(Item);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& ItemQ : ItemsWithQuantity)
+		{
+			Hash ^= ItemQ.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -862,6 +1452,18 @@ struct FManifestNarrativeEventDefinition
 	FString EventTag;
 	FString EventType;
 	FString Description;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		Hash ^= GetTypeHash(EventTag) << 8;
+		Hash ^= GetTypeHash(EventType) << 12;
+		Hash ^= GetTypeHash(Description) << 16;
+		return Hash;
+	}
 };
 
 /**
@@ -880,6 +1482,23 @@ struct FManifestNPCDefinitionDefinition
 	int32 MaxLevel = 1;
 	bool bAllowMultipleInstances = true;
 	bool bIsVendor = false;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(NPCID) << 4;
+		Hash ^= GetTypeHash(NPCName) << 8;
+		Hash ^= GetTypeHash(NPCClassPath) << 12;
+		Hash ^= GetTypeHash(AbilityConfiguration) << 16;
+		Hash ^= GetTypeHash(ActivityConfiguration) << 20;
+		Hash ^= static_cast<uint64>(MinLevel) << 24;
+		Hash ^= static_cast<uint64>(MaxLevel) << 32;
+		Hash ^= (bAllowMultipleInstances ? 1ULL : 0ULL) << 40;
+		Hash ^= (bIsVendor ? 1ULL : 0ULL) << 41;
+		return Hash;
+	}
 };
 
 /**
@@ -893,6 +1512,18 @@ struct FManifestCharacterDefinitionDefinition
 	FString DefaultFactions;
 	int32 DefaultCurrency = 0;
 	float AttackPriority = 1.0f;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(DefaultOwnedTags) << 4;
+		Hash ^= GetTypeHash(DefaultFactions) << 8;
+		Hash ^= static_cast<uint64>(DefaultCurrency) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttackPriority * 1000.f)) << 32;
+		return Hash;
+	}
 };
 
 /**
@@ -906,6 +1537,26 @@ struct FManifestTaggedDialogueEntry
 	float MaxDistance = 5000.0f;    // Max distance to trigger
 	TArray<FString> RequiredTags;   // Tags NPC must have to play this dialogue
 	TArray<FString> BlockedTags;    // Tags that prevent this dialogue
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Tag);
+		Hash ^= GetTypeHash(DialogueClass) << 4;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Cooldown * 1000.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(MaxDistance * 10.f)) << 24;
+		for (const FString& ReqTag : RequiredTags)
+		{
+			Hash ^= GetTypeHash(ReqTag);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& BlkTag : BlockedTags)
+		{
+			Hash ^= GetTypeHash(BlkTag);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -916,6 +1567,19 @@ struct FManifestTaggedDialogueSetDefinition
 	FString Name;
 	FString Folder;
 	TArray<FManifestTaggedDialogueEntry> Dialogues;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		for (const auto& Dialogue : Dialogues)
+		{
+			Hash ^= Dialogue.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
 };
 
 /**
@@ -927,6 +1591,15 @@ struct FManifestNiagaraUserParameter
 	FString Name;           // Parameter name (e.g., CoreScale, AlertLevel)
 	FString Type;           // float, int, bool, vector, color, linear_color
 	FString DefaultValue;   // Default value as string (parsed based on type)
+
+	/** v3.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 8;
+		Hash ^= GetTypeHash(DefaultValue) << 16;
+		return Hash;
+	}
 };
 
 /**
@@ -1189,6 +1862,181 @@ struct FFXGeneratorMetadata
 	}
 };
 
+// ============================================================================
+// v3.0: Regen/Diff Safety System
+// Universal metadata tracking and dry-run support for all generators
+// ============================================================================
+
+/**
+ * v3.0: Universal generator metadata for regeneration tracking
+ * Stored on each generated asset via UAssetUserData
+ */
+struct FGeneratorMetadata
+{
+	FString GeneratorId;           // "GA", "GE", "BP", "WBP", etc.
+	FString ManifestPath;          // Full path to manifest.yaml
+	FString ManifestAssetKey;      // Asset name in manifest (stable identifier)
+	uint64 InputHash = 0;          // Hash of manifest definition at generation time
+	uint64 OutputHash = 0;         // Hash of generated content (for manual edit detection)
+	FString GeneratorVersion;      // Plugin version (e.g., "3.0.0")
+	FDateTime Timestamp;           // When asset was last generated
+	TArray<FString> Dependencies;  // Assets this asset depends on
+	bool bIsGenerated = false;     // True if this asset was generator-created
+
+	FGeneratorMetadata() : Timestamp(FDateTime::Now()) {}
+
+	/** Check if manifest definition changed since generation */
+	bool HasInputChanged(uint64 NewInputHash) const
+	{
+		return InputHash != NewInputHash;
+	}
+
+	/** Check if asset was manually edited since generation */
+	bool HasOutputChanged(uint64 CurrentOutputHash) const
+	{
+		return OutputHash != CurrentOutputHash;
+	}
+
+	/** Serialize to string for storage in asset metadata */
+	FString ToString() const
+	{
+		FString DepsStr = FString::Join(Dependencies, TEXT(";"));
+		return FString::Printf(TEXT("GenId:%s|Path:%s|Key:%s|InHash:%llu|OutHash:%llu|Ver:%s|Time:%s|Deps:%s|Gen:%d"),
+			*GeneratorId, *ManifestPath, *ManifestAssetKey,
+			InputHash, OutputHash, *GeneratorVersion,
+			*Timestamp.ToString(), *DepsStr, bIsGenerated ? 1 : 0);
+	}
+
+	/** Parse from serialized string stored in asset metadata */
+	static FGeneratorMetadata FromString(const FString& Str)
+	{
+		FGeneratorMetadata Meta;
+		TArray<FString> Parts;
+		Str.ParseIntoArray(Parts, TEXT("|"));
+
+		for (const FString& Part : Parts)
+		{
+			FString Key, Value;
+			if (Part.Split(TEXT(":"), &Key, &Value))
+			{
+				if (Key == TEXT("GenId")) Meta.GeneratorId = Value;
+				else if (Key == TEXT("Path")) Meta.ManifestPath = Value;
+				else if (Key == TEXT("Key")) Meta.ManifestAssetKey = Value;
+				else if (Key == TEXT("InHash")) Meta.InputHash = FCString::Strtoui64(*Value, nullptr, 10);
+				else if (Key == TEXT("OutHash")) Meta.OutputHash = FCString::Strtoui64(*Value, nullptr, 10);
+				else if (Key == TEXT("Ver")) Meta.GeneratorVersion = Value;
+				else if (Key == TEXT("Time")) FDateTime::Parse(Value, Meta.Timestamp);
+				else if (Key == TEXT("Deps")) Value.ParseIntoArray(Meta.Dependencies, TEXT(";"));
+				else if (Key == TEXT("Gen")) Meta.bIsGenerated = (Value == TEXT("1"));
+			}
+		}
+		return Meta;
+	}
+};
+
+/**
+ * v3.0: Dry run status for preview mode
+ */
+enum class EDryRunStatus : uint8
+{
+	WillCreate,      // New asset, will be created
+	WillModify,      // Manifest changed, no manual edits, will regenerate
+	WillSkip,        // No changes needed (hashes match)
+	Conflicted,      // Manifest changed AND asset was manually edited
+};
+
+/**
+ * v3.0: Dry run result for a single asset
+ */
+struct FDryRunResult
+{
+	FString AssetName;
+	FString AssetPath;
+	FString GeneratorId;
+	EDryRunStatus Status = EDryRunStatus::WillSkip;
+	FString Reason;
+
+	// Hash comparison info
+	uint64 StoredInputHash = 0;
+	uint64 CurrentInputHash = 0;
+	uint64 StoredOutputHash = 0;
+	uint64 CurrentOutputHash = 0;
+
+	FDryRunResult() = default;
+
+	FDryRunResult(const FString& InName, EDryRunStatus InStatus, const FString& InReason = TEXT(""))
+		: AssetName(InName), Status(InStatus), Reason(InReason) {}
+
+	FString GetStatusString() const
+	{
+		switch (Status)
+		{
+		case EDryRunStatus::WillCreate: return TEXT("CREATE");
+		case EDryRunStatus::WillModify: return TEXT("MODIFY");
+		case EDryRunStatus::WillSkip: return TEXT("SKIP");
+		case EDryRunStatus::Conflicted: return TEXT("CONFLICT");
+		default: return TEXT("UNKNOWN");
+		}
+	}
+
+	FString ToString() const
+	{
+		return FString::Printf(TEXT("[%s] %s%s"),
+			*GetStatusString(), *AssetName,
+			Reason.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" - %s"), *Reason));
+	}
+};
+
+/**
+ * v3.0: Aggregated dry run results summary
+ */
+struct FDryRunSummary
+{
+	TArray<FDryRunResult> Results;
+	int32 CreateCount = 0;
+	int32 ModifyCount = 0;
+	int32 SkipCount = 0;
+	int32 ConflictCount = 0;
+
+	void AddResult(const FDryRunResult& Result)
+	{
+		Results.Add(Result);
+		switch (Result.Status)
+		{
+		case EDryRunStatus::WillCreate: CreateCount++; break;
+		case EDryRunStatus::WillModify: ModifyCount++; break;
+		case EDryRunStatus::WillSkip: SkipCount++; break;
+		case EDryRunStatus::Conflicted: ConflictCount++; break;
+		}
+	}
+
+	bool HasConflicts() const { return ConflictCount > 0; }
+	int32 GetTotal() const { return CreateCount + ModifyCount + SkipCount + ConflictCount; }
+
+	FString GetSummary() const
+	{
+		return FString::Printf(TEXT("Dry Run: %d CREATE, %d MODIFY, %d SKIP, %d CONFLICT"),
+			CreateCount, ModifyCount, SkipCount, ConflictCount);
+	}
+
+	void Reset()
+	{
+		Results.Empty();
+		CreateCount = 0;
+		ModifyCount = 0;
+		SkipCount = 0;
+		ConflictCount = 0;
+	}
+
+	/** Get results filtered by status */
+	TArray<FDryRunResult> GetResultsByStatus(EDryRunStatus Status) const
+	{
+		return Results.FilterByPredicate([Status](const FDryRunResult& Result) {
+			return Result.Status == Status;
+		});
+	}
+};
+
 /**
  * v2.6.10: Niagara System definition - creates UNiagaraSystem assets
  * Enhanced with warmup, bounds, determinism, and effect type settings
@@ -1226,6 +2074,50 @@ struct FManifestNiagaraSystemDefinition
 
 	// v2.9.0: FX Descriptor for data-driven parameter binding
 	FManifestFXDescriptor FXDescriptor;
+
+	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(TemplateSystem) << 4;
+		for (const FString& Emitter : Emitters)
+		{
+			Hash ^= GetTypeHash(Emitter);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+
+		// Warmup settings
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(WarmupTime * 1000.f)) << 8;
+		Hash ^= static_cast<uint64>(WarmupTickCount) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(WarmupTickDelta * 10000.f)) << 24;
+
+		// Bounds settings
+		Hash ^= (bFixedBounds ? 1ULL : 0ULL) << 32;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(BoundsMin.X * 10.f)) << 33;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(BoundsMax.X * 10.f)) << 40;
+
+		// Determinism settings
+		Hash ^= (bDeterminism ? 1ULL : 0ULL) << 48;
+		Hash ^= static_cast<uint64>(RandomSeed) << 49;
+
+		// Effect type settings
+		Hash ^= GetTypeHash(EffectType);
+		Hash ^= GetTypeHash(PoolingMethod) << 4;
+		Hash ^= static_cast<uint64>(MaxPoolSize) << 56;
+
+		// User parameters
+		for (const auto& Param : UserParameters)
+		{
+			Hash ^= Param.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		// FX Descriptor
+		Hash ^= FXDescriptor.ComputeHash();
+
+		return Hash;
+	}
 };
 
 /**
