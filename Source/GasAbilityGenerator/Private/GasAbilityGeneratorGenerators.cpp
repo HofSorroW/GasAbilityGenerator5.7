@@ -1,5 +1,7 @@
-// GasAbilityGenerator v2.8.3
+// GasAbilityGenerator v2.9.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.9.0: Data-driven FX architecture - FXDescriptor for Niagara User param binding
+//         Duplicates template systems and applies User.* parameters from manifest
 // v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 //         - Creates function graph with entry node and CallParent node
 //         - Supports all standard node types in function overrides
@@ -7146,6 +7148,47 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 					LogGeneration(FString::Printf(TEXT("  WARNING: Emitter not found: %s"), *EmitterName));
 				}
 			}
+
+			// v2.8.4: Add default emitter based on effect_type if no emitters specified
+			if (Definition.Emitters.Num() == 0 && !Definition.EffectType.IsEmpty())
+			{
+				FString DefaultEmitterPath;
+				FString EffectTypeLower = Definition.EffectType.ToLower();
+
+				if (EffectTypeLower == TEXT("ambient") || EffectTypeLower == TEXT("looping"))
+				{
+					DefaultEmitterPath = TEXT("/Niagara/DefaultAssets/Templates/Emitters/Fountain");
+				}
+				else if (EffectTypeLower == TEXT("burst") || EffectTypeLower == TEXT("explosion"))
+				{
+					DefaultEmitterPath = TEXT("/Niagara/DefaultAssets/Templates/Emitters/SimpleSpriteBurst");
+				}
+				else if (EffectTypeLower == TEXT("beam") || EffectTypeLower == TEXT("laser"))
+				{
+					DefaultEmitterPath = TEXT("/Niagara/DefaultAssets/Templates/Emitters/DynamicBeam");
+				}
+				else if (EffectTypeLower == TEXT("ribbon") || EffectTypeLower == TEXT("trail"))
+				{
+					DefaultEmitterPath = TEXT("/Niagara/DefaultAssets/Templates/Emitters/LocationBasedRibbon");
+				}
+				else
+				{
+					// Default fallback - simple sprite burst
+					DefaultEmitterPath = TEXT("/Niagara/DefaultAssets/Templates/Emitters/SimpleSpriteBurst");
+				}
+
+				UNiagaraEmitter* DefaultEmitter = LoadObject<UNiagaraEmitter>(nullptr, *DefaultEmitterPath);
+				if (DefaultEmitter)
+				{
+					FVersionedNiagaraEmitter VersionedEmitter(DefaultEmitter, DefaultEmitter->GetExposedVersion().VersionGuid);
+					FNiagaraEditorUtilities::AddEmitterToSystem(*NewSystem, *DefaultEmitter, VersionedEmitter.Version);
+					LogGeneration(FString::Printf(TEXT("  Added default emitter for effect_type '%s': %s"), *Definition.EffectType, *DefaultEmitterPath));
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  WARNING: Default emitter not found: %s"), *DefaultEmitterPath));
+				}
+			}
 		}
 	}
 
@@ -7366,6 +7409,118 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		}
 
 		LogGeneration(FString::Printf(TEXT("  Added %d user parameters"), Definition.UserParameters.Num()));
+	}
+
+	// v2.9.0: Apply FX Descriptor values to existing User parameters
+	// This sets values on User.* parameters that were defined in the template system
+	if (Definition.FXDescriptor.HasData())
+	{
+		FNiagaraUserRedirectionParameterStore& UserParams = NewSystem->GetExposedParameters();
+		int32 ParamsApplied = 0;
+
+		// Helper lambda to set a float parameter (adds if not exists)
+		auto SetFloatParam = [&](const FString& ParamName, float Value) {
+			FName FullName = *FString::Printf(TEXT("User.%s"), *ParamName);
+			FNiagaraVariable Var(FNiagaraTypeDefinition::GetFloatDef(), FullName);
+			Var.SetValue(Value);
+			UserParams.AddParameter(Var, true);
+			ParamsApplied++;
+		};
+
+		// Helper lambda to set a bool parameter (adds if not exists)
+		auto SetBoolParam = [&](const FString& ParamName, bool Value) {
+			FName FullName = *FString::Printf(TEXT("User.%s"), *ParamName);
+			FNiagaraVariable Var(FNiagaraTypeDefinition::GetBoolDef(), FullName);
+			Var.SetValue(Value);
+			UserParams.AddParameter(Var, true);
+			ParamsApplied++;
+		};
+
+		// Helper lambda to set an int parameter (adds if not exists)
+		auto SetIntParam = [&](const FString& ParamName, int32 Value) {
+			FName FullName = *FString::Printf(TEXT("User.%s"), *ParamName);
+			FNiagaraVariable Var(FNiagaraTypeDefinition::GetIntDef(), FullName);
+			Var.SetValue(Value);
+			UserParams.AddParameter(Var, true);
+			ParamsApplied++;
+		};
+
+		// Helper lambda to set a vector parameter (adds if not exists)
+		auto SetVectorParam = [&](const FString& ParamName, const FVector& Value) {
+			FName FullName = *FString::Printf(TEXT("User.%s"), *ParamName);
+			FNiagaraVariable Var(FNiagaraTypeDefinition::GetVec3Def(), FullName);
+			Var.SetValue(Value);
+			UserParams.AddParameter(Var, true);
+			ParamsApplied++;
+		};
+
+		// Helper lambda to set a color parameter (adds if not exists)
+		auto SetColorParam = [&](const FString& ParamName, const FLinearColor& Value) {
+			FName FullName = *FString::Printf(TEXT("User.%s"), *ParamName);
+			FNiagaraVariable Var(FNiagaraTypeDefinition::GetColorDef(), FullName);
+			Var.SetValue(Value);
+			UserParams.AddParameter(Var, true);
+			ParamsApplied++;
+		};
+
+		// Apply emitter toggles
+		SetBoolParam(TEXT("Particles.Enabled"), Definition.FXDescriptor.bParticlesEnabled);
+		SetBoolParam(TEXT("Burst.Enabled"), Definition.FXDescriptor.bBurstEnabled);
+		SetBoolParam(TEXT("Beam.Enabled"), Definition.FXDescriptor.bBeamEnabled);
+		SetBoolParam(TEXT("Ribbon.Enabled"), Definition.FXDescriptor.bRibbonEnabled);
+		SetBoolParam(TEXT("Light.Enabled"), Definition.FXDescriptor.bLightEnabled);
+		SetBoolParam(TEXT("Smoke.Enabled"), Definition.FXDescriptor.bSmokeEnabled);
+		SetBoolParam(TEXT("Sparks.Enabled"), Definition.FXDescriptor.bSparkEnabled);
+
+		// Apply core emission parameters
+		SetFloatParam(TEXT("SpawnRate"), Definition.FXDescriptor.SpawnRate);
+		SetFloatParam(TEXT("LifetimeMin"), Definition.FXDescriptor.LifetimeMin);
+		SetFloatParam(TEXT("LifetimeMax"), Definition.FXDescriptor.LifetimeMax);
+		SetIntParam(TEXT("MaxParticles"), Definition.FXDescriptor.MaxParticles);
+
+		// Apply appearance parameters
+		SetColorParam(TEXT("Color"), Definition.FXDescriptor.Color);
+		SetFloatParam(TEXT("SizeMin"), Definition.FXDescriptor.SizeMin);
+		SetFloatParam(TEXT("SizeMax"), Definition.FXDescriptor.SizeMax);
+		SetFloatParam(TEXT("Opacity"), Definition.FXDescriptor.Opacity);
+		SetFloatParam(TEXT("Emissive"), Definition.FXDescriptor.Emissive);
+
+		// Apply motion parameters
+		SetVectorParam(TEXT("InitialVelocity"), Definition.FXDescriptor.InitialVelocity);
+		SetFloatParam(TEXT("NoiseStrength"), Definition.FXDescriptor.NoiseStrength);
+		SetFloatParam(TEXT("GravityScale"), Definition.FXDescriptor.GravityScale);
+
+		// Apply beam-specific parameters
+		SetFloatParam(TEXT("BeamLength"), Definition.FXDescriptor.BeamLength);
+		SetFloatParam(TEXT("BeamWidth"), Definition.FXDescriptor.BeamWidth);
+
+		// Apply ribbon-specific parameters
+		SetFloatParam(TEXT("RibbonWidth"), Definition.FXDescriptor.RibbonWidth);
+
+		// Apply light-specific parameters
+		SetFloatParam(TEXT("LightIntensity"), Definition.FXDescriptor.LightIntensity);
+		SetFloatParam(TEXT("LightRadius"), Definition.FXDescriptor.LightRadius);
+
+		// Apply LOD parameters
+		SetFloatParam(TEXT("CullDistance"), Definition.FXDescriptor.CullDistance);
+		SetIntParam(TEXT("LODLevel"), Definition.FXDescriptor.LODLevel);
+
+		LogGeneration(FString::Printf(TEXT("  Applied FX Descriptor: %d parameters set"), ParamsApplied));
+
+		// Log enabled emitters
+		TArray<FString> EnabledEmitters;
+		if (Definition.FXDescriptor.bParticlesEnabled) EnabledEmitters.Add(TEXT("Particles"));
+		if (Definition.FXDescriptor.bBurstEnabled) EnabledEmitters.Add(TEXT("Burst"));
+		if (Definition.FXDescriptor.bBeamEnabled) EnabledEmitters.Add(TEXT("Beam"));
+		if (Definition.FXDescriptor.bRibbonEnabled) EnabledEmitters.Add(TEXT("Ribbon"));
+		if (Definition.FXDescriptor.bLightEnabled) EnabledEmitters.Add(TEXT("Light"));
+		if (Definition.FXDescriptor.bSmokeEnabled) EnabledEmitters.Add(TEXT("Smoke"));
+		if (Definition.FXDescriptor.bSparkEnabled) EnabledEmitters.Add(TEXT("Sparks"));
+
+		if (EnabledEmitters.Num() > 0)
+		{
+			LogGeneration(FString::Printf(TEXT("  Enabled emitters: %s"), *FString::Join(EnabledEmitters, TEXT(", "))));
+		}
 	}
 
 	// Request compilation

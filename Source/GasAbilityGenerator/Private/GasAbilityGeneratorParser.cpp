@@ -3897,9 +3897,11 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 	bool bInItem = false;
 	bool bInEmitters = false;
 	bool bInUserParameters = false;
+	bool bInFXDescriptor = false;  // v2.9.0
 	FManifestNiagaraUserParameter CurrentUserParam;
 	int32 EmittersIndent = -1;
 	int32 UserParamsIndent = -1;
+	int32 FXDescriptorIndent = -1;  // v2.9.0
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3961,9 +3963,11 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			bInItem = true;
 			bInEmitters = false;
 			bInUserParameters = false;
+			bInFXDescriptor = false;  // v2.9.0
 			CurrentUserParam = FManifestNiagaraUserParameter();
 			EmittersIndent = -1;
 			UserParamsIndent = -1;
+			FXDescriptorIndent = -1;  // v2.9.0
 		}
 		else if (bInItem)
 		{
@@ -4109,6 +4113,182 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 				CurrentDef.MaxPoolSize = FCString::Atoi(*GetLineValue(TrimmedLine));
 				bInEmitters = false;
 				bInUserParameters = false;
+				bInFXDescriptor = false;
+			}
+			// v2.9.0: FX Descriptor section for data-driven Niagara parameter binding
+			else if (TrimmedLine.StartsWith(TEXT("fx_descriptor:")))
+			{
+				bInFXDescriptor = true;
+				bInEmitters = false;
+				bInUserParameters = false;
+				FXDescriptorIndent = CurrentIndent;
+			}
+			// v2.9.0: FX Descriptor fields
+			else if (bInFXDescriptor)
+			{
+				// Emitter toggles
+				if (TrimmedLine.StartsWith(TEXT("particles_enabled:")))
+				{
+					CurrentDef.FXDescriptor.bParticlesEnabled = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("burst_enabled:")))
+				{
+					CurrentDef.FXDescriptor.bBurstEnabled = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("beam_enabled:")))
+				{
+					CurrentDef.FXDescriptor.bBeamEnabled = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("ribbon_enabled:")))
+				{
+					CurrentDef.FXDescriptor.bRibbonEnabled = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("light_enabled:")))
+				{
+					CurrentDef.FXDescriptor.bLightEnabled = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("smoke_enabled:")))
+				{
+					CurrentDef.FXDescriptor.bSmokeEnabled = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("spark_enabled:")) || TrimmedLine.StartsWith(TEXT("sparks_enabled:")))
+				{
+					CurrentDef.FXDescriptor.bSparkEnabled = GetLineValue(TrimmedLine).ToBool();
+				}
+				// Core emission
+				else if (TrimmedLine.StartsWith(TEXT("spawn_rate:")))
+				{
+					CurrentDef.FXDescriptor.SpawnRate = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("lifetime_min:")))
+				{
+					CurrentDef.FXDescriptor.LifetimeMin = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("lifetime_max:")))
+				{
+					CurrentDef.FXDescriptor.LifetimeMax = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("lifetime:")))
+				{
+					// Parse [min, max] format
+					FString Value = GetLineValue(TrimmedLine);
+					Value.RemoveFromStart(TEXT("["));
+					Value.RemoveFromEnd(TEXT("]"));
+					TArray<FString> Parts;
+					Value.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 2)
+					{
+						CurrentDef.FXDescriptor.LifetimeMin = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						CurrentDef.FXDescriptor.LifetimeMax = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("max_particles:")))
+				{
+					CurrentDef.FXDescriptor.MaxParticles = FCString::Atoi(*GetLineValue(TrimmedLine));
+				}
+				// Appearance
+				else if (TrimmedLine.StartsWith(TEXT("color:")))
+				{
+					// Parse [R, G, B, A] format
+					FString Value = GetLineValue(TrimmedLine);
+					Value.RemoveFromStart(TEXT("["));
+					Value.RemoveFromEnd(TEXT("]"));
+					TArray<FString> Parts;
+					Value.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 3)
+					{
+						CurrentDef.FXDescriptor.Color.R = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						CurrentDef.FXDescriptor.Color.G = FCString::Atof(*Parts[1].TrimStartAndEnd());
+						CurrentDef.FXDescriptor.Color.B = FCString::Atof(*Parts[2].TrimStartAndEnd());
+						CurrentDef.FXDescriptor.Color.A = Parts.Num() >= 4 ? FCString::Atof(*Parts[3].TrimStartAndEnd()) : 1.0f;
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("size_min:")))
+				{
+					CurrentDef.FXDescriptor.SizeMin = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("size_max:")))
+				{
+					CurrentDef.FXDescriptor.SizeMax = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("size:")))
+				{
+					// Parse [min, max] format
+					FString Value = GetLineValue(TrimmedLine);
+					Value.RemoveFromStart(TEXT("["));
+					Value.RemoveFromEnd(TEXT("]"));
+					TArray<FString> Parts;
+					Value.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 2)
+					{
+						CurrentDef.FXDescriptor.SizeMin = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						CurrentDef.FXDescriptor.SizeMax = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("opacity:")))
+				{
+					CurrentDef.FXDescriptor.Opacity = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("emissive:")))
+				{
+					CurrentDef.FXDescriptor.Emissive = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				// Motion
+				else if (TrimmedLine.StartsWith(TEXT("initial_velocity:")))
+				{
+					// Parse [X, Y, Z] format
+					FString Value = GetLineValue(TrimmedLine);
+					Value.RemoveFromStart(TEXT("["));
+					Value.RemoveFromEnd(TEXT("]"));
+					TArray<FString> Parts;
+					Value.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 3)
+					{
+						CurrentDef.FXDescriptor.InitialVelocity.X = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						CurrentDef.FXDescriptor.InitialVelocity.Y = FCString::Atof(*Parts[1].TrimStartAndEnd());
+						CurrentDef.FXDescriptor.InitialVelocity.Z = FCString::Atof(*Parts[2].TrimStartAndEnd());
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("noise_strength:")))
+				{
+					CurrentDef.FXDescriptor.NoiseStrength = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("gravity_scale:")))
+				{
+					CurrentDef.FXDescriptor.GravityScale = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				// Beam-specific
+				else if (TrimmedLine.StartsWith(TEXT("beam_length:")))
+				{
+					CurrentDef.FXDescriptor.BeamLength = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("beam_width:")))
+				{
+					CurrentDef.FXDescriptor.BeamWidth = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				// Ribbon-specific
+				else if (TrimmedLine.StartsWith(TEXT("ribbon_width:")))
+				{
+					CurrentDef.FXDescriptor.RibbonWidth = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				// Light-specific
+				else if (TrimmedLine.StartsWith(TEXT("light_intensity:")))
+				{
+					CurrentDef.FXDescriptor.LightIntensity = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("light_radius:")))
+				{
+					CurrentDef.FXDescriptor.LightRadius = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				// LOD
+				else if (TrimmedLine.StartsWith(TEXT("cull_distance:")))
+				{
+					CurrentDef.FXDescriptor.CullDistance = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("lod_level:")))
+				{
+					CurrentDef.FXDescriptor.LODLevel = FCString::Atoi(*GetLineValue(TrimmedLine));
+				}
 			}
 		}
 

@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.8.3
+// GasAbilityGenerator v2.9.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.9.0: Data-driven FX architecture - FManifestFXDescriptor for Niagara User param binding
 // v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
 // v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
@@ -755,9 +756,68 @@ struct FManifestNiagaraUserParameter
 };
 
 /**
+ * v2.9.0: FX Descriptor for data-driven Niagara parameter binding
+ * Maps directly to User.* parameters in Uber-Emitters
+ * See: Data_Driven_FX_Architecture_v1_0.md
+ */
+struct FManifestFXDescriptor
+{
+	// Emitter toggles (which emitters to enable)
+	bool bParticlesEnabled = false;
+	bool bBurstEnabled = false;
+	bool bBeamEnabled = false;
+	bool bRibbonEnabled = false;
+	bool bLightEnabled = false;
+	bool bSmokeEnabled = false;
+	bool bSparkEnabled = false;
+
+	// Core emission
+	float SpawnRate = 100.f;
+	float LifetimeMin = 1.0f;
+	float LifetimeMax = 2.0f;
+	int32 MaxParticles = 500;
+
+	// Appearance
+	FLinearColor Color = FLinearColor::White;
+	float SizeMin = 5.f;
+	float SizeMax = 10.f;
+	float Opacity = 1.0f;
+	float Emissive = 1.0f;
+
+	// Motion
+	FVector InitialVelocity = FVector::ZeroVector;
+	float NoiseStrength = 0.f;
+	float GravityScale = 0.f;
+
+	// Beam-specific
+	float BeamLength = 100.f;
+	float BeamWidth = 10.f;
+
+	// Ribbon-specific
+	float RibbonWidth = 20.f;
+
+	// Light-specific
+	float LightIntensity = 5000.f;
+	float LightRadius = 200.f;
+
+	// LOD
+	float CullDistance = 5000.f;
+	int32 LODLevel = 0;
+
+	// Check if any FX descriptor data was provided
+	bool HasData() const
+	{
+		return bParticlesEnabled || bBurstEnabled || bBeamEnabled ||
+		       bRibbonEnabled || bLightEnabled || bSmokeEnabled || bSparkEnabled ||
+		       SpawnRate != 100.f || !Color.Equals(FLinearColor::White);
+	}
+};
+
+/**
  * v2.6.10: Niagara System definition - creates UNiagaraSystem assets
  * Enhanced with warmup, bounds, determinism, and effect type settings
  * v2.6.11: Added user parameters support
+ * v2.9.0: Added FX descriptor for data-driven parameter binding
  */
 struct FManifestNiagaraSystemDefinition
 {
@@ -787,6 +847,9 @@ struct FManifestNiagaraSystemDefinition
 
 	// v2.6.11: User parameters
 	TArray<FManifestNiagaraUserParameter> UserParameters;  // User-exposed parameters
+
+	// v2.9.0: FX Descriptor for data-driven parameter binding
+	FManifestFXDescriptor FXDescriptor;
 };
 
 /**

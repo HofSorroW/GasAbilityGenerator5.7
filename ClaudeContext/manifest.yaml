@@ -4688,6 +4688,14 @@ widget_blueprints:
 # ============================================================================
 # NIAGARA SYSTEMS (7) - v2.6.11 Enhanced with user parameters
 # ============================================================================
+# v2.9.0: Niagara Systems now support data-driven FX architecture
+# Two modes:
+#   1. user_parameters: - Define custom User.* params (current method)
+#   2. fx_descriptor: + template_system: - Use template duplication with standard params
+#
+# For fx_descriptor mode, artist must first create NS_FatherFXTemplate with Uber-Emitters
+# See: guides/Niagara_Uber_Emitter_Setup_Guide_v1_0.md
+# ============================================================================
 niagara_systems:
   # Main Father companion floating energy orb VFX
   # Composed of: NE_FatherCore, NE_FatherShell, NE_FatherParticles, NE_FatherAura, NE_FatherTrail
@@ -4825,6 +4833,36 @@ niagara_systems:
     fixed_bounds: true
     bounds_min: -300, -300, -300
     bounds_max: 300, 300, 300
+
+  # v2.9.0 EXAMPLE: Data-driven FX using fx_descriptor
+  # Requires NS_FatherFXTemplate to be created by artist first
+  # Uncomment when template is ready:
+  #
+  # - name: NS_ImpactFX_Fire
+  #   folder: VFX/Impacts
+  #   template_system: /Game/FatherCompanion/VFX/Systems/NS_FatherFXTemplate
+  #   fx_descriptor:
+  #     # Enable specific emitters
+  #     particles_enabled: true
+  #     burst_enabled: true
+  #     light_enabled: true
+  #     smoke_enabled: true
+  #     # Core emission
+  #     spawn_rate: 200.0
+  #     lifetime: [0.3, 0.8]
+  #     max_particles: 300
+  #     # Appearance (Fire orange)
+  #     color: [1.0, 0.4, 0.1, 1.0]
+  #     size: [8.0, 20.0]
+  #     opacity: 1.0
+  #     emissive: 5.0
+  #     # Motion
+  #     initial_velocity: [0, 0, 150]
+  #     noise_strength: 2.0
+  #     gravity_scale: -0.3
+  #     # Light
+  #     light_intensity: 8000.0
+  #     light_radius: 300.0
 
 # ============================================================================
 # ANIMATION ASSETS (7)
