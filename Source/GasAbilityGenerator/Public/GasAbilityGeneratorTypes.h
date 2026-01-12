@@ -1347,7 +1347,30 @@ struct FManifestAnimationNotifyDefinition
 };
 
 /**
+ * v3.2: Dialogue speaker definition for UDialogue::Speakers array
+ */
+struct FManifestDialogueSpeakerDefinition
+{
+	FString NPCDefinition;  // Reference to NPCDef_ asset
+	FString NodeColor;      // Hex color e.g. "#0066FF"
+	TArray<FString> OwnedTags;  // Tags applied during dialogue
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(NPCDefinition);
+		Hash ^= GetTypeHash(NodeColor) << 4;
+		for (const auto& Tag : OwnedTags)
+		{
+			Hash ^= GetTypeHash(Tag);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
  * Dialogue blueprint definition (follows actor blueprint pattern)
+ * v3.2: Added configuration properties and speakers array
  */
 struct FManifestDialogueBlueprintDefinition
 {
@@ -1356,6 +1379,19 @@ struct FManifestDialogueBlueprintDefinition
 	FString Folder;
 	TArray<FManifestActorVariableDefinition> Variables;
 	FString EventGraphName;
+
+	// v3.2: Dialogue configuration properties
+	bool bFreeMovement = true;       // Player can still control character
+	bool bUnskippable = false;       // Lines cannot be skipped
+	bool bCanBeExited = true;        // Player can exit dialogue with ESC
+	bool bShowCinematicBars = false; // Show letterbox bars
+	bool bAutoRotateSpeakers = true; // Auto-face current speaker
+	bool bAutoStopMovement = false;  // Stop movement when dialogue starts
+	int32 Priority = 0;              // Lower = more important
+	float EndDialogueDist = 0.0f;    // Auto-end if player > distance (0 = disabled)
+
+	// v3.2: Speakers configuration
+	TArray<FManifestDialogueSpeakerDefinition> Speakers;
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -1369,6 +1405,20 @@ struct FManifestDialogueBlueprintDefinition
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
 		Hash ^= GetTypeHash(EventGraphName) << 8;
+		// v3.2: Include new configuration in hash
+		Hash ^= (bFreeMovement ? 1ULL : 0ULL) << 12;
+		Hash ^= (bUnskippable ? 1ULL : 0ULL) << 13;
+		Hash ^= (bCanBeExited ? 1ULL : 0ULL) << 14;
+		Hash ^= (bShowCinematicBars ? 1ULL : 0ULL) << 15;
+		Hash ^= (bAutoRotateSpeakers ? 1ULL : 0ULL) << 16;
+		Hash ^= (bAutoStopMovement ? 1ULL : 0ULL) << 17;
+		Hash ^= GetTypeHash(Priority) << 18;
+		Hash ^= GetTypeHash(static_cast<int32>(EndDialogueDist)) << 22;
+		for (const auto& Speaker : Speakers)
+		{
+			Hash ^= Speaker.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
 		return Hash;
 	}
 };
@@ -1543,6 +1593,7 @@ struct FManifestItemCollectionDefinition
 
 /**
  * Narrative event definition
+ * v3.2: Added event configuration properties (runtime, filter, party policy, targets)
  */
 struct FManifestNarrativeEventDefinition
 {
@@ -1553,6 +1604,17 @@ struct FManifestNarrativeEventDefinition
 	FString EventType;
 	FString Description;
 
+	// v3.2: Event configuration properties
+	FString EventRuntime = TEXT("Start");     // "Start", "End", "Both"
+	FString EventFilter = TEXT("Anyone");     // "Anyone", "OnlyNPCs", "OnlyPlayers"
+	FString PartyEventPolicy = TEXT("Party"); // "Party", "AllPartyMembers", "PartyLeader"
+	bool bRefireOnLoad = false;               // Re-fire when game loads
+
+	// v3.2: Target configuration
+	TArray<FString> NPCTargets;               // NPCDefinition references for OnlyNPCs filter
+	TArray<FString> CharacterTargets;         // CharacterDefinition refs for Anyone filter
+	TArray<FString> PlayerTargets;            // PlayerDefinition refs for OnlyPlayers filter
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -1562,6 +1624,26 @@ struct FManifestNarrativeEventDefinition
 		Hash ^= GetTypeHash(EventTag) << 8;
 		Hash ^= GetTypeHash(EventType) << 12;
 		Hash ^= GetTypeHash(Description) << 16;
+		// v3.2: Include new configuration in hash
+		Hash ^= GetTypeHash(EventRuntime) << 20;
+		Hash ^= GetTypeHash(EventFilter) << 24;
+		Hash ^= GetTypeHash(PartyEventPolicy) << 28;
+		Hash ^= (bRefireOnLoad ? 1ULL : 0ULL) << 32;
+		for (const auto& Target : NPCTargets)
+		{
+			Hash ^= GetTypeHash(Target);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Target : CharacterTargets)
+		{
+			Hash ^= GetTypeHash(Target);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& Target : PlayerTargets)
+		{
+			Hash ^= GetTypeHash(Target);
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
 		return Hash;
 	}
 };

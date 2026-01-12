@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.1.1) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.2) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -222,7 +222,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v3.1.1)
+## GasAbilityGenerator Plugin (v3.2)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -401,6 +401,36 @@ behavior_trees:
         services:
           - class: BTService_BlueprintBase
             interval: 0.5
+
+# v3.2: NarrativeEvent with event configuration
+narrative_events:
+  - name: NE_FatherAwakens
+    folder: Events
+    event_runtime: Start                          # Start, End, Both
+    event_filter: OnlyPlayers                     # Anyone, OnlyNPCs, OnlyPlayers
+    party_policy: Party                           # Party, AllPartyMembers, PartyLeader
+    refire_on_load: false
+    npc_targets: [NPCDef_Father]                  # Logged for manual setup
+    character_targets: []
+    player_targets: []
+
+# v3.2: DialogueBlueprint with dialogue configuration
+dialogue_blueprints:
+  - name: DBP_FatherGreeting
+    parent_class: NarrativeDialogue
+    folder: Dialogues
+    free_movement: true                           # Allow movement during dialogue
+    unskippable: false                            # Cannot skip dialogue lines
+    can_be_exited: true                           # Can exit via ESC
+    cinematic_bars: false                         # Show letterbox bars
+    auto_rotate_speakers: true                    # Auto-face speakers
+    auto_stop_movement: false                     # Stop NPC movement
+    priority: 0                                   # Higher = more important
+    end_dialogue_distance: 500.0                  # Auto-end if players move away
+    speakers:                                     # Logged for manual setup
+      - npc_definition: NPCDef_Father
+        node_color: "#FF6600"
+        owned_tags: [Father.State.Speaking]
 ```
 
 ### Event Graph Generation
@@ -510,6 +540,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.2 - NE_ & DBP_ Enhancements: NarrativeEvent now sets EventRuntime/EventFilter/PartyEventPolicy/bRefireOnLoad via reflection, DialogueBlueprint sets bFreeMovement/bUnskippable/bCanBeExited/bShowCinematicBars/bAutoRotateSpeakers/bAutoStopMovement/Priority/EndDialogueDist via reflection, both types upgraded from Stub to Medium automation level
 - v3.1.1 - Robustness Fixes: Commandlet exit code returns non-zero on failures (CI/CD support), dedicated LogGasAbilityGenerator log category, try/catch for YAML parsing exceptions, UGeneratorMetadataRegistry fallback for UDataAsset/UBlueprint/UNiagaraSystem (which don't support IInterface_AssetUserData in UE5.7)
 - v3.1 - TSubclassOf Resolution & BT Node Trees: AbilityConfiguration now populates DefaultAbilities/StartupEffects/DefaultAttributes via LoadClass<>, ActivityConfiguration populates DefaultActivities/GoalGenerators, BehaviorTree creates root composite node (Selector/Sequence) and populates Children with tasks/decorators/services
 - v3.0 - Regen/Diff Safety System: Per-asset metadata via UGeneratorAssetMetadata (UAssetUserData), input hash (manifest definition) + output hash (asset content) change detection, --dryrun preview mode, --force conflict override, universal SkipIfModified policy for all 25 generators, ComputeDataAssetOutputHash for 17 DataAsset types, ComputeBlueprintOutputHash for 9 Blueprint types

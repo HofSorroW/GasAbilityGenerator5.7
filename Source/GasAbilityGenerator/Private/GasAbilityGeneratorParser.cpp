@@ -3033,8 +3033,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	bool bInItem = false;
 	bool bInVariables = false;
 	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
+	bool bInSpeakers = false;  // v3.2: Speaker array parsing
+	bool bInOwnedTags = false;  // v3.2: Speaker owned tags array
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
+	FManifestDialogueSpeakerDefinition CurrentSpeaker;  // v3.2: Current speaker being parsed
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3047,6 +3050,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			if (bInVariables && !CurrentVar.Name.IsEmpty())
 			{
 				CurrentDef.Variables.Add(CurrentVar);
+			}
+			// v3.2: Save any pending speaker
+			if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
+			{
+				CurrentDef.Speakers.Add(CurrentSpeaker);
 			}
 			// v2.6.14: Prefix validation - only add if DBP_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
@@ -3077,6 +3085,14 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 				CurrentVar = FManifestActorVariableDefinition();
 			}
 			bInVariables = false;
+			// v3.2: Save pending speaker and reset
+			if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
+			{
+				CurrentDef.Speakers.Add(CurrentSpeaker);
+				CurrentSpeaker = FManifestDialogueSpeakerDefinition();
+			}
+			bInSpeakers = false;
+			bInOwnedTags = false;
 
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
@@ -3108,8 +3124,110 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			{
 				CurrentDef.EventGraphName = GetLineValue(TrimmedLine);
 			}
+			// v3.2: Dialogue configuration properties
+			else if (TrimmedLine.StartsWith(TEXT("free_movement:")))
+			{
+				CurrentDef.bFreeMovement = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("unskippable:")))
+			{
+				CurrentDef.bUnskippable = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("can_be_exited:")))
+			{
+				CurrentDef.bCanBeExited = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cinematic_bars:")))
+			{
+				CurrentDef.bShowCinematicBars = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("auto_rotate_speakers:")))
+			{
+				CurrentDef.bAutoRotateSpeakers = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("auto_stop_movement:")))
+			{
+				CurrentDef.bAutoStopMovement = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("priority:")))
+			{
+				CurrentDef.Priority = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("end_dialogue_distance:")))
+			{
+				CurrentDef.EndDialogueDist = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// v3.2: Speakers array parsing
+			else if (TrimmedLine.Equals(TEXT("speakers:")) || TrimmedLine.StartsWith(TEXT("speakers:")))
+			{
+				// Save any pending speaker from previous section
+				if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
+				{
+					CurrentDef.Speakers.Add(CurrentSpeaker);
+				}
+				bInSpeakers = true;
+				bInVariables = false;
+				bInOwnedTags = false;
+				CurrentSpeaker = FManifestDialogueSpeakerDefinition();
+			}
+			else if (bInSpeakers)
+			{
+				// New speaker item: "- npc_definition:"
+				if (TrimmedLine.StartsWith(TEXT("- npc_definition:")))
+				{
+					// Save previous speaker if any
+					if (!CurrentSpeaker.NPCDefinition.IsEmpty())
+					{
+						CurrentDef.Speakers.Add(CurrentSpeaker);
+					}
+					CurrentSpeaker = FManifestDialogueSpeakerDefinition();
+					CurrentSpeaker.NPCDefinition = GetLineValue(TrimmedLine.Mid(2));
+					bInOwnedTags = false;
+				}
+				else if (TrimmedLine.StartsWith(TEXT("npc_definition:")))
+				{
+					CurrentSpeaker.NPCDefinition = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("node_color:")))
+				{
+					CurrentSpeaker.NodeColor = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.Equals(TEXT("owned_tags:")) || TrimmedLine.StartsWith(TEXT("owned_tags:")))
+				{
+					bInOwnedTags = true;
+					// Check for inline array format [tag1, tag2]
+					FString Value = GetLineValue(TrimmedLine);
+					if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+					{
+						FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+						TArray<FString> Tags;
+						ArrayContent.ParseIntoArray(Tags, TEXT(","), true);
+						for (const FString& Tag : Tags)
+						{
+							CurrentSpeaker.OwnedTags.Add(Tag.TrimStartAndEnd());
+						}
+						bInOwnedTags = false;
+					}
+				}
+				else if (bInOwnedTags && TrimmedLine.StartsWith(TEXT("-")))
+				{
+					FString Tag = TrimmedLine.Mid(1).TrimStartAndEnd();
+					if (!Tag.IsEmpty())
+					{
+						CurrentSpeaker.OwnedTags.Add(Tag);
+					}
+				}
+			}
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
+				// Save pending speaker when entering variables
+				if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
+				{
+					CurrentDef.Speakers.Add(CurrentSpeaker);
+					CurrentSpeaker = FManifestDialogueSpeakerDefinition();
+				}
+				bInSpeakers = false;
+				bInOwnedTags = false;
 				bInVariables = true;
 			}
 			else if (bInVariables)
@@ -3140,6 +3258,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	if (bInVariables && !CurrentVar.Name.IsEmpty())
 	{
 		CurrentDef.Variables.Add(CurrentVar);
+	}
+	// v3.2: Save any pending speaker
+	if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
+	{
+		CurrentDef.Speakers.Add(CurrentSpeaker);
 	}
 	// v2.6.14: Prefix validation - only add if DBP_ prefix
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
@@ -3610,6 +3733,9 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 
 	FManifestNarrativeEventDefinition CurrentDef;
 	bool bInItem = false;
+	bool bInNPCTargets = false;
+	bool bInCharacterTargets = false;
+	bool bInPlayerTargets = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3641,28 +3767,130 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 			CurrentDef = FManifestNarrativeEventDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			bInNPCTargets = false;
+			bInCharacterTargets = false;
+			bInPlayerTargets = false;
 		}
 		else if (bInItem)
 		{
-			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			// Check for array item (starts with "- ")
+			if (TrimmedLine.StartsWith(TEXT("- ")) && !TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				FString ArrayValue = TrimmedLine.Mid(2).TrimStart();
+				if (bInNPCTargets)
+				{
+					CurrentDef.NPCTargets.Add(ArrayValue);
+				}
+				else if (bInCharacterTargets)
+				{
+					CurrentDef.CharacterTargets.Add(ArrayValue);
+				}
+				else if (bInPlayerTargets)
+				{
+					CurrentDef.PlayerTargets.Add(ArrayValue);
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("parent_class:")))
 			{
 				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("event_tag:")))
 			{
 				CurrentDef.EventTag = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("event_type:")))
 			{
 				CurrentDef.EventType = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("description:")))
 			{
 				CurrentDef.Description = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
+			// v3.2: New event configuration properties
+			else if (TrimmedLine.StartsWith(TEXT("event_runtime:")))
+			{
+				CurrentDef.EventRuntime = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("event_filter:")))
+			{
+				CurrentDef.EventFilter = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("party_policy:")))
+			{
+				CurrentDef.PartyEventPolicy = GetLineValue(TrimmedLine);
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("refire_on_load:")))
+			{
+				CurrentDef.bRefireOnLoad = GetLineValue(TrimmedLine).ToBool();
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
+			// v3.2: Target arrays
+			else if (TrimmedLine.StartsWith(TEXT("npc_targets:")))
+			{
+				bInNPCTargets = true;
+				bInCharacterTargets = false;
+				bInPlayerTargets = false;
+				// Check for inline array format: npc_targets: [NPCDef_A, NPCDef_B]
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					Value = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Items;
+					Value.ParseIntoArray(Items, TEXT(","), true);
+					for (FString& Item : Items)
+					{
+						CurrentDef.NPCTargets.Add(Item.TrimStartAndEnd());
+					}
+					bInNPCTargets = false;
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("character_targets:")))
+			{
+				bInNPCTargets = false;
+				bInCharacterTargets = true;
+				bInPlayerTargets = false;
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					Value = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Items;
+					Value.ParseIntoArray(Items, TEXT(","), true);
+					for (FString& Item : Items)
+					{
+						CurrentDef.CharacterTargets.Add(Item.TrimStartAndEnd());
+					}
+					bInCharacterTargets = false;
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("player_targets:")))
+			{
+				bInNPCTargets = false;
+				bInCharacterTargets = false;
+				bInPlayerTargets = true;
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					Value = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Items;
+					Value.ParseIntoArray(Items, TEXT(","), true);
+					for (FString& Item : Items)
+					{
+						CurrentDef.PlayerTargets.Add(Item.TrimStartAndEnd());
+					}
+					bInPlayerTargets = false;
+				}
 			}
 		}
 

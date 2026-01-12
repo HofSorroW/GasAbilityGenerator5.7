@@ -7146,6 +7146,114 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
+	// v3.2: Set dialogue configuration properties on CDO
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// Set bFreeMovement (default true)
+		if (!Definition.bFreeMovement)  // Only set if false (non-default)
+		{
+			FBoolProperty* FreeMoveP = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bFreeMovement")));
+			if (FreeMoveP)
+			{
+				FreeMoveP->SetPropertyValue_InContainer(CDO, false);
+				LogGeneration(TEXT("  Set bFreeMovement: false"));
+			}
+		}
+
+		// Set bUnskippable (default false)
+		if (Definition.bUnskippable)
+		{
+			FBoolProperty* UnskippableP = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bUnskippable")));
+			if (UnskippableP)
+			{
+				UnskippableP->SetPropertyValue_InContainer(CDO, true);
+				LogGeneration(TEXT("  Set bUnskippable: true"));
+			}
+		}
+
+		// Set bCanBeExited (default true)
+		if (!Definition.bCanBeExited)
+		{
+			FBoolProperty* CanExitP = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bCanBeExited")));
+			if (CanExitP)
+			{
+				CanExitP->SetPropertyValue_InContainer(CDO, false);
+				LogGeneration(TEXT("  Set bCanBeExited: false"));
+			}
+		}
+
+		// Set bShowCinematicBars (default false)
+		if (Definition.bShowCinematicBars)
+		{
+			FBoolProperty* CinematicP = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bShowCinematicBars")));
+			if (CinematicP)
+			{
+				CinematicP->SetPropertyValue_InContainer(CDO, true);
+				LogGeneration(TEXT("  Set bShowCinematicBars: true"));
+			}
+		}
+
+		// Set bAutoRotateSpeakers (default true)
+		if (!Definition.bAutoRotateSpeakers)
+		{
+			FBoolProperty* AutoRotateP = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bAutoRotateSpeakers")));
+			if (AutoRotateP)
+			{
+				AutoRotateP->SetPropertyValue_InContainer(CDO, false);
+				LogGeneration(TEXT("  Set bAutoRotateSpeakers: false"));
+			}
+		}
+
+		// Set bAutoStopMovement (default false)
+		if (Definition.bAutoStopMovement)
+		{
+			FBoolProperty* AutoStopP = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bAutoStopMovement")));
+			if (AutoStopP)
+			{
+				AutoStopP->SetPropertyValue_InContainer(CDO, true);
+				LogGeneration(TEXT("  Set bAutoStopMovement: true"));
+			}
+		}
+
+		// Set Priority (default 0)
+		if (Definition.Priority != 0)
+		{
+			FIntProperty* PriorityP = CastField<FIntProperty>(CDO->GetClass()->FindPropertyByName(TEXT("Priority")));
+			if (PriorityP)
+			{
+				PriorityP->SetPropertyValue_InContainer(CDO, Definition.Priority);
+				LogGeneration(FString::Printf(TEXT("  Set Priority: %d"), Definition.Priority));
+			}
+		}
+
+		// Set EndDialogueDist (default 0.0f)
+		if (Definition.EndDialogueDist > 0.0f)
+		{
+			FFloatProperty* EndDistP = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("EndDialogueDist")));
+			if (EndDistP)
+			{
+				EndDistP->SetPropertyValue_InContainer(CDO, Definition.EndDialogueDist);
+				LogGeneration(FString::Printf(TEXT("  Set EndDialogueDist: %.1f"), Definition.EndDialogueDist));
+			}
+		}
+
+		// Recompile after setting CDO properties
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	}
+
+	// v3.2: Log speakers for manual setup (FSpeakerInfo contains soft object refs)
+	if (Definition.Speakers.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Dialogue '%s' has %d speaker(s) to configure manually:"), *Definition.Name, Definition.Speakers.Num()));
+		for (int32 i = 0; i < Definition.Speakers.Num(); i++)
+		{
+			const auto& Speaker = Definition.Speakers[i];
+			LogGeneration(FString::Printf(TEXT("    [%d] NPCDefinition: %s, NodeColor: %s, OwnedTags: %d"),
+				i, *Speaker.NPCDefinition, *Speaker.NodeColor, Speaker.OwnedTags.Num()));
+		}
+	}
+
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Blueprint);
 
@@ -7933,6 +8041,67 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	// Compile blueprint
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
+	// v3.2: Set event configuration properties on CDO
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// Set EventRuntime enum via reflection
+		if (!Definition.EventRuntime.IsEmpty())
+		{
+			FByteProperty* RuntimeProp = CastField<FByteProperty>(CDO->GetClass()->FindPropertyByName(TEXT("EventRuntime")));
+			if (RuntimeProp)
+			{
+				int32 RuntimeValue = 0;  // Default: Start
+				if (Definition.EventRuntime.Equals(TEXT("End"), ESearchCase::IgnoreCase)) RuntimeValue = 1;
+				else if (Definition.EventRuntime.Equals(TEXT("Both"), ESearchCase::IgnoreCase)) RuntimeValue = 2;
+				RuntimeProp->SetPropertyValue_InContainer(CDO, static_cast<uint8>(RuntimeValue));
+				LogGeneration(FString::Printf(TEXT("  Set EventRuntime: %s"), *Definition.EventRuntime));
+			}
+		}
+
+		// Set EventFilter enum via reflection
+		if (!Definition.EventFilter.IsEmpty())
+		{
+			FByteProperty* FilterProp = CastField<FByteProperty>(CDO->GetClass()->FindPropertyByName(TEXT("EventFilter")));
+			if (FilterProp)
+			{
+				int32 FilterValue = 0;  // Default: Anyone
+				if (Definition.EventFilter.Equals(TEXT("OnlyNPCs"), ESearchCase::IgnoreCase)) FilterValue = 1;
+				else if (Definition.EventFilter.Equals(TEXT("OnlyPlayers"), ESearchCase::IgnoreCase)) FilterValue = 2;
+				FilterProp->SetPropertyValue_InContainer(CDO, static_cast<uint8>(FilterValue));
+				LogGeneration(FString::Printf(TEXT("  Set EventFilter: %s"), *Definition.EventFilter));
+			}
+		}
+
+		// Set PartyEventPolicy enum via reflection
+		if (!Definition.PartyEventPolicy.IsEmpty())
+		{
+			FByteProperty* PartyProp = CastField<FByteProperty>(CDO->GetClass()->FindPropertyByName(TEXT("PartyEventPolicy")));
+			if (PartyProp)
+			{
+				int32 PartyValue = 0;  // Default: Party
+				if (Definition.PartyEventPolicy.Equals(TEXT("AllPartyMembers"), ESearchCase::IgnoreCase)) PartyValue = 1;
+				else if (Definition.PartyEventPolicy.Equals(TEXT("PartyLeader"), ESearchCase::IgnoreCase)) PartyValue = 2;
+				PartyProp->SetPropertyValue_InContainer(CDO, static_cast<uint8>(PartyValue));
+				LogGeneration(FString::Printf(TEXT("  Set PartyEventPolicy: %s"), *Definition.PartyEventPolicy));
+			}
+		}
+
+		// Set bRefireOnLoad bool property
+		if (Definition.bRefireOnLoad)
+		{
+			FBoolProperty* RefireProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bRefireOnLoad")));
+			if (RefireProp)
+			{
+				RefireProp->SetPropertyValue_InContainer(CDO, true);
+				LogGeneration(TEXT("  Set bRefireOnLoad: true"));
+			}
+		}
+
+		// Recompile after setting CDO properties
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	}
+
 	// Log event details for manual setup
 	if (!Definition.EventType.IsEmpty())
 	{
@@ -7941,6 +8110,19 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	if (!Definition.Description.IsEmpty())
 	{
 		LogGeneration(FString::Printf(TEXT("  Event '%s' Description: %s"), *Definition.Name, *Definition.Description));
+	}
+	// v3.2: Log target arrays for manual setup (soft object references require manual setup)
+	if (Definition.NPCTargets.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Event '%s' NPCTargets (%d): %s"), *Definition.Name, Definition.NPCTargets.Num(), *FString::Join(Definition.NPCTargets, TEXT(", "))));
+	}
+	if (Definition.CharacterTargets.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Event '%s' CharacterTargets (%d): %s"), *Definition.Name, Definition.CharacterTargets.Num(), *FString::Join(Definition.CharacterTargets, TEXT(", "))));
+	}
+	if (Definition.PlayerTargets.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Event '%s' PlayerTargets (%d): %s"), *Definition.Name, Definition.PlayerTargets.Num(), *FString::Join(Definition.PlayerTargets, TEXT(", "))));
 	}
 
 	Package->MarkPackageDirty();
