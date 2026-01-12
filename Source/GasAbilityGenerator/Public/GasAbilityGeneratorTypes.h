@@ -1390,6 +1390,11 @@ struct FManifestDialogueBlueprintDefinition
 	int32 Priority = 0;              // Lower = more important
 	float EndDialogueDist = 0.0f;    // Auto-end if player > distance (0 = disabled)
 
+	// v3.5: Additional UDialogue properties
+	FString DefaultHeadBoneName;     // Bone to aim camera at (default: "head")
+	float DialogueBlendOutTime = 0.5f; // Camera blend out duration
+	bool bAdjustPlayerTransform = false; // Move player to face speaker
+
 	// v3.2: Speakers configuration
 	TArray<FManifestDialogueSpeakerDefinition> Speakers;
 
@@ -1414,6 +1419,10 @@ struct FManifestDialogueBlueprintDefinition
 		Hash ^= (bAutoStopMovement ? 1ULL : 0ULL) << 17;
 		Hash ^= GetTypeHash(Priority) << 18;
 		Hash ^= GetTypeHash(static_cast<int32>(EndDialogueDist)) << 22;
+		// v3.5: Additional properties
+		Hash ^= GetTypeHash(DefaultHeadBoneName) << 26;
+		Hash ^= GetTypeHash(static_cast<int32>(DialogueBlendOutTime * 1000.f)) << 30;
+		Hash ^= (bAdjustPlayerTransform ? 1ULL : 0ULL) << 34;
 		for (const auto& Speaker : Speakers)
 		{
 			Hash ^= Speaker.ComputeHash();
@@ -1876,25 +1885,49 @@ struct FManifestNPCDefinitionDefinition
 
 /**
  * Character definition - maps to UCharacterDefinition data asset
+ * v3.5: Enhanced with full UCharacterDefinition property support
  */
 struct FManifestCharacterDefinitionDefinition
 {
 	FString Name;
 	FString Folder;
-	FString DefaultOwnedTags;
-	FString DefaultFactions;
+
+	// v3.5: Changed to arrays for proper FGameplayTagContainer support
+	TArray<FString> DefaultOwnedTags;    // Tags granted to character (State.Invulnerable, etc.)
+	TArray<FString> DefaultFactions;     // Faction tags (Narrative.Factions.Friendly, etc.)
+
 	int32 DefaultCurrency = 0;
 	float AttackPriority = 1.0f;
+
+	// v3.5: Additional UCharacterDefinition properties
+	FString DefaultAppearance;           // TSoftObjectPtr<UCharacterAppearanceBase>
+	TArray<FString> TriggerSets;         // TArray<TSoftObjectPtr<UTriggerSet>>
+	FString AbilityConfiguration;        // TObjectPtr<UAbilityConfiguration>
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
 		// NOTE: Folder excluded - presentational only
-		Hash ^= GetTypeHash(DefaultOwnedTags) << 4;
-		Hash ^= GetTypeHash(DefaultFactions) << 8;
+		for (const FString& Tag : DefaultOwnedTags)
+		{
+			Hash ^= GetTypeHash(Tag);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Faction : DefaultFactions)
+		{
+			Hash ^= GetTypeHash(Faction);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
 		Hash ^= static_cast<uint64>(DefaultCurrency) << 16;
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttackPriority * 1000.f)) << 32;
+		Hash ^= GetTypeHash(DefaultAppearance) << 4;
+		for (const FString& TriggerSet : TriggerSets)
+		{
+			Hash ^= GetTypeHash(TriggerSet);
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		Hash ^= GetTypeHash(AbilityConfiguration) << 8;
 		return Hash;
 	}
 };

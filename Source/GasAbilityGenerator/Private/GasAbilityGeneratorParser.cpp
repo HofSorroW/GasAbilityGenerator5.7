@@ -3157,6 +3157,19 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			{
 				CurrentDef.EndDialogueDist = FCString::Atof(*GetLineValue(TrimmedLine));
 			}
+			// v3.5: Additional UDialogue properties
+			else if (TrimmedLine.StartsWith(TEXT("default_head_bone_name:")))
+			{
+				CurrentDef.DefaultHeadBoneName = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("dialogue_blend_out_time:")))
+			{
+				CurrentDef.DialogueBlendOutTime = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("adjust_player_transform:")))
+			{
+				CurrentDef.bAdjustPlayerTransform = GetLineValue(TrimmedLine).ToBool();
+			}
 			// v3.2: Speakers array parsing
 			else if (TrimmedLine.Equals(TEXT("speakers:")) || TrimmedLine.StartsWith(TEXT("speakers:")))
 			{
@@ -4368,6 +4381,10 @@ void FGasAbilityGeneratorParser::ParseCharacterDefinitions(const TArray<FString>
 
 	FManifestCharacterDefinitionDefinition CurrentDef;
 	bool bInItem = false;
+	// v3.5: Array parsing states
+	bool bInOwnedTags = false;
+	bool bInFactions = false;
+	bool bInTriggerSets = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -4399,28 +4416,116 @@ void FGasAbilityGeneratorParser::ParseCharacterDefinitions(const TArray<FString>
 			CurrentDef = FManifestCharacterDefinitionDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			// v3.5: Reset array states
+			bInOwnedTags = false;
+			bInFactions = false;
+			bInTriggerSets = false;
 		}
 		else if (bInItem)
 		{
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInOwnedTags = false; bInFactions = false; bInTriggerSets = false;
 			}
-			else if (TrimmedLine.StartsWith(TEXT("default_owned_tags:")))
+			// v3.5: Array properties
+			else if (TrimmedLine.Equals(TEXT("default_owned_tags:")) || TrimmedLine.StartsWith(TEXT("default_owned_tags:")))
 			{
-				CurrentDef.DefaultOwnedTags = GetLineValue(TrimmedLine);
+				bInOwnedTags = true;
+				bInFactions = false;
+				bInTriggerSets = false;
+				// Check for inline array format: [Tag1, Tag2]
+				FString Value = GetLineValue(TrimmedLine);
+				if (!Value.IsEmpty() && Value.StartsWith(TEXT("[")))
+				{
+					Value = Value.Mid(1);
+					if (Value.EndsWith(TEXT("]"))) Value = Value.LeftChop(1);
+					TArray<FString> Items;
+					Value.ParseIntoArray(Items, TEXT(","));
+					for (FString& Item : Items)
+					{
+						Item = Item.TrimStartAndEnd();
+						if (!Item.IsEmpty()) CurrentDef.DefaultOwnedTags.Add(Item);
+					}
+					bInOwnedTags = false;
+				}
 			}
-			else if (TrimmedLine.StartsWith(TEXT("default_factions:")))
+			else if (TrimmedLine.Equals(TEXT("default_factions:")) || TrimmedLine.StartsWith(TEXT("default_factions:")))
 			{
-				CurrentDef.DefaultFactions = GetLineValue(TrimmedLine);
+				bInOwnedTags = false;
+				bInFactions = true;
+				bInTriggerSets = false;
+				FString Value = GetLineValue(TrimmedLine);
+				if (!Value.IsEmpty() && Value.StartsWith(TEXT("[")))
+				{
+					Value = Value.Mid(1);
+					if (Value.EndsWith(TEXT("]"))) Value = Value.LeftChop(1);
+					TArray<FString> Items;
+					Value.ParseIntoArray(Items, TEXT(","));
+					for (FString& Item : Items)
+					{
+						Item = Item.TrimStartAndEnd();
+						if (!Item.IsEmpty()) CurrentDef.DefaultFactions.Add(Item);
+					}
+					bInFactions = false;
+				}
+			}
+			else if (TrimmedLine.Equals(TEXT("trigger_sets:")) || TrimmedLine.StartsWith(TEXT("trigger_sets:")))
+			{
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInTriggerSets = true;
+			}
+			else if (bInOwnedTags && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Tag = TrimmedLine.Mid(1).TrimStart();
+				if (Tag.Len() >= 2 && ((Tag.StartsWith(TEXT("\"")) && Tag.EndsWith(TEXT("\""))) ||
+					(Tag.StartsWith(TEXT("'")) && Tag.EndsWith(TEXT("'")))))
+				{
+					Tag = Tag.Mid(1, Tag.Len() - 2);
+				}
+				if (!Tag.IsEmpty()) CurrentDef.DefaultOwnedTags.Add(Tag);
+			}
+			else if (bInFactions && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Faction = TrimmedLine.Mid(1).TrimStart();
+				if (Faction.Len() >= 2 && ((Faction.StartsWith(TEXT("\"")) && Faction.EndsWith(TEXT("\""))) ||
+					(Faction.StartsWith(TEXT("'")) && Faction.EndsWith(TEXT("'")))))
+				{
+					Faction = Faction.Mid(1, Faction.Len() - 2);
+				}
+				if (!Faction.IsEmpty()) CurrentDef.DefaultFactions.Add(Faction);
+			}
+			else if (bInTriggerSets && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString TriggerSet = TrimmedLine.Mid(1).TrimStart();
+				if (TriggerSet.Len() >= 2 && ((TriggerSet.StartsWith(TEXT("\"")) && TriggerSet.EndsWith(TEXT("\""))) ||
+					(TriggerSet.StartsWith(TEXT("'")) && TriggerSet.EndsWith(TEXT("'")))))
+				{
+					TriggerSet = TriggerSet.Mid(1, TriggerSet.Len() - 2);
+				}
+				if (!TriggerSet.IsEmpty()) CurrentDef.TriggerSets.Add(TriggerSet);
 			}
 			else if (TrimmedLine.StartsWith(TEXT("default_currency:")))
 			{
 				CurrentDef.DefaultCurrency = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInOwnedTags = false; bInFactions = false; bInTriggerSets = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("attack_priority:")))
 			{
 				CurrentDef.AttackPriority = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInOwnedTags = false; bInFactions = false; bInTriggerSets = false;
+			}
+			// v3.5: New properties
+			else if (TrimmedLine.StartsWith(TEXT("default_appearance:")))
+			{
+				CurrentDef.DefaultAppearance = GetLineValue(TrimmedLine);
+				bInOwnedTags = false; bInFactions = false; bInTriggerSets = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("ability_configuration:")))
+			{
+				CurrentDef.AbilityConfiguration = GetLineValue(TrimmedLine);
+				bInOwnedTags = false; bInFactions = false; bInTriggerSets = false;
 			}
 		}
 

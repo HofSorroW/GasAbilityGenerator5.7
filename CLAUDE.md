@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.4) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.5) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -414,7 +414,7 @@ narrative_events:
     character_targets: []
     player_targets: []
 
-# v3.2: DialogueBlueprint with dialogue configuration
+# v3.5: DialogueBlueprint with dialogue configuration
 dialogue_blueprints:
   - name: DBP_FatherGreeting
     parent_class: NarrativeDialogue
@@ -427,10 +427,34 @@ dialogue_blueprints:
     auto_stop_movement: false                     # Stop NPC movement
     priority: 0                                   # Higher = more important
     end_dialogue_distance: 500.0                  # Auto-end if players move away
+    # v3.5: Additional UDialogue properties
+    default_head_bone_name: head                  # Bone for camera focus (default: head)
+    dialogue_blend_out_time: 0.5                  # Camera blend-out duration
+    adjust_player_transform: false                # Move player to face speaker
     speakers:                                     # Logged for manual setup
       - npc_definition: NPCDef_Father
         node_color: "#FF6600"
         owned_tags: [Father.State.Speaking]
+
+# v3.5: CharacterDefinition with full property support
+character_definitions:
+  - name: CD_Merchant
+    folder: Characters/Definitions
+    # v3.5: Core properties (arrays populate FGameplayTagContainer)
+    default_owned_tags:
+      - State.Invulnerable
+      - Character.Merchant
+    default_factions:
+      - Narrative.Factions.Friendly
+      - Narrative.Factions.Town
+    default_currency: 1000                        # Starting gold
+    attack_priority: 0.2                          # Low priority target
+    # v3.5: Additional properties
+    default_appearance: Appearance_Merchant       # TSoftObjectPtr<UObject>
+    trigger_sets:                                 # TArray<FNPCTriggerSet>
+      - TS_MerchantSchedule
+      - TS_MerchantCombat
+    ability_configuration: AC_Merchant            # FObjectProperty
 
 # v3.3: NPCDefinition with full property support
 npc_definitions:
@@ -649,6 +673,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.5 - CharacterDefinition & DialogueBlueprint Enhancement: CharacterDefinition (CD_) gains full property support - DefaultOwnedTags/DefaultFactions now properly populate FGameplayTagContainer from arrays, added DefaultAppearance (TSoftObjectPtr), TriggerSets (array via FScriptArrayHelper reflection), AbilityConfiguration (FObjectProperty). DialogueBlueprint gains 3 additional UDialogue properties - DefaultHeadBoneName (FName), DialogueBlendOutTime (float), bAdjustPlayerTransform (bool). Both CD_ and DBP_ upgraded to High automation level.
 - v3.4 - WeaponItem Property Support: EquippableItem generator now supports full WeaponItem/MeleeWeaponItem/RangedWeaponItem property chain when using those parent classes. New properties: WeaponVisualClass (TSoftClassPtr), WeaponHand (EWeaponHandRule enum), WeaponAbilities/MainhandAbilities/OffhandAbilities arrays (TSubclassOf<UGameplayAbility>), bPawnFollowsControlRotation, bPawnOrientsRotationToMovement, AttackDamage, HeavyAttackDamageMultiplier, bAllowManualReload, RequiredAmmo, bBotsConsumeAmmo, BotAttackRange, ClipSize, AimFOVPct, BaseSpreadDegrees, MaxSpreadDegrees, SpreadFireBump, SpreadDecreaseSpeed. Enables complete weapon definition from YAML.
 - v3.3 - NPCDefinition, EquippableItem & Activity Enhancement: NPCDefinition gains full CharacterDefinition property support (Dialogue, TaggedDialogueSet, vendor properties, inherited properties). EquippableItem gains full NarrativeItem property support (DisplayName, Description, AttackRating, ArmorRating, StealthRating, Weight, BaseValue, BaseScore, ItemTags, bStackable, MaxStackSize, UseRechargeDuration, Thumbnail). Activity gains full NarrativeActivityBase/NPCActivity property support (ActivityName, OwnedTags, BlockTags, RequireTags, SupportedGoalType, bIsInterruptable, bSaveActivity). EI_, NPCDef_, and BPA_ upgraded to High automation level.
 - v3.2 - NE_ & DBP_ Enhancements: NarrativeEvent now sets EventRuntime/EventFilter/PartyEventPolicy/bRefireOnLoad via reflection, DialogueBlueprint sets bFreeMovement/bUnskippable/bCanBeExited/bShowCinematicBars/bAutoRotateSpeakers/bAutoStopMovement/Priority/EndDialogueDist via reflection, both types upgraded from Stub to Medium automation level

@@ -7246,6 +7246,39 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			}
 		}
 
+		// v3.5: Set DefaultHeadBoneName (default "head")
+		if (!Definition.DefaultHeadBoneName.IsEmpty() && Definition.DefaultHeadBoneName != TEXT("head"))
+		{
+			FNameProperty* HeadBoneP = CastField<FNameProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DefaultHeadBoneName")));
+			if (HeadBoneP)
+			{
+				HeadBoneP->SetPropertyValue_InContainer(CDO, FName(*Definition.DefaultHeadBoneName));
+				LogGeneration(FString::Printf(TEXT("  Set DefaultHeadBoneName: %s"), *Definition.DefaultHeadBoneName));
+			}
+		}
+
+		// v3.5: Set DialogueBlendOutTime (default 0.5f)
+		if (Definition.DialogueBlendOutTime != 0.5f)
+		{
+			FFloatProperty* BlendOutP = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DialogueBlendOutTime")));
+			if (BlendOutP)
+			{
+				BlendOutP->SetPropertyValue_InContainer(CDO, Definition.DialogueBlendOutTime);
+				LogGeneration(FString::Printf(TEXT("  Set DialogueBlendOutTime: %.2f"), Definition.DialogueBlendOutTime));
+			}
+		}
+
+		// v3.5: Set bAdjustPlayerTransform (default false)
+		if (Definition.bAdjustPlayerTransform)
+		{
+			FBoolProperty* AdjustTransformP = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bAdjustPlayerTransform")));
+			if (AdjustTransformP)
+			{
+				AdjustTransformP->SetPropertyValue_InContainer(CDO, true);
+				LogGeneration(TEXT("  Set bAdjustPlayerTransform: true"));
+			}
+		}
+
 		// Recompile after setting CDO properties
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
@@ -8975,32 +9008,94 @@ FGenerationResult FCharacterDefinitionGenerator::Generate(const FManifestCharact
 	CharDef->DefaultCurrency = Definition.DefaultCurrency;
 	CharDef->AttackPriority = Definition.AttackPriority;
 
-	// Parse tags
-	if (!Definition.DefaultOwnedTags.IsEmpty())
+	// v3.5: Parse tags from array
+	if (Definition.DefaultOwnedTags.Num() > 0)
 	{
-		TArray<FString> TagStrings;
-		Definition.DefaultOwnedTags.ParseIntoArray(TagStrings, TEXT(","), true);
-		for (const FString& TagString : TagStrings)
+		for (const FString& TagString : Definition.DefaultOwnedTags)
 		{
 			FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString.TrimStartAndEnd()), false);
 			if (Tag.IsValid())
 			{
 				CharDef->DefaultOwnedTags.AddTag(Tag);
+				LogGeneration(FString::Printf(TEXT("  Added DefaultOwnedTag: %s"), *TagString));
 			}
 		}
 	}
 
-	// Parse factions
-	if (!Definition.DefaultFactions.IsEmpty())
+	// v3.5: Parse factions from array
+	if (Definition.DefaultFactions.Num() > 0)
 	{
-		TArray<FString> FactionStrings;
-		Definition.DefaultFactions.ParseIntoArray(FactionStrings, TEXT(","), true);
-		for (const FString& FactionString : FactionStrings)
+		for (const FString& FactionString : Definition.DefaultFactions)
 		{
 			FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*FactionString.TrimStartAndEnd()), false);
 			if (Tag.IsValid())
 			{
 				CharDef->DefaultFactions.AddTag(Tag);
+				LogGeneration(FString::Printf(TEXT("  Added DefaultFaction: %s"), *FactionString));
+			}
+		}
+	}
+
+	// v3.5: Set DefaultAppearance (TSoftObjectPtr<UCharacterAppearanceBase>) via reflection
+	if (!Definition.DefaultAppearance.IsEmpty())
+	{
+		FSoftObjectProperty* AppearanceProp = CastField<FSoftObjectProperty>(CharDef->GetClass()->FindPropertyByName(TEXT("DefaultAppearance")));
+		if (AppearanceProp)
+		{
+			FSoftObjectPath AppearancePath(Definition.DefaultAppearance);
+			void* PropertyValue = AppearanceProp->ContainerPtrToValuePtr<void>(CharDef);
+			FSoftObjectPtr* SoftPtr = reinterpret_cast<FSoftObjectPtr*>(PropertyValue);
+			if (SoftPtr)
+			{
+				*SoftPtr = FSoftObjectPtr(AppearancePath);
+				LogGeneration(FString::Printf(TEXT("  Set DefaultAppearance: %s"), *Definition.DefaultAppearance));
+			}
+		}
+	}
+
+	// v3.5: Set TriggerSets array (TArray<TSoftObjectPtr<UTriggerSet>>)
+	if (Definition.TriggerSets.Num() > 0)
+	{
+		// Use reflection to access TriggerSets array
+		FArrayProperty* TriggerSetsProperty = CastField<FArrayProperty>(CharDef->GetClass()->FindPropertyByName(TEXT("TriggerSets")));
+		if (TriggerSetsProperty)
+		{
+			FScriptArrayHelper ArrayHelper(TriggerSetsProperty, TriggerSetsProperty->ContainerPtrToValuePtr<void>(CharDef));
+			for (const FString& TriggerSetPath : Definition.TriggerSets)
+			{
+				FSoftObjectPath SoftPath(TriggerSetPath);
+				int32 NewIndex = ArrayHelper.AddValue();
+				FSoftObjectProperty* InnerProp = CastField<FSoftObjectProperty>(TriggerSetsProperty->Inner);
+				if (InnerProp)
+				{
+					FSoftObjectPtr* SoftPtr = reinterpret_cast<FSoftObjectPtr*>(ArrayHelper.GetRawPtr(NewIndex));
+					if (SoftPtr)
+					{
+						*SoftPtr = FSoftObjectPtr(SoftPath);
+						LogGeneration(FString::Printf(TEXT("  Added TriggerSet: %s"), *TriggerSetPath));
+					}
+				}
+			}
+		}
+	}
+
+	// v3.5: Set AbilityConfiguration (TObjectPtr<UAbilityConfiguration>)
+	if (!Definition.AbilityConfiguration.IsEmpty())
+	{
+		UObject* AbilityConfig = LoadObject<UObject>(nullptr, *Definition.AbilityConfiguration);
+		if (!AbilityConfig)
+		{
+			// Try common paths
+			FString ConfigPath = FString::Printf(TEXT("%s/AbilityConfigs/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration);
+			AbilityConfig = LoadObject<UObject>(nullptr, *ConfigPath);
+		}
+		if (AbilityConfig)
+		{
+			FObjectProperty* ConfigProp = CastField<FObjectProperty>(CharDef->GetClass()->FindPropertyByName(TEXT("AbilityConfiguration")));
+			if (ConfigProp)
+			{
+				ConfigProp->SetObjectPropertyValue_InContainer(CharDef, AbilityConfig);
+				LogGeneration(FString::Printf(TEXT("  Set AbilityConfiguration: %s"), *AbilityConfig->GetName()));
 			}
 		}
 	}
