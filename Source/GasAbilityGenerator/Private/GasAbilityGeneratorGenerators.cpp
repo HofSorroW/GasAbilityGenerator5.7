@@ -175,6 +175,34 @@ bool FGeneratorBase::bForceMode = false;
 FDryRunSummary FGeneratorBase::DryRunSummary;
 FString FGeneratorBase::CurrentManifestPath;
 
+// v3.0: Generator version constant for metadata tracking
+static const FString GENERATOR_VERSION = TEXT("3.0");
+
+// v3.0: Helper function to store metadata after successful Blueprint generation
+static void StoreBlueprintMetadata(
+	UBlueprint* Blueprint,
+	const FString& GeneratorId,
+	const FString& ManifestAssetKey,
+	uint64 InputHash)
+{
+	if (!Blueprint)
+	{
+		return;
+	}
+
+	FGeneratorMetadata Metadata;
+	Metadata.GeneratorId = GeneratorId;
+	Metadata.ManifestPath = FGeneratorBase::GetManifestPath();
+	Metadata.ManifestAssetKey = ManifestAssetKey;
+	Metadata.InputHash = InputHash;
+	Metadata.OutputHash = FGeneratorBase::ComputeBlueprintOutputHash(Blueprint);
+	Metadata.GeneratorVersion = GENERATOR_VERSION;
+	Metadata.Timestamp = FDateTime::Now();
+	Metadata.bIsGenerated = true;
+
+	FGeneratorBase::StoreAssetMetadata(Blueprint, Metadata);
+}
+
 // v2.1.8: Global variable to track project root for enum lookups
 static FString GCurrentProjectRoot = TEXT("");
 
@@ -1664,8 +1692,8 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Gameplay Effect"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Gameplay Effect"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -1883,6 +1911,9 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 	LogGeneration(FString::Printf(TEXT("Created Gameplay Effect Blueprint: %s (Duration: %s, Modifiers: %d, Tags: %d)"),
 		*Definition.Name, *Definition.DurationPolicy, Definition.Modifiers.Num(), Definition.GrantedTags.Num()));
 
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("GameplayEffect"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -1931,8 +1962,8 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence - but for GAs, configure tags on existing assets before skipping
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Gameplay Ability"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Gameplay Ability"), Definition.ComputeHash(), Result))
 	{
 		// v2.6.2: Even when skipping, update tags on existing GA blueprints
 		UBlueprint* ExistingBlueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
@@ -2093,6 +2124,9 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 
 	LogGeneration(FString::Printf(TEXT("Created Gameplay Ability: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
 
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("GameplayAbility"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -2141,8 +2175,8 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		LogGeneration(FString::Printf(TEXT("  PRE-GEN WARNING: %s"), *Warning));
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Actor Blueprint"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Actor Blueprint"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -2401,6 +2435,9 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 
 	LogGeneration(FString::Printf(TEXT("Created Actor Blueprint: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
 
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("ActorBlueprint"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -2426,8 +2463,8 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Widget Blueprint"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Widget Blueprint"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -2555,6 +2592,9 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 	UPackage::SavePackage(Package, WidgetBP, *PackageFileName, SaveArgs);
 
 	LogGeneration(FString::Printf(TEXT("Created Widget Blueprint: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(WidgetBP, TEXT("WidgetBlueprint"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
@@ -6445,7 +6485,8 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Animation Notify"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Animation Notify"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -6506,6 +6547,9 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 
 	LogGeneration(FString::Printf(TEXT("Created Animation Notify: %s (Parent: %s)"), *Definition.Name, *ParentClass->GetName()));
 
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("AnimationNotify"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
 		FString::Printf(TEXT("Created at %s"), *AssetPath));
 	Result.DetermineCategory();
@@ -6527,7 +6571,8 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Dialogue Blueprint"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Dialogue Blueprint"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -6600,6 +6645,10 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
 
 	LogGeneration(FString::Printf(TEXT("Created Dialogue Blueprint: %s"), *Definition.Name));
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("DialogueBlueprint"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
 	return Result;
@@ -6618,7 +6667,8 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Equippable Item"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Equippable Item"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -6832,6 +6882,10 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
 
 	LogGeneration(FString::Printf(TEXT("Created Equippable Item: %s"), *Definition.Name));
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("EquippableItem"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
 	return Result;
@@ -6850,7 +6904,8 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Activity"), Result))
+	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Activity"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -6949,6 +7004,10 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
 
 	LogGeneration(FString::Printf(TEXT("Created Activity: %s"), *Definition.Name));
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("Activity"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
 	return Result;
