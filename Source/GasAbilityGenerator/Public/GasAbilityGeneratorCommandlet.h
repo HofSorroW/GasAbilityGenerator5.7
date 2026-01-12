@@ -77,5 +77,6 @@ private:
 
 	// v2.8.4: Verification tracking
 	TSet<FString> ProcessedAssets;  // Track ALL processed assets (new + skipped + failed)
-	void VerifyGenerationComplete(const FManifestData& ManifestData, int32 ExpectedCount, int32 ActualCount);
+	TArray<FString> GenerationDuplicates;  // Track assets processed more than once
+	void VerifyGenerationComplete(const TSet<FString>& ExpectedAssets, int32 ExpectedCount, int32 ActualCount);
 };

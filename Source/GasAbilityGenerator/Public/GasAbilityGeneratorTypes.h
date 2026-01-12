@@ -941,36 +941,48 @@ struct FManifestData
 
 	/**
 	 * v2.8.4: Get all expected asset names for verification
+	 * Also detects duplicates via OutDuplicates
 	 */
-	TSet<FString> GetExpectedAssetNames() const
+	TSet<FString> GetExpectedAssetNames(TArray<FString>* OutDuplicates = nullptr) const
 	{
 		TSet<FString> Names;
-		for (const auto& Def : Enumerations) Names.Add(Def.Name);
-		for (const auto& Def : InputActions) Names.Add(Def.Name);
-		for (const auto& Def : InputMappingContexts) Names.Add(Def.Name);
-		for (const auto& Def : GameplayEffects) Names.Add(Def.Name);
-		for (const auto& Def : GameplayAbilities) Names.Add(Def.Name);
-		for (const auto& Def : ActorBlueprints) Names.Add(Def.Name);
-		for (const auto& Def : WidgetBlueprints) Names.Add(Def.Name);
-		for (const auto& Def : Blackboards) Names.Add(Def.Name);
-		for (const auto& Def : BehaviorTrees) Names.Add(Def.Name);
-		for (const auto& Def : Materials) Names.Add(Def.Name);
+		auto AddWithDupeCheck = [&Names, OutDuplicates](const FString& Name) {
+			if (Names.Contains(Name))
+			{
+				if (OutDuplicates) OutDuplicates->AddUnique(Name);
+			}
+			else
+			{
+				Names.Add(Name);
+			}
+		};
+
+		for (const auto& Def : Enumerations) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : InputActions) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : InputMappingContexts) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : GameplayEffects) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : GameplayAbilities) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : ActorBlueprints) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : WidgetBlueprints) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : Blackboards) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : BehaviorTrees) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : Materials) AddWithDupeCheck(Def.Name);
 		// EventGraphs excluded - embedded in other assets
-		for (const auto& Def : FloatCurves) Names.Add(Def.Name);
-		for (const auto& Def : AnimationMontages) Names.Add(Def.Name);
-		for (const auto& Def : AnimationNotifies) Names.Add(Def.Name);
-		for (const auto& Def : DialogueBlueprints) Names.Add(Def.Name);
-		for (const auto& Def : EquippableItems) Names.Add(Def.Name);
-		for (const auto& Def : Activities) Names.Add(Def.Name);
-		for (const auto& Def : AbilityConfigurations) Names.Add(Def.Name);
-		for (const auto& Def : ActivityConfigurations) Names.Add(Def.Name);
-		for (const auto& Def : ItemCollections) Names.Add(Def.Name);
-		for (const auto& Def : NarrativeEvents) Names.Add(Def.Name);
-		for (const auto& Def : NPCDefinitions) Names.Add(Def.Name);
-		for (const auto& Def : CharacterDefinitions) Names.Add(Def.Name);
-		for (const auto& Def : TaggedDialogueSets) Names.Add(Def.Name);
-		for (const auto& Def : NiagaraSystems) Names.Add(Def.Name);
-		for (const auto& Def : MaterialFunctions) Names.Add(Def.Name);
+		for (const auto& Def : FloatCurves) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : AnimationMontages) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : AnimationNotifies) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : DialogueBlueprints) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : EquippableItems) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : Activities) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : AbilityConfigurations) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : ActivityConfigurations) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : ItemCollections) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : NarrativeEvents) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : NPCDefinitions) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : CharacterDefinitions) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : TaggedDialogueSets) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : NiagaraSystems) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : MaterialFunctions) AddWithDupeCheck(Def.Name);
 		return Names;
 	}
 

@@ -177,14 +177,23 @@ void UGasAbilityGeneratorCommandlet::GenerateTags(const FManifestData& ManifestD
 }
 
 // v2.6.7: Helper lambda to process generation results
-// v2.8.4: Also tracks ProcessedAssets for verification
+// v2.8.4: Also tracks ProcessedAssets for verification and detects duplicates
 static auto ProcessResult = [](UGasAbilityGeneratorCommandlet* Self, FGenerationResult& Result,
-	FGenerationSummary& Summary, TSet<FString>& GeneratedAssets, TSet<FString>& ProcessedAssets)
+	FGenerationSummary& Summary, TSet<FString>& GeneratedAssets, TSet<FString>& ProcessedAssets,
+	TArray<FString>& GenerationDuplicates)
 {
 	Summary.AddResult(Result);
 
-	// v2.8.4: Track ALL processed assets for verification
-	ProcessedAssets.Add(Result.AssetName);
+	// v2.8.4: Track ALL processed assets for verification, detect duplicates
+	if (ProcessedAssets.Contains(Result.AssetName))
+	{
+		GenerationDuplicates.AddUnique(Result.AssetName);
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DUPLICATE GENERATION: %s"), *Result.AssetName);
+	}
+	else
+	{
+		ProcessedAssets.Add(Result.AssetName);
+	}
 
 	// Track generated/existing assets for dependency resolution
 	if (Result.Status == EGenerationStatus::New || Result.Status == EGenerationStatus::Skipped)
@@ -214,18 +223,52 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	// v2.6.7: Clear tracking for this run
 	GeneratedAssets.Empty();
 	DeferredAssets.Empty();
-	// v2.8.4: Clear processed assets for verification
+	// v2.8.4: Clear processed assets and duplicates for verification
 	ProcessedAssets.Empty();
+	GenerationDuplicates.Empty();
 
-	// v2.8.4: Log expected count for verification
-	const int32 ExpectedCount = ManifestData.GetExpectedAssetCount();
-	LogMessage(FString::Printf(TEXT("Expected asset count from manifest: %d"), ExpectedCount));
+	// v2.8.4: Helper lambda to track processed assets with duplicate detection
+	auto TrackProcessedAsset = [this](const FString& AssetName) {
+		if (ProcessedAssets.Contains(AssetName))
+		{
+			GenerationDuplicates.AddUnique(AssetName);
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DUPLICATE GENERATION: %s"), *AssetName);
+		}
+		else
+		{
+			ProcessedAssets.Add(AssetName);
+		}
+	};
+
+	// v2.8.4: Build expected asset whitelist at START for verification
+	TArray<FString> DuplicateAssets;
+	const TSet<FString> ExpectedAssets = ManifestData.GetExpectedAssetNames(&DuplicateAssets);
+	const int32 ExpectedCount = ExpectedAssets.Num();
+
+	// Check for duplicates in manifest
+	if (DuplicateAssets.Num() > 0)
+	{
+		LogError(FString::Printf(TEXT("WARNING: Found %d duplicate asset names in manifest:"), DuplicateAssets.Num()));
+		for (const FString& DupeName : DuplicateAssets)
+		{
+			LogError(FString::Printf(TEXT("  DUPLICATE: %s"), *DupeName));
+		}
+		LogMessage(TEXT(""));
+	}
+
+	LogMessage(FString::Printf(TEXT("Expected unique asset count from manifest: %d"), ExpectedCount));
+	LogMessage(TEXT("Expected assets from manifest whitelist:"));
+	for (const FString& AssetName : ExpectedAssets)
+	{
+		LogMessage(FString::Printf(TEXT("  - %s"), *AssetName));
+	}
+	LogMessage(TEXT(""));
 
 	// PHASE 1: No Dependencies - Enumerations
 	for (const auto& Definition : ManifestData.Enumerations)
 	{
 		FGenerationResult Result = FEnumerationGenerator::Generate(Definition);
-		ProcessResult(this, Result, Summary, GeneratedAssets, ProcessedAssets);
+		ProcessResult(this, Result, Summary, GeneratedAssets, ProcessedAssets, GenerationDuplicates);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -241,7 +284,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FFloatCurveGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -253,7 +296,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FInputActionGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -265,7 +308,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FInputMappingContextGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -277,7 +320,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FGameplayEffectGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -290,7 +333,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		const auto& Definition = ManifestData.ActorBlueprints[i];
 		FGenerationResult Result = FActorBlueprintGenerator::Generate(Definition, ManifestData.ProjectRoot, &ManifestData);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 
 		// v2.6.7: Handle deferred assets
 		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
@@ -327,7 +370,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		const auto& Definition = ManifestData.GameplayAbilities[i];
 		FGenerationResult Result = FGameplayAbilityGenerator::Generate(Definition, ManifestData.ProjectRoot);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 
 		// v2.6.7: Handle deferred assets
 		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
@@ -364,7 +407,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		const auto& Definition = ManifestData.WidgetBlueprints[i];
 		FGenerationResult Result = FWidgetBlueprintGenerator::Generate(Definition, &ManifestData);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 
 		// v2.6.7: Handle deferred assets
 		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
@@ -400,7 +443,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FBlackboardGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -412,7 +455,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FBehaviorTreeGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -424,7 +467,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FMaterialGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -436,7 +479,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FMaterialFunctionGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -448,7 +491,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FTaggedDialogueSetGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -460,7 +503,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FAnimationMontageGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -472,7 +515,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FAnimationNotifyGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -484,7 +527,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FDialogueBlueprintGenerator::Generate(Definition, ManifestData.ProjectRoot, &ManifestData);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -497,7 +540,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		const auto& Definition = ManifestData.EquippableItems[i];
 		FGenerationResult Result = FEquippableItemGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 
 		// v2.6.9: Handle deferred assets
 		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
@@ -534,7 +577,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		const auto& Definition = ManifestData.Activities[i];
 		FGenerationResult Result = FActivityGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 
 		// v2.6.9: Handle deferred assets
 		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
@@ -570,7 +613,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FAbilityConfigurationGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -582,7 +625,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FActivityConfigurationGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -594,7 +637,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FItemCollectionGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -606,7 +649,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FNarrativeEventGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -619,7 +662,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		const auto& Definition = ManifestData.NPCDefinitions[i];
 		FGenerationResult Result = FNPCDefinitionGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 
 		// v2.6.9: Handle deferred assets
 		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
@@ -655,7 +698,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FCharacterDefinitionGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -667,7 +710,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	{
 		FGenerationResult Result = FNiagaraSystemGenerator::Generate(Definition);
 		Summary.AddResult(Result);
-		ProcessedAssets.Add(Result.AssetName);
+		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
@@ -693,8 +736,8 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	LogMessage(FString::Printf(TEXT("Deferred: %d"), Summary.DeferredCount));
 	LogMessage(FString::Printf(TEXT("Total: %d"), ActualCount + Summary.DeferredCount));
 
-	// v2.8.4: Verification - compare actual vs expected
-	VerifyGenerationComplete(ManifestData, ExpectedCount, ActualCount);
+	// v2.8.4: Verification - compare actual vs expected using whitelist from start
+	VerifyGenerationComplete(ExpectedAssets, ExpectedCount, ActualCount);
 }
 
 void UGasAbilityGeneratorCommandlet::LogMessage(const FString& Message)
@@ -884,58 +927,77 @@ bool UGasAbilityGeneratorCommandlet::TryGenerateDeferredAsset(const FDeferredAss
 	return false;
 }
 
-// v2.8.4: Verify generation completeness
-void UGasAbilityGeneratorCommandlet::VerifyGenerationComplete(const FManifestData& ManifestData, int32 ExpectedCount, int32 ActualCount)
+// v2.8.4: Verify generation completeness using whitelist from start
+void UGasAbilityGeneratorCommandlet::VerifyGenerationComplete(const TSet<FString>& ExpectedAssets, int32 ExpectedCount, int32 ActualCount)
 {
 	LogMessage(TEXT(""));
-	LogMessage(TEXT("--- Verification ---"));
-	LogMessage(FString::Printf(TEXT("Expected: %d, Processed: %d"), ExpectedCount, ActualCount));
+	LogMessage(TEXT("--- Verification (Whitelist Check) ---"));
+	LogMessage(FString::Printf(TEXT("Expected (from whitelist): %d"), ExpectedCount));
+	LogMessage(FString::Printf(TEXT("Processed: %d"), ActualCount));
 
-	if (ActualCount == ExpectedCount)
-	{
-		LogMessage(TEXT("VERIFICATION PASSED: All manifest assets were processed"));
-		return;
-	}
-
-	// Mismatch detected - find missing assets
-	LogError(FString::Printf(TEXT("VERIFICATION FAILED: Expected %d assets but only processed %d"), ExpectedCount, ActualCount));
-	LogMessage(TEXT(""));
-	LogMessage(TEXT("Missing assets (in manifest but not processed):"));
-
-	// Get expected asset names from manifest
-	TSet<FString> ExpectedNames = ManifestData.GetExpectedAssetNames();
-
-	// Find which ones are missing from ProcessedAssets
+	// Find missing assets (in whitelist but not processed)
 	TArray<FString> MissingAssets;
-	for (const FString& ExpectedName : ExpectedNames)
+	for (const FString& ExpectedName : ExpectedAssets)
 	{
 		if (!ProcessedAssets.Contains(ExpectedName))
 		{
 			MissingAssets.Add(ExpectedName);
-			LogError(FString::Printf(TEXT("  - %s"), *ExpectedName));
 		}
 	}
 
-	// Also check for any processed assets not in expected (shouldn't happen but good to verify)
+	// Find unexpected assets (processed but not in whitelist)
 	TArray<FString> UnexpectedAssets;
 	for (const FString& ProcessedName : ProcessedAssets)
 	{
-		if (!ExpectedNames.Contains(ProcessedName))
+		if (!ExpectedAssets.Contains(ProcessedName))
 		{
 			UnexpectedAssets.Add(ProcessedName);
+		}
+	}
+
+	// Report results
+	const bool bHasDuplicates = GenerationDuplicates.Num() > 0;
+	if (MissingAssets.Num() == 0 && UnexpectedAssets.Num() == 0 && ActualCount == ExpectedCount && !bHasDuplicates)
+	{
+		LogMessage(TEXT(""));
+		LogMessage(TEXT("VERIFICATION PASSED: All whitelist assets processed, counts match, no duplicates"));
+		return;
+	}
+
+	// Verification failed
+	LogError(TEXT("VERIFICATION FAILED"));
+
+	if (MissingAssets.Num() > 0)
+	{
+		LogMessage(TEXT(""));
+		LogError(FString::Printf(TEXT("Missing assets (%d) - in whitelist but NOT processed:"), MissingAssets.Num()));
+		for (const FString& Name : MissingAssets)
+		{
+			LogError(FString::Printf(TEXT("  - %s"), *Name));
 		}
 	}
 
 	if (UnexpectedAssets.Num() > 0)
 	{
 		LogMessage(TEXT(""));
-		LogMessage(TEXT("Unexpected assets (processed but not in manifest):"));
+		LogMessage(FString::Printf(TEXT("Unexpected assets (%d) - processed but NOT in whitelist:"), UnexpectedAssets.Num()));
 		for (const FString& Name : UnexpectedAssets)
 		{
 			LogMessage(FString::Printf(TEXT("  + %s"), *Name));
 		}
 	}
 
+	if (bHasDuplicates)
+	{
+		LogMessage(TEXT(""));
+		LogError(FString::Printf(TEXT("Generation duplicates (%d) - processed more than once:"), GenerationDuplicates.Num()));
+		for (const FString& Name : GenerationDuplicates)
+		{
+			LogError(FString::Printf(TEXT("  ! %s"), *Name));
+		}
+	}
+
 	LogMessage(TEXT(""));
-	LogMessage(FString::Printf(TEXT("Summary: %d missing, %d unexpected"), MissingAssets.Num(), UnexpectedAssets.Num()));
+	LogMessage(FString::Printf(TEXT("Verification Summary: %d missing, %d unexpected, %d duplicates, count diff: %d"),
+		MissingAssets.Num(), UnexpectedAssets.Num(), GenerationDuplicates.Num(), ExpectedCount - ActualCount));
 }
