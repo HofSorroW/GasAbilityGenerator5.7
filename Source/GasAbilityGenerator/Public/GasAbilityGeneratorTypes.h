@@ -1935,6 +1935,34 @@ struct FGeneratorMetadata
 };
 
 /**
+ * v3.0: Regeneration policy for generator assets
+ * Determines how the generator handles existing assets
+ */
+enum class ERegenPolicy : uint8
+{
+	/** Always regenerate (overwrite) - use with --force flag */
+	Strict,
+
+	/** Skip if manual edit detected - universal default for all generators */
+	SkipIfModified,
+
+	/** Future: Attempt to merge changes */
+	Merge UMETA(Hidden)
+};
+
+/**
+ * v3.0: Get default regen policy for a generator type
+ * SkipIfModified is the universal default for all asset types.
+ * This ensures manual edits are never overwritten without explicit --force flag.
+ */
+inline ERegenPolicy GetDefaultRegenPolicy(const FString& GeneratorId)
+{
+	// SkipIfModified is the universal default for all generators
+	// Never overwrites manual edits without explicit --force flag
+	return ERegenPolicy::SkipIfModified;
+}
+
+/**
  * v3.0: Dry run status for preview mode
  */
 enum class EDryRunStatus : uint8
@@ -1943,6 +1971,7 @@ enum class EDryRunStatus : uint8
 	WillModify,      // Manifest changed, no manual edits, will regenerate
 	WillSkip,        // No changes needed (hashes match)
 	Conflicted,      // Manifest changed AND asset was manually edited
+	PolicySkip,      // Policy prevents regeneration (manual edits preserved)
 };
 
 /**
@@ -1962,6 +1991,13 @@ struct FDryRunResult
 	uint64 StoredOutputHash = 0;
 	uint64 CurrentOutputHash = 0;
 
+	// v3.0: Detailed change tracking for conflicts
+	TArray<FString> ManifestChanges;  // Fields that changed in manifest (e.g., "Tags.AbilityTags", "Variables")
+	TArray<FString> AssetChanges;     // Detected manual edits (e.g., "Event graph modified", "Components added")
+
+	// v3.0: Policy tracking
+	ERegenPolicy Policy = ERegenPolicy::SkipIfModified;
+
 	FDryRunResult() = default;
 
 	FDryRunResult(const FString& InName, EDryRunStatus InStatus, const FString& InReason = TEXT(""))
@@ -1975,6 +2011,7 @@ struct FDryRunResult
 		case EDryRunStatus::WillModify: return TEXT("MODIFY");
 		case EDryRunStatus::WillSkip: return TEXT("SKIP");
 		case EDryRunStatus::Conflicted: return TEXT("CONFLICT");
+		case EDryRunStatus::PolicySkip: return TEXT("POLICY_SKIP");
 		default: return TEXT("UNKNOWN");
 		}
 	}
@@ -1984,6 +2021,27 @@ struct FDryRunResult
 		return FString::Printf(TEXT("[%s] %s%s"),
 			*GetStatusString(), *AssetName,
 			Reason.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" - %s"), *Reason));
+	}
+
+	/** Get detailed conflict description */
+	FString GetConflictDetails() const
+	{
+		if (Status != EDryRunStatus::Conflicted)
+		{
+			return TEXT("");
+		}
+
+		FString Details;
+		if (ManifestChanges.Num() > 0)
+		{
+			Details += TEXT("  Manifest changes: ") + FString::Join(ManifestChanges, TEXT(", ")) + TEXT("\n");
+		}
+		if (AssetChanges.Num() > 0)
+		{
+			Details += TEXT("  Manual edits: ") + FString::Join(AssetChanges, TEXT(", ")) + TEXT("\n");
+		}
+		Details += TEXT("  Action: Use -force to override or resolve manually");
+		return Details;
 	}
 };
 
@@ -1997,6 +2055,7 @@ struct FDryRunSummary
 	int32 ModifyCount = 0;
 	int32 SkipCount = 0;
 	int32 ConflictCount = 0;
+	int32 PolicySkipCount = 0;
 
 	void AddResult(const FDryRunResult& Result)
 	{
@@ -2007,14 +2066,20 @@ struct FDryRunSummary
 		case EDryRunStatus::WillModify: ModifyCount++; break;
 		case EDryRunStatus::WillSkip: SkipCount++; break;
 		case EDryRunStatus::Conflicted: ConflictCount++; break;
+		case EDryRunStatus::PolicySkip: PolicySkipCount++; break;
 		}
 	}
 
 	bool HasConflicts() const { return ConflictCount > 0; }
-	int32 GetTotal() const { return CreateCount + ModifyCount + SkipCount + ConflictCount; }
+	int32 GetTotal() const { return CreateCount + ModifyCount + SkipCount + ConflictCount + PolicySkipCount; }
 
 	FString GetSummary() const
 	{
+		if (PolicySkipCount > 0)
+		{
+			return FString::Printf(TEXT("Dry Run: %d CREATE, %d MODIFY, %d SKIP, %d CONFLICT, %d POLICY_SKIP"),
+				CreateCount, ModifyCount, SkipCount, ConflictCount, PolicySkipCount);
+		}
 		return FString::Printf(TEXT("Dry Run: %d CREATE, %d MODIFY, %d SKIP, %d CONFLICT"),
 			CreateCount, ModifyCount, SkipCount, ConflictCount);
 	}
@@ -2026,6 +2091,7 @@ struct FDryRunSummary
 		ModifyCount = 0;
 		SkipCount = 0;
 		ConflictCount = 0;
+		PolicySkipCount = 0;
 	}
 
 	/** Get results filtered by status */
@@ -2034,6 +2100,27 @@ struct FDryRunSummary
 		return Results.FilterByPredicate([Status](const FDryRunResult& Result) {
 			return Result.Status == Status;
 		});
+	}
+
+	/** Get detailed conflict report */
+	FString GetConflictReport() const
+	{
+		if (ConflictCount == 0)
+		{
+			return TEXT("");
+		}
+
+		FString Report = FString::Printf(TEXT("--- CONFLICTS (%d assets require attention) ---\n"), ConflictCount);
+		for (const FDryRunResult& Result : Results)
+		{
+			if (Result.Status == EDryRunStatus::Conflicted)
+			{
+				Report += FString::Printf(TEXT("[CONFLICT] %s\n"), *Result.AssetName);
+				Report += Result.GetConflictDetails();
+				Report += TEXT("\n");
+			}
+		}
+		return Report;
 	}
 };
 

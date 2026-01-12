@@ -115,6 +115,15 @@
 // v2.6.0: Reflection for setting protected properties
 #include "UObject/UnrealType.h"
 
+// v3.0: Narrative Pro types for ComputeDataAssetOutputHash
+#include "GAS/AbilityConfiguration.h"
+#include "AI/Activities/NPCActivityConfiguration.h"
+#include "Items/InventoryComponent.h"  // Contains UItemCollection
+#include "AI/NPCDefinition.h"
+#include "Character/CharacterDefinition.h"
+#include "Tales/TaggedDialogueSet.h"
+#include "NiagaraSystem.h"
+
 // v2.3.0: Component includes for Actor Blueprint generation
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -201,6 +210,31 @@ static void StoreBlueprintMetadata(
 	Metadata.bIsGenerated = true;
 
 	FGeneratorBase::StoreAssetMetadata(Blueprint, Metadata);
+}
+
+// v3.0: Helper function to store metadata after successful DataAsset generation
+static void StoreDataAssetMetadata(
+	UObject* Asset,
+	const FString& GeneratorId,
+	const FString& ManifestAssetKey,
+	uint64 InputHash)
+{
+	if (!Asset)
+	{
+		return;
+	}
+
+	FGeneratorMetadata Metadata;
+	Metadata.GeneratorId = GeneratorId;
+	Metadata.ManifestPath = FGeneratorBase::GetManifestPath();
+	Metadata.ManifestAssetKey = ManifestAssetKey;
+	Metadata.InputHash = InputHash;
+	Metadata.OutputHash = FGeneratorBase::ComputeDataAssetOutputHash(Asset);
+	Metadata.GeneratorVersion = GENERATOR_VERSION;
+	Metadata.Timestamp = FDateTime::Now();
+	Metadata.bIsGenerated = true;
+
+	FGeneratorBase::StoreAssetMetadata(Asset, Metadata);
 }
 
 // v2.1.8: Global variable to track project root for enum lookups
@@ -589,7 +623,235 @@ uint64 FGeneratorBase::ComputeDataAssetOutputHash(UObject* DataAsset)
 	Hash ^= GetTypeHash(DataAsset->GetName());
 	Hash ^= GetTypeHash(DataAsset->GetClass()->GetName()) << 8;
 
-	// Hash property count for the class
+	// v3.0: Type-specific hashing for manual edit detection
+
+	// Blackboard - hash keys
+	if (UBlackboardData* Blackboard = Cast<UBlackboardData>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(Blackboard->Keys.Num()) << 16;
+		for (const FBlackboardEntry& Entry : Blackboard->Keys)
+		{
+			Hash ^= GetTypeHash(Entry.EntryName);
+			if (Entry.KeyType)
+			{
+				Hash ^= GetTypeHash(Entry.KeyType->GetClass()->GetName()) << 4;
+			}
+		}
+		return Hash;
+	}
+
+	// GameplayEffect (non-Blueprint) - hash modifiers and tags
+	if (UGameplayEffect* Effect = Cast<UGameplayEffect>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(Effect->Modifiers.Num()) << 16;
+		for (const FGameplayModifierInfo& Mod : Effect->Modifiers)
+		{
+			Hash ^= GetTypeHash(Mod.Attribute.GetName());
+			Hash ^= static_cast<uint64>(Mod.ModifierOp) << 4;
+		}
+		Hash ^= static_cast<uint64>(Effect->DurationPolicy) << 24;
+
+		// Hash granted tags count
+		Hash ^= static_cast<uint64>(Effect->GetGrantedTags().Num()) << 32;
+		return Hash;
+	}
+
+	// InputAction - hash value type and triggers
+	if (UInputAction* InputAction = Cast<UInputAction>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(InputAction->ValueType) << 16;
+		Hash ^= static_cast<uint64>(InputAction->Triggers.Num()) << 24;
+		Hash ^= static_cast<uint64>(InputAction->Modifiers.Num()) << 32;
+		return Hash;
+	}
+
+	// InputMappingContext - hash mappings
+	if (UInputMappingContext* IMC = Cast<UInputMappingContext>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(IMC->GetMappings().Num()) << 16;
+		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+		{
+			if (Mapping.Action)
+			{
+				Hash ^= GetTypeHash(Mapping.Action->GetName());
+			}
+			Hash ^= GetTypeHash(Mapping.Key.GetFName()) << 4;
+		}
+		return Hash;
+	}
+
+	// BehaviorTree - hash root node and blackboard reference
+	if (UBehaviorTree* BT = Cast<UBehaviorTree>(DataAsset))
+	{
+		Hash ^= BT->RootNode ? 1ULL << 16 : 0ULL;
+		if (BT->BlackboardAsset)
+		{
+			Hash ^= GetTypeHash(BT->BlackboardAsset->GetName()) << 24;
+		}
+		return Hash;
+	}
+
+	// UserDefinedEnum - hash enum values
+	if (UUserDefinedEnum* Enum = Cast<UUserDefinedEnum>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(Enum->NumEnums()) << 16;
+		for (int32 i = 0; i < Enum->NumEnums(); i++)
+		{
+			Hash ^= GetTypeHash(Enum->GetNameStringByIndex(i));
+		}
+		return Hash;
+	}
+
+	// FloatCurve - hash curve keys
+	if (UCurveFloat* Curve = Cast<UCurveFloat>(DataAsset))
+	{
+		TArray<FRichCurveKey> Keys = Curve->FloatCurve.GetCopyOfKeys();
+		Hash ^= static_cast<uint64>(Keys.Num()) << 16;
+		for (const FRichCurveKey& Key : Keys)
+		{
+			Hash ^= GetTypeHash(Key.Time) << 4;
+			Hash ^= GetTypeHash(Key.Value) << 8;
+		}
+		return Hash;
+	}
+
+	// AnimMontage - hash sections, slots, blend times
+	if (UAnimMontage* Montage = Cast<UAnimMontage>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(Montage->SlotAnimTracks.Num()) << 16;
+		Hash ^= static_cast<uint64>(Montage->CompositeSections.Num()) << 24;
+		// Cast to uint64 before shifting to avoid overflow
+		Hash ^= static_cast<uint64>(GetTypeHash(Montage->BlendIn.GetBlendTime())) << 8;
+		Hash ^= static_cast<uint64>(GetTypeHash(Montage->BlendOut.GetBlendTime())) << 12;
+		for (const FSlotAnimationTrack& Track : Montage->SlotAnimTracks)
+		{
+			Hash ^= GetTypeHash(Track.SlotName);
+		}
+		return Hash;
+	}
+
+	// Material - hash blend mode, shading models, two-sided
+	if (UMaterial* Material = Cast<UMaterial>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(Material->GetBlendMode()) << 16;
+		Hash ^= static_cast<uint64>(Material->GetShadingModels().GetShadingModelField()) << 24;
+		Hash ^= Material->TwoSided ? 1ULL << 32 : 0ULL;
+		// Use expression count via reflection
+		Hash ^= static_cast<uint64>(Material->GetExpressions().Num()) << 40;
+		return Hash;
+	}
+
+	// MaterialFunction - hash input/output count
+	if (UMaterialFunction* MatFunc = Cast<UMaterialFunction>(DataAsset))
+	{
+		TArray<FFunctionExpressionInput> Inputs;
+		TArray<FFunctionExpressionOutput> Outputs;
+		MatFunc->GetInputsAndOutputs(Inputs, Outputs);
+		Hash ^= static_cast<uint64>(Inputs.Num()) << 16;
+		Hash ^= static_cast<uint64>(Outputs.Num()) << 24;
+		// Hash input count only - avoids need for full type definition
+		return Hash;
+	}
+
+	// AbilityConfiguration - hash abilities list
+	if (UAbilityConfiguration* AbilityConfig = Cast<UAbilityConfiguration>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(AbilityConfig->DefaultAbilities.Num()) << 16;
+		Hash ^= static_cast<uint64>(AbilityConfig->StartupEffects.Num()) << 24;
+		Hash ^= AbilityConfig->DefaultAttributes ? 1ULL << 32 : 0ULL;
+		for (const TSubclassOf<UGameplayAbility>& Ability : AbilityConfig->DefaultAbilities)
+		{
+			if (Ability.Get())
+			{
+				Hash ^= GetTypeHash(Ability.Get()->GetName());
+			}
+		}
+		return Hash;
+	}
+
+	// NPCActivityConfiguration - hash activities and rescore interval
+	if (UNPCActivityConfiguration* ActivityConfig = Cast<UNPCActivityConfiguration>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(GetTypeHash(ActivityConfig->RescoreInterval)) << 16;
+		Hash ^= static_cast<uint64>(ActivityConfig->DefaultActivities.Num()) << 24;
+		Hash ^= static_cast<uint64>(ActivityConfig->GoalGenerators.Num()) << 32;
+		for (const TSubclassOf<UNPCActivity>& Activity : ActivityConfig->DefaultActivities)
+		{
+			if (Activity.Get())
+			{
+				Hash ^= GetTypeHash(Activity.Get()->GetName());
+			}
+		}
+		return Hash;
+	}
+
+	// ItemCollection - hash items
+	if (UItemCollection* ItemColl = Cast<UItemCollection>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(ItemColl->Items.Num()) << 16;
+		for (const FItemWithQuantity& Item : ItemColl->Items)
+		{
+			Hash ^= static_cast<uint64>(Item.Quantity) << 4;
+			if (!Item.Item.IsNull())
+			{
+				Hash ^= GetTypeHash(Item.Item.GetAssetName());
+			}
+		}
+		return Hash;
+	}
+
+	// NPCDefinition - hash NPC properties
+	if (UNPCDefinition* NPCDef = Cast<UNPCDefinition>(DataAsset))
+	{
+		Hash ^= GetTypeHash(NPCDef->NPCID) << 16;
+		Hash ^= GetTypeHash(NPCDef->NPCName.ToString()) << 8;
+		Hash ^= static_cast<uint64>(NPCDef->MinLevel) << 24;
+		Hash ^= static_cast<uint64>(NPCDef->MaxLevel) << 32;
+		Hash ^= NPCDef->bAllowMultipleInstances ? 1ULL << 40 : 0ULL;
+		Hash ^= NPCDef->bIsVendor ? 1ULL << 41 : 0ULL;
+		if (NPCDef->AbilityConfiguration)
+		{
+			Hash ^= GetTypeHash(NPCDef->AbilityConfiguration->GetName());
+		}
+		return Hash;
+	}
+
+	// CharacterDefinition - hash character properties
+	if (UCharacterDefinition* CharDef = Cast<UCharacterDefinition>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(CharDef->DefaultCurrency) << 16;
+		Hash ^= static_cast<uint64>(CharDef->AttackPriority) << 24;
+		Hash ^= static_cast<uint64>(CharDef->DefaultOwnedTags.Num()) << 32;
+		Hash ^= static_cast<uint64>(CharDef->DefaultFactions.Num()) << 40;
+		return Hash;
+	}
+
+	// TaggedDialogueSet - hash dialogues
+	if (UTaggedDialogueSet* DialogueSet = Cast<UTaggedDialogueSet>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(DialogueSet->TaggedDialogues.Num()) << 16;
+		for (const FTaggedDialogue& Dialogue : DialogueSet->TaggedDialogues)
+		{
+			Hash ^= GetTypeHash(Dialogue.Tag.GetTagName());
+			Hash ^= static_cast<uint64>(GetTypeHash(Dialogue.Cooldown)) << 4;
+			Hash ^= static_cast<uint64>(GetTypeHash(Dialogue.MaxDistance)) << 8;
+		}
+		return Hash;
+	}
+
+	// NiagaraSystem - hash emitters and user parameters
+	if (UNiagaraSystem* NiagaraSys = Cast<UNiagaraSystem>(DataAsset))
+	{
+		Hash ^= static_cast<uint64>(NiagaraSys->GetNumEmitters()) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(NiagaraSys->GetWarmupTime())) << 24;
+		// Hash user parameter count via GetUserParameters
+		TArray<FNiagaraVariable> UserParamArray;
+		NiagaraSys->GetExposedParameters().GetUserParameters(UserParamArray);
+		Hash ^= static_cast<uint64>(UserParamArray.Num()) << 32;
+		return Hash;
+	}
+
+	// Fallback: Hash property count for unknown types
 	int32 PropertyCount = 0;
 	for (TFieldIterator<FProperty> PropIt(DataAsset->GetClass()); PropIt; ++PropIt)
 	{
@@ -1480,12 +1742,12 @@ FGenerationResult FEnumerationGenerator::Generate(const FManifestEnumerationDefi
 		return Result;
 	}
 
-	// Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Enumeration"), Result))
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Enumeration"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
-	
+
 	// Validate we have values
 	if (Definition.Values.Num() == 0)
 	{
@@ -1541,7 +1803,10 @@ FGenerationResult FEnumerationGenerator::Generate(const FManifestEnumerationDefi
 	UPackage::SavePackage(Package, NewEnum, *PackageFileName, SaveArgs);
 	
 	LogGeneration(FString::Printf(TEXT("Created Enumeration: %s (with %d values)"), *Definition.Name, Definition.Values.Num()));
-	
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreDataAssetMetadata(NewEnum, TEXT("E"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -1562,12 +1827,12 @@ FGenerationResult FInputActionGenerator::Generate(const FManifestInputActionDefi
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Input Action"), Result))
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Input Action"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
-	
+
 	// Create package
 	FString PackagePath = AssetPath;
 	UPackage* Package = CreatePackage(*PackagePath);
@@ -1575,7 +1840,7 @@ FGenerationResult FInputActionGenerator::Generate(const FManifestInputActionDefi
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
 	}
-	
+
 	// Create input action
 	UInputAction* InputAction = NewObject<UInputAction>(Package, *Definition.Name, RF_Public | RF_Standalone);
 	if (!InputAction)
@@ -1612,7 +1877,10 @@ FGenerationResult FInputActionGenerator::Generate(const FManifestInputActionDefi
 	UPackage::SavePackage(Package, InputAction, *PackageFileName, SaveArgs);
 	
 	LogGeneration(FString::Printf(TEXT("Created Input Action: %s"), *Definition.Name));
-	
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreDataAssetMetadata(InputAction, TEXT("IA"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -1633,12 +1901,12 @@ FGenerationResult FInputMappingContextGenerator::Generate(const FManifestInputMa
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Input Mapping Context"), Result))
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Input Mapping Context"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
-	
+
 	// Create package
 	FString PackagePath = AssetPath;
 	UPackage* Package = CreatePackage(*PackagePath);
@@ -1668,7 +1936,10 @@ FGenerationResult FInputMappingContextGenerator::Generate(const FManifestInputMa
 	UPackage::SavePackage(Package, IMC, *PackageFileName, SaveArgs);
 	
 	LogGeneration(FString::Printf(TEXT("Created Input Mapping Context: %s"), *Definition.Name));
-	
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreDataAssetMetadata(IMC, TEXT("IMC"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -2616,12 +2887,12 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Blackboard"), Result))
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Blackboard"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
-	
+
 	// Create package
 	FString PackagePath = AssetPath;
 	UPackage* Package = CreatePackage(*PackagePath);
@@ -2720,6 +2991,9 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 
 	LogGeneration(FString::Printf(TEXT("Created Blackboard: %s with %d keys"), *Definition.Name, KeysCreated));
 
+	// v3.0: Store metadata for regeneration tracking
+	StoreDataAssetMetadata(Blackboard, TEXT("BB"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -2741,8 +3015,8 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Behavior Tree"), Result))
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Behavior Tree"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -2785,7 +3059,10 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 	UPackage::SavePackage(Package, BT, *PackageFileName, SaveArgs);
 	
 	LogGeneration(FString::Printf(TEXT("Created Behavior Tree: %s"), *Definition.Name));
-	
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreDataAssetMetadata(BT, TEXT("BT"), Definition.Name, Definition.ComputeHash());
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
 	return Result;
@@ -3099,8 +3376,8 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 		return Result;
 	}
 
-	// v2.0.9 FIX: Check existence and return SKIPPED if exists
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Material"), Result))
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Material"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -3193,6 +3470,9 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 
 	LogGeneration(FString::Printf(TEXT("Created Material: %s (%d expressions, %d connections)"),
 		*Definition.Name, Definition.Expressions.Num(), Definition.Connections.Num()));
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreDataAssetMetadata(Material, TEXT("M"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
@@ -3329,8 +3609,8 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 		return Result;
 	}
 
-	// Check existence
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Material Function"), Result))
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Material Function"), Definition.ComputeHash(), Result))
 	{
 		return Result;
 	}
@@ -3429,6 +3709,9 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 
 	LogGeneration(FString::Printf(TEXT("Created Material Function: %s (%d inputs, %d outputs)"),
 		*Definition.Name, Definition.Inputs.Num(), Definition.Outputs.Num()));
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreDataAssetMetadata(MaterialFunction, TEXT("MF"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.DetermineCategory();
@@ -6308,7 +6591,9 @@ FGenerationResult FFloatCurveGenerator::Generate(const FManifestFloatCurveDefini
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Float Curve"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Float Curve"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -6339,6 +6624,9 @@ FGenerationResult FFloatCurveGenerator::Generate(const FManifestFloatCurveDefini
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, Curve, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(Curve, TEXT("FC"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created Float Curve: %s with %d keys"), *Definition.Name, Definition.Keys.Num()));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
@@ -6357,7 +6645,9 @@ FGenerationResult FAnimationMontageGenerator::Generate(const FManifestAnimationM
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Animation Montage"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Animation Montage"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -6465,6 +6755,9 @@ FGenerationResult FAnimationMontageGenerator::Generate(const FManifestAnimationM
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, Montage, *PackageFileName, SaveArgs);
+
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(Montage, TEXT("AM"), Definition.Name, InputHash);
 
 	LogGeneration(FString::Printf(TEXT("Created Animation Montage: %s with %d sections"),
 		*Definition.Name, Definition.Sections.Num()));
@@ -7025,7 +7318,9 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Ability Configuration"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Ability Configuration"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -7061,6 +7356,9 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, AbilityConfig, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(AbilityConfig, TEXT("AC"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created Ability Configuration: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
@@ -7079,7 +7377,9 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Activity Configuration"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Activity Configuration"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -7118,6 +7418,9 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, ActivityConfig, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(ActivityConfig, TEXT("ActConfig"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created Activity Configuration: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
@@ -7136,7 +7439,9 @@ FGenerationResult FItemCollectionGenerator::Generate(const FManifestItemCollecti
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Item Collection"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Item Collection"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -7207,6 +7512,9 @@ FGenerationResult FItemCollectionGenerator::Generate(const FManifestItemCollecti
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, ItemColl, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(ItemColl, TEXT("IC"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created Item Collection: %s with %d items"), *Definition.Name, ItemsAdded));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
@@ -7225,7 +7533,9 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Narrative Event"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Narrative Event"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -7277,6 +7587,9 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreBlueprintMetadata(Blueprint, TEXT("NE"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created Narrative Event: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
@@ -7296,7 +7609,9 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("NPC Definition"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("NPC Definition"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -7410,6 +7725,9 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, NPCDef, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(NPCDef, TEXT("NPCDef"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created NPC Definition: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
@@ -7428,7 +7746,9 @@ FGenerationResult FCharacterDefinitionGenerator::Generate(const FManifestCharact
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Character Definition"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Character Definition"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -7487,6 +7807,9 @@ FGenerationResult FCharacterDefinitionGenerator::Generate(const FManifestCharact
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, CharDef, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(CharDef, TEXT("CD"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created Character Definition: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
@@ -7507,7 +7830,9 @@ FGenerationResult FTaggedDialogueSetGenerator::Generate(const FManifestTaggedDia
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Tagged Dialogue Set"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Tagged Dialogue Set"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -7587,6 +7912,9 @@ FGenerationResult FTaggedDialogueSetGenerator::Generate(const FManifestTaggedDia
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, DialogueSet, *PackageFileName, SaveArgs);
 
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(DialogueSet, TEXT("TaggedDialogue"), Definition.Name, InputHash);
+
 	LogGeneration(FString::Printf(TEXT("Created Tagged Dialogue Set: %s with %d dialogues"),
 		*Definition.Name, Definition.Dialogues.Num()));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
@@ -7617,7 +7945,9 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		return Result;
 	}
 
-	if (CheckExistsAndPopulateResult(AssetPath, Definition.Name, TEXT("Niagara System"), Result))
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Niagara System"), InputHash, Result))
 	{
 		return Result;
 	}
@@ -8150,8 +8480,11 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, NewSystem, *PackageFileName, SaveArgs);
 
-	// v2.9.1: Store generator metadata for regeneration safety
+	// v2.9.1: Store generator metadata for regeneration safety (FX-specific)
 	StoreGeneratorMetadata(NewSystem, Definition);
+
+	// v3.0: Store standard asset metadata for regen/diff system
+	StoreDataAssetMetadata(NewSystem, TEXT("NS"), Definition.Name, InputHash);
 
 	LogGeneration(FString::Printf(TEXT("Created Niagara System: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);

@@ -52,6 +52,26 @@ Generate assets from command line without launching the editor UI:
 ... -run=GasAbilityGenerator -manifest="..." -force
 ```
 
+### v3.0 Regen/Diff Safety System
+
+The v3.0 metadata system tracks changes to detect what needs regeneration:
+
+| Status | Condition | Action |
+|--------|-----------|--------|
+| **CREATE** | No existing asset | Generate new asset |
+| **MODIFY** | Manifest changed, asset unchanged | Safe to regenerate |
+| **SKIP** | No changes detected | Skip generation |
+| **CONFLICT** | Both manifest AND asset changed | Requires `--force` or manual resolution |
+
+**How it works:**
+1. **Input Hash** - Computed from manifest definition via `Definition.ComputeHash()`
+2. **Output Hash** - Computed from asset content via `ComputeDataAssetOutputHash()` or `ComputeBlueprintOutputHash()`
+3. **Metadata Storage** - `UGeneratorAssetMetadata` (UAssetUserData) stores both hashes on each generated asset
+
+**Coverage:** All 25 asset generators have full v3.0 support:
+- 16 DataAsset types: E, IA, IMC, BB, BT, M, MF, FC, AM, AC, ActConfig, IC, NPCDef, CD, TaggedDialogue, NS
+- 9 Blueprint types: GE, GA, ActorBP, WidgetBP, AnimNotify, DialogueBP, EquippableBP, ActivityBP, NE
+
 ## Automation Workflow
 
 PowerShell automation scripts in `Tools/`:
@@ -451,7 +471,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
-- v3.0 - Regen/Diff Safety System: Per-asset metadata via UAssetUserData, input/output hash change detection, --dryrun preview mode, --force conflict override, universal SkipIfModified policy
+- v3.0 - Regen/Diff Safety System: Per-asset metadata via UGeneratorAssetMetadata (UAssetUserData), input hash (manifest definition) + output hash (asset content) change detection, --dryrun preview mode, --force conflict override, universal SkipIfModified policy for all 25 generators, ComputeDataAssetOutputHash for 17 DataAsset types, ComputeBlueprintOutputHash for 9 Blueprint types
 - v2.9.1 - FX Validation System: Template integrity validation, descriptor-to-system validation, regeneration safety with metadata tracking and descriptor hashing
 - v2.9.0 - Data-driven FX architecture: FManifestFXDescriptor for Niagara User param binding, template duplication workflow
 - v2.8.4 - Whitelist-based verification system with duplicate detection for fresh generations
