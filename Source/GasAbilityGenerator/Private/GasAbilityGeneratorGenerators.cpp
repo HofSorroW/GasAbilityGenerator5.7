@@ -7628,6 +7628,314 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
+			// v3.4: WeaponItem properties (set if parent is WeaponItem/MeleeWeaponItem/RangedWeaponItem)
+			// WeaponVisualClass (TSoftClassPtr<AWeaponVisual>)
+			if (!Definition.WeaponVisualClass.IsEmpty())
+			{
+				FSoftClassProperty* VisualProp = CastField<FSoftClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("WeaponVisualClass")));
+				if (VisualProp)
+				{
+					FSoftObjectPath ClassPath(Definition.WeaponVisualClass);
+					void* PropertyValue = VisualProp->ContainerPtrToValuePtr<void>(CDO);
+					if (PropertyValue)
+					{
+						FSoftObjectPtr* SoftPtr = static_cast<FSoftObjectPtr*>(PropertyValue);
+						if (SoftPtr)
+						{
+							*SoftPtr = FSoftObjectPtr(ClassPath);
+							LogGeneration(FString::Printf(TEXT("  Set WeaponVisualClass: %s"), *Definition.WeaponVisualClass));
+						}
+					}
+				}
+			}
+			// WeaponHand (EWeaponHandRule enum)
+			if (!Definition.WeaponHand.IsEmpty())
+			{
+				FByteProperty* HandProp = CastField<FByteProperty>(CDO->GetClass()->FindPropertyByName(TEXT("WeaponHand")));
+				if (HandProp)
+				{
+					// Map string to enum value
+					uint8 HandValue = 0; // TwoHanded
+					if (Definition.WeaponHand.Equals(TEXT("MainHand"), ESearchCase::IgnoreCase))
+					{
+						HandValue = 1;
+					}
+					else if (Definition.WeaponHand.Equals(TEXT("OffHand"), ESearchCase::IgnoreCase))
+					{
+						HandValue = 2;
+					}
+					else if (Definition.WeaponHand.Equals(TEXT("DualWieldable"), ESearchCase::IgnoreCase))
+					{
+						HandValue = 3;
+					}
+					HandProp->SetPropertyValue_InContainer(CDO, HandValue);
+					LogGeneration(FString::Printf(TEXT("  Set WeaponHand: %s"), *Definition.WeaponHand));
+				}
+				else
+				{
+					// Try enum property
+					FEnumProperty* EnumHandProp = CastField<FEnumProperty>(CDO->GetClass()->FindPropertyByName(TEXT("WeaponHand")));
+					if (EnumHandProp)
+					{
+						UEnum* EnumClass = EnumHandProp->GetEnum();
+						if (EnumClass)
+						{
+							int64 EnumValue = EnumClass->GetValueByNameString(Definition.WeaponHand);
+							if (EnumValue != INDEX_NONE)
+							{
+								EnumHandProp->GetUnderlyingProperty()->SetIntPropertyValue(EnumHandProp->ContainerPtrToValuePtr<void>(CDO), EnumValue);
+								LogGeneration(FString::Printf(TEXT("  Set WeaponHand: %s"), *Definition.WeaponHand));
+							}
+						}
+					}
+				}
+			}
+			// bPawnFollowsControlRotation
+			if (Definition.bPawnFollowsControlRotation)
+			{
+				FBoolProperty* FollowProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bPawnFollowsControlRotation")));
+				if (FollowProp)
+				{
+					FollowProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bPawnFollowsControlRotation: true"));
+				}
+			}
+			// bPawnOrientsRotationToMovement (default true, only set if false)
+			if (!Definition.bPawnOrientsRotationToMovement)
+			{
+				FBoolProperty* OrientProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bPawnOrientsRotationToMovement")));
+				if (OrientProp)
+				{
+					OrientProp->SetPropertyValue_InContainer(CDO, false);
+					LogGeneration(TEXT("  Set bPawnOrientsRotationToMovement: false"));
+				}
+			}
+			// AttackDamage
+			if (Definition.AttackDamage != 0.0f)
+			{
+				FFloatProperty* DamageProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("AttackDamage")));
+				if (DamageProp)
+				{
+					DamageProp->SetPropertyValue_InContainer(CDO, Definition.AttackDamage);
+					LogGeneration(FString::Printf(TEXT("  Set AttackDamage: %.2f"), Definition.AttackDamage));
+				}
+			}
+			// HeavyAttackDamageMultiplier (default 1.5, only set if different)
+			if (Definition.HeavyAttackDamageMultiplier != 1.5f)
+			{
+				FFloatProperty* HeavyProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("HeavyAttackDamageMultiplier")));
+				if (HeavyProp)
+				{
+					HeavyProp->SetPropertyValue_InContainer(CDO, Definition.HeavyAttackDamageMultiplier);
+					LogGeneration(FString::Printf(TEXT("  Set HeavyAttackDamageMultiplier: %.2f"), Definition.HeavyAttackDamageMultiplier));
+				}
+			}
+			// bAllowManualReload (default true, only set if false)
+			if (!Definition.bAllowManualReload)
+			{
+				FBoolProperty* ReloadProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bAllowManualReload")));
+				if (ReloadProp)
+				{
+					ReloadProp->SetPropertyValue_InContainer(CDO, false);
+					LogGeneration(TEXT("  Set bAllowManualReload: false"));
+				}
+			}
+			// RequiredAmmo (TSubclassOf<UNarrativeItem>)
+			if (!Definition.RequiredAmmo.IsEmpty())
+			{
+				UClass* AmmoClass = LoadClass<UObject>(nullptr, *Definition.RequiredAmmo);
+				if (!AmmoClass)
+				{
+					// Try project paths
+					FString AmmoPath = FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *Definition.RequiredAmmo, *Definition.RequiredAmmo);
+					AmmoClass = LoadClass<UObject>(nullptr, *AmmoPath);
+				}
+				if (AmmoClass)
+				{
+					FClassProperty* AmmoProp = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("RequiredAmmo")));
+					if (AmmoProp)
+					{
+						AmmoProp->SetObjectPropertyValue_InContainer(CDO, AmmoClass);
+						LogGeneration(FString::Printf(TEXT("  Set RequiredAmmo: %s"), *AmmoClass->GetName()));
+					}
+				}
+			}
+			// bBotsConsumeAmmo (default true, only set if false)
+			if (!Definition.bBotsConsumeAmmo)
+			{
+				FBoolProperty* ConsumeProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bBotsConsumeAmmo")));
+				if (ConsumeProp)
+				{
+					ConsumeProp->SetPropertyValue_InContainer(CDO, false);
+					LogGeneration(TEXT("  Set bBotsConsumeAmmo: false"));
+				}
+			}
+			// BotAttackRange (default 1000, only set if different)
+			if (Definition.BotAttackRange != 1000.0f)
+			{
+				FFloatProperty* RangeProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BotAttackRange")));
+				if (RangeProp)
+				{
+					RangeProp->SetPropertyValue_InContainer(CDO, Definition.BotAttackRange);
+					LogGeneration(FString::Printf(TEXT("  Set BotAttackRange: %.2f"), Definition.BotAttackRange));
+				}
+			}
+			// ClipSize
+			if (Definition.ClipSize > 0)
+			{
+				FIntProperty* ClipProp = CastField<FIntProperty>(CDO->GetClass()->FindPropertyByName(TEXT("ClipSize")));
+				if (ClipProp)
+				{
+					ClipProp->SetPropertyValue_InContainer(CDO, Definition.ClipSize);
+					LogGeneration(FString::Printf(TEXT("  Set ClipSize: %d"), Definition.ClipSize));
+				}
+			}
+			// v3.4: RangedWeaponItem properties
+			// AimFOVPct (default 0.75, only set if different)
+			if (Definition.AimFOVPct != 0.75f)
+			{
+				FFloatProperty* AimProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("AimFOVPct")));
+				if (AimProp)
+				{
+					AimProp->SetPropertyValue_InContainer(CDO, Definition.AimFOVPct);
+					LogGeneration(FString::Printf(TEXT("  Set AimFOVPct: %.2f"), Definition.AimFOVPct));
+				}
+			}
+			// BaseSpreadDegrees
+			if (Definition.BaseSpreadDegrees != 0.0f)
+			{
+				FFloatProperty* SpreadProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BaseSpreadDegrees")));
+				if (SpreadProp)
+				{
+					SpreadProp->SetPropertyValue_InContainer(CDO, Definition.BaseSpreadDegrees);
+					LogGeneration(FString::Printf(TEXT("  Set BaseSpreadDegrees: %.2f"), Definition.BaseSpreadDegrees));
+				}
+			}
+			// MaxSpreadDegrees (default 5.0, only set if different)
+			if (Definition.MaxSpreadDegrees != 5.0f)
+			{
+				FFloatProperty* MaxSpreadProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("MaxSpreadDegrees")));
+				if (MaxSpreadProp)
+				{
+					MaxSpreadProp->SetPropertyValue_InContainer(CDO, Definition.MaxSpreadDegrees);
+					LogGeneration(FString::Printf(TEXT("  Set MaxSpreadDegrees: %.2f"), Definition.MaxSpreadDegrees));
+				}
+			}
+			// SpreadFireBump (default 0.5, only set if different)
+			if (Definition.SpreadFireBump != 0.5f)
+			{
+				FFloatProperty* BumpProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("SpreadFireBump")));
+				if (BumpProp)
+				{
+					BumpProp->SetPropertyValue_InContainer(CDO, Definition.SpreadFireBump);
+					LogGeneration(FString::Printf(TEXT("  Set SpreadFireBump: %.2f"), Definition.SpreadFireBump));
+				}
+			}
+			// SpreadDecreaseSpeed (default 5.0, only set if different)
+			if (Definition.SpreadDecreaseSpeed != 5.0f)
+			{
+				FFloatProperty* DecreaseProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("SpreadDecreaseSpeed")));
+				if (DecreaseProp)
+				{
+					DecreaseProp->SetPropertyValue_InContainer(CDO, Definition.SpreadDecreaseSpeed);
+					LogGeneration(FString::Printf(TEXT("  Set SpreadDecreaseSpeed: %.2f"), Definition.SpreadDecreaseSpeed));
+				}
+			}
+			// v3.4: Weapon ability arrays (TArray<TSubclassOf<UGameplayAbility>>)
+			// Helper lambda to load ability classes
+			const FString ProjectRoot = GetProjectRoot();
+			auto LoadAbilityClassLocal = [&ProjectRoot](const FString& AbilityName) -> UClass*
+			{
+				// Try direct path first
+				UClass* AbilityClass = LoadObject<UClass>(nullptr, *AbilityName);
+				if (AbilityClass) return AbilityClass;
+
+				// Try project paths
+				TArray<FString> SearchPaths = {
+					FString::Printf(TEXT("%s/Abilities/Forms/%s.%s_C"), *ProjectRoot, *AbilityName, *AbilityName),
+					FString::Printf(TEXT("%s/Abilities/Actions/%s.%s_C"), *ProjectRoot, *AbilityName, *AbilityName),
+					FString::Printf(TEXT("%s/Abilities/Combat/%s.%s_C"), *ProjectRoot, *AbilityName, *AbilityName),
+					FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *ProjectRoot, *AbilityName, *AbilityName),
+					FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *AbilityName, *AbilityName)
+				};
+				for (const FString& Path : SearchPaths)
+				{
+					AbilityClass = LoadObject<UClass>(nullptr, *Path);
+					if (AbilityClass) return AbilityClass;
+				}
+				return nullptr;
+			};
+
+			// WeaponAbilities
+			if (Definition.WeaponAbilities.Num() > 0)
+			{
+				FArrayProperty* WeaponAbilityProp = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("WeaponAbilities")));
+				if (WeaponAbilityProp)
+				{
+					FScriptArrayHelper ArrayHelper(WeaponAbilityProp, WeaponAbilityProp->ContainerPtrToValuePtr<void>(CDO));
+					for (const FString& AbilityName : Definition.WeaponAbilities)
+					{
+						UClass* AbilityClass = LoadAbilityClassLocal(AbilityName);
+						if (AbilityClass)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							FClassProperty* InnerProp = CastField<FClassProperty>(WeaponAbilityProp->Inner);
+							if (InnerProp)
+							{
+								InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), AbilityClass);
+								LogGeneration(FString::Printf(TEXT("  Added WeaponAbility: %s"), *AbilityClass->GetName()));
+							}
+						}
+					}
+				}
+			}
+			// MainhandAbilities
+			if (Definition.MainhandAbilities.Num() > 0)
+			{
+				FArrayProperty* MainhandProp = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("MainhandAbilities")));
+				if (MainhandProp)
+				{
+					FScriptArrayHelper ArrayHelper(MainhandProp, MainhandProp->ContainerPtrToValuePtr<void>(CDO));
+					for (const FString& AbilityName : Definition.MainhandAbilities)
+					{
+						UClass* AbilityClass = LoadAbilityClassLocal(AbilityName);
+						if (AbilityClass)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							FClassProperty* InnerProp = CastField<FClassProperty>(MainhandProp->Inner);
+							if (InnerProp)
+							{
+								InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), AbilityClass);
+								LogGeneration(FString::Printf(TEXT("  Added MainhandAbility: %s"), *AbilityClass->GetName()));
+							}
+						}
+					}
+				}
+			}
+			// OffhandAbilities
+			if (Definition.OffhandAbilities.Num() > 0)
+			{
+				FArrayProperty* OffhandProp = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("OffhandAbilities")));
+				if (OffhandProp)
+				{
+					FScriptArrayHelper ArrayHelper(OffhandProp, OffhandProp->ContainerPtrToValuePtr<void>(CDO));
+					for (const FString& AbilityName : Definition.OffhandAbilities)
+					{
+						UClass* AbilityClass = LoadAbilityClassLocal(AbilityName);
+						if (AbilityClass)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							FClassProperty* InnerProp = CastField<FClassProperty>(OffhandProp->Inner);
+							if (InnerProp)
+							{
+								InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), AbilityClass);
+								LogGeneration(FString::Printf(TEXT("  Added OffhandAbility: %s"), *AbilityClass->GetName()));
+							}
+						}
+					}
+				}
+			}
+
 			CDO->MarkPackageDirty();
 		}
 	}

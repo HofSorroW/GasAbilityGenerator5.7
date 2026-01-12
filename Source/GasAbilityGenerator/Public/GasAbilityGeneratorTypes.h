@@ -1425,10 +1425,8 @@ struct FManifestDialogueBlueprintDefinition
 
 /**
  * Equippable item definition
- */
-/**
- * Equippable item definition
  * v3.3: Enhanced with full NarrativeItem + EquippableItem property support
+ * v3.4: Added WeaponItem and RangedWeaponItem property support
  */
 struct FManifestEquippableItemDefinition
 {
@@ -1456,7 +1454,30 @@ struct FManifestEquippableItemDefinition
 	int32 MaxStackSize = 1;              // Max stack size (if stackable)
 	float UseRechargeDuration = 0.0f;    // Cooldown between uses
 
-	/** v3.3: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.4: WeaponItem properties (when parent is WeaponItem/MeleeWeaponItem/RangedWeaponItem)
+	FString WeaponVisualClass;           // TSoftClassPtr<AWeaponVisual> - visual actor to spawn
+	FString WeaponHand;                  // EWeaponHandRule: TwoHanded, MainHand, OffHand, DualWieldable
+	TArray<FString> WeaponAbilities;     // Abilities granted when wielded alone
+	TArray<FString> MainhandAbilities;   // Abilities when wielded in mainhand
+	TArray<FString> OffhandAbilities;    // Abilities when wielded in offhand
+	bool bPawnFollowsControlRotation = false;   // Pawn follows camera rotation
+	bool bPawnOrientsRotationToMovement = true; // Pawn orients to velocity
+	float AttackDamage = 0.0f;           // Base weapon damage
+	float HeavyAttackDamageMultiplier = 1.5f;   // Heavy attack multiplier
+	bool bAllowManualReload = true;      // Can be manually reloaded
+	FString RequiredAmmo;                // TSubclassOf<UNarrativeItem> - ammo class
+	bool bBotsConsumeAmmo = true;        // Bots consume ammo
+	float BotAttackRange = 1000.0f;      // Bot attack range
+	int32 ClipSize = 0;                  // Magazine size (0 = no clip)
+
+	// v3.4: RangedWeaponItem properties
+	float AimFOVPct = 0.75f;             // Aim zoom (1=no zoom, 0.1=max zoom)
+	float BaseSpreadDegrees = 0.0f;      // Base accuracy spread
+	float MaxSpreadDegrees = 5.0f;       // Maximum spread
+	float SpreadFireBump = 0.5f;         // Spread increase per shot
+	float SpreadDecreaseSpeed = 5.0f;    // Spread recovery speed
+
+	/** v3.4: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1472,7 +1493,7 @@ struct FManifestEquippableItemDefinition
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
 
-		// v3.3: Hash new properties
+		// v3.3: Hash NarrativeItem/EquippableItem properties
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttackRating * 100.f));
 		Hash = (Hash << 5) | (Hash >> 59);
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(ArmorRating * 100.f));
@@ -1495,6 +1516,53 @@ struct FManifestEquippableItemDefinition
 			Hash ^= GetTypeHash(Tag);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
+
+		// v3.4: Hash WeaponItem properties
+		Hash ^= GetTypeHash(WeaponVisualClass);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(WeaponHand);
+		Hash = (Hash << 5) | (Hash >> 59);
+		for (const FString& Ability : WeaponAbilities)
+		{
+			Hash ^= GetTypeHash(Ability);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Ability : MainhandAbilities)
+		{
+			Hash ^= GetTypeHash(Ability);
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+		for (const FString& Ability : OffhandAbilities)
+		{
+			Hash ^= GetTypeHash(Ability);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		Hash ^= (bPawnFollowsControlRotation ? 1ULL : 0ULL) << 6;
+		Hash ^= (bPawnOrientsRotationToMovement ? 1ULL : 0ULL) << 7;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttackDamage * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(HeavyAttackDamageMultiplier * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= (bAllowManualReload ? 1ULL : 0ULL) << 8;
+		Hash ^= GetTypeHash(RequiredAmmo);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= (bBotsConsumeAmmo ? 1ULL : 0ULL) << 9;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(BotAttackRange));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(ClipSize) << 10;
+
+		// v3.4: Hash RangedWeaponItem properties
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AimFOVPct * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(BaseSpreadDegrees * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(MaxSpreadDegrees * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(SpreadFireBump * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(SpreadDecreaseSpeed * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+
 		return Hash;
 	}
 };

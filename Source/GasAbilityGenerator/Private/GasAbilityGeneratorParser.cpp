@@ -3280,6 +3280,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInItem = false;
 	bool bInAbilities = false;
 	bool bInItemTags = false;
+	// v3.4: Weapon ability array parsing states
+	bool bInWeaponAbilities = false;
+	bool bInMainhandAbilities = false;
+	bool bInOffhandAbilities = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3315,6 +3319,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInItem = true;
 			bInAbilities = false;
 			bInItemTags = false;
+			// v3.4: Reset weapon ability array states
+			bInWeaponAbilities = false;
+			bInMainhandAbilities = false;
+			bInOffhandAbilities = false;
 		}
 		else if (bInItem)
 		{
@@ -3385,15 +3393,116 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			{
 				CurrentDef.UseRechargeDuration = FCString::Atof(*GetLineValue(TrimmedLine));
 			}
+			// v3.4: WeaponItem properties
+			else if (TrimmedLine.StartsWith(TEXT("weapon_visual_class:")))
+			{
+				CurrentDef.WeaponVisualClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("weapon_hand:")))
+			{
+				CurrentDef.WeaponHand = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("pawn_follows_control_rotation:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bPawnFollowsControlRotation = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("pawn_orients_rotation_to_movement:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bPawnOrientsRotationToMovement = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("attack_damage:")))
+			{
+				CurrentDef.AttackDamage = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("heavy_attack_damage_multiplier:")))
+			{
+				CurrentDef.HeavyAttackDamageMultiplier = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("allow_manual_reload:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bAllowManualReload = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("required_ammo:")))
+			{
+				CurrentDef.RequiredAmmo = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("bots_consume_ammo:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bBotsConsumeAmmo = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("bot_attack_range:")))
+			{
+				CurrentDef.BotAttackRange = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("clip_size:")))
+			{
+				CurrentDef.ClipSize = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			// v3.4: RangedWeaponItem properties
+			else if (TrimmedLine.StartsWith(TEXT("aim_fov_pct:")))
+			{
+				CurrentDef.AimFOVPct = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("base_spread_degrees:")))
+			{
+				CurrentDef.BaseSpreadDegrees = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("max_spread_degrees:")))
+			{
+				CurrentDef.MaxSpreadDegrees = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("spread_fire_bump:")))
+			{
+				CurrentDef.SpreadFireBump = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("spread_decrease_speed:")))
+			{
+				CurrentDef.SpreadDecreaseSpeed = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// v3.4: Weapon ability arrays
+			else if (TrimmedLine.Equals(TEXT("weapon_abilities:")) || TrimmedLine.StartsWith(TEXT("weapon_abilities:")))
+			{
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = true;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("mainhand_abilities:")) || TrimmedLine.StartsWith(TEXT("mainhand_abilities:")))
+			{
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = true;
+				bInOffhandAbilities = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("offhand_abilities:")) || TrimmedLine.StartsWith(TEXT("offhand_abilities:")))
+			{
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = true;
+			}
 			else if (TrimmedLine.Equals(TEXT("item_tags:")) || TrimmedLine.StartsWith(TEXT("item_tags:")))
 			{
-				bInAbilities = false; // Reset abilities parsing state
+				bInAbilities = false;
 				bInItemTags = true;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("abilities_to_grant:")) || TrimmedLine.StartsWith(TEXT("abilities_to_grant:")))
 			{
 				bInAbilities = true;
 				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
 			}
 			else if (bInItemTags && TrimmedLine.StartsWith(TEXT("-")))
 			{
@@ -3406,6 +3515,45 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				if (!Tag.IsEmpty())
 				{
 					CurrentDef.ItemTags.Add(Tag);
+				}
+			}
+			else if (bInWeaponAbilities && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Ability = TrimmedLine.Mid(1).TrimStart();
+				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
+					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
+				{
+					Ability = Ability.Mid(1, Ability.Len() - 2);
+				}
+				if (!Ability.IsEmpty())
+				{
+					CurrentDef.WeaponAbilities.Add(Ability);
+				}
+			}
+			else if (bInMainhandAbilities && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Ability = TrimmedLine.Mid(1).TrimStart();
+				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
+					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
+				{
+					Ability = Ability.Mid(1, Ability.Len() - 2);
+				}
+				if (!Ability.IsEmpty())
+				{
+					CurrentDef.MainhandAbilities.Add(Ability);
+				}
+			}
+			else if (bInOffhandAbilities && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Ability = TrimmedLine.Mid(1).TrimStart();
+				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
+					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
+				{
+					Ability = Ability.Mid(1, Ability.Len() - 2);
+				}
+				if (!Ability.IsEmpty())
+				{
+					CurrentDef.OffhandAbilities.Add(Ability);
 				}
 			}
 			else if (bInAbilities && TrimmedLine.StartsWith(TEXT("-")))

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.3) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.4) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -507,6 +507,39 @@ activities:
     supported_goal_type: Goal_Patrol                # TSubclassOf<UNPCGoalItem>
     is_interruptable: true                          # Can be interrupted by higher priority activities
     save_activity: false                            # Don't persist across saves
+
+# v3.4: WeaponItem with full weapon property support
+equippable_items:
+  - name: EI_FatherRifleWeapon
+    folder: Items/Weapons
+    parent_class: RangedWeaponItem                  # Enables WeaponItem + RangedWeaponItem properties
+    display_name: "Father's Laser Rifle"
+    description: "A high-powered laser rifle formed from Father's Engineer mode."
+    equipment_slot: Narrative.Equipment.Slot.Weapon
+    # v3.4: WeaponItem properties
+    weapon_visual_class: "/Game/Weapons/WV_LaserRifle"  # TSoftClassPtr<AWeaponVisual>
+    weapon_hand: TwoHanded                          # TwoHanded, MainHand, OffHand, DualWieldable
+    pawn_follows_control_rotation: true
+    pawn_orients_rotation_to_movement: false
+    attack_damage: 50.0
+    heavy_attack_damage_multiplier: 2.0
+    allow_manual_reload: true
+    required_ammo: EI_EnergyCells                   # TSubclassOf<UNarrativeItem>
+    bots_consume_ammo: false
+    bot_attack_range: 2000.0
+    clip_size: 30
+    # v3.4: RangedWeaponItem properties
+    aim_fov_pct: 0.5                                # 50% FOV when aiming
+    base_spread_degrees: 1.0
+    max_spread_degrees: 8.0
+    spread_fire_bump: 0.3
+    spread_decrease_speed: 4.0
+    # v3.4: Weapon ability arrays
+    weapon_abilities:                               # Granted when wielded alone
+      - GA_LaserShot
+    mainhand_abilities:                             # Granted when wielded in mainhand
+      - GA_LaserShot
+    offhand_abilities: []                           # No offhand abilities
 ```
 
 ### Event Graph Generation
@@ -616,6 +649,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.4 - WeaponItem Property Support: EquippableItem generator now supports full WeaponItem/MeleeWeaponItem/RangedWeaponItem property chain when using those parent classes. New properties: WeaponVisualClass (TSoftClassPtr), WeaponHand (EWeaponHandRule enum), WeaponAbilities/MainhandAbilities/OffhandAbilities arrays (TSubclassOf<UGameplayAbility>), bPawnFollowsControlRotation, bPawnOrientsRotationToMovement, AttackDamage, HeavyAttackDamageMultiplier, bAllowManualReload, RequiredAmmo, bBotsConsumeAmmo, BotAttackRange, ClipSize, AimFOVPct, BaseSpreadDegrees, MaxSpreadDegrees, SpreadFireBump, SpreadDecreaseSpeed. Enables complete weapon definition from YAML.
 - v3.3 - NPCDefinition, EquippableItem & Activity Enhancement: NPCDefinition gains full CharacterDefinition property support (Dialogue, TaggedDialogueSet, vendor properties, inherited properties). EquippableItem gains full NarrativeItem property support (DisplayName, Description, AttackRating, ArmorRating, StealthRating, Weight, BaseValue, BaseScore, ItemTags, bStackable, MaxStackSize, UseRechargeDuration, Thumbnail). Activity gains full NarrativeActivityBase/NPCActivity property support (ActivityName, OwnedTags, BlockTags, RequireTags, SupportedGoalType, bIsInterruptable, bSaveActivity). EI_, NPCDef_, and BPA_ upgraded to High automation level.
 - v3.2 - NE_ & DBP_ Enhancements: NarrativeEvent now sets EventRuntime/EventFilter/PartyEventPolicy/bRefireOnLoad via reflection, DialogueBlueprint sets bFreeMovement/bUnskippable/bCanBeExited/bShowCinematicBars/bAutoRotateSpeakers/bAutoStopMovement/Priority/EndDialogueDist via reflection, both types upgraded from Stub to Medium automation level
 - v3.1.1 - Robustness Fixes: Commandlet exit code returns non-zero on failures (CI/CD support), dedicated LogGasAbilityGenerator log category, try/catch for YAML parsing exceptions, UGeneratorMetadataRegistry fallback for UDataAsset/UBlueprint/UNiagaraSystem (which don't support IInterface_AssetUserData in UE5.7)
