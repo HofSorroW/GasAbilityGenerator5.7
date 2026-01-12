@@ -3928,6 +3928,20 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			continue;
 		}
 
+		// v2.8.4: Exit user_parameters when we encounter a top-level item (at SectionIndent + 2)
+		// This fixes the bug where subsequent NS_ entries were not parsed
+		if (bInUserParameters && TrimmedLine.StartsWith(TEXT("- name:")) && CurrentIndent <= SectionIndent + 2)
+		{
+			// Save pending user parameter
+			if (!CurrentUserParam.Name.IsEmpty())
+			{
+				CurrentDef.UserParameters.Add(CurrentUserParam);
+				CurrentUserParam = FManifestNiagaraUserParameter();
+			}
+			bInUserParameters = false;
+			UserParamsIndent = -1;
+		}
+
 		// New item entry - v2.6.13: only if not in user_parameters subsection
 		if (!bInUserParameters && TrimmedLine.StartsWith(TEXT("- name:")))
 		{
