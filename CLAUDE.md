@@ -89,22 +89,6 @@ rm -rf "/c/Unreal Projects/NP22B57/Content/FatherCompanion"
 UnrealEditor-Cmd.exe ... -run=GasAbilityGenerator ...
 ```
 
-### Debugging with Verbose Logging
-When debugging parser or generation issues, ALWAYS enable verbose logging to see all trace messages. Parser trace logs are at Verbose level (not Warning) to keep normal output clean, but they are essential for debugging.
-
-**For debugging, ALWAYS use:**
-```bash
-"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "C:/Unreal Projects/NP22B57/NP22B57.uproject" -run=GasAbilityGenerator -manifest="..." -LogCmds="LogTemp Verbose" 2>&1 | tee debug_output.log
-```
-
-**Log levels to check when debugging:**
-- `Error` - Always check, indicates failures
-- `Warning` - Always check, indicates potential issues
-- `Display` - Normal output, generation progress
-- `Verbose` - Parser traces, detailed flow (MUST enable with `-LogCmds="LogTemp Verbose"`)
-
-**Never skip verbose logs when debugging** - they contain critical parser state transitions, tag assignments, and node creation details that are invisible at normal log levels.
-
 ### Non-Asset Entries Must Be Nested
 Variables, properties, and parameters are NOT standalone assets. They must always be nested inside their parent asset definition:
 
