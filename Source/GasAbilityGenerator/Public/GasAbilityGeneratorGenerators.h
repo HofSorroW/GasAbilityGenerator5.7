@@ -112,6 +112,60 @@ public:
 	 */
 	static UEnum* FindUserDefinedEnum(const FString& EnumName, const FString& ProjectRoot);
 
+	// ====================================================================
+	// v2.9.1: Generalized Validation Utilities
+	// ====================================================================
+
+	/**
+	 * Validate that a required string field is not empty
+	 * @return true if valid, false if empty (adds error to result)
+	 */
+	static bool ValidateRequiredField(const FString& AssetName, const FString& FieldName,
+		const FString& Value, FPreValidationResult& OutResult);
+
+	/**
+	 * Validate that a referenced asset exists (by path or common search paths)
+	 * @return true if found, false if not found (adds error to result)
+	 */
+	static bool ValidateAssetReference(const FString& AssetName, const FString& FieldName,
+		const FString& ReferencePath, FPreValidationResult& OutResult);
+
+	/**
+	 * Validate parent class exists and is valid for the asset type
+	 * @return true if found, false if not found (adds error to result)
+	 */
+	static bool ValidateParentClass(const FString& AssetName, const FString& ClassName,
+		FPreValidationResult& OutResult);
+
+	/**
+	 * Validate a float value is within expected range
+	 * @return true if in range, adds warning if out of range
+	 */
+	static bool ValidateFloatRange(const FString& AssetName, const FString& FieldName,
+		float Value, float Min, float Max, FPreValidationResult& OutResult);
+
+	/**
+	 * Validate asset name follows expected prefix convention
+	 * @return true if valid, adds warning if invalid
+	 */
+	static bool ValidateNamePrefix(const FString& AssetName, const FString& ExpectedPrefix,
+		FPreValidationResult& OutResult);
+
+	/**
+	 * Validate an array is not empty when required
+	 * @return true if not empty or not required, adds error if required and empty
+	 */
+	static bool ValidateNonEmptyArray(const FString& AssetName, const FString& FieldName,
+		int32 ArraySize, bool bRequired, FPreValidationResult& OutResult);
+
+	/**
+	 * Run validation and return result - combines all validation in one call
+	 * Logs all issues automatically
+	 * @return FGenerationResult with Failed status if validation has errors
+	 */
+	static bool HandleValidationResult(const FPreValidationResult& Validation,
+		const FString& AssetName, FGenerationResult& OutResult);
+
 protected:
 	/**
 	 * Log generation message to editor output

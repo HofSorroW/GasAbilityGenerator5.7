@@ -299,6 +299,145 @@ bool FGeneratorBase::CheckExistsAndPopulateResult(
 	return false; // Asset doesn't exist, should generate
 }
 
+// ============================================================================
+// v2.9.1: Generalized Validation Utilities Implementation
+// ============================================================================
+
+bool FGeneratorBase::ValidateRequiredField(const FString& AssetName, const FString& FieldName,
+	const FString& Value, FPreValidationResult& OutResult)
+{
+	if (Value.IsEmpty())
+	{
+		OutResult.AddIssue(FValidationIssue::RequiredField(AssetName, FieldName));
+		return false;
+	}
+	return true;
+}
+
+bool FGeneratorBase::ValidateAssetReference(const FString& AssetName, const FString& FieldName,
+	const FString& ReferencePath, FPreValidationResult& OutResult)
+{
+	if (ReferencePath.IsEmpty())
+	{
+		// Empty reference is valid (optional)
+		return true;
+	}
+
+	// Try to find the referenced asset
+	if (DoesAssetExistOnDisk(ReferencePath))
+	{
+		return true;
+	}
+
+	// Try common search patterns
+	TArray<FString> SearchPaths;
+	if (!ReferencePath.Contains(TEXT("/")))
+	{
+		// Short name - search common locations
+		SearchPaths.Add(FString::Printf(TEXT("/Game/%s"), *ReferencePath));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/Blueprints/%s"), *ReferencePath));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/Characters/%s"), *ReferencePath));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/VFX/%s"), *ReferencePath));
+	}
+
+	for (const FString& Path : SearchPaths)
+	{
+		if (DoesAssetExistOnDisk(Path))
+		{
+			return true;
+		}
+	}
+
+	// Also check if it's a native class
+	if (FindParentClass(ReferencePath) != nullptr)
+	{
+		return true;
+	}
+
+	OutResult.AddIssue(FValidationIssue::MissingReference(AssetName, FieldName, ReferencePath));
+	return false;
+}
+
+bool FGeneratorBase::ValidateParentClass(const FString& AssetName, const FString& ClassName,
+	FPreValidationResult& OutResult)
+{
+	if (ClassName.IsEmpty())
+	{
+		// Empty means use default parent - valid
+		return true;
+	}
+
+	UClass* FoundClass = FindParentClass(ClassName);
+	if (FoundClass)
+	{
+		return true;
+	}
+
+	// Parent class not found - this is a warning, not error
+	// Because FindParentClass may not find all classes (plugins, etc.)
+	OutResult.AddIssue(FValidationIssue(AssetName, TEXT("ParentClass"),
+		FString::Printf(TEXT("Parent class '%s' not found (may exist in plugin)"), *ClassName),
+		EValidationSeverity::Warning, EValidationCategory::Reference));
+
+	return true; // Return true because this is just a warning
+}
+
+bool FGeneratorBase::ValidateFloatRange(const FString& AssetName, const FString& FieldName,
+	float Value, float Min, float Max, FPreValidationResult& OutResult)
+{
+	if (Max > Min && (Value < Min || Value > Max))
+	{
+		OutResult.AddIssue(FValidationIssue::ValueOutOfRange(AssetName, FieldName, Value, Min, Max));
+		return false;
+	}
+	return true;
+}
+
+bool FGeneratorBase::ValidateNamePrefix(const FString& AssetName, const FString& ExpectedPrefix,
+	FPreValidationResult& OutResult)
+{
+	if (!ExpectedPrefix.IsEmpty() && !AssetName.StartsWith(ExpectedPrefix))
+	{
+		OutResult.AddIssue(FValidationIssue(AssetName, TEXT("Name"),
+			FString::Printf(TEXT("Asset name should start with '%s'"), *ExpectedPrefix),
+			EValidationSeverity::Warning, EValidationCategory::Format));
+		return false;
+	}
+	return true;
+}
+
+bool FGeneratorBase::ValidateNonEmptyArray(const FString& AssetName, const FString& FieldName,
+	int32 ArraySize, bool bRequired, FPreValidationResult& OutResult)
+{
+	if (bRequired && ArraySize == 0)
+	{
+		OutResult.AddIssue(FValidationIssue(AssetName, FieldName,
+			TEXT("Array cannot be empty"),
+			EValidationSeverity::Error, EValidationCategory::Required));
+		return false;
+	}
+	return true;
+}
+
+bool FGeneratorBase::HandleValidationResult(const FPreValidationResult& Validation,
+	const FString& AssetName, FGenerationResult& OutResult)
+{
+	if (Validation.HasIssues())
+	{
+		Validation.LogIssues();
+	}
+
+	if (!Validation.IsValid())
+	{
+		OutResult = FGenerationResult(AssetName, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Pre-validation failed: %s"), *Validation.GetSummary()));
+		OutResult.DetermineCategory();
+		return false;
+	}
+
+	return true;
+}
+
 // v2.6.2: Helper function to configure gameplay ability tags on CDO
 void FGeneratorBase::ConfigureGameplayAbilityTags(
 	UGameplayAbility* AbilityCDO,

@@ -155,6 +155,178 @@ struct FGenerationSummary
 	}
 };
 
+// ============================================================================
+// v2.9.1: Generalized Validation System
+// Provides validation utilities for all generators
+// ============================================================================
+
+/**
+ * Validation error severity levels
+ */
+enum class EValidationSeverity : uint8
+{
+	Info,     // Informational message
+	Warning,  // Non-fatal issue
+	Error,    // Fatal error - blocks generation
+};
+
+/**
+ * Validation error categories for grouping
+ */
+enum class EValidationCategory : uint8
+{
+	Required,      // Required field missing
+	Reference,     // Referenced asset not found
+	Format,        // Naming/format issue
+	TypeMismatch,  // Type incompatibility
+	Range,         // Value out of range
+	Dependency,    // Missing dependency
+	Template,      // Template validation
+	Custom,        // Custom validation
+};
+
+/**
+ * Single validation issue from pre-generation checks
+ */
+struct FValidationIssue
+{
+	FString AssetName;           // Asset being validated
+	FString FieldName;           // Field with the issue
+	FString Message;             // Human-readable message
+	EValidationSeverity Severity = EValidationSeverity::Warning;
+	EValidationCategory Category = EValidationCategory::Custom;
+
+	FValidationIssue() = default;
+
+	FValidationIssue(const FString& InAsset, const FString& InField, const FString& InMessage,
+		EValidationSeverity InSeverity = EValidationSeverity::Warning,
+		EValidationCategory InCategory = EValidationCategory::Custom)
+		: AssetName(InAsset), FieldName(InField), Message(InMessage)
+		, Severity(InSeverity), Category(InCategory) {}
+
+	// Convenience constructors
+	static FValidationIssue RequiredField(const FString& Asset, const FString& Field)
+	{
+		return FValidationIssue(Asset, Field,
+			FString::Printf(TEXT("Required field '%s' is empty"), *Field),
+			EValidationSeverity::Error, EValidationCategory::Required);
+	}
+
+	static FValidationIssue MissingReference(const FString& Asset, const FString& Field, const FString& RefPath)
+	{
+		return FValidationIssue(Asset, Field,
+			FString::Printf(TEXT("Referenced asset not found: %s"), *RefPath),
+			EValidationSeverity::Error, EValidationCategory::Reference);
+	}
+
+	static FValidationIssue InvalidFormat(const FString& Asset, const FString& Field, const FString& Expected)
+	{
+		return FValidationIssue(Asset, Field,
+			FString::Printf(TEXT("Invalid format. Expected: %s"), *Expected),
+			EValidationSeverity::Error, EValidationCategory::Format);
+	}
+
+	static FValidationIssue ValueOutOfRange(const FString& Asset, const FString& Field, float Value, float Min, float Max)
+	{
+		return FValidationIssue(Asset, Field,
+			FString::Printf(TEXT("Value %.2f out of range [%.2f, %.2f]"), Value, Min, Max),
+			EValidationSeverity::Warning, EValidationCategory::Range);
+	}
+
+	// Get log prefix based on severity
+	FString GetLogPrefix() const
+	{
+		switch (Severity)
+		{
+		case EValidationSeverity::Info: return TEXT("[INFO]");
+		case EValidationSeverity::Warning: return TEXT("[WARN]");
+		case EValidationSeverity::Error: return TEXT("[ERROR]");
+		default: return TEXT("[???]");
+		}
+	}
+
+	// Format for logging
+	FString ToString() const
+	{
+		return FString::Printf(TEXT("%s %s.%s: %s"), *GetLogPrefix(), *AssetName, *FieldName, *Message);
+	}
+};
+
+/**
+ * Aggregated validation result for pre-generation checks
+ */
+struct FPreValidationResult
+{
+	TArray<FValidationIssue> Issues;
+	bool bValidated = false;
+
+	// Counts by severity
+	int32 InfoCount = 0;
+	int32 WarningCount = 0;
+	int32 ErrorCount = 0;
+
+	void AddIssue(const FValidationIssue& Issue)
+	{
+		Issues.Add(Issue);
+		switch (Issue.Severity)
+		{
+		case EValidationSeverity::Info: InfoCount++; break;
+		case EValidationSeverity::Warning: WarningCount++; break;
+		case EValidationSeverity::Error: ErrorCount++; break;
+		}
+	}
+
+	// Check if validation passed (no errors)
+	bool IsValid() const { return ErrorCount == 0; }
+
+	// Check if there are any issues at all
+	bool HasIssues() const { return Issues.Num() > 0; }
+
+	// Get summary string
+	FString GetSummary() const
+	{
+		return FString::Printf(TEXT("Validation: %d errors, %d warnings, %d info"),
+			ErrorCount, WarningCount, InfoCount);
+	}
+
+	// Log all issues
+	void LogIssues() const
+	{
+		for (const auto& Issue : Issues)
+		{
+			switch (Issue.Severity)
+			{
+			case EValidationSeverity::Error:
+				UE_LOG(LogTemp, Error, TEXT("[VALIDATE] %s"), *Issue.ToString());
+				break;
+			case EValidationSeverity::Warning:
+				UE_LOG(LogTemp, Warning, TEXT("[VALIDATE] %s"), *Issue.ToString());
+				break;
+			default:
+				UE_LOG(LogTemp, Log, TEXT("[VALIDATE] %s"), *Issue.ToString());
+				break;
+			}
+		}
+	}
+
+	void Reset()
+	{
+		Issues.Empty();
+		bValidated = false;
+		InfoCount = 0;
+		WarningCount = 0;
+		ErrorCount = 0;
+	}
+
+	// Get issues filtered by category
+	TArray<FValidationIssue> GetIssuesByCategory(EValidationCategory Category) const
+	{
+		return Issues.FilterByPredicate([Category](const FValidationIssue& Issue) {
+			return Issue.Category == Category;
+		});
+	}
+};
+
 /**
  * Enumeration definition from manifest
  */
