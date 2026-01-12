@@ -1,5 +1,7 @@
-// GasAbilityGenerator v2.9.0
+// GasAbilityGenerator v2.9.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.9.1: FX Validation System - Template integrity checking, descriptor validation,
+//         regeneration safety with metadata tracking and hash comparison
 // v2.9.0: Data-driven FX architecture - FXDescriptor for Niagara User param binding
 //         Duplicates template systems and applies User.* parameters from manifest
 // v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
@@ -7083,6 +7085,44 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		UNiagaraSystem* TemplateSystem = LoadObject<UNiagaraSystem>(nullptr, *TemplatePath);
 		if (TemplateSystem)
 		{
+			// v2.9.1: Validate template and descriptor before proceeding
+			if (Definition.FXDescriptor.HasData())
+			{
+				FFXValidationResult TemplateValidation;
+				if (!ValidateTemplate(TemplatePath, TemplateValidation))
+				{
+					// Log errors but continue (warnings are non-fatal)
+					for (const auto& Error : TemplateValidation.Errors)
+					{
+						if (Error.bFatal)
+						{
+							UE_LOG(LogTemp, Error, TEXT("[FXGEN][ERROR] %s: %s"), *Error.AssetPath, *Error.Message);
+						}
+					}
+					// Fatal errors prevent generation
+					if (TemplateValidation.HasFatalErrors())
+					{
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("Template validation failed: %s"), *TemplateValidation.GetSummary()));
+					}
+				}
+
+				// Validate descriptor against template
+				FFXValidationResult DescriptorValidation;
+				if (!ValidateDescriptor(Definition, TemplateSystem, DescriptorValidation))
+				{
+					for (const auto& Error : DescriptorValidation.Errors)
+					{
+						UE_LOG(LogTemp, Error, TEXT("[FXGEN][ERROR] %s: %s"), *Error.ParamName, *Error.Message);
+					}
+					if (DescriptorValidation.HasFatalErrors())
+					{
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("Descriptor validation failed: %s"), *DescriptorValidation.GetSummary()));
+					}
+				}
+			}
+
 			if (!TemplateSystem->IsReadyToRun())
 			{
 				TemplateSystem->WaitForCompilationComplete();
@@ -7536,8 +7576,355 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, NewSystem, *PackageFileName, SaveArgs);
 
+	// v2.9.1: Store generator metadata for regeneration safety
+	StoreGeneratorMetadata(NewSystem, Definition);
+
 	LogGeneration(FString::Printf(TEXT("Created Niagara System: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
 	return Result;
+}
+
+// ============================================================================
+// v2.9.1: FNiagaraSystemGenerator Validation Implementation
+// ============================================================================
+
+// Static member initialization
+TArray<FFXExpectedParam> FNiagaraSystemGenerator::CachedExpectedParams;
+bool FNiagaraSystemGenerator::bExpectedParamsBuilt = false;
+
+void FNiagaraSystemGenerator::BuildExpectedParameters()
+{
+	if (bExpectedParamsBuilt) return;
+
+	CachedExpectedParams.Empty();
+
+	// Emitter toggles (all optional, but if present must be bool)
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Particles.Enabled"), EFXParamType::Bool, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Burst.Enabled"), EFXParamType::Bool, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Beam.Enabled"), EFXParamType::Bool, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Ribbon.Enabled"), EFXParamType::Bool, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Light.Enabled"), EFXParamType::Bool, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Smoke.Enabled"), EFXParamType::Bool, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Sparks.Enabled"), EFXParamType::Bool, false));
+
+	// Core emission parameters (required for most effects)
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.SpawnRate"), EFXParamType::Float, true, 0.f, 10000.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.LifetimeMin"), EFXParamType::Float, false, 0.001f, 60.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.LifetimeMax"), EFXParamType::Float, false, 0.001f, 60.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.MaxParticles"), EFXParamType::Int, false, 1.f, 100000.f));
+
+	// Appearance parameters
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Color"), EFXParamType::Color, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.SizeMin"), EFXParamType::Float, false, 0.f, 10000.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.SizeMax"), EFXParamType::Float, false, 0.f, 10000.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Opacity"), EFXParamType::Float, false, 0.f, 1.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.Emissive"), EFXParamType::Float, false, 0.f, 100.f));
+
+	// Motion parameters
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.InitialVelocity"), EFXParamType::Vec3, false));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.NoiseStrength"), EFXParamType::Float, false, 0.f, 1000.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.GravityScale"), EFXParamType::Float, false, -10.f, 10.f));
+
+	// Beam-specific
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.BeamLength"), EFXParamType::Float, false, 0.f, 10000.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.BeamWidth"), EFXParamType::Float, false, 0.f, 1000.f));
+
+	// Ribbon-specific
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.RibbonWidth"), EFXParamType::Float, false, 0.f, 1000.f));
+
+	// Light-specific
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.LightIntensity"), EFXParamType::Float, false, 0.f, 100000.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.LightRadius"), EFXParamType::Float, false, 0.f, 10000.f));
+
+	// LOD
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.CullDistance"), EFXParamType::Float, false, 0.f, 100000.f));
+	CachedExpectedParams.Add(FFXExpectedParam(TEXT("User.LODLevel"), EFXParamType::Int, false, 0.f, 4.f));
+
+	bExpectedParamsBuilt = true;
+}
+
+TArray<FFXExpectedParam> FNiagaraSystemGenerator::GetExpectedParameters()
+{
+	BuildExpectedParameters();
+	return CachedExpectedParams;
+}
+
+bool FNiagaraSystemGenerator::ValidateTemplate(const FString& TemplatePath, FFXValidationResult& OutResult)
+{
+	OutResult.Reset();
+
+	// Phase A.1: Check template loads
+	UNiagaraSystem* TemplateSystem = LoadObject<UNiagaraSystem>(nullptr, *TemplatePath);
+	if (!TemplateSystem)
+	{
+		OutResult.bTemplateValid = false;
+		OutResult.AddError(FFXValidationError(TemplatePath, TEXT("Template system failed to load"), true));
+		return false;
+	}
+
+	// Phase A.2: Get exposed parameters
+	const FNiagaraUserRedirectionParameterStore& UserParams = TemplateSystem->GetExposedParameters();
+	TArray<FNiagaraVariable> AllParams;
+	UserParams.GetParameters(AllParams);
+
+	if (AllParams.Num() == 0)
+	{
+		OutResult.AddError(FFXValidationError(TemplatePath, TEXT("Template has no exposed User parameters"), true));
+		OutResult.bTemplateValid = false;
+		return false;
+	}
+
+	// Phase A.3: Check for duplicate parameter names
+	TSet<FName> SeenNames;
+	for (const FNiagaraVariableBase& Param : AllParams)
+	{
+		if (SeenNames.Contains(Param.GetName()))
+		{
+			OutResult.AddError(FFXValidationError(TemplatePath, Param.GetName().ToString(),
+				FString::Printf(TEXT("Duplicate User parameter: %s"), *Param.GetName().ToString()), true));
+		}
+		SeenNames.Add(Param.GetName());
+	}
+
+	// Phase A.4: Validate expected parameters exist
+	BuildExpectedParameters();
+	for (const FFXExpectedParam& Expected : CachedExpectedParams)
+	{
+		bool bFound = false;
+		for (const FNiagaraVariableBase& Param : AllParams)
+		{
+			if (Param.GetName() == Expected.Name)
+			{
+				bFound = true;
+				OutResult.ParamsValidated++;
+
+				// Check type match
+				EFXParamType ActualType = EFXParamType::Unknown;
+				const FNiagaraTypeDefinition& TypeDef = Param.GetType();
+				if (TypeDef == FNiagaraTypeDefinition::GetFloatDef()) ActualType = EFXParamType::Float;
+				else if (TypeDef == FNiagaraTypeDefinition::GetIntDef()) ActualType = EFXParamType::Int;
+				else if (TypeDef == FNiagaraTypeDefinition::GetBoolDef()) ActualType = EFXParamType::Bool;
+				else if (TypeDef == FNiagaraTypeDefinition::GetVec2Def()) ActualType = EFXParamType::Vec2;
+				else if (TypeDef == FNiagaraTypeDefinition::GetVec3Def()) ActualType = EFXParamType::Vec3;
+				else if (TypeDef == FNiagaraTypeDefinition::GetColorDef()) ActualType = EFXParamType::Color;
+
+				if (ActualType != Expected.Type && Expected.Type != EFXParamType::Unknown)
+				{
+					OutResult.ParamsTypeMismatch++;
+					OutResult.AddError(FFXValidationError(TemplatePath, Expected.Name.ToString(),
+						FString::Printf(TEXT("Type mismatch for %s: expected %d, got %d"),
+							*Expected.Name.ToString(), (int)Expected.Type, (int)ActualType),
+						Expected.bRequired));
+				}
+				break;
+			}
+		}
+
+		if (!bFound)
+		{
+			OutResult.ParamsMissing++;
+			if (Expected.bRequired)
+			{
+				OutResult.AddError(FFXValidationError(TemplatePath, Expected.Name.ToString(),
+					FString::Printf(TEXT("Missing required User parameter: %s"), *Expected.Name.ToString()), true));
+			}
+			else
+			{
+				// Warning for optional params
+				OutResult.AddError(FFXValidationError(TemplatePath, Expected.Name.ToString(),
+					FString::Printf(TEXT("Missing optional User parameter: %s"), *Expected.Name.ToString()), false));
+			}
+		}
+	}
+
+	OutResult.bTemplateValid = !OutResult.HasFatalErrors();
+
+	// Log validation summary
+	UE_LOG(LogTemp, Log, TEXT("[FXGEN] Template validation for %s: %s"),
+		*TemplatePath, *OutResult.GetSummary());
+
+	return OutResult.bTemplateValid;
+}
+
+bool FNiagaraSystemGenerator::ValidateDescriptor(const FManifestNiagaraSystemDefinition& Definition,
+	UNiagaraSystem* TemplateSystem, FFXValidationResult& OutResult)
+{
+	OutResult.Reset();
+
+	if (!TemplateSystem)
+	{
+		OutResult.AddError(FFXValidationError(Definition.Name, TEXT("Template system is null"), true));
+		return false;
+	}
+
+	if (!Definition.FXDescriptor.HasData())
+	{
+		// No FX descriptor, nothing to validate
+		return true;
+	}
+
+	const FNiagaraUserRedirectionParameterStore& UserParams = TemplateSystem->GetExposedParameters();
+	TArray<FNiagaraVariable> AllParams;
+	UserParams.GetParameters(AllParams);
+
+	// Build a map of parameter name -> type for quick lookup
+	TMap<FName, EFXParamType> ParamTypeMap;
+	for (const FNiagaraVariableBase& Param : AllParams)
+	{
+		EFXParamType Type = EFXParamType::Unknown;
+		const FNiagaraTypeDefinition& TypeDef = Param.GetType();
+		if (TypeDef == FNiagaraTypeDefinition::GetFloatDef()) Type = EFXParamType::Float;
+		else if (TypeDef == FNiagaraTypeDefinition::GetIntDef()) Type = EFXParamType::Int;
+		else if (TypeDef == FNiagaraTypeDefinition::GetBoolDef()) Type = EFXParamType::Bool;
+		else if (TypeDef == FNiagaraTypeDefinition::GetVec2Def()) Type = EFXParamType::Vec2;
+		else if (TypeDef == FNiagaraTypeDefinition::GetVec3Def()) Type = EFXParamType::Vec3;
+		else if (TypeDef == FNiagaraTypeDefinition::GetColorDef()) Type = EFXParamType::Color;
+		ParamTypeMap.Add(Param.GetName(), Type);
+	}
+
+	// Lambda to validate a parameter
+	auto ValidateParam = [&](FName ParamName, EFXParamType ExpectedType, bool bRequired) {
+		const EFXParamType* FoundType = ParamTypeMap.Find(ParamName);
+		if (!FoundType)
+		{
+			OutResult.ParamsMissing++;
+			if (bRequired)
+			{
+				OutResult.AddError(FFXValidationError(Definition.Name, ParamName.ToString(),
+					FString::Printf(TEXT("Descriptor references missing parameter: %s"), *ParamName.ToString()), true));
+			}
+			return;
+		}
+		OutResult.ParamsValidated++;
+
+		if (*FoundType != ExpectedType && *FoundType != EFXParamType::Unknown)
+		{
+			OutResult.ParamsTypeMismatch++;
+			OutResult.AddError(FFXValidationError(Definition.Name, ParamName.ToString(),
+				FString::Printf(TEXT("Descriptor type mismatch for %s"), *ParamName.ToString()), bRequired));
+		}
+	};
+
+	// Validate all descriptor parameters that are being set
+	// Emitter toggles
+	if (Definition.FXDescriptor.bParticlesEnabled)
+		ValidateParam(TEXT("User.Particles.Enabled"), EFXParamType::Bool, false);
+	if (Definition.FXDescriptor.bBurstEnabled)
+		ValidateParam(TEXT("User.Burst.Enabled"), EFXParamType::Bool, false);
+	if (Definition.FXDescriptor.bBeamEnabled)
+		ValidateParam(TEXT("User.Beam.Enabled"), EFXParamType::Bool, false);
+	if (Definition.FXDescriptor.bRibbonEnabled)
+		ValidateParam(TEXT("User.Ribbon.Enabled"), EFXParamType::Bool, false);
+	if (Definition.FXDescriptor.bLightEnabled)
+		ValidateParam(TEXT("User.Light.Enabled"), EFXParamType::Bool, false);
+
+	// Core parameters are always validated since they're always set
+	ValidateParam(TEXT("User.SpawnRate"), EFXParamType::Float, true);
+	ValidateParam(TEXT("User.Color"), EFXParamType::Color, false);
+
+	// Log validation summary
+	UE_LOG(LogTemp, Log, TEXT("[FXGEN] Descriptor validation for %s: %s"),
+		*Definition.Name, *OutResult.GetSummary());
+
+	return !OutResult.HasFatalErrors();
+}
+
+bool FNiagaraSystemGenerator::DetectManualEdit(UNiagaraSystem* ExistingSystem,
+	const FManifestNiagaraSystemDefinition& Definition)
+{
+	if (!ExistingSystem) return false;
+
+	// Get stored metadata
+	FFXGeneratorMetadata Metadata = GetGeneratorMetadata(ExistingSystem);
+
+	// If no metadata, this wasn't generated by us - treat as manual
+	if (!Metadata.bIsGenerated)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[FXGEN] Asset %s has no generator metadata - may be manually created"),
+			*Definition.Name);
+		return true;
+	}
+
+	// Check if template changed
+	if (Metadata.SourceTemplate != Definition.TemplateSystem)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[FXGEN] Asset %s template changed: was %s, now %s"),
+			*Definition.Name, *Metadata.SourceTemplate, *Definition.TemplateSystem);
+		return true;
+	}
+
+	// Check parameter count difference (sign of manual modification)
+	const FNiagaraUserRedirectionParameterStore& UserParams = ExistingSystem->GetExposedParameters();
+	TArray<FNiagaraVariable> AllParams;
+	UserParams.GetParameters(AllParams);
+
+	// If significantly more params than expected, likely modified
+	if (AllParams.Num() > GetExpectedParameters().Num() + 5)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[FXGEN] Asset %s has %d params, expected ~%d - may be manually modified"),
+			*Definition.Name, AllParams.Num(), GetExpectedParameters().Num());
+		return true;
+	}
+
+	return false;
+}
+
+void FNiagaraSystemGenerator::StoreGeneratorMetadata(UNiagaraSystem* System,
+	const FManifestNiagaraSystemDefinition& Definition)
+{
+	if (!System) return;
+
+	FFXGeneratorMetadata Metadata;
+	Metadata.bIsGenerated = true;
+	Metadata.SourceTemplate = Definition.TemplateSystem;
+	Metadata.DescriptorHash = Definition.FXDescriptor.ComputeHash();
+	Metadata.GeneratedTime = FDateTime::Now();
+
+	// Store as asset user data string
+	// UNiagaraSystem inherits from UObject, so we use the package metadata
+	UPackage* Package = System->GetOutermost();
+	if (Package)
+	{
+		// Store metadata string for logging
+		FString MetadataStr = Metadata.ToString();
+
+		// Note: For full metadata persistence, we could use asset registry tags
+		// or store in a sidecar file. For now, we rely on parameter pattern detection.
+		UE_LOG(LogTemp, Log, TEXT("[FXGEN] Stored generator metadata for %s: Hash=%llu, Info=%s"),
+			*System->GetName(), Metadata.DescriptorHash, *MetadataStr);
+	}
+}
+
+FFXGeneratorMetadata FNiagaraSystemGenerator::GetGeneratorMetadata(UNiagaraSystem* System)
+{
+	FFXGeneratorMetadata EmptyMetadata;
+	if (!System) return EmptyMetadata;
+
+	// For now, we detect generated assets by checking for our known parameter patterns
+	// A more robust implementation would use asset user data or registry tags
+
+	const FNiagaraUserRedirectionParameterStore& UserParams = System->GetExposedParameters();
+	TArray<FNiagaraVariable> AllParams;
+	UserParams.GetParameters(AllParams);
+
+	// Check for presence of our standard parameters as a heuristic
+	bool bHasParticlesEnabled = false;
+	bool bHasSpawnRate = false;
+	for (const FNiagaraVariableBase& Param : AllParams)
+	{
+		FString ParamName = Param.GetName().ToString();
+		if (ParamName.Contains(TEXT("Particles.Enabled"))) bHasParticlesEnabled = true;
+		if (ParamName.Contains(TEXT("SpawnRate"))) bHasSpawnRate = true;
+	}
+
+	if (bHasParticlesEnabled && bHasSpawnRate)
+	{
+		// Looks like a generated asset
+		FFXGeneratorMetadata Metadata;
+		Metadata.bIsGenerated = true;
+		return Metadata;
+	}
+
+	return EmptyMetadata;
 }

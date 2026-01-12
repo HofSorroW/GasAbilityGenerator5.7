@@ -1,5 +1,7 @@
-// GasAbilityGenerator v2.9.0
+// GasAbilityGenerator v2.9.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.9.1: FX Validation System - FFXValidationError, FFXExpectedParam, FFXGeneratorMetadata
+//         Template integrity validation, descriptor hashing for regeneration safety
 // v2.9.0: Data-driven FX architecture - FManifestFXDescriptor for Niagara User param binding
 // v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
@@ -810,6 +812,208 @@ struct FManifestFXDescriptor
 		return bParticlesEnabled || bBurstEnabled || bBeamEnabled ||
 		       bRibbonEnabled || bLightEnabled || bSmokeEnabled || bSparkEnabled ||
 		       SpawnRate != 100.f || !Color.Equals(FLinearColor::White);
+	}
+
+	/**
+	 * v2.9.1: Compute stable hash for regeneration detection
+	 * Only hashes semantic inputs, not runtime noise
+	 */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = 0;
+
+		// Hash emitter toggles (bit flags)
+		uint32 EmitterFlags = 0;
+		if (bParticlesEnabled) EmitterFlags |= (1 << 0);
+		if (bBurstEnabled) EmitterFlags |= (1 << 1);
+		if (bBeamEnabled) EmitterFlags |= (1 << 2);
+		if (bRibbonEnabled) EmitterFlags |= (1 << 3);
+		if (bLightEnabled) EmitterFlags |= (1 << 4);
+		if (bSmokeEnabled) EmitterFlags |= (1 << 5);
+		if (bSparkEnabled) EmitterFlags |= (1 << 6);
+		Hash ^= static_cast<uint64>(EmitterFlags);
+
+		// Hash core emission (convert floats to stable ints)
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(SpawnRate * 100.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(LifetimeMin * 1000.f)) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(LifetimeMax * 1000.f)) << 24;
+		Hash ^= static_cast<uint64>(MaxParticles) << 32;
+
+		// Hash appearance (color as packed RGBA)
+		uint32 PackedColor =
+			(FMath::Clamp(FMath::RoundToInt(Color.R * 255.f), 0, 255)) |
+			(FMath::Clamp(FMath::RoundToInt(Color.G * 255.f), 0, 255) << 8) |
+			(FMath::Clamp(FMath::RoundToInt(Color.B * 255.f), 0, 255) << 16) |
+			(FMath::Clamp(FMath::RoundToInt(Color.A * 255.f), 0, 255) << 24);
+		Hash ^= static_cast<uint64>(PackedColor) << 40;
+
+		// Hash sizes and motion
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(SizeMin * 100.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(SizeMax * 100.f)) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Opacity * 1000.f)) << 32;
+
+		return Hash;
+	}
+};
+
+// ============================================================================
+// v2.9.1: FX Validation System
+// Validates template integrity and descriptor-to-system parameter matching
+// ============================================================================
+
+/**
+ * FX parameter type enum for type-safe validation
+ */
+enum class EFXParamType : uint8
+{
+	Float,
+	Int,
+	Bool,
+	Vec2,
+	Vec3,
+	Color,
+	Unknown
+};
+
+/**
+ * Expected parameter definition for template validation
+ */
+struct FFXExpectedParam
+{
+	FName Name;           // Full parameter name (e.g., "User.SpawnRate")
+	EFXParamType Type;    // Expected type
+	bool bRequired;       // If true, missing param is fatal error
+	float MinValue = 0.f; // Optional min value for range validation (floats/ints)
+	float MaxValue = 0.f; // Optional max value (0 = no limit)
+
+	FFXExpectedParam() = default;
+	FFXExpectedParam(FName InName, EFXParamType InType, bool InRequired = false)
+		: Name(InName), Type(InType), bRequired(InRequired) {}
+	FFXExpectedParam(FName InName, EFXParamType InType, bool InRequired, float InMin, float InMax)
+		: Name(InName), Type(InType), bRequired(InRequired), MinValue(InMin), MaxValue(InMax) {}
+};
+
+/**
+ * Single validation error from FX generation
+ */
+struct FFXValidationError
+{
+	FString AssetPath;    // Path to the asset with the error
+	FString ParamName;    // Parameter name involved (if applicable)
+	FString Message;      // Human-readable error message
+	bool bFatal;          // If true, generation should abort
+
+	FFXValidationError() : bFatal(false) {}
+	FFXValidationError(const FString& InPath, const FString& InMessage, bool InFatal = false)
+		: AssetPath(InPath), Message(InMessage), bFatal(InFatal) {}
+	FFXValidationError(const FString& InPath, const FString& InParam, const FString& InMessage, bool InFatal)
+		: AssetPath(InPath), ParamName(InParam), Message(InMessage), bFatal(InFatal) {}
+};
+
+/**
+ * Aggregated validation result for FX generation
+ */
+struct FFXValidationResult
+{
+	TArray<FFXValidationError> Errors;
+	TArray<FFXValidationError> Warnings;
+	bool bTemplateValid = true;
+	int32 ParamsValidated = 0;
+	int32 ParamsMissing = 0;
+	int32 ParamsTypeMismatch = 0;
+
+	bool HasFatalErrors() const
+	{
+		for (const auto& Error : Errors)
+		{
+			if (Error.bFatal) return true;
+		}
+		return false;
+	}
+
+	void AddError(const FFXValidationError& Error)
+	{
+		if (Error.bFatal)
+		{
+			Errors.Add(Error);
+		}
+		else
+		{
+			Warnings.Add(Error);
+		}
+	}
+
+	FString GetSummary() const
+	{
+		return FString::Printf(TEXT("Validated: %d, Missing: %d, TypeMismatch: %d, Errors: %d, Warnings: %d"),
+			ParamsValidated, ParamsMissing, ParamsTypeMismatch, Errors.Num(), Warnings.Num());
+	}
+
+	void Reset()
+	{
+		Errors.Empty();
+		Warnings.Empty();
+		bTemplateValid = true;
+		ParamsValidated = 0;
+		ParamsMissing = 0;
+		ParamsTypeMismatch = 0;
+	}
+};
+
+/**
+ * Generator metadata stored on generated assets for regeneration safety
+ * v2.9.1: Tracks source template, descriptor hash, and generator version
+ */
+struct FFXGeneratorMetadata
+{
+	FString GeneratorVersion = TEXT("2.9.1");  // Plugin version that generated this asset
+	FString SourceTemplate;                     // Path to template system used
+	uint64 DescriptorHash = 0;                  // Hash of FManifestFXDescriptor at generation time
+	FDateTime GeneratedTime;                    // When the asset was generated
+	bool bIsGenerated = false;                  // True if this asset was generator-created
+
+	FFXGeneratorMetadata() : GeneratedTime(FDateTime::Now()) {}
+
+	/**
+	 * Check if the descriptor has changed since generation
+	 */
+	bool HasDescriptorChanged(uint64 NewHash) const
+	{
+		return DescriptorHash != NewHash;
+	}
+
+	/**
+	 * Serialize to string for storage in asset metadata
+	 */
+	FString ToString() const
+	{
+		return FString::Printf(TEXT("Ver:%s|Tmpl:%s|Hash:%llu|Time:%s|Gen:%d"),
+			*GeneratorVersion, *SourceTemplate, DescriptorHash,
+			*GeneratedTime.ToString(), bIsGenerated ? 1 : 0);
+	}
+
+	/**
+	 * Parse from string stored in asset metadata
+	 */
+	static FFXGeneratorMetadata FromString(const FString& Str)
+	{
+		FFXGeneratorMetadata Meta;
+		TArray<FString> Parts;
+		Str.ParseIntoArray(Parts, TEXT("|"));
+
+		for (const FString& Part : Parts)
+		{
+			FString Key, Value;
+			if (Part.Split(TEXT(":"), &Key, &Value))
+			{
+				if (Key == TEXT("Ver")) Meta.GeneratorVersion = Value;
+				else if (Key == TEXT("Tmpl")) Meta.SourceTemplate = Value;
+				else if (Key == TEXT("Hash")) Meta.DescriptorHash = FCString::Strtoui64(*Value, nullptr, 10);
+				else if (Key == TEXT("Time")) FDateTime::Parse(Value, Meta.GeneratedTime);
+				else if (Key == TEXT("Gen")) Meta.bIsGenerated = (Value == TEXT("1"));
+			}
+		}
+		return Meta;
 	}
 };
 

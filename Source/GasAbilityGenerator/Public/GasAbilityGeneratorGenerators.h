@@ -504,8 +504,65 @@ public:
 };
 
 // v2.6.5: Niagara System Generator - creates UNiagaraSystem assets
+// v2.9.1: Added validation system for template integrity and regeneration safety
 class GASABILITYGENERATOR_API FNiagaraSystemGenerator : public FGeneratorBase
 {
 public:
 	static FGenerationResult Generate(const FManifestNiagaraSystemDefinition& Definition);
+
+	// v2.9.1: Validation functions
+	/**
+	 * Validate template system integrity (Phase A validation)
+	 * Checks: system loads, has expected User params, no duplicates
+	 * @param TemplatePath Path to the template Niagara system
+	 * @param OutResult Validation result with errors/warnings
+	 * @return true if template is valid for use
+	 */
+	static bool ValidateTemplate(const FString& TemplatePath, FFXValidationResult& OutResult);
+
+	/**
+	 * Validate FX descriptor against template parameters (Phase B validation)
+	 * Checks: required params exist, types match, values in range
+	 * @param Definition The Niagara system definition from manifest
+	 * @param TemplateSystem The loaded template system
+	 * @param OutResult Validation result with errors/warnings
+	 * @return true if descriptor is valid for this template
+	 */
+	static bool ValidateDescriptor(const FManifestNiagaraSystemDefinition& Definition,
+		class UNiagaraSystem* TemplateSystem, FFXValidationResult& OutResult);
+
+	/**
+	 * Check if existing asset was manually edited (regeneration safety)
+	 * @param ExistingSystem The existing generated asset
+	 * @param Definition The current manifest definition
+	 * @return true if asset appears to have been manually modified
+	 */
+	static bool DetectManualEdit(class UNiagaraSystem* ExistingSystem,
+		const FManifestNiagaraSystemDefinition& Definition);
+
+	/**
+	 * Get expected parameter definitions for template validation
+	 * Returns the canonical list of User.* parameters that should exist
+	 */
+	static TArray<FFXExpectedParam> GetExpectedParameters();
+
+	/**
+	 * Store generator metadata on asset for regeneration tracking
+	 */
+	static void StoreGeneratorMetadata(class UNiagaraSystem* System,
+		const FManifestNiagaraSystemDefinition& Definition);
+
+	/**
+	 * Retrieve generator metadata from existing asset
+	 * @return Metadata if found, empty metadata if not a generated asset
+	 */
+	static FFXGeneratorMetadata GetGeneratorMetadata(class UNiagaraSystem* System);
+
+private:
+	// Cached expected parameters (built once)
+	static TArray<FFXExpectedParam> CachedExpectedParams;
+	static bool bExpectedParamsBuilt;
+
+	// Build the expected parameter list
+	static void BuildExpectedParameters();
 };

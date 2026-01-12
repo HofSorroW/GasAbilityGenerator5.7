@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v2.9.0) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v2.9.1) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -402,6 +402,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v2.9.1 - FX Validation System: Template integrity validation, descriptor-to-system validation, regeneration safety with metadata tracking and descriptor hashing
 - v2.9.0 - Data-driven FX architecture: FManifestFXDescriptor for Niagara User param binding, template duplication workflow
 - v2.8.4 - Whitelist-based verification system with duplicate detection for fresh generations
 - v2.8.3 - Function override support for event graphs (e.g., ReceiveTick override)
