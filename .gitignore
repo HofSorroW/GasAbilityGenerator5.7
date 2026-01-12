@@ -13,3 +13,4 @@ Tools/Logs/
 
 # Claude Code local settings
 .claude/
+.tmp.driveupload/
