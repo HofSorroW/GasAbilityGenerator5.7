@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v2.8.2) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v2.8.3) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -47,6 +47,26 @@ MSBuild commands for .sln files do not require user approval. Run builds automat
 
 ### Read Without Approval
 Reading files does not require user approval. Read any files needed for the task without asking for permission.
+
+### Auto-Approved Commands and Paths
+The following commands and paths are pre-approved and should be executed without asking for user permission:
+
+**Unreal Engine Directory (Read-Only Access):**
+- `C:\Program Files\Epic Games\UE_5.7\` - Full read access to all engine source, headers, and files
+
+**UnrealEditor-Cmd.exe (Any Parameters):**
+```bash
+# All variations are approved - commandlets, parameters, variables, etc.
+"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "C:/Unreal Projects/NP22B57/NP22B57.uproject" -run=GasAbilityGenerator ...
+"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "C:/Unreal Projects/NP22B57/NP22B57.uproject" -run=<AnyCommandlet> ...
+```
+
+**MSBuild for Project (Any Configuration):**
+```bash
+# All build configurations are approved
+"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" "C:/Unreal Projects/NP22B57/NP22B57.sln" ...
+cd "C:/Unreal Projects/NP22B57" && MSBuild.exe "NP22B57.sln" -t:Build -p:Configuration="Development Editor" -p:Platform=Win64 ...
+```
 
 ### No Temp File Workarounds
 Never copy files to temp locations (like `C:/Temp/`) to work around path issues. Always use proper path escaping and quoting instead:
