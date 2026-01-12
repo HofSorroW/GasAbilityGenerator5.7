@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.14
+// GasAbilityGenerator v2.8.2
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.8.2: Added nested parameters support for CallFunction nodes (parameters: section under properties:)
 // v2.6.14: Prefix validation for all asset types (E_, IA_, IMC_, GE_, GA_, BP_, WBP_, BB_, BT_, M_, MF_, NS_, etc.)
 // v2.5.6: Added NPC system extensions - suffix-based section names (_tags, _gameplay_effects, etc.)
 // v2.3.0: Added 12 new asset type parsers with dependency-based generation order
@@ -2242,12 +2243,15 @@ void FGasAbilityGeneratorParser::ParseEventGraphs(const TArray<FString>& Lines, 
 }
 
 // v2.2.0: Parse graph nodes subsection
+// v2.8.2: Added nested parameters support for CallFunction nodes
 void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph)
 {
 	FManifestGraphNodeDefinition CurrentNode;
 	bool bInNode = false;
 	bool bInProperties = false;
+	bool bInParameters = false;  // v2.8.2: Track nested parameters section
 	int32 NodeIndent = -1;
+	int32 PropertiesIndent = -1;  // v2.8.2: Track properties indentation
 
 	while (LineIndex < Lines.Num())
 	{
@@ -2293,6 +2297,8 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 			CurrentNode.Id = GetLineValue(TrimmedLine.Mid(2));
 			bInNode = true;
 			bInProperties = false;
+			bInParameters = false;
+			PropertiesIndent = -1;
 		}
 		else if (TrimmedLine.StartsWith(TEXT("- id:")) && NodeIndent < 0)
 		{
@@ -2302,12 +2308,15 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 			CurrentNode.Id = GetLineValue(TrimmedLine.Mid(2));
 			bInNode = true;
 			bInProperties = false;
+			bInParameters = false;
+			PropertiesIndent = -1;
 		}
 		else if (bInNode)
 		{
 			if (TrimmedLine.StartsWith(TEXT("type:")))
 			{
 				CurrentNode.Type = GetLineValue(TrimmedLine);
+				bInParameters = false;  // v2.8.2: Exit parameters when hitting new property
 			}
 			else if (TrimmedLine.StartsWith(TEXT("position:")))
 			{
@@ -2322,10 +2331,13 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 					CurrentNode.PositionY = FCString::Atof(*Coords[1].TrimStartAndEnd());
 					CurrentNode.bHasPosition = true;
 				}
+				bInParameters = false;  // v2.8.2: Exit parameters when hitting new property
 			}
 			else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
 			{
 				bInProperties = true;
+				bInParameters = false;
+				PropertiesIndent = CurrentIndent;
 			}
 			else if (bInProperties && !TrimmedLine.StartsWith(TEXT("-")))
 			{
@@ -2335,16 +2347,45 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 				{
 					FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
 					FString Value = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
-					// Remove quotes
-					if (Value.Len() >= 2)
+
+					// v2.8.2: Check if this is the start of a nested parameters section
+					if (Key == TEXT("parameters") && Value.IsEmpty())
 					{
-						if ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
-							(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'"))))
-						{
-							Value = Value.Mid(1, Value.Len() - 2);
-						}
+						bInParameters = true;
+						// Don't add "parameters" as a property - we'll add individual params with "param." prefix
 					}
-					CurrentNode.Properties.Add(Key, Value);
+					else if (bInParameters && CurrentIndent > PropertiesIndent + 2)
+					{
+						// v2.8.2: We're inside nested parameters - prefix with "param."
+						// Remove quotes from value
+						if (Value.Len() >= 2)
+						{
+							if ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
+								(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'"))))
+							{
+								Value = Value.Mid(1, Value.Len() - 2);
+							}
+						}
+						CurrentNode.Properties.Add(TEXT("param.") + Key, Value);
+					}
+					else
+					{
+						// v2.8.2: Regular property - exit parameters mode if we were in it
+						if (bInParameters && CurrentIndent <= PropertiesIndent + 2)
+						{
+							bInParameters = false;
+						}
+						// Remove quotes
+						if (Value.Len() >= 2)
+						{
+							if ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
+								(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'"))))
+							{
+								Value = Value.Mid(1, Value.Len() - 2);
+							}
+						}
+						CurrentNode.Properties.Add(Key, Value);
+					}
 				}
 			}
 		}

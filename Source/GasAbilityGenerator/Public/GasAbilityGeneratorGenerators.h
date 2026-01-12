@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.7.0
+// GasAbilityGenerator v2.8.2
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.8.2: CallFunction parameter defaults - applies "param.*" properties to function input pins
 // v2.7.0: Added BreakStruct, MakeArray, GetArrayItem node support for weapon form implementation
 // v2.6.14: Prefix validation for all asset types (E_, IA_, GA_, BP_, WBP_, M_, MF_, NS_, etc.)
 // v2.6.8: EquippableItemGenerator now uses ParentClass from manifest (RangedWeaponItem, MeleeWeaponItem support)

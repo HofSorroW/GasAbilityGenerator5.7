@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v2.7.0) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v2.8.2) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -102,7 +102,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v2.7.0)
+## GasAbilityGenerator Plugin (v2.8.2)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -137,6 +137,7 @@ manifest.yaml → Parser → FManifestData → Generators → UE5 Assets
 | BB_ | Blackboards | FBlackboardGenerator |
 | BT_ | Behavior Trees | FBehaviorTreeGenerator |
 | M_ | Materials | FMaterialGenerator |
+| MF_ | Material Functions | FMaterialFunctionGenerator |
 | FC_ | Float Curves | FFloatCurveGenerator |
 | AM_ | Animation Montages | FAnimationMontageGenerator |
 | NAS_ | Animation Notifies | FAnimationNotifyGenerator |
@@ -177,6 +178,7 @@ All asset prefixes from Technical Reference Appendix C, categorized by generatio
 | DBP_ | Dialogue Blueprint | `dialogue_blueprints` | FDialogueBlueprintGenerator |
 | AM_ | Animation Montage | `animation_montages` | FAnimationMontageGenerator |
 | M_ | Material | `materials` | FMaterialGenerator |
+| MF_ | Material Function | `material_functions` | FMaterialFunctionGenerator |
 | NS_ | Niagara System | `niagara_systems` | FNiagaraSystemGenerator |
 | E_ | Enumeration | `enumerations` | FEnumerationGenerator |
 | IA_ | Input Action | `input_actions` | FInputActionGenerator |
@@ -315,6 +317,10 @@ actor_blueprints:
 | DynamicCast | target_class | Type casting |
 | ForEachLoop | - | Array iteration |
 | SpawnActor | actor_class_variable | Spawn actors |
+| BreakStruct | struct_type | Break struct into member pins |
+| MakeArray | element_type, num_elements | Create array from elements |
+| GetArrayItem | - | Access array element by index |
+| Self | - | Reference to blueprint self |
 
 ### Search Paths
 
@@ -375,8 +381,18 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v2.8.2 - CallFunction parameter defaults with enum conversion (e.g., SetMovementMode NewMovementMode: Flying)
+- v2.8.1 - NPC event_graphs with descriptive messages and Self node fix
+- v2.8.0 - Flying NPC event_graphs for BP_WardenCore and BP_PossessedExploder
+- v2.7.8 - Self node support for event graphs
+- v2.7.7 - Pre-generation validation for event graph definitions
+- v2.7.6 - Inline event graph support for actor blueprints
 - v2.7.0 - BreakStruct, MakeArray, GetArrayItem node support for weapon form implementation
+- v2.6.14 - Prefix validation for all asset types
+- v2.6.12 - Material expression graph support, Material Function generator
 - v2.6.11 - Force scan NarrativePro plugin content for Blueprint parent class resolution in commandlet mode
+- v2.6.7 - Deferred asset retry mechanism for dependency resolution
+- v2.6.6 - GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
 - v2.6.5 - Niagara System generator
 - v2.6.3 - Tags configured on existing GA assets during SKIP
 - v2.6.2 - Gameplay ability tag/policy configuration via reflection

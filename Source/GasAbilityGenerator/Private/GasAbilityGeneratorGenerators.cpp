@@ -1,5 +1,8 @@
-// GasAbilityGenerator v2.7.5
+// GasAbilityGenerator v2.8.2
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.8.2: CallFunction parameter defaults - applies "param.*" properties to function input pins
+//         - Supports enum value conversion (e.g., "Flying" -> MOVE_Flying for EMovementMode)
+//         - Enhanced pre-generation validation with comprehensive error reporting
 // v2.7.5: Added K2_ClearTimerHandle to deprecated function remapping
 //         - Added STABLE SECTION markers for critical code protection
 //         - Manifest fixes: GetOwnASC for ASC Target, MakeTransform for SpawnActor
@@ -2996,9 +2999,20 @@ bool FEventGraphGenerator::ValidateEventGraph(
 		bValid = false;
 	}
 
-	// Build set of valid node IDs
+	// Build set of valid node IDs and map node types
 	TSet<FString> NodeIds;
 	TSet<FString> DuplicateIds;
+	TMap<FString, FString> NodeTypes;  // v2.8.2: Map node ID to type for connection validation
+
+	// v2.8.2: Supported node types for validation
+	static TSet<FString> SupportedNodeTypes = {
+		TEXT("Event"), TEXT("CustomEvent"), TEXT("CallFunction"), TEXT("Branch"),
+		TEXT("VariableGet"), TEXT("VariableSet"), TEXT("PropertyGet"), TEXT("PropertySet"),
+		TEXT("Sequence"), TEXT("Delay"), TEXT("PrintString"), TEXT("DynamicCast"),
+		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("BreakStruct"), TEXT("MakeArray"),
+		TEXT("GetArrayItem"), TEXT("Self")
+	};
+
 	for (const FManifestGraphNodeDefinition& Node : GraphDefinition.Nodes)
 	{
 		if (Node.Id.IsEmpty())
@@ -3020,6 +3034,14 @@ bool FEventGraphGenerator::ValidateEventGraph(
 		else
 		{
 			NodeIds.Add(Node.Id);
+			NodeTypes.Add(Node.Id, Node.Type);
+		}
+
+		// v2.8.2: Validate node type is supported
+		if (!SupportedNodeTypes.Contains(Node.Type))
+		{
+			OutErrors.Add(FString::Printf(TEXT("[%s] Node '%s' has unsupported type: %s"), *ContextName, *Node.Id, *Node.Type));
+			bValid = false;
 		}
 
 		// Check required properties based on node type
@@ -3028,6 +3050,14 @@ bool FEventGraphGenerator::ValidateEventGraph(
 			if (!Node.Properties.Contains(TEXT("event_name")))
 			{
 				OutErrors.Add(FString::Printf(TEXT("[%s] Event node '%s' missing event_name property"), *ContextName, *Node.Id));
+				bValid = false;
+			}
+		}
+		else if (Node.Type == TEXT("CustomEvent"))
+		{
+			if (!Node.Properties.Contains(TEXT("event_name")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] CustomEvent node '%s' missing event_name property"), *ContextName, *Node.Id));
 				bValid = false;
 			}
 		}
@@ -3055,34 +3085,104 @@ bool FEventGraphGenerator::ValidateEventGraph(
 				bValid = false;
 			}
 		}
+		else if (Node.Type == TEXT("PropertyGet") || Node.Type == TEXT("PropertySet"))
+		{
+			// v2.8.2: Validate PropertyGet/PropertySet nodes
+			if (!Node.Properties.Contains(TEXT("property_name")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] Property node '%s' missing property_name property"), *ContextName, *Node.Id));
+				bValid = false;
+			}
+		}
+		else if (Node.Type == TEXT("BreakStruct"))
+		{
+			// v2.8.2: Validate BreakStruct nodes
+			if (!Node.Properties.Contains(TEXT("struct_type")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] BreakStruct node '%s' missing struct_type property"), *ContextName, *Node.Id));
+				bValid = false;
+			}
+		}
+		else if (Node.Type == TEXT("MakeArray"))
+		{
+			// v2.8.2: Validate MakeArray nodes - element_type is optional but recommended
+			if (!Node.Properties.Contains(TEXT("element_type")))
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] WARNING: MakeArray node '%s' missing element_type property - will use default"), *ContextName, *Node.Id));
+				// Not an error, just a warning
+			}
+		}
 	}
+
+	// v2.8.2: Track exec output connections to detect multiple connections from same pin
+	TMap<FString, int32> ExecOutputConnectionCount;
 
 	// Validate connections reference existing nodes
 	for (const FManifestGraphConnectionDefinition& Connection : GraphDefinition.Connections)
 	{
 		if (!NodeIds.Contains(Connection.From.NodeId))
 		{
-			OutErrors.Add(FString::Printf(TEXT("[%s] Connection references unknown source node: %s"), 
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection references unknown source node: %s"),
 				*ContextName, *Connection.From.NodeId));
 			bValid = false;
 		}
 		if (!NodeIds.Contains(Connection.To.NodeId))
 		{
-			OutErrors.Add(FString::Printf(TEXT("[%s] Connection references unknown target node: %s"), 
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection references unknown target node: %s"),
 				*ContextName, *Connection.To.NodeId));
 			bValid = false;
 		}
 		if (Connection.From.PinName.IsEmpty())
 		{
-			OutErrors.Add(FString::Printf(TEXT("[%s] Connection from %s has empty pin name"), 
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection from %s has empty pin name"),
 				*ContextName, *Connection.From.NodeId));
 			bValid = false;
 		}
 		if (Connection.To.PinName.IsEmpty())
 		{
-			OutErrors.Add(FString::Printf(TEXT("[%s] Connection to %s has empty pin name"), 
+			OutErrors.Add(FString::Printf(TEXT("[%s] Connection to %s has empty pin name"),
 				*ContextName, *Connection.To.NodeId));
 			bValid = false;
+		}
+
+		// v2.8.2: Check for multiple exec connections from same output pin
+		FString ExecPinKey = Connection.From.NodeId + TEXT(".") + Connection.From.PinName;
+		if (Connection.From.PinName == TEXT("Then") || Connection.From.PinName == TEXT("Exec") ||
+			Connection.From.PinName == TEXT("Completed") || Connection.From.PinName == TEXT("true") ||
+			Connection.From.PinName == TEXT("false"))
+		{
+			int32& Count = ExecOutputConnectionCount.FindOrAdd(ExecPinKey);
+			Count++;
+			if (Count > 1)
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] Multiple exec connections from %s.%s - use Sequence node instead"),
+					*ContextName, *Connection.From.NodeId, *Connection.From.PinName));
+				bValid = false;
+			}
+		}
+	}
+
+	// v2.8.2: Check that Event/CustomEvent nodes have at least one outgoing exec connection
+	for (const FManifestGraphNodeDefinition& Node : GraphDefinition.Nodes)
+	{
+		if (Node.Type == TEXT("Event") || Node.Type == TEXT("CustomEvent"))
+		{
+			bool bHasExecOutput = false;
+			for (const FManifestGraphConnectionDefinition& Connection : GraphDefinition.Connections)
+			{
+				if (Connection.From.NodeId == Node.Id &&
+					(Connection.From.PinName == TEXT("Then") || Connection.From.PinName == TEXT("Exec")))
+				{
+					bHasExecOutput = true;
+					break;
+				}
+			}
+			if (!bHasExecOutput)
+			{
+				OutErrors.Add(FString::Printf(TEXT("[%s] WARNING: %s node '%s' has no outgoing exec connection - event will do nothing"),
+					*ContextName, *Node.Type, *Node.Id));
+				// Warning, not error
+			}
 		}
 	}
 
@@ -4079,6 +4179,95 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		CallNode->CreateNewGuid();
 		CallNode->PostPlacedNewNode();
 		CallNode->AllocateDefaultPins();
+
+		// v2.8.2: Apply parameter defaults from properties with "param." prefix
+		for (const auto& PropPair : NodeDef.Properties)
+		{
+			if (PropPair.Key.StartsWith(TEXT("param.")))
+			{
+				FString ParamName = PropPair.Key.Mid(6);  // Remove "param." prefix
+				FString ParamValue = PropPair.Value;
+
+				// Find the input pin by name
+				UEdGraphPin* ParamPin = nullptr;
+				for (UEdGraphPin* Pin : CallNode->Pins)
+				{
+					if (Pin && Pin->Direction == EGPD_Input &&
+						(Pin->PinName.ToString() == ParamName ||
+						 Pin->PinName.ToString().Replace(TEXT(" "), TEXT("")) == ParamName.Replace(TEXT(" "), TEXT(""))))
+					{
+						ParamPin = Pin;
+						break;
+					}
+				}
+
+				if (ParamPin)
+				{
+					// v2.8.2: Handle different pin types
+					FString PinTypeStr = ParamPin->PinType.PinCategory.ToString();
+
+					if (ParamPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte &&
+						ParamPin->PinType.PinSubCategoryObject.IsValid())
+					{
+						// This is an enum - need to convert value to enum constant
+						UEnum* EnumType = Cast<UEnum>(ParamPin->PinType.PinSubCategoryObject.Get());
+						if (EnumType)
+						{
+							// Try to find the enum value - check both raw name and with enum prefix
+							FString EnumValueName = ParamValue;
+							int64 EnumValue = EnumType->GetValueByNameString(EnumValueName);
+
+							// If not found, try with common prefixes
+							if (EnumValue == INDEX_NONE)
+							{
+								// Try MOVE_ prefix for EMovementMode
+								EnumValue = EnumType->GetValueByNameString(TEXT("MOVE_") + EnumValueName);
+							}
+							if (EnumValue == INDEX_NONE)
+							{
+								// Try full qualified name
+								EnumValue = EnumType->GetValueByNameString(EnumType->GetNameStringByIndex(0).Left(EnumType->GetNameStringByIndex(0).Find(TEXT("::")) + 2) + EnumValueName);
+							}
+
+							if (EnumValue != INDEX_NONE)
+							{
+								ParamPin->DefaultValue = EnumType->GetNameStringByValue(EnumValue);
+								LogGeneration(FString::Printf(TEXT("  Set enum parameter '%s' = '%s' (value %lld)"),
+									*ParamName, *ParamPin->DefaultValue, EnumValue));
+							}
+							else
+							{
+								LogGeneration(FString::Printf(TEXT("  WARNING: Could not find enum value '%s' in %s. Available values:"),
+									*ParamValue, *EnumType->GetName()));
+								for (int32 i = 0; i < EnumType->NumEnums() - 1; i++)
+								{
+									LogGeneration(FString::Printf(TEXT("    - %s"), *EnumType->GetNameStringByIndex(i)));
+								}
+							}
+						}
+					}
+					else
+					{
+						// Standard value types - set directly
+						ParamPin->DefaultValue = ParamValue;
+						LogGeneration(FString::Printf(TEXT("  Set parameter '%s' = '%s'"), *ParamName, *ParamValue));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  WARNING: Could not find input pin '%s' on function '%s'. Available pins:"),
+						*ParamName, *FunctionName.ToString()));
+					for (UEdGraphPin* Pin : CallNode->Pins)
+					{
+						if (Pin && Pin->Direction == EGPD_Input)
+						{
+							LogGeneration(FString::Printf(TEXT("    - %s (%s)"), *Pin->PinName.ToString(), *Pin->PinType.PinCategory.ToString()));
+						}
+					}
+				}
+			}
+		}
+
 		return CallNode;
 	}
 
