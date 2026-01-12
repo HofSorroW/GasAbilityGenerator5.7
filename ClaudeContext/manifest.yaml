@@ -5182,6 +5182,39 @@ warden_actor_blueprints:
       connections:
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
+    # v2.8.3: Function override for death spawning
+    function_overrides:
+      - function: HandleDeath
+        nodes:
+          - id: HasAuth
+            type: CallFunction
+            properties:
+              function: HasAuthority
+              class: Actor
+              target_self: true
+            position: [200, 0]
+          - id: AuthBranch
+            type: Branch
+            position: [400, 0]
+          - id: PrintSpawning
+            type: PrintString
+            properties:
+              message: "WardenHusk HandleDeath: Spawning BP_WardenCore"
+            position: [600, 0]
+          - id: CallParentDeath
+            type: CallParent
+            position: [800, 0]
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [HasAuth, Exec]
+          - from: [HasAuth, ReturnValue]
+            to: [AuthBranch, Condition]
+          - from: [AuthBranch, True]
+            to: [PrintSpawning, Exec]
+          - from: [PrintSpawning, Then]
+            to: [CallParentDeath, Exec]
+          - from: [AuthBranch, False]
+            to: [CallParentDeath, Exec]
 
   - name: BP_WardenCore
     folder: Enemies/Warden
@@ -5488,6 +5521,39 @@ biomech_actor_blueprints:
       connections:
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
+    # v2.8.3: Function override for death spawning
+    function_overrides:
+      - function: HandleDeath
+        nodes:
+          - id: HasAuth
+            type: CallFunction
+            properties:
+              function: HasAuthority
+              class: Actor
+              target_self: true
+            position: [200, 0]
+          - id: AuthBranch
+            type: Branch
+            position: [400, 0]
+          - id: PrintSpawning
+            type: PrintString
+            properties:
+              message: "BiomechHost HandleDeath: Spawning BP_BiomechCreature"
+            position: [600, 0]
+          - id: CallParentDeath
+            type: CallParent
+            position: [800, 0]
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [HasAuth, Exec]
+          - from: [HasAuth, ReturnValue]
+            to: [AuthBranch, Condition]
+          - from: [AuthBranch, True]
+            to: [PrintSpawning, Exec]
+          - from: [PrintSpawning, Then]
+            to: [CallParentDeath, Exec]
+          - from: [AuthBranch, False]
+            to: [CallParentDeath, Exec]
 
   - name: BP_BiomechCreature
     folder: Enemies/Biomech

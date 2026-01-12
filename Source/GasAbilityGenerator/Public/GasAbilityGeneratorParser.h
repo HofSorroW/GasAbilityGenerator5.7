@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.14
+// GasAbilityGenerator v2.8.3
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.8.3: Function override parsing for parent class functions (HandleDeath, etc.)
 // v2.6.14: Prefix validation for all asset types as secondary safeguard against parser bugs
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
 // v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
@@ -75,6 +76,9 @@ private:
 	static void ParseGraphNodes(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);
 	static void ParseGraphConnections(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);
 	static FManifestGraphPinReference ParsePinReference(const FString& Value);
+
+	// v2.8.3: Function override parser
+	static void ParseFunctionOverrides(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, TArray<FManifestFunctionOverrideDefinition>& OutOverrides);
 
 	// Helper functions
 	static FString GetLineValue(const FString& Line);

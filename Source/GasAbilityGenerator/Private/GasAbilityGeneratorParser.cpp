@@ -1337,7 +1337,37 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 					CurrentDef.EventGraphConnections = MoveTemp(TempGraph.Connections);
 					continue;
 				}
+				// v2.8.3: If we see another section header while in event_graph, exit event_graph mode
+				// This handles function_overrides, variables, components etc. following event_graph
+				else if (TrimmedLine.Contains(TEXT(":")) && !TrimmedLine.StartsWith(TEXT("-")) && !TrimmedLine.StartsWith(TEXT("#")))
+				{
+					bInEventGraph = false;
+					// Don't continue - fall through to process this section header below
+				}
+			}
+			// v2.8.3: Parse function_overrides section
+			if (!bInEventGraph && (TrimmedLine.Equals(TEXT("function_overrides:")) || TrimmedLine.StartsWith(TEXT("function_overrides:"))))
+			{
+				// Save pending variable/component before switching sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInComponents && !CurrentComp.Name.IsEmpty())
+				{
+					CurrentDef.Components.Add(CurrentComp);
+					CurrentComp = FManifestActorComponentDefinition();
+				}
+				bInEventGraph = false;
+				bInVariables = false;
+				bInComponents = false;
 
+				// Parse function overrides subsection
+				int32 FuncOverridesIndent = CurrentIndent;
+				LineIndex++;
+				ParseFunctionOverrides(Lines, LineIndex, FuncOverridesIndent, CurrentDef.FunctionOverrides);
+				continue;
 			}
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
@@ -2514,6 +2544,100 @@ FManifestGraphPinReference FGasAbilityGeneratorParser::ParsePinReference(const F
 	}
 
 	return Ref;
+}
+
+// ============================================================================
+// v2.8.3: Function Override Parser
+// ============================================================================
+
+void FGasAbilityGeneratorParser::ParseFunctionOverrides(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, TArray<FManifestFunctionOverrideDefinition>& OutOverrides)
+{
+	FManifestFunctionOverrideDefinition CurrentOverride;
+	bool bInOverride = false;
+	bool bInNodes = false;
+	bool bInConnections = false;
+	int32 OverrideIndent = -1;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		// Exit if we're back at or before subsection level with a new section
+		if (!TrimmedLine.IsEmpty() && !TrimmedLine.StartsWith(TEXT("#")))
+		{
+			if (CurrentIndent <= SubsectionIndent && TrimmedLine.Contains(TEXT(":")))
+			{
+				// Save pending override
+				if (bInOverride && !CurrentOverride.FunctionName.IsEmpty())
+				{
+					OutOverrides.Add(CurrentOverride);
+				}
+				return;
+			}
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for new override item (- function: name)
+		if (TrimmedLine.StartsWith(TEXT("- function:")))
+		{
+			// Save previous override
+			if (bInOverride && !CurrentOverride.FunctionName.IsEmpty())
+			{
+				OutOverrides.Add(CurrentOverride);
+			}
+			CurrentOverride = FManifestFunctionOverrideDefinition();
+			CurrentOverride.FunctionName = GetLineValue(TrimmedLine.Mid(2));  // Skip "- "
+			bInOverride = true;
+			bInNodes = false;
+			bInConnections = false;
+			OverrideIndent = CurrentIndent;
+		}
+		else if (bInOverride)
+		{
+			if (TrimmedLine.StartsWith(TEXT("call_parent:")))
+			{
+				FString Val = GetLineValue(TrimmedLine);
+				CurrentOverride.bCallParent = Val.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+			}
+			else if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
+			{
+				bInNodes = true;
+				bInConnections = false;
+				int32 NodesIndent = CurrentIndent;
+				LineIndex++;
+				FManifestEventGraphDefinition TempGraph;
+				ParseGraphNodes(Lines, LineIndex, NodesIndent, TempGraph);
+				CurrentOverride.Nodes = MoveTemp(TempGraph.Nodes);
+				continue;
+			}
+			else if (TrimmedLine.Equals(TEXT("connections:")) || TrimmedLine.StartsWith(TEXT("connections:")))
+			{
+				bInNodes = false;
+				bInConnections = true;
+				int32 ConnectionsIndent = CurrentIndent;
+				LineIndex++;
+				FManifestEventGraphDefinition TempGraph;
+				ParseGraphConnections(Lines, LineIndex, ConnectionsIndent, TempGraph);
+				CurrentOverride.Connections = MoveTemp(TempGraph.Connections);
+				continue;
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last override
+	if (bInOverride && !CurrentOverride.FunctionName.IsEmpty())
+	{
+		OutOverrides.Add(CurrentOverride);
+	}
 }
 
 // ============================================================================

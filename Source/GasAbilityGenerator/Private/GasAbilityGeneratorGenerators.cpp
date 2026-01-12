@@ -1,5 +1,8 @@
-// GasAbilityGenerator v2.8.2
+// GasAbilityGenerator v2.8.3
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
+//         - Creates function graph with entry node and CallParent node
+//         - Supports all standard node types in function overrides
 // v2.8.2: CallFunction parameter defaults - applies "param.*" properties to function input pins
 //         - Supports enum value conversion (e.g., "Flying" -> MOVE_Flying for EMovementMode)
 //         - Enhanced pre-generation validation with comprehensive error reporting
@@ -135,6 +138,8 @@
 #include "K2Node_MakeArray.h"  // v2.7.0: MakeArray support
 #include "K2Node_GetArrayItem.h"  // v2.7.0: GetArrayItem support
 #include "K2Node_Self.h"  // v2.7.8: Self reference support
+#include "K2Node_FunctionEntry.h"  // v2.8.3: Function override entry
+#include "K2Node_CallParentFunction.h"  // v2.8.3: Call parent function
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -1841,6 +1846,24 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		else
 		{
 			LogGeneration(FString::Printf(TEXT("  Event graph not found: %s"), *Definition.EventGraphName));
+		}
+	}
+
+	// v2.8.3: Generate function overrides if defined
+	if (Definition.FunctionOverrides.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Generating %d function override(s)"), Definition.FunctionOverrides.Num()));
+
+		for (const FManifestFunctionOverrideDefinition& OverrideDef : Definition.FunctionOverrides)
+		{
+			if (FEventGraphGenerator::GenerateFunctionOverride(Blueprint, OverrideDef, ProjectRoot))
+			{
+				LogGeneration(FString::Printf(TEXT("    Generated function override: %s"), *OverrideDef.FunctionName));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    WARNING: Failed to generate function override: %s"), *OverrideDef.FunctionName));
+			}
 		}
 	}
 
@@ -3737,6 +3760,238 @@ bool FEventGraphGenerator::GenerateEventGraph(
 	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
 	return true;
+}
+
+// ============================================================================
+// v2.8.3: Function Override Generation
+// ============================================================================
+bool FEventGraphGenerator::GenerateFunctionOverride(
+	UBlueprint* Blueprint,
+	const FManifestFunctionOverrideDefinition& OverrideDefinition,
+	const FString& ProjectRoot)
+{
+	if (!Blueprint)
+	{
+		LogGeneration(TEXT("Function override generation failed: Blueprint is null"));
+		return false;
+	}
+
+	LogGeneration(FString::Printf(TEXT("Generating function override '%s' in Blueprint %s"),
+		*OverrideDefinition.FunctionName, *Blueprint->GetName()));
+
+	// Find the parent class function to override
+	UClass* ParentClass = Blueprint->ParentClass;
+	if (!ParentClass)
+	{
+		LogGeneration(FString::Printf(TEXT("Function override failed: Blueprint '%s' has no parent class"),
+			*Blueprint->GetName()));
+		return false;
+	}
+
+	FName FunctionName(*OverrideDefinition.FunctionName);
+	UFunction* ParentFunction = ParentClass->FindFunctionByName(FunctionName);
+	if (!ParentFunction)
+	{
+		LogGeneration(FString::Printf(TEXT("Function override failed: Function '%s' not found in parent class '%s'"),
+			*OverrideDefinition.FunctionName, *ParentClass->GetName()));
+		return false;
+	}
+
+	// Check if function is BlueprintNativeEvent or BlueprintImplementableEvent
+	bool bIsBlueprintEvent = (ParentFunction->FunctionFlags & (FUNC_BlueprintEvent | FUNC_Event)) != 0;
+	if (!bIsBlueprintEvent)
+	{
+		LogGeneration(FString::Printf(TEXT("Function override failed: Function '%s' is not a Blueprint event"),
+			*OverrideDefinition.FunctionName));
+		return false;
+	}
+
+	// Find or create the function graph for this override
+	UEdGraph* FunctionGraph = nullptr;
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+	{
+		if (Graph && Graph->GetFName() == FunctionName)
+		{
+			FunctionGraph = Graph;
+			LogGeneration(FString::Printf(TEXT("  Found existing function graph for '%s'"),
+				*OverrideDefinition.FunctionName));
+			break;
+		}
+	}
+
+	if (!FunctionGraph)
+	{
+		// Create the function override graph
+		FunctionGraph = FBlueprintEditorUtils::CreateNewGraph(
+			Blueprint,
+			FunctionName,
+			UEdGraph::StaticClass(),
+			UEdGraphSchema_K2::StaticClass());
+
+		if (FunctionGraph)
+		{
+			Blueprint->FunctionGraphs.Add(FunctionGraph);
+
+			// Create the function entry node
+			FGraphNodeCreator<UK2Node_FunctionEntry> EntryNodeCreator(*FunctionGraph);
+			UK2Node_FunctionEntry* EntryNode = EntryNodeCreator.CreateNode();
+			// v2.8.3: Use FunctionReference.SetExternalMember (replaces deprecated SignatureClass/SignatureName)
+			EntryNode->FunctionReference.SetExternalMember(FunctionName, ParentClass);
+			EntryNode->NodePosX = 0;
+			EntryNode->NodePosY = 0;
+			EntryNodeCreator.Finalize();
+
+			// Allocate pins based on the parent function signature
+			EntryNode->AllocateDefaultPins();
+
+			LogGeneration(FString::Printf(TEXT("  Created function override graph for '%s'"),
+				*OverrideDefinition.FunctionName));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("Function override failed: Could not create graph for '%s'"),
+				*OverrideDefinition.FunctionName));
+			return false;
+		}
+	}
+
+	// Find the entry node
+	UK2Node_FunctionEntry* EntryNode = nullptr;
+	for (UEdGraphNode* Node : FunctionGraph->Nodes)
+	{
+		if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+		{
+			EntryNode = Entry;
+			break;
+		}
+	}
+
+	if (!EntryNode)
+	{
+		LogGeneration(FString::Printf(TEXT("Function override failed: No entry node found for '%s'"),
+			*OverrideDefinition.FunctionName));
+		return false;
+	}
+
+	// Map to track created nodes by their definition IDs
+	TMap<FString, UK2Node*> NodeMap;
+
+	// Add the entry node to the map with a special ID
+	NodeMap.Add(TEXT("FunctionEntry"), EntryNode);
+
+	int32 NodesCreated = 0;
+	int32 NodesFailed = 0;
+
+	// Create all nodes (similar to GenerateEventGraph)
+	for (const FManifestGraphNodeDefinition& NodeDef : OverrideDefinition.Nodes)
+	{
+		UK2Node* CreatedNode = nullptr;
+
+		// Handle special node types for function overrides
+		if (NodeDef.Type.Equals(TEXT("CallParent"), ESearchCase::IgnoreCase))
+		{
+			// Create call to parent function node
+			UK2Node_CallParentFunction* ParentCallNode = NewObject<UK2Node_CallParentFunction>(FunctionGraph);
+			FunctionGraph->AddNode(ParentCallNode, false, false);
+			ParentCallNode->SetFromFunction(ParentFunction);
+			ParentCallNode->CreateNewGuid();
+			ParentCallNode->PostPlacedNewNode();
+			ParentCallNode->AllocateDefaultPins();
+			CreatedNode = ParentCallNode;
+			LogGeneration(FString::Printf(TEXT("  Created CallParent node for '%s'"), *NodeDef.Id));
+		}
+		// Standard node types (reuse existing creation logic)
+		else if (NodeDef.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateCallFunctionNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		else if (NodeDef.Type.Equals(TEXT("Branch"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateBranchNode(FunctionGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("VariableGet"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateVariableGetNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		else if (NodeDef.Type.Equals(TEXT("VariableSet"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateVariableSetNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		else if (NodeDef.Type.Equals(TEXT("Sequence"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSequenceNode(FunctionGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("PrintString"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreatePrintStringNode(FunctionGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSelfNode(FunctionGraph, NodeDef);
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Unknown/unsupported node type '%s' for function override node '%s'"),
+				*NodeDef.Type, *NodeDef.Id));
+			NodesFailed++;
+			continue;
+		}
+
+		if (CreatedNode)
+		{
+			NodeMap.Add(NodeDef.Id, CreatedNode);
+			NodesCreated++;
+
+			// Set position if specified
+			if (NodeDef.bHasPosition)
+			{
+				CreatedNode->NodePosX = static_cast<int32>(NodeDef.PositionX);
+				CreatedNode->NodePosY = static_cast<int32>(NodeDef.PositionY);
+			}
+			else
+			{
+				// Default positioning
+				CreatedNode->NodePosX = 200 + (NodesCreated * 250);
+				CreatedNode->NodePosY = 0;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Created node: %s (%s)"), *NodeDef.Id, *NodeDef.Type));
+		}
+		else
+		{
+			NodesFailed++;
+		}
+	}
+
+	// Create connections
+	int32 ConnectionsCreated = 0;
+	int32 ConnectionsFailed = 0;
+
+	for (const FManifestGraphConnectionDefinition& Connection : OverrideDefinition.Connections)
+	{
+		if (ConnectPins(NodeMap, Connection))
+		{
+			ConnectionsCreated++;
+			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
+				*Connection.From.NodeId, *Connection.From.PinName,
+				*Connection.To.NodeId, *Connection.To.PinName));
+		}
+		else
+		{
+			ConnectionsFailed++;
+			LogGeneration(FString::Printf(TEXT("  FAILED to connect: %s.%s -> %s.%s"),
+				*Connection.From.NodeId, *Connection.From.PinName,
+				*Connection.To.NodeId, *Connection.To.PinName));
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("Function override '%s': %d nodes created, %d failed, %d connections, %d failed"),
+		*OverrideDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsFailed));
+
+	// Mark blueprint as modified
+	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+	return NodesFailed == 0 && ConnectionsFailed == 0;
 }
 
 const FManifestEventGraphDefinition* FEventGraphGenerator::FindEventGraphByName(

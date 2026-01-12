@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.8.2
+// GasAbilityGenerator v2.8.3
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 // v2.8.2: CallFunction parameter defaults - applies "param.*" properties to function input pins
 // v2.7.0: Added BreakStruct, MakeArray, GetArrayItem node support for weapon form implementation
 // v2.6.14: Prefix validation for all asset types (E_, IA_, GA_, BP_, WBP_, M_, MF_, NS_, etc.)
@@ -290,6 +291,15 @@ public:
 	static bool GenerateEventGraph(
 		UBlueprint* Blueprint,
 		const FManifestEventGraphDefinition& GraphDefinition,
+		const FString& ProjectRoot);
+
+	/**
+	 * v2.8.3: Generate function override graph in a Blueprint
+	 * Creates a function override with entry node, custom logic, and optional parent call
+	 */
+	static bool GenerateFunctionOverride(
+		UBlueprint* Blueprint,
+		const FManifestFunctionOverrideDefinition& OverrideDefinition,
 		const FString& ProjectRoot);
 
 	/**

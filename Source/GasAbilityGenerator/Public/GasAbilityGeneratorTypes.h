@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.6.7
+// GasAbilityGenerator v2.8.3
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
 // v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
 // v2.6.5: Added Niagara System generator
@@ -300,7 +301,20 @@ struct FManifestActorComponentDefinition
 };
 
 /**
+ * Function override definition
+ * v2.8.3: Used for overriding parent class functions (e.g., HandleDeath)
+ */
+struct FManifestFunctionOverrideDefinition
+{
+	FString FunctionName;  // Name of function to override (e.g., "HandleDeath")
+	TArray<FManifestGraphNodeDefinition> Nodes;
+	TArray<FManifestGraphConnectionDefinition> Connections;
+	bool bCallParent = true;  // Whether to call parent implementation
+};
+
+/**
  * Actor blueprint definition
+ * v2.8.3: Added function_overrides for overriding parent class functions (HandleDeath, etc.)
  * v2.7.6: Added inline event graph support (bHasInlineEventGraph, EventGraphNodes, EventGraphConnections)
  */
 struct FManifestActorBlueprintDefinition
@@ -317,6 +331,9 @@ struct FManifestActorBlueprintDefinition
 	// Inline event graph data (populated during parsing, used during generation)
 	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
 	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
+
+	// v2.8.3: Function overrides for parent class functions
+	TArray<FManifestFunctionOverrideDefinition> FunctionOverrides;
 };
 
 /**
