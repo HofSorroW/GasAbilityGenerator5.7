@@ -1655,17 +1655,30 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
 	LineIndex++;
-	
+
 	FManifestBehaviorTreeDefinition CurrentDef;
 	bool bInItem = false;
-	
+	bool bInNodes = false;
+	bool bInChildren = false;
+	bool bInDecorators = false;
+	bool bInServices = false;
+	FManifestBTNodeDefinition CurrentNode;
+	FManifestBTDecoratorDefinition CurrentDecorator;
+	FManifestBTServiceDefinition CurrentService;
+
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
 		FString TrimmedLine = Line.TrimStart();
-		
+		int32 CurrentIndent = GetIndentLevel(Line);
+
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// Save current node if valid
+			if (bInNodes && !CurrentNode.Id.IsEmpty())
+			{
+				CurrentDef.Nodes.Add(CurrentNode);
+			}
 			// v2.6.14: Prefix validation - only add if BT_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BT_")))
 			{
@@ -1683,6 +1696,11 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// Save current node if valid
+			if (bInNodes && !CurrentNode.Id.IsEmpty())
+			{
+				CurrentDef.Nodes.Add(CurrentNode);
+			}
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BT_")))
 			{
@@ -1691,22 +1709,157 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 			CurrentDef = FManifestBehaviorTreeDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			bInNodes = false;
+			bInChildren = false;
+			bInDecorators = false;
+			bInServices = false;
 		}
 		else if (bInItem)
 		{
 			if (TrimmedLine.StartsWith(TEXT("blackboard_asset:")))
 			{
 				CurrentDef.BlackboardAsset = GetLineValue(TrimmedLine);
+				bInNodes = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInNodes = false;
+			}
+			// v3.1: root_type for composite (Selector or Sequence)
+			else if (TrimmedLine.StartsWith(TEXT("root_type:")))
+			{
+				CurrentDef.RootType = GetLineValue(TrimmedLine);
+				bInNodes = false;
+			}
+			// v3.1: nodes array
+			else if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
+			{
+				bInNodes = true;
+				bInChildren = false;
+				bInDecorators = false;
+				bInServices = false;
+			}
+			else if (bInNodes)
+			{
+				// Start new node
+				if (TrimmedLine.StartsWith(TEXT("- id:")))
+				{
+					// Save previous node
+					if (!CurrentNode.Id.IsEmpty())
+					{
+						CurrentDef.Nodes.Add(CurrentNode);
+					}
+					CurrentNode = FManifestBTNodeDefinition();
+					CurrentNode.Id = GetLineValue(TrimmedLine.Mid(2));
+					bInChildren = false;
+					bInDecorators = false;
+					bInServices = false;
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentNode.Type = GetLineValue(TrimmedLine);
+					bInChildren = false;
+					bInDecorators = false;
+					bInServices = false;
+				}
+				else if (TrimmedLine.StartsWith(TEXT("task_class:")))
+				{
+					CurrentNode.TaskClass = GetLineValue(TrimmedLine);
+					bInChildren = false;
+					bInDecorators = false;
+					bInServices = false;
+				}
+				else if (TrimmedLine.StartsWith(TEXT("blackboard_key:")))
+				{
+					CurrentNode.BlackboardKey = GetLineValue(TrimmedLine);
+					bInChildren = false;
+					bInDecorators = false;
+					bInServices = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("children:")) || TrimmedLine.StartsWith(TEXT("children:")))
+				{
+					bInChildren = true;
+					bInDecorators = false;
+					bInServices = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("decorators:")) || TrimmedLine.StartsWith(TEXT("decorators:")))
+				{
+					bInDecorators = true;
+					bInChildren = false;
+					bInServices = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("services:")) || TrimmedLine.StartsWith(TEXT("services:")))
+				{
+					bInServices = true;
+					bInChildren = false;
+					bInDecorators = false;
+				}
+				else if (bInChildren && TrimmedLine.StartsWith(TEXT("-")))
+				{
+					FString ChildId = TrimmedLine.Mid(1).TrimStart();
+					if (ChildId.Len() >= 2 && ((ChildId.StartsWith(TEXT("\"")) && ChildId.EndsWith(TEXT("\""))) ||
+						(ChildId.StartsWith(TEXT("'")) && ChildId.EndsWith(TEXT("'")))))
+					{
+						ChildId = ChildId.Mid(1, ChildId.Len() - 2);
+					}
+					if (!ChildId.IsEmpty())
+					{
+						CurrentNode.Children.Add(ChildId);
+					}
+				}
+				else if (bInDecorators && TrimmedLine.StartsWith(TEXT("- class:")))
+				{
+					// Save previous decorator if any
+					if (!CurrentDecorator.Class.IsEmpty())
+					{
+						CurrentNode.Decorators.Add(CurrentDecorator);
+					}
+					CurrentDecorator = FManifestBTDecoratorDefinition();
+					CurrentDecorator.Class = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (bInDecorators && TrimmedLine.StartsWith(TEXT("key:")))
+				{
+					CurrentDecorator.BlackboardKey = GetLineValue(TrimmedLine);
+				}
+				else if (bInDecorators && TrimmedLine.StartsWith(TEXT("operation:")))
+				{
+					CurrentDecorator.Operation = GetLineValue(TrimmedLine);
+				}
+				else if (bInServices && TrimmedLine.StartsWith(TEXT("- class:")))
+				{
+					// Save previous service if any
+					if (!CurrentService.Class.IsEmpty())
+					{
+						CurrentNode.Services.Add(CurrentService);
+					}
+					CurrentService = FManifestBTServiceDefinition();
+					CurrentService.Class = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (bInServices && TrimmedLine.StartsWith(TEXT("interval:")))
+				{
+					CurrentService.Interval = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
 			}
 		}
 
 		LineIndex++;
 	}
 
+	// Save last decorator/service
+	if (!CurrentDecorator.Class.IsEmpty())
+	{
+		CurrentNode.Decorators.Add(CurrentDecorator);
+	}
+	if (!CurrentService.Class.IsEmpty())
+	{
+		CurrentNode.Services.Add(CurrentService);
+	}
+	// Save current node if valid
+	if (bInNodes && !CurrentNode.Id.IsEmpty())
+	{
+		CurrentDef.Nodes.Add(CurrentNode);
+	}
 	// v2.6.14: Prefix validation - only add if BT_ prefix
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BT_")))
 	{
@@ -3172,6 +3325,7 @@ void FGasAbilityGeneratorParser::ParseAbilityConfigurations(const TArray<FString
 	FManifestAbilityConfigurationDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInAbilities = false;
+	bool bInStartupEffects = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3204,28 +3358,52 @@ void FGasAbilityGeneratorParser::ParseAbilityConfigurations(const TArray<FString
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
 			bInAbilities = false;
+			bInStartupEffects = false;
 		}
 		else if (bInItem)
 		{
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInAbilities = false;
+				bInStartupEffects = false;
+			}
+			// v3.1: default_attributes (single GE for attribute initialization)
+			else if (TrimmedLine.StartsWith(TEXT("default_attributes:")))
+			{
+				CurrentDef.DefaultAttributes = GetLineValue(TrimmedLine);
+				bInAbilities = false;
+				bInStartupEffects = false;
+			}
+			// v3.1: startup_effects array
+			else if (TrimmedLine.Equals(TEXT("startup_effects:")) || TrimmedLine.StartsWith(TEXT("startup_effects:")))
+			{
+				bInStartupEffects = true;
+				bInAbilities = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("abilities:")) || TrimmedLine.StartsWith(TEXT("abilities:")))
 			{
 				bInAbilities = true;
+				bInStartupEffects = false;
 			}
-			else if (bInAbilities && TrimmedLine.StartsWith(TEXT("-")))
+			else if (TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Ability = TrimmedLine.Mid(1).TrimStart();
-				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
-					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
+				FString Value = TrimmedLine.Mid(1).TrimStart();
+				if (Value.Len() >= 2 && ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
+					(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'")))))
 				{
-					Ability = Ability.Mid(1, Ability.Len() - 2);
+					Value = Value.Mid(1, Value.Len() - 2);
 				}
-				if (!Ability.IsEmpty())
+				if (!Value.IsEmpty())
 				{
-					CurrentDef.Abilities.Add(Ability);
+					if (bInAbilities)
+					{
+						CurrentDef.Abilities.Add(Value);
+					}
+					else if (bInStartupEffects)
+					{
+						CurrentDef.StartupEffects.Add(Value);
+					}
 				}
 			}
 		}
@@ -3247,6 +3425,7 @@ void FGasAbilityGeneratorParser::ParseActivityConfigurations(const TArray<FStrin
 	FManifestActivityConfigurationDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInActivities = false;
+	bool bInGoalGenerators = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3279,40 +3458,63 @@ void FGasAbilityGeneratorParser::ParseActivityConfigurations(const TArray<FStrin
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
 			bInActivities = false;
+			bInGoalGenerators = false;
 		}
 		else if (bInItem)
 		{
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInActivities = false;
+				bInGoalGenerators = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("default_activity:")))
 			{
 				CurrentDef.DefaultActivity = GetLineValue(TrimmedLine);
+				bInActivities = false;
+				bInGoalGenerators = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("request_interval:")))
 			{
 				CurrentDef.RescoreInterval = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInActivities = false;
+				bInGoalGenerators = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("rescore_interval:")))
 			{
 				CurrentDef.RescoreInterval = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInActivities = false;
+				bInGoalGenerators = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("activities:")) || TrimmedLine.StartsWith(TEXT("activities:")))
 			{
 				bInActivities = true;
+				bInGoalGenerators = false;
 			}
-			else if (bInActivities && TrimmedLine.StartsWith(TEXT("-")))
+			// v3.1: goal_generators array
+			else if (TrimmedLine.Equals(TEXT("goal_generators:")) || TrimmedLine.StartsWith(TEXT("goal_generators:")))
 			{
-				FString Activity = TrimmedLine.Mid(1).TrimStart();
-				if (Activity.Len() >= 2 && ((Activity.StartsWith(TEXT("\"")) && Activity.EndsWith(TEXT("\""))) ||
-					(Activity.StartsWith(TEXT("'")) && Activity.EndsWith(TEXT("'")))))
+				bInGoalGenerators = true;
+				bInActivities = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Value = TrimmedLine.Mid(1).TrimStart();
+				if (Value.Len() >= 2 && ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
+					(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'")))))
 				{
-					Activity = Activity.Mid(1, Activity.Len() - 2);
+					Value = Value.Mid(1, Value.Len() - 2);
 				}
-				if (!Activity.IsEmpty())
+				if (!Value.IsEmpty())
 				{
-					CurrentDef.Activities.Add(Activity);
+					if (bInActivities)
+					{
+						CurrentDef.Activities.Add(Value);
+					}
+					else if (bInGoalGenerators)
+					{
+						CurrentDef.GoalGenerators.Add(Value);
+					}
 				}
 			}
 		}

@@ -993,20 +993,104 @@ struct FManifestBlackboardDefinition
 };
 
 /**
+ * v3.1: BehaviorTree decorator definition
+ */
+struct FManifestBTDecoratorDefinition
+{
+	FString Class;                        // Decorator class (e.g., BTDecorator_Blackboard, custom BP class)
+	FString BlackboardKey;                // Blackboard key to check (if applicable)
+	FString Operation;                    // Condition operation (IsSet, IsNotSet, etc.)
+	TMap<FString, FString> Properties;    // Additional properties
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Class);
+		Hash ^= GetTypeHash(BlackboardKey) << 8;
+		Hash ^= GetTypeHash(Operation) << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v3.1: BehaviorTree service definition
+ */
+struct FManifestBTServiceDefinition
+{
+	FString Class;                        // Service class (e.g., BTS_UpdateTarget, custom BP class)
+	float Interval = 0.5f;                // Tick interval
+	TMap<FString, FString> Properties;    // Additional properties
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Class);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Interval * 1000.f)) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v3.1: BehaviorTree node definition (task or composite)
+ */
+struct FManifestBTNodeDefinition
+{
+	FString Id;                           // Unique node identifier
+	FString Type;                         // Selector, Sequence, SimpleParallel, or Task class name
+	FString TaskClass;                    // For task nodes: BTTask_MoveTo, BTTask_Wait, or custom BP class
+	FString BlackboardKey;                // Blackboard key for task (if applicable)
+	TArray<FString> Children;             // Child node IDs (for composites)
+	TArray<FManifestBTDecoratorDefinition> Decorators;  // Decorators on this node
+	TArray<FManifestBTServiceDefinition> Services;      // Services on this node (composites only)
+	TMap<FString, FString> Properties;    // Additional task properties
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(TaskClass) << 8;
+		Hash ^= GetTypeHash(BlackboardKey) << 12;
+		for (const FString& Child : Children)
+		{
+			Hash ^= GetTypeHash(Child);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Decorator : Decorators)
+		{
+			Hash ^= Decorator.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& Service : Services)
+		{
+			Hash ^= Service.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		return Hash;
+	}
+};
+
+/**
  * Behavior tree definition
+ * v3.1: Added node tree structure for full programmatic generation
  */
 struct FManifestBehaviorTreeDefinition
 {
 	FString Name;
 	FString BlackboardAsset;
 	FString Folder;
+	FString RootType;                     // Selector or Sequence (default: Selector)
+	TArray<FManifestBTNodeDefinition> Nodes;  // All nodes in the tree
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
 		Hash ^= GetTypeHash(BlackboardAsset) << 8;
+		Hash ^= GetTypeHash(RootType) << 16;
 		// NOTE: Folder excluded - presentational only
+		for (const auto& Node : Nodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
 		return Hash;
 	}
 };
@@ -1347,12 +1431,15 @@ struct FManifestActivityDefinition
 
 /**
  * Ability configuration definition
+ * v3.1: Added DefaultAttributes, StartupEffects for full TSubclassOf population
  */
 struct FManifestAbilityConfigurationDefinition
 {
 	FString Name;
 	FString Folder;
-	TArray<FString> Abilities;
+	TArray<FString> Abilities;           // GA_ ability blueprints to grant
+	TArray<FString> StartupEffects;      // GE_ effects applied once on startup
+	FString DefaultAttributes;           // GE_ effect for default attributes
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -1364,12 +1451,19 @@ struct FManifestAbilityConfigurationDefinition
 			Hash ^= GetTypeHash(Ability);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
+		for (const FString& Effect : StartupEffects)
+		{
+			Hash ^= GetTypeHash(Effect);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		Hash ^= GetTypeHash(DefaultAttributes) << 16;
 		return Hash;
 	}
 };
 
 /**
  * Activity configuration definition
+ * v3.1: Added GoalGenerators for full TSubclassOf population
  */
 struct FManifestActivityConfigurationDefinition
 {
@@ -1377,7 +1471,8 @@ struct FManifestActivityConfigurationDefinition
 	FString Folder;
 	float RescoreInterval = 1.0f;
 	FString DefaultActivity;
-	TArray<FString> Activities;
+	TArray<FString> Activities;           // BPA_ activity blueprints
+	TArray<FString> GoalGenerators;       // GoalGenerator_ classes
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -1390,6 +1485,11 @@ struct FManifestActivityConfigurationDefinition
 		{
 			Hash ^= GetTypeHash(Activity);
 			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Generator : GoalGenerators)
+		{
+			Hash ^= GetTypeHash(Generator);
+			Hash = (Hash << 5) | (Hash >> 59);
 		}
 		return Hash;
 	}

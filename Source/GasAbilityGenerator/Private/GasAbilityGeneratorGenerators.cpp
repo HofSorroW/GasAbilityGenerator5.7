@@ -86,6 +86,15 @@
 #include "InputMappingContext.h"
 #include "BehaviorTree/BlackboardData.h"
 #include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BTCompositeNode.h"
+#include "BehaviorTree/Composites/BTComposite_Selector.h"
+#include "BehaviorTree/Composites/BTComposite_Sequence.h"
+#include "BehaviorTree/BTTaskNode.h"
+#include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "BehaviorTree/Tasks/BTTask_MoveTo.h"
+#include "BehaviorTree/BTDecorator.h"
+#include "BehaviorTree/Decorators/BTDecorator_Blackboard.h"
+#include "BehaviorTree/BTService.h"
 // v2.6.0: Blackboard key types for full key automation
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Bool.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
@@ -3001,6 +3010,7 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 
 // ============================================================================
 // FBehaviorTreeGenerator Implementation
+// v3.1: Enhanced with root composite and node tree generation
 // ============================================================================
 
 FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDefinition& Definition)
@@ -3020,7 +3030,7 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 	{
 		return Result;
 	}
-	
+
 	// Create package
 	FString PackagePath = AssetPath;
 	UPackage* Package = CreatePackage(*PackagePath);
@@ -3028,36 +3038,242 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
 	}
-	
+
 	// Create behavior tree
 	UBehaviorTree* BT = NewObject<UBehaviorTree>(Package, *Definition.Name, RF_Public | RF_Standalone);
 	if (!BT)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create BehaviorTree"));
 	}
-	
+
 	// Link blackboard if specified
 	if (!Definition.BlackboardAsset.IsEmpty())
 	{
-		FString BBPath = FString::Printf(TEXT("/Game/AI/%s.%s"), 
-			*Definition.BlackboardAsset, *Definition.BlackboardAsset);
-		UBlackboardData* BB = LoadObject<UBlackboardData>(nullptr, *BBPath);
+		// Try multiple paths for blackboard
+		TArray<FString> BBPaths;
+		BBPaths.Add(FString::Printf(TEXT("%s/AI/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("/Game/AI/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("%s/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+
+		UBlackboardData* BB = nullptr;
+		for (const FString& BBPath : BBPaths)
+		{
+			BB = LoadObject<UBlackboardData>(nullptr, *BBPath);
+			if (BB)
+			{
+				break;
+			}
+		}
+
 		if (BB)
 		{
 			BT->BlackboardAsset = BB;
+			LogGeneration(FString::Printf(TEXT("  Linked Blackboard: %s"), *Definition.BlackboardAsset));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Blackboard not found: %s"), *Definition.BlackboardAsset));
 		}
 	}
-	
+
+	// v3.1: Create root composite node if nodes are defined
+	if (Definition.Nodes.Num() > 0 || !Definition.RootType.IsEmpty())
+	{
+		// Determine root composite type (default: Selector)
+		FString RootType = Definition.RootType.IsEmpty() ? TEXT("Selector") : Definition.RootType;
+
+		UBTCompositeNode* RootNode = nullptr;
+		if (RootType.Equals(TEXT("Sequence"), ESearchCase::IgnoreCase))
+		{
+			RootNode = NewObject<UBTComposite_Sequence>(BT);
+			LogGeneration(TEXT("  Created root Sequence node"));
+		}
+		else
+		{
+			RootNode = NewObject<UBTComposite_Selector>(BT);
+			LogGeneration(TEXT("  Created root Selector node"));
+		}
+
+		if (RootNode)
+		{
+			BT->RootNode = RootNode;
+
+			// v3.1: Build node map for child reference resolution
+			TMap<FString, int32> NodeIndexMap;
+			for (int32 i = 0; i < Definition.Nodes.Num(); i++)
+			{
+				NodeIndexMap.Add(Definition.Nodes[i].Id, i);
+			}
+
+			// v3.1: Process nodes and build tree structure
+			int32 NodesCreated = 0;
+			for (const FManifestBTNodeDefinition& NodeDef : Definition.Nodes)
+			{
+				// Create child entry for root
+				FBTCompositeChild ChildEntry;
+
+				// Determine if this is a composite or task node
+				bool bIsComposite = NodeDef.Type.Equals(TEXT("Selector"), ESearchCase::IgnoreCase) ||
+					NodeDef.Type.Equals(TEXT("Sequence"), ESearchCase::IgnoreCase) ||
+					NodeDef.Type.Equals(TEXT("SimpleParallel"), ESearchCase::IgnoreCase);
+
+				if (bIsComposite)
+				{
+					// Create composite node
+					UBTCompositeNode* CompositeNode = nullptr;
+					if (NodeDef.Type.Equals(TEXT("Sequence"), ESearchCase::IgnoreCase))
+					{
+						CompositeNode = NewObject<UBTComposite_Sequence>(RootNode);
+					}
+					else
+					{
+						CompositeNode = NewObject<UBTComposite_Selector>(RootNode);
+					}
+
+					if (CompositeNode)
+					{
+						ChildEntry.ChildComposite = CompositeNode;
+						NodesCreated++;
+						LogGeneration(FString::Printf(TEXT("  Created composite node: %s (%s)"), *NodeDef.Id, *NodeDef.Type));
+					}
+				}
+				else
+				{
+					// Create task node - try to load specified class or use built-in
+					UBTTaskNode* TaskNode = nullptr;
+
+					if (!NodeDef.TaskClass.IsEmpty())
+					{
+						// Try to load the specified task class
+						TArray<FString> TaskPaths;
+						TaskPaths.Add(FString::Printf(TEXT("%s/AI/Tasks/%s.%s_C"), *GetProjectRoot(), *NodeDef.TaskClass, *NodeDef.TaskClass));
+						TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
+						TaskPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *NodeDef.TaskClass));
+
+						UClass* TaskClass = nullptr;
+						for (const FString& Path : TaskPaths)
+						{
+							TaskClass = LoadClass<UBTTaskNode>(nullptr, *Path);
+							if (TaskClass)
+							{
+								break;
+							}
+						}
+
+						if (TaskClass)
+						{
+							TaskNode = NewObject<UBTTaskNode>(RootNode, TaskClass);
+							LogGeneration(FString::Printf(TEXT("  Created task node: %s (%s)"), *NodeDef.Id, *NodeDef.TaskClass));
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  [WARNING] Task class not found: %s, using BTTask_Wait"), *NodeDef.TaskClass));
+							TaskNode = NewObject<UBTTask_Wait>(RootNode);
+						}
+					}
+					else
+					{
+						// Default to Wait task
+						TaskNode = NewObject<UBTTask_Wait>(RootNode);
+						LogGeneration(FString::Printf(TEXT("  Created default Wait task: %s"), *NodeDef.Id));
+					}
+
+					if (TaskNode)
+					{
+						ChildEntry.ChildTask = TaskNode;
+						NodesCreated++;
+					}
+				}
+
+				// Add decorators to this child entry
+				for (const FManifestBTDecoratorDefinition& DecoratorDef : NodeDef.Decorators)
+				{
+					// Try to load decorator class
+					UClass* DecoratorClass = nullptr;
+					if (DecoratorDef.Class.Equals(TEXT("BTDecorator_Blackboard"), ESearchCase::IgnoreCase))
+					{
+						DecoratorClass = UBTDecorator_Blackboard::StaticClass();
+					}
+					else
+					{
+						TArray<FString> DecPaths;
+						DecPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *DecoratorDef.Class));
+						DecPaths.Add(FString::Printf(TEXT("%s/AI/Decorators/%s.%s_C"), *GetProjectRoot(), *DecoratorDef.Class, *DecoratorDef.Class));
+
+						for (const FString& Path : DecPaths)
+						{
+							DecoratorClass = LoadClass<UBTDecorator>(nullptr, *Path);
+							if (DecoratorClass)
+							{
+								break;
+							}
+						}
+					}
+
+					if (DecoratorClass)
+					{
+						UBTDecorator* Decorator = NewObject<UBTDecorator>(RootNode, DecoratorClass);
+						if (Decorator)
+						{
+							ChildEntry.Decorators.Add(Decorator);
+							LogGeneration(FString::Printf(TEXT("    Added decorator: %s"), *DecoratorDef.Class));
+						}
+					}
+				}
+
+				// Add services (only to composite nodes)
+				if (ChildEntry.ChildComposite)
+				{
+					for (const FManifestBTServiceDefinition& ServiceDef : NodeDef.Services)
+					{
+						UClass* ServiceClass = nullptr;
+						TArray<FString> SvcPaths;
+						SvcPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *ServiceDef.Class));
+						SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
+						SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
+
+						for (const FString& Path : SvcPaths)
+						{
+							ServiceClass = LoadClass<UBTService>(nullptr, *Path);
+							if (ServiceClass)
+							{
+								break;
+							}
+						}
+
+						if (ServiceClass)
+						{
+							UBTService* Service = NewObject<UBTService>(ChildEntry.ChildComposite, ServiceClass);
+							if (Service)
+							{
+								ChildEntry.ChildComposite->Services.Add(Service);
+								LogGeneration(FString::Printf(TEXT("    Added service: %s"), *ServiceDef.Class));
+							}
+						}
+					}
+				}
+
+				// Add child entry to root node
+				if (ChildEntry.ChildComposite || ChildEntry.ChildTask)
+				{
+					RootNode->Children.Add(ChildEntry);
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Created %d nodes in behavior tree"), NodesCreated));
+		}
+	}
+
 	// Mark dirty and register
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(BT);
-	
+
 	// Save package
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, BT, *PackageFileName, SaveArgs);
-	
+
 	LogGeneration(FString::Printf(TEXT("Created Behavior Tree: %s"), *Definition.Name));
 
 	// v3.0: Store metadata for regeneration tracking
@@ -6574,6 +6790,7 @@ void FEventGraphGenerator::AutoLayoutNodes(
 #include "GAS/AbilityConfiguration.h"
 #include "AI/Activities/NPCActivityConfiguration.h"
 #include "AI/Activities/NPCActivity.h"
+#include "AI/Activities/NPCGoalGenerator.h"
 #include "Items/NarrativeItem.h"
 #include "Tales/NarrativeEvent.h"
 #include "Tales/Dialogue.h"
@@ -7306,7 +7523,8 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 	return Result;
 }
 
-// v2.3.0: Ability Configuration Generator (placeholder)
+// v2.3.0: Ability Configuration Generator
+// v3.1: Now populates DefaultAbilities, StartupEffects, and DefaultAttributes via class resolution
 FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilityConfigurationDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Configurations") : Definition.Folder;
@@ -7337,16 +7555,102 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Ability Configuration"));
 	}
 
-	// Log abilities that need to be set manually (require class references)
-	if (Definition.Abilities.Num() > 0)
+	// v3.1: Resolve DefaultAbilities (GA_ blueprints -> NarrativeGameplayAbility subclasses)
+	int32 ResolvedAbilities = 0;
+	for (const FString& AbilityName : Definition.Abilities)
 	{
-		LogGeneration(FString::Printf(TEXT("  Ability Config '%s' - add %d abilities manually:"),
-			*Definition.Name, Definition.Abilities.Num()));
-		for (const FString& Ability : Definition.Abilities)
+		// Try multiple paths for the ability blueprint
+		TArray<FString> SearchPaths;
+		SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+		SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Crawler/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+		SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Forms/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Abilities/%s.%s_C"), *AbilityName, *AbilityName));
+
+		UClass* AbilityClass = nullptr;
+		for (const FString& Path : SearchPaths)
 		{
-			LogGeneration(FString::Printf(TEXT("    - %s"), *Ability));
+			AbilityClass = LoadClass<UNarrativeGameplayAbility>(nullptr, *Path);
+			if (AbilityClass)
+			{
+				break;
+			}
+		}
+
+		if (AbilityClass)
+		{
+			AbilityConfig->DefaultAbilities.Add(AbilityClass);
+			ResolvedAbilities++;
+			LogGeneration(FString::Printf(TEXT("  Resolved ability: %s"), *AbilityName));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve ability: %s (will need manual assignment)"), *AbilityName));
 		}
 	}
+
+	// v3.1: Resolve StartupEffects (GE_ blueprints -> GameplayEffect subclasses)
+	int32 ResolvedEffects = 0;
+	for (const FString& EffectName : Definition.StartupEffects)
+	{
+		TArray<FString> SearchPaths;
+		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
+
+		UClass* EffectClass = nullptr;
+		for (const FString& Path : SearchPaths)
+		{
+			EffectClass = LoadClass<UGameplayEffect>(nullptr, *Path);
+			if (EffectClass)
+			{
+				break;
+			}
+		}
+
+		if (EffectClass)
+		{
+			AbilityConfig->StartupEffects.Add(EffectClass);
+			ResolvedEffects++;
+			LogGeneration(FString::Printf(TEXT("  Resolved startup effect: %s"), *EffectName));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve startup effect: %s"), *EffectName));
+		}
+	}
+
+	// v3.1: Resolve DefaultAttributes (single GE_ for attribute initialization)
+	if (!Definition.DefaultAttributes.IsEmpty())
+	{
+		TArray<FString> SearchPaths;
+		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *Definition.DefaultAttributes, *Definition.DefaultAttributes));
+		SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *Definition.DefaultAttributes, *Definition.DefaultAttributes));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *Definition.DefaultAttributes, *Definition.DefaultAttributes));
+
+		UClass* AttrClass = nullptr;
+		for (const FString& Path : SearchPaths)
+		{
+			AttrClass = LoadClass<UGameplayEffect>(nullptr, *Path);
+			if (AttrClass)
+			{
+				break;
+			}
+		}
+
+		if (AttrClass)
+		{
+			AbilityConfig->DefaultAttributes = AttrClass;
+			LogGeneration(FString::Printf(TEXT("  Resolved default attributes: %s"), *Definition.DefaultAttributes));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve default attributes: %s"), *Definition.DefaultAttributes));
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Summary: %d/%d abilities, %d/%d effects resolved"),
+		ResolvedAbilities, Definition.Abilities.Num(),
+		ResolvedEffects, Definition.StartupEffects.Num()));
 
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(AbilityConfig);
@@ -7366,6 +7670,7 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 }
 
 // v2.3.0: Activity Configuration Generator - creates UNPCActivityConfiguration data assets
+// v3.1: Now populates DefaultActivities and GoalGenerators via class resolution
 FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActivityConfigurationDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Configurations") : Definition.Folder;
@@ -7399,16 +7704,75 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 	// Set rescore interval if specified
 	ActivityConfig->RescoreInterval = Definition.RescoreInterval;
 
-	// Log activities that need to be set manually (require class references)
-	if (Definition.Activities.Num() > 0)
+	// v3.1: Resolve DefaultActivities (BPA_ blueprints -> UNPCActivity subclasses)
+	int32 ResolvedActivities = 0;
+	for (const FString& ActivityName : Definition.Activities)
 	{
-		LogGeneration(FString::Printf(TEXT("  Activity Config '%s' - add %d activities manually:"),
-			*Definition.Name, Definition.Activities.Num()));
-		for (const FString& Activity : Definition.Activities)
+		TArray<FString> SearchPaths;
+		SearchPaths.Add(FString::Printf(TEXT("%s/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName));
+		SearchPaths.Add(FString::Printf(TEXT("%s/AI/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Activities/%s.%s_C"), *ActivityName, *ActivityName));
+		// Also check Narrative Pro plugin for built-in activities
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Activities/%s.%s_C"), *ActivityName, *ActivityName));
+
+		UClass* ActivityClass = nullptr;
+		for (const FString& Path : SearchPaths)
 		{
-			LogGeneration(FString::Printf(TEXT("    - %s"), *Activity));
+			ActivityClass = LoadClass<UNPCActivity>(nullptr, *Path);
+			if (ActivityClass)
+			{
+				break;
+			}
+		}
+
+		if (ActivityClass)
+		{
+			ActivityConfig->DefaultActivities.Add(ActivityClass);
+			ResolvedActivities++;
+			LogGeneration(FString::Printf(TEXT("  Resolved activity: %s"), *ActivityName));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve activity: %s (will need manual assignment)"), *ActivityName));
 		}
 	}
+
+	// v3.1: Resolve GoalGenerators (GoalGenerator_ blueprints -> UNPCGoalGenerator subclasses)
+	int32 ResolvedGenerators = 0;
+	for (const FString& GeneratorName : Definition.GoalGenerators)
+	{
+		TArray<FString> SearchPaths;
+		SearchPaths.Add(FString::Printf(TEXT("%s/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		// Also check Narrative Pro plugin for built-in generators
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+
+		UClass* GeneratorClass = nullptr;
+		for (const FString& Path : SearchPaths)
+		{
+			GeneratorClass = LoadClass<UNPCGoalGenerator>(nullptr, *Path);
+			if (GeneratorClass)
+			{
+				break;
+			}
+		}
+
+		if (GeneratorClass)
+		{
+			ActivityConfig->GoalGenerators.Add(GeneratorClass);
+			ResolvedGenerators++;
+			LogGeneration(FString::Printf(TEXT("  Resolved goal generator: %s"), *GeneratorName));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve goal generator: %s"), *GeneratorName));
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Summary: %d/%d activities, %d/%d generators resolved"),
+		ResolvedActivities, Definition.Activities.Num(),
+		ResolvedGenerators, Definition.GoalGenerators.Num()));
 
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(ActivityConfig);

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.0) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.1) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -362,6 +362,41 @@ gameplay_abilities:
         type: Float
         default_value: "25.0"
     event_graph: AttackGraph
+
+# v3.1: AbilityConfiguration with TSubclassOf resolution
+ability_configurations:
+  - name: AC_FatherCrawler
+    folder: AbilityConfigs
+    abilities: [GA_FatherAttack, GA_FatherLaserShot]
+    startup_effects: [GE_FatherCrawlerStats]      # Applied once at spawn
+    default_attributes: GE_FatherAttributes       # Attribute initialization
+
+# v3.1: ActivityConfiguration with goal generators
+activity_configurations:
+  - name: ActConfig_Father
+    folder: ActivityConfigs
+    activities: [BPA_FatherFollow, BPA_FormationFollow]
+    goal_generators: [GoalGenerator_Attack]       # Goal generation classes
+    rescore_interval: 1.0
+
+# v3.1: BehaviorTree with node tree structure
+behavior_trees:
+  - name: BT_FatherFollow
+    blackboard: BB_Father
+    folder: AI/BehaviorTrees
+    root_type: Selector                           # Selector or Sequence
+    nodes:
+      - id: MoveToPlayer
+        type: Task
+        task_class: BTTask_MoveTo
+        blackboard_key: TargetPlayer
+        decorators:
+          - class: BTDecorator_Blackboard
+            blackboard_key: TargetPlayer
+            operation: IsSet
+        services:
+          - class: BTService_BlueprintBase
+            interval: 0.5
 ```
 
 ### Event Graph Generation
@@ -471,6 +506,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.1 - TSubclassOf Resolution & BT Node Trees: AbilityConfiguration now populates DefaultAbilities/StartupEffects/DefaultAttributes via LoadClass<>, ActivityConfiguration populates DefaultActivities/GoalGenerators, BehaviorTree creates root composite node (Selector/Sequence) and populates Children with tasks/decorators/services
 - v3.0 - Regen/Diff Safety System: Per-asset metadata via UGeneratorAssetMetadata (UAssetUserData), input hash (manifest definition) + output hash (asset content) change detection, --dryrun preview mode, --force conflict override, universal SkipIfModified policy for all 25 generators, ComputeDataAssetOutputHash for 17 DataAsset types, ComputeBlueprintOutputHash for 9 Blueprint types
 - v2.9.1 - FX Validation System: Template integrity validation, descriptor-to-system validation, regeneration safety with metadata tracking and descriptor hashing
 - v2.9.0 - Data-driven FX architecture: FManifestFXDescriptor for Niagara User param binding, template duplication workflow
