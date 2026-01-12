@@ -10,6 +10,7 @@
 // Forward declarations
 struct FManifestData;
 struct FGenerationResult;
+struct FGenerationSummary;
 
 /**
  * v2.6.7: Deferred asset info for retry mechanism
@@ -79,4 +80,9 @@ private:
 	TSet<FString> ProcessedAssets;  // Track ALL processed assets (new + skipped + failed)
 	TArray<FString> GenerationDuplicates;  // Track assets processed more than once
 	void VerifyGenerationComplete(const TSet<FString>& ExpectedAssets, int32 ExpectedCount, int32 ActualCount);
+
+	// v3.1: Track generation results for exit code
+	int32 LastFailedCount = 0;
+	int32 LastValidationErrorCount = 0;
+	bool bHadParseError = false;
 };

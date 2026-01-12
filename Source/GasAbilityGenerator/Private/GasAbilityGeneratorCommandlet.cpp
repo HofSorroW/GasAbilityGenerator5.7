@@ -1,12 +1,18 @@
 // GasAbilityGeneratorCommandlet.cpp
 // Commandlet for automated asset generation from command line
+// v3.1: Fixed exit code, added dedicated log category, exception handling
 
 #include "GasAbilityGeneratorCommandlet.h"
 #include "GasAbilityGeneratorParser.h"
 #include "GasAbilityGeneratorGenerators.h"
+#include "GasAbilityGeneratorMetadata.h"  // v3.1: For metadata registry
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformFilemanager.h"
+#include <exception>  // v3.1: For std::exception in try/catch
+
+// v3.1: Dedicated log category for filtering
+DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);
 
 UGasAbilityGeneratorCommandlet::UGasAbilityGeneratorCommandlet()
 {
@@ -118,13 +124,30 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		return 1;
 	}
 
-	// Parse manifest
+	// Parse manifest with exception handling
 	LogMessage(TEXT("Parsing manifest..."));
 	FManifestData ManifestData;
 
-	if (!FGasAbilityGeneratorParser::ParseManifest(ManifestContent, ManifestData))
+	// v3.1: Wrap parsing in try/catch for safety
+	try
 	{
-		LogError(TEXT("ERROR: Failed to parse manifest file"));
+		if (!FGasAbilityGeneratorParser::ParseManifest(ManifestContent, ManifestData))
+		{
+			LogError(TEXT("ERROR: Failed to parse manifest file"));
+			bHadParseError = true;
+			return 1;
+		}
+	}
+	catch (const std::exception& e)
+	{
+		LogError(FString::Printf(TEXT("ERROR: Manifest parse exception: %hs"), e.what()));
+		bHadParseError = true;
+		return 1;
+	}
+	catch (...)
+	{
+		LogError(TEXT("ERROR: Unknown manifest parse exception"));
+		bHadParseError = true;
 		return 1;
 	}
 
@@ -224,7 +247,7 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 	{
 		FString LogContent = FString::Join(LogMessages, TEXT("\n"));
 		FFileHelper::SaveStringToFile(LogContent, *OutputLogPath);
-		UE_LOG(LogTemp, Log, TEXT("Log saved to: %s"), *OutputLogPath);
+		UE_LOG(LogGasAbilityGenerator, Display, TEXT("Log saved to: %s"), *OutputLogPath);
 	}
 
 	LogMessage(TEXT(""));
@@ -232,7 +255,19 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 	LogMessage(TEXT("Generation Complete"));
 	LogMessage(TEXT("========================================"));
 
-	return 0;
+	// v3.1: Return non-zero exit code if any failures occurred
+	int32 ExitCode = 0;
+	if (!FGeneratorBase::IsDryRunMode())
+	{
+		if (LastFailedCount > 0 || LastValidationErrorCount > 0 || bHadParseError)
+		{
+			ExitCode = 1;
+			LogError(FString::Printf(TEXT("Exiting with code 1 (Failed: %d, Validation Errors: %d, Parse Errors: %s)"),
+				LastFailedCount, LastValidationErrorCount, bHadParseError ? TEXT("Yes") : TEXT("No")));
+		}
+	}
+
+	return ExitCode;
 }
 
 void UGasAbilityGeneratorCommandlet::GenerateTags(const FManifestData& ManifestData)
@@ -280,7 +315,7 @@ static auto ProcessResult = [](UGasAbilityGeneratorCommandlet* Self, FGeneration
 	if (ProcessedAssets.Contains(Result.AssetName))
 	{
 		GenerationDuplicates.AddUnique(Result.AssetName);
-		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DUPLICATE GENERATION: %s"), *Result.AssetName);
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("DUPLICATE GENERATION: %s"), *Result.AssetName);
 	}
 	else
 	{
@@ -302,7 +337,7 @@ static auto ProcessResult = [](UGasAbilityGeneratorCommandlet* Self, FGeneration
 	case EGenerationStatus::Failed: StatusStr = TEXT("FAIL"); break;
 	}
 
-	UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] [%s] %s"), StatusStr, *Result.AssetName);
+	UE_LOG(LogGasAbilityGenerator, Display, TEXT("[%s] %s"), StatusStr, *Result.AssetName);
 };
 
 void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& ManifestData)
@@ -324,7 +359,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		if (ProcessedAssets.Contains(AssetName))
 		{
 			GenerationDuplicates.AddUnique(AssetName);
-			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DUPLICATE GENERATION: %s"), *AssetName);
+			UE_LOG(LogGasAbilityGenerator, Error, TEXT("DUPLICATE GENERATION: %s"), *AssetName);
 		}
 		else
 		{
@@ -830,17 +865,23 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 
 	// v2.8.4: Verification - compare actual vs expected using whitelist from start
 	VerifyGenerationComplete(ExpectedAssets, ExpectedCount, ActualCount);
+
+	// v3.1: Store results for exit code
+	LastFailedCount = Summary.FailedCount;
+
+	// v3.1: Save the metadata registry
+	GeneratorMetadataHelpers::SaveRegistryIfNeeded();
 }
 
 void UGasAbilityGeneratorCommandlet::LogMessage(const FString& Message)
 {
-	UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] %s"), *Message);
+	UE_LOG(LogGasAbilityGenerator, Display, TEXT("%s"), *Message);
 	LogMessages.Add(Message);
 }
 
 void UGasAbilityGeneratorCommandlet::LogError(const FString& Message)
 {
-	UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] %s"), *Message);
+	UE_LOG(LogGasAbilityGenerator, Error, TEXT("%s"), *Message);
 	LogMessages.Add(FString::Printf(TEXT("ERROR: %s"), *Message));
 }
 

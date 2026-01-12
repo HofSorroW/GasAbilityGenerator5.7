@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.1) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.1.1) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -52,9 +52,9 @@ Generate assets from command line without launching the editor UI:
 ... -run=GasAbilityGenerator -manifest="..." -force
 ```
 
-### v3.0 Regen/Diff Safety System
+### v3.0/3.1 Regen/Diff Safety System
 
-The v3.0 metadata system tracks changes to detect what needs regeneration:
+The metadata system tracks changes to detect what needs regeneration:
 
 | Status | Condition | Action |
 |--------|-----------|--------|
@@ -66,9 +66,13 @@ The v3.0 metadata system tracks changes to detect what needs regeneration:
 **How it works:**
 1. **Input Hash** - Computed from manifest definition via `Definition.ComputeHash()`
 2. **Output Hash** - Computed from asset content via `ComputeDataAssetOutputHash()` or `ComputeBlueprintOutputHash()`
-3. **Metadata Storage** - `UGeneratorAssetMetadata` (UAssetUserData) stores both hashes on each generated asset
+3. **Metadata Storage** - Dual storage system (v3.1):
+   - `UGeneratorAssetMetadata` (UAssetUserData) - For assets supporting IInterface_AssetUserData (Animation Montages, etc.)
+   - `UGeneratorMetadataRegistry` (DataAsset) - Fallback registry for UDataAsset, UBlueprint, UNiagaraSystem (stored at `/Game/{Project}/GeneratorMetadataRegistry`)
 
-**Coverage:** All 25 asset generators have full v3.0 support:
+**v3.1 Note:** UDataAsset and UBlueprint don't implement IInterface_AssetUserData in UE5.7, so a central registry stores metadata for these asset types.
+
+**Coverage:** All 25 asset generators have full support:
 - 16 DataAsset types: E, IA, IMC, BB, BT, M, MF, FC, AM, AC, ActConfig, IC, NPCDef, CD, TaggedDialogue, NS
 - 9 Blueprint types: GE, GA, ActorBP, WidgetBP, AnimNotify, DialogueBP, EquippableBP, ActivityBP, NE
 
@@ -218,7 +222,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v2.9.1)
+## GasAbilityGenerator Plugin (v3.1.1)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -506,6 +510,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.1.1 - Robustness Fixes: Commandlet exit code returns non-zero on failures (CI/CD support), dedicated LogGasAbilityGenerator log category, try/catch for YAML parsing exceptions, UGeneratorMetadataRegistry fallback for UDataAsset/UBlueprint/UNiagaraSystem (which don't support IInterface_AssetUserData in UE5.7)
 - v3.1 - TSubclassOf Resolution & BT Node Trees: AbilityConfiguration now populates DefaultAbilities/StartupEffects/DefaultAttributes via LoadClass<>, ActivityConfiguration populates DefaultActivities/GoalGenerators, BehaviorTree creates root composite node (Selector/Sequence) and populates Children with tasks/decorators/services
 - v3.0 - Regen/Diff Safety System: Per-asset metadata via UGeneratorAssetMetadata (UAssetUserData), input hash (manifest definition) + output hash (asset content) change detection, --dryrun preview mode, --force conflict override, universal SkipIfModified policy for all 25 generators, ComputeDataAssetOutputHash for 17 DataAsset types, ComputeBlueprintOutputHash for 9 Blueprint types
 - v2.9.1 - FX Validation System: Template integrity validation, descriptor-to-system validation, regeneration safety with metadata tracking and descriptor hashing

@@ -1,11 +1,13 @@
-// GasAbilityGenerator v3.0
+// GasAbilityGenerator v3.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 // v3.0: UGeneratorAssetMetadata - Persistent metadata storage for generated assets
+// v3.1: UGeneratorMetadataRegistry - Central registry for assets that don't support AssetUserData
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/AssetUserData.h"
+#include "Engine/DataAsset.h"
 #include "GasAbilityGeneratorTypes.h"
 #include "GasAbilityGeneratorMetadata.generated.h"
 
@@ -82,15 +84,119 @@ public:
 };
 
 /**
+ * v3.1: Serializable metadata record for the registry
+ */
+USTRUCT(BlueprintType)
+struct GASABILITYGENERATOR_API FGeneratorMetadataRecord
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	FString GeneratorId;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	FString ManifestPath;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	FString ManifestAssetKey;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	int64 InputHash = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	int64 OutputHash = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	FString GeneratorVersion;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	FDateTime Timestamp;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	TArray<FString> Dependencies;
+
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	bool bIsGenerated = false;
+
+	/** Convert to FGeneratorMetadata struct */
+	FGeneratorMetadata ToMetadata() const;
+
+	/** Set from FGeneratorMetadata struct */
+	void FromMetadata(const FGeneratorMetadata& InMetadata);
+};
+
+/**
+ * v3.1: Central registry for storing metadata of assets that don't support UAssetUserData
+ *
+ * This includes:
+ * - All DataAssets (UDataAsset, UPrimaryDataAsset)
+ * - All Blueprints (UBlueprint and subclasses)
+ * - Niagara Systems
+ *
+ * The registry is stored as a single asset at /Game/{Project}/GeneratorMetadataRegistry
+ */
+UCLASS()
+class GASABILITYGENERATOR_API UGeneratorMetadataRegistry : public UDataAsset
+{
+	GENERATED_BODY()
+
+public:
+	UGeneratorMetadataRegistry();
+
+	/** Map of asset paths to their generator metadata */
+	UPROPERTY(EditAnywhere, Category = "Generator")
+	TMap<FString, FGeneratorMetadataRecord> Records;
+
+	/** Get metadata for an asset path (returns nullptr if not found) */
+	FGeneratorMetadataRecord* GetRecord(const FString& AssetPath);
+
+	/** Set metadata for an asset path */
+	void SetRecord(const FString& AssetPath, const FGeneratorMetadataRecord& Record);
+
+	/** Remove metadata for an asset path */
+	void RemoveRecord(const FString& AssetPath);
+
+	/** Check if registry has metadata for an asset path */
+	bool HasRecord(const FString& AssetPath) const;
+
+	/** Get all asset paths in the registry */
+	TArray<FString> GetAllAssetPaths() const;
+
+	/** Clear all records */
+	void ClearAllRecords();
+
+	// Static helper to get/create the singleton registry
+	static UGeneratorMetadataRegistry* GetOrCreateRegistry();
+	static UGeneratorMetadataRegistry* GetRegistry();
+	static void SaveRegistry();
+	static void ClearRegistryCache();
+
+private:
+	static TWeakObjectPtr<UGeneratorMetadataRegistry> CachedRegistry;
+};
+
+/**
  * v3.0: Helper functions for working with generator metadata on assets
+ * v3.1: Now uses registry fallback for unsupported asset types
  */
 namespace GeneratorMetadataHelpers
 {
 	/**
-	 * Get generator metadata from an asset (returns nullptr if not found)
-	 * Works with any UObject that supports AssetUserData (UBlueprint, UDataAsset, etc.)
+	 * Get generator metadata from an asset via AssetUserData (returns nullptr if not found or unsupported)
+	 * Only works with assets implementing IInterface_AssetUserData
 	 */
 	UGeneratorAssetMetadata* GetMetadata(UObject* Asset);
+
+	/**
+	 * v3.1: Get generator metadata from an asset, checking both AssetUserData and registry
+	 * This is the preferred method for retrieving metadata
+	 */
+	FGeneratorMetadata GetMetadataEx(UObject* Asset);
+
+	/**
+	 * v3.1: Check if we have metadata from either AssetUserData or registry
+	 */
+	bool HasMetadataEx(UObject* Asset);
 
 	/**
 	 * Store generator metadata on an asset
@@ -119,4 +225,10 @@ namespace GeneratorMetadataHelpers
 		UObject* Asset,
 		uint64 NewInputHash,
 		TFunction<uint64(UObject*)> ComputeCurrentOutputHash = nullptr);
+
+	/**
+	 * v3.1: Save the metadata registry after generation completes
+	 * Call this at the end of asset generation to persist registry changes
+	 */
+	void SaveRegistryIfNeeded();
 }
