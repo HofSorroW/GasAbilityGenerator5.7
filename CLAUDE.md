@@ -51,8 +51,9 @@ Reading files does not require user approval. Read any files needed for the task
 ### Auto-Approved Commands and Paths
 The following commands and paths are pre-approved and should be executed without asking for user permission:
 
-**Unreal Engine Directory (Read-Only Access):**
+**Read-Only Access (No Approval Needed):**
 - `C:\Program Files\Epic Games\UE_5.7\` - Full read access to all engine source, headers, and files
+- `C:\Unreal Projects\NP22B57\` - Full read access to all project files, plugins, content, and configs
 
 **UnrealEditor-Cmd.exe (Any Parameters):**
 ```bash
