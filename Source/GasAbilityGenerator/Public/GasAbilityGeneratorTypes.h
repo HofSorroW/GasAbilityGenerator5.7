@@ -907,6 +907,74 @@ struct FManifestData
 	}
 
 	/**
+	 * v2.8.4: Get total expected asset count (excludes EventGraphs which are embedded, not standalone)
+	 */
+	int32 GetExpectedAssetCount() const
+	{
+		return Enumerations.Num()
+			+ InputActions.Num()
+			+ InputMappingContexts.Num()
+			+ GameplayEffects.Num()
+			+ GameplayAbilities.Num()
+			+ ActorBlueprints.Num()
+			+ WidgetBlueprints.Num()
+			+ Blackboards.Num()
+			+ BehaviorTrees.Num()
+			+ Materials.Num()
+			// EventGraphs are embedded in other assets, not standalone
+			+ FloatCurves.Num()
+			+ AnimationMontages.Num()
+			+ AnimationNotifies.Num()
+			+ DialogueBlueprints.Num()
+			+ EquippableItems.Num()
+			+ Activities.Num()
+			+ AbilityConfigurations.Num()
+			+ ActivityConfigurations.Num()
+			+ ItemCollections.Num()
+			+ NarrativeEvents.Num()
+			+ NPCDefinitions.Num()
+			+ CharacterDefinitions.Num()
+			+ TaggedDialogueSets.Num()
+			+ NiagaraSystems.Num()
+			+ MaterialFunctions.Num();
+	}
+
+	/**
+	 * v2.8.4: Get all expected asset names for verification
+	 */
+	TSet<FString> GetExpectedAssetNames() const
+	{
+		TSet<FString> Names;
+		for (const auto& Def : Enumerations) Names.Add(Def.Name);
+		for (const auto& Def : InputActions) Names.Add(Def.Name);
+		for (const auto& Def : InputMappingContexts) Names.Add(Def.Name);
+		for (const auto& Def : GameplayEffects) Names.Add(Def.Name);
+		for (const auto& Def : GameplayAbilities) Names.Add(Def.Name);
+		for (const auto& Def : ActorBlueprints) Names.Add(Def.Name);
+		for (const auto& Def : WidgetBlueprints) Names.Add(Def.Name);
+		for (const auto& Def : Blackboards) Names.Add(Def.Name);
+		for (const auto& Def : BehaviorTrees) Names.Add(Def.Name);
+		for (const auto& Def : Materials) Names.Add(Def.Name);
+		// EventGraphs excluded - embedded in other assets
+		for (const auto& Def : FloatCurves) Names.Add(Def.Name);
+		for (const auto& Def : AnimationMontages) Names.Add(Def.Name);
+		for (const auto& Def : AnimationNotifies) Names.Add(Def.Name);
+		for (const auto& Def : DialogueBlueprints) Names.Add(Def.Name);
+		for (const auto& Def : EquippableItems) Names.Add(Def.Name);
+		for (const auto& Def : Activities) Names.Add(Def.Name);
+		for (const auto& Def : AbilityConfigurations) Names.Add(Def.Name);
+		for (const auto& Def : ActivityConfigurations) Names.Add(Def.Name);
+		for (const auto& Def : ItemCollections) Names.Add(Def.Name);
+		for (const auto& Def : NarrativeEvents) Names.Add(Def.Name);
+		for (const auto& Def : NPCDefinitions) Names.Add(Def.Name);
+		for (const auto& Def : CharacterDefinitions) Names.Add(Def.Name);
+		for (const auto& Def : TaggedDialogueSets) Names.Add(Def.Name);
+		for (const auto& Def : NiagaraSystems) Names.Add(Def.Name);
+		for (const auto& Def : MaterialFunctions) Names.Add(Def.Name);
+		return Names;
+	}
+
+	/**
 	 * Get event graph count for display
 	 */
 	int32 GetEventGraphCount() const
