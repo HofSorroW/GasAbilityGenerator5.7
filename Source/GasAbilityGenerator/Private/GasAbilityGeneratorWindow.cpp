@@ -49,13 +49,14 @@ static uint64 ComputeNPCInputHash(const FString& NPCName)
 	// Include fixed parameters (these are hardcoded in the UI for now)
 	Hash ^= GetTypeHash(FString(TEXT("AC_NPC_Default")));  // AbilityConfiguration
 	Hash ^= GetTypeHash(FString(TEXT("AC_RunAndGun")));    // ActivityConfiguration
-	Hash ^= GetTypeHash(FString(TEXT("IC_RifleWithAmmo"))); // Item collection 1
-	Hash ^= GetTypeHash(FString(TEXT("IC_ExampleArmorSet"))); // Item collection 2
+	Hash ^= GetTypeHash(FString(TEXT("TableToRoll")));     // Using TableToRoll method (like Seth)
 	Hash ^= GetTypeHash(FString(TEXT("Narrative.State.Invulnerable"))); // OwnedTags
 	Hash ^= GetTypeHash(FString(TEXT("Narrative.Factions.Heroes"))); // Factions
+	Hash ^= GetTypeHash(FString(TEXT("BuyItemPercentage=0.0"))); // Default non-vendor
+	Hash ^= GetTypeHash(FString(TEXT("SellItemPercentage=0.0"))); // Default non-vendor
 
 	// Version identifier for hash compatibility
-	Hash ^= 0x37000001ULL; // v3.7 NPC UI version 1
+	Hash ^= 0x37000002ULL; // v3.7 NPC UI version 2 (TableToRoll, 0% buy/sell)
 
 	return Hash;
 }
@@ -1656,13 +1657,10 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 			AppendLog(TEXT("[WARN] AC_NPC_Default not found - AbilityConfiguration not set"));
 		}
 
-		// Set DefaultItemLoadout with ItemCollections directly (like Seth)
-		// DefaultItemLoadout is TArray<FLootTableRoll> from CharacterDefinition - items NPC spawns with
+		// Set DefaultItemLoadout to reference ItemLoadout_{Name} DataTable (like Seth)
+		// DefaultItemLoadout is TArray<FLootTableRoll> from CharacterDefinition - uses TableToRoll property
+		if (CreatedItemLoadout)
 		{
-			// Load Item Collections (like Seth uses)
-			UObject* IC_RifleWithAmmo = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/IC_RifleWithAmmo.IC_RifleWithAmmo"));
-			UObject* IC_ExampleArmorSet = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/IC_ExampleArmorSet.IC_ExampleArmorSet"));
-
 			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("DefaultItemLoadout")))
 			{
 				FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop);
@@ -1678,48 +1676,31 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 						void* ElementPtr = ArrayHelper.GetRawPtr(0);
 						InnerStructProp->Struct->InitializeStruct(ElementPtr);
 
-						// Find ItemCollectionsToGrant array in FLootTableRoll
-						if (FProperty* ICProp = InnerStructProp->Struct->FindPropertyByName(TEXT("ItemCollectionsToGrant")))
+						// Set TableToRoll to reference the ItemLoadout DataTable (like Seth)
+						if (FProperty* TableProp = InnerStructProp->Struct->FindPropertyByName(TEXT("TableToRoll")))
 						{
-							FArrayProperty* ICArrayProp = CastField<FArrayProperty>(ICProp);
-							if (ICArrayProp)
+							FObjectProperty* ObjProp = CastField<FObjectProperty>(TableProp);
+							if (ObjProp)
 							{
-								FScriptArrayHelper ICArrayHelper(ICArrayProp, ICArrayProp->ContainerPtrToValuePtr<void>(ElementPtr));
-
-								int32 NumCollections = 0;
-								if (IC_RifleWithAmmo) NumCollections++;
-								if (IC_ExampleArmorSet) NumCollections++;
-
-								if (NumCollections > 0)
-								{
-									ICArrayHelper.Resize(NumCollections);
-									FObjectProperty* InnerObjProp = CastField<FObjectProperty>(ICArrayProp->Inner);
-									if (InnerObjProp)
-									{
-										int32 Index = 0;
-										if (IC_RifleWithAmmo)
-										{
-											InnerObjProp->SetObjectPropertyValue(ICArrayHelper.GetRawPtr(Index), IC_RifleWithAmmo);
-											AppendLog(TEXT("[LINK] DefaultItemLoadout[0].ItemCollectionsToGrant += IC_RifleWithAmmo"));
-											Index++;
-										}
-										if (IC_ExampleArmorSet)
-										{
-											InnerObjProp->SetObjectPropertyValue(ICArrayHelper.GetRawPtr(Index), IC_ExampleArmorSet);
-											AppendLog(TEXT("[LINK] DefaultItemLoadout[0].ItemCollectionsToGrant += IC_ExampleArmorSet"));
-											Index++;
-										}
-									}
-								}
-								else
-								{
-									AppendLog(TEXT("[WARN] No Item Collections found for DefaultItemLoadout"));
-								}
+								ObjProp->SetObjectPropertyValue(TableProp->ContainerPtrToValuePtr<void>(ElementPtr), CreatedItemLoadout);
+								AppendLog(FString::Printf(TEXT("[LINK] DefaultItemLoadout[0].TableToRoll -> ItemLoadout_%s"), *NPCName));
 							}
 						}
-						else
+
+						// Set NumRolls = 1 (like Seth)
+						if (FProperty* NumRollsProp = InnerStructProp->Struct->FindPropertyByName(TEXT("NumRolls")))
 						{
-							AppendLog(TEXT("[WARN] ItemCollectionsToGrant property not found in FLootTableRoll"));
+							int32* NumRollsPtr = NumRollsProp->ContainerPtrToValuePtr<int32>(ElementPtr);
+							*NumRollsPtr = 1;
+							AppendLog(TEXT("[LINK] DefaultItemLoadout[0].NumRolls = 1"));
+						}
+
+						// Set Chance = 1.0 (like Seth)
+						if (FProperty* ChanceProp = InnerStructProp->Struct->FindPropertyByName(TEXT("Chance")))
+						{
+							float* ChancePtr = ChanceProp->ContainerPtrToValuePtr<float>(ElementPtr);
+							*ChancePtr = 1.0f;
+							AppendLog(TEXT("[LINK] DefaultItemLoadout[0].Chance = 1.0"));
 						}
 					}
 				}
@@ -1732,6 +1713,10 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 			{
 				AppendLog(TEXT("[WARN] DefaultItemLoadout property not found on NPCDefinition"));
 			}
+		}
+		else
+		{
+			AppendLog(TEXT("[WARN] ItemLoadout DataTable not available for DefaultItemLoadout"));
 		}
 
 		// Set DefaultOwnedTags (like Seth: Narrative.State.Invulnerable)
@@ -1862,20 +1847,20 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 			AppendLog(TEXT("[LINK] TradingCurrency = 0"));
 		}
 
-		// Set BuyItemPercentage = 0.5 (50% buy price like Seth)
+		// Set BuyItemPercentage = 0.0 (like Seth - default non-vendor)
 		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("BuyItemPercentage")))
 		{
 			float* Ptr = Prop->ContainerPtrToValuePtr<float>(CreatedNPCDef);
-			*Ptr = 0.5f;
-			AppendLog(TEXT("[LINK] BuyItemPercentage = 0.5"));
+			*Ptr = 0.0f;
+			AppendLog(TEXT("[LINK] BuyItemPercentage = 0.0"));
 		}
 
-		// Set SellItemPercentage = 1.5 (150% sell price like Seth)
+		// Set SellItemPercentage = 0.0 (like Seth - default non-vendor)
 		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("SellItemPercentage")))
 		{
 			float* Ptr = Prop->ContainerPtrToValuePtr<float>(CreatedNPCDef);
-			*Ptr = 1.5f;
-			AppendLog(TEXT("[LINK] SellItemPercentage = 1.5"));
+			*Ptr = 0.0f;
+			AppendLog(TEXT("[LINK] SellItemPercentage = 0.0"));
 		}
 
 		// Mark NPC Definition dirty and save
