@@ -732,3 +732,37 @@ private:
 	// Build the expected parameter list
 	static void BuildExpectedParameters();
 };
+
+// ============================================================================
+// v3.9: NPC Pipeline Generators
+// ============================================================================
+
+/**
+ * v3.9: Activity Schedule Generator
+ * Creates UNPCActivitySchedule data assets for NPC daily routines
+ */
+class GASABILITYGENERATOR_API FActivityScheduleGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestActivityScheduleDefinition& Definition);
+};
+
+/**
+ * v3.9: Goal Item Generator
+ * Creates UNPCGoalItem Blueprint assets for NPC AI objectives
+ */
+class GASABILITYGENERATOR_API FGoalItemGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestGoalItemDefinition& Definition);
+};
+
+/**
+ * v3.9: Quest Generator
+ * Creates UQuest Blueprint assets for NPC quest chains
+ */
+class GASABILITYGENERATOR_API FQuestGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestQuestDefinition& Definition);
+};

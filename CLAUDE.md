@@ -26,7 +26,7 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.8) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.9) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -283,6 +283,9 @@ manifest.yaml → Parser → FManifestData → Generators → UE5 Assets
 | NPCDef_ | NPC Definitions | `npc_definitions` | FNPCDefinitionGenerator |
 | CD_ | Character Definitions | `character_definitions` | FCharacterDefinitionGenerator |
 | NS_ | Niagara Systems | `niagara_systems` | FNiagaraSystemGenerator |
+| Schedule_ | Activity Schedules | `activity_schedules` | FActivityScheduleGenerator |
+| Goal_ | Goal Items | `goal_items` / `goals` | FGoalItemGenerator |
+| Quest_ | Quests | `quests` | FQuestGenerator |
 | - | Gameplay Tags | `tags` | FTagGenerator |
 | - | Tagged Dialogue Sets | `tagged_dialogue_sets` | FTaggedDialogueSetGenerator |
 
@@ -297,11 +300,9 @@ manifest.yaml → Parser → FManifestData → Generators → UE5 Assets
 | BTTask_ | BT Task (C++) | C++ only | Built-in tasks (BTTask_ActivateAbilityByClass) |
 | EQS_ | Environment Query | NarrativePro/AI/ | Standard queries (EQS_Actor_SensedAttackTarget) |
 | EQSContext_ | EQS Context | C++ only | Query contexts (EQSContext_PlayerPawn) |
-| Goal_ | Goal Item | NarrativePro/Goals/ | Standard goals (Goal_Attack, Goal_FollowCharacter) |
-| GoalGenerator_ | Goal Generator | NarrativePro/Goals/ | Goal generators (GoalGenerator_Attack) |
+| GoalGenerator_ | Goal Generator | NarrativePro/Goals/ | Goal generators (GoalGenerator_Attack) - v3.9 adds Goal_ generator |
 | BPT_ | Blueprint Trigger | NarrativePro/Schedules/ | Trigger conditions (BPT_TimeOfDayRange, BPT_Always) |
 | BI_ | Blueprint Item | NarrativePro/Items/ | Item system (BI_NarrativeBook) - Father uses NPC system |
-| QBP_ | Quest Blueprint | NarrativePro/Quests/ | Quest assets - not used by Father |
 | DT_ | Data Table | Standard UE5 | Configuration tables - referenced, not generated |
 
 #### External Dependencies (art/source assets)
@@ -622,6 +623,50 @@ equippable_items:
     mainhand_abilities:                             # Granted when wielded in mainhand
       - GA_LaserShot
     offhand_abilities: []                           # No offhand abilities
+
+# v3.9: ActivitySchedule for NPC daily routines
+activity_schedules:
+  - name: Schedule_BlacksmithDay
+    folder: AI/Schedules
+    behaviors:
+      - time: [6, 12]                               # Start hour, end hour (24h format)
+        goal: Goal_Work
+        score: 100.0                                # Priority score override
+        location: Forge                             # Optional location tag
+      - time: [12, 13]
+        goal: Goal_Eat
+        location: Tavern
+      - time: [13, 18]
+        goal: Goal_Work
+        location: Forge
+      - time: [22, 6]
+        goal: Goal_Sleep
+        location: BlacksmithHome
+
+# v3.9: GoalItem for AI objectives
+goal_items:
+  - name: Goal_DefendForge
+    folder: AI/Goals
+    parent_class: NPCGoalItem                       # Default parent class
+    default_score: 75.0                             # Priority when active
+    goal_lifetime: -1.0                             # -1 = never expires
+    remove_on_succeeded: false                      # Keep goal after completion
+    save_goal: true                                 # Persist across saves
+    owned_tags:                                     # Tags granted while active
+      - State.Defending
+    block_tags:                                     # Tags that block this goal
+      - State.Fleeing
+    require_tags:                                   # Tags required to pursue goal
+      - State.Alive
+
+# v3.9: Quest blueprint for quest state machine
+quests:
+  - name: Quest_ForgeSupplies
+    folder: Quests/Town
+    quest_name: "Forge Supplies"                    # Display name
+    description: "Gather iron ore for the blacksmith."
+    is_tracked: true                                # Show in quest tracker
+    # Note: States, branches, tasks, and rewards are logged for manual editor setup
 ```
 
 ### Event Graph Generation
@@ -731,6 +776,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.9 - NPC Pipeline (Schedules, Goals, Quests): Three new generators for comprehensive NPC content creation. FActivityScheduleGenerator creates Schedule_ assets (UNPCActivitySchedule DataAssets) for NPC daily routines with time-based behaviors. FGoalItemGenerator creates Goal_ assets (UNPCGoalItem Blueprints) for AI objectives with DefaultScore, GoalLifetime, RemoveOnSucceeded, SaveGoal, OwnedTags, BlockTags, RequireTags. FQuestGenerator creates Quest_ assets (UQuest Blueprints) with QuestName, QuestDescription, IsTracked properties - state machine structure (states, branches, tasks, rewards) logged for manual editor setup. New manifest sections: activity_schedules (behaviors array with time, goal, score, location), goal_items/goals (AI objectives), quests (quest definitions). Full v3.0 Regen/Diff Safety System integration. Supports both NPC schema file (.npc.yaml) batch processing and incremental manifest entries.
 - v3.8 - Dialogue Tree Generation: DialogueBlueprint (DBP_) now supports full dialogue tree creation from YAML. New manifest property `dialogue_tree` with `root` and `nodes` array. Each node supports: id, type (npc/player), speaker, text, option_text, audio, montage, duration, duration_seconds, auto_select, auto_select_if_only, skippable, directed_at, npc_replies[], player_replies[], alternative_lines[], events[], conditions[]. Events support type, runtime (Start/End/Both), and properties map. Conditions support type, not (invert), and properties map. Creates UDialogueBlueprint with proper DialogueTemplate containing UDialogueNode_NPC/UDialogueNode_Player nodes and FDialogueLine data. Full v3.0 Regen/Diff Safety System integration. Upgrades DBP_ to High automation level with full editor compatibility.
 - v3.7 - NPC Auto-Create Related Assets: NPCDefinition gains auto_create_dialogue, auto_create_tagged_dialogue, and auto_create_item_loadout flags for one-manifest NPC package generation. When enabled: auto_create_dialogue creates DBP_{NPCName}Dialogue, auto_create_tagged_dialogue creates {NPCName}_TaggedDialogue, auto_create_item_loadout populates DefaultItemLoadout.ItemCollectionsToGrant with specified item collections. New manifest field default_item_loadout_collections for specifying item collections to grant. All v3.0 Regen/Diff Safety System hash safeguards included via updated ComputeHash().
 - v3.6 - NPCDefinition ActivitySchedules: NPCDefinition (NPCDef_) gains ActivitySchedules array support (TArray<TSoftObjectPtr<UNPCActivitySchedule>>) for defining NPC daily routines. Also adds YAML list parsing support for DefaultOwnedTags, DefaultFactions, and ActivitySchedules arrays in npc_definitions.

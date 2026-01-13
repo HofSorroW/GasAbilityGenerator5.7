@@ -191,6 +191,19 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseNiagaraSystems(Lines, i, OutData);
 		}
+		// v3.9: NPC Pipeline - Schedules, Goals, Quests
+		else if (IsSectionHeader(TrimmedLine, TEXT("activity_schedules:")))
+		{
+			ParseActivitySchedules(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("goal_items:")) || IsSectionHeader(TrimmedLine, TEXT("goals:")))
+		{
+			ParseGoalItems(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("quests:")))
+		{
+			ParseQuests(Lines, i, OutData);
+		}
 		// v2.5.6: NPC System Extensions - Support for suffix-based section names
 		// Any section ending with _tags: gets parsed as tags
 		else if (TrimmedLine.EndsWith(TEXT("_tags:")) && !TrimmedLine.StartsWith(TEXT("-")))
@@ -3039,6 +3052,21 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestDialogueSpeakerDefinition CurrentSpeaker;  // v3.2: Current speaker being parsed
 
+	// v3.7: Dialogue tree parsing state
+	bool bInDialogueTree = false;
+	bool bInDialogueNodes = false;
+	FManifestDialogueNodeDefinition CurrentDialogueNode;
+	bool bInNodeNPCReplies = false;
+	bool bInNodePlayerReplies = false;
+	bool bInNodeAlternativeLines = false;
+	bool bInNodeEvents = false;
+	bool bInNodeConditions = false;
+	bool bInEventProperties = false;
+	bool bInConditionProperties = false;
+	FManifestDialogueLineDefinition CurrentAltLine;
+	FManifestDialogueEventDefinition CurrentEvent;
+	FManifestDialogueConditionDefinition CurrentCondition;
+
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
@@ -3055,6 +3083,23 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
 			{
 				CurrentDef.Speakers.Add(CurrentSpeaker);
+			}
+			// v3.7: Save pending dialogue tree node
+			if (bInDialogueTree && bInDialogueNodes && !CurrentDialogueNode.Id.IsEmpty())
+			{
+				if (bInNodeEvents && !CurrentEvent.Type.IsEmpty())
+				{
+					CurrentDialogueNode.Events.Add(CurrentEvent);
+				}
+				if (bInNodeConditions && !CurrentCondition.Type.IsEmpty())
+				{
+					CurrentDialogueNode.Conditions.Add(CurrentCondition);
+				}
+				if (bInNodeAlternativeLines && !CurrentAltLine.Text.IsEmpty())
+				{
+					CurrentDialogueNode.AlternativeLines.Add(CurrentAltLine);
+				}
+				CurrentDef.DialogueTree.Nodes.Add(CurrentDialogueNode);
 			}
 			// v2.6.14: Prefix validation - only add if DBP_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
@@ -3170,6 +3215,320 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			{
 				CurrentDef.bAdjustPlayerTransform = GetLineValue(TrimmedLine).ToBool();
 			}
+			// v3.7: Dialogue tree parsing
+			else if (TrimmedLine.Equals(TEXT("dialogue_tree:")) || TrimmedLine.StartsWith(TEXT("dialogue_tree:")))
+			{
+				// Save pending states from other sections
+				if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
+				{
+					CurrentDef.Speakers.Add(CurrentSpeaker);
+					CurrentSpeaker = FManifestDialogueSpeakerDefinition();
+				}
+				bInSpeakers = false;
+				bInVariables = false;
+				bInOwnedTags = false;
+				bInDialogueTree = true;
+				bInDialogueNodes = false;
+			}
+			else if (bInDialogueTree)
+			{
+				// Handle dialogue tree properties
+				if (TrimmedLine.StartsWith(TEXT("root:")))
+				{
+					CurrentDef.DialogueTree.RootNodeId = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
+				{
+					bInDialogueNodes = true;
+					// Reset node parsing state
+					bInNodeNPCReplies = false;
+					bInNodePlayerReplies = false;
+					bInNodeAlternativeLines = false;
+					bInNodeEvents = false;
+					bInNodeConditions = false;
+					bInEventProperties = false;
+					bInConditionProperties = false;
+				}
+				else if (bInDialogueNodes)
+				{
+					// New node: "- id:"
+					if (TrimmedLine.StartsWith(TEXT("- id:")))
+					{
+						// Save previous node if any
+						if (!CurrentDialogueNode.Id.IsEmpty())
+						{
+							// Save pending event/condition
+							if (bInNodeEvents && !CurrentEvent.Type.IsEmpty())
+							{
+								CurrentDialogueNode.Events.Add(CurrentEvent);
+							}
+							if (bInNodeConditions && !CurrentCondition.Type.IsEmpty())
+							{
+								CurrentDialogueNode.Conditions.Add(CurrentCondition);
+							}
+							if (bInNodeAlternativeLines && !CurrentAltLine.Text.IsEmpty())
+							{
+								CurrentDialogueNode.AlternativeLines.Add(CurrentAltLine);
+							}
+							CurrentDef.DialogueTree.Nodes.Add(CurrentDialogueNode);
+						}
+						CurrentDialogueNode = FManifestDialogueNodeDefinition();
+						CurrentDialogueNode.Id = GetLineValue(TrimmedLine.Mid(2));
+						bInNodeNPCReplies = false;
+						bInNodePlayerReplies = false;
+						bInNodeAlternativeLines = false;
+						bInNodeEvents = false;
+						bInNodeConditions = false;
+						bInEventProperties = false;
+						bInConditionProperties = false;
+						CurrentEvent = FManifestDialogueEventDefinition();
+						CurrentCondition = FManifestDialogueConditionDefinition();
+						CurrentAltLine = FManifestDialogueLineDefinition();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentDialogueNode.Type = GetLineValue(TrimmedLine);
+						bInNodeNPCReplies = false;
+						bInNodePlayerReplies = false;
+						bInNodeAlternativeLines = false;
+						bInNodeEvents = false;
+						bInNodeConditions = false;
+					}
+					else if (TrimmedLine.StartsWith(TEXT("speaker:")))
+					{
+						CurrentDialogueNode.Speaker = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("text:")))
+					{
+						CurrentDialogueNode.Text = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("option_text:")))
+					{
+						CurrentDialogueNode.OptionText = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("audio:")))
+					{
+						CurrentDialogueNode.Audio = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("montage:")))
+					{
+						CurrentDialogueNode.Montage = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("duration:")))
+					{
+						CurrentDialogueNode.Duration = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("duration_seconds:")))
+					{
+						CurrentDialogueNode.DurationSeconds = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("auto_select:")))
+					{
+						CurrentDialogueNode.bAutoSelect = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("auto_select_if_only:")))
+					{
+						CurrentDialogueNode.bAutoSelectIfOnly = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("skippable:")))
+					{
+						CurrentDialogueNode.bIsSkippable = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("directed_at:")))
+					{
+						CurrentDialogueNode.DirectedAt = GetLineValue(TrimmedLine);
+					}
+					// NPC replies array
+					else if (TrimmedLine.Equals(TEXT("npc_replies:")) || TrimmedLine.StartsWith(TEXT("npc_replies:")))
+					{
+						bInNodeNPCReplies = true;
+						bInNodePlayerReplies = false;
+						bInNodeAlternativeLines = false;
+						bInNodeEvents = false;
+						bInNodeConditions = false;
+						// Handle inline array format [reply1, reply2]
+						FString Value = GetLineValue(TrimmedLine);
+						if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+						{
+							FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+							TArray<FString> Replies;
+							ArrayContent.ParseIntoArray(Replies, TEXT(","), true);
+							for (const FString& Reply : Replies)
+							{
+								CurrentDialogueNode.NPCReplies.Add(Reply.TrimStartAndEnd());
+							}
+							bInNodeNPCReplies = false;
+						}
+					}
+					else if (bInNodeNPCReplies && TrimmedLine.StartsWith(TEXT("-")))
+					{
+						FString Reply = TrimmedLine.Mid(1).TrimStartAndEnd();
+						if (!Reply.IsEmpty())
+						{
+							CurrentDialogueNode.NPCReplies.Add(Reply);
+						}
+					}
+					// Player replies array
+					else if (TrimmedLine.Equals(TEXT("player_replies:")) || TrimmedLine.StartsWith(TEXT("player_replies:")))
+					{
+						bInNodePlayerReplies = true;
+						bInNodeNPCReplies = false;
+						bInNodeAlternativeLines = false;
+						bInNodeEvents = false;
+						bInNodeConditions = false;
+						// Handle inline array format
+						FString Value = GetLineValue(TrimmedLine);
+						if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+						{
+							FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+							TArray<FString> Replies;
+							ArrayContent.ParseIntoArray(Replies, TEXT(","), true);
+							for (const FString& Reply : Replies)
+							{
+								CurrentDialogueNode.PlayerReplies.Add(Reply.TrimStartAndEnd());
+							}
+							bInNodePlayerReplies = false;
+						}
+					}
+					else if (bInNodePlayerReplies && TrimmedLine.StartsWith(TEXT("-")))
+					{
+						FString Reply = TrimmedLine.Mid(1).TrimStartAndEnd();
+						if (!Reply.IsEmpty())
+						{
+							CurrentDialogueNode.PlayerReplies.Add(Reply);
+						}
+					}
+					// Alternative lines array
+					else if (TrimmedLine.Equals(TEXT("alternative_lines:")) || TrimmedLine.StartsWith(TEXT("alternative_lines:")))
+					{
+						bInNodeAlternativeLines = true;
+						bInNodeNPCReplies = false;
+						bInNodePlayerReplies = false;
+						bInNodeEvents = false;
+						bInNodeConditions = false;
+						CurrentAltLine = FManifestDialogueLineDefinition();
+					}
+					else if (bInNodeAlternativeLines)
+					{
+						if (TrimmedLine.StartsWith(TEXT("- text:")))
+						{
+							// Save previous alt line
+							if (!CurrentAltLine.Text.IsEmpty())
+							{
+								CurrentDialogueNode.AlternativeLines.Add(CurrentAltLine);
+							}
+							CurrentAltLine = FManifestDialogueLineDefinition();
+							CurrentAltLine.Text = GetLineValue(TrimmedLine.Mid(2));
+						}
+						else if (TrimmedLine.StartsWith(TEXT("audio:")) && !CurrentAltLine.Text.IsEmpty())
+						{
+							CurrentAltLine.Audio = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("montage:")) && !CurrentAltLine.Text.IsEmpty())
+						{
+							CurrentAltLine.Montage = GetLineValue(TrimmedLine);
+						}
+					}
+					// Events array
+					else if (TrimmedLine.Equals(TEXT("events:")) || TrimmedLine.StartsWith(TEXT("events:")))
+					{
+						// Save pending alt line
+						if (bInNodeAlternativeLines && !CurrentAltLine.Text.IsEmpty())
+						{
+							CurrentDialogueNode.AlternativeLines.Add(CurrentAltLine);
+							CurrentAltLine = FManifestDialogueLineDefinition();
+						}
+						bInNodeEvents = true;
+						bInNodeNPCReplies = false;
+						bInNodePlayerReplies = false;
+						bInNodeAlternativeLines = false;
+						bInNodeConditions = false;
+						bInEventProperties = false;
+						CurrentEvent = FManifestDialogueEventDefinition();
+					}
+					else if (bInNodeEvents)
+					{
+						if (TrimmedLine.StartsWith(TEXT("- type:")))
+						{
+							// Save previous event
+							if (!CurrentEvent.Type.IsEmpty())
+							{
+								CurrentDialogueNode.Events.Add(CurrentEvent);
+							}
+							CurrentEvent = FManifestDialogueEventDefinition();
+							CurrentEvent.Type = GetLineValue(TrimmedLine.Mid(2));
+							bInEventProperties = false;
+						}
+						else if (TrimmedLine.StartsWith(TEXT("runtime:")) && !CurrentEvent.Type.IsEmpty())
+						{
+							CurrentEvent.Runtime = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+						{
+							bInEventProperties = true;
+						}
+						else if (bInEventProperties && TrimmedLine.Contains(TEXT(":")))
+						{
+							int32 ColonPos = TrimmedLine.Find(TEXT(":"));
+							FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+							FString Value = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+							if (!Key.IsEmpty())
+							{
+								CurrentEvent.Properties.Add(Key, Value);
+							}
+						}
+					}
+					// Conditions array
+					else if (TrimmedLine.Equals(TEXT("conditions:")) || TrimmedLine.StartsWith(TEXT("conditions:")))
+					{
+						// Save pending event
+						if (bInNodeEvents && !CurrentEvent.Type.IsEmpty())
+						{
+							CurrentDialogueNode.Events.Add(CurrentEvent);
+							CurrentEvent = FManifestDialogueEventDefinition();
+						}
+						bInNodeConditions = true;
+						bInNodeNPCReplies = false;
+						bInNodePlayerReplies = false;
+						bInNodeAlternativeLines = false;
+						bInNodeEvents = false;
+						bInConditionProperties = false;
+						CurrentCondition = FManifestDialogueConditionDefinition();
+					}
+					else if (bInNodeConditions)
+					{
+						if (TrimmedLine.StartsWith(TEXT("- type:")))
+						{
+							// Save previous condition
+							if (!CurrentCondition.Type.IsEmpty())
+							{
+								CurrentDialogueNode.Conditions.Add(CurrentCondition);
+							}
+							CurrentCondition = FManifestDialogueConditionDefinition();
+							CurrentCondition.Type = GetLineValue(TrimmedLine.Mid(2));
+							bInConditionProperties = false;
+						}
+						else if (TrimmedLine.StartsWith(TEXT("not:")) && !CurrentCondition.Type.IsEmpty())
+						{
+							CurrentCondition.bNot = GetLineValue(TrimmedLine).ToBool();
+						}
+						else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+						{
+							bInConditionProperties = true;
+						}
+						else if (bInConditionProperties && TrimmedLine.Contains(TEXT(":")))
+						{
+							int32 ColonPos = TrimmedLine.Find(TEXT(":"));
+							FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+							FString Value = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+							if (!Key.IsEmpty())
+							{
+								CurrentCondition.Properties.Add(Key, Value);
+							}
+						}
+					}
+				}
+			}
 			// v3.2: Speakers array parsing
 			else if (TrimmedLine.Equals(TEXT("speakers:")) || TrimmedLine.StartsWith(TEXT("speakers:")))
 			{
@@ -3276,6 +3635,23 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
 	{
 		CurrentDef.Speakers.Add(CurrentSpeaker);
+	}
+	// v3.7: Save pending dialogue tree node
+	if (bInDialogueTree && bInDialogueNodes && !CurrentDialogueNode.Id.IsEmpty())
+	{
+		if (bInNodeEvents && !CurrentEvent.Type.IsEmpty())
+		{
+			CurrentDialogueNode.Events.Add(CurrentEvent);
+		}
+		if (bInNodeConditions && !CurrentCondition.Type.IsEmpty())
+		{
+			CurrentDialogueNode.Conditions.Add(CurrentCondition);
+		}
+		if (bInNodeAlternativeLines && !CurrentAltLine.Text.IsEmpty())
+		{
+			CurrentDialogueNode.AlternativeLines.Add(CurrentAltLine);
+		}
+		CurrentDef.DialogueTree.Nodes.Add(CurrentDialogueNode);
 	}
 	// v2.6.14: Prefix validation - only add if DBP_ prefix
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("DBP_")))
@@ -5336,5 +5712,543 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("NS_")))
 	{
 		OutData.NiagaraSystems.Add(CurrentDef);
+	}
+}
+
+// ============================================================================
+// v3.9: NPC Pipeline Parsing
+// ============================================================================
+
+void FGasAbilityGeneratorParser::ParseActivitySchedules(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestActivityScheduleDefinition CurrentDef;
+	FManifestScheduledBehaviorDefinition CurrentBehavior;
+	bool bInItem = false;
+	bool bInBehaviors = false;
+	bool bInBehavior = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			break;
+		}
+
+		// New item
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save previous
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				if (bInBehavior && !CurrentBehavior.GoalClass.IsEmpty())
+				{
+					CurrentDef.Behaviors.Add(CurrentBehavior);
+				}
+				OutData.ActivitySchedules.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestActivityScheduleDefinition();
+			CurrentBehavior = FManifestScheduledBehaviorDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine);
+			bInItem = true;
+			bInBehaviors = false;
+			bInBehavior = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("behaviors:")))
+			{
+				bInBehaviors = true;
+				bInBehavior = false;
+			}
+			else if (bInBehaviors)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- time:")))
+				{
+					// Save previous behavior
+					if (bInBehavior && !CurrentBehavior.GoalClass.IsEmpty())
+					{
+						CurrentDef.Behaviors.Add(CurrentBehavior);
+					}
+					CurrentBehavior = FManifestScheduledBehaviorDefinition();
+					bInBehavior = true;
+
+					// Parse time array [start, end]
+					FString TimeStr = GetLineValue(TrimmedLine);
+					TimeStr = TimeStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+					TArray<FString> Times;
+					TimeStr.ParseIntoArray(Times, TEXT(","));
+					if (Times.Num() >= 2)
+					{
+						CurrentBehavior.StartTime = FCString::Atof(*Times[0].TrimStartAndEnd());
+						CurrentBehavior.EndTime = FCString::Atof(*Times[1].TrimStartAndEnd());
+					}
+				}
+				else if (bInBehavior)
+				{
+					if (TrimmedLine.StartsWith(TEXT("goal:")))
+					{
+						CurrentBehavior.GoalClass = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("score:")))
+					{
+						CurrentBehavior.ScoreOverride = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("location:")))
+					{
+						CurrentBehavior.Location = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("reselect:")))
+					{
+						CurrentBehavior.bReselect = GetLineValue(TrimmedLine).ToBool();
+					}
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last item
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		if (bInBehavior && !CurrentBehavior.GoalClass.IsEmpty())
+		{
+			CurrentDef.Behaviors.Add(CurrentBehavior);
+		}
+		OutData.ActivitySchedules.Add(CurrentDef);
+	}
+}
+
+void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestGoalItemDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInOwnedTags = false;
+	bool bInBlockTags = false;
+	bool bInRequireTags = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			break;
+		}
+
+		// New item
+		if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- id:")))
+		{
+			// Save previous
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.GoalItems.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestGoalItemDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine);
+			bInItem = true;
+			bInOwnedTags = false;
+			bInBlockTags = false;
+			bInRequireTags = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:")) || TrimmedLine.StartsWith(TEXT("base_class:")))
+			{
+				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("default_score:")))
+			{
+				CurrentDef.DefaultScore = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("goal_lifetime:")) || TrimmedLine.StartsWith(TEXT("lifetime:")))
+			{
+				CurrentDef.GoalLifetime = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("remove_on_succeeded:")) || TrimmedLine.StartsWith(TEXT("remove_on_success:")))
+			{
+				CurrentDef.bRemoveOnSucceeded = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("save_goal:")))
+			{
+				CurrentDef.bSaveGoal = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("owned_tags:")))
+			{
+				bInOwnedTags = true;
+				bInBlockTags = false;
+				bInRequireTags = false;
+				// Check for inline array format [Tag1, Tag2]
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Tags;
+					ArrayContent.ParseIntoArray(Tags, TEXT(","));
+					for (FString& Tag : Tags)
+					{
+						CurrentDef.OwnedTags.Add(Tag.TrimStartAndEnd());
+					}
+					bInOwnedTags = false;
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("block_tags:")))
+			{
+				bInOwnedTags = false;
+				bInBlockTags = true;
+				bInRequireTags = false;
+				// Check for inline array format [Tag1, Tag2]
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Tags;
+					ArrayContent.ParseIntoArray(Tags, TEXT(","));
+					for (FString& Tag : Tags)
+					{
+						CurrentDef.BlockTags.Add(Tag.TrimStartAndEnd());
+					}
+					bInBlockTags = false;
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("require_tags:")))
+			{
+				bInOwnedTags = false;
+				bInBlockTags = false;
+				bInRequireTags = true;
+				// Check for inline array format [Tag1, Tag2]
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Tags;
+					ArrayContent.ParseIntoArray(Tags, TEXT(","));
+					for (FString& Tag : Tags)
+					{
+						CurrentDef.RequireTags.Add(Tag.TrimStartAndEnd());
+					}
+					bInRequireTags = false;
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("- ")) && !TrimmedLine.Contains(TEXT(":")))
+			{
+				FString Tag = TrimmedLine.RightChop(2).TrimStartAndEnd();
+				if (bInOwnedTags)
+				{
+					CurrentDef.OwnedTags.Add(Tag);
+				}
+				else if (bInBlockTags)
+				{
+					CurrentDef.BlockTags.Add(Tag);
+				}
+				else if (bInRequireTags)
+				{
+					CurrentDef.RequireTags.Add(Tag);
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last item
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.GoalItems.Add(CurrentDef);
+	}
+}
+
+void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestQuestDefinition CurrentDef;
+	FManifestQuestStateDefinition CurrentState;
+	FManifestQuestBranchDefinition CurrentBranch;
+	FManifestQuestTaskDefinition CurrentTask;
+	bool bInItem = false;
+	bool bInStates = false;
+	bool bInState = false;
+	bool bInBranches = false;
+	bool bInBranch = false;
+	bool bInTasks = false;
+	bool bInTask = false;
+	bool bInRewards = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			break;
+		}
+
+		// New quest
+		if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- id:")))
+		{
+			// Save previous
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				if (bInTask && !CurrentTask.TaskClass.IsEmpty())
+				{
+					CurrentBranch.Tasks.Add(CurrentTask);
+				}
+				if (bInBranch && !CurrentBranch.Id.IsEmpty())
+				{
+					CurrentDef.Branches.Add(CurrentBranch);
+				}
+				if (bInState && !CurrentState.Id.IsEmpty())
+				{
+					CurrentDef.States.Add(CurrentState);
+				}
+				OutData.Quests.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestQuestDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine);
+			bInItem = true;
+			bInStates = false;
+			bInState = false;
+			bInBranches = false;
+			bInBranch = false;
+			bInTasks = false;
+			bInTask = false;
+			bInRewards = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("quest_name:")) || (TrimmedLine.StartsWith(TEXT("name:")) && !bInStates && !bInBranches))
+			{
+				CurrentDef.QuestName = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("description:")) && !bInStates && !bInBranches)
+			{
+				CurrentDef.QuestDescription = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("dialogue:")))
+			{
+				CurrentDef.QuestDialogue = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("tracked:")))
+			{
+				CurrentDef.bTracked = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("states:")))
+			{
+				bInStates = true;
+				bInState = false;
+				bInBranches = false;
+				bInRewards = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("branches:")))
+			{
+				if (bInState && !CurrentState.Id.IsEmpty())
+				{
+					CurrentDef.States.Add(CurrentState);
+					CurrentState = FManifestQuestStateDefinition();
+				}
+				bInStates = false;
+				bInBranches = true;
+				bInBranch = false;
+				bInRewards = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("rewards:")))
+			{
+				if (bInBranch && !CurrentBranch.Id.IsEmpty())
+				{
+					if (bInTask && !CurrentTask.TaskClass.IsEmpty())
+					{
+						CurrentBranch.Tasks.Add(CurrentTask);
+						CurrentTask = FManifestQuestTaskDefinition();
+					}
+					CurrentDef.Branches.Add(CurrentBranch);
+					CurrentBranch = FManifestQuestBranchDefinition();
+				}
+				bInBranches = false;
+				bInRewards = true;
+			}
+			else if (bInStates)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- id:")))
+				{
+					if (bInState && !CurrentState.Id.IsEmpty())
+					{
+						CurrentDef.States.Add(CurrentState);
+					}
+					CurrentState = FManifestQuestStateDefinition();
+					CurrentState.Id = GetLineValue(TrimmedLine);
+					bInState = true;
+				}
+				else if (bInState)
+				{
+					if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentState.Type = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("description:")))
+					{
+						CurrentState.Description = GetLineValue(TrimmedLine);
+					}
+				}
+			}
+			else if (bInBranches)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- id:")))
+				{
+					if (bInBranch && !CurrentBranch.Id.IsEmpty())
+					{
+						if (bInTask && !CurrentTask.TaskClass.IsEmpty())
+						{
+							CurrentBranch.Tasks.Add(CurrentTask);
+						}
+						CurrentDef.Branches.Add(CurrentBranch);
+					}
+					CurrentBranch = FManifestQuestBranchDefinition();
+					CurrentTask = FManifestQuestTaskDefinition();
+					CurrentBranch.Id = GetLineValue(TrimmedLine);
+					bInBranch = true;
+					bInTasks = false;
+					bInTask = false;
+				}
+				else if (bInBranch)
+				{
+					if (TrimmedLine.StartsWith(TEXT("from_state:")))
+					{
+						CurrentBranch.FromState = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("to_state:")))
+					{
+						CurrentBranch.ToState = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("description:")))
+					{
+						CurrentBranch.Description = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("hidden:")))
+					{
+						CurrentBranch.bHidden = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("tasks:")))
+					{
+						bInTasks = true;
+						bInTask = false;
+					}
+					else if (bInTasks)
+					{
+						if (TrimmedLine.StartsWith(TEXT("- type:")))
+						{
+							if (bInTask && !CurrentTask.TaskClass.IsEmpty())
+							{
+								CurrentBranch.Tasks.Add(CurrentTask);
+							}
+							CurrentTask = FManifestQuestTaskDefinition();
+							CurrentTask.TaskClass = GetLineValue(TrimmedLine);
+							bInTask = true;
+						}
+						else if (bInTask)
+						{
+							if (TrimmedLine.StartsWith(TEXT("quantity:")))
+							{
+								CurrentTask.RequiredQuantity = FCString::Atoi(*GetLineValue(TrimmedLine));
+							}
+							else if (TrimmedLine.StartsWith(TEXT("description:")))
+							{
+								CurrentTask.DescriptionOverride = GetLineValue(TrimmedLine);
+							}
+							else if (TrimmedLine.StartsWith(TEXT("optional:")))
+							{
+								CurrentTask.bOptional = GetLineValue(TrimmedLine).ToBool();
+							}
+							else if (TrimmedLine.StartsWith(TEXT("hidden:")))
+							{
+								CurrentTask.bHidden = GetLineValue(TrimmedLine).ToBool();
+							}
+						}
+					}
+				}
+			}
+			else if (bInRewards)
+			{
+				if (TrimmedLine.StartsWith(TEXT("currency:")))
+				{
+					CurrentDef.Rewards.Currency = FCString::Atoi(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("xp:")))
+				{
+					CurrentDef.Rewards.XP = FCString::Atoi(*GetLineValue(TrimmedLine));
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last item
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		if (bInTask && !CurrentTask.TaskClass.IsEmpty())
+		{
+			CurrentBranch.Tasks.Add(CurrentTask);
+		}
+		if (bInBranch && !CurrentBranch.Id.IsEmpty())
+		{
+			CurrentDef.Branches.Add(CurrentBranch);
+		}
+		if (bInState && !CurrentState.Id.IsEmpty())
+		{
+			CurrentDef.States.Add(CurrentState);
+		}
+		OutData.Quests.Add(CurrentDef);
 	}
 }

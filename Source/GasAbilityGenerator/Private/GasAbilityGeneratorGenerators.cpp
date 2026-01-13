@@ -1,5 +1,8 @@
-// GasAbilityGenerator v3.3
+// GasAbilityGenerator v3.8
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.8: Dialogue Tree Generation - Full dialogue tree creation from YAML with nodes, connections,
+//       events (UNarrativeEvent), conditions (UNarrativeCondition), and alternative lines.
+//       Creates UDialogueBlueprint with DialogueTemplate containing UDialogueNode_NPC/UDialogueNode_Player.
 // v3.3: NPCDefinition, EquippableItem & Activity Enhancement:
 //       NPCDefinition: Dialogue, TaggedDialogueSet, vendor properties, inherited properties
 //       EquippableItem: DisplayName, Description, AttackRating, ArmorRating, StealthRating,
@@ -139,7 +142,15 @@
 #include "Character/CharacterAppearance.h"  // v3.3: UCharacterAppearanceBase for NPCDefinition
 #include "Tales/TaggedDialogueSet.h"
 #include "Tales/Dialogue.h"  // v3.3: UDialogue for NPCDefinition
+#include "Tales/DialogueSM.h"  // v3.7: UDialogueNode_NPC, UDialogueNode_Player, FDialogueLine
+#include "Tales/NarrativeEvent.h"  // v3.7: UNarrativeEvent for dialogue events
+#include "Tales/NarrativeCondition.h"  // v3.7: UNarrativeCondition for dialogue conditions
+#include "DialogueBlueprint.h"  // v3.7: UDialogueBlueprint for dialogue tree generation
 #include "NiagaraSystem.h"
+// v3.9: NPC Pipeline includes
+#include "AI/Activities/NPCActivitySchedule.h"
+#include "AI/Activities/NPCGoalItem.h"
+#include "Tales/Quest.h"
 
 // v2.3.0: Component includes for Actor Blueprint generation
 #include "Components/SceneComponent.h"
@@ -7074,6 +7085,352 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 	return Result;
 }
 
+// v3.7: Helper - Convert duration string to ELineDuration enum
+static ELineDuration ParseDialogueDuration(const FString& DurationStr)
+{
+	if (DurationStr.Equals(TEXT("WhenAudioEnds"), ESearchCase::IgnoreCase))
+		return ELineDuration::LD_WhenAudioEnds;
+	if (DurationStr.Equals(TEXT("WhenSequenceEnds"), ESearchCase::IgnoreCase))
+		return ELineDuration::LD_WhenSequenceEnds;
+	if (DurationStr.Equals(TEXT("AfterReadingTime"), ESearchCase::IgnoreCase))
+		return ELineDuration::LD_AfterReadingTime;
+	if (DurationStr.Equals(TEXT("AfterDuration"), ESearchCase::IgnoreCase))
+		return ELineDuration::LD_AfterDuration;
+	if (DurationStr.Equals(TEXT("Never"), ESearchCase::IgnoreCase))
+		return ELineDuration::LD_Never;
+	return ELineDuration::LD_Default;
+}
+
+// v3.7: Helper - Create event instance from manifest definition
+static UNarrativeEvent* CreateDialogueEventFromDefinition(
+	UObject* Outer,
+	const FManifestDialogueEventDefinition& EventDef)
+{
+	if (EventDef.Type.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	// Try to find event class in Narrative Pro paths
+	TArray<FString> EventSearchPaths = {
+		FString::Printf(TEXT("/Game/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.Type, *EventDef.Type),
+		FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *EventDef.Type),
+		FString::Printf(TEXT("/Script/NarrativePro.%s"), *EventDef.Type)
+	};
+
+	UClass* EventClass = nullptr;
+	for (const FString& Path : EventSearchPaths)
+	{
+		EventClass = LoadClass<UNarrativeEvent>(nullptr, *Path);
+		if (EventClass)
+		{
+			break;
+		}
+	}
+
+	if (!EventClass)
+	{
+		UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find dialogue event class: %s"), *EventDef.Type);
+		return nullptr;
+	}
+
+	// Create instance
+	UNarrativeEvent* Event = NewObject<UNarrativeEvent>(Outer, EventClass);
+
+	// Set runtime via reflection
+	if (FEnumProperty* RuntimeProp = CastField<FEnumProperty>(EventClass->FindPropertyByName(TEXT("EventRuntime"))))
+	{
+		EEventRuntime RuntimeValue = EEventRuntime::Start;
+		if (EventDef.Runtime.Equals(TEXT("End"), ESearchCase::IgnoreCase))
+			RuntimeValue = EEventRuntime::End;
+		else if (EventDef.Runtime.Equals(TEXT("Both"), ESearchCase::IgnoreCase))
+			RuntimeValue = EEventRuntime::Both;
+
+		RuntimeProp->GetUnderlyingProperty()->SetIntPropertyValue(
+			RuntimeProp->ContainerPtrToValuePtr<void>(Event),
+			static_cast<int64>(RuntimeValue));
+	}
+
+	// Set additional properties via reflection
+	for (const auto& Prop : EventDef.Properties)
+	{
+		FProperty* Property = EventClass->FindPropertyByName(FName(*Prop.Key));
+		if (Property)
+		{
+			void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Event);
+			Property->ImportText_Direct(*Prop.Value, ValuePtr, Event, 0);
+		}
+	}
+
+	return Event;
+}
+
+// v3.7: Helper - Create condition instance from manifest definition
+static UNarrativeCondition* CreateDialogueConditionFromDefinition(
+	UObject* Outer,
+	const FManifestDialogueConditionDefinition& CondDef)
+{
+	if (CondDef.Type.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	// Try to find condition class in Narrative Pro paths
+	TArray<FString> CondSearchPaths = {
+		FString::Printf(TEXT("/Game/Pro/Core/Tales/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type),
+		FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *CondDef.Type),
+		FString::Printf(TEXT("/Script/NarrativePro.%s"), *CondDef.Type)
+	};
+
+	UClass* CondClass = nullptr;
+	for (const FString& Path : CondSearchPaths)
+	{
+		CondClass = LoadClass<UNarrativeCondition>(nullptr, *Path);
+		if (CondClass)
+		{
+			break;
+		}
+	}
+
+	if (!CondClass)
+	{
+		UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find dialogue condition class: %s"), *CondDef.Type);
+		return nullptr;
+	}
+
+	// Create instance
+	UNarrativeCondition* Condition = NewObject<UNarrativeCondition>(Outer, CondClass);
+	Condition->bNot = CondDef.bNot;
+
+	// Set additional properties via reflection
+	for (const auto& Prop : CondDef.Properties)
+	{
+		FProperty* Property = CondClass->FindPropertyByName(FName(*Prop.Key));
+		if (Property)
+		{
+			void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Condition);
+			Property->ImportText_Direct(*Prop.Value, ValuePtr, Condition, 0);
+		}
+	}
+
+	return Condition;
+}
+
+// v3.7: Helper - Create dialogue tree from manifest definition
+static void CreateDialogueTree(
+	UDialogueBlueprint* DialogueBP,
+	const FManifestDialogueTreeDefinition& TreeDef)
+{
+	if (TreeDef.Nodes.Num() == 0)
+	{
+		return;  // No tree to create
+	}
+
+	UDialogue* Dialogue = DialogueBP->DialogueTemplate;
+	if (!Dialogue)
+	{
+		UE_LOG(LogGasAbilityGenerator, Warning, TEXT("DialogueBlueprint has no DialogueTemplate"));
+		return;
+	}
+
+	// Maps for node lookup during connection phase
+	TMap<FString, UDialogueNode_NPC*> NPCNodeMap;
+	TMap<FString, UDialogueNode_Player*> PlayerNodeMap;
+
+	// First pass: Create all nodes
+	for (const auto& NodeDef : TreeDef.Nodes)
+	{
+		UDialogueNode* DialogueNode = nullptr;
+
+		if (NodeDef.Type.Equals(TEXT("npc"), ESearchCase::IgnoreCase))
+		{
+			// Create NPC dialogue node
+			UDialogueNode_NPC* NPCNode = NewObject<UDialogueNode_NPC>(Dialogue);
+			NPCNode->SetFlags(RF_Transactional);
+			NPCNode->OwningDialogue = Dialogue;
+			NPCNode->SetSpeakerID(FName(*NodeDef.Speaker));
+
+			Dialogue->NPCReplies.AddUnique(NPCNode);
+			NPCNodeMap.Add(NodeDef.Id, NPCNode);
+			DialogueNode = NPCNode;
+
+			// Set as root if this is the root node
+			if (NodeDef.Id == TreeDef.RootNodeId)
+			{
+				Dialogue->RootDialogue = NPCNode;
+			}
+		}
+		else if (NodeDef.Type.Equals(TEXT("player"), ESearchCase::IgnoreCase))
+		{
+			// Create Player dialogue node
+			UDialogueNode_Player* PlayerNode = NewObject<UDialogueNode_Player>(Dialogue);
+			PlayerNode->SetFlags(RF_Transactional);
+			PlayerNode->OwningDialogue = Dialogue;
+
+			Dialogue->PlayerReplies.AddUnique(PlayerNode);
+			PlayerNodeMap.Add(NodeDef.Id, PlayerNode);
+			DialogueNode = PlayerNode;
+
+			// Set player-specific properties via reflection
+			if (!NodeDef.OptionText.IsEmpty())
+			{
+				FTextProperty* OptionTextProp = CastField<FTextProperty>(
+					PlayerNode->GetClass()->FindPropertyByName(TEXT("OptionText")));
+				if (OptionTextProp)
+				{
+					OptionTextProp->SetPropertyValue_InContainer(PlayerNode, FText::FromString(NodeDef.OptionText));
+				}
+			}
+
+			FBoolProperty* AutoSelectProp = CastField<FBoolProperty>(
+				PlayerNode->GetClass()->FindPropertyByName(TEXT("bAutoSelect")));
+			if (AutoSelectProp && NodeDef.bAutoSelect)
+			{
+				AutoSelectProp->SetPropertyValue_InContainer(PlayerNode, true);
+			}
+
+			FBoolProperty* AutoSelectIfOnlyProp = CastField<FBoolProperty>(
+				PlayerNode->GetClass()->FindPropertyByName(TEXT("bAutoSelectIfOnlyReply")));
+			if (AutoSelectIfOnlyProp)
+			{
+				AutoSelectIfOnlyProp->SetPropertyValue_InContainer(PlayerNode, NodeDef.bAutoSelectIfOnly);
+			}
+		}
+
+		if (!DialogueNode)
+		{
+			UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Failed to create dialogue node: %s (type: %s)"), *NodeDef.Id, *NodeDef.Type);
+			continue;
+		}
+
+		// Set common dialogue line properties
+		DialogueNode->Line.Text = FText::FromString(NodeDef.Text);
+		DialogueNode->Line.Duration = ParseDialogueDuration(NodeDef.Duration);
+		DialogueNode->Line.DurationSecondsOverride = NodeDef.DurationSeconds;
+		DialogueNode->bIsSkippable = NodeDef.bIsSkippable;
+
+		if (!NodeDef.DirectedAt.IsEmpty())
+		{
+			DialogueNode->DirectedAtSpeakerID = FName(*NodeDef.DirectedAt);
+		}
+
+		// Load audio if specified
+		if (!NodeDef.Audio.IsEmpty())
+		{
+			USoundBase* Sound = LoadObject<USoundBase>(nullptr, *NodeDef.Audio);
+			if (Sound)
+			{
+				DialogueNode->Line.DialogueSound = Sound;
+			}
+			else
+			{
+				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load dialogue audio: %s"), *NodeDef.Audio);
+			}
+		}
+
+		// Load montage if specified
+		if (!NodeDef.Montage.IsEmpty())
+		{
+			UAnimMontage* Montage = LoadObject<UAnimMontage>(nullptr, *NodeDef.Montage);
+			if (Montage)
+			{
+				DialogueNode->Line.DialogueMontage = Montage;
+			}
+		}
+
+		// Add alternative lines
+		for (const auto& AltLineDef : NodeDef.AlternativeLines)
+		{
+			FDialogueLine AltLine;
+			AltLine.Text = FText::FromString(AltLineDef.Text);
+			AltLine.Duration = ELineDuration::LD_Default;
+
+			if (!AltLineDef.Audio.IsEmpty())
+			{
+				AltLine.DialogueSound = LoadObject<USoundBase>(nullptr, *AltLineDef.Audio);
+			}
+			if (!AltLineDef.Montage.IsEmpty())
+			{
+				AltLine.DialogueMontage = LoadObject<UAnimMontage>(nullptr, *AltLineDef.Montage);
+			}
+
+			DialogueNode->AlternativeLines.Add(AltLine);
+		}
+
+		// Add events
+		for (const auto& EventDef : NodeDef.Events)
+		{
+			if (UNarrativeEvent* Event = CreateDialogueEventFromDefinition(DialogueNode, EventDef))
+			{
+				DialogueNode->Events.Add(Event);
+			}
+		}
+
+		// Add conditions
+		for (const auto& CondDef : NodeDef.Conditions)
+		{
+			if (UNarrativeCondition* Cond = CreateDialogueConditionFromDefinition(DialogueNode, CondDef))
+			{
+				DialogueNode->Conditions.Add(Cond);
+			}
+		}
+
+		// Generate unique ID for the node
+		DialogueNode->SetID(FName(*(DialogueBP->GetName() + TEXT("_") + NodeDef.Id)));
+
+		UE_LOG(LogGasAbilityGenerator, Log, TEXT("  Created dialogue node: %s (%s)"), *NodeDef.Id, *NodeDef.Type);
+	}
+
+	// Second pass: Wire connections (NPC/Player replies)
+	for (const auto& NodeDef : TreeDef.Nodes)
+	{
+		UDialogueNode* SourceNode = nullptr;
+
+		if (UDialogueNode_NPC** NPCPtr = NPCNodeMap.Find(NodeDef.Id))
+		{
+			SourceNode = *NPCPtr;
+		}
+		else if (UDialogueNode_Player** PlayerPtr = PlayerNodeMap.Find(NodeDef.Id))
+		{
+			SourceNode = *PlayerPtr;
+		}
+
+		if (!SourceNode)
+		{
+			continue;
+		}
+
+		// Add NPC replies
+		for (const FString& ReplyId : NodeDef.NPCReplies)
+		{
+			if (UDialogueNode_NPC** FoundNode = NPCNodeMap.Find(ReplyId))
+			{
+				SourceNode->NPCReplies.AddUnique(*FoundNode);
+			}
+			else
+			{
+				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find NPC node for reply: %s"), *ReplyId);
+			}
+		}
+
+		// Add Player replies
+		for (const FString& ReplyId : NodeDef.PlayerReplies)
+		{
+			if (UDialogueNode_Player** FoundNode = PlayerNodeMap.Find(ReplyId))
+			{
+				SourceNode->PlayerReplies.AddUnique(*FoundNode);
+			}
+			else
+			{
+				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find Player node for reply: %s"), *ReplyId);
+			}
+		}
+	}
+
+	UE_LOG(LogGasAbilityGenerator, Log, TEXT("  Created dialogue tree: %d NPC nodes, %d Player nodes"),
+		NPCNodeMap.Num(), PlayerNodeMap.Num());
+}
+
 // v2.3.0: Dialogue Blueprint Generator
 FGenerationResult FDialogueBlueprintGenerator::Generate(
 	const FManifestDialogueBlueprintDefinition& Definition,
@@ -7112,17 +7469,23 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
 	}
 
-	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
-	Factory->ParentClass = ParentClass;
-
-	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
-		UBlueprint::StaticClass(), Package, *Definition.Name,
-		RF_Public | RF_Standalone, nullptr, GWarn));
-
-	if (!Blueprint)
+	// v3.7: Create UDialogueBlueprint directly (not regular UBlueprint) to enable dialogue tree support
+	UDialogueBlueprint* DialogueBP = NewObject<UDialogueBlueprint>(Package, *Definition.Name, RF_Public | RF_Standalone | RF_Transactional);
+	if (!DialogueBP)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Dialogue Blueprint"));
 	}
+
+	// Setup as proper blueprint with parent class
+	DialogueBP->ParentClass = ParentClass;
+	DialogueBP->BlueprintType = BPTYPE_Normal;
+	DialogueBP->bIsNewlyCreated = true;
+
+	// Create the skeleton generated class
+	FKismetEditorUtilities::CompileBlueprint(DialogueBP);
+
+	// Use DialogueBP as the Blueprint pointer for the rest of the function
+	UBlueprint* Blueprint = DialogueBP;
 
 	// Add variables
 	for (const auto& VarDef : Definition.Variables)
@@ -7293,6 +7656,18 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			LogGeneration(FString::Printf(TEXT("    [%d] NPCDefinition: %s, NodeColor: %s, OwnedTags: %d"),
 				i, *Speaker.NPCDefinition, *Speaker.NodeColor, Speaker.OwnedTags.Num()));
 		}
+	}
+
+	// v3.7: Create dialogue tree if defined
+	if (Definition.DialogueTree.Nodes.Num() > 0)
+	{
+		CreateDialogueTree(DialogueBP, Definition.DialogueTree);
+		LogGeneration(FString::Printf(TEXT("  Created dialogue tree with %d nodes (root: %s)"),
+			Definition.DialogueTree.Nodes.Num(), *Definition.DialogueTree.RootNodeId));
+
+		// Recompile after adding dialogue nodes
+		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
 
 	Package->MarkPackageDirty();
@@ -10281,4 +10656,355 @@ FFXGeneratorMetadata FNiagaraSystemGenerator::GetGeneratorMetadata(UNiagaraSyste
 	}
 
 	return EmptyMetadata;
+}
+
+// ============================================================================
+// v3.9: NPC Pipeline Generators
+// ============================================================================
+
+// v3.9: Activity Schedule Generator - Creates UNPCActivitySchedule data assets
+FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivityScheduleDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("AI/Schedules") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Activity Schedule"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Activity Schedule"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UNPCActivitySchedule* Schedule = NewObject<UNPCActivitySchedule>(Package, *Definition.Name, RF_Public | RF_Standalone);
+	if (!Schedule)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Activity Schedule"));
+	}
+
+	// Note: UNPCActivitySchedule.Activities is TArray<TObjectPtr<UScheduledBehavior_NPC>>
+	// These are instanced objects that need to be created as subobjects
+	// For now, we log the intended behaviors - full implementation requires creating
+	// UScheduledBehavior_AddNPCGoal instances which need goal class resolution
+
+	LogGeneration(FString::Printf(TEXT("Creating Activity Schedule: %s"), *Definition.Name));
+
+	for (const auto& Behavior : Definition.Behaviors)
+	{
+		LogGeneration(FString::Printf(TEXT("  [INFO] Scheduled behavior: %.1f-%.1f -> %s (score: %.1f)"),
+			Behavior.StartTime, Behavior.EndTime, *Behavior.GoalClass, Behavior.ScoreOverride));
+
+		// TODO: Create UScheduledBehavior_AddNPCGoal instances and add to Activities array
+		// This requires resolving goal classes and creating instanced subobjects
+		// For now, the schedule is created as a stub that can be populated in editor
+	}
+
+	if (Definition.Behaviors.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  [WARNING] %d behaviors defined but require manual setup (goal class resolution needed)"),
+			Definition.Behaviors.Num()));
+	}
+
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Schedule);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Schedule, *PackageFileName, SaveArgs);
+
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(Schedule, TEXT("Schedule"), Definition.Name, InputHash);
+
+	LogGeneration(FString::Printf(TEXT("Created Activity Schedule: %s"), *Definition.Name));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.DetermineCategory();
+	return Result;
+}
+
+// v3.9: Goal Item Generator - Creates UNPCGoalItem Blueprint assets
+FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("AI/Goals") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Goal Item"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Goal Item"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	// Find parent class
+	FString ParentClassName = Definition.ParentClass.IsEmpty() ? TEXT("NPCGoalItem") : Definition.ParentClass;
+	UClass* ParentClass = FindParentClass(ParentClassName);
+
+	if (!ParentClass)
+	{
+		// Try loading from Narrative Pro
+		TArray<FString> SearchPaths;
+		SearchPaths.Add(TEXT("/Script/NarrativeArsenal.NPCGoalItem"));
+		SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ParentClassName));
+
+		for (const FString& Path : SearchPaths)
+		{
+			ParentClass = LoadClass<UObject>(nullptr, *Path);
+			if (ParentClass) break;
+		}
+	}
+
+	if (!ParentClass)
+	{
+		LogGeneration(FString::Printf(TEXT("  [WARNING] Could not find parent class %s, using UNPCGoalItem"), *ParentClassName));
+		ParentClass = LoadClass<UObject>(nullptr, TEXT("/Script/NarrativeArsenal.NPCGoalItem"));
+	}
+
+	if (!ParentClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Could not resolve parent class: %s"), *ParentClassName));
+	}
+
+	// Create Blueprint
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = ParentClass;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(),
+		Package,
+		*Definition.Name,
+		RF_Public | RF_Standalone,
+		nullptr,
+		GWarn
+	));
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Goal Blueprint"));
+	}
+
+	// Set default property values via CDO
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// DefaultScore
+		if (FFloatProperty* ScoreProp = FindFProperty<FFloatProperty>(CDO->GetClass(), TEXT("DefaultScore")))
+		{
+			ScoreProp->SetPropertyValue_InContainer(CDO, Definition.DefaultScore);
+		}
+
+		// GoalLifetime
+		if (FFloatProperty* LifetimeProp = FindFProperty<FFloatProperty>(CDO->GetClass(), TEXT("GoalLifetime")))
+		{
+			LifetimeProp->SetPropertyValue_InContainer(CDO, Definition.GoalLifetime);
+		}
+
+		// bRemoveOnSucceeded
+		if (FBoolProperty* RemoveProp = FindFProperty<FBoolProperty>(CDO->GetClass(), TEXT("bRemoveOnSucceeded")))
+		{
+			RemoveProp->SetPropertyValue_InContainer(CDO, Definition.bRemoveOnSucceeded);
+		}
+
+		// bSaveGoal
+		if (FBoolProperty* SaveProp = FindFProperty<FBoolProperty>(CDO->GetClass(), TEXT("bSaveGoal")))
+		{
+			SaveProp->SetPropertyValue_InContainer(CDO, Definition.bSaveGoal);
+		}
+
+		// Set tag containers via reflection
+		auto SetTagContainer = [&CDO](const TCHAR* PropName, const TArray<FString>& Tags) {
+			if (FStructProperty* TagProp = FindFProperty<FStructProperty>(CDO->GetClass(), PropName))
+			{
+				if (TagProp->Struct == FGameplayTagContainer::StaticStruct())
+				{
+					FGameplayTagContainer* Container = TagProp->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (Container)
+					{
+						for (const FString& TagStr : Tags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+							if (Tag.IsValid())
+							{
+								Container->AddTag(Tag);
+							}
+						}
+					}
+				}
+			}
+		};
+
+		SetTagContainer(TEXT("OwnedTags"), Definition.OwnedTags);
+		SetTagContainer(TEXT("BlockTags"), Definition.BlockTags);
+		SetTagContainer(TEXT("RequireTags"), Definition.RequireTags);
+	}
+
+	// Compile and save
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	// v3.0: Store metadata
+	StoreBlueprintMetadata(Blueprint, TEXT("Goal"), Definition.Name, InputHash);
+
+	LogGeneration(FString::Printf(TEXT("Created Goal Item: %s (DefaultScore: %.1f)"), *Definition.Name, Definition.DefaultScore));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.DetermineCategory();
+	return Result;
+}
+
+// v3.9: Quest Generator - Creates UQuest Blueprint assets
+FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Quests") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Quest"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Quest"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	// UQuest is a Blueprint class in Narrative Pro
+	// Find the base class
+	UClass* QuestClass = LoadClass<UObject>(nullptr, TEXT("/Script/NarrativeArsenal.Quest"));
+	if (!QuestClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Could not find UQuest class"));
+	}
+
+	// Create Blueprint
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = QuestClass;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(),
+		Package,
+		*Definition.Name,
+		RF_Public | RF_Standalone,
+		nullptr,
+		GWarn
+	));
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Quest Blueprint"));
+	}
+
+	// Set basic properties via CDO
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// QuestName (FText)
+		if (FTextProperty* NameProp = FindFProperty<FTextProperty>(CDO->GetClass(), TEXT("QuestName")))
+		{
+			NameProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.QuestName));
+		}
+
+		// QuestDescription (FText)
+		if (FTextProperty* DescProp = FindFProperty<FTextProperty>(CDO->GetClass(), TEXT("QuestDescription")))
+		{
+			DescProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.QuestDescription));
+		}
+
+		// bTracked
+		if (FBoolProperty* TrackedProp = FindFProperty<FBoolProperty>(CDO->GetClass(), TEXT("bTracked")))
+		{
+			TrackedProp->SetPropertyValue_InContainer(CDO, Definition.bTracked);
+		}
+	}
+
+	// Note: Quest state machine (states, branches, tasks) requires complex node graph creation
+	// similar to dialogue tree generation. For now, we create a basic quest with metadata
+	// and log the structure for manual completion.
+
+	LogGeneration(FString::Printf(TEXT("Creating Quest: %s - \"%s\""), *Definition.Name, *Definition.QuestName));
+	LogGeneration(FString::Printf(TEXT("  Description: %s"), *Definition.QuestDescription));
+
+	if (Definition.States.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  States (%d):"), Definition.States.Num()));
+		for (const auto& State : Definition.States)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s (%s): %s"), *State.Id, *State.Type, *State.Description));
+		}
+	}
+
+	if (Definition.Branches.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Branches (%d):"), Definition.Branches.Num()));
+		for (const auto& Branch : Definition.Branches)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s: %s -> %s (%d tasks)"),
+				*Branch.Id, *Branch.FromState, *Branch.ToState, Branch.Tasks.Num()));
+		}
+	}
+
+	if (Definition.Rewards.Currency > 0 || Definition.Rewards.XP > 0 || Definition.Rewards.Items.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Rewards: %d gold, %d XP, %d items"),
+			Definition.Rewards.Currency, Definition.Rewards.XP, Definition.Rewards.Items.Num()));
+	}
+
+	LogGeneration(TEXT("  [INFO] Quest state machine requires manual setup in Quest Editor"));
+
+	// Compile and save
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	// v3.0: Store metadata
+	StoreBlueprintMetadata(Blueprint, TEXT("Quest"), Definition.Name, InputHash);
+
+	LogGeneration(FString::Printf(TEXT("Created Quest: %s"), *Definition.Name));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.DetermineCategory();
+	return Result;
 }

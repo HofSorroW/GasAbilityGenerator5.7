@@ -1347,6 +1347,136 @@ struct FManifestAnimationNotifyDefinition
 };
 
 /**
+ * v3.7: Alternative dialogue line for variety in NPC responses
+ */
+struct FManifestDialogueLineDefinition
+{
+	FString Text;
+	FString Audio;    // Asset path to USoundBase
+	FString Montage;  // Asset path to UAnimMontage
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Text);
+		Hash ^= GetTypeHash(Audio) << 4;
+		Hash ^= GetTypeHash(Montage) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v3.7: Event definition for dialogue nodes (fires on start/end of line)
+ */
+struct FManifestDialogueEventDefinition
+{
+	FString Type;                        // Event class name (NE_BeginQuest, etc.)
+	FString Runtime = TEXT("Start");     // Start, End, Both
+	TMap<FString, FString> Properties;   // Event-specific properties
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Type);
+		Hash ^= GetTypeHash(Runtime) << 4;
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.7: Condition definition for dialogue nodes (controls node visibility)
+ */
+struct FManifestDialogueConditionDefinition
+{
+	FString Type;                        // Condition class name (NC_IsQuestInProgress, etc.)
+	bool bNot = false;                   // Invert result
+	TMap<FString, FString> Properties;   // Condition-specific properties
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Type);
+		Hash ^= bNot ? 1ULL : 0ULL;
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.7: Dialogue node definition (NPC or Player node)
+ */
+struct FManifestDialogueNodeDefinition
+{
+	FString Id;                          // Unique node identifier
+	FString Type;                        // "npc" or "player"
+	FString Speaker;                     // Speaker ID (for NPC nodes)
+	FString Text;                        // Dialogue line text
+	FString OptionText;                  // Short option text (player nodes)
+	FString Audio;                       // Audio asset path
+	FString Montage;                     // Animation montage path
+	FString Duration;                    // "Default", "WhenAudioEnds", "AfterDuration", etc.
+	float DurationSeconds = 0.0f;        // Duration override
+	bool bAutoSelect = false;            // Auto-select this option
+	bool bAutoSelectIfOnly = true;       // Auto-select if only option
+	bool bIsSkippable = true;            // Can skip this line
+	FString DirectedAt;                  // Speaker ID this line is directed at
+	TArray<FString> NPCReplies;          // IDs of NPC nodes that follow
+	TArray<FString> PlayerReplies;       // IDs of player nodes that follow
+	TArray<FManifestDialogueLineDefinition> AlternativeLines;  // Random alternatives
+	TArray<FManifestDialogueEventDefinition> Events;           // Events on this node
+	TArray<FManifestDialogueConditionDefinition> Conditions;   // Conditions for visibility
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(Speaker) << 8;
+		Hash ^= static_cast<uint64>(GetTypeHash(Text)) << 12;
+		Hash ^= static_cast<uint64>(GetTypeHash(OptionText)) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(Audio)) << 20;
+		Hash ^= static_cast<uint64>(GetTypeHash(Montage)) << 24;
+		Hash ^= static_cast<uint64>(GetTypeHash(Duration)) << 28;
+		Hash ^= static_cast<uint64>(GetTypeHash(static_cast<int32>(DurationSeconds * 1000.f))) << 32;
+		Hash ^= (bAutoSelect ? 1ULL : 0ULL) << 36;
+		Hash ^= (bAutoSelectIfOnly ? 1ULL : 0ULL) << 37;
+		Hash ^= (bIsSkippable ? 1ULL : 0ULL) << 38;
+		Hash ^= static_cast<uint64>(GetTypeHash(DirectedAt)) << 40;
+		for (const auto& Reply : NPCReplies) { Hash ^= GetTypeHash(Reply); }
+		for (const auto& Reply : PlayerReplies) { Hash ^= GetTypeHash(Reply); }
+		for (const auto& Alt : AlternativeLines) { Hash ^= Alt.ComputeHash(); }
+		for (const auto& Evt : Events) { Hash ^= Evt.ComputeHash(); }
+		for (const auto& Cond : Conditions) { Hash ^= Cond.ComputeHash(); }
+		return Hash;
+	}
+};
+
+/**
+ * v3.7: Dialogue tree definition containing all nodes
+ */
+struct FManifestDialogueTreeDefinition
+{
+	FString RootNodeId;                  // ID of the starting node
+	TArray<FManifestDialogueNodeDefinition> Nodes;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(RootNodeId);
+		for (const auto& Node : Nodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
  * v3.2: Dialogue speaker definition for UDialogue::Speakers array
  */
 struct FManifestDialogueSpeakerDefinition
@@ -1398,6 +1528,9 @@ struct FManifestDialogueBlueprintDefinition
 	// v3.2: Speakers configuration
 	TArray<FManifestDialogueSpeakerDefinition> Speakers;
 
+	// v3.7: Full dialogue tree
+	FManifestDialogueTreeDefinition DialogueTree;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -1428,6 +1561,8 @@ struct FManifestDialogueBlueprintDefinition
 			Hash ^= Speaker.ComputeHash();
 			Hash = (Hash << 5) | (Hash >> 59);
 		}
+		// v3.7: Include dialogue tree in hash
+		Hash ^= DialogueTree.ComputeHash() << 38;
 		return Hash;
 	}
 };
@@ -2638,6 +2773,233 @@ struct FManifestNiagaraSystemDefinition
 };
 
 /**
+ * v3.9: Scheduled behavior definition for NPC activity schedules
+ * Maps to UScheduledBehavior_AddNPCGoal entries in UNPCActivitySchedule
+ */
+struct FManifestScheduledBehaviorDefinition
+{
+	float StartTime = 0.0f;              // Start hour (24h format, e.g., 6.0 = 6:00 AM)
+	float EndTime = 0.0f;                // End hour (24h format, e.g., 18.0 = 6:00 PM)
+	FString GoalClass;                   // Goal class to add (e.g., "Goal_Work")
+	float ScoreOverride = 0.0f;          // Optional score override (0 = use goal's default)
+	bool bReselect = false;              // Trigger activity reselection when goal added
+	FString Location;                    // Optional: Location tag or actor name
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(FMath::RoundToInt(StartTime * 100.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(EndTime * 100.f)) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(GoalClass)) << 32;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ScoreOverride * 100.f)) << 40;
+		Hash ^= (bReselect ? 1ULL : 0ULL) << 48;
+		Hash ^= static_cast<uint64>(GetTypeHash(Location)) << 52;
+		return Hash;
+	}
+};
+
+/**
+ * v3.9: Activity schedule definition for NPC daily routines
+ * Generates UNPCActivitySchedule data assets
+ */
+struct FManifestActivityScheduleDefinition
+{
+	FString Name;                        // Asset name (e.g., "Schedule_BlacksmithDay")
+	FString Folder;                      // Output folder
+	TArray<FManifestScheduledBehaviorDefinition> Behaviors;  // Time-based behaviors
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		for (const auto& Behavior : Behaviors)
+		{
+			Hash ^= Behavior.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9: Goal item definition for NPC AI objectives
+ * Generates UNPCGoalItem Blueprint assets
+ */
+struct FManifestGoalItemDefinition
+{
+	FString Name;                        // Asset name (e.g., "Goal_DefendForge")
+	FString Folder;                      // Output folder
+	FString ParentClass;                 // Parent class (default: "NPCGoalItem")
+	float DefaultScore = 50.0f;          // Default priority score
+	float GoalLifetime = -1.0f;          // Expiry time (-1 = never expires)
+	bool bRemoveOnSucceeded = true;      // Auto-remove when completed
+	bool bSaveGoal = false;              // Persist across saves
+	TArray<FString> OwnedTags;           // Tags granted while active
+	TArray<FString> BlockTags;           // Tags that block this goal
+	TArray<FString> RequireTags;         // Tags required to act on goal
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(DefaultScore * 100.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(GoalLifetime * 100.f)) << 16;
+		Hash ^= (bRemoveOnSucceeded ? 1ULL : 0ULL) << 24;
+		Hash ^= (bSaveGoal ? 1ULL : 0ULL) << 25;
+		for (const auto& Tag : OwnedTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 3) | (Hash >> 61); }
+		for (const auto& Tag : BlockTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 4) | (Hash >> 60); }
+		for (const auto& Tag : RequireTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 5) | (Hash >> 59); }
+		return Hash;
+	}
+};
+
+/**
+ * v3.9: Quest task definition for quest objectives
+ */
+struct FManifestQuestTaskDefinition
+{
+	FString TaskClass;                   // Task class (e.g., "FindItem", "GoToLocation", "TalkToNPC")
+	int32 RequiredQuantity = 1;          // Number of times task must be completed
+	FString DescriptionOverride;         // Override auto-generated description
+	bool bOptional = false;              // Task is optional
+	bool bHidden = false;                // Hide from UI
+	TMap<FString, FString> Properties;   // Task-specific properties (item_class, location, npc, etc.)
+
+	// Navigation marker
+	bool bAddNavigationMarker = false;
+	FVector MarkerLocation = FVector::ZeroVector;
+	FString MarkerIcon;
+	FString MarkerColor;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(TaskClass);
+		Hash ^= static_cast<uint64>(RequiredQuantity) << 8;
+		Hash ^= GetTypeHash(DescriptionOverride) << 16;
+		Hash ^= (bOptional ? 1ULL : 0ULL) << 24;
+		Hash ^= (bHidden ? 1ULL : 0ULL) << 25;
+		Hash ^= (bAddNavigationMarker ? 1ULL : 0ULL) << 26;
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9: Quest branch definition (task collection leading to next state)
+ */
+struct FManifestQuestBranchDefinition
+{
+	FString Id;                          // Branch ID
+	FString FromState;                   // Source state ID
+	FString ToState;                     // Destination state ID
+	FString Description;                 // Branch description
+	bool bHidden = false;                // Hide from UI
+	TArray<FManifestQuestTaskDefinition> Tasks;  // Tasks required to take branch
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(FromState) << 4;
+		Hash ^= GetTypeHash(ToState) << 8;
+		Hash ^= GetTypeHash(Description) << 12;
+		Hash ^= (bHidden ? 1ULL : 0ULL) << 16;
+		for (const auto& Task : Tasks)
+		{
+			Hash ^= Task.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9: Quest state definition (node in quest state machine)
+ */
+struct FManifestQuestStateDefinition
+{
+	FString Id;                          // State ID
+	FString Type;                        // "regular", "success", "failure"
+	FString Description;                 // State description for journal
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(Description) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v3.9: Quest reward definition
+ */
+struct FManifestQuestRewardDefinition
+{
+	int32 Currency = 0;                  // Gold/currency reward
+	int32 XP = 0;                        // Experience reward
+	TArray<FString> Items;               // Item rewards (asset names)
+	TArray<int32> ItemQuantities;        // Quantities for each item
+	TMap<FString, int32> Reputation;     // Faction -> reputation change
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(Currency);
+		Hash ^= static_cast<uint64>(XP) << 16;
+		for (const auto& Item : Items) { Hash ^= GetTypeHash(Item); }
+		for (const auto& Rep : Reputation)
+		{
+			Hash ^= GetTypeHash(Rep.Key);
+			Hash ^= static_cast<uint64>(Rep.Value) << 8;
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9: Quest definition for quest-giving NPCs
+ * Generates UQuest Blueprint assets
+ */
+struct FManifestQuestDefinition
+{
+	FString Name;                        // Asset name (e.g., "Quest_ForgeSupplies")
+	FString Folder;                      // Output folder
+	FString QuestName;                   // Display name
+	FString QuestDescription;            // Journal description
+	FString QuestDialogue;               // Optional: Associated dialogue asset
+	bool bTracked = true;                // Show on HUD/map
+
+	TArray<FManifestQuestStateDefinition> States;
+	TArray<FManifestQuestBranchDefinition> Branches;
+	FManifestQuestRewardDefinition Rewards;
+
+	// Events
+	TArray<FManifestDialogueEventDefinition> OnStartEvents;
+	TArray<FManifestDialogueEventDefinition> OnCompleteEvents;
+	TArray<FManifestDialogueEventDefinition> OnFailEvents;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(QuestName) << 4;
+		Hash ^= GetTypeHash(QuestDescription) << 8;
+		Hash ^= GetTypeHash(QuestDialogue) << 12;
+		Hash ^= (bTracked ? 1ULL : 0ULL) << 16;
+		for (const auto& State : States) { Hash ^= State.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		for (const auto& Branch : Branches) { Hash ^= Branch.ComputeHash(); Hash = (Hash << 4) | (Hash >> 60); }
+		Hash ^= Rewards.ComputeHash();
+		for (const auto& Evt : OnStartEvents) { Hash ^= Evt.ComputeHash(); }
+		for (const auto& Evt : OnCompleteEvents) { Hash ^= Evt.ComputeHash(); }
+		for (const auto& Evt : OnFailEvents) { Hash ^= Evt.ComputeHash(); }
+		return Hash;
+	}
+};
+
+/**
  * Parsed manifest data
  */
 struct FManifestData
@@ -2673,6 +3035,11 @@ struct FManifestData
 	TArray<FManifestTaggedDialogueSetDefinition> TaggedDialogueSets;
 	TArray<FManifestNiagaraSystemDefinition> NiagaraSystems;  // v2.6.5: Niagara VFX systems
 	TArray<FManifestMaterialFunctionDefinition> MaterialFunctions;  // v2.6.12: Material functions
+
+	// v3.9: NPC Pipeline - Schedules, Goals, Quests
+	TArray<FManifestActivityScheduleDefinition> ActivitySchedules;
+	TArray<FManifestGoalItemDefinition> GoalItems;
+	TArray<FManifestQuestDefinition> Quests;
 
 	// Cached whitelist of all asset names for validation
 	mutable TSet<FString> AssetWhitelist;
@@ -2711,6 +3078,10 @@ struct FManifestData
 		for (const auto& Def : TaggedDialogueSets) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : NiagaraSystems) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : MaterialFunctions) AssetWhitelist.Add(Def.Name);  // v2.6.12
+		// v3.9: NPC Pipeline
+		for (const auto& Def : ActivitySchedules) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : GoalItems) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : Quests) AssetWhitelist.Add(Def.Name);
 
 		bWhitelistBuilt = true;
 	}
@@ -2784,7 +3155,11 @@ struct FManifestData
 			+ CharacterDefinitions.Num()
 			+ TaggedDialogueSets.Num()
 			+ NiagaraSystems.Num()
-			+ MaterialFunctions.Num();
+			+ MaterialFunctions.Num()
+			// v3.9: NPC Pipeline
+			+ ActivitySchedules.Num()
+			+ GoalItems.Num()
+			+ Quests.Num();
 	}
 
 	/**
@@ -2831,6 +3206,10 @@ struct FManifestData
 		for (const auto& Def : TaggedDialogueSets) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : NiagaraSystems) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : MaterialFunctions) AddWithDupeCheck(Def.Name);
+		// v3.9: NPC Pipeline
+		for (const auto& Def : ActivitySchedules) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : GoalItems) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : Quests) AddWithDupeCheck(Def.Name);
 		return Names;
 	}
 
@@ -2871,8 +3250,13 @@ struct FManifestData
 		Total += NarrativeEvents.Num();
 		Total += NPCDefinitions.Num();
 		Total += CharacterDefinitions.Num();
+		Total += TaggedDialogueSets.Num();
 		Total += NiagaraSystems.Num();
 		Total += MaterialFunctions.Num();  // v2.6.12
+		// v3.9: NPC Pipeline
+		Total += ActivitySchedules.Num();
+		Total += GoalItems.Num();
+		Total += Quests.Num();
 
 		return Total;
 	}

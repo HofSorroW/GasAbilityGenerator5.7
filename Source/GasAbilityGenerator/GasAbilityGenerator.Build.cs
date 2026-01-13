@@ -40,25 +40,28 @@ public class GasAbilityGenerator : ModuleRules
 			"Kismet",
 			"KismetCompiler",
 			"GraphEditor",
-			
+
 			// Widget blueprint generation
 			"UMG",
 			"UMGEditor",
-			
+
 			// Behavior tree generation
 			"BehaviorTreeEditor",
-			
+
 			// Material generation
 			"MaterialEditor",
-			
+
 			// Asset creation
 			"AssetTools",
 			"AssetRegistry",
 			"ContentBrowser",
-			
+
 			// Narrative Pro integration
 			"NarrativeArsenal",
 			"NarrativePro",
+
+			// v3.7: Dialogue blueprint generation with full tree support
+			"NarrativeDialogueEditor",
 			
 			// Property handling
 			"PropertyEditor",

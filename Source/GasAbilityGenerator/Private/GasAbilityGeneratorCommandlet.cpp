@@ -844,6 +844,42 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
+	// v3.9: Activity Schedules (NPC daily routines)
+	for (const auto& Definition : ManifestData.ActivitySchedules)
+	{
+		FGenerationResult Result = FActivityScheduleGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v3.9: Goal Items (AI objectives)
+	for (const auto& Definition : ManifestData.GoalItems)
+	{
+		FGenerationResult Result = FGoalItemGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v3.9: Quests (quest state machines)
+	for (const auto& Definition : ManifestData.Quests)
+	{
+		FGenerationResult Result = FQuestGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	// v2.6.7: Process deferred assets (retry mechanism)
 	if (DeferredAssets.Num() > 0)
 	{

@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.8.3
+// GasAbilityGenerator v3.9
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.9: NPC Pipeline - ActivitySchedules, GoalItems, Quests parsing
 // v2.8.3: Function override parsing for parent class functions (HandleDeath, etc.)
 // v2.6.14: Prefix validation for all asset types as secondary safeguard against parser bugs
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
@@ -71,6 +72,11 @@ private:
 	static void ParseCharacterDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseTaggedDialogueSets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseNiagaraSystems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v2.6.5
+
+	// v3.9: NPC Pipeline parsers
+	static void ParseActivitySchedules(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseGoalItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseQuests(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 
 	// v2.2.0: Event graph helper parsers
 	static void ParseGraphNodes(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);
