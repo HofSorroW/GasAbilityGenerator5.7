@@ -3406,6 +3406,133 @@ struct FManifestPipelineLoadoutDefinition
 };
 
 /**
+ * v3.9.9: POI Placement Definition
+ * Places APOIActor instances in World Partition levels
+ */
+struct FManifestPOIPlacement
+{
+	FString POITag;                      // Narrative.POIs.* tag
+	FVector Location = FVector::ZeroVector;
+	FRotator Rotation = FRotator::ZeroRotator;
+	FString DisplayName;                 // UI display name
+	bool bCreateMapMarker = true;
+	bool bSupportsFastTravel = false;
+	FString MapIcon;                     // Texture path for map icon
+	TArray<FString> LinkedPOIs;          // Other POI tags for navigation graph
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(POITag);
+		Hash ^= GetTypeHash(FMath::RoundToInt(Location.X));
+		Hash ^= GetTypeHash(FMath::RoundToInt(Location.Y));
+		Hash ^= GetTypeHash(FMath::RoundToInt(Location.Z));
+		Hash ^= GetTypeHash(FMath::RoundToInt(Rotation.Pitch));
+		Hash ^= GetTypeHash(FMath::RoundToInt(Rotation.Yaw));
+		Hash ^= GetTypeHash(FMath::RoundToInt(Rotation.Roll));
+		Hash ^= GetTypeHash(DisplayName);
+		Hash ^= (bCreateMapMarker ? 1ULL : 0ULL) << 1;
+		Hash ^= (bSupportsFastTravel ? 1ULL : 0ULL) << 2;
+		Hash ^= GetTypeHash(MapIcon);
+		for (const FString& Link : LinkedPOIs)
+		{
+			Hash ^= GetTypeHash(Link);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.9: NPC Spawn Parameters (mirrors FNPCSpawnParams from Narrative Pro)
+ */
+struct FManifestNPCSpawnParams
+{
+	bool bOverrideLevelRange = false;
+	int32 MinLevel = 1;
+	int32 MaxLevel = 1;
+	bool bOverrideOwnedTags = false;
+	TArray<FString> DefaultOwnedTags;
+	bool bOverrideFactions = false;
+	TArray<FString> DefaultFactions;
+	bool bOverrideActivityConfiguration = false;
+	FString ActivityConfiguration;       // ActConfig_* name
+	bool bOverrideAppearance = false;
+	FString DefaultAppearance;           // Appearance asset path
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = 0;
+		if (bOverrideLevelRange) Hash ^= (uint64(MinLevel) << 8) | uint64(MaxLevel);
+		for (const FString& Tag : DefaultOwnedTags) { Hash ^= GetTypeHash(Tag); }
+		for (const FString& Faction : DefaultFactions) { Hash ^= GetTypeHash(Faction); }
+		Hash ^= GetTypeHash(ActivityConfiguration);
+		Hash ^= GetTypeHash(DefaultAppearance);
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.9: Single NPC entry in a spawner
+ */
+struct FManifestNPCSpawnEntry
+{
+	FString NPCDefinition;               // NPCDef_* name
+	FVector RelativeLocation = FVector::ZeroVector;  // Offset from spawner
+	FRotator RelativeRotation = FRotator::ZeroRotator;
+	FManifestNPCSpawnParams SpawnParams;
+	bool bDontSpawnIfKilled = false;
+	FString OptionalGoal;                // Goal_* class name
+	float UntetherDistance = 5000.0f;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(NPCDefinition);
+		Hash ^= GetTypeHash(FMath::RoundToInt(RelativeLocation.X * 10.f));
+		Hash ^= GetTypeHash(FMath::RoundToInt(RelativeLocation.Y * 10.f));
+		Hash ^= GetTypeHash(FMath::RoundToInt(RelativeLocation.Z * 10.f));
+		Hash ^= SpawnParams.ComputeHash();
+		Hash ^= (bDontSpawnIfKilled ? 1ULL : 0ULL) << 4;
+		Hash ^= GetTypeHash(OptionalGoal);
+		Hash ^= GetTypeHash(FMath::RoundToInt(UntetherDistance));
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.9: NPC Spawner Placement Definition
+ * Places ANPCSpawner actors with configured UNPCSpawnComponents
+ */
+struct FManifestNPCSpawnerPlacement
+{
+	FString Name;                        // Unique spawner name (actor label)
+	FVector Location = FVector::ZeroVector;
+	FRotator Rotation = FRotator::ZeroRotator;
+	FString NearPOI;                     // Optional: use POI location instead of Location
+	FVector POIOffset = FVector::ZeroVector;  // Offset from POI if using NearPOI
+	bool bActivateOnBeginPlay = true;
+	TArray<FManifestNPCSpawnEntry> NPCs;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(FMath::RoundToInt(Location.X));
+		Hash ^= GetTypeHash(FMath::RoundToInt(Location.Y));
+		Hash ^= GetTypeHash(FMath::RoundToInt(Location.Z));
+		Hash ^= GetTypeHash(NearPOI);
+		Hash ^= GetTypeHash(FMath::RoundToInt(POIOffset.X));
+		Hash ^= GetTypeHash(FMath::RoundToInt(POIOffset.Y));
+		Hash ^= GetTypeHash(FMath::RoundToInt(POIOffset.Z));
+		Hash ^= (bActivateOnBeginPlay ? 1ULL : 0ULL) << 5;
+		for (const FManifestNPCSpawnEntry& NPC : NPCs)
+		{
+			Hash ^= NPC.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
  * Parsed manifest data
  */
 struct FManifestData
@@ -3452,6 +3579,10 @@ struct FManifestData
 	TArray<FManifestPipelineItemDefinition> PipelineItems;
 	TArray<FManifestPipelineCollectionDefinition> PipelineCollections;
 	TArray<FManifestPipelineLoadoutDefinition> PipelineLoadouts;
+
+	// v3.9.9: POI & NPC Spawner Placements (level actors, not assets)
+	TArray<FManifestPOIPlacement> POIPlacements;
+	TArray<FManifestNPCSpawnerPlacement> NPCSpawnerPlacements;
 
 	// Cached whitelist of all asset names for validation
 	mutable TSet<FString> AssetWhitelist;

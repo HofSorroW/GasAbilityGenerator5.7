@@ -26,7 +26,7 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.9.4) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.9.9) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -63,6 +63,7 @@ Generate assets from command line without launching the editor UI:
 |------|-------------|
 | `-dryrun` | Preview what would be created/modified/skipped without making changes |
 | `-force` | Regenerate all assets even if they were manually edited (override conflicts) |
+| `-level="/Game/..."` | (v3.9.9) Load a World Partition level for POI/NPC Spawner placement |
 
 ```bash
 # Preview changes without generating
@@ -70,6 +71,9 @@ Generate assets from command line without launching the editor UI:
 
 # Force regeneration of all assets
 ... -run=GasAbilityGenerator -manifest="..." -force
+
+# Generate assets AND place level actors (POIs, NPC Spawners)
+... -run=GasAbilityGenerator -manifest="..." -level="/Game/Maps/MainWorld"
 ```
 
 ### v3.0/3.1 Regen/Diff Safety System
@@ -232,7 +236,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v3.8)
+## GasAbilityGenerator Plugin (v3.9.9)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -844,6 +848,9 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.9.9 - POI & NPC Spawner Automation: Level actor placement for World Partition worlds. New `-level="/Game/..."` commandlet parameter loads a world for actor placement. FPOIPlacementGenerator places APOIActor instances with POITag, DisplayName, MapIcon, LinkedPOIs (A* navigation). FNPCSpawnerPlacementGenerator places ANPCSpawner actors with UNPCSpawnComponent entries, supporting NearPOI resolution and spawn parameter configuration. New manifest sections: `poi_placements:` (poi_tag, location, rotation, display_name, map_icon, linked_pois) and `npc_spawner_placements:` (name, location/near_poi, npcs array with npc_definition, spawn_params, optional_goal). Idempotency via actor label/POI tag matching. World auto-saved after new placements.
+- v3.9.8 - Item Pipeline: Mesh-to-Item automation with clothing mesh support for auto-generating EI_ assets from mesh files
+- v3.9.7 - Parser & Manifest Fixes: Fixed ParseMaterialFunctions multi-item parsing bug where subsection flags (bInExpressions, etc.) prevented subsequent items from being recognized. Added indent-based detection to properly identify new items regardless of subsection state. Fixed manifest BP_FatherRifleWeapon/BP_FatherSwordWeapon prefix to EI_ (RangedWeaponItem/MeleeWeaponItem are UObject data assets, not Actors). Consolidated 33 prefixed manifest sections (warden_tags:, guard_formation_goals:, etc.) into standard section names with comments. Increases parsed asset count from 151 to 155.
 - v3.9.6 - Automation Gaps Implementation: (1) Quest Rewards & Questgiver - `FManifestQuestRewardDefinition` struct with Currency/XP/Items, `questgiver` and `rewards` fields on quest definitions, rewards logged on success states for manual NE_Grant* event setup. (2) Dialogue Quest Shortcuts - `start_quest`, `complete_quest_branch`, `fail_quest` fields on dialogue nodes auto-generate NE_BeginQuest/NE_CompleteQuestBranch/NE_FailQuest events. (3) Item Usage Properties - `bAddDefaultUseOption`, `bConsumeOnUse`, `bUsedWithOtherItem`, `UseActionText`, `bCanActivate`, `bToggleActiveOnUse`, `UseSound` for NarrativeItem configuration. (4) Weapon Attachments - `holster_attachments`/`wield_attachments` arrays with slot/socket/offset/rotation entries (logged for manual TMap setup due to complex nested structure).
 - v3.9.5 - NPC Item Loadout Automation: Full loot table roll support for NPCDefinitions. New manifest properties `default_item_loadout` and `trading_item_loadout` accept arrays of loot table rolls, each containing `items` (item class + quantity), `item_collections`, `table_to_roll`, `num_rolls`, and `chance`. Maps to Narrative Pro's `TArray<FLootTableRoll>` via reflection with proper population of nested `FItemWithQuantity` and item collection arrays. Enables complete NPC inventory definition from YAML.
 - v3.9.4 - Quest Blueprint Generator (UQuestBlueprint): Complete rewrite using UQuestBlueprint (same pattern as DialogueBlueprint v3.8). Works directly on QuestTemplate (auto-created by constructor). Branches now nested inside states (cleaner YAML structure). Events supported on both states and branches. Task argument resolution via reflection. Added NarrativeQuestEditor module dependency. Visual editor shows empty graph but quest functions at runtime.

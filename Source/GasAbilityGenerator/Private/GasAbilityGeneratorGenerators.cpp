@@ -11778,3 +11778,377 @@ UClass* FQuestGenerator::ResolveQuestTaskClass(const FString& TaskClassName)
 
 	return nullptr;
 }
+
+// ============================================================================
+// v3.9.9: POI & NPC Spawner Placement Generators
+// ============================================================================
+
+#include "Navigation/POIActor.h"
+#include "Spawners/NPCSpawner.h"
+#include "Spawners/NPCSpawnComponent.h"
+#include "EngineUtils.h"
+
+// ----------------------------------------------------------------------------
+// FPOIPlacementGenerator
+// ----------------------------------------------------------------------------
+
+FGenerationResult FPOIPlacementGenerator::Generate(
+	const FManifestPOIPlacement& Definition,
+	UWorld* World,
+	TMap<FString, APOIActor*>& PlacedPOIs)
+{
+	FGenerationResult Result;
+
+	if (!World)
+	{
+		Result = FGenerationResult(Definition.POITag, EGenerationStatus::Failed, TEXT("No world context"));
+		return Result;
+	}
+
+	if (Definition.POITag.IsEmpty())
+	{
+		Result = FGenerationResult(TEXT("POI"), EGenerationStatus::Failed, TEXT("POI tag is required"));
+		return Result;
+	}
+
+	// Check for existing POI with same tag
+	APOIActor* ExistingPOI = FindExistingPOI(World, Definition.POITag);
+	if (ExistingPOI)
+	{
+		// Already exists - skip
+		LogGeneration(FString::Printf(TEXT("[SKIP] POI already exists: %s"), *Definition.POITag));
+		PlacedPOIs.Add(Definition.POITag, ExistingPOI);
+		Result = FGenerationResult(Definition.POITag, EGenerationStatus::Skipped, TEXT("Already exists"));
+		return Result;
+	}
+
+	// Spawn the POI actor
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Name = FName(*Definition.POITag.Replace(TEXT("."), TEXT("_")));
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FTransform SpawnTransform(Definition.Rotation, Definition.Location);
+
+	APOIActor* POI = World->SpawnActor<APOIActor>(
+		APOIActor::StaticClass(),
+		SpawnTransform,
+		SpawnParams
+	);
+
+	if (!POI)
+	{
+		Result = FGenerationResult(Definition.POITag, EGenerationStatus::Failed, TEXT("Failed to spawn POI actor"));
+		return Result;
+	}
+
+	// Set POI properties
+	POI->POITag = FGameplayTag::RequestGameplayTag(FName(*Definition.POITag), false);
+	if (!POI->POITag.IsValid())
+	{
+		// Tag doesn't exist yet - log warning but continue
+		LogGeneration(FString::Printf(TEXT("[WARN] POI tag not registered: %s (register via tags: section)"), *Definition.POITag));
+		// Try to set it anyway - it may get registered later
+		POI->POITag = FGameplayTag::RequestGameplayTag(FName(*Definition.POITag), true);
+	}
+
+	POI->POIDisplayName = FText::FromString(Definition.DisplayName);
+	POI->bCreateMapMarker = Definition.bCreateMapMarker;
+	POI->bSupportsFastTravel = Definition.bSupportsFastTravel;
+
+	// Load map icon if specified
+	if (!Definition.MapIcon.IsEmpty())
+	{
+		UTexture2D* IconTexture = LoadObject<UTexture2D>(nullptr, *Definition.MapIcon);
+		if (IconTexture)
+		{
+			POI->POIIcon = IconTexture;
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("[WARN] Failed to load POI icon: %s"), *Definition.MapIcon));
+		}
+	}
+
+	// Set actor label for identification
+	POI->SetActorLabel(Definition.POITag);
+
+	// Track for LinkedPOI resolution
+	PlacedPOIs.Add(Definition.POITag, POI);
+
+	// Note: LinkedPOIs are resolved in a second pass after all POIs are placed
+
+	LogGeneration(FString::Printf(TEXT("[NEW] Placed POI: %s at (%0.0f, %0.0f, %0.0f)"),
+		*Definition.POITag, Definition.Location.X, Definition.Location.Y, Definition.Location.Z));
+
+	Result = FGenerationResult(Definition.POITag, EGenerationStatus::New);
+	return Result;
+}
+
+APOIActor* FPOIPlacementGenerator::FindExistingPOI(UWorld* World, const FString& POITag)
+{
+	if (!World) return nullptr;
+
+	FGameplayTag TargetTag = FGameplayTag::RequestGameplayTag(FName(*POITag), false);
+
+	for (TActorIterator<APOIActor> It(World); It; ++It)
+	{
+		APOIActor* POI = *It;
+		if (POI && POI->POITag == TargetTag)
+		{
+			return POI;
+		}
+		// Also check by actor label
+		if (POI && POI->GetActorLabel() == POITag)
+		{
+			return POI;
+		}
+	}
+
+	return nullptr;
+}
+
+// ----------------------------------------------------------------------------
+// FNPCSpawnerPlacementGenerator
+// ----------------------------------------------------------------------------
+
+FGenerationResult FNPCSpawnerPlacementGenerator::Generate(
+	const FManifestNPCSpawnerPlacement& Definition,
+	UWorld* World,
+	const TMap<FString, APOIActor*>& PlacedPOIs)
+{
+	FGenerationResult Result;
+
+	if (!World)
+	{
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("No world context"));
+		return Result;
+	}
+
+	if (Definition.Name.IsEmpty())
+	{
+		Result = FGenerationResult(TEXT("Spawner"), EGenerationStatus::Failed, TEXT("Spawner name is required"));
+		return Result;
+	}
+
+	// Check for existing spawner
+	ANPCSpawner* ExistingSpawner = FindExistingSpawner(World, Definition.Name);
+	if (ExistingSpawner)
+	{
+		LogGeneration(FString::Printf(TEXT("[SKIP] Spawner already exists: %s"), *Definition.Name));
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Skipped, TEXT("Already exists"));
+		return Result;
+	}
+
+	// Determine spawn location
+	FVector SpawnLocation = Definition.Location;
+	if (!Definition.NearPOI.IsEmpty())
+	{
+		SpawnLocation = ResolvePOILocation(World, Definition.NearPOI, PlacedPOIs) + Definition.POIOffset;
+	}
+
+	// Spawn the NPC spawner
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Name = FName(*Definition.Name);
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FTransform SpawnTransform(Definition.Rotation, SpawnLocation);
+
+	ANPCSpawner* Spawner = World->SpawnActor<ANPCSpawner>(
+		ANPCSpawner::StaticClass(),
+		SpawnTransform,
+		SpawnParams
+	);
+
+	if (!Spawner)
+	{
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to spawn NPCSpawner actor"));
+		return Result;
+	}
+
+	// Set spawner properties
+	Spawner->SetActorLabel(Definition.Name);
+	Spawner->SpawnerSaveGUID = FGuid::NewGuid();
+
+	// Set activation flag via reflection (protected)
+	if (FBoolProperty* ActivateProp = FindFProperty<FBoolProperty>(Spawner->GetClass(), TEXT("bActivateOnBeginPlay")))
+	{
+		ActivateProp->SetPropertyValue_InContainer(Spawner, Definition.bActivateOnBeginPlay);
+	}
+
+#if WITH_EDITOR
+	// Add NPC spawn components for each entry
+	for (int32 i = 0; i < Definition.NPCs.Num(); ++i)
+	{
+		const FManifestNPCSpawnEntry& NPCEntry = Definition.NPCs[i];
+
+		UNPCSpawnComponent* SpawnComp = Spawner->CreateNPCSpawner();
+		if (SpawnComp)
+		{
+			// Set relative transform
+			SpawnComp->SetRelativeLocation(NPCEntry.RelativeLocation);
+			SpawnComp->SetRelativeRotation(NPCEntry.RelativeRotation);
+
+			// Configure the component
+			ConfigureSpawnComponent(SpawnComp, NPCEntry);
+
+			LogGeneration(FString::Printf(TEXT("  Added NPC spawn component: %s"), *NPCEntry.NPCDefinition));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("[WARN] Failed to create NPC spawn component for: %s"), *NPCEntry.NPCDefinition));
+		}
+	}
+#endif
+
+	LogGeneration(FString::Printf(TEXT("[NEW] Placed NPCSpawner: %s at (%0.0f, %0.0f, %0.0f) with %d NPCs"),
+		*Definition.Name, SpawnLocation.X, SpawnLocation.Y, SpawnLocation.Z, Definition.NPCs.Num()));
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	return Result;
+}
+
+FVector FNPCSpawnerPlacementGenerator::ResolvePOILocation(
+	UWorld* World,
+	const FString& POITag,
+	const TMap<FString, APOIActor*>& PlacedPOIs)
+{
+	// First check already-placed POIs
+	if (const APOIActor* const* FoundPOI = PlacedPOIs.Find(POITag))
+	{
+		if (*FoundPOI)
+		{
+			return (*FoundPOI)->GetActorLocation();
+		}
+	}
+
+	// Search world for existing POI
+	APOIActor* ExistingPOI = FPOIPlacementGenerator::FindExistingPOI(World, POITag);
+	if (ExistingPOI)
+	{
+		return ExistingPOI->GetActorLocation();
+	}
+
+	LogGeneration(FString::Printf(TEXT("[WARN] Could not resolve POI location: %s, using origin"), *POITag));
+	return FVector::ZeroVector;
+}
+
+ANPCSpawner* FNPCSpawnerPlacementGenerator::FindExistingSpawner(UWorld* World, const FString& SpawnerName)
+{
+	if (!World) return nullptr;
+
+	for (TActorIterator<ANPCSpawner> It(World); It; ++It)
+	{
+		ANPCSpawner* Spawner = *It;
+		if (Spawner && Spawner->GetActorLabel() == SpawnerName)
+		{
+			return Spawner;
+		}
+	}
+
+	return nullptr;
+}
+
+void FNPCSpawnerPlacementGenerator::ConfigureSpawnComponent(
+	UNPCSpawnComponent* Component,
+	const FManifestNPCSpawnEntry& Entry)
+{
+	if (!Component) return;
+
+	// Load NPC Definition
+	TArray<FString> NPCDefSearchPaths;
+	NPCDefSearchPaths.Add(FString::Printf(TEXT("%s/NPCs/Definitions/%s.%s"), *GetProjectRoot(), *Entry.NPCDefinition, *Entry.NPCDefinition));
+	NPCDefSearchPaths.Add(FString::Printf(TEXT("%s/Characters/Definitions/%s.%s"), *GetProjectRoot(), *Entry.NPCDefinition, *Entry.NPCDefinition));
+	NPCDefSearchPaths.Add(FString::Printf(TEXT("%s/%s.%s"), *GetProjectRoot(), *Entry.NPCDefinition, *Entry.NPCDefinition));
+
+	UNPCDefinition* NPCDef = nullptr;
+	for (const FString& Path : NPCDefSearchPaths)
+	{
+		NPCDef = LoadObject<UNPCDefinition>(nullptr, *Path);
+		if (NPCDef) break;
+	}
+
+	if (NPCDef)
+	{
+		Component->NPCToSpawn = NPCDef;
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("[WARN] Could not load NPCDefinition: %s"), *Entry.NPCDefinition));
+	}
+
+	// Set spawn component properties
+	Component->bDontSpawnIfPreviouslyKilled = Entry.bDontSpawnIfKilled;
+	Component->UntetherDistance = Entry.UntetherDistance;
+	Component->NPCSaveGUID = FGuid::NewGuid();
+
+	// Configure spawn params
+	FNPCSpawnParams& Params = Component->SpawnParams;
+
+	if (Entry.SpawnParams.bOverrideLevelRange)
+	{
+		// Set override flag and values via reflection (may be protected)
+		if (FBoolProperty* OverrideProp = FindFProperty<FBoolProperty>(FNPCSpawnParams::StaticStruct(), TEXT("bOverride_LevelRange")))
+		{
+			OverrideProp->SetPropertyValue_InContainer(&Params, true);
+		}
+		Params.MinLevel = Entry.SpawnParams.MinLevel;
+		Params.MaxLevel = Entry.SpawnParams.MaxLevel;
+	}
+
+	if (Entry.SpawnParams.bOverrideOwnedTags && Entry.SpawnParams.DefaultOwnedTags.Num() > 0)
+	{
+		if (FBoolProperty* OverrideProp = FindFProperty<FBoolProperty>(FNPCSpawnParams::StaticStruct(), TEXT("bOverride_DefaultOwnedTags")))
+		{
+			OverrideProp->SetPropertyValue_InContainer(&Params, true);
+		}
+		for (const FString& Tag : Entry.SpawnParams.DefaultOwnedTags)
+		{
+			FGameplayTag GameplayTag = FGameplayTag::RequestGameplayTag(FName(*Tag), false);
+			if (GameplayTag.IsValid())
+			{
+				Params.DefaultOwnedTags.AddTag(GameplayTag);
+			}
+		}
+	}
+
+	if (Entry.SpawnParams.bOverrideFactions && Entry.SpawnParams.DefaultFactions.Num() > 0)
+	{
+		if (FBoolProperty* OverrideProp = FindFProperty<FBoolProperty>(FNPCSpawnParams::StaticStruct(), TEXT("bOverride_DefaultFactions")))
+		{
+			OverrideProp->SetPropertyValue_InContainer(&Params, true);
+		}
+		for (const FString& Faction : Entry.SpawnParams.DefaultFactions)
+		{
+			FGameplayTag FactionTag = FGameplayTag::RequestGameplayTag(FName(*Faction), false);
+			if (FactionTag.IsValid())
+			{
+				Params.DefaultFactions.AddTag(FactionTag);
+			}
+		}
+	}
+
+	// Load optional goal
+	if (!Entry.OptionalGoal.IsEmpty())
+	{
+		TArray<FString> GoalSearchPaths;
+		GoalSearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *Entry.OptionalGoal, *Entry.OptionalGoal));
+		GoalSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Entry.OptionalGoal, *Entry.OptionalGoal));
+		GoalSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Entry.OptionalGoal, *Entry.OptionalGoal));
+
+		UClass* GoalClass = nullptr;
+		for (const FString& Path : GoalSearchPaths)
+		{
+			GoalClass = LoadClass<UNPCGoalItem>(nullptr, *Path);
+			if (GoalClass) break;
+		}
+
+		if (GoalClass)
+		{
+			Component->OptionalGoal = NewObject<UNPCGoalItem>(Component, GoalClass);
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("[WARN] Could not load goal class: %s"), *Entry.OptionalGoal));
+		}
+	}
+}

@@ -84,6 +84,10 @@ private:
 	static void ParsePipelineCollections(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParsePipelineLoadouts(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 
+	// v3.9.9: POI & NPC Spawner Placement parsers
+	static void ParsePOIPlacements(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseNPCSpawnerPlacements(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+
 	// v2.2.0: Event graph helper parsers
 	static void ParseGraphNodes(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);
 	static void ParseGraphConnections(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);

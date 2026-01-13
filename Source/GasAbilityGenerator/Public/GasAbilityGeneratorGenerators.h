@@ -771,3 +771,56 @@ private:
 	// v3.9.4: Helper to resolve quest task classes from multiple search paths
 	static UClass* ResolveQuestTaskClass(const FString& TaskClassName);
 };
+
+/**
+ * v3.9.9: POI Placement Generator
+ * Places APOIActor instances in World Partition levels
+ */
+class GASABILITYGENERATOR_API FPOIPlacementGenerator : public FGeneratorBase
+{
+public:
+	/**
+	 * Place a POI actor in the world
+	 * @param Definition - POI placement definition from manifest
+	 * @param World - Target world to spawn in
+	 * @param PlacedPOIs - Map of already placed POIs for LinkedPOI resolution
+	 * @return Generation result with spawned actor info
+	 */
+	static FGenerationResult Generate(
+		const FManifestPOIPlacement& Definition,
+		UWorld* World,
+		TMap<FString, class APOIActor*>& PlacedPOIs
+	);
+
+	/**
+	 * Find existing POI actor by tag
+	 * Made public so FNPCSpawnerPlacementGenerator can use it for NearPOI resolution
+	 */
+	static class APOIActor* FindExistingPOI(UWorld* World, const FString& POITag);
+};
+
+/**
+ * v3.9.9: NPC Spawner Placement Generator
+ * Places ANPCSpawner actors with configured UNPCSpawnComponents in World Partition levels
+ */
+class GASABILITYGENERATOR_API FNPCSpawnerPlacementGenerator : public FGeneratorBase
+{
+public:
+	/**
+	 * Place an NPC spawner actor in the world
+	 * @param Definition - Spawner placement definition from manifest
+	 * @param World - Target world to spawn in
+	 * @param PlacedPOIs - Map of placed POIs for NearPOI resolution
+	 * @return Generation result with spawned actor info
+	 */
+	static FGenerationResult Generate(
+		const FManifestNPCSpawnerPlacement& Definition,
+		UWorld* World,
+		const TMap<FString, class APOIActor*>& PlacedPOIs
+	);
+
+private:
+	static FVector ResolvePOILocation(UWorld* World, const FString& POITag, const TMap<FString, class APOIActor*>& PlacedPOIs);
+	static class ANPCSpawner* FindExistingSpawner(UWorld* World, const FString& SpawnerName);
+	static void ConfigureSpawnComponent(class UNPCSpawnComponent* Component, const FManifestNPCSpawnEntry& Entry);
+};

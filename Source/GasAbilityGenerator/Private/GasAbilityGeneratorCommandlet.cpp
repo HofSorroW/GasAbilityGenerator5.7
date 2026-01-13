@@ -11,6 +11,17 @@
 #include "HAL/PlatformFilemanager.h"
 #include <exception>  // v3.1: For std::exception in try/catch
 
+// v3.9.9: World loading and saving for level actor placement
+#include "Engine/World.h"
+#include "Engine/Level.h"
+#include "EditorWorldUtils.h"
+#include "FileHelpers.h"
+#include "Misc/PackageName.h"
+#include "UObject/Package.h"
+#include "UObject/SavePackage.h"
+#include "Navigation/POIActor.h"
+#include "Spawners/NPCSpawner.h"
+
 // v3.1: Dedicated log category for filtering
 DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);
 
@@ -95,6 +106,26 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		LogMessage(TEXT("MODE: Force (will overwrite even on conflicts)"));
 	}
 
+	// v3.9.9: Parse -level parameter for World Partition level loading
+	FString LevelPath;
+	if (FParse::Value(*Params, TEXT("-level="), LevelPath))
+	{
+		LevelPath = LevelPath.TrimQuotes();
+	}
+	else
+	{
+		const FString* LevelVal = ParamVals.Find(TEXT("level"));
+		if (LevelVal)
+		{
+			LevelPath = LevelVal->TrimQuotes();
+		}
+	}
+
+	if (!LevelPath.IsEmpty())
+	{
+		LogMessage(FString::Printf(TEXT("Level: %s"), *LevelPath));
+	}
+
 	// v3.0: Set manifest path for metadata tracking
 	FGeneratorBase::SetManifestPath(ManifestPath);
 
@@ -157,7 +188,62 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		ManifestData.GameplayAbilities.Num(),
 		ManifestData.GameplayEffects.Num(),
 		ManifestData.ActorBlueprints.Num()));
+
+	// v3.9.9: Log POI and Spawner counts
+	if (ManifestData.POIPlacements.Num() > 0 || ManifestData.NPCSpawnerPlacements.Num() > 0)
+	{
+		LogMessage(FString::Printf(TEXT("Level actors: %d POIs, %d NPC Spawners"),
+			ManifestData.POIPlacements.Num(),
+			ManifestData.NPCSpawnerPlacements.Num()));
+	}
 	LogMessage(TEXT(""));
+
+	// v3.9.9: Load world if level path specified and we have level actors to place
+	UWorld* TargetWorld = nullptr;
+	bool bNeedsLevelPlacement = ManifestData.POIPlacements.Num() > 0 || ManifestData.NPCSpawnerPlacements.Num() > 0;
+
+	if (!LevelPath.IsEmpty() && bNeedsLevelPlacement)
+	{
+		LogMessage(TEXT("--- Loading Level for Actor Placement ---"));
+
+		// Resolve the level path
+		FString LongPackageName;
+		if (!FPackageName::SearchForPackageOnDisk(LevelPath, &LongPackageName))
+		{
+			// Try as content path directly
+			LongPackageName = LevelPath;
+		}
+
+		LogMessage(FString::Printf(TEXT("Loading level package: %s"), *LongPackageName));
+
+		// Load the world package
+		UPackage* WorldPackage = LoadPackage(nullptr, *LongPackageName, LOAD_None);
+		if (WorldPackage)
+		{
+			// Find the world in the package
+			TargetWorld = UWorld::FindWorldInPackage(WorldPackage);
+			if (TargetWorld)
+			{
+				LoadedWorld = TargetWorld;
+				LogMessage(FString::Printf(TEXT("Successfully loaded world: %s"), *TargetWorld->GetName()));
+			}
+			else
+			{
+				LogError(TEXT("Failed to find world in package"));
+			}
+		}
+		else
+		{
+			LogError(FString::Printf(TEXT("Failed to load level package: %s"), *LongPackageName));
+		}
+		LogMessage(TEXT(""));
+	}
+	else if (bNeedsLevelPlacement && LevelPath.IsEmpty())
+	{
+		LogMessage(TEXT("WARNING: POI/Spawner placements defined but no -level parameter specified. Level actors will NOT be placed."));
+		LogMessage(TEXT("Use -level=\"/Game/Maps/YourLevel\" to enable level actor placement."));
+		LogMessage(TEXT(""));
+	}
 
 	// Generate tags
 	if (bGenerateTags)
@@ -169,6 +255,12 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 	if (bGenerateAssets)
 	{
 		GenerateAssets(ManifestData);
+	}
+
+	// v3.9.9: Generate level actors if world is loaded
+	if (TargetWorld && bNeedsLevelPlacement)
+	{
+		GenerateLevelActors(ManifestData, TargetWorld);
 	}
 
 	// v3.0: Print dry run summary if in dry run mode
@@ -1169,4 +1261,218 @@ void UGasAbilityGeneratorCommandlet::VerifyGenerationComplete(const TSet<FString
 	LogMessage(TEXT(""));
 	LogMessage(FString::Printf(TEXT("Verification Summary: %d missing, %d unexpected, %d duplicates, count diff: %d"),
 		MissingAssets.Num(), UnexpectedAssets.Num(), GenerationDuplicates.Num(), ExpectedCount - ActualCount));
+}
+
+// v3.9.9: Generate level actors (POIs and NPC Spawners)
+void UGasAbilityGeneratorCommandlet::GenerateLevelActors(const FManifestData& ManifestData, UWorld* TargetWorld)
+{
+	if (!TargetWorld)
+	{
+		LogError(TEXT("Cannot generate level actors: No world loaded"));
+		return;
+	}
+
+	LogMessage(TEXT(""));
+	LogMessage(TEXT("--- Generating Level Actors ---"));
+	LogMessage(FString::Printf(TEXT("Target World: %s"), *TargetWorld->GetName()));
+
+	int32 POINewCount = 0;
+	int32 POISkipCount = 0;
+	int32 POIFailCount = 0;
+	int32 SpawnerNewCount = 0;
+	int32 SpawnerSkipCount = 0;
+	int32 SpawnerFailCount = 0;
+
+	// Track placed POIs for NearPOI resolution and LinkedPOI second pass
+	TMap<FString, APOIActor*> PlacedPOIs;
+
+	// Phase 1: Place POI actors
+	if (ManifestData.POIPlacements.Num() > 0)
+	{
+		LogMessage(TEXT(""));
+		LogMessage(FString::Printf(TEXT("Placing %d POI actors..."), ManifestData.POIPlacements.Num()));
+
+		for (const FManifestPOIPlacement& POIDef : ManifestData.POIPlacements)
+		{
+			FGenerationResult Result = FPOIPlacementGenerator::Generate(POIDef, TargetWorld, PlacedPOIs);
+
+			const TCHAR* StatusStr = TEXT("FAIL");
+			switch (Result.Status)
+			{
+			case EGenerationStatus::New:
+				StatusStr = TEXT("NEW");
+				POINewCount++;
+				break;
+			case EGenerationStatus::Skipped:
+				StatusStr = TEXT("SKIP");
+				POISkipCount++;
+				break;
+			case EGenerationStatus::Failed:
+				StatusStr = TEXT("FAIL");
+				POIFailCount++;
+				break;
+			default:
+				break;
+			}
+
+			LogMessage(FString::Printf(TEXT("[%s] POI: %s"), StatusStr, *POIDef.POITag));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+		}
+
+		// Second pass: Resolve LinkedPOIs
+		LogMessage(TEXT("Resolving POI links..."));
+		for (const FManifestPOIPlacement& POIDef : ManifestData.POIPlacements)
+		{
+			if (POIDef.LinkedPOIs.Num() == 0)
+			{
+				continue;
+			}
+
+			APOIActor** FoundPOI = PlacedPOIs.Find(POIDef.POITag);
+			if (!FoundPOI || !*FoundPOI)
+			{
+				continue;
+			}
+
+			APOIActor* POIActor = *FoundPOI;
+
+			// Get LinkedPOIs property via reflection
+			FArrayProperty* LinkedPOIsProp = CastField<FArrayProperty>(APOIActor::StaticClass()->FindPropertyByName(TEXT("LinkedPOIs")));
+			if (LinkedPOIsProp)
+			{
+				FScriptArrayHelper ArrayHelper(LinkedPOIsProp, LinkedPOIsProp->ContainerPtrToValuePtr<void>(POIActor));
+				ArrayHelper.EmptyValues();
+
+				for (const FString& LinkedTag : POIDef.LinkedPOIs)
+				{
+					APOIActor** LinkedPOI = PlacedPOIs.Find(LinkedTag);
+					if (LinkedPOI && *LinkedPOI)
+					{
+						int32 Index = ArrayHelper.AddValue();
+						FObjectProperty* InnerProp = CastField<FObjectProperty>(LinkedPOIsProp->Inner);
+						if (InnerProp)
+						{
+							InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(Index), *LinkedPOI);
+						}
+						LogMessage(FString::Printf(TEXT("  Linked: %s -> %s"), *POIDef.POITag, *LinkedTag));
+					}
+					else
+					{
+						LogMessage(FString::Printf(TEXT("  Warning: Could not find linked POI: %s"), *LinkedTag));
+					}
+				}
+			}
+		}
+	}
+
+	// Phase 2: Place NPC Spawner actors
+	if (ManifestData.NPCSpawnerPlacements.Num() > 0)
+	{
+		LogMessage(TEXT(""));
+		LogMessage(FString::Printf(TEXT("Placing %d NPC Spawner actors..."), ManifestData.NPCSpawnerPlacements.Num()));
+
+		for (const FManifestNPCSpawnerPlacement& SpawnerDef : ManifestData.NPCSpawnerPlacements)
+		{
+			FGenerationResult Result = FNPCSpawnerPlacementGenerator::Generate(SpawnerDef, TargetWorld, PlacedPOIs);
+
+			const TCHAR* StatusStr = TEXT("FAIL");
+			switch (Result.Status)
+			{
+			case EGenerationStatus::New:
+				StatusStr = TEXT("NEW");
+				SpawnerNewCount++;
+				break;
+			case EGenerationStatus::Skipped:
+				StatusStr = TEXT("SKIP");
+				SpawnerSkipCount++;
+				break;
+			case EGenerationStatus::Failed:
+				StatusStr = TEXT("FAIL");
+				SpawnerFailCount++;
+				break;
+			default:
+				break;
+			}
+
+			LogMessage(FString::Printf(TEXT("[%s] Spawner: %s"), StatusStr, *SpawnerDef.Name));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+		}
+	}
+
+	// Summary
+	LogMessage(TEXT(""));
+	LogMessage(TEXT("--- Level Actor Summary ---"));
+	LogMessage(FString::Printf(TEXT("POIs: %d new, %d skipped, %d failed"), POINewCount, POISkipCount, POIFailCount));
+	LogMessage(FString::Printf(TEXT("Spawners: %d new, %d skipped, %d failed"), SpawnerNewCount, SpawnerSkipCount, SpawnerFailCount));
+
+	// Save the world if any actors were placed
+	if (POINewCount > 0 || SpawnerNewCount > 0)
+	{
+		if (!FGeneratorBase::IsDryRunMode())
+		{
+			SaveWorldPackage(TargetWorld);
+		}
+		else
+		{
+			LogMessage(TEXT("Dry run: World would be saved"));
+		}
+	}
+	else
+	{
+		LogMessage(TEXT("No new actors placed, world not modified"));
+	}
+}
+
+// v3.9.9: Save the world package after actor placement
+void UGasAbilityGeneratorCommandlet::SaveWorldPackage(UWorld* World)
+{
+	if (!World)
+	{
+		LogError(TEXT("Cannot save world: World is null"));
+		return;
+	}
+
+	UPackage* Package = World->GetOutermost();
+	if (!Package)
+	{
+		LogError(TEXT("Cannot save world: Package is null"));
+		return;
+	}
+
+	LogMessage(TEXT(""));
+	LogMessage(TEXT("Saving world package..."));
+
+	// Mark the package dirty
+	Package->MarkPackageDirty();
+
+	// Get the package filename
+	FString PackageFileName;
+	if (FPackageName::TryConvertLongPackageNameToFilename(Package->GetName(), PackageFileName, FPackageName::GetMapPackageExtension()))
+	{
+		// Save the package
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Standalone;
+		SaveArgs.Error = GWarn;
+
+		FSavePackageResultStruct Result = UPackage::Save(Package, World, *PackageFileName, SaveArgs);
+
+		if (Result.Result == ESavePackageResult::Success)
+		{
+			LogMessage(FString::Printf(TEXT("World saved successfully: %s"), *PackageFileName));
+		}
+		else
+		{
+			LogError(FString::Printf(TEXT("Failed to save world: %s"), *PackageFileName));
+		}
+	}
+	else
+	{
+		LogError(FString::Printf(TEXT("Failed to resolve package filename for: %s"), *Package->GetName()));
+	}
 }

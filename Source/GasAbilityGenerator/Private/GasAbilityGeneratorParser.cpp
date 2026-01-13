@@ -221,6 +221,15 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParsePipelineLoadouts(Lines, i, OutData);
 		}
+		// v3.9.9: POI & NPC Spawner Placements
+		else if (IsSectionHeader(TrimmedLine, TEXT("poi_placements:")))
+		{
+			ParsePOIPlacements(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("npc_spawner_placements:")) || IsSectionHeader(TrimmedLine, TEXT("spawner_placements:")))
+		{
+			ParseNPCSpawnerPlacements(Lines, i, OutData);
+		}
 		// v2.5.6: NPC System Extensions - Support for suffix-based section names
 		// Any section ending with _tags: gets parsed as tags
 		else if (TrimmedLine.EndsWith(TEXT("_tags:")) && !TrimmedLine.StartsWith(TEXT("-")))
@@ -7272,4 +7281,411 @@ FRotator FGasAbilityGeneratorParser::ParseRotatorFromString(const FString& Rotat
 	}
 
 	return Result;
+}
+
+// v3.9.9: Parse POI Placements
+void FGasAbilityGeneratorParser::ParsePOIPlacements(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestPOIPlacement CurrentDef;
+	bool bInItem = false;
+	bool bInLinkedPOIs = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			break;
+		}
+
+		// New item - starts with "- poi_tag:"
+		if (TrimmedLine.StartsWith(TEXT("- poi_tag:")))
+		{
+			// Save previous
+			if (bInItem && !CurrentDef.POITag.IsEmpty())
+			{
+				OutData.POIPlacements.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestPOIPlacement();
+			CurrentDef.POITag = GetLineValue(TrimmedLine);
+			bInItem = true;
+			bInLinkedPOIs = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("location:")))
+			{
+				// Parse [X, Y, Z] format
+				FString LocStr = GetLineValue(TrimmedLine);
+				LocStr = LocStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+				TArray<FString> Parts;
+				LocStr.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentDef.Location.X = FCString::Atof(*Parts[0].TrimStartAndEnd());
+					CurrentDef.Location.Y = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					CurrentDef.Location.Z = FCString::Atof(*Parts[2].TrimStartAndEnd());
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("rotation:")))
+			{
+				// Parse [Roll, Pitch, Yaw] format
+				FString RotStr = GetLineValue(TrimmedLine);
+				RotStr = RotStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+				TArray<FString> Parts;
+				RotStr.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentDef.Rotation.Roll = FCString::Atof(*Parts[0].TrimStartAndEnd());
+					CurrentDef.Rotation.Pitch = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					CurrentDef.Rotation.Yaw = FCString::Atof(*Parts[2].TrimStartAndEnd());
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("display_name:")))
+			{
+				CurrentDef.DisplayName = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("create_map_marker:")))
+			{
+				CurrentDef.bCreateMapMarker = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("supports_fast_travel:")))
+			{
+				CurrentDef.bSupportsFastTravel = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("map_icon:")))
+			{
+				CurrentDef.MapIcon = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("linked_pois:")))
+			{
+				bInLinkedPOIs = true;
+			}
+			else if (bInLinkedPOIs && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString POITag = TrimmedLine.Mid(1).TrimStartAndEnd();
+				if (!POITag.IsEmpty())
+				{
+					CurrentDef.LinkedPOIs.Add(POITag);
+				}
+			}
+			else if (!TrimmedLine.StartsWith(TEXT("-")))
+			{
+				// Not a linked poi entry, end linked_pois section
+				bInLinkedPOIs = false;
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last item
+	if (bInItem && !CurrentDef.POITag.IsEmpty())
+	{
+		OutData.POIPlacements.Add(CurrentDef);
+	}
+}
+
+// v3.9.9: Parse NPC Spawner Placements
+void FGasAbilityGeneratorParser::ParseNPCSpawnerPlacements(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestNPCSpawnerPlacement CurrentDef;
+	FManifestNPCSpawnEntry CurrentNPC;
+	bool bInItem = false;
+	bool bInNPCs = false;
+	bool bInNPC = false;
+	bool bInSpawnParams = false;
+	bool bInOwnedTags = false;
+	bool bInFactions = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			break;
+		}
+
+		// New spawner - starts with "- name:"
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save previous
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				if (bInNPC && !CurrentNPC.NPCDefinition.IsEmpty())
+				{
+					CurrentDef.NPCs.Add(CurrentNPC);
+				}
+				OutData.NPCSpawnerPlacements.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestNPCSpawnerPlacement();
+			CurrentNPC = FManifestNPCSpawnEntry();
+			CurrentDef.Name = GetLineValue(TrimmedLine);
+			bInItem = true;
+			bInNPCs = false;
+			bInNPC = false;
+			bInSpawnParams = false;
+			bInOwnedTags = false;
+			bInFactions = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("location:")))
+			{
+				FString LocStr = GetLineValue(TrimmedLine);
+				LocStr = LocStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+				TArray<FString> Parts;
+				LocStr.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentDef.Location.X = FCString::Atof(*Parts[0].TrimStartAndEnd());
+					CurrentDef.Location.Y = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					CurrentDef.Location.Z = FCString::Atof(*Parts[2].TrimStartAndEnd());
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("rotation:")))
+			{
+				FString RotStr = GetLineValue(TrimmedLine);
+				RotStr = RotStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+				TArray<FString> Parts;
+				RotStr.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentDef.Rotation.Roll = FCString::Atof(*Parts[0].TrimStartAndEnd());
+					CurrentDef.Rotation.Pitch = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					CurrentDef.Rotation.Yaw = FCString::Atof(*Parts[2].TrimStartAndEnd());
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("near_poi:")))
+			{
+				CurrentDef.NearPOI = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("poi_offset:")))
+			{
+				FString OffStr = GetLineValue(TrimmedLine);
+				OffStr = OffStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+				TArray<FString> Parts;
+				OffStr.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentDef.POIOffset.X = FCString::Atof(*Parts[0].TrimStartAndEnd());
+					CurrentDef.POIOffset.Y = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					CurrentDef.POIOffset.Z = FCString::Atof(*Parts[2].TrimStartAndEnd());
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("activate_on_begin_play:")))
+			{
+				CurrentDef.bActivateOnBeginPlay = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("npcs:")))
+			{
+				bInNPCs = true;
+				bInNPC = false;
+				bInSpawnParams = false;
+			}
+			else if (bInNPCs)
+			{
+				// New NPC entry
+				if (TrimmedLine.StartsWith(TEXT("- npc_definition:")))
+				{
+					// Save previous NPC
+					if (bInNPC && !CurrentNPC.NPCDefinition.IsEmpty())
+					{
+						CurrentDef.NPCs.Add(CurrentNPC);
+					}
+					CurrentNPC = FManifestNPCSpawnEntry();
+					CurrentNPC.NPCDefinition = GetLineValue(TrimmedLine);
+					bInNPC = true;
+					bInSpawnParams = false;
+					bInOwnedTags = false;
+					bInFactions = false;
+				}
+				else if (bInNPC)
+				{
+					if (TrimmedLine.StartsWith(TEXT("relative_location:")))
+					{
+						FString LocStr = GetLineValue(TrimmedLine);
+						LocStr = LocStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+						TArray<FString> Parts;
+						LocStr.ParseIntoArray(Parts, TEXT(","));
+						if (Parts.Num() >= 3)
+						{
+							CurrentNPC.RelativeLocation.X = FCString::Atof(*Parts[0].TrimStartAndEnd());
+							CurrentNPC.RelativeLocation.Y = FCString::Atof(*Parts[1].TrimStartAndEnd());
+							CurrentNPC.RelativeLocation.Z = FCString::Atof(*Parts[2].TrimStartAndEnd());
+						}
+					}
+					else if (TrimmedLine.StartsWith(TEXT("relative_rotation:")))
+					{
+						FString RotStr = GetLineValue(TrimmedLine);
+						RotStr = RotStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+						TArray<FString> Parts;
+						RotStr.ParseIntoArray(Parts, TEXT(","));
+						if (Parts.Num() >= 3)
+						{
+							CurrentNPC.RelativeRotation.Roll = FCString::Atof(*Parts[0].TrimStartAndEnd());
+							CurrentNPC.RelativeRotation.Pitch = FCString::Atof(*Parts[1].TrimStartAndEnd());
+							CurrentNPC.RelativeRotation.Yaw = FCString::Atof(*Parts[2].TrimStartAndEnd());
+						}
+					}
+					else if (TrimmedLine.StartsWith(TEXT("dont_spawn_if_killed:")))
+					{
+						CurrentNPC.bDontSpawnIfKilled = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("optional_goal:")))
+					{
+						CurrentNPC.OptionalGoal = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("untether_distance:")))
+					{
+						CurrentNPC.UntetherDistance = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("spawn_params:")))
+					{
+						bInSpawnParams = true;
+						bInOwnedTags = false;
+						bInFactions = false;
+					}
+					else if (bInSpawnParams)
+					{
+						if (TrimmedLine.StartsWith(TEXT("override_level_range:")))
+						{
+							CurrentNPC.SpawnParams.bOverrideLevelRange = GetLineValue(TrimmedLine).ToBool();
+						}
+						else if (TrimmedLine.StartsWith(TEXT("min_level:")))
+						{
+							CurrentNPC.SpawnParams.MinLevel = FCString::Atoi(*GetLineValue(TrimmedLine));
+						}
+						else if (TrimmedLine.StartsWith(TEXT("max_level:")))
+						{
+							CurrentNPC.SpawnParams.MaxLevel = FCString::Atoi(*GetLineValue(TrimmedLine));
+						}
+						else if (TrimmedLine.StartsWith(TEXT("override_owned_tags:")))
+						{
+							CurrentNPC.SpawnParams.bOverrideOwnedTags = GetLineValue(TrimmedLine).ToBool();
+						}
+						else if (TrimmedLine.StartsWith(TEXT("default_owned_tags:")))
+						{
+							bInOwnedTags = true;
+							bInFactions = false;
+							// Check for inline array [tag1, tag2]
+							FString TagsStr = GetLineValue(TrimmedLine);
+							if (TagsStr.StartsWith(TEXT("[")))
+							{
+								TagsStr = TagsStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+								TArray<FString> Tags;
+								TagsStr.ParseIntoArray(Tags, TEXT(","));
+								for (const FString& Tag : Tags)
+								{
+									CurrentNPC.SpawnParams.DefaultOwnedTags.Add(Tag.TrimStartAndEnd());
+								}
+								bInOwnedTags = false;
+							}
+						}
+						else if (bInOwnedTags && TrimmedLine.StartsWith(TEXT("-")))
+						{
+							FString Tag = TrimmedLine.Mid(1).TrimStartAndEnd();
+							if (!Tag.IsEmpty())
+							{
+								CurrentNPC.SpawnParams.DefaultOwnedTags.Add(Tag);
+							}
+						}
+						else if (TrimmedLine.StartsWith(TEXT("override_factions:")))
+						{
+							CurrentNPC.SpawnParams.bOverrideFactions = GetLineValue(TrimmedLine).ToBool();
+						}
+						else if (TrimmedLine.StartsWith(TEXT("default_factions:")))
+						{
+							bInFactions = true;
+							bInOwnedTags = false;
+							// Check for inline array
+							FString FactionsStr = GetLineValue(TrimmedLine);
+							if (FactionsStr.StartsWith(TEXT("[")))
+							{
+								FactionsStr = FactionsStr.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+								TArray<FString> Factions;
+								FactionsStr.ParseIntoArray(Factions, TEXT(","));
+								for (const FString& Faction : Factions)
+								{
+									CurrentNPC.SpawnParams.DefaultFactions.Add(Faction.TrimStartAndEnd());
+								}
+								bInFactions = false;
+							}
+						}
+						else if (bInFactions && TrimmedLine.StartsWith(TEXT("-")))
+						{
+							FString Faction = TrimmedLine.Mid(1).TrimStartAndEnd();
+							if (!Faction.IsEmpty())
+							{
+								CurrentNPC.SpawnParams.DefaultFactions.Add(Faction);
+							}
+						}
+						else if (TrimmedLine.StartsWith(TEXT("override_activity_configuration:")))
+						{
+							CurrentNPC.SpawnParams.bOverrideActivityConfiguration = GetLineValue(TrimmedLine).ToBool();
+						}
+						else if (TrimmedLine.StartsWith(TEXT("activity_configuration:")))
+						{
+							CurrentNPC.SpawnParams.ActivityConfiguration = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("override_appearance:")))
+						{
+							CurrentNPC.SpawnParams.bOverrideAppearance = GetLineValue(TrimmedLine).ToBool();
+						}
+						else if (TrimmedLine.StartsWith(TEXT("default_appearance:")))
+						{
+							CurrentNPC.SpawnParams.DefaultAppearance = GetLineValue(TrimmedLine);
+						}
+						else if (!TrimmedLine.StartsWith(TEXT("-")))
+						{
+							// Non-spawn-params property encountered
+							bInSpawnParams = false;
+							bInOwnedTags = false;
+							bInFactions = false;
+						}
+					}
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last spawner
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		if (bInNPC && !CurrentNPC.NPCDefinition.IsEmpty())
+		{
+			CurrentDef.NPCs.Add(CurrentNPC);
+		}
+		OutData.NPCSpawnerPlacements.Add(CurrentDef);
+	}
 }

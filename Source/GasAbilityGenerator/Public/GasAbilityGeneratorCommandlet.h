@@ -85,4 +85,9 @@ private:
 	int32 LastFailedCount = 0;
 	int32 LastValidationErrorCount = 0;
 	bool bHadParseError = false;
+
+	// v3.9.9: Level actor placement
+	void GenerateLevelActors(const FManifestData& ManifestData, UWorld* TargetWorld);
+	void SaveWorldPackage(UWorld* World);
+	UWorld* LoadedWorld = nullptr;
 };
