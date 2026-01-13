@@ -26,7 +26,7 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.9) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.9.4) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -825,6 +825,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.9.4 - Quest Blueprint Generator (UQuestBlueprint): Complete rewrite using UQuestBlueprint (same pattern as DialogueBlueprint v3.8). Works directly on QuestTemplate (auto-created by constructor). Branches now nested inside states (cleaner YAML structure). Events supported on both states and branches. Task argument resolution via reflection. Added NarrativeQuestEditor module dependency. Visual editor shows empty graph but quest functions at runtime.
 - v3.9.3 - Quest State Machine Generator: FQuestGenerator now creates complete quest state machines with UQuestState nodes, UQuestBranch transitions, and UNarrativeTask instances. States support Regular/Success/Failure types. Branches connect states and contain instanced tasks (BPT_FindItem, BPT_FinishDialogue, BPT_Move, etc.). Task properties set via reflection. Full automation - no manual editor setup required for basic quest flows.
 - v3.9.2 - Goal Search Paths: Added all Narrative Pro goal locations to FActivityScheduleGenerator search paths (Attacks/Goals/, DriveToDestination/, FollowCharacter/, GoToLocation/, Idle/, Interact/Goals/, Patrol/, ReturnToSpawn/).
 - v3.9.1 - Schedule Behavior Helper: Added UScheduledBehavior_AddNPCGoalByClass concrete helper class allowing goal class specification via property instead of Blueprint override. FActivityScheduleGenerator now creates fully functional scheduled behaviors.
