@@ -27,6 +27,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/DataTable.h"
 #include "Misc/PackageName.h"
+#include "UObject/SavePackage.h"  // v3.10: Required for FSavePackageArgs
 #include "Kismet2/KismetEditorUtilities.h"  // v3.7: For NPC Creation blueprint generation
 #include "UObject/SavePackage.h"             // v4.0: For FSavePackageArgs
 

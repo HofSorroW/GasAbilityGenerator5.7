@@ -1,10 +1,12 @@
 // GasAbilityGenerator v4.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 // v4.0: Added Spec DataAsset workflow with Content Browser context menus
+// v3.10.0: Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
 
 #include "GasAbilityGeneratorModule.h"
 #include "GasAbilityGeneratorWindow.h"
 #include "GasAbilityGeneratorSpecs.h"
+#include "NPCTableEditor/SNPCTableEditor.h"
 #include "Modules/ModuleManager.h"
 #include "ToolMenus.h"
 #include "Framework/Docking/TabManager.h"
@@ -18,9 +20,8 @@
 
 #define LOCTEXT_NAMESPACE "GasAbilityGenerator"
 
-// Using LogTemp to avoid conflict with LogGasAbilityGenerator in Generators.cpp
-
 static const FName GasAbilityGeneratorTabName("GasAbilityGenerator");
+static const FName NPCTableEditorTabName("NPCTableEditor");
 
 void FGasAbilityGeneratorModule::StartupModule()
 {
@@ -37,14 +38,21 @@ void FGasAbilityGeneratorModule::StartupModule()
 	// Register Spec context menus
 	RegisterSpecContextMenus();
 
-	// Register the tab spawner
+	// Register the tab spawner for main generator window
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
 		GasAbilityGeneratorTabName,
 		FOnSpawnTab::CreateRaw(this, &FGasAbilityGeneratorModule::OnSpawnPluginTab))
 		.SetDisplayName(LOCTEXT("TabTitle", "GAS Ability Generator"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
-	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v4.0 module loaded - Spec DataAsset workflow enabled"));
+	// Register the tab spawner for NPC Table Editor
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+		NPCTableEditorTabName,
+		FOnSpawnTab::CreateRaw(this, &FGasAbilityGeneratorModule::OnSpawnNPCTableEditorTab))
+		.SetDisplayName(LOCTEXT("NPCTableEditorTabTitle", "NPC Table Editor"))
+		.SetMenuType(ETabSpawnerMenuType::Hidden);
+
+	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v4.0 module loaded - Spec DataAsset workflow + NPC Table Editor"));
 }
 
 void FGasAbilityGeneratorModule::ShutdownModule()
@@ -53,6 +61,7 @@ void FGasAbilityGeneratorModule::ShutdownModule()
 	UToolMenus::UnregisterOwner(this);
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GasAbilityGeneratorTabName);
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(NPCTableEditorTabName);
 
 	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] Module shutdown"));
 }
@@ -72,6 +81,13 @@ void FGasAbilityGeneratorModule::RegisterMenus()
 			LOCTEXT("MenuTooltip", "Open the GAS Ability Generator window"),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenPluginWindow))
+		);
+		Section.AddMenuEntry(
+			"NPCTableEditor",
+			LOCTEXT("NPCTableEditorMenuLabel", "NPC Table Editor"),
+			LOCTEXT("NPCTableEditorMenuTooltip", "Open the NPC Table Editor - Excel-like spreadsheet for managing NPCs"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenNPCTableEditorWindow))
 		);
 	}
 }
@@ -179,6 +195,11 @@ void FGasAbilityGeneratorModule::OpenPluginWindow()
 	FGlobalTabmanager::Get()->TryInvokeTab(GasAbilityGeneratorTabName);
 }
 
+void FGasAbilityGeneratorModule::OpenNPCTableEditorWindow()
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(NPCTableEditorTabName);
+}
+
 TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnPluginTab(const FSpawnTabArgs& SpawnTabArgs)
 {
 	return SNew(SDockTab)
@@ -188,13 +209,21 @@ TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnPluginTab(const FSpawnTa
 		];
 }
 
+TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnNPCTableEditorTab(const FSpawnTabArgs& SpawnTabArgs)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		[
+			SNew(SNPCTableEditorWindow)
+		];
+}
+
 //=============================================================================
 // NPC Package Spec Handlers
 //=============================================================================
 
 void FGasAbilityGeneratorModule::GenerateFromSelectedNPCSpecs()
 {
-	// Get selected assets from Content Browser
 	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
 	TArray<FAssetData> SelectedAssets;
 	ContentBrowserModule.Get().GetSelectedAssets(SelectedAssets);
@@ -241,20 +270,14 @@ void FGasAbilityGeneratorModule::GenerateFromSelectedNPCSpecs()
 		return;
 	}
 
-	// Wrap in transaction for undo support
 	FScopedTransaction Transaction(LOCTEXT("GenerateFromNPCSpecs", "Generate from NPC Specs"));
 
 	int32 SuccessCount = 0;
-	int32 FailCount = 0;
-	TArray<FString> GeneratedAssetPaths;
 
 	for (UNPCPackageSpec* Spec : Specs)
 	{
-		// Get merged spec (with parent template applied)
 		UNPCPackageSpec* MergedSpec = Spec->GetMergedSpec();
 
-		// TODO: Implement actual generation by calling existing generators
-		// For now, log what would be generated
 		UE_LOG(LogTemp, Log, TEXT("[NPC Spec] Would generate for: %s"), *MergedSpec->BaseName);
 		UE_LOG(LogTemp, Log, TEXT("  - NPCDef_%s"), *MergedSpec->BaseName);
 
@@ -288,17 +311,13 @@ void FGasAbilityGeneratorModule::GenerateFromSelectedNPCSpecs()
 			UE_LOG(LogTemp, Log, TEXT("  - Quest_%s_%s"), *MergedSpec->BaseName, *Quest.Id);
 		}
 
-		// Update tracking
 		Spec->LastGeneratedTime = FDateTime::Now();
 		Spec->MarkPackageDirty();
 		SuccessCount++;
 	}
 
-	// Show results
 	FString ResultMessage = FString::Printf(
-		TEXT("Generation complete (preview mode - actual generation not yet implemented).\n\n")
-		TEXT("Specs processed: %d\n")
-		TEXT("Check Output Log for details."),
+		TEXT("Generation complete (preview mode).\n\nSpecs processed: %d\nCheck Output Log for details."),
 		SuccessCount);
 
 	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ResultMessage));
@@ -367,16 +386,11 @@ void FGasAbilityGeneratorModule::PreviewSelectedNPCSpecs()
 		if (UNPCPackageSpec* Spec = Cast<UNPCPackageSpec>(AssetData.GetAsset()))
 		{
 			SpecCount++;
-
-			// Get merged spec to show accurate preview
 			UNPCPackageSpec* MergedSpec = Spec->GetMergedSpec();
 
 			PreviewMessage += FString::Printf(TEXT("=== %s ===\n"), *MergedSpec->BaseName);
-
-			// Always generates NPCDefinition
 			PreviewMessage += FString::Printf(TEXT("  [CREATE] NPCDef_%s\n"), *MergedSpec->BaseName);
 
-			// Conditional generations
 			if (MergedSpec->Abilities.Num() > 0)
 			{
 				PreviewMessage += FString::Printf(TEXT("  [CREATE] AC_%s (%d abilities)\n"),
@@ -457,7 +471,6 @@ void FGasAbilityGeneratorModule::GenerateFromSelectedQuestSpecs()
 		return;
 	}
 
-	// Validate first
 	TArray<FString> AllErrors;
 	for (UQuestSpec* Spec : Specs)
 	{
@@ -482,11 +495,8 @@ void FGasAbilityGeneratorModule::GenerateFromSelectedQuestSpecs()
 		return;
 	}
 
-	// TODO: Implement actual generation
 	FString ResultMessage = FString::Printf(
-		TEXT("Quest generation preview:\n\n")
-		TEXT("%d quest(s) would be generated.\n")
-		TEXT("Actual generation not yet implemented."),
+		TEXT("Quest generation preview:\n\n%d quest(s) would be generated.\nActual generation not yet implemented."),
 		Specs.Num());
 
 	for (UQuestSpec* Spec : Specs)
@@ -574,7 +584,6 @@ void FGasAbilityGeneratorModule::GenerateFromSelectedItemSpecs()
 		return;
 	}
 
-	// Validate first
 	TArray<FString> AllErrors;
 	for (UItemSpec* Spec : Specs)
 	{
@@ -599,11 +608,8 @@ void FGasAbilityGeneratorModule::GenerateFromSelectedItemSpecs()
 		return;
 	}
 
-	// TODO: Implement actual generation
 	FString ResultMessage = FString::Printf(
-		TEXT("Item generation preview:\n\n")
-		TEXT("%d item(s) would be generated.\n")
-		TEXT("Actual generation not yet implemented."),
+		TEXT("Item generation preview:\n\n%d item(s) would be generated.\nActual generation not yet implemented."),
 		Specs.Num());
 
 	for (UItemSpec* Spec : Specs)

@@ -6,6 +6,9 @@
 // - Content Browser right-click generation
 // - Template inheritance via ParentTemplate
 //
+// v3.10.0 Features:
+// - Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
+//
 // v2.5.0 Features:
 // - Renamed to GasAbilityGenerator for generic UE project compatibility
 // - Removed project-specific dependencies
@@ -69,8 +72,14 @@ private:
 	/** Open the plugin window */
 	void OpenPluginWindow();
 
+	/** Open the NPC Table Editor window */
+	void OpenNPCTableEditorWindow();
+
 	/** Spawn the plugin tab */
 	TSharedRef<SDockTab> OnSpawnPluginTab(const FSpawnTabArgs& SpawnTabArgs);
+
+	/** Spawn the NPC Table Editor tab */
+	TSharedRef<SDockTab> OnSpawnNPCTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);
 
 	/** Asset category handle for "GasAbilityGenerator" */
 	EAssetTypeCategories::Type GasAbilityGeneratorCategory = EAssetTypeCategories::None;
