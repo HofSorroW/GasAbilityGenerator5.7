@@ -26,7 +26,7 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.7) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.8) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -232,7 +232,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v3.6)
+## GasAbilityGenerator Plugin (v3.8)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -445,6 +445,43 @@ dialogue_blueprints:
       - npc_definition: NPCDef_Father
         node_color: "#FF6600"
         owned_tags: [Father.State.Speaking]
+    # v3.8: Full dialogue tree generation
+    dialogue_tree:
+      root: greeting_node                         # ID of root node
+      nodes:
+        - id: greeting_node
+          type: npc                               # npc or player
+          speaker: NPCDef_Father
+          text: "Hello, traveler!"
+          duration: auto                          # auto, manual, or seconds
+          skippable: true
+          player_replies:                         # Links to player choice nodes
+            - friendly_response
+            - hostile_response
+        - id: friendly_response
+          type: player
+          text: "Hello, friend!"
+          option_text: "Greet warmly"             # Text shown in dialogue wheel
+          npc_replies: [farewell_node]
+        - id: hostile_response
+          type: player
+          text: "Leave me alone."
+          option_text: "Be rude"
+          events:                                 # Events fired during node
+            - type: NarrativeEvent
+              runtime: Start                      # Start, End, Both
+              properties:
+                event_class: NE_PlayerRude
+          npc_replies: [angry_farewell]
+        - id: farewell_node
+          type: npc
+          speaker: NPCDef_Father
+          text: "Safe travels!"
+          conditions:                             # Node visibility conditions
+            - type: HasGameplayTag
+              not: false                          # Invert condition
+              properties:
+                tag: Father.State.Friendly
 
 # v3.5: CharacterDefinition with full property support
 character_definitions:
@@ -694,6 +731,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.8 - Dialogue Tree Generation: DialogueBlueprint (DBP_) now supports full dialogue tree creation from YAML. New manifest property `dialogue_tree` with `root` and `nodes` array. Each node supports: id, type (npc/player), speaker, text, option_text, audio, montage, duration, duration_seconds, auto_select, auto_select_if_only, skippable, directed_at, npc_replies[], player_replies[], alternative_lines[], events[], conditions[]. Events support type, runtime (Start/End/Both), and properties map. Conditions support type, not (invert), and properties map. Creates UDialogueBlueprint with proper DialogueTemplate containing UDialogueNode_NPC/UDialogueNode_Player nodes and FDialogueLine data. Full v3.0 Regen/Diff Safety System integration. Upgrades DBP_ to High automation level with full editor compatibility.
 - v3.7 - NPC Auto-Create Related Assets: NPCDefinition gains auto_create_dialogue, auto_create_tagged_dialogue, and auto_create_item_loadout flags for one-manifest NPC package generation. When enabled: auto_create_dialogue creates DBP_{NPCName}Dialogue, auto_create_tagged_dialogue creates {NPCName}_TaggedDialogue, auto_create_item_loadout populates DefaultItemLoadout.ItemCollectionsToGrant with specified item collections. New manifest field default_item_loadout_collections for specifying item collections to grant. All v3.0 Regen/Diff Safety System hash safeguards included via updated ComputeHash().
 - v3.6 - NPCDefinition ActivitySchedules: NPCDefinition (NPCDef_) gains ActivitySchedules array support (TArray<TSoftObjectPtr<UNPCActivitySchedule>>) for defining NPC daily routines. Also adds YAML list parsing support for DefaultOwnedTags, DefaultFactions, and ActivitySchedules arrays in npc_definitions.
 - v3.5 - CharacterDefinition & DialogueBlueprint Enhancement: CharacterDefinition (CD_) gains full property support - DefaultOwnedTags/DefaultFactions now properly populate FGameplayTagContainer from arrays, added DefaultAppearance (TSoftObjectPtr), TriggerSets (array via FScriptArrayHelper reflection), AbilityConfiguration (FObjectProperty). DialogueBlueprint gains 3 additional UDialogue properties - DefaultHeadBoneName (FName), DialogueBlendOutTime (float), bAdjustPlayerTransform (bool). Both CD_ and DBP_ upgraded to High automation level.
