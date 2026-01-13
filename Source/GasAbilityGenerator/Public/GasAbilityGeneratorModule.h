@@ -1,10 +1,5 @@
-// GasAbilityGenerator v4.0
+// GasAbilityGenerator v3.10.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
-//
-// v4.0 Features:
-// - Spec DataAssets for native UE workflow
-// - Content Browser right-click generation
-// - Template inheritance via ParentTemplate
 //
 // v3.10.0 Features:
 // - Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
@@ -17,18 +12,13 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
-#include "IAssetTools.h"
 
 class SDockTab;
 class FSpawnTabArgs;
-class UNPCPackageSpec;
-class UQuestSpec;
-class UItemSpec;
 
 /**
  * GAS Ability Generator Plugin Module
- * Generates Gameplay Ability System assets from YAML manifest definitions
- * and Spec DataAssets (v4.0+).
+ * Generates Gameplay Ability System assets from YAML manifest definitions.
  */
 class GASABILITYGENERATOR_API FGasAbilityGeneratorModule : public IModuleInterface
 {
@@ -37,37 +27,9 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
-	//=========================================================================
-	// v4.0: Spec DataAsset Context Menu Handlers
-	//=========================================================================
-
-	/** Generate assets from selected NPC Package Specs */
-	static void GenerateFromSelectedNPCSpecs();
-
-	/** Validate selected NPC Package Specs without generating */
-	static void ValidateSelectedNPCSpecs();
-
-	/** Preview what would be generated from selected NPC Package Specs */
-	static void PreviewSelectedNPCSpecs();
-
-	/** Generate assets from selected Quest Specs */
-	static void GenerateFromSelectedQuestSpecs();
-
-	/** Validate selected Quest Specs */
-	static void ValidateSelectedQuestSpecs();
-
-	/** Generate assets from selected Item Specs */
-	static void GenerateFromSelectedItemSpecs();
-
-	/** Validate selected Item Specs */
-	static void ValidateSelectedItemSpecs();
-
 private:
 	/** Register menu extensions */
 	void RegisterMenus();
-
-	/** Register Content Browser context menu extensions for Spec assets */
-	void RegisterSpecContextMenus();
 
 	/** Open the plugin window */
 	void OpenPluginWindow();
@@ -80,7 +42,4 @@ private:
 
 	/** Spawn the NPC Table Editor tab */
 	TSharedRef<SDockTab> OnSpawnNPCTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);
-
-	/** Asset category handle for "GasAbilityGenerator" */
-	EAssetTypeCategories::Type GasAbilityGeneratorCategory = EAssetTypeCategories::None;
 };
