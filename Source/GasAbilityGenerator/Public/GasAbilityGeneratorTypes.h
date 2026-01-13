@@ -1410,6 +1410,7 @@ struct FManifestDialogueConditionDefinition
 
 /**
  * v3.7: Dialogue node definition (NPC or Player node)
+ * v3.9.6: Added quest shortcuts (StartQuest, CompleteQuestBranch, FailQuest)
  */
 struct FManifestDialogueNodeDefinition
 {
@@ -1432,6 +1433,11 @@ struct FManifestDialogueNodeDefinition
 	TArray<FManifestDialogueEventDefinition> Events;           // Events on this node
 	TArray<FManifestDialogueConditionDefinition> Conditions;   // Conditions for visibility
 
+	// v3.9.6: Quest shortcuts - auto-generate NarrativeEvents
+	FString StartQuest;                  // Quest to start when node selected
+	FString CompleteQuestBranch;         // Quest branch to complete
+	FString FailQuest;                   // Quest to fail
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Id);
@@ -1452,6 +1458,12 @@ struct FManifestDialogueNodeDefinition
 		for (const auto& Alt : AlternativeLines) { Hash ^= Alt.ComputeHash(); }
 		for (const auto& Evt : Events) { Hash ^= Evt.ComputeHash(); }
 		for (const auto& Cond : Conditions) { Hash ^= Cond.ComputeHash(); }
+		// v3.9.6: Include quest shortcuts in hash
+		Hash ^= static_cast<uint64>(GetTypeHash(StartQuest));
+		Hash = (Hash << 3) | (Hash >> 61);
+		Hash ^= static_cast<uint64>(GetTypeHash(CompleteQuestBranch));
+		Hash = (Hash << 3) | (Hash >> 61);
+		Hash ^= static_cast<uint64>(GetTypeHash(FailQuest));
 		return Hash;
 	}
 };
@@ -1621,7 +1633,26 @@ struct FManifestEquippableItemDefinition
 	float SpreadFireBump = 0.5f;         // Spread increase per shot
 	float SpreadDecreaseSpeed = 5.0f;    // Spread recovery speed
 
-	/** v3.4: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.9.6: NarrativeItem usage properties
+	bool bAddDefaultUseOption = true;    // Add default "Use" option to context menu
+	bool bConsumeOnUse = false;          // Consume item when used
+	bool bUsedWithOtherItem = false;     // Item is used with another item
+	FString UseActionText;               // Custom use action text (e.g., "Drink", "Read")
+	bool bCanActivate = false;           // Item can be activated
+	bool bToggleActiveOnUse = false;     // Toggle active state on use
+	FString UseSound;                    // Sound to play on use (asset path)
+
+	// v3.9.6: Weapon attachment configurations
+	TArray<FString> HolsterAttachmentSlots;     // Slot tags for holster configs
+	TArray<FString> HolsterAttachmentSockets;   // Socket names (parallel array)
+	TArray<FVector> HolsterAttachmentOffsets;   // Location offsets (parallel array)
+	TArray<FRotator> HolsterAttachmentRotations; // Rotation offsets (parallel array)
+	TArray<FString> WieldAttachmentSlots;       // Slot tags for wield configs
+	TArray<FString> WieldAttachmentSockets;     // Socket names (parallel array)
+	TArray<FVector> WieldAttachmentOffsets;     // Location offsets (parallel array)
+	TArray<FRotator> WieldAttachmentRotations;  // Rotation offsets (parallel array)
+
+	/** v3.9.6: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1706,6 +1737,31 @@ struct FManifestEquippableItemDefinition
 		Hash = (Hash << 5) | (Hash >> 59);
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(SpreadDecreaseSpeed * 100.f));
 		Hash = (Hash << 5) | (Hash >> 59);
+
+		// v3.9.6: Hash usage properties
+		Hash ^= (bAddDefaultUseOption ? 1ULL : 0ULL) << 11;
+		Hash ^= (bConsumeOnUse ? 1ULL : 0ULL) << 12;
+		Hash ^= (bUsedWithOtherItem ? 1ULL : 0ULL) << 13;
+		Hash ^= GetTypeHash(UseActionText);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= (bCanActivate ? 1ULL : 0ULL) << 14;
+		Hash ^= (bToggleActiveOnUse ? 1ULL : 0ULL) << 15;
+		Hash ^= GetTypeHash(UseSound);
+		Hash = (Hash << 5) | (Hash >> 59);
+
+		// v3.9.6: Hash weapon attachment configs
+		for (int32 i = 0; i < HolsterAttachmentSlots.Num(); i++)
+		{
+			Hash ^= GetTypeHash(HolsterAttachmentSlots[i]);
+			if (HolsterAttachmentSockets.IsValidIndex(i)) Hash ^= GetTypeHash(HolsterAttachmentSockets[i]);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (int32 i = 0; i < WieldAttachmentSlots.Num(); i++)
+		{
+			Hash ^= GetTypeHash(WieldAttachmentSlots[i]);
+			if (WieldAttachmentSockets.IsValidIndex(i)) Hash ^= GetTypeHash(WieldAttachmentSockets[i]);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
 
 		return Hash;
 	}
@@ -3007,8 +3063,34 @@ struct FManifestQuestStateDefinition
 };
 
 /**
+ * v3.9.6: Quest reward definition - currency, XP, and items granted on completion
+ */
+struct FManifestQuestRewardDefinition
+{
+	int32 Currency = 0;                  // Currency to grant
+	int32 XP = 0;                        // Experience points to grant
+	TArray<FString> Items;               // Item class names to grant
+	TArray<int32> ItemQuantities;        // Parallel array of quantities
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(Currency);
+		Hash ^= static_cast<uint64>(XP) << 16;
+		for (int32 i = 0; i < Items.Num(); i++)
+		{
+			Hash ^= GetTypeHash(Items[i]);
+			int32 Qty = ItemQuantities.IsValidIndex(i) ? ItemQuantities[i] : 1;
+			Hash ^= static_cast<uint64>(Qty) << 8;
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
  * v3.9.4: Quest Blueprint definition - creates UQuestBlueprint with full state machine
  * Following the same pattern as DialogueBlueprint v3.8
+ * v3.9.6: Added Questgiver and Rewards
  */
 struct FManifestQuestDefinition
 {
@@ -3019,6 +3101,10 @@ struct FManifestQuestDefinition
 	bool bTracked = true;                // Show navigation markers
 	FString Dialogue;                    // Associated dialogue asset (optional)
 	FString StartState;                  // ID of starting state (defaults to first state)
+
+	// v3.9.6: Questgiver and rewards
+	FString Questgiver;                  // NPCDef_ who gives this quest
+	FManifestQuestRewardDefinition Rewards;  // Rewards on completion
 
 	TArray<FManifestQuestStateDefinition> States;
 
@@ -3031,6 +3117,9 @@ struct FManifestQuestDefinition
 		Hash ^= (bTracked ? 1ULL : 0ULL) << 12;
 		Hash ^= GetTypeHash(Dialogue) << 16;
 		Hash ^= GetTypeHash(StartState) << 20;
+		// v3.9.6: Include questgiver and rewards in hash
+		Hash ^= GetTypeHash(Questgiver) << 24;
+		Hash ^= Rewards.ComputeHash() << 28;
 		for (const auto& State : States)
 		{
 			Hash ^= State.ComputeHash();

@@ -7378,6 +7378,44 @@ static void CreateDialogueTree(
 			}
 		}
 
+		// v3.9.6: Quest shortcuts - create events for start_quest, complete_quest_branch, fail_quest
+		if (!NodeDef.StartQuest.IsEmpty())
+		{
+			FManifestDialogueEventDefinition QuestEventDef;
+			QuestEventDef.Type = TEXT("NE_BeginQuest");
+			QuestEventDef.Runtime = TEXT("Start");
+			QuestEventDef.Properties.Add(TEXT("QuestClass"), NodeDef.StartQuest);
+			if (UNarrativeEvent* Event = CreateDialogueEventFromDefinition(DialogueNode, QuestEventDef))
+			{
+				DialogueNode->Events.Add(Event);
+				UE_LOG(LogGasAbilityGenerator, Log, TEXT("    Added StartQuest event: %s"), *NodeDef.StartQuest);
+			}
+		}
+		if (!NodeDef.CompleteQuestBranch.IsEmpty())
+		{
+			FManifestDialogueEventDefinition BranchEventDef;
+			BranchEventDef.Type = TEXT("NE_CompleteQuestBranch");
+			BranchEventDef.Runtime = TEXT("Start");
+			BranchEventDef.Properties.Add(TEXT("BranchID"), NodeDef.CompleteQuestBranch);
+			if (UNarrativeEvent* Event = CreateDialogueEventFromDefinition(DialogueNode, BranchEventDef))
+			{
+				DialogueNode->Events.Add(Event);
+				UE_LOG(LogGasAbilityGenerator, Log, TEXT("    Added CompleteQuestBranch event: %s"), *NodeDef.CompleteQuestBranch);
+			}
+		}
+		if (!NodeDef.FailQuest.IsEmpty())
+		{
+			FManifestDialogueEventDefinition FailEventDef;
+			FailEventDef.Type = TEXT("NE_FailQuest");
+			FailEventDef.Runtime = TEXT("Start");
+			FailEventDef.Properties.Add(TEXT("QuestClass"), NodeDef.FailQuest);
+			if (UNarrativeEvent* Event = CreateDialogueEventFromDefinition(DialogueNode, FailEventDef))
+			{
+				DialogueNode->Events.Add(Event);
+				UE_LOG(LogGasAbilityGenerator, Log, TEXT("    Added FailQuest event: %s"), *NodeDef.FailQuest);
+			}
+		}
+
 		// Add conditions
 		for (const auto& CondDef : NodeDef.Conditions)
 		{
@@ -8353,6 +8391,100 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 							}
 						}
 					}
+				}
+			}
+
+			// v3.9.6: NarrativeItem usage properties
+			// bAddDefaultUseOption (default true, only set if false)
+			if (!Definition.bAddDefaultUseOption)
+			{
+				FBoolProperty* UseOptProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bAddDefaultUseOption")));
+				if (UseOptProp)
+				{
+					UseOptProp->SetPropertyValue_InContainer(CDO, false);
+					LogGeneration(TEXT("  Set bAddDefaultUseOption: false"));
+				}
+			}
+			// bConsumeOnUse
+			if (Definition.bConsumeOnUse)
+			{
+				FBoolProperty* ConsumeProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bConsumeOnUse")));
+				if (ConsumeProp)
+				{
+					ConsumeProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bConsumeOnUse: true"));
+				}
+			}
+			// bUsedWithOtherItem
+			if (Definition.bUsedWithOtherItem)
+			{
+				FBoolProperty* UsedWithProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bUsedWithOtherItem")));
+				if (UsedWithProp)
+				{
+					UsedWithProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bUsedWithOtherItem: true"));
+				}
+			}
+			// UseActionText
+			if (!Definition.UseActionText.IsEmpty())
+			{
+				FTextProperty* UseTextProp = CastField<FTextProperty>(CDO->GetClass()->FindPropertyByName(TEXT("UseActionText")));
+				if (UseTextProp)
+				{
+					UseTextProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.UseActionText));
+					LogGeneration(FString::Printf(TEXT("  Set UseActionText: %s"), *Definition.UseActionText));
+				}
+			}
+			// bCanActivate
+			if (Definition.bCanActivate)
+			{
+				FBoolProperty* ActivateProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bCanActivate")));
+				if (ActivateProp)
+				{
+					ActivateProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bCanActivate: true"));
+				}
+			}
+			// bToggleActiveOnUse
+			if (Definition.bToggleActiveOnUse)
+			{
+				FBoolProperty* ToggleProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bToggleActiveOnUse")));
+				if (ToggleProp)
+				{
+					ToggleProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bToggleActiveOnUse: true"));
+				}
+			}
+			// UseSound (TSoftObjectPtr<USoundBase>)
+			if (!Definition.UseSound.IsEmpty())
+			{
+				FSoftObjectProperty* SoundProp = CastField<FSoftObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("UseSound")));
+				if (SoundProp)
+				{
+					FSoftObjectPtr SoftPtr(FSoftObjectPath(Definition.UseSound));
+					SoundProp->SetPropertyValue_InContainer(CDO, SoftPtr);
+					LogGeneration(FString::Printf(TEXT("  Set UseSound: %s"), *Definition.UseSound));
+				}
+			}
+
+			// v3.9.6: Weapon attachments (HolsterAttachments, WieldAttachments)
+			// Log for manual setup as TMap<FGameplayTag, FWeaponAttachmentConfig> is complex
+			if (Definition.HolsterAttachmentSlots.Num() > 0)
+			{
+				LogGeneration(FString::Printf(TEXT("  [INFO] HolsterAttachments require manual setup: %d entries"), Definition.HolsterAttachmentSlots.Num()));
+				for (int32 i = 0; i < Definition.HolsterAttachmentSlots.Num(); i++)
+				{
+					FString Socket = Definition.HolsterAttachmentSockets.IsValidIndex(i) ? Definition.HolsterAttachmentSockets[i] : TEXT("None");
+					LogGeneration(FString::Printf(TEXT("    [%d] Slot: %s, Socket: %s"), i, *Definition.HolsterAttachmentSlots[i], *Socket));
+				}
+			}
+			if (Definition.WieldAttachmentSlots.Num() > 0)
+			{
+				LogGeneration(FString::Printf(TEXT("  [INFO] WieldAttachments require manual setup: %d entries"), Definition.WieldAttachmentSlots.Num()));
+				for (int32 i = 0; i < Definition.WieldAttachmentSlots.Num(); i++)
+				{
+					FString Socket = Definition.WieldAttachmentSockets.IsValidIndex(i) ? Definition.WieldAttachmentSockets[i] : TEXT("None");
+					LogGeneration(FString::Printf(TEXT("    [%d] Slot: %s, Socket: %s"), i, *Definition.WieldAttachmentSlots[i], *Socket));
 				}
 			}
 
@@ -11400,6 +11532,46 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 					LogGeneration(FString::Printf(TEXT("  Set QuestDialogue: %s"), *Definition.Dialogue));
 				}
 				break;
+			}
+		}
+	}
+
+	// v3.9.6: Log questgiver for manual setup
+	if (!Definition.Questgiver.IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("  Questgiver (manual setup): %s"), *Definition.Questgiver));
+	}
+
+	// v3.9.6: Add reward events to success state
+	if (Definition.Rewards.Currency > 0 || Definition.Rewards.XP > 0 || Definition.Rewards.Items.Num() > 0)
+	{
+		// Find the success state
+		UQuestState* SuccessState = nullptr;
+		for (const auto& Pair : StateMap)
+		{
+			if (Pair.Value && Pair.Value->StateNodeType == EStateNodeType::Success)
+			{
+				SuccessState = Pair.Value;
+				break;
+			}
+		}
+
+		if (SuccessState)
+		{
+			// Log rewards for manual setup (Narrative Pro handles rewards via game-specific events)
+			if (Definition.Rewards.Currency > 0)
+			{
+				LogGeneration(FString::Printf(TEXT("  [INFO] Success state reward: Currency +%d (manual NE_GrantCurrency setup)"), Definition.Rewards.Currency));
+			}
+			if (Definition.Rewards.XP > 0)
+			{
+				LogGeneration(FString::Printf(TEXT("  [INFO] Success state reward: XP +%d (manual NE_GrantXP setup)"), Definition.Rewards.XP));
+			}
+			for (int32 i = 0; i < Definition.Rewards.Items.Num(); i++)
+			{
+				int32 Qty = Definition.Rewards.ItemQuantities.IsValidIndex(i) ? Definition.Rewards.ItemQuantities[i] : 1;
+				LogGeneration(FString::Printf(TEXT("  [INFO] Success state reward: Item %s x%d (manual NE_GrantItem setup)"),
+					*Definition.Rewards.Items[i], Qty));
 			}
 		}
 	}

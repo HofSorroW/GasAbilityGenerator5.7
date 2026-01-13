@@ -3338,6 +3338,19 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 					{
 						CurrentDialogueNode.DirectedAt = GetLineValue(TrimmedLine);
 					}
+					// v3.9.6: Quest shortcuts
+					else if (TrimmedLine.StartsWith(TEXT("start_quest:")))
+					{
+						CurrentDialogueNode.StartQuest = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("complete_quest_branch:")))
+					{
+						CurrentDialogueNode.CompleteQuestBranch = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("fail_quest:")))
+					{
+						CurrentDialogueNode.FailQuest = GetLineValue(TrimmedLine);
+					}
 					// NPC replies array
 					else if (TrimmedLine.Equals(TEXT("npc_replies:")) || TrimmedLine.StartsWith(TEXT("npc_replies:")))
 					{
@@ -3673,6 +3686,9 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInWeaponAbilities = false;
 	bool bInMainhandAbilities = false;
 	bool bInOffhandAbilities = false;
+	// v3.9.6: Weapon attachment parsing states
+	bool bInHolsterAttachments = false;
+	bool bInWieldAttachments = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3852,6 +3868,88 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			{
 				CurrentDef.SpreadDecreaseSpeed = FCString::Atof(*GetLineValue(TrimmedLine));
 			}
+			// v3.9.6: NarrativeItem usage properties
+			else if (TrimmedLine.StartsWith(TEXT("add_default_use_option:")))
+			{
+				CurrentDef.bAddDefaultUseOption = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("consume_on_use:")))
+			{
+				CurrentDef.bConsumeOnUse = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("used_with_other_item:")))
+			{
+				CurrentDef.bUsedWithOtherItem = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("use_action_text:")))
+			{
+				CurrentDef.UseActionText = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("can_activate:")))
+			{
+				CurrentDef.bCanActivate = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("toggle_active_on_use:")))
+			{
+				CurrentDef.bToggleActiveOnUse = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("use_sound:")))
+			{
+				CurrentDef.UseSound = GetLineValue(TrimmedLine);
+			}
+			// v3.9.6: Weapon attachment arrays
+			else if (TrimmedLine.Equals(TEXT("holster_attachments:")) || TrimmedLine.StartsWith(TEXT("holster_attachments:")))
+			{
+				bInHolsterAttachments = true;
+				bInWieldAttachments = false;
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("wield_attachments:")) || TrimmedLine.StartsWith(TEXT("wield_attachments:")))
+			{
+				bInHolsterAttachments = false;
+				bInWieldAttachments = true;
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+			}
+			else if (bInHolsterAttachments || bInWieldAttachments)
+			{
+				// Parse attachment entry
+				if (TrimmedLine.StartsWith(TEXT("- slot:")))
+				{
+					if (bInHolsterAttachments)
+					{
+						CurrentDef.HolsterAttachmentSlots.Add(GetLineValue(TrimmedLine));
+						CurrentDef.HolsterAttachmentSockets.Add(TEXT(""));
+						CurrentDef.HolsterAttachmentOffsets.Add(FVector::ZeroVector);
+						CurrentDef.HolsterAttachmentRotations.Add(FRotator::ZeroRotator);
+					}
+					else
+					{
+						CurrentDef.WieldAttachmentSlots.Add(GetLineValue(TrimmedLine));
+						CurrentDef.WieldAttachmentSockets.Add(TEXT(""));
+						CurrentDef.WieldAttachmentOffsets.Add(FVector::ZeroVector);
+						CurrentDef.WieldAttachmentRotations.Add(FRotator::ZeroRotator);
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("socket:")))
+				{
+					if (bInHolsterAttachments && CurrentDef.HolsterAttachmentSockets.Num() > 0)
+					{
+						CurrentDef.HolsterAttachmentSockets[CurrentDef.HolsterAttachmentSockets.Num() - 1] = GetLineValue(TrimmedLine);
+					}
+					else if (bInWieldAttachments && CurrentDef.WieldAttachmentSockets.Num() > 0)
+					{
+						CurrentDef.WieldAttachmentSockets[CurrentDef.WieldAttachmentSockets.Num() - 1] = GetLineValue(TrimmedLine);
+					}
+				}
+			}
 			// v3.4: Weapon ability arrays
 			else if (TrimmedLine.Equals(TEXT("weapon_abilities:")) || TrimmedLine.StartsWith(TEXT("weapon_abilities:")))
 			{
@@ -3860,6 +3958,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInWeaponAbilities = true;
 				bInMainhandAbilities = false;
 				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("mainhand_abilities:")) || TrimmedLine.StartsWith(TEXT("mainhand_abilities:")))
 			{
@@ -3868,6 +3968,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInWeaponAbilities = false;
 				bInMainhandAbilities = true;
 				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("offhand_abilities:")) || TrimmedLine.StartsWith(TEXT("offhand_abilities:")))
 			{
@@ -3876,6 +3978,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInWeaponAbilities = false;
 				bInMainhandAbilities = false;
 				bInOffhandAbilities = true;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("item_tags:")) || TrimmedLine.StartsWith(TEXT("item_tags:")))
 			{
@@ -3884,6 +3988,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInWeaponAbilities = false;
 				bInMainhandAbilities = false;
 				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("abilities_to_grant:")) || TrimmedLine.StartsWith(TEXT("abilities_to_grant:")))
 			{
@@ -3892,6 +3998,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInWeaponAbilities = false;
 				bInMainhandAbilities = false;
 				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
 			}
 			else if (bInItemTags && TrimmedLine.StartsWith(TEXT("-")))
 			{
@@ -6197,6 +6305,8 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 	bool bInBranchEvents = false;
 	bool bInEvent = false;
 	bool bInEventProperties = false;
+	bool bInQuestRewards = false;   // v3.9.6: Rewards section
+	bool bInRewardItems = false;    // v3.9.6: Items in rewards
 
 	auto SaveCurrentTask = [&]()
 	{
@@ -6316,6 +6426,53 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 			{
 				CurrentQuest.StartState = GetLineValue(TrimmedLine);
 			}
+			// v3.9.6: Questgiver
+			else if (TrimmedLine.StartsWith(TEXT("questgiver:")))
+			{
+				CurrentQuest.Questgiver = GetLineValue(TrimmedLine);
+			}
+			// v3.9.6: Rewards section
+			else if (TrimmedLine.StartsWith(TEXT("rewards:")))
+			{
+				bInQuestRewards = true;
+				bInRewardItems = false;
+			}
+			else if (bInQuestRewards && !bInStates)
+			{
+				if (TrimmedLine.StartsWith(TEXT("currency:")))
+				{
+					CurrentQuest.Rewards.Currency = FCString::Atoi(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("xp:")))
+				{
+					CurrentQuest.Rewards.XP = FCString::Atoi(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("items:")))
+				{
+					bInRewardItems = true;
+				}
+				else if (bInRewardItems)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- item:")))
+					{
+						CurrentQuest.Rewards.Items.Add(GetLineValue(TrimmedLine));
+						CurrentQuest.Rewards.ItemQuantities.Add(1); // Default quantity
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- ")) && !TrimmedLine.Contains(TEXT(":")))
+					{
+						// Simple item name
+						FString ItemName = TrimmedLine.Mid(2).TrimStart();
+						CurrentQuest.Rewards.Items.Add(ItemName);
+						CurrentQuest.Rewards.ItemQuantities.Add(1);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("quantity:")) && CurrentQuest.Rewards.Items.Num() > 0)
+					{
+						// Update the last item's quantity
+						CurrentQuest.Rewards.ItemQuantities[CurrentQuest.Rewards.ItemQuantities.Num() - 1] =
+							FCString::Atoi(*GetLineValue(TrimmedLine));
+					}
+				}
+			}
 			else if (TrimmedLine.StartsWith(TEXT("states:")))
 			{
 				bInStates = true;
@@ -6323,6 +6480,8 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 				bInStateBranches = false;
 				bInStateEvents = false;
 				bInBranchEvents = false;
+				bInQuestRewards = false;  // v3.9.6: Exit rewards section
+				bInRewardItems = false;
 			}
 			else if (bInStates)
 			{
