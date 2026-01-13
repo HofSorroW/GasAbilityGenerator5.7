@@ -666,14 +666,56 @@ goal_items:
     require_tags:                                   # Tags required to pursue goal
       - State.Alive
 
-# v3.9: Quest blueprint for quest state machine
+# v3.9.3: Quest blueprint with full state machine
 quests:
   - name: Quest_ForgeSupplies
     folder: Quests/Town
-    quest_name: "Forge Supplies"                    # Display name
+    quest_name: "Forge Supplies"
     description: "Gather iron ore for the blacksmith."
-    is_tracked: true                                # Show in quest tracker
-    # Note: States, branches, tasks, and rewards are logged for manual editor setup
+    is_tracked: true
+    states:
+      - id: Start
+        type: regular                               # regular, success, failure
+        description: "Talk to the blacksmith"
+      - id: Gathering
+        type: regular
+        description: "Gather 10 iron ore"
+      - id: Return
+        type: regular
+        description: "Return to the blacksmith"
+      - id: Complete
+        type: success                               # Quest succeeds at this state
+        description: "Quest completed!"
+    branches:
+      - id: AcceptQuest
+        from_state: Start
+        to_state: Gathering
+        description: "I'll gather the ore"
+        tasks:
+          - task_class: BPT_FinishDialogue          # Narrative Pro task classes
+            properties:
+              dialogue: DBP_BlacksmithQuest
+      - id: GatherOre
+        from_state: Gathering
+        to_state: Return
+        description: "Gather iron ore"
+        tasks:
+          - task_class: BPT_FindItem
+            quantity: 10
+            properties:
+              item_class: IronOre
+      - id: ReturnToBlacksmith
+        from_state: Return
+        to_state: Complete
+        description: "Talk to blacksmith"
+        tasks:
+          - task_class: BPT_FinishDialogue
+            properties:
+              dialogue: DBP_BlacksmithReturn
+    rewards:
+      currency: 100
+      xp: 50
+      items: [EI_IronSword]
 ```
 
 ### Event Graph Generation
@@ -783,7 +825,10 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
-- v3.9 - NPC Pipeline (Schedules, Goals, Quests): Three new generators for comprehensive NPC content creation. FActivityScheduleGenerator creates Schedule_ assets (UNPCActivitySchedule DataAssets) with fully populated scheduled behaviors via new `UScheduledBehavior_AddNPCGoalByClass` helper class (concrete implementation that allows specifying goal class directly via property, replacing the abstract `UScheduledBehavior_AddNPCGoal` which requires Blueprint override). Time format: 0-2400 where 100 = 1 hour. FGoalItemGenerator creates Goal_ assets (UNPCGoalItem Blueprints) for AI objectives with DefaultScore, GoalLifetime, RemoveOnSucceeded, SaveGoal, OwnedTags, BlockTags, RequireTags. FQuestGenerator creates Quest_ assets (UQuest Blueprints) with QuestName, QuestDescription, IsTracked properties - state machine structure (states, branches, tasks, rewards) logged for manual editor setup. New manifest sections: activity_schedules (behaviors array with start_time, end_time, goal_class, score_override), goal_items/goals (AI objectives), quests (quest definitions). Full v3.0 Regen/Diff Safety System integration. Supports both NPC schema file (.npc.yaml) batch processing and incremental manifest entries.
+- v3.9.3 - Quest State Machine Generator: FQuestGenerator now creates complete quest state machines with UQuestState nodes, UQuestBranch transitions, and UNarrativeTask instances. States support Regular/Success/Failure types. Branches connect states and contain instanced tasks (BPT_FindItem, BPT_FinishDialogue, BPT_Move, etc.). Task properties set via reflection. Full automation - no manual editor setup required for basic quest flows.
+- v3.9.2 - Goal Search Paths: Added all Narrative Pro goal locations to FActivityScheduleGenerator search paths (Attacks/Goals/, DriveToDestination/, FollowCharacter/, GoToLocation/, Idle/, Interact/Goals/, Patrol/, ReturnToSpawn/).
+- v3.9.1 - Schedule Behavior Helper: Added UScheduledBehavior_AddNPCGoalByClass concrete helper class allowing goal class specification via property instead of Blueprint override. FActivityScheduleGenerator now creates fully functional scheduled behaviors.
+- v3.9 - NPC Pipeline (Schedules, Goals, Quests): Three new generators for comprehensive NPC content creation. FActivityScheduleGenerator creates Schedule_ assets (UNPCActivitySchedule DataAssets) with fully populated scheduled behaviors. Time format: 0-2400 where 100 = 1 hour. FGoalItemGenerator creates Goal_ assets (UNPCGoalItem Blueprints) for AI objectives with DefaultScore, GoalLifetime, RemoveOnSucceeded, SaveGoal, OwnedTags, BlockTags, RequireTags. FQuestGenerator creates Quest_ assets (UQuest Blueprints) with full state machine support. New manifest sections: activity_schedules, goal_items/goals, quests. Full v3.0 Regen/Diff Safety System integration.
 - v3.8 - Dialogue Tree Generation: DialogueBlueprint (DBP_) now supports full dialogue tree creation from YAML. New manifest property `dialogue_tree` with `root` and `nodes` array. Each node supports: id, type (npc/player), speaker, text, option_text, audio, montage, duration, duration_seconds, auto_select, auto_select_if_only, skippable, directed_at, npc_replies[], player_replies[], alternative_lines[], events[], conditions[]. Events support type, runtime (Start/End/Both), and properties map. Conditions support type, not (invert), and properties map. Creates UDialogueBlueprint with proper DialogueTemplate containing UDialogueNode_NPC/UDialogueNode_Player nodes and FDialogueLine data. Full v3.0 Regen/Diff Safety System integration. Upgrades DBP_ to High automation level with full editor compatibility.
 - v3.7 - NPC Auto-Create Related Assets: NPCDefinition gains auto_create_dialogue, auto_create_tagged_dialogue, and auto_create_item_loadout flags for one-manifest NPC package generation. When enabled: auto_create_dialogue creates DBP_{NPCName}Dialogue, auto_create_tagged_dialogue creates {NPCName}_TaggedDialogue, auto_create_item_loadout populates DefaultItemLoadout.ItemCollectionsToGrant with specified item collections. New manifest field default_item_loadout_collections for specifying item collections to grant. All v3.0 Regen/Diff Safety System hash safeguards included via updated ComputeHash().
 - v3.6 - NPCDefinition ActivitySchedules: NPCDefinition (NPCDef_) gains ActivitySchedules array support (TArray<TSoftObjectPtr<UNPCActivitySchedule>>) for defining NPC daily routines. Also adds YAML list parsing support for DefaultOwnedTags, DefaultFactions, and ActivitySchedules arrays in npc_definitions.

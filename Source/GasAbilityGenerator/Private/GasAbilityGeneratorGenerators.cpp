@@ -156,6 +156,8 @@
 #include "AI/Activities/NPCActivitySchedule.h"
 #include "AI/Activities/NPCGoalItem.h"
 #include "Tales/Quest.h"
+#include "Tales/QuestSM.h"      // v3.9: UQuestState, UQuestBranch for quest state machine
+#include "Tales/QuestTask.h"    // v3.9: UNarrativeTask for quest tasks
 #include "GasScheduledBehaviorHelpers.h"  // v3.9: Concrete helper for UScheduledBehavior_AddNPCGoal
 
 // v2.3.0: Component includes for Actor Blueprint generation
@@ -11037,39 +11039,198 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 		}
 	}
 
-	// Note: Quest state machine (states, branches, tasks) requires complex node graph creation
-	// similar to dialogue tree generation. For now, we create a basic quest with metadata
-	// and log the structure for manual completion.
-
+	// v3.9.3: Create quest state machine with states, branches, and tasks
 	LogGeneration(FString::Printf(TEXT("Creating Quest: %s - \"%s\""), *Definition.Name, *Definition.QuestName));
-	LogGeneration(FString::Printf(TEXT("  Description: %s"), *Definition.QuestDescription));
 
-	if (Definition.States.Num() > 0)
+	// Cast CDO to UQuest for state machine setup
+	UQuest* QuestCDO = Cast<UQuest>(CDO);
+	if (!QuestCDO)
 	{
-		LogGeneration(FString::Printf(TEXT("  States (%d):"), Definition.States.Num()));
-		for (const auto& State : Definition.States)
+		LogGeneration(TEXT("  [WARNING] Could not cast CDO to UQuest - state machine creation skipped"));
+	}
+	else if (Definition.States.Num() > 0)
+	{
+		// Map to track created states by ID
+		TMap<FString, UQuestState*> StateMap;
+
+		// Create all states first
+		for (const auto& StateDef : Definition.States)
 		{
-			LogGeneration(FString::Printf(TEXT("    - %s (%s): %s"), *State.Id, *State.Type, *State.Description));
+			UQuestState* State = NewObject<UQuestState>(QuestCDO, NAME_None, RF_Public | RF_Transactional);
+			if (State)
+			{
+				State->SetID(FName(*StateDef.Id));
+				State->OwningQuest = QuestCDO;
+
+				// Set description via property (inherited from UQuestNode)
+				if (FTextProperty* DescProp = FindFProperty<FTextProperty>(State->GetClass(), TEXT("Description")))
+				{
+					DescProp->SetPropertyValue_InContainer(State, FText::FromString(StateDef.Description));
+				}
+
+				// Set StateNodeType
+				EStateNodeType NodeType = EStateNodeType::Regular;
+				if (StateDef.Type.Equals(TEXT("success"), ESearchCase::IgnoreCase))
+				{
+					NodeType = EStateNodeType::Success;
+				}
+				else if (StateDef.Type.Equals(TEXT("failure"), ESearchCase::IgnoreCase) ||
+				         StateDef.Type.Equals(TEXT("fail"), ESearchCase::IgnoreCase))
+				{
+					NodeType = EStateNodeType::Failure;
+				}
+				State->StateNodeType = NodeType;
+
+				// Add to quest and map
+				QuestCDO->AddState(State);
+				StateMap.Add(StateDef.Id, State);
+
+				LogGeneration(FString::Printf(TEXT("  Created state: %s (%s)"),
+					*StateDef.Id, *StateDef.Type));
+			}
 		}
+
+		// Set first state as start state
+		if (Definition.States.Num() > 0 && StateMap.Contains(Definition.States[0].Id))
+		{
+			QuestCDO->SetQuestStartState(StateMap[Definition.States[0].Id]);
+			LogGeneration(FString::Printf(TEXT("  Set start state: %s"), *Definition.States[0].Id));
+		}
+
+		// Create branches and connect to states
+		for (const auto& BranchDef : Definition.Branches)
+		{
+			UQuestState* FromState = StateMap.Contains(BranchDef.FromState) ? StateMap[BranchDef.FromState] : nullptr;
+			UQuestState* ToState = StateMap.Contains(BranchDef.ToState) ? StateMap[BranchDef.ToState] : nullptr;
+
+			if (!FromState)
+			{
+				LogGeneration(FString::Printf(TEXT("  [WARNING] Branch %s: source state '%s' not found"),
+					*BranchDef.Id, *BranchDef.FromState));
+				continue;
+			}
+			if (!ToState)
+			{
+				LogGeneration(FString::Printf(TEXT("  [WARNING] Branch %s: destination state '%s' not found"),
+					*BranchDef.Id, *BranchDef.ToState));
+				continue;
+			}
+
+			UQuestBranch* Branch = NewObject<UQuestBranch>(QuestCDO, NAME_None, RF_Public | RF_Transactional);
+			if (Branch)
+			{
+				Branch->SetID(FName(*BranchDef.Id));
+				Branch->OwningQuest = QuestCDO;
+				Branch->DestinationState = ToState;
+				Branch->bHidden = BranchDef.bHidden;
+
+				// Set description
+				if (FTextProperty* DescProp = FindFProperty<FTextProperty>(Branch->GetClass(), TEXT("Description")))
+				{
+					DescProp->SetPropertyValue_InContainer(Branch, FText::FromString(BranchDef.Description));
+				}
+
+				// Add branch to source state
+				FromState->Branches.Add(Branch);
+
+				// Add branch to quest
+				QuestCDO->AddBranch(Branch);
+
+				// Create tasks for this branch
+				int32 TasksCreated = 0;
+				for (const auto& TaskDef : BranchDef.Tasks)
+				{
+					// Resolve task class
+					UClass* TaskClass = nullptr;
+					TArray<FString> TaskSearchPaths;
+
+					// Try Blueprint task classes (BPT_ prefix)
+					TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/%s.%s_C"),
+						*TaskDef.TaskClass, *TaskDef.TaskClass));
+					TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/BPT_%s.BPT_%s_C"),
+						*TaskDef.TaskClass, *TaskDef.TaskClass));
+					TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/GoToLocation/%s.%s_C"),
+						*TaskDef.TaskClass, *TaskDef.TaskClass));
+
+					// Try project-specific paths
+					TaskSearchPaths.Add(FString::Printf(TEXT("%s/Tales/Tasks/%s.%s_C"),
+						*GetProjectRoot(), *TaskDef.TaskClass, *TaskDef.TaskClass));
+
+					// Try C++ class
+					TaskSearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *TaskDef.TaskClass));
+
+					for (const FString& Path : TaskSearchPaths)
+					{
+						TaskClass = LoadClass<UNarrativeTask>(nullptr, *Path);
+						if (TaskClass) break;
+					}
+
+					if (!TaskClass)
+					{
+						LogGeneration(FString::Printf(TEXT("    [WARNING] Could not resolve task class: %s"),
+							*TaskDef.TaskClass));
+						continue;
+					}
+
+					// Create task instance as subobject of branch
+					UNarrativeTask* Task = NewObject<UNarrativeTask>(Branch, TaskClass, NAME_None,
+						RF_Public | RF_Transactional);
+					if (Task)
+					{
+						Task->RequiredQuantity = TaskDef.RequiredQuantity;
+						Task->bOptional = TaskDef.bOptional;
+						Task->bHidden = TaskDef.bHidden;
+
+						if (!TaskDef.DescriptionOverride.IsEmpty())
+						{
+							if (FTextProperty* DescProp = FindFProperty<FTextProperty>(Task->GetClass(), TEXT("DescriptionOverride")))
+							{
+								DescProp->SetPropertyValue_InContainer(Task, FText::FromString(TaskDef.DescriptionOverride));
+							}
+						}
+
+						// Set task-specific properties
+						for (const auto& Prop : TaskDef.Properties)
+						{
+							if (FProperty* Property = Task->GetClass()->FindPropertyByName(FName(*Prop.Key)))
+							{
+								void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Task);
+								Property->ImportText_Direct(*Prop.Value, ValuePtr, Task, 0);
+							}
+						}
+
+						// Navigation marker settings
+						if (TaskDef.bAddNavigationMarker)
+						{
+							Task->MarkerSettings.bAddNavigationMarker = true;
+							Task->MarkerSettings.MarkerLocation = TaskDef.MarkerLocation;
+						}
+
+						// Add to branch
+						Branch->QuestTasks.Add(Task);
+						TasksCreated++;
+					}
+				}
+
+				LogGeneration(FString::Printf(TEXT("  Created branch: %s -> %s (%d tasks)"),
+					*BranchDef.FromState, *BranchDef.ToState, TasksCreated));
+			}
+		}
+
+		LogGeneration(FString::Printf(TEXT("  Created %d states and %d branches"),
+			Definition.States.Num(), Definition.Branches.Num()));
+	}
+	else
+	{
+		LogGeneration(TEXT("  [INFO] No states defined - quest will need manual state machine setup"));
 	}
 
-	if (Definition.Branches.Num() > 0)
-	{
-		LogGeneration(FString::Printf(TEXT("  Branches (%d):"), Definition.Branches.Num()));
-		for (const auto& Branch : Definition.Branches)
-		{
-			LogGeneration(FString::Printf(TEXT("    - %s: %s -> %s (%d tasks)"),
-				*Branch.Id, *Branch.FromState, *Branch.ToState, Branch.Tasks.Num()));
-		}
-	}
-
+	// Log rewards info if any
 	if (Definition.Rewards.Currency > 0 || Definition.Rewards.XP > 0 || Definition.Rewards.Items.Num() > 0)
 	{
-		LogGeneration(FString::Printf(TEXT("  Rewards: %d gold, %d XP, %d items"),
+		LogGeneration(FString::Printf(TEXT("  Rewards: %d gold, %d XP, %d items (requires manual reward node setup)"),
 			Definition.Rewards.Currency, Definition.Rewards.XP, Definition.Rewards.Items.Num()));
 	}
-
-	LogGeneration(TEXT("  [INFO] Quest state machine requires manual setup in Quest Editor"));
 
 	// Compile and save
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
