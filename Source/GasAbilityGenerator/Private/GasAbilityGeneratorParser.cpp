@@ -5996,21 +5996,83 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 
 void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
 {
+	// v3.9.4: Updated parser for nested branches-in-states structure
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
 	LineIndex++;  // Skip header
 
-	FManifestQuestDefinition CurrentDef;
+	FManifestQuestDefinition CurrentQuest;
 	FManifestQuestStateDefinition CurrentState;
 	FManifestQuestBranchDefinition CurrentBranch;
 	FManifestQuestTaskDefinition CurrentTask;
-	bool bInItem = false;
+	FManifestDialogueEventDefinition CurrentEvent;
+
+	bool bInQuest = false;
 	bool bInStates = false;
 	bool bInState = false;
-	bool bInBranches = false;
+	bool bInStateBranches = false;  // Branches inside state
 	bool bInBranch = false;
 	bool bInTasks = false;
 	bool bInTask = false;
-	bool bInRewards = false;
+	bool bInStateEvents = false;
+	bool bInBranchEvents = false;
+	bool bInEvent = false;
+	bool bInEventProperties = false;
+
+	auto SaveCurrentTask = [&]()
+	{
+		if (!CurrentTask.TaskClass.IsEmpty())
+		{
+			CurrentBranch.Tasks.Add(CurrentTask);
+			CurrentTask = FManifestQuestTaskDefinition();
+		}
+	};
+
+	auto SaveCurrentEvent = [&]()
+	{
+		if (!CurrentEvent.Type.IsEmpty())
+		{
+			if (bInBranchEvents)
+			{
+				CurrentBranch.Events.Add(CurrentEvent);
+			}
+			else if (bInStateEvents)
+			{
+				CurrentState.Events.Add(CurrentEvent);
+			}
+			CurrentEvent = FManifestDialogueEventDefinition();
+		}
+	};
+
+	auto SaveCurrentBranch = [&]()
+	{
+		SaveCurrentTask();
+		SaveCurrentEvent();
+		if (!CurrentBranch.DestinationState.IsEmpty() || CurrentBranch.Tasks.Num() > 0)
+		{
+			CurrentState.Branches.Add(CurrentBranch);
+			CurrentBranch = FManifestQuestBranchDefinition();
+		}
+	};
+
+	auto SaveCurrentState = [&]()
+	{
+		SaveCurrentBranch();
+		if (!CurrentState.Id.IsEmpty())
+		{
+			CurrentQuest.States.Add(CurrentState);
+			CurrentState = FManifestQuestStateDefinition();
+		}
+	};
+
+	auto SaveCurrentQuest = [&]()
+	{
+		SaveCurrentState();
+		if (!CurrentQuest.Name.IsEmpty())
+		{
+			OutData.Quests.Add(CurrentQuest);
+			CurrentQuest = FManifestQuestDefinition();
+		}
+	};
 
 	while (LineIndex < Lines.Num())
 	{
@@ -6024,209 +6086,246 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 			continue;
 		}
 
-		// Check for end of section
+		// End of section
 		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
 		{
 			break;
 		}
 
-		// New quest
-		if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- id:")))
+		// New quest item
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
-			// Save previous
-			if (bInItem && !CurrentDef.Name.IsEmpty())
-			{
-				if (bInTask && !CurrentTask.TaskClass.IsEmpty())
-				{
-					CurrentBranch.Tasks.Add(CurrentTask);
-				}
-				if (bInBranch && !CurrentBranch.Id.IsEmpty())
-				{
-					CurrentDef.Branches.Add(CurrentBranch);
-				}
-				if (bInState && !CurrentState.Id.IsEmpty())
-				{
-					CurrentDef.States.Add(CurrentState);
-				}
-				OutData.Quests.Add(CurrentDef);
-			}
-
-			CurrentDef = FManifestQuestDefinition();
-			CurrentDef.Name = GetLineValue(TrimmedLine);
-			bInItem = true;
+			SaveCurrentQuest();
+			CurrentQuest.Name = GetLineValue(TrimmedLine);
+			bInQuest = true;
 			bInStates = false;
 			bInState = false;
-			bInBranches = false;
+			bInStateBranches = false;
 			bInBranch = false;
 			bInTasks = false;
 			bInTask = false;
-			bInRewards = false;
+			bInStateEvents = false;
+			bInBranchEvents = false;
+			bInEvent = false;
+			bInEventProperties = false;
 		}
-		else if (bInItem)
+		else if (bInQuest)
 		{
+			// Quest-level properties
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
-				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				CurrentQuest.Folder = GetLineValue(TrimmedLine);
 			}
-			else if (TrimmedLine.StartsWith(TEXT("quest_name:")) || (TrimmedLine.StartsWith(TEXT("name:")) && !bInStates && !bInBranches))
+			else if (TrimmedLine.StartsWith(TEXT("quest_name:")))
 			{
-				CurrentDef.QuestName = GetLineValue(TrimmedLine);
+				CurrentQuest.QuestName = GetLineValue(TrimmedLine);
 			}
-			else if (TrimmedLine.StartsWith(TEXT("description:")) && !bInStates && !bInBranches)
+			else if (TrimmedLine.StartsWith(TEXT("quest_description:")))
 			{
-				CurrentDef.QuestDescription = GetLineValue(TrimmedLine);
-			}
-			else if (TrimmedLine.StartsWith(TEXT("dialogue:")))
-			{
-				CurrentDef.QuestDialogue = GetLineValue(TrimmedLine);
+				CurrentQuest.QuestDescription = GetLineValue(TrimmedLine);
 			}
 			else if (TrimmedLine.StartsWith(TEXT("tracked:")))
 			{
-				CurrentDef.bTracked = GetLineValue(TrimmedLine).ToBool();
+				CurrentQuest.bTracked = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("dialogue:")))
+			{
+				CurrentQuest.Dialogue = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("start_state:")))
+			{
+				CurrentQuest.StartState = GetLineValue(TrimmedLine);
 			}
 			else if (TrimmedLine.StartsWith(TEXT("states:")))
 			{
 				bInStates = true;
 				bInState = false;
-				bInBranches = false;
-				bInRewards = false;
-			}
-			else if (TrimmedLine.StartsWith(TEXT("branches:")))
-			{
-				if (bInState && !CurrentState.Id.IsEmpty())
-				{
-					CurrentDef.States.Add(CurrentState);
-					CurrentState = FManifestQuestStateDefinition();
-				}
-				bInStates = false;
-				bInBranches = true;
-				bInBranch = false;
-				bInRewards = false;
-			}
-			else if (TrimmedLine.StartsWith(TEXT("rewards:")))
-			{
-				if (bInBranch && !CurrentBranch.Id.IsEmpty())
-				{
-					if (bInTask && !CurrentTask.TaskClass.IsEmpty())
-					{
-						CurrentBranch.Tasks.Add(CurrentTask);
-						CurrentTask = FManifestQuestTaskDefinition();
-					}
-					CurrentDef.Branches.Add(CurrentBranch);
-					CurrentBranch = FManifestQuestBranchDefinition();
-				}
-				bInBranches = false;
-				bInRewards = true;
+				bInStateBranches = false;
+				bInStateEvents = false;
+				bInBranchEvents = false;
 			}
 			else if (bInStates)
 			{
+				// State parsing
 				if (TrimmedLine.StartsWith(TEXT("- id:")))
 				{
-					if (bInState && !CurrentState.Id.IsEmpty())
-					{
-						CurrentDef.States.Add(CurrentState);
-					}
-					CurrentState = FManifestQuestStateDefinition();
+					SaveCurrentState();
 					CurrentState.Id = GetLineValue(TrimmedLine);
 					bInState = true;
+					bInStateBranches = false;
+					bInBranch = false;
+					bInTasks = false;
+					bInTask = false;
+					bInStateEvents = false;
+					bInBranchEvents = false;
+					bInEvent = false;
 				}
 				else if (bInState)
 				{
-					if (TrimmedLine.StartsWith(TEXT("type:")))
-					{
-						CurrentState.Type = GetLineValue(TrimmedLine);
-					}
-					else if (TrimmedLine.StartsWith(TEXT("description:")))
+					if (TrimmedLine.StartsWith(TEXT("description:")) && !bInBranch && !bInEvent)
 					{
 						CurrentState.Description = GetLineValue(TrimmedLine);
 					}
-				}
-			}
-			else if (bInBranches)
-			{
-				if (TrimmedLine.StartsWith(TEXT("- id:")))
-				{
-					if (bInBranch && !CurrentBranch.Id.IsEmpty())
+					else if (TrimmedLine.StartsWith(TEXT("type:")))
 					{
-						if (bInTask && !CurrentTask.TaskClass.IsEmpty())
+						CurrentState.Type = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("branches:")) && !bInTask)
+					{
+						SaveCurrentEvent();
+						bInStateBranches = true;
+						bInBranch = false;
+						bInStateEvents = false;
+						bInBranchEvents = false;
+						bInEvent = false;
+					}
+					else if (TrimmedLine.StartsWith(TEXT("events:")) && !bInStateBranches)
+					{
+						bInStateEvents = true;
+						bInBranchEvents = false;
+						bInEvent = false;
+					}
+					else if (bInStateBranches)
+					{
+						// Branch parsing (inside state)
+						if (TrimmedLine.StartsWith(TEXT("- destination:")) || TrimmedLine.StartsWith(TEXT("- id:")))
 						{
-							CurrentBranch.Tasks.Add(CurrentTask);
+							SaveCurrentBranch();
+							if (TrimmedLine.StartsWith(TEXT("- destination:")))
+							{
+								CurrentBranch.DestinationState = GetLineValue(TrimmedLine);
+							}
+							else
+							{
+								CurrentBranch.Id = GetLineValue(TrimmedLine);
+							}
+							bInBranch = true;
+							bInTasks = false;
+							bInTask = false;
+							bInBranchEvents = false;
+							bInEvent = false;
 						}
-						CurrentDef.Branches.Add(CurrentBranch);
+						else if (bInBranch)
+						{
+							if (TrimmedLine.StartsWith(TEXT("destination:")) && !bInTask)
+							{
+								CurrentBranch.DestinationState = GetLineValue(TrimmedLine);
+							}
+							else if (TrimmedLine.StartsWith(TEXT("id:")) && !bInTask)
+							{
+								CurrentBranch.Id = GetLineValue(TrimmedLine);
+							}
+							else if (TrimmedLine.StartsWith(TEXT("hidden:")) && !bInTask)
+							{
+								CurrentBranch.bHidden = GetLineValue(TrimmedLine).ToBool();
+							}
+							else if (TrimmedLine.StartsWith(TEXT("tasks:")))
+							{
+								SaveCurrentEvent();
+								bInTasks = true;
+								bInTask = false;
+								bInBranchEvents = false;
+								bInEvent = false;
+							}
+							else if (TrimmedLine.StartsWith(TEXT("events:")) && !bInTasks)
+							{
+								SaveCurrentTask();
+								bInBranchEvents = true;
+								bInStateEvents = false;
+								bInTasks = false;
+								bInEvent = false;
+							}
+							else if (bInTasks)
+							{
+								// Task parsing
+								if (TrimmedLine.StartsWith(TEXT("- task:")))
+								{
+									SaveCurrentTask();
+									CurrentTask.TaskClass = GetLineValue(TrimmedLine);
+									bInTask = true;
+								}
+								else if (bInTask)
+								{
+									if (TrimmedLine.StartsWith(TEXT("argument:")))
+									{
+										CurrentTask.Argument = GetLineValue(TrimmedLine);
+									}
+									else if (TrimmedLine.StartsWith(TEXT("quantity:")))
+									{
+										CurrentTask.Quantity = FCString::Atoi(*GetLineValue(TrimmedLine));
+									}
+									else if (TrimmedLine.StartsWith(TEXT("optional:")))
+									{
+										CurrentTask.bOptional = GetLineValue(TrimmedLine).ToBool();
+									}
+									else if (TrimmedLine.StartsWith(TEXT("hidden:")))
+									{
+										CurrentTask.bHidden = GetLineValue(TrimmedLine).ToBool();
+									}
+								}
+							}
+							else if (bInBranchEvents)
+							{
+								// Event parsing (branch events)
+								if (TrimmedLine.StartsWith(TEXT("- type:")))
+								{
+									SaveCurrentEvent();
+									CurrentEvent.Type = GetLineValue(TrimmedLine);
+									bInEvent = true;
+									bInEventProperties = false;
+								}
+								else if (bInEvent)
+								{
+									if (TrimmedLine.StartsWith(TEXT("runtime:")))
+									{
+										CurrentEvent.Runtime = GetLineValue(TrimmedLine);
+									}
+									else if (TrimmedLine.StartsWith(TEXT("properties:")))
+									{
+										bInEventProperties = true;
+									}
+									else if (bInEventProperties && TrimmedLine.Contains(TEXT(":")))
+									{
+										int32 ColonIdx;
+										TrimmedLine.FindChar(TEXT(':'), ColonIdx);
+										FString Key = TrimmedLine.Left(ColonIdx).TrimEnd();
+										FString Value = TrimmedLine.Mid(ColonIdx + 1).TrimStart();
+										CurrentEvent.Properties.Add(Key, Value);
+									}
+								}
+							}
+						}
 					}
-					CurrentBranch = FManifestQuestBranchDefinition();
-					CurrentTask = FManifestQuestTaskDefinition();
-					CurrentBranch.Id = GetLineValue(TrimmedLine);
-					bInBranch = true;
-					bInTasks = false;
-					bInTask = false;
-				}
-				else if (bInBranch)
-				{
-					if (TrimmedLine.StartsWith(TEXT("from_state:")))
+					else if (bInStateEvents)
 					{
-						CurrentBranch.FromState = GetLineValue(TrimmedLine);
-					}
-					else if (TrimmedLine.StartsWith(TEXT("to_state:")))
-					{
-						CurrentBranch.ToState = GetLineValue(TrimmedLine);
-					}
-					else if (TrimmedLine.StartsWith(TEXT("description:")))
-					{
-						CurrentBranch.Description = GetLineValue(TrimmedLine);
-					}
-					else if (TrimmedLine.StartsWith(TEXT("hidden:")))
-					{
-						CurrentBranch.bHidden = GetLineValue(TrimmedLine).ToBool();
-					}
-					else if (TrimmedLine.StartsWith(TEXT("tasks:")))
-					{
-						bInTasks = true;
-						bInTask = false;
-					}
-					else if (bInTasks)
-					{
+						// Event parsing (state events)
 						if (TrimmedLine.StartsWith(TEXT("- type:")))
 						{
-							if (bInTask && !CurrentTask.TaskClass.IsEmpty())
-							{
-								CurrentBranch.Tasks.Add(CurrentTask);
-							}
-							CurrentTask = FManifestQuestTaskDefinition();
-							CurrentTask.TaskClass = GetLineValue(TrimmedLine);
-							bInTask = true;
+							SaveCurrentEvent();
+							CurrentEvent.Type = GetLineValue(TrimmedLine);
+							bInEvent = true;
+							bInEventProperties = false;
 						}
-						else if (bInTask)
+						else if (bInEvent)
 						{
-							if (TrimmedLine.StartsWith(TEXT("quantity:")))
+							if (TrimmedLine.StartsWith(TEXT("runtime:")))
 							{
-								CurrentTask.RequiredQuantity = FCString::Atoi(*GetLineValue(TrimmedLine));
+								CurrentEvent.Runtime = GetLineValue(TrimmedLine);
 							}
-							else if (TrimmedLine.StartsWith(TEXT("description:")))
+							else if (TrimmedLine.StartsWith(TEXT("properties:")))
 							{
-								CurrentTask.DescriptionOverride = GetLineValue(TrimmedLine);
+								bInEventProperties = true;
 							}
-							else if (TrimmedLine.StartsWith(TEXT("optional:")))
+							else if (bInEventProperties && TrimmedLine.Contains(TEXT(":")))
 							{
-								CurrentTask.bOptional = GetLineValue(TrimmedLine).ToBool();
-							}
-							else if (TrimmedLine.StartsWith(TEXT("hidden:")))
-							{
-								CurrentTask.bHidden = GetLineValue(TrimmedLine).ToBool();
+								int32 ColonIdx;
+								TrimmedLine.FindChar(TEXT(':'), ColonIdx);
+								FString Key = TrimmedLine.Left(ColonIdx).TrimEnd();
+								FString Value = TrimmedLine.Mid(ColonIdx + 1).TrimStart();
+								CurrentEvent.Properties.Add(Key, Value);
 							}
 						}
 					}
-				}
-			}
-			else if (bInRewards)
-			{
-				if (TrimmedLine.StartsWith(TEXT("currency:")))
-				{
-					CurrentDef.Rewards.Currency = FCString::Atoi(*GetLineValue(TrimmedLine));
-				}
-				else if (TrimmedLine.StartsWith(TEXT("xp:")))
-				{
-					CurrentDef.Rewards.XP = FCString::Atoi(*GetLineValue(TrimmedLine));
 				}
 			}
 		}
@@ -6234,21 +6333,6 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 		LineIndex++;
 	}
 
-	// Save last item
-	if (bInItem && !CurrentDef.Name.IsEmpty())
-	{
-		if (bInTask && !CurrentTask.TaskClass.IsEmpty())
-		{
-			CurrentBranch.Tasks.Add(CurrentTask);
-		}
-		if (bInBranch && !CurrentBranch.Id.IsEmpty())
-		{
-			CurrentDef.Branches.Add(CurrentBranch);
-		}
-		if (bInState && !CurrentState.Id.IsEmpty())
-		{
-			CurrentDef.States.Add(CurrentState);
-		}
-		OutData.Quests.Add(CurrentDef);
-	}
+	// Save final quest
+	SaveCurrentQuest();
 }

@@ -758,11 +758,16 @@ public:
 };
 
 /**
- * v3.9: Quest Generator
- * Creates UQuest Blueprint assets for NPC quest chains
+ * v3.9.4: Quest Blueprint Generator
+ * Creates UQuestBlueprint assets with full state machine (same pattern as DialogueBlueprint v3.8)
+ * Works directly on QuestTemplate - visual editor shows empty graph but quest functions at runtime
  */
 class GASABILITYGENERATOR_API FQuestGenerator : public FGeneratorBase
 {
 public:
 	static FGenerationResult Generate(const FManifestQuestDefinition& Definition);
+
+private:
+	// v3.9.4: Helper to resolve quest task classes from multiple search paths
+	static UClass* ResolveQuestTaskClass(const FString& TaskClassName);
 };

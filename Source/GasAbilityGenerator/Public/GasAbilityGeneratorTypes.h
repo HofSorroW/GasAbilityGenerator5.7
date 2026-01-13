@@ -2854,132 +2854,105 @@ struct FManifestGoalItemDefinition
 };
 
 /**
- * v3.9: Quest task definition for quest objectives
+ * v3.9.4: Quest task definition - objective within a branch
+ * Based on UNarrativeTask properties
  */
 struct FManifestQuestTaskDefinition
 {
-	FString TaskClass;                   // Task class (e.g., "FindItem", "GoToLocation", "TalkToNPC")
-	int32 RequiredQuantity = 1;          // Number of times task must be completed
-	FString DescriptionOverride;         // Override auto-generated description
+	FString TaskClass;                   // Task class (e.g., "GoToLocation", "FindItem", "TalkToCharacter")
+	FString Argument;                    // Task argument (location name, item name, NPC name)
+	int32 Quantity = 1;                  // Required quantity
 	bool bOptional = false;              // Task is optional
 	bool bHidden = false;                // Hide from UI
-	TMap<FString, FString> Properties;   // Task-specific properties (item_class, location, npc, etc.)
-
-	// Navigation marker
-	bool bAddNavigationMarker = false;
-	FVector MarkerLocation = FVector::ZeroVector;
-	FString MarkerIcon;
-	FString MarkerColor;
 
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(TaskClass);
-		Hash ^= static_cast<uint64>(RequiredQuantity) << 8;
-		Hash ^= GetTypeHash(DescriptionOverride) << 16;
-		Hash ^= (bOptional ? 1ULL : 0ULL) << 24;
-		Hash ^= (bHidden ? 1ULL : 0ULL) << 25;
-		Hash ^= (bAddNavigationMarker ? 1ULL : 0ULL) << 26;
-		for (const auto& Prop : Properties)
-		{
-			Hash ^= GetTypeHash(Prop.Key);
-			Hash ^= GetTypeHash(Prop.Value);
-		}
+		Hash ^= GetTypeHash(Argument) << 4;
+		Hash ^= static_cast<uint64>(Quantity) << 8;
+		Hash ^= (bOptional ? 1ULL : 0ULL) << 16;
+		Hash ^= (bHidden ? 1ULL : 0ULL) << 17;
 		return Hash;
 	}
 };
 
 /**
- * v3.9: Quest branch definition (task collection leading to next state)
+ * v3.9.4: Quest branch definition - transition between states
+ * Each state has outgoing branches leading to destination states
  */
 struct FManifestQuestBranchDefinition
 {
-	FString Id;                          // Branch ID
-	FString FromState;                   // Source state ID
-	FString ToState;                     // Destination state ID
-	FString Description;                 // Branch description
-	bool bHidden = false;                // Hide from UI
+	FString Id;                          // Branch ID (optional)
+	FString DestinationState;            // Target state ID
 	TArray<FManifestQuestTaskDefinition> Tasks;  // Tasks required to take branch
+	TArray<FManifestDialogueEventDefinition> Events;  // Events fired on branch completion
+	bool bHidden = false;                // Hide from UI
 
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Id);
-		Hash ^= GetTypeHash(FromState) << 4;
-		Hash ^= GetTypeHash(ToState) << 8;
-		Hash ^= GetTypeHash(Description) << 12;
-		Hash ^= (bHidden ? 1ULL : 0ULL) << 16;
+		Hash ^= GetTypeHash(DestinationState) << 4;
+		Hash ^= (bHidden ? 1ULL : 0ULL) << 8;
 		for (const auto& Task : Tasks)
 		{
 			Hash ^= Task.ComputeHash();
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
-		return Hash;
-	}
-};
-
-/**
- * v3.9: Quest state definition (node in quest state machine)
- */
-struct FManifestQuestStateDefinition
-{
-	FString Id;                          // State ID
-	FString Type;                        // "regular", "success", "failure"
-	FString Description;                 // State description for journal
-
-	uint64 ComputeHash() const
-	{
-		uint64 Hash = GetTypeHash(Id);
-		Hash ^= GetTypeHash(Type) << 4;
-		Hash ^= GetTypeHash(Description) << 8;
-		return Hash;
-	}
-};
-
-/**
- * v3.9: Quest reward definition
- */
-struct FManifestQuestRewardDefinition
-{
-	int32 Currency = 0;                  // Gold/currency reward
-	int32 XP = 0;                        // Experience reward
-	TArray<FString> Items;               // Item rewards (asset names)
-	TArray<int32> ItemQuantities;        // Quantities for each item
-	TMap<FString, int32> Reputation;     // Faction -> reputation change
-
-	uint64 ComputeHash() const
-	{
-		uint64 Hash = static_cast<uint64>(Currency);
-		Hash ^= static_cast<uint64>(XP) << 16;
-		for (const auto& Item : Items) { Hash ^= GetTypeHash(Item); }
-		for (const auto& Rep : Reputation)
+		for (const auto& Event : Events)
 		{
-			Hash ^= GetTypeHash(Rep.Key);
-			Hash ^= static_cast<uint64>(Rep.Value) << 8;
+			Hash ^= Event.ComputeHash();
+			Hash = (Hash << 2) | (Hash >> 62);
 		}
 		return Hash;
 	}
 };
 
 /**
- * v3.9: Quest definition for quest-giving NPCs
- * Generates UQuest Blueprint assets
+ * v3.9.4: Quest state definition - node in quest state machine
+ * States contain branches that lead to other states
+ */
+struct FManifestQuestStateDefinition
+{
+	FString Id;                          // State ID (required)
+	FString Description;                 // State description for journal
+	FString Type = TEXT("regular");      // "regular", "success", "failure"
+	TArray<FManifestQuestBranchDefinition> Branches;  // Outgoing transitions
+	TArray<FManifestDialogueEventDefinition> Events;  // Events fired when state is entered
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Description) << 4;
+		Hash ^= GetTypeHash(Type) << 8;
+		for (const auto& Branch : Branches)
+		{
+			Hash ^= Branch.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Event : Events)
+		{
+			Hash ^= Event.ComputeHash();
+			Hash = (Hash << 2) | (Hash >> 62);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.4: Quest Blueprint definition - creates UQuestBlueprint with full state machine
+ * Following the same pattern as DialogueBlueprint v3.8
  */
 struct FManifestQuestDefinition
 {
-	FString Name;                        // Asset name (e.g., "Quest_ForgeSupplies")
+	FString Name;                        // Asset name (e.g., "QBP_FindArtifact")
 	FString Folder;                      // Output folder
 	FString QuestName;                   // Display name
 	FString QuestDescription;            // Journal description
-	FString QuestDialogue;               // Optional: Associated dialogue asset
-	bool bTracked = true;                // Show on HUD/map
+	bool bTracked = true;                // Show navigation markers
+	FString Dialogue;                    // Associated dialogue asset (optional)
+	FString StartState;                  // ID of starting state (defaults to first state)
 
 	TArray<FManifestQuestStateDefinition> States;
-	TArray<FManifestQuestBranchDefinition> Branches;
-	FManifestQuestRewardDefinition Rewards;
-
-	// Events
-	TArray<FManifestDialogueEventDefinition> OnStartEvents;
-	TArray<FManifestDialogueEventDefinition> OnCompleteEvents;
-	TArray<FManifestDialogueEventDefinition> OnFailEvents;
 
 	uint64 ComputeHash() const
 	{
@@ -2987,14 +2960,14 @@ struct FManifestQuestDefinition
 		// NOTE: Folder excluded - presentational only
 		Hash ^= GetTypeHash(QuestName) << 4;
 		Hash ^= GetTypeHash(QuestDescription) << 8;
-		Hash ^= GetTypeHash(QuestDialogue) << 12;
-		Hash ^= (bTracked ? 1ULL : 0ULL) << 16;
-		for (const auto& State : States) { Hash ^= State.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
-		for (const auto& Branch : Branches) { Hash ^= Branch.ComputeHash(); Hash = (Hash << 4) | (Hash >> 60); }
-		Hash ^= Rewards.ComputeHash();
-		for (const auto& Evt : OnStartEvents) { Hash ^= Evt.ComputeHash(); }
-		for (const auto& Evt : OnCompleteEvents) { Hash ^= Evt.ComputeHash(); }
-		for (const auto& Evt : OnFailEvents) { Hash ^= Evt.ComputeHash(); }
+		Hash ^= (bTracked ? 1ULL : 0ULL) << 12;
+		Hash ^= GetTypeHash(Dialogue) << 16;
+		Hash ^= GetTypeHash(StartState) << 20;
+		for (const auto& State : States)
+		{
+			Hash ^= State.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
 		return Hash;
 	}
 };

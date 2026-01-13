@@ -62,7 +62,10 @@ public class GasAbilityGenerator : ModuleRules
 
 			// v3.7: Dialogue blueprint generation with full tree support
 			"NarrativeDialogueEditor",
-			
+
+			// v3.9.4: Quest blueprint generation with full state machine support
+			"NarrativeQuestEditor",
+
 			// Property handling
 			"PropertyEditor",
 			"DetailCustomizations",
