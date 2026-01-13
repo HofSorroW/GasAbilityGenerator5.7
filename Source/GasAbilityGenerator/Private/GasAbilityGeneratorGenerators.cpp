@@ -1,5 +1,10 @@
-// GasAbilityGenerator v3.8
+// GasAbilityGenerator v3.9
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.9: NPC Pipeline - ActivitySchedule, GoalItem, Quest generators
+//       ActivitySchedule: Creates UNPCActivitySchedule with UScheduledBehavior_AddNPCGoalByClass
+//       instances for time-based goal assignment (concrete helper class replaces abstract base)
+//       GoalItem: Creates UNPCGoalItem Blueprints with DefaultScore, Activity, BehaviorTree properties
+//       Quest: Creates UQuest Blueprints (stub for editor completion)
 // v3.8: Dialogue Tree Generation - Full dialogue tree creation from YAML with nodes, connections,
 //       events (UNarrativeEvent), conditions (UNarrativeCondition), and alternative lines.
 //       Creates UDialogueBlueprint with DialogueTemplate containing UDialogueNode_NPC/UDialogueNode_Player.
@@ -151,6 +156,7 @@
 #include "AI/Activities/NPCActivitySchedule.h"
 #include "AI/Activities/NPCGoalItem.h"
 #include "Tales/Quest.h"
+#include "GasScheduledBehaviorHelpers.h"  // v3.9: Concrete helper for UScheduledBehavior_AddNPCGoal
 
 // v2.3.0: Component includes for Actor Blueprint generation
 #include "Components/SceneComponent.h"
@@ -202,6 +208,9 @@
 #include "Items/InventoryComponent.h"
 #include "Items/WeaponItem.h"
 #include "Items/EquippableItem.h"
+
+// v3.9: Log category for generator messages
+DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);
 
 // v2.1.9: Static member initialization for manifest validation
 const FManifestData* FGeneratorBase::ActiveManifest = nullptr;
@@ -10693,27 +10702,83 @@ FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivitySc
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Activity Schedule"));
 	}
 
-	// Note: UNPCActivitySchedule.Activities is TArray<TObjectPtr<UScheduledBehavior_NPC>>
-	// These are instanced objects that need to be created as subobjects
-	// For now, we log the intended behaviors - full implementation requires creating
-	// UScheduledBehavior_AddNPCGoal instances which need goal class resolution
-
+	// v3.9: Create UScheduledBehavior_AddNPCGoalByClass instanced subobjects
+	// Uses our concrete helper class that allows specifying GoalClass directly
 	LogGeneration(FString::Printf(TEXT("Creating Activity Schedule: %s"), *Definition.Name));
 
+	int32 BehaviorsCreated = 0;
 	for (const auto& Behavior : Definition.Behaviors)
 	{
-		LogGeneration(FString::Printf(TEXT("  [INFO] Scheduled behavior: %.1f-%.1f -> %s (score: %.1f)"),
-			Behavior.StartTime, Behavior.EndTime, *Behavior.GoalClass, Behavior.ScoreOverride));
+		// Resolve goal class
+		UClass* GoalClass = nullptr;
+		if (!Behavior.GoalClass.IsEmpty())
+		{
+			// Try multiple resolution paths for goal classes
+			TArray<FString> SearchPaths;
+			SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/Game/NarrativePro/AI/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 
-		// TODO: Create UScheduledBehavior_AddNPCGoal instances and add to Activities array
-		// This requires resolving goal classes and creating instanced subobjects
-		// For now, the schedule is created as a stub that can be populated in editor
+			// Also check Narrative Pro content paths
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+
+			for (const FString& Path : SearchPaths)
+			{
+				GoalClass = LoadClass<UNPCGoalItem>(nullptr, *Path);
+				if (GoalClass)
+				{
+					LogGeneration(FString::Printf(TEXT("  [INFO] Resolved goal class %s -> %s"), *Behavior.GoalClass, *Path));
+					break;
+				}
+			}
+		}
+
+		if (!GoalClass)
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve goal class: %s - behavior will need manual setup"), *Behavior.GoalClass));
+			continue;
+		}
+
+		// Create instanced subobject with Schedule as outer
+		UScheduledBehavior_AddNPCGoalByClass* BehaviorInstance = NewObject<UScheduledBehavior_AddNPCGoalByClass>(
+			Schedule,
+			UScheduledBehavior_AddNPCGoalByClass::StaticClass(),
+			NAME_None,
+			RF_Public | RF_Transactional
+		);
+
+		if (BehaviorInstance)
+		{
+			// Set properties from manifest
+			BehaviorInstance->StartTime = Behavior.StartTime;
+			BehaviorInstance->EndTime = Behavior.EndTime;
+			BehaviorInstance->GoalClass = GoalClass;
+
+			// Set ScoreOverride via reflection (it's protected in parent class)
+			if (FFloatProperty* ScoreProp = FindFProperty<FFloatProperty>(UScheduledBehavior_AddNPCGoal::StaticClass(), TEXT("ScoreOverride")))
+			{
+				ScoreProp->SetPropertyValue_InContainer(BehaviorInstance, Behavior.ScoreOverride);
+			}
+
+			// Add to schedule's Activities array
+			Schedule->Activities.Add(BehaviorInstance);
+			BehaviorsCreated++;
+
+			LogGeneration(FString::Printf(TEXT("  [INFO] Created scheduled behavior: %.0f-%.0f -> %s (score: %.1f)"),
+				Behavior.StartTime, Behavior.EndTime, *Behavior.GoalClass, Behavior.ScoreOverride));
+		}
 	}
 
-	if (Definition.Behaviors.Num() > 0)
+	if (BehaviorsCreated > 0)
 	{
-		LogGeneration(FString::Printf(TEXT("  [WARNING] %d behaviors defined but require manual setup (goal class resolution needed)"),
-			Definition.Behaviors.Num()));
+		LogGeneration(FString::Printf(TEXT("  [INFO] Created %d scheduled behaviors"), BehaviorsCreated));
+	}
+	else if (Definition.Behaviors.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  [WARNING] No behaviors created - goal classes could not be resolved")));
 	}
 
 	Package->MarkPackageDirty();
