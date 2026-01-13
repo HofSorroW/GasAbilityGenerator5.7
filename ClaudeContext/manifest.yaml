@@ -4338,14 +4338,15 @@ equippable_items:
     stealth_rating: 0.0
 
   # Weapon Items - use Narrative Pro weapon classes (v2.6.8)
-  - name: BP_FatherRifleWeapon
+  # v3.9.7: Fixed prefix from BP_ to EI_ (RangedWeaponItem/MeleeWeaponItem are UObject data assets, not Actors)
+  - name: EI_FatherRifleWeapon
     folder: FatherCompanion/Weapons
     parent_class: RangedWeaponItem
     display_name: Father Rifle
     description: Transform your father companion into a bio-organic rifle. Fires high-energy projectiles with precision accuracy.
     equipment_slot: Narrative.Equipment.Slot.Weapon_Back
 
-  - name: BP_FatherSwordWeapon
+  - name: EI_FatherSwordWeapon
     folder: FatherCompanion/Weapons
     parent_class: MeleeWeaponItem
     display_name: Father Sword
@@ -5161,7 +5162,7 @@ dialogue_blueprints:
 # ============================================================================
 # NPC SYSTEMS - WARDEN HUSK (Two-Phase Enemy)
 # ============================================================================
-warden_tags:
+tags:  # WARDEN SYSTEM
   - tag: State.Warden.Husk
     comment: Applied to husk entity
   - tag: State.Warden.Core
@@ -5177,7 +5178,7 @@ warden_tags:
   - tag: Effect.Damage.WardenLaser
     comment: Laser damage type
 
-warden_gameplay_effects:
+gameplay_effects:  # WARDEN SYSTEM
   - name: GE_CoreLaserDamage
     folder: Enemies/Warden/Effects
     duration_policy: Instant
@@ -5197,7 +5198,7 @@ warden_gameplay_effects:
     folder: Enemies/Warden/Effects
     duration_policy: Instant
 
-warden_actor_blueprints:
+actor_blueprints:  # WARDEN SYSTEM
   - name: BP_WardenHusk
     folder: Enemies/Warden
     parent_class: NarrativeNPCCharacter
@@ -5294,13 +5295,13 @@ warden_actor_blueprints:
     folder: Enemies/Warden
     parent_class: NarrativeProjectile
 
-warden_materials:
+materials:  # WARDEN SYSTEM
   - name: M_CoreLaserGlow
     folder: Enemies/Warden/Materials
     blend_mode: Additive
     shading_model: Unlit
 
-warden_gameplay_abilities:
+gameplay_abilities:  # WARDEN SYSTEM
   - name: GA_CoreLaser
     folder: Enemies/Warden/Abilities
     parent_class: NarrativeGameplayAbility
@@ -5315,11 +5316,11 @@ warden_gameplay_abilities:
 # ============================================================================
 # NPC SYSTEMS - GUARD FORMATION
 # ============================================================================
-guard_formation_tags:
+tags:  # GUARD FORMATION
   - tag: Narrative.State.NPC.Activity.FormationFollow
     comment: NPC is following in formation
 
-guard_formation_blackboards:
+blackboards:  # GUARD FORMATION
   - name: BB_FormationFollow
     folder: AI/Blackboards
     keys:
@@ -5334,14 +5335,14 @@ guard_formation_blackboards:
       - key_name: TargetLocation
         key_type: Vector
 
-guard_formation_behavior_trees:
+behavior_trees:  # GUARD FORMATION
   - name: BT_FormationFollow
     folder: AI/BehaviorTrees
     blackboard: BB_FormationFollow
     root_type: Selector
     description: Formation follow behavior
 
-guard_formation_activities:
+activities:  # GUARD FORMATION
   - name: BPA_FormationFollow
     folder: AI/Activities
     parent_class: NarrativeActivityBase
@@ -5351,7 +5352,7 @@ guard_formation_activities:
     folder: AI/Activities
     parent_class: BPA_Attack_Melee
 
-guard_formation_bt_services:
+actor_blueprints:  # GUARD FORMATION BT SERVICES
   - name: BTS_CalculateFormationPosition
     folder: AI/Services
     parent_class: BTService_BlueprintBase
@@ -5360,7 +5361,7 @@ guard_formation_bt_services:
     folder: AI/Services
     parent_class: BTService_BlueprintBase
 
-guard_formation_goals:
+goals:  # GUARD FORMATION
   - name: Goal_FormationFollow
     folder: AI/Goals
     parent_class: Goal_FollowCharacter
@@ -5368,7 +5369,7 @@ guard_formation_goals:
 # ============================================================================
 # NPC SYSTEMS - POSSESSED EXPLODER
 # ============================================================================
-possessed_exploder_tags:
+tags:  # POSSESSED EXPLODER
   - tag: State.Enemy.PossessedExploder
     comment: NPC identifier
   - tag: State.Enemy.Exploder.Alert
@@ -5382,7 +5383,7 @@ possessed_exploder_tags:
   - tag: GameplayCue.Enemy.Exploder.Explosion
     comment: Explosion VFX/SFX trigger
 
-possessed_exploder_gameplay_effects:
+gameplay_effects:  # POSSESSED EXPLODER
   - name: GE_ExploderAttributes
     folder: Enemies/Possessed/Effects
     duration_policy: Instant
@@ -5391,7 +5392,7 @@ possessed_exploder_gameplay_effects:
     folder: Enemies/Possessed/Effects
     duration_policy: Instant
 
-possessed_exploder_actor_blueprints:
+actor_blueprints:  # POSSESSED EXPLODER
   - name: BP_PossessedExploder
     folder: Enemies/Possessed
     parent_class: NarrativeNPCCharacter
@@ -5428,19 +5429,19 @@ possessed_exploder_actor_blueprints:
         - from: [GetCharMovement, CharacterMovement]
           to: [SetMovementMode, Target]
 
-possessed_exploder_bt_services:
+actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
   - name: BTS_CheckExplosionProximity
     folder: AI/Services
     parent_class: BTService_BlueprintBase
 
-possessed_exploder_behavior_trees:
+behavior_trees:  # POSSESSED EXPLODER
   - name: BT_Explode
     folder: AI/BehaviorTrees
     blackboard: BB_Attack
     root_type: Selector
     description: Suicide explosion behavior
 
-possessed_exploder_activities:
+activities:  # POSSESSED EXPLODER
   - name: BPA_Explode
     folder: AI/Activities
     parent_class: NarrativeActivityBase
@@ -5449,7 +5450,7 @@ possessed_exploder_activities:
 # ============================================================================
 # NPC SYSTEMS - SUPPORT BUFFER
 # ============================================================================
-support_buffer_tags:
+tags:  # SUPPORT BUFFER
   - tag: State.NPC.SupportBuffer
     comment: NPC identifier
   - tag: State.NPC.Support.Healing
@@ -5463,7 +5464,7 @@ support_buffer_tags:
   - tag: GameplayCue.Support.Heal
     comment: Heal VFX/SFX trigger
 
-support_buffer_gameplay_effects:
+gameplay_effects:  # SUPPORT BUFFER
   - name: GE_SupporterAttributes
     folder: NPCs/Support/Effects
     duration_policy: Instant
@@ -5472,7 +5473,7 @@ support_buffer_gameplay_effects:
     folder: NPCs/Support/Effects
     duration_policy: Instant
 
-support_buffer_actor_blueprints:
+actor_blueprints:  # SUPPORT BUFFER
   - name: BP_SupportBuffer
     folder: NPCs/Support
     parent_class: NarrativeNPCCharacter
@@ -5496,19 +5497,19 @@ support_buffer_actor_blueprints:
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
 
-support_buffer_bt_services:
+actor_blueprints:  # SUPPORT BUFFER BT SERVICES
   - name: BTS_HealNearbyAllies
     folder: AI/Services
     parent_class: BTService_BlueprintBase
 
-support_buffer_behavior_trees:
+behavior_trees:  # SUPPORT BUFFER
   - name: BT_SupportFollow
     folder: AI/BehaviorTrees
     blackboard: BB_FollowCharacter
     root_type: Selector
     description: Support follow with healing behavior
 
-support_buffer_activities:
+activities:  # SUPPORT BUFFER
   - name: BPA_SupportFollow
     folder: AI/Activities
     parent_class: BPA_FollowCharacter
@@ -5517,7 +5518,7 @@ support_buffer_activities:
 # ============================================================================
 # NPC SYSTEMS - BIOMECHANICAL DETACHMENT
 # ============================================================================
-biomech_tags:
+tags:  # BIOMECH
   - tag: State.Biomech.Host
     comment: Applied to combined host entity
   - tag: State.Biomech.Creature
@@ -5527,7 +5528,7 @@ biomech_tags:
   - tag: Faction.Enemy.Biomech
     comment: Biomech faction identifier
 
-biomech_gameplay_effects:
+gameplay_effects:  # BIOMECH
   - name: GE_BiomechHostAttributes
     folder: Enemies/Biomech/Effects
     duration_policy: Instant
@@ -5536,7 +5537,7 @@ biomech_gameplay_effects:
     folder: Enemies/Biomech/Effects
     duration_policy: Instant
 
-biomech_actor_blueprints:
+actor_blueprints:  # BIOMECH
   - name: BP_BiomechHost
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
@@ -5619,7 +5620,7 @@ biomech_actor_blueprints:
 # ============================================================================
 # NPC SYSTEMS - GATHERER SCOUT
 # ============================================================================
-gatherer_tags:
+tags:  # GATHERER
   - tag: State.NPC.Alert.Signaling
     comment: Applied during alert animation
   - tag: Faction.Enemy.Gatherer
@@ -5629,7 +5630,7 @@ gatherer_tags:
   - tag: Goal.Alert
     comment: Goal type identifier
 
-gatherer_actor_blueprints:
+actor_blueprints:  # GATHERER
   - name: BP_GathererScout
     folder: Enemies/Gatherer
     parent_class: NarrativeNPCCharacter
@@ -5676,17 +5677,17 @@ gatherer_actor_blueprints:
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
 
-gatherer_goals:
+goals:  # GATHERER
   - name: Goal_Alert
     folder: AI/Goals
     parent_class: NPCGoalItem
 
-gatherer_goal_generators:
+actor_blueprints:  # GATHERER GOAL GENERATORS
   - name: GoalGenerator_Alert
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
 
-gatherer_activities:
+activities:  # GATHERER
   - name: BPA_Alert
     folder: AI/Activities
     parent_class: NarrativeActivityBase
@@ -5698,7 +5699,7 @@ gatherer_activities:
 # ============================================================================
 # NPC SYSTEMS - STALKER RANDOM AGGRESSION
 # ============================================================================
-stalker_tags:
+tags:  # STALKER
   - tag: State.NPC.Returned.Following
     comment: Applied during follow state
   - tag: State.NPC.Returned.Bonded
@@ -5722,7 +5723,7 @@ stalker_tags:
   - tag: Narrative.TaggedDialogue.Returned.GivingUp
     comment: When timeout expires
 
-stalker_actor_blueprints:
+actor_blueprints:  # STALKER
   - name: BP_ReturnedStalker
     folder: NPCs/Returned
     parent_class: NarrativeNPCCharacter
@@ -5746,12 +5747,12 @@ stalker_actor_blueprints:
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
 
-stalker_goal_generators:
+actor_blueprints:  # STALKER GOAL GENERATORS
   - name: GoalGenerator_RandomAggression
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
 
-stalker_tagged_dialogue_sets:
+tagged_dialogue_sets:  # STALKER
   - name: TaggedDialogueSet_Returned
     folder: Dialogue/TaggedSets
     dialogues:

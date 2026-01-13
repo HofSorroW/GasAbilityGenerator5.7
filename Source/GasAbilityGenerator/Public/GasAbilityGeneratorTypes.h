@@ -3510,6 +3510,11 @@ struct FManifestNPCSpawnerPlacement
 	FString NearPOI;                     // Optional: use POI location instead of Location
 	FVector POIOffset = FVector::ZeroVector;  // Offset from POI if using NearPOI
 	bool bActivateOnBeginPlay = true;
+
+	// v3.9.10: Spawner activation via NarrativeEvent
+	FString ActivationEvent;             // Optional: NE_* name that enables this spawner when fired
+	FString DeactivationEvent;           // Optional: NE_* name that disables this spawner when fired
+
 	TArray<FManifestNPCSpawnEntry> NPCs;
 
 	uint64 ComputeHash() const
@@ -3523,6 +3528,8 @@ struct FManifestNPCSpawnerPlacement
 		Hash ^= GetTypeHash(FMath::RoundToInt(POIOffset.Y));
 		Hash ^= GetTypeHash(FMath::RoundToInt(POIOffset.Z));
 		Hash ^= (bActivateOnBeginPlay ? 1ULL : 0ULL) << 5;
+		Hash ^= GetTypeHash(ActivationEvent);
+		Hash ^= GetTypeHash(DeactivationEvent);
 		for (const FManifestNPCSpawnEntry& NPC : NPCs)
 		{
 			Hash ^= NPC.ComputeHash();

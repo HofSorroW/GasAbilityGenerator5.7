@@ -7123,9 +7123,15 @@ static UNarrativeEvent* CreateDialogueEventFromDefinition(
 		return nullptr;
 	}
 
-	// Try to find event class in Narrative Pro paths
+	// v3.9.11: Try to find event class in Narrative Pro paths (fixed paths)
 	TArray<FString> EventSearchPaths = {
+		// Narrative Pro built-in events (primary location)
+		FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.Type, *EventDef.Type),
+		// Project-specific events
 		FString::Printf(TEXT("/Game/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.Type, *EventDef.Type),
+		FString::Printf(TEXT("%s/Tales/Events/%s.%s_C"), *GetProjectRoot(), *EventDef.Type, *EventDef.Type),
+		FString::Printf(TEXT("%s/Events/%s.%s_C"), *GetProjectRoot(), *EventDef.Type, *EventDef.Type),
+		// Native C++ classes
 		FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *EventDef.Type),
 		FString::Printf(TEXT("/Script/NarrativePro.%s"), *EventDef.Type)
 	};
@@ -7378,42 +7384,34 @@ static void CreateDialogueTree(
 			}
 		}
 
-		// v3.9.6: Quest shortcuts - create events for start_quest, complete_quest_branch, fail_quest
+		// v3.9.6/v3.9.11: Quest shortcuts - create events for start_quest using NE_BeginQuest
 		if (!NodeDef.StartQuest.IsEmpty())
 		{
 			FManifestDialogueEventDefinition QuestEventDef;
 			QuestEventDef.Type = TEXT("NE_BeginQuest");
 			QuestEventDef.Runtime = TEXT("Start");
-			QuestEventDef.Properties.Add(TEXT("QuestClass"), NodeDef.StartQuest);
+			QuestEventDef.Properties.Add(TEXT("Quest"), NodeDef.StartQuest);  // Property name: Quest (TSubclassOf)
 			if (UNarrativeEvent* Event = CreateDialogueEventFromDefinition(DialogueNode, QuestEventDef))
 			{
 				DialogueNode->Events.Add(Event);
-				UE_LOG(LogGasAbilityGenerator, Log, TEXT("    Added StartQuest event: %s"), *NodeDef.StartQuest);
+				UE_LOG(LogGasAbilityGenerator, Log, TEXT("    Added NE_BeginQuest event: %s"), *NodeDef.StartQuest);
+			}
+			else
+			{
+				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("    [WARN] Could not create NE_BeginQuest for: %s"), *NodeDef.StartQuest);
 			}
 		}
+		// v3.9.11: complete_quest_branch - Quest branches complete via task completion, not direct event
+		// Log info for manual setup via BPT_FinishDialogue task on quest branch
 		if (!NodeDef.CompleteQuestBranch.IsEmpty())
 		{
-			FManifestDialogueEventDefinition BranchEventDef;
-			BranchEventDef.Type = TEXT("NE_CompleteQuestBranch");
-			BranchEventDef.Runtime = TEXT("Start");
-			BranchEventDef.Properties.Add(TEXT("BranchID"), NodeDef.CompleteQuestBranch);
-			if (UNarrativeEvent* Event = CreateDialogueEventFromDefinition(DialogueNode, BranchEventDef))
-			{
-				DialogueNode->Events.Add(Event);
-				UE_LOG(LogGasAbilityGenerator, Log, TEXT("    Added CompleteQuestBranch event: %s"), *NodeDef.CompleteQuestBranch);
-			}
+			UE_LOG(LogGasAbilityGenerator, Log, TEXT("    [INFO] complete_quest_branch: %s - Use BPT_FinishDialogue task on quest branch"), *NodeDef.CompleteQuestBranch);
 		}
+		// v3.9.11: fail_quest - No built-in NE_FailQuest in Narrative Pro
+		// Log info for manual setup via Blueprint call to Quest->FailQuest()
 		if (!NodeDef.FailQuest.IsEmpty())
 		{
-			FManifestDialogueEventDefinition FailEventDef;
-			FailEventDef.Type = TEXT("NE_FailQuest");
-			FailEventDef.Runtime = TEXT("Start");
-			FailEventDef.Properties.Add(TEXT("QuestClass"), NodeDef.FailQuest);
-			if (UNarrativeEvent* Event = CreateDialogueEventFromDefinition(DialogueNode, FailEventDef))
-			{
-				DialogueNode->Events.Add(Event);
-				UE_LOG(LogGasAbilityGenerator, Log, TEXT("    Added FailQuest event: %s"), *NodeDef.FailQuest);
-			}
+			UE_LOG(LogGasAbilityGenerator, Log, TEXT("    [INFO] fail_quest: %s - Call Quest->FailQuest() from Blueprint event"), *NodeDef.FailQuest);
 		}
 
 		// Add conditions
@@ -11690,7 +11688,7 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 		LogGeneration(FString::Printf(TEXT("  Questgiver (manual setup): %s"), *Definition.Questgiver));
 	}
 
-	// v3.9.6: Add reward events to success state
+	// v3.9.6/v3.9.11: Add reward events to success state using Narrative Pro's built-in events
 	if (Definition.Rewards.Currency > 0 || Definition.Rewards.XP > 0 || Definition.Rewards.Items.Num() > 0)
 	{
 		// Find the success state
@@ -11706,20 +11704,123 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 
 		if (SuccessState)
 		{
-			// Log rewards for manual setup (Narrative Pro handles rewards via game-specific events)
-			if (Definition.Rewards.Currency > 0)
-			{
-				LogGeneration(FString::Printf(TEXT("  [INFO] Success state reward: Currency +%d (manual NE_GrantCurrency setup)"), Definition.Rewards.Currency));
-			}
+			// v3.9.11: Create actual reward events using Narrative Pro's built-in events
+
+			// XP Reward - NE_GiveXP
 			if (Definition.Rewards.XP > 0)
 			{
-				LogGeneration(FString::Printf(TEXT("  [INFO] Success state reward: XP +%d (manual NE_GrantXP setup)"), Definition.Rewards.XP));
+				UClass* GiveXPClass = LoadClass<UNarrativeEvent>(nullptr, TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_GiveXP.NE_GiveXP_C"));
+				if (GiveXPClass)
+				{
+					UNarrativeEvent* XPEvent = NewObject<UNarrativeEvent>(SuccessState, GiveXPClass);
+					if (XPEvent)
+					{
+						// Set XP amount via reflection (property name: "XP" or "Amount")
+						if (FIntProperty* XPProp = FindFProperty<FIntProperty>(GiveXPClass, TEXT("XP")))
+						{
+							XPProp->SetPropertyValue_InContainer(XPEvent, Definition.Rewards.XP);
+						}
+						else if (FIntProperty* AmountProp = FindFProperty<FIntProperty>(GiveXPClass, TEXT("Amount")))
+						{
+							AmountProp->SetPropertyValue_InContainer(AmountProp, Definition.Rewards.XP);
+						}
+						XPEvent->EventRuntime = EEventRuntime::Start;
+						SuccessState->Events.Add(XPEvent);
+						LogGeneration(FString::Printf(TEXT("  Added reward event: NE_GiveXP +%d XP"), Definition.Rewards.XP));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARN] Could not load NE_GiveXP class - XP reward requires manual setup")));
+				}
 			}
+
+			// Currency Reward - BPE_AddCurrency
+			if (Definition.Rewards.Currency > 0)
+			{
+				UClass* AddCurrencyClass = LoadClass<UNarrativeEvent>(nullptr, TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"));
+				if (AddCurrencyClass)
+				{
+					UNarrativeEvent* CurrencyEvent = NewObject<UNarrativeEvent>(SuccessState, AddCurrencyClass);
+					if (CurrencyEvent)
+					{
+						// Set currency amount via reflection
+						if (FIntProperty* CurrencyProp = FindFProperty<FIntProperty>(AddCurrencyClass, TEXT("Currency")))
+						{
+							CurrencyProp->SetPropertyValue_InContainer(CurrencyEvent, Definition.Rewards.Currency);
+						}
+						else if (FIntProperty* AmountProp = FindFProperty<FIntProperty>(AddCurrencyClass, TEXT("Amount")))
+						{
+							AmountProp->SetPropertyValue_InContainer(CurrencyEvent, Definition.Rewards.Currency);
+						}
+						CurrencyEvent->EventRuntime = EEventRuntime::Start;
+						SuccessState->Events.Add(CurrencyEvent);
+						LogGeneration(FString::Printf(TEXT("  Added reward event: BPE_AddCurrency +%d"), Definition.Rewards.Currency));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARN] Could not load BPE_AddCurrency class - Currency reward requires manual setup")));
+				}
+			}
+
+			// Item Rewards - BPE_AddItemToInventory
 			for (int32 i = 0; i < Definition.Rewards.Items.Num(); i++)
 			{
+				const FString& ItemName = Definition.Rewards.Items[i];
 				int32 Qty = Definition.Rewards.ItemQuantities.IsValidIndex(i) ? Definition.Rewards.ItemQuantities[i] : 1;
-				LogGeneration(FString::Printf(TEXT("  [INFO] Success state reward: Item %s x%d (manual NE_GrantItem setup)"),
-					*Definition.Rewards.Items[i], Qty));
+
+				UClass* AddItemClass = LoadClass<UNarrativeEvent>(nullptr, TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"));
+				if (AddItemClass)
+				{
+					UNarrativeEvent* ItemEvent = NewObject<UNarrativeEvent>(SuccessState, AddItemClass);
+					if (ItemEvent)
+					{
+						// Set item class via reflection - need to load the item class first
+						TArray<FString> ItemSearchPaths;
+						ItemSearchPaths.Add(FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemName, *ItemName));
+						ItemSearchPaths.Add(FString::Printf(TEXT("%s/Items/Equipment/%s.%s_C"), *GetProjectRoot(), *ItemName, *ItemName));
+						ItemSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Items/%s.%s_C"), *ItemName, *ItemName));
+
+						UClass* ItemClass = nullptr;
+						for (const FString& Path : ItemSearchPaths)
+						{
+							ItemClass = LoadClass<UObject>(nullptr, *Path);
+							if (ItemClass) break;
+						}
+
+						if (ItemClass)
+						{
+							// Set ItemClass property (TSubclassOf<UNarrativeItem>)
+							if (FClassProperty* ItemClassProp = FindFProperty<FClassProperty>(AddItemClass, TEXT("ItemClass")))
+							{
+								ItemClassProp->SetPropertyValue_InContainer(ItemEvent, ItemClass);
+							}
+							else if (FClassProperty* ItemProp = FindFProperty<FClassProperty>(AddItemClass, TEXT("Item")))
+							{
+								ItemProp->SetPropertyValue_InContainer(ItemEvent, ItemClass);
+							}
+						}
+
+						// Set quantity
+						if (FIntProperty* QtyProp = FindFProperty<FIntProperty>(AddItemClass, TEXT("Quantity")))
+						{
+							QtyProp->SetPropertyValue_InContainer(ItemEvent, Qty);
+						}
+						else if (FIntProperty* AmountProp = FindFProperty<FIntProperty>(AddItemClass, TEXT("Amount")))
+						{
+							AmountProp->SetPropertyValue_InContainer(ItemEvent, Qty);
+						}
+
+						ItemEvent->EventRuntime = EEventRuntime::Start;
+						SuccessState->Events.Add(ItemEvent);
+						LogGeneration(FString::Printf(TEXT("  Added reward event: BPE_AddItemToInventory %s x%d"), *ItemName, Qty));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARN] Could not load BPE_AddItemToInventory class - Item reward requires manual setup")));
+				}
 			}
 		}
 	}
@@ -11969,10 +12070,23 @@ FGenerationResult FNPCSpawnerPlacementGenerator::Generate(
 	Spawner->SetActorLabel(Definition.Name);
 	Spawner->SpawnerSaveGUID = FGuid::NewGuid();
 
+	// v3.9.10: Determine activation behavior based on activation event
+	bool bActivateOnBeginPlay = Definition.bActivateOnBeginPlay;
+	if (!Definition.ActivationEvent.IsEmpty())
+	{
+		// When an activation event is specified, spawner starts inactive
+		bActivateOnBeginPlay = false;
+		LogGeneration(FString::Printf(TEXT("  Spawner will activate when event fires: %s"), *Definition.ActivationEvent));
+	}
+	if (!Definition.DeactivationEvent.IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("  Spawner will deactivate when event fires: %s"), *Definition.DeactivationEvent));
+	}
+
 	// Set activation flag via reflection (protected)
 	if (FBoolProperty* ActivateProp = FindFProperty<FBoolProperty>(Spawner->GetClass(), TEXT("bActivateOnBeginPlay")))
 	{
-		ActivateProp->SetPropertyValue_InContainer(Spawner, Definition.bActivateOnBeginPlay);
+		ActivateProp->SetPropertyValue_InContainer(Spawner, bActivateOnBeginPlay);
 	}
 
 #if WITH_EDITOR

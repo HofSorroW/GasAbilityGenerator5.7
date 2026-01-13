@@ -7505,6 +7505,15 @@ void FGasAbilityGeneratorParser::ParseNPCSpawnerPlacements(const TArray<FString>
 			{
 				CurrentDef.bActivateOnBeginPlay = GetLineValue(TrimmedLine).ToBool();
 			}
+			// v3.9.10: Spawner activation via NarrativeEvent
+			else if (TrimmedLine.StartsWith(TEXT("activation_event:")))
+			{
+				CurrentDef.ActivationEvent = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("deactivation_event:")))
+			{
+				CurrentDef.DeactivationEvent = GetLineValue(TrimmedLine);
+			}
 			else if (TrimmedLine.StartsWith(TEXT("npcs:")))
 			{
 				bInNPCs = true;
