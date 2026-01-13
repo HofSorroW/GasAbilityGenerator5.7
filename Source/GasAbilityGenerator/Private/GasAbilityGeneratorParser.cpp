@@ -204,6 +204,23 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseQuests(Lines, i, OutData);
 		}
+		// v3.9.8: Mesh-to-Item Pipeline parsers
+		else if (IsSectionHeader(TrimmedLine, TEXT("pipeline_config:")))
+		{
+			ParsePipelineConfig(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("pipeline_items:")))
+		{
+			ParsePipelineItems(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("pipeline_collections:")))
+		{
+			ParsePipelineCollections(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("pipeline_loadouts:")))
+		{
+			ParsePipelineLoadouts(Lines, i, OutData);
+		}
 		// v2.5.6: NPC System Extensions - Support for suffix-based section names
 		// Any section ending with _tags: gets parsed as tags
 		else if (TrimmedLine.EndsWith(TEXT("_tags:")) && !TrimmedLine.StartsWith(TEXT("-")))
@@ -2102,6 +2119,7 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 }
 
 // v2.6.12: Parse material_functions section
+// v3.9.7: Fixed multi-item parsing with indent-based subsection detection
 void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
@@ -2122,11 +2140,13 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 	bool bInExpression = false;
 	bool bInConnection = false;
 	bool bInProperties = false;
+	int32 ItemIndent = -1;  // v3.9.7: Track item indent level
 
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
 		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);  // v3.9.7: Track indent level
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
@@ -2149,8 +2169,12 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 			continue;
 		}
 
-		// New material function item - v2.6.13: only if not in a subsection
-		if (!bInInputs && !bInOutputs && !bInExpressions && !bInConnections && TrimmedLine.StartsWith(TEXT("- name:")))
+		// v3.9.7: Use indent level to detect new items - if we see "- name:" at item level,
+		// it's a new item regardless of subsection flags (fixes multi-item parsing)
+		bool bIsNewItem = TrimmedLine.StartsWith(TEXT("- name:")) &&
+			(ItemIndent < 0 || CurrentIndent <= ItemIndent);
+
+		if (bIsNewItem)
 		{
 			// Save all pending from previous item
 			if (bInInput && !CurrentInput.Name.IsEmpty()) CurrentDef.Inputs.Add(CurrentInput);
@@ -2164,6 +2188,7 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 			CurrentDef = FManifestMaterialFunctionDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			if (ItemIndent < 0) ItemIndent = CurrentIndent;  // v3.9.7: Store item indent
 			bInInputs = false;
 			bInOutputs = false;
 			bInExpressions = false;
@@ -3689,6 +3714,15 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	// v3.9.6: Weapon attachment parsing states
 	bool bInHolsterAttachments = false;
 	bool bInWieldAttachments = false;
+	// v3.9.8: Clothing mesh parsing states
+	bool bInClothingMesh = false;
+	bool bInClothingMaterials = false;
+	bool bInCurrentMaterial = false;
+	bool bInVectorParams = false;
+	bool bInScalarParams = false;
+	bool bInMorphs = false;
+	bool bInCurrentMorph = false;
+	bool bInMorphNames = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3728,6 +3762,15 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInWeaponAbilities = false;
 			bInMainhandAbilities = false;
 			bInOffhandAbilities = false;
+			// v3.9.8: Reset clothing mesh states
+			bInClothingMesh = false;
+			bInClothingMaterials = false;
+			bInCurrentMaterial = false;
+			bInVectorParams = false;
+			bInScalarParams = false;
+			bInMorphs = false;
+			bInCurrentMorph = false;
+			bInMorphNames = false;
 		}
 		else if (bInItem)
 		{
@@ -4000,6 +4043,180 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInOffhandAbilities = false;
 				bInHolsterAttachments = false;
 				bInWieldAttachments = false;
+				bInClothingMesh = false;
+			}
+			// v3.9.8: Clothing mesh section
+			else if (TrimmedLine.Equals(TEXT("clothing_mesh:")) || TrimmedLine.StartsWith(TEXT("clothing_mesh:")))
+			{
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInClothingMesh = true;
+				bInClothingMaterials = false;
+				bInCurrentMaterial = false;
+				bInVectorParams = false;
+				bInScalarParams = false;
+				bInMorphs = false;
+				bInCurrentMorph = false;
+				bInMorphNames = false;
+			}
+			// v3.9.8: Clothing mesh property parsing
+			else if (bInClothingMesh)
+			{
+				// Check for nested section headers first
+				if (TrimmedLine.Equals(TEXT("materials:")) || TrimmedLine.StartsWith(TEXT("materials:")))
+				{
+					bInClothingMaterials = true;
+					bInCurrentMaterial = false;
+					bInVectorParams = false;
+					bInScalarParams = false;
+					bInMorphs = false;
+					bInCurrentMorph = false;
+					bInMorphNames = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("morphs:")) || TrimmedLine.StartsWith(TEXT("morphs:")))
+				{
+					bInClothingMaterials = false;
+					bInCurrentMaterial = false;
+					bInVectorParams = false;
+					bInScalarParams = false;
+					bInMorphs = true;
+					bInCurrentMorph = false;
+					bInMorphNames = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("vector_params:")) || TrimmedLine.StartsWith(TEXT("vector_params:")))
+				{
+					bInVectorParams = true;
+					bInScalarParams = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("scalar_params:")) || TrimmedLine.StartsWith(TEXT("scalar_params:")))
+				{
+					bInVectorParams = false;
+					bInScalarParams = true;
+				}
+				else if (TrimmedLine.Equals(TEXT("morph_names:")) || TrimmedLine.StartsWith(TEXT("morph_names:")))
+				{
+					bInMorphNames = true;
+				}
+				// Parse morph_names array items
+				else if (bInMorphNames && bInCurrentMorph && TrimmedLine.StartsWith(TEXT("-")))
+				{
+					FString MorphName = TrimmedLine.Mid(1).TrimStart();
+					// Remove quotes if present
+					if (MorphName.Len() >= 2 && ((MorphName.StartsWith(TEXT("\"")) && MorphName.EndsWith(TEXT("\""))) ||
+						(MorphName.StartsWith(TEXT("'")) && MorphName.EndsWith(TEXT("'")))))
+					{
+						MorphName = MorphName.Mid(1, MorphName.Len() - 2);
+					}
+					if (!MorphName.IsEmpty() && CurrentDef.ClothingMesh.Morphs.Num() > 0)
+					{
+						CurrentDef.ClothingMesh.Morphs.Last().MorphNames.Add(MorphName);
+					}
+				}
+				// Parse morphs array items (new morph entry)
+				else if (bInMorphs && TrimmedLine.StartsWith(TEXT("- scalar_tag:")))
+				{
+					FManifestClothingMorph NewMorph;
+					NewMorph.ScalarTag = GetLineValue(TrimmedLine.Mid(2));
+					CurrentDef.ClothingMesh.Morphs.Add(NewMorph);
+					bInCurrentMorph = true;
+					bInMorphNames = false;
+				}
+				// Parse vector_params array items
+				else if (bInVectorParams && bInCurrentMaterial && TrimmedLine.StartsWith(TEXT("- parameter_name:")))
+				{
+					FManifestMaterialParamBinding NewBinding;
+					NewBinding.ParameterName = GetLineValue(TrimmedLine.Mid(2));
+					if (CurrentDef.ClothingMesh.Materials.Num() > 0)
+					{
+						CurrentDef.ClothingMesh.Materials.Last().VectorParams.Add(NewBinding);
+					}
+				}
+				else if (bInVectorParams && bInCurrentMaterial && TrimmedLine.StartsWith(TEXT("tag_id:")))
+				{
+					if (CurrentDef.ClothingMesh.Materials.Num() > 0 &&
+						CurrentDef.ClothingMesh.Materials.Last().VectorParams.Num() > 0)
+					{
+						CurrentDef.ClothingMesh.Materials.Last().VectorParams.Last().TagId = GetLineValue(TrimmedLine);
+					}
+				}
+				// Parse scalar_params array items
+				else if (bInScalarParams && bInCurrentMaterial && TrimmedLine.StartsWith(TEXT("- parameter_name:")))
+				{
+					FManifestMaterialParamBinding NewBinding;
+					NewBinding.ParameterName = GetLineValue(TrimmedLine.Mid(2));
+					if (CurrentDef.ClothingMesh.Materials.Num() > 0)
+					{
+						CurrentDef.ClothingMesh.Materials.Last().ScalarParams.Add(NewBinding);
+					}
+				}
+				else if (bInScalarParams && bInCurrentMaterial && TrimmedLine.StartsWith(TEXT("tag_id:")))
+				{
+					if (CurrentDef.ClothingMesh.Materials.Num() > 0 &&
+						CurrentDef.ClothingMesh.Materials.Last().ScalarParams.Num() > 0)
+					{
+						CurrentDef.ClothingMesh.Materials.Last().ScalarParams.Last().TagId = GetLineValue(TrimmedLine);
+					}
+				}
+				// Parse materials array items (new material entry)
+				else if (bInClothingMaterials && TrimmedLine.StartsWith(TEXT("- material:")))
+				{
+					FManifestClothingMaterial NewMaterial;
+					NewMaterial.Material = GetLineValue(TrimmedLine.Mid(2));
+					CurrentDef.ClothingMesh.Materials.Add(NewMaterial);
+					bInCurrentMaterial = true;
+					bInVectorParams = false;
+					bInScalarParams = false;
+				}
+				// Parse clothing_mesh simple properties
+				else if (TrimmedLine.StartsWith(TEXT("mesh:")))
+				{
+					CurrentDef.ClothingMesh.Mesh = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("use_leader_pose:")))
+				{
+					FString Value = GetLineValue(TrimmedLine).ToLower();
+					CurrentDef.ClothingMesh.bUseLeaderPose = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("is_static_mesh:")))
+				{
+					FString Value = GetLineValue(TrimmedLine).ToLower();
+					CurrentDef.ClothingMesh.bIsStaticMesh = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("static_mesh:")))
+				{
+					CurrentDef.ClothingMesh.StaticMesh = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attach_socket:")))
+				{
+					CurrentDef.ClothingMesh.AttachSocket = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attach_location:")))
+				{
+					// Parse {x: 0, y: 0, z: 0} format
+					FString VectorStr = GetLineValue(TrimmedLine);
+					CurrentDef.ClothingMesh.AttachLocation = ParseVectorFromString(VectorStr);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attach_rotation:")))
+				{
+					// Parse {pitch: 0, yaw: 0, roll: 0} format
+					FString RotatorStr = GetLineValue(TrimmedLine);
+					CurrentDef.ClothingMesh.AttachRotation = ParseRotatorFromString(RotatorStr);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attach_scale:")))
+				{
+					// Parse {x: 1, y: 1, z: 1} format
+					FString VectorStr = GetLineValue(TrimmedLine);
+					CurrentDef.ClothingMesh.AttachScale = ParseVectorFromString(VectorStr);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("mesh_anim_bp:")))
+				{
+					CurrentDef.ClothingMesh.MeshAnimBP = GetLineValue(TrimmedLine);
+				}
 			}
 			else if (bInItemTags && TrimmedLine.StartsWith(TEXT("-")))
 			{
@@ -6674,4 +6891,385 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 
 	// Save final quest
 	SaveCurrentQuest();
+}
+
+// v3.9.8: Pipeline Config parser
+void FGasAbilityGeneratorParser::ParsePipelineConfig(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("default_folder:")))
+		{
+			OutData.PipelineConfig.DefaultFolder = GetLineValue(TrimmedLine);
+		}
+		else if (TrimmedLine.StartsWith(TEXT("auto_create_collections:")))
+		{
+			FString Value = GetLineValue(TrimmedLine).ToLower();
+			OutData.PipelineConfig.bAutoCreateCollections = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+		}
+		else if (TrimmedLine.StartsWith(TEXT("auto_create_loadouts:")))
+		{
+			FString Value = GetLineValue(TrimmedLine).ToLower();
+			OutData.PipelineConfig.bAutoCreateLoadouts = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+		}
+
+		LineIndex++;
+	}
+}
+
+// v3.9.8: Pipeline Items parser
+void FGasAbilityGeneratorParser::ParsePipelineItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestPipelineItemDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInClothingMesh = false;
+	bool bInStats = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInItem && !CurrentDef.Mesh.IsEmpty())
+			{
+				OutData.PipelineItems.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- mesh:")))
+		{
+			// Save previous item
+			if (bInItem && !CurrentDef.Mesh.IsEmpty())
+			{
+				OutData.PipelineItems.Add(CurrentDef);
+			}
+			CurrentDef = FManifestPipelineItemDefinition();
+			CurrentDef.Mesh = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInClothingMesh = false;
+			bInStats = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("name:")))
+			{
+				CurrentDef.Name = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("type:")))
+			{
+				CurrentDef.Type = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("slot:")))
+			{
+				CurrentDef.Slot = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("display_name:")))
+			{
+				CurrentDef.DisplayName = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("target_collection:")))
+			{
+				CurrentDef.TargetCollection = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.Equals(TEXT("clothing_mesh:")) || TrimmedLine.StartsWith(TEXT("clothing_mesh:")))
+			{
+				bInClothingMesh = true;
+				bInStats = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("stats:")) || TrimmedLine.StartsWith(TEXT("stats:")))
+			{
+				bInStats = true;
+				bInClothingMesh = false;
+			}
+			else if (bInClothingMesh)
+			{
+				// Parse clothing mesh properties
+				if (TrimmedLine.StartsWith(TEXT("mesh:")))
+				{
+					CurrentDef.ClothingMesh.Mesh = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("use_leader_pose:")))
+				{
+					FString Value = GetLineValue(TrimmedLine).ToLower();
+					CurrentDef.ClothingMesh.bUseLeaderPose = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+				}
+			}
+			else if (bInStats)
+			{
+				// Parse stat key-value pairs
+				if (TrimmedLine.Contains(TEXT(":")))
+				{
+					int32 ColonIdx;
+					TrimmedLine.FindChar(TEXT(':'), ColonIdx);
+					FString Key = TrimmedLine.Left(ColonIdx).TrimEnd();
+					FString Value = TrimmedLine.Mid(ColonIdx + 1).TrimStart();
+					CurrentDef.Stats.Add(Key, Value);
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save final item
+	if (bInItem && !CurrentDef.Mesh.IsEmpty())
+	{
+		OutData.PipelineItems.Add(CurrentDef);
+	}
+}
+
+// v3.9.8: Pipeline Collections parser
+void FGasAbilityGeneratorParser::ParsePipelineCollections(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestPipelineCollectionDefinition CurrentDef;
+	bool bInCollection = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInCollection && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.PipelineCollections.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save previous collection
+			if (bInCollection && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.PipelineCollections.Add(CurrentDef);
+			}
+			CurrentDef = FManifestPipelineCollectionDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInCollection = true;
+		}
+		else if (bInCollection)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			// Items would be auto-populated from pipeline_items with matching target_collection
+		}
+
+		LineIndex++;
+	}
+
+	// Save final collection
+	if (bInCollection && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.PipelineCollections.Add(CurrentDef);
+	}
+}
+
+// v3.9.8: Pipeline Loadouts parser
+void FGasAbilityGeneratorParser::ParsePipelineLoadouts(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestPipelineLoadoutDefinition CurrentDef;
+	bool bInLoadout = false;
+	bool bInCollections = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInLoadout && !CurrentDef.NPCDefinition.IsEmpty())
+			{
+				OutData.PipelineLoadouts.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- npc_definition:")))
+		{
+			// Save previous loadout
+			if (bInLoadout && !CurrentDef.NPCDefinition.IsEmpty())
+			{
+				OutData.PipelineLoadouts.Add(CurrentDef);
+			}
+			CurrentDef = FManifestPipelineLoadoutDefinition();
+			CurrentDef.NPCDefinition = GetLineValue(TrimmedLine.Mid(2));
+			bInLoadout = true;
+			bInCollections = false;
+		}
+		else if (bInLoadout)
+		{
+			if (TrimmedLine.Equals(TEXT("collections:")) || TrimmedLine.StartsWith(TEXT("collections:")))
+			{
+				bInCollections = true;
+			}
+			else if (bInCollections && TrimmedLine.StartsWith(TEXT("-")))
+			{
+				FString Collection = TrimmedLine.Mid(1).TrimStart();
+				// Remove quotes if present
+				if (Collection.Len() >= 2 && ((Collection.StartsWith(TEXT("\"")) && Collection.EndsWith(TEXT("\""))) ||
+					(Collection.StartsWith(TEXT("'")) && Collection.EndsWith(TEXT("'")))))
+				{
+					Collection = Collection.Mid(1, Collection.Len() - 2);
+				}
+				if (!Collection.IsEmpty())
+				{
+					CurrentDef.Collections.Add(Collection);
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save final loadout
+	if (bInLoadout && !CurrentDef.NPCDefinition.IsEmpty())
+	{
+		OutData.PipelineLoadouts.Add(CurrentDef);
+	}
+}
+
+// v3.9.8: Parse FVector from string format {x: 1, y: 2, z: 3}
+FVector FGasAbilityGeneratorParser::ParseVectorFromString(const FString& VectorStr)
+{
+	FVector Result = FVector::ZeroVector;
+
+	// Remove braces and parse
+	FString CleanStr = VectorStr;
+	CleanStr.ReplaceInline(TEXT("{"), TEXT(""));
+	CleanStr.ReplaceInline(TEXT("}"), TEXT(""));
+	CleanStr = CleanStr.TrimStartAndEnd();
+
+	// Parse x, y, z components
+	TArray<FString> Components;
+	CleanStr.ParseIntoArray(Components, TEXT(","));
+
+	for (const FString& Component : Components)
+	{
+		FString TrimmedComponent = Component.TrimStartAndEnd();
+		int32 ColonIdx;
+		if (TrimmedComponent.FindChar(TEXT(':'), ColonIdx))
+		{
+			FString Key = TrimmedComponent.Left(ColonIdx).TrimStartAndEnd().ToLower();
+			FString Value = TrimmedComponent.Mid(ColonIdx + 1).TrimStartAndEnd();
+			float FloatValue = FCString::Atof(*Value);
+
+			if (Key == TEXT("x"))
+			{
+				Result.X = FloatValue;
+			}
+			else if (Key == TEXT("y"))
+			{
+				Result.Y = FloatValue;
+			}
+			else if (Key == TEXT("z"))
+			{
+				Result.Z = FloatValue;
+			}
+		}
+	}
+
+	return Result;
+}
+
+// v3.9.8: Parse FRotator from string format {pitch: 0, yaw: 90, roll: 0}
+FRotator FGasAbilityGeneratorParser::ParseRotatorFromString(const FString& RotatorStr)
+{
+	FRotator Result = FRotator::ZeroRotator;
+
+	// Remove braces and parse
+	FString CleanStr = RotatorStr;
+	CleanStr.ReplaceInline(TEXT("{"), TEXT(""));
+	CleanStr.ReplaceInline(TEXT("}"), TEXT(""));
+	CleanStr = CleanStr.TrimStartAndEnd();
+
+	// Parse pitch, yaw, roll components
+	TArray<FString> Components;
+	CleanStr.ParseIntoArray(Components, TEXT(","));
+
+	for (const FString& Component : Components)
+	{
+		FString TrimmedComponent = Component.TrimStartAndEnd();
+		int32 ColonIdx;
+		if (TrimmedComponent.FindChar(TEXT(':'), ColonIdx))
+		{
+			FString Key = TrimmedComponent.Left(ColonIdx).TrimStartAndEnd().ToLower();
+			FString Value = TrimmedComponent.Mid(ColonIdx + 1).TrimStartAndEnd();
+			float FloatValue = FCString::Atof(*Value);
+
+			if (Key == TEXT("pitch"))
+			{
+				Result.Pitch = FloatValue;
+			}
+			else if (Key == TEXT("yaw"))
+			{
+				Result.Yaw = FloatValue;
+			}
+			else if (Key == TEXT("roll"))
+			{
+				Result.Roll = FloatValue;
+			}
+		}
+	}
+
+	return Result;
 }

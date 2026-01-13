@@ -8488,6 +8488,154 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
+			// v3.9.8: ClothingMeshData population for EquippableItem_Clothing parent classes
+			if (!Definition.ClothingMesh.IsEmpty())
+			{
+				// Check if parent class is clothing-related (by name or presence of ClothingMeshData property)
+				FStructProperty* ClothingMeshProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("ClothingMeshData")));
+				if (ClothingMeshProp)
+				{
+					void* ClothingMeshPtr = ClothingMeshProp->ContainerPtrToValuePtr<void>(CDO);
+					UScriptStruct* MeshStruct = ClothingMeshProp->Struct;
+					if (ClothingMeshPtr && MeshStruct)
+					{
+						LogGeneration(TEXT("  Populating ClothingMeshData..."));
+
+						// Set Mesh (TSoftObjectPtr<USkeletalMesh>)
+						if (!Definition.ClothingMesh.Mesh.IsEmpty())
+						{
+							FSoftObjectProperty* MeshProp = CastField<FSoftObjectProperty>(MeshStruct->FindPropertyByName(TEXT("Mesh")));
+							if (MeshProp)
+							{
+								FSoftObjectPtr SoftPtr(FSoftObjectPath(Definition.ClothingMesh.Mesh));
+								MeshProp->SetPropertyValue_InContainer(ClothingMeshPtr, SoftPtr);
+								LogGeneration(FString::Printf(TEXT("    Set Mesh: %s"), *Definition.ClothingMesh.Mesh));
+							}
+						}
+
+						// Set bUseLeaderPose (bool)
+						FBoolProperty* LeaderPoseProp = CastField<FBoolProperty>(MeshStruct->FindPropertyByName(TEXT("bUseLeaderPose")));
+						if (LeaderPoseProp)
+						{
+							LeaderPoseProp->SetPropertyValue_InContainer(ClothingMeshPtr, Definition.ClothingMesh.bUseLeaderPose);
+							LogGeneration(FString::Printf(TEXT("    Set bUseLeaderPose: %s"), Definition.ClothingMesh.bUseLeaderPose ? TEXT("true") : TEXT("false")));
+						}
+
+						// Set bIsStaticMesh (bool)
+						if (Definition.ClothingMesh.bIsStaticMesh)
+						{
+							FBoolProperty* StaticMeshBoolProp = CastField<FBoolProperty>(MeshStruct->FindPropertyByName(TEXT("bIsStaticMesh")));
+							if (StaticMeshBoolProp)
+							{
+								StaticMeshBoolProp->SetPropertyValue_InContainer(ClothingMeshPtr, true);
+								LogGeneration(TEXT("    Set bIsStaticMesh: true"));
+							}
+						}
+
+						// Set StaticMesh (TSoftObjectPtr<UStaticMesh>)
+						if (!Definition.ClothingMesh.StaticMesh.IsEmpty())
+						{
+							FSoftObjectProperty* StaticMeshProp = CastField<FSoftObjectProperty>(MeshStruct->FindPropertyByName(TEXT("StaticMesh")));
+							if (StaticMeshProp)
+							{
+								FSoftObjectPtr SoftPtr(FSoftObjectPath(Definition.ClothingMesh.StaticMesh));
+								StaticMeshProp->SetPropertyValue_InContainer(ClothingMeshPtr, SoftPtr);
+								LogGeneration(FString::Printf(TEXT("    Set StaticMesh: %s"), *Definition.ClothingMesh.StaticMesh));
+							}
+						}
+
+						// Set MeshAttachSocket (FName)
+						if (!Definition.ClothingMesh.AttachSocket.IsEmpty())
+						{
+							FNameProperty* SocketProp = CastField<FNameProperty>(MeshStruct->FindPropertyByName(TEXT("MeshAttachSocket")));
+							if (SocketProp)
+							{
+								SocketProp->SetPropertyValue_InContainer(ClothingMeshPtr, FName(*Definition.ClothingMesh.AttachSocket));
+								LogGeneration(FString::Printf(TEXT("    Set MeshAttachSocket: %s"), *Definition.ClothingMesh.AttachSocket));
+							}
+						}
+
+						// Set MeshAttachOffset (FTransform) - combining AttachLocation, AttachRotation, AttachScale
+						FStructProperty* TransformProp = CastField<FStructProperty>(MeshStruct->FindPropertyByName(TEXT("MeshAttachOffset")));
+						if (TransformProp)
+						{
+							FTransform* TransformPtr = TransformProp->ContainerPtrToValuePtr<FTransform>(ClothingMeshPtr);
+							if (TransformPtr)
+							{
+								*TransformPtr = FTransform(
+									Definition.ClothingMesh.AttachRotation.Quaternion(),
+									Definition.ClothingMesh.AttachLocation,
+									Definition.ClothingMesh.AttachScale
+								);
+								LogGeneration(FString::Printf(TEXT("    Set MeshAttachOffset: Loc(%s) Rot(%s) Scale(%s)"),
+									*Definition.ClothingMesh.AttachLocation.ToString(),
+									*Definition.ClothingMesh.AttachRotation.ToString(),
+									*Definition.ClothingMesh.AttachScale.ToString()));
+							}
+						}
+
+						// Set MeshAnimBP (TSoftClassPtr<UAnimInstance>)
+						if (!Definition.ClothingMesh.MeshAnimBP.IsEmpty())
+						{
+							FSoftClassProperty* AnimBPProp = CastField<FSoftClassProperty>(MeshStruct->FindPropertyByName(TEXT("MeshAnimBP")));
+							if (AnimBPProp)
+							{
+								FSoftObjectPath ClassPath(Definition.ClothingMesh.MeshAnimBP);
+								void* PropValue = AnimBPProp->ContainerPtrToValuePtr<void>(ClothingMeshPtr);
+								if (PropValue)
+								{
+									FSoftObjectPtr* SoftPtr = static_cast<FSoftObjectPtr*>(PropValue);
+									if (SoftPtr)
+									{
+										*SoftPtr = FSoftObjectPtr(ClassPath);
+										LogGeneration(FString::Printf(TEXT("    Set MeshAnimBP: %s"), *Definition.ClothingMesh.MeshAnimBP));
+									}
+								}
+							}
+						}
+
+						// Note: MeshMaterials (TArray<FCreatorMeshMaterial>) and Morphs (TArray<FCreatorMeshMorph>)
+						// are complex nested arrays - log info for manual setup if specified
+						if (Definition.ClothingMesh.Materials.Num() > 0)
+						{
+							LogGeneration(FString::Printf(TEXT("    [INFO] MeshMaterials (%d entries) - complex struct, logging for manual setup:"), Definition.ClothingMesh.Materials.Num()));
+							for (int32 i = 0; i < Definition.ClothingMesh.Materials.Num(); i++)
+							{
+								const FManifestClothingMaterial& Mat = Definition.ClothingMesh.Materials[i];
+								LogGeneration(FString::Printf(TEXT("      [%d] Material: %s"), i, *Mat.Material));
+								for (const FManifestMaterialParamBinding& Param : Mat.VectorParams)
+								{
+									LogGeneration(FString::Printf(TEXT("        VectorParam: %s -> %s"), *Param.ParameterName, *Param.TagId));
+								}
+								for (const FManifestMaterialParamBinding& Param : Mat.ScalarParams)
+								{
+									LogGeneration(FString::Printf(TEXT("        ScalarParam: %s -> %s"), *Param.ParameterName, *Param.TagId));
+								}
+							}
+						}
+
+						if (Definition.ClothingMesh.Morphs.Num() > 0)
+						{
+							LogGeneration(FString::Printf(TEXT("    [INFO] Morphs (%d entries) - complex struct, logging for manual setup:"), Definition.ClothingMesh.Morphs.Num()));
+							for (int32 i = 0; i < Definition.ClothingMesh.Morphs.Num(); i++)
+							{
+								const FManifestClothingMorph& Morph = Definition.ClothingMesh.Morphs[i];
+								LogGeneration(FString::Printf(TEXT("      [%d] ScalarTag: %s, MorphNames: %d"), i, *Morph.ScalarTag, Morph.MorphNames.Num()));
+								for (const FString& MorphName : Morph.MorphNames)
+								{
+									LogGeneration(FString::Printf(TEXT("        - %s"), *MorphName));
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] ClothingMesh specified but ClothingMeshData property not found on class %s"), *CDO->GetClass()->GetName()));
+					LogGeneration(TEXT("  [INFO] Ensure parent_class is set to EquippableItem_Clothing or a child class"));
+				}
+			}
+
 			CDO->MarkPackageDirty();
 		}
 	}

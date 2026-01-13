@@ -78,6 +78,12 @@ private:
 	static void ParseGoalItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseQuests(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 
+	// v3.9.8: Mesh-to-Item Pipeline parsers
+	static void ParsePipelineConfig(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParsePipelineItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParsePipelineCollections(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParsePipelineLoadouts(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+
 	// v2.2.0: Event graph helper parsers
 	static void ParseGraphNodes(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);
 	static void ParseGraphConnections(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, FManifestEventGraphDefinition& OutGraph);
@@ -93,4 +99,7 @@ private:
 	static FString GetArrayItemValue(const FString& Line);
 	static bool IsSectionHeader(const FString& Line, const FString& SectionName);
 	static bool ShouldExitSection(const FString& Line, int32 SectionIndent);
+	// v3.9.8: Vector/Rotator string parsing helpers
+	static FVector ParseVectorFromString(const FString& VectorStr);
+	static FRotator ParseRotatorFromString(const FString& RotatorStr);
 };

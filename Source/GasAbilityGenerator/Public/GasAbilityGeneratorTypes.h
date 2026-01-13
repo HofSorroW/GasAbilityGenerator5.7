@@ -1579,10 +1579,175 @@ struct FManifestDialogueBlueprintDefinition
 	}
 };
 
+// ============================================================================
+// v3.9.8: Item Pipeline Types
+// Mesh-to-Item automation with clothing mesh support
+// ============================================================================
+
+/**
+ * Pipeline item type for mesh analysis
+ */
+enum class EPipelineItemType : uint8
+{
+	Clothing,       // UEquippableItem_Clothing
+	Weapon_Melee,   // UMeleeWeaponItem
+	Weapon_Ranged,  // URangedWeaponItem
+	Consumable,     // UConsumableItem
+	Generic         // UNarrativeItem
+};
+
+/**
+ * Mesh analysis result from pipeline analyzer
+ */
+struct FMeshAnalysisResult
+{
+	EPipelineItemType InferredType = EPipelineItemType::Generic;
+	FString InferredSlot;           // Gameplay tag string
+	FString SuggestedDisplayName;
+	FString SuggestedAssetName;
+	float SlotConfidence = 0.0f;
+	float TypeConfidence = 0.0f;
+};
+
+/**
+ * Pipeline mesh input definition
+ */
+struct FPipelineMeshInput
+{
+	FString MeshPath;
+	EPipelineItemType ItemType = EPipelineItemType::Clothing;
+	FString EquipmentSlot;          // Override slot
+	FString DisplayName;            // Override name
+	FString TargetCollection;
+	FString TargetLoadout;
+};
+
+/**
+ * Pipeline processing result
+ */
+struct FPipelineProcessResult
+{
+	bool bSuccess = false;
+	FString GeneratedItemPath;
+	FString GeneratedCollectionPath;
+	TArray<FString> Warnings;
+	TArray<FString> Errors;
+};
+
+// ============================================================================
+// v3.9.8: Clothing Mesh Configuration Structs
+// Maps to Narrative Pro's FCharacterCreatorAttribute_Mesh structure
+// ============================================================================
+
+/**
+ * Material parameter binding (maps to FCreatorMeshMaterialParam_Vector/Scalar)
+ */
+struct FManifestMaterialParamBinding
+{
+	FString ParameterName;          // Material parameter name
+	FString TagId;                  // Gameplay tag (Narrative.CharacterCreator.Vectors.*)
+
+	uint64 ComputeHash() const
+	{
+		return GetTypeHash(ParameterName) ^ (GetTypeHash(TagId) << 16);
+	}
+};
+
+/**
+ * Clothing material definition (maps to FCreatorMeshMaterial)
+ */
+struct FManifestClothingMaterial
+{
+	FString Material;               // TSoftObjectPtr<UMaterialInterface>
+	TArray<FManifestMaterialParamBinding> VectorParams;
+	TArray<FManifestMaterialParamBinding> ScalarParams;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Material);
+		for (const auto& VP : VectorParams)
+		{
+			Hash ^= VP.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& SP : ScalarParams)
+		{
+			Hash ^= SP.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * Clothing morph definition (maps to FCreatorMeshMorph)
+ */
+struct FManifestClothingMorph
+{
+	FString ScalarTag;              // Gameplay tag for scalar value
+	TArray<FString> MorphNames;     // Morph target names
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(ScalarTag);
+		for (const FString& Name : MorphNames)
+		{
+			Hash ^= GetTypeHash(Name);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * Complete clothing mesh configuration (maps to FCharacterCreatorAttribute_Mesh)
+ */
+struct FManifestClothingMeshConfig
+{
+	FString Mesh;                   // TSoftObjectPtr<USkeletalMesh>
+	bool bUseLeaderPose = true;
+	bool bIsStaticMesh = false;
+	FString StaticMesh;             // TSoftObjectPtr<UStaticMesh>
+	FString AttachSocket;           // FName MeshAttachSocket
+	FVector AttachLocation = FVector::ZeroVector;
+	FRotator AttachRotation = FRotator::ZeroRotator;
+	FVector AttachScale = FVector::OneVector;
+	FString MeshAnimBP;             // TSoftClassPtr<UAnimInstance>
+	TArray<FManifestClothingMaterial> Materials;
+	TArray<FManifestClothingMorph> Morphs;
+
+	bool IsEmpty() const { return Mesh.IsEmpty() && StaticMesh.IsEmpty(); }
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Mesh);
+		Hash ^= (bUseLeaderPose ? 1ULL : 0ULL) << 4;
+		Hash ^= (bIsStaticMesh ? 1ULL : 0ULL) << 5;
+		Hash ^= GetTypeHash(StaticMesh) << 8;
+		Hash ^= GetTypeHash(AttachSocket) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttachLocation.X * 10.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttachLocation.Y * 10.f)) << 10;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AttachLocation.Z * 10.f)) << 20;
+		Hash ^= GetTypeHash(MeshAnimBP) << 24;
+		for (const auto& Mat : Materials)
+		{
+			Hash ^= Mat.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Morph : Morphs)
+		{
+			Hash ^= Morph.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+		return Hash;
+	}
+};
+
 /**
  * Equippable item definition
  * v3.3: Enhanced with full NarrativeItem + EquippableItem property support
  * v3.4: Added WeaponItem and RangedWeaponItem property support
+ * v3.9.8: Added ClothingMesh for EquippableItem_Clothing support
  */
 struct FManifestEquippableItemDefinition
 {
@@ -1652,7 +1817,10 @@ struct FManifestEquippableItemDefinition
 	TArray<FVector> WieldAttachmentOffsets;     // Location offsets (parallel array)
 	TArray<FRotator> WieldAttachmentRotations;  // Rotation offsets (parallel array)
 
-	/** v3.9.6: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.9.8: Clothing mesh configuration (for EquippableItem_Clothing parent class)
+	FManifestClothingMeshConfig ClothingMesh;
+
+	/** v3.9.8: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1761,6 +1929,13 @@ struct FManifestEquippableItemDefinition
 			Hash ^= GetTypeHash(WieldAttachmentSlots[i]);
 			if (WieldAttachmentSockets.IsValidIndex(i)) Hash ^= GetTypeHash(WieldAttachmentSockets[i]);
 			Hash = (Hash << 3) | (Hash >> 61);
+		}
+
+		// v3.9.8: Hash clothing mesh config
+		if (!ClothingMesh.IsEmpty())
+		{
+			Hash ^= ClothingMesh.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
 		}
 
 		return Hash;
@@ -3130,6 +3305,107 @@ struct FManifestQuestDefinition
 };
 
 /**
+ * v3.9.8: Pipeline configuration
+ */
+struct FManifestPipelineConfig
+{
+	FString DefaultFolder = TEXT("Items/Generated");
+	bool bAutoCreateCollections = true;
+	bool bAutoCreateLoadouts = false;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(DefaultFolder);
+		Hash ^= bAutoCreateCollections ? 1 : 0;
+		Hash ^= bAutoCreateLoadouts ? 2 : 0;
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.8: Pipeline item definition (mesh-to-item entry)
+ */
+struct FManifestPipelineItemDefinition
+{
+	FString Mesh;                    // Source mesh path
+	FString Name;                    // Generated item name (optional, auto-generated if empty)
+	FString Type;                    // Item type: Clothing, Weapon_Melee, Weapon_Ranged, Consumable, Generic
+	FString Slot;                    // Equipment slot tag
+	FString DisplayName;             // Human-readable name
+	FString Folder;                  // Target folder
+	FManifestClothingMeshConfig ClothingMesh;  // Clothing mesh config
+	TMap<FString, FString> Stats;    // Additional stats (armor_rating, attack_rating, etc.)
+	FString TargetCollection;        // Target collection to add item to
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Mesh);
+		Hash ^= GetTypeHash(Name);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(Type);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(Slot);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(DisplayName);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(Folder);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= ClothingMesh.ComputeHash();
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(TargetCollection);
+		for (const auto& Stat : Stats)
+		{
+			Hash ^= GetTypeHash(Stat.Key);
+			Hash ^= GetTypeHash(Stat.Value);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.8: Pipeline collection definition (auto-generated from items)
+ */
+struct FManifestPipelineCollectionDefinition
+{
+	FString Name;                    // Collection name (IC_ prefix)
+	FString Folder;                  // Target folder
+	TArray<FString> Items;           // Items to include (auto-populated from pipeline_items with matching TargetCollection)
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Folder) << 16;
+		for (const FString& Item : Items)
+		{
+			Hash ^= GetTypeHash(Item);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.8: Pipeline loadout definition (NPC loadout assignment)
+ */
+struct FManifestPipelineLoadoutDefinition
+{
+	FString NPCDefinition;           // Target NPC definition name
+	TArray<FString> Collections;     // Item collections to add to loadout
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(NPCDefinition);
+		for (const FString& Collection : Collections)
+		{
+			Hash ^= GetTypeHash(Collection);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
  * Parsed manifest data
  */
 struct FManifestData
@@ -3170,6 +3446,12 @@ struct FManifestData
 	TArray<FManifestActivityScheduleDefinition> ActivitySchedules;
 	TArray<FManifestGoalItemDefinition> GoalItems;
 	TArray<FManifestQuestDefinition> Quests;
+
+	// v3.9.8: Mesh-to-Item Pipeline
+	FManifestPipelineConfig PipelineConfig;
+	TArray<FManifestPipelineItemDefinition> PipelineItems;
+	TArray<FManifestPipelineCollectionDefinition> PipelineCollections;
+	TArray<FManifestPipelineLoadoutDefinition> PipelineLoadouts;
 
 	// Cached whitelist of all asset names for validation
 	mutable TSet<FString> AssetWhitelist;
