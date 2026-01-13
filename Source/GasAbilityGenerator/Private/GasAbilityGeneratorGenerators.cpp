@@ -10715,15 +10715,32 @@ FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivitySc
 		{
 			// Try multiple resolution paths for goal classes
 			TArray<FString> SearchPaths;
-			SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *Behavior.GoalClass));
-			SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *Behavior.GoalClass, *Behavior.GoalClass));
-			SearchPaths.Add(FString::Printf(TEXT("/Game/NarrativePro/AI/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 
-			// Also check Narrative Pro content paths
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// C++ class in NarrativeArsenal
+			SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *Behavior.GoalClass));
+
+			// Project-specific paths
+			SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *Behavior.GoalClass, *Behavior.GoalClass));
+
+			// Narrative Pro plugin content paths - all known goal locations
+			// Attacks folder (Goal_Attack, Goal_Flee)
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// DriveToDestination folder
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/DriveToDestination/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// FlyToDestination folder
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FlyToDestination/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// FollowCharacter folder
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// GoToLocation folder (Goal_MoveToDestination)
 			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// Idle folder
 			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// Interact folder (with Goals subfolder)
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// Patrol folder
 			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			// ReturnToSpawn folder
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 
 			for (const FString& Path : SearchPaths)
 			{
