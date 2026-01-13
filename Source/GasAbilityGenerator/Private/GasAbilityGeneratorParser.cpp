@@ -4587,6 +4587,44 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 	// v3.7: Item loadout collections array state
 	bool bInItemLoadoutCollections = false;
 
+	// v3.9.5: Loot table roll parsing states
+	bool bInDefaultItemLoadout = false;
+	bool bInTradingItemLoadout = false;
+	FManifestLootTableRollDefinition CurrentRoll;
+	bool bInRollItems = false;                    // Parsing "items:" array inside a roll
+	bool bInRollItemCollections = false;          // Parsing "item_collections:" array inside a roll
+	FManifestItemWithQuantityDefinition CurrentItemDef;
+	bool bInItemDef = false;                      // Currently building an item definition
+
+	// Lambda to save current roll if valid
+	auto SaveCurrentRoll = [&]() {
+		if (CurrentRoll.ItemsToGrant.Num() > 0 || CurrentRoll.ItemCollectionsToGrant.Num() > 0 || !CurrentRoll.TableToRoll.IsEmpty())
+		{
+			if (bInDefaultItemLoadout)
+			{
+				CurrentDef.DefaultItemLoadout.Add(CurrentRoll);
+			}
+			else if (bInTradingItemLoadout)
+			{
+				CurrentDef.TradingItemLoadout.Add(CurrentRoll);
+			}
+		}
+		CurrentRoll = FManifestLootTableRollDefinition();
+		bInRollItems = false;
+		bInRollItemCollections = false;
+		bInItemDef = false;
+	};
+
+	// Lambda to save current item definition if valid
+	auto SaveCurrentItemDef = [&]() {
+		if (!CurrentItemDef.Item.IsEmpty())
+		{
+			CurrentRoll.ItemsToGrant.Add(CurrentItemDef);
+		}
+		CurrentItemDef = FManifestItemWithQuantityDefinition();
+		bInItemDef = false;
+	};
+
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
@@ -4594,6 +4632,10 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// v3.9.5: Save any pending loot table roll
+			if (bInItemDef) SaveCurrentItemDef();
+			if (bInDefaultItemLoadout || bInTradingItemLoadout) SaveCurrentRoll();
+
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NPCDefinitions.Add(CurrentDef);
@@ -4610,6 +4652,10 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// v3.9.5: Save any pending loot table roll before starting new item
+			if (bInItemDef) SaveCurrentItemDef();
+			if (bInDefaultItemLoadout || bInTradingItemLoadout) SaveCurrentRoll();
+
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NPCDefinitions.Add(CurrentDef);
@@ -4622,6 +4668,11 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 			bInFactions = false;
 			bInActivitySchedules = false;
 			bInItemLoadoutCollections = false;
+			// v3.9.5: Reset loot table parsing states
+			bInDefaultItemLoadout = false;
+			bInTradingItemLoadout = false;
+			bInRollItems = false;
+			bInRollItemCollections = false;
 		}
 		else if (bInItem)
 		{
@@ -4836,6 +4887,117 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 				bInOwnedTags = false;
 				bInFactions = false;
 				bInActivitySchedules = false;
+				// v3.9.5: Exit loot table parsing
+				if (bInItemDef) SaveCurrentItemDef();
+				if (bInDefaultItemLoadout || bInTradingItemLoadout) SaveCurrentRoll();
+				bInDefaultItemLoadout = false;
+				bInTradingItemLoadout = false;
+			}
+			// v3.9.5: Default item loadout (full loot table roll array)
+			else if (TrimmedLine.StartsWith(TEXT("default_item_loadout:")))
+			{
+				// Save any pending roll and start new loadout section
+				if (bInItemDef) SaveCurrentItemDef();
+				if (bInDefaultItemLoadout || bInTradingItemLoadout) SaveCurrentRoll();
+				bInDefaultItemLoadout = true;
+				bInTradingItemLoadout = false;
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInActivitySchedules = false;
+				bInItemLoadoutCollections = false;
+			}
+			// v3.9.5: Trading item loadout (vendor inventory)
+			else if (TrimmedLine.StartsWith(TEXT("trading_item_loadout:")))
+			{
+				// Save any pending roll and start new loadout section
+				if (bInItemDef) SaveCurrentItemDef();
+				if (bInDefaultItemLoadout || bInTradingItemLoadout) SaveCurrentRoll();
+				bInTradingItemLoadout = true;
+				bInDefaultItemLoadout = false;
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInActivitySchedules = false;
+				bInItemLoadoutCollections = false;
+			}
+			// v3.9.5: Loot table roll properties (inside default_item_loadout or trading_item_loadout)
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("items:")))
+			{
+				// Start items array inside current roll
+				if (bInItemDef) SaveCurrentItemDef();
+				bInRollItems = true;
+				bInRollItemCollections = false;
+			}
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("item_collections:")))
+			{
+				// Start item collections array inside current roll
+				if (bInItemDef) SaveCurrentItemDef();
+				bInRollItemCollections = true;
+				bInRollItems = false;
+			}
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("table_to_roll:")))
+			{
+				if (bInItemDef) SaveCurrentItemDef();
+				CurrentRoll.TableToRoll = GetLineValue(TrimmedLine);
+				bInRollItems = false;
+				bInRollItemCollections = false;
+			}
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("num_rolls:")))
+			{
+				if (bInItemDef) SaveCurrentItemDef();
+				CurrentRoll.NumRolls = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInRollItems = false;
+				bInRollItemCollections = false;
+			}
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("chance:")))
+			{
+				if (bInItemDef) SaveCurrentItemDef();
+				CurrentRoll.Chance = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInRollItems = false;
+				bInRollItemCollections = false;
+			}
+			// v3.9.5: Item definition properties (inside items array of a roll)
+			else if (bInRollItems && TrimmedLine.StartsWith(TEXT("- item:")))
+			{
+				// New item definition - save previous if any
+				if (bInItemDef) SaveCurrentItemDef();
+				CurrentItemDef = FManifestItemWithQuantityDefinition();
+				CurrentItemDef.Item = GetLineValue(TrimmedLine.Mid(2)); // Skip "- "
+				bInItemDef = true;
+			}
+			else if (bInRollItems && bInItemDef && TrimmedLine.StartsWith(TEXT("quantity:")))
+			{
+				CurrentItemDef.Quantity = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			// v3.9.5: Handle new loot table roll start (e.g., "- items:" or "- item_collections:")
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("- items:")))
+			{
+				// Save previous roll if any, then start new roll
+				if (bInItemDef) SaveCurrentItemDef();
+				SaveCurrentRoll();
+				bInRollItems = true;
+				bInRollItemCollections = false;
+			}
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("- item_collections:")))
+			{
+				// Save previous roll if any, then start new roll
+				if (bInItemDef) SaveCurrentItemDef();
+				SaveCurrentRoll();
+				bInRollItemCollections = true;
+				bInRollItems = false;
+			}
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("- chance:")))
+			{
+				// Shorthand: a roll starting directly with chance
+				if (bInItemDef) SaveCurrentItemDef();
+				SaveCurrentRoll();
+				CurrentRoll.Chance = FCString::Atof(*GetLineValue(TrimmedLine.Mid(2)));
+			}
+			else if ((bInDefaultItemLoadout || bInTradingItemLoadout) && TrimmedLine.StartsWith(TEXT("- table_to_roll:")))
+			{
+				// Shorthand: a roll starting directly with table_to_roll
+				if (bInItemDef) SaveCurrentItemDef();
+				SaveCurrentRoll();
+				CurrentRoll.TableToRoll = GetLineValue(TrimmedLine.Mid(2));
 			}
 			// v3.6: Handle YAML list items for arrays
 			else if (TrimmedLine.StartsWith(TEXT("- ")) && !TrimmedLine.Contains(TEXT(":")))
@@ -4859,6 +5021,11 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 					{
 						CurrentDef.DefaultItemLoadoutCollections.Add(ItemValue);
 					}
+					// v3.9.5: Item collection inside a loot table roll
+					else if (bInRollItemCollections)
+					{
+						CurrentRoll.ItemCollectionsToGrant.Add(ItemValue);
+					}
 				}
 			}
 			else
@@ -4868,11 +5035,24 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 				bInFactions = false;
 				bInActivitySchedules = false;
 				bInItemLoadoutCollections = false;
+				// v3.9.5: Reset loot table parsing if we see a non-loadout property
+				// But only if we're not inside nested items/collections parsing
+				if (!bInRollItems && !bInRollItemCollections)
+				{
+					if (bInItemDef) SaveCurrentItemDef();
+					if (bInDefaultItemLoadout || bInTradingItemLoadout) SaveCurrentRoll();
+					bInDefaultItemLoadout = false;
+					bInTradingItemLoadout = false;
+				}
 			}
 		}
 
 		LineIndex++;
 	}
+
+	// v3.9.5: Save any pending loot table roll at end of file
+	if (bInItemDef) SaveCurrentItemDef();
+	if (bInDefaultItemLoadout || bInTradingItemLoadout) SaveCurrentRoll();
 
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{

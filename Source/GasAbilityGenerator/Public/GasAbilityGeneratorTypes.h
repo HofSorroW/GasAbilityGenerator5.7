@@ -1937,8 +1937,61 @@ struct FManifestNarrativeEventDefinition
 };
 
 /**
+ * v3.9.5: Item with quantity - maps to FItemWithQuantity
+ * Used in loot table rolls for specifying individual items
+ */
+struct FManifestItemWithQuantityDefinition
+{
+	FString Item;           // Item class path (e.g., "EI_IronSword" or full path)
+	int32 Quantity = 1;     // Amount of this item to grant
+
+	/** v3.9.5: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Item);
+		Hash ^= static_cast<uint64>(Quantity) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v3.9.5: Loot table roll - maps to FLootTableRoll
+ * Defines a single roll in DefaultItemLoadout or TradingItemLoadout
+ */
+struct FManifestLootTableRollDefinition
+{
+	TArray<FManifestItemWithQuantityDefinition> ItemsToGrant;  // Individual items with quantities
+	TArray<FString> ItemCollectionsToGrant;                     // Item collection references (IC_*)
+	FString TableToRoll;                                        // Optional DataTable path for dynamic rolling
+	int32 NumRolls = 1;                                         // Number of times to roll (default 1)
+	float Chance = 1.0f;                                        // Chance of each roll succeeding (0.0-1.0)
+
+	/** v3.9.5: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = 0;
+		for (const auto& ItemDef : ItemsToGrant)
+		{
+			Hash ^= ItemDef.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Collection : ItemCollectionsToGrant)
+		{
+			Hash ^= GetTypeHash(Collection);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		Hash ^= GetTypeHash(TableToRoll);
+		Hash = (Hash << 7) | (Hash >> 57);
+		Hash ^= static_cast<uint64>(NumRolls) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Chance * 1000.f)) << 24;
+		return Hash;
+	}
+};
+
+/**
  * NPC definition - maps to UNPCDefinition data asset
  * v3.3: Enhanced with full Narrative Pro property support
+ * v3.9.5: Added DefaultItemLoadout and TradingItemLoadout arrays
  */
 struct FManifestNPCDefinitionDefinition
 {
@@ -1978,9 +2031,13 @@ struct FManifestNPCDefinitionDefinition
 	bool bAutoCreateDialogue = false;           // Create DBP_{Name} dialogue blueprint
 	bool bAutoCreateTaggedDialogue = false;     // Create {Name}_TaggedDialogue set
 	bool bAutoCreateItemLoadout = false;        // Create ItemLoadout_{Name} DataTable
-	TArray<FString> DefaultItemLoadoutCollections;  // Item collections for DefaultItemLoadout (e.g., IC_RifleWithAmmo)
+	TArray<FString> DefaultItemLoadoutCollections;  // v3.7: Simple item collections (legacy, converted to loot rolls)
 
-	/** v3.7: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.9.5: Full loot table roll support for item loadouts
+	TArray<FManifestLootTableRollDefinition> DefaultItemLoadout;  // Items granted at spawn (from CharacterDefinition)
+	TArray<FManifestLootTableRollDefinition> TradingItemLoadout;  // Vendor inventory items (NPCDefinition only)
+
+	/** v3.9.5: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -2037,6 +2094,17 @@ struct FManifestNPCDefinitionDefinition
 		{
 			Hash ^= GetTypeHash(Collection);
 			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		// v3.9.5: Hash full loot table rolls
+		for (const auto& Roll : DefaultItemLoadout)
+		{
+			Hash ^= Roll.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		for (const auto& Roll : TradingItemLoadout)
+		{
+			Hash ^= Roll.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
 		}
 		return Hash;
 	}

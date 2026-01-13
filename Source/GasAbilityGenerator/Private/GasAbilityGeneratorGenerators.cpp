@@ -9128,6 +9128,196 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	return Result;
 }
 
+// v3.9.5: Helper function to populate TArray<FLootTableRoll> from manifest definitions
+static void PopulateLootTableRollArray(
+	UObject* Container,
+	FArrayProperty* ArrayProp,
+	const TArray<FManifestLootTableRollDefinition>& Rolls,
+	const FString& PropertyName)
+{
+	FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(Container));
+	FStructProperty* InnerStructProp = CastField<FStructProperty>(ArrayProp->Inner);
+	if (!InnerStructProp)
+	{
+		UE_LOG(LogGasAbilityGenerator, Warning, TEXT("  [v3.9.5 WARNING] %s inner is not a struct"), *PropertyName);
+		return;
+	}
+
+	UScriptStruct* LootRollStruct = InnerStructProp->Struct;
+
+	for (const FManifestLootTableRollDefinition& RollDef : Rolls)
+	{
+		int32 NewIndex = ArrayHelper.AddValue();
+		void* RollPtr = ArrayHelper.GetRawPtr(NewIndex);
+
+		// Set NumRolls
+		FIntProperty* NumRollsProp = CastField<FIntProperty>(LootRollStruct->FindPropertyByName(TEXT("NumRolls")));
+		if (NumRollsProp)
+		{
+			NumRollsProp->SetPropertyValue_InContainer(RollPtr, RollDef.NumRolls);
+		}
+
+		// Set Chance
+		FFloatProperty* ChanceProp = CastField<FFloatProperty>(LootRollStruct->FindPropertyByName(TEXT("Chance")));
+		if (ChanceProp)
+		{
+			ChanceProp->SetPropertyValue_InContainer(RollPtr, RollDef.Chance);
+		}
+
+		// Set TableToRoll (TObjectPtr<UDataTable>)
+		if (!RollDef.TableToRoll.IsEmpty())
+		{
+			FObjectProperty* TableProp = CastField<FObjectProperty>(LootRollStruct->FindPropertyByName(TEXT("TableToRoll")));
+			if (TableProp)
+			{
+				UDataTable* LoadedTable = LoadObject<UDataTable>(nullptr, *RollDef.TableToRoll);
+				if (LoadedTable)
+				{
+					TableProp->SetObjectPropertyValue(TableProp->ContainerPtrToValuePtr<void>(RollPtr), LoadedTable);
+					UE_LOG(LogGasAbilityGenerator, Log, TEXT("  [v3.9.5] Set TableToRoll: %s"), *RollDef.TableToRoll);
+				}
+				else
+				{
+					UE_LOG(LogGasAbilityGenerator, Warning, TEXT("  [v3.9.5 WARNING] TableToRoll not found: %s"), *RollDef.TableToRoll);
+				}
+			}
+		}
+
+		// Populate ItemsToGrant (TArray<FItemWithQuantity>)
+		if (RollDef.ItemsToGrant.Num() > 0)
+		{
+			FArrayProperty* ItemsArrayProp = CastField<FArrayProperty>(LootRollStruct->FindPropertyByName(TEXT("ItemsToGrant")));
+			if (ItemsArrayProp)
+			{
+				FScriptArrayHelper ItemsHelper(ItemsArrayProp, ItemsArrayProp->ContainerPtrToValuePtr<void>(RollPtr));
+				FStructProperty* ItemStructProp = CastField<FStructProperty>(ItemsArrayProp->Inner);
+
+				if (ItemStructProp)
+				{
+					UScriptStruct* ItemWithQtyStruct = ItemStructProp->Struct;
+
+					for (const FManifestItemWithQuantityDefinition& ItemDef : RollDef.ItemsToGrant)
+					{
+						int32 ItemIndex = ItemsHelper.AddValue();
+						void* ItemPtr = ItemsHelper.GetRawPtr(ItemIndex);
+
+						// Set Item (TSoftClassPtr<UNarrativeItem>)
+						FString ItemPath = ItemDef.Item;
+						if (!ItemPath.Contains(TEXT("/")))
+						{
+							// Try to resolve short name to full path
+							TArray<FString> SearchPaths = {
+								FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item),
+								FString::Printf(TEXT("%s/Items/Equipment/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item),
+								FString::Printf(TEXT("%s/Items/Weapons/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item)
+							};
+
+							for (const FString& SearchPath : SearchPaths)
+							{
+								if (UClass* FoundClass = LoadClass<UObject>(nullptr, *SearchPath))
+								{
+									ItemPath = SearchPath;
+									break;
+								}
+							}
+
+							// If not found, build default path
+							if (!ItemPath.Contains(TEXT("/")))
+							{
+								ItemPath = FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item);
+							}
+						}
+						else if (!ItemPath.EndsWith(TEXT("_C")))
+						{
+							ItemPath = ItemPath + TEXT("_C");
+						}
+
+						// Set via FSoftClassPath on the "Item" property (TSoftClassPtr)
+						FSoftObjectProperty* ItemSoftProp = CastField<FSoftObjectProperty>(ItemWithQtyStruct->FindPropertyByName(TEXT("Item")));
+						if (ItemSoftProp)
+						{
+							FSoftObjectPtr* SoftPtr = ItemSoftProp->GetPropertyValuePtr_InContainer(ItemPtr);
+							if (SoftPtr)
+							{
+								*SoftPtr = FSoftObjectPtr(FSoftObjectPath(ItemPath));
+								UE_LOG(LogGasAbilityGenerator, Log, TEXT("  [v3.9.5] Added Item: %s (Qty: %d)"), *ItemDef.Item, ItemDef.Quantity);
+							}
+						}
+
+						// Set Quantity
+						FIntProperty* QtyProp = CastField<FIntProperty>(ItemWithQtyStruct->FindPropertyByName(TEXT("Quantity")));
+						if (QtyProp)
+						{
+							QtyProp->SetPropertyValue_InContainer(ItemPtr, ItemDef.Quantity);
+						}
+					}
+				}
+			}
+		}
+
+		// Populate ItemCollectionsToGrant (TArray<TObjectPtr<UItemCollection>>)
+		if (RollDef.ItemCollectionsToGrant.Num() > 0)
+		{
+			FArrayProperty* CollectionsArrayProp = CastField<FArrayProperty>(LootRollStruct->FindPropertyByName(TEXT("ItemCollectionsToGrant")));
+			if (CollectionsArrayProp)
+			{
+				FScriptArrayHelper CollectionsHelper(CollectionsArrayProp, CollectionsArrayProp->ContainerPtrToValuePtr<void>(RollPtr));
+
+				for (const FString& CollectionName : RollDef.ItemCollectionsToGrant)
+				{
+					FString CollectionPath = CollectionName;
+					UObject* LoadedCollection = nullptr;
+
+					if (!CollectionPath.Contains(TEXT("/")))
+					{
+						// Try common paths
+						TArray<FString> SearchPaths = {
+							FString::Printf(TEXT("%s/Items/%s"), *GetProjectRoot(), *CollectionName),
+							FString::Printf(TEXT("%s/Items/Collections/%s"), *GetProjectRoot(), *CollectionName),
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/%s"), *CollectionName),
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/%s"), *CollectionName)
+						};
+
+						for (const FString& SearchPath : SearchPaths)
+						{
+							LoadedCollection = LoadObject<UObject>(nullptr, *SearchPath);
+							if (LoadedCollection)
+							{
+								CollectionPath = SearchPath;
+								break;
+							}
+						}
+					}
+					else
+					{
+						LoadedCollection = LoadObject<UObject>(nullptr, *CollectionPath);
+					}
+
+					if (LoadedCollection)
+					{
+						int32 CollIndex = CollectionsHelper.AddValue();
+						TObjectPtr<UObject>* ObjPtr = reinterpret_cast<TObjectPtr<UObject>*>(CollectionsHelper.GetRawPtr(CollIndex));
+						if (ObjPtr)
+						{
+							*ObjPtr = LoadedCollection;
+							UE_LOG(LogGasAbilityGenerator, Log, TEXT("  [v3.9.5] Added ItemCollection: %s"), *CollectionName);
+						}
+					}
+					else
+					{
+						UE_LOG(LogGasAbilityGenerator, Warning, TEXT("  [v3.9.5 WARNING] ItemCollection not found: %s"), *CollectionName);
+					}
+				}
+			}
+		}
+
+		UE_LOG(LogGasAbilityGenerator, Log, TEXT("  [v3.9.5] Added LootTableRoll: %d items, %d collections, chance=%.2f, rolls=%d"),
+			RollDef.ItemsToGrant.Num(), RollDef.ItemCollectionsToGrant.Num(), RollDef.Chance, RollDef.NumRolls);
+	}
+
+	UE_LOG(LogGasAbilityGenerator, Log, TEXT("  [v3.9.5] Populated %s with %d rolls"), *PropertyName, ArrayHelper.Num());
+}
+
 // v2.3.0: NPC Definition Generator - creates UNPCDefinition data assets
 // v2.6.9: Added deferred handling for AbilityConfiguration dependency
 FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinitionDefinition& Definition)
@@ -9486,6 +9676,34 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 		else
 		{
 			LogGeneration(TEXT("  [v3.7 WARNING] DefaultItemLoadout property not found on UNPCDefinition"));
+		}
+	}
+
+	// v3.9.5: Populate full DefaultItemLoadout array (TArray<FLootTableRoll>)
+	if (Definition.DefaultItemLoadout.Num() > 0)
+	{
+		FArrayProperty* LoadoutArrayProp = CastField<FArrayProperty>(NPCDef->GetClass()->FindPropertyByName(TEXT("DefaultItemLoadout")));
+		if (LoadoutArrayProp)
+		{
+			PopulateLootTableRollArray(NPCDef, LoadoutArrayProp, Definition.DefaultItemLoadout, TEXT("DefaultItemLoadout"));
+		}
+		else
+		{
+			LogGeneration(TEXT("  [v3.9.5 WARNING] DefaultItemLoadout array property not found on UNPCDefinition"));
+		}
+	}
+
+	// v3.9.5: Populate TradingItemLoadout array for vendors (TArray<FLootTableRoll>)
+	if (Definition.TradingItemLoadout.Num() > 0 && Definition.bIsVendor)
+	{
+		FArrayProperty* TradingArrayProp = CastField<FArrayProperty>(NPCDef->GetClass()->FindPropertyByName(TEXT("TradingItemLoadout")));
+		if (TradingArrayProp)
+		{
+			PopulateLootTableRollArray(NPCDef, TradingArrayProp, Definition.TradingItemLoadout, TEXT("TradingItemLoadout"));
+		}
+		else
+		{
+			LogGeneration(TEXT("  [v3.9.5 WARNING] TradingItemLoadout array property not found on UNPCDefinition"));
 		}
 	}
 

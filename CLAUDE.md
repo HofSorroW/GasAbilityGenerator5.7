@@ -539,9 +539,28 @@ npc_definitions:
     auto_create_dialogue: true                    # Creates DBP_BlacksmithDialogue
     auto_create_tagged_dialogue: true             # Creates Blacksmith_TaggedDialogue
     auto_create_item_loadout: true                # Populates DefaultItemLoadout
-    default_item_loadout_collections:             # Item collections for DefaultItemLoadout
+    default_item_loadout_collections:             # v3.7: Simple item collections (legacy)
       - IC_RifleWithAmmo
       - IC_ExampleArmorSet
+    # v3.9.5: Full loot table roll support (preferred over default_item_loadout_collections)
+    default_item_loadout:                         # TArray<FLootTableRoll> - items granted at spawn
+      - items:                                    # TArray<FItemWithQuantity>
+          - item: EI_IronSword
+            quantity: 1
+          - item: EI_HealthPotion
+            quantity: 5
+        item_collections:                         # TArray<TObjectPtr<UItemCollection>>
+          - IC_BlacksmithTools
+        chance: 1.0                               # Roll success chance (0.0-1.0)
+        num_rolls: 1                              # Times to roll this entry
+      - table_to_roll: /Game/Tables/DT_RandomLoot  # Optional: DataTable-based rolling
+        chance: 0.5
+        num_rolls: 2
+    trading_item_loadout:                         # TArray<FLootTableRoll> - vendor inventory (bIsVendor=true)
+      - item_collections:
+          - IC_WeaponsForSale
+          - IC_ArmorForSale
+        chance: 1.0
 
 # v3.3: EquippableItem with full property support
 equippable_items:
@@ -825,6 +844,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.9.5 - NPC Item Loadout Automation: Full loot table roll support for NPCDefinitions. New manifest properties `default_item_loadout` and `trading_item_loadout` accept arrays of loot table rolls, each containing `items` (item class + quantity), `item_collections`, `table_to_roll`, `num_rolls`, and `chance`. Maps to Narrative Pro's `TArray<FLootTableRoll>` via reflection with proper population of nested `FItemWithQuantity` and item collection arrays. Enables complete NPC inventory definition from YAML.
 - v3.9.4 - Quest Blueprint Generator (UQuestBlueprint): Complete rewrite using UQuestBlueprint (same pattern as DialogueBlueprint v3.8). Works directly on QuestTemplate (auto-created by constructor). Branches now nested inside states (cleaner YAML structure). Events supported on both states and branches. Task argument resolution via reflection. Added NarrativeQuestEditor module dependency. Visual editor shows empty graph but quest functions at runtime.
 - v3.9.3 - Quest State Machine Generator: FQuestGenerator now creates complete quest state machines with UQuestState nodes, UQuestBranch transitions, and UNarrativeTask instances. States support Regular/Success/Failure types. Branches connect states and contain instanced tasks (BPT_FindItem, BPT_FinishDialogue, BPT_Move, etc.). Task properties set via reflection. Full automation - no manual editor setup required for basic quest flows.
 - v3.9.2 - Goal Search Paths: Added all Narrative Pro goal locations to FActivityScheduleGenerator search paths (Attacks/Goals/, DriveToDestination/, FollowCharacter/, GoToLocation/, Idle/, Interact/Goals/, Patrol/, ReturnToSpawn/).
