@@ -1,6 +1,6 @@
 // GasAbilityGenerator v3.7
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
-// v3.7: Added NPC Creation feature - one-click NPC asset generation
+// v3.7: Added NPC Creation feature - one-click NPC asset generation with v3.0 hash safety
 // v3.0: Added Dry Run and Force checkboxes for metadata-aware regeneration
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
 // v2.3.0: Added 12 new asset type generators with dependency-based generation order
@@ -29,6 +29,120 @@
 #include "Misc/PackageName.h"
 
 #define LOCTEXT_NAMESPACE "GasAbilityGenerator"
+
+// v3.7: NPC Creation asset status for v3.0 hash safety
+enum class ENPCAssetStatus : uint8
+{
+	Create,     // Asset doesn't exist - will create
+	Modify,     // Manifest changed, asset not manually edited - safe to regenerate
+	Skip,       // No changes or manually edited - skip
+	Conflict    // Both manifest and asset changed - requires force
+};
+
+// v3.7: Compute input hash for NPC Definition from UI parameters
+static uint64 ComputeNPCInputHash(const FString& NPCName)
+{
+	// Hash includes all parameters that affect the generated NPC
+	// This creates a unique identifier for the current configuration
+	uint64 Hash = GetTypeHash(NPCName);
+
+	// Include fixed parameters (these are hardcoded in the UI for now)
+	Hash ^= GetTypeHash(FString(TEXT("AC_NPC_Default")));  // AbilityConfiguration
+	Hash ^= GetTypeHash(FString(TEXT("AC_RunAndGun")));    // ActivityConfiguration
+	Hash ^= GetTypeHash(FString(TEXT("IC_RifleWithAmmo"))); // Item collection 1
+	Hash ^= GetTypeHash(FString(TEXT("IC_ExampleArmorSet"))); // Item collection 2
+	Hash ^= GetTypeHash(FString(TEXT("Narrative.State.Invulnerable"))); // OwnedTags
+	Hash ^= GetTypeHash(FString(TEXT("Narrative.Factions.Heroes"))); // Factions
+
+	// Version identifier for hash compatibility
+	Hash ^= 0x37000001ULL; // v3.7 NPC UI version 1
+
+	return Hash;
+}
+
+// v3.7: Check asset status using v3.0 metadata system
+static ENPCAssetStatus CheckNPCAssetStatus(
+	const FString& PackagePath,
+	uint64 InputHash,
+	FString& OutStatusReason)
+{
+	// Check if asset exists
+	if (!FPackageName::DoesPackageExist(PackagePath))
+	{
+		OutStatusReason = TEXT("New asset");
+		return ENPCAssetStatus::Create;
+	}
+
+	// Try to load asset
+	FString FullAssetPath = PackagePath + TEXT(".") + FPackageName::GetShortName(PackagePath);
+	UObject* ExistingAsset = StaticLoadObject(UObject::StaticClass(), nullptr, *FullAssetPath);
+
+	if (!ExistingAsset)
+	{
+		OutStatusReason = TEXT("Exists but couldn't load");
+		return ENPCAssetStatus::Skip;
+	}
+
+	// Check for generator metadata
+	UGeneratorAssetMetadata* Metadata = FGeneratorBase::GetAssetMetadata(ExistingAsset);
+
+	if (!Metadata)
+	{
+		// No metadata - likely manual asset, skip to avoid overwriting
+		OutStatusReason = TEXT("No generator metadata (likely manual)");
+		return ENPCAssetStatus::Skip;
+	}
+
+	// Has metadata - compare hashes
+	bool bInputChanged = Metadata->HasInputChanged(InputHash);
+
+	// Compute current output hash
+	uint64 CurrentOutputHash = FGeneratorBase::ComputeDataAssetOutputHash(ExistingAsset);
+	bool bOutputChanged = Metadata->HasOutputChanged(CurrentOutputHash);
+
+	if (!bInputChanged && !bOutputChanged)
+	{
+		OutStatusReason = TEXT("No changes (hashes match)");
+		return ENPCAssetStatus::Skip;
+	}
+	else if (bInputChanged && !bOutputChanged)
+	{
+		OutStatusReason = TEXT("Config changed, no manual edits");
+		return ENPCAssetStatus::Modify;
+	}
+	else if (bInputChanged && bOutputChanged)
+	{
+		OutStatusReason = TEXT("CONFLICT: Both config AND asset changed");
+		return ENPCAssetStatus::Conflict;
+	}
+	else // !bInputChanged && bOutputChanged
+	{
+		OutStatusReason = TEXT("Manually edited, config unchanged");
+		return ENPCAssetStatus::Skip;
+	}
+}
+
+// v3.7: Store NPC asset metadata after creation/modification
+static void StoreNPCAssetMetadata(
+	UObject* Asset,
+	const FString& GeneratorId,
+	const FString& AssetKey,
+	uint64 InputHash)
+{
+	if (!Asset) return;
+
+	FGeneratorMetadata Metadata;
+	Metadata.GeneratorId = GeneratorId;
+	Metadata.ManifestPath = TEXT("NPC_Creation_UI"); // Special marker for UI-generated assets
+	Metadata.ManifestAssetKey = AssetKey;
+	Metadata.InputHash = InputHash;
+	Metadata.OutputHash = FGeneratorBase::ComputeDataAssetOutputHash(Asset);
+	Metadata.GeneratorVersion = TEXT("3.7");
+	Metadata.Timestamp = FDateTime::Now();
+	Metadata.bIsGenerated = true;
+
+	FGeneratorBase::StoreAssetMetadata(Asset, Metadata);
+}
 
 void SGasAbilityGeneratorWindow::Construct(const FArguments& InArgs)
 {
@@ -1044,6 +1158,12 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 
 	int32 SuccessCount = 0;
 	int32 FailCount = 0;
+	int32 SkipCount = 0;
+	int32 ModifyCount = 0;
+	int32 ConflictCount = 0;
+
+	// v3.7: Compute input hash for v3.0 safety system
+	uint64 InputHash = ComputeNPCInputHash(NPCName);
 
 	// Store created assets for linking
 	UObject* CreatedNPCDef = nullptr;
@@ -1053,6 +1173,14 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 	UDataTable* CreatedItemLoadout = nullptr;
 	UBlueprint* CreatedTriggerBP = nullptr;
 
+	// v3.7: Track asset statuses for Phase 2 decisions
+	ENPCAssetStatus NPCDefStatus = ENPCAssetStatus::Skip;
+	ENPCAssetStatus DialogueStatus = ENPCAssetStatus::Skip;
+	ENPCAssetStatus TDSStatus = ENPCAssetStatus::Skip;
+	ENPCAssetStatus GreetingsStatus = ENPCAssetStatus::Skip;
+	ENPCAssetStatus ItemLoadoutStatus = ENPCAssetStatus::Skip;
+	ENPCAssetStatus TriggerBPStatus = ENPCAssetStatus::Skip;
+
 	// Get required classes
 	UClass* NPCDefClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.NPCDefinition"));
 	UClass* DialogueClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.Dialogue"));
@@ -1060,44 +1188,63 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 	UClass* AbilityConfigClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.AbilityConfiguration"));
 	UScriptStruct* LootTableRowStruct = FindObject<UScriptStruct>(nullptr, TEXT("/Script/NarrativeArsenal.LootTableRow"));
 
-	// ========== PHASE 1: Create all assets ==========
-	AppendLog(TEXT("--- Phase 1: Creating Assets ---"));
+	// ========== PHASE 1: Create/Check all assets with v3.0 hash safety ==========
+	AppendLog(TEXT("--- Phase 1: Checking Assets (v3.0 Hash Safety) ---"));
 
 	// Asset 1: NPC Definition - NPC_{Name}.uasset
 	{
 		FString AssetName = FString::Printf(TEXT("NPC_%s"), *NPCName);
 		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
 
-		if (FPackageName::DoesPackageExist(PackagePath))
+		FString StatusReason;
+		NPCDefStatus = CheckNPCAssetStatus(PackagePath, InputHash, StatusReason);
+
+		switch (NPCDefStatus)
 		{
-			// Load existing asset for linking
-			CreatedNPCDef = LoadObject<UObject>(nullptr, *PackagePath);
-			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
-			SuccessCount++;
-		}
-		else if (NPCDefClass)
-		{
-			UPackage* Package = CreatePackage(*PackagePath);
-			if (Package)
-			{
-				CreatedNPCDef = NewObject<UObject>(Package, NPCDefClass, *AssetName, RF_Public | RF_Standalone);
-				if (CreatedNPCDef)
+			case ENPCAssetStatus::Create:
+				if (NPCDefClass)
 				{
-					FAssetRegistryModule::AssetCreated(CreatedNPCDef);
-					AppendLog(FString::Printf(TEXT("[NEW] %s (UNPCDefinition)"), *AssetName));
-					SuccessCount++;
+					UPackage* Package = CreatePackage(*PackagePath);
+					if (Package)
+					{
+						CreatedNPCDef = NewObject<UObject>(Package, NPCDefClass, *AssetName, RF_Public | RF_Standalone);
+						if (CreatedNPCDef)
+						{
+							FAssetRegistryModule::AssetCreated(CreatedNPCDef);
+							AppendLog(FString::Printf(TEXT("[CREATE] %s (UNPCDefinition)"), *AssetName));
+							SuccessCount++;
+						}
+						else
+						{
+							AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create object"), *AssetName));
+							FailCount++;
+						}
+					}
 				}
 				else
 				{
-					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create object"), *AssetName));
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - UNPCDefinition class not found"), *AssetName));
 					FailCount++;
 				}
-			}
-		}
-		else
-		{
-			AppendLog(FString::Printf(TEXT("[FAIL] %s - UNPCDefinition class not found"), *AssetName));
-			FailCount++;
+				break;
+
+			case ENPCAssetStatus::Modify:
+				CreatedNPCDef = LoadObject<UObject>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *StatusReason));
+				ModifyCount++;
+				break;
+
+			case ENPCAssetStatus::Skip:
+				CreatedNPCDef = LoadObject<UObject>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[SKIP] %s - %s"), *AssetName, *StatusReason));
+				SkipCount++;
+				break;
+
+			case ENPCAssetStatus::Conflict:
+				CreatedNPCDef = LoadObject<UObject>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[CONFLICT] %s - %s"), *AssetName, *StatusReason));
+				ConflictCount++;
+				break;
 		}
 	}
 
@@ -1106,37 +1253,57 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		FString AssetName = FString::Printf(TEXT("DBP_%s"), *NPCName);
 		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
 
-		if (FPackageName::DoesPackageExist(PackagePath))
+		FString StatusReason;
+		DialogueStatus = CheckNPCAssetStatus(PackagePath, InputHash, StatusReason);
+
+		switch (DialogueStatus)
 		{
-			CreatedDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
-			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
-			SuccessCount++;
-		}
-		else if (DialogueClass)
-		{
-			UPackage* Package = CreatePackage(*PackagePath);
-			if (Package)
-			{
-				CreatedDialogue = FKismetEditorUtilities::CreateBlueprint(
-					DialogueClass, Package, *AssetName, BPTYPE_Normal,
-					UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
-				if (CreatedDialogue)
+			case ENPCAssetStatus::Create:
+				if (DialogueClass)
 				{
-					FAssetRegistryModule::AssetCreated(CreatedDialogue);
-					AppendLog(FString::Printf(TEXT("[NEW] %s (UDialogue - Main)"), *AssetName));
-					SuccessCount++;
+					UPackage* Package = CreatePackage(*PackagePath);
+					if (Package)
+					{
+						CreatedDialogue = FKismetEditorUtilities::CreateBlueprint(
+							DialogueClass, Package, *AssetName, BPTYPE_Normal,
+							UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+						if (CreatedDialogue)
+						{
+							FAssetRegistryModule::AssetCreated(CreatedDialogue);
+							AppendLog(FString::Printf(TEXT("[CREATE] %s (UDialogue - Main)"), *AssetName));
+							SuccessCount++;
+						}
+						else
+						{
+							AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+							FailCount++;
+						}
+					}
 				}
 				else
 				{
-					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - UDialogue class not found"), *AssetName));
 					FailCount++;
 				}
-			}
-		}
-		else
-		{
-			AppendLog(FString::Printf(TEXT("[FAIL] %s - UDialogue class not found"), *AssetName));
-			FailCount++;
+				break;
+
+			case ENPCAssetStatus::Modify:
+				CreatedDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *StatusReason));
+				ModifyCount++;
+				break;
+
+			case ENPCAssetStatus::Skip:
+				CreatedDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[SKIP] %s - %s"), *AssetName, *StatusReason));
+				SkipCount++;
+				break;
+
+			case ENPCAssetStatus::Conflict:
+				CreatedDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[CONFLICT] %s - %s"), *AssetName, *StatusReason));
+				ConflictCount++;
+				break;
 		}
 	}
 
@@ -1145,35 +1312,55 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		FString AssetName = FString::Printf(TEXT("%s_TaggedDialogue"), *NPCName);
 		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
 
-		if (FPackageName::DoesPackageExist(PackagePath))
+		FString StatusReason;
+		TDSStatus = CheckNPCAssetStatus(PackagePath, InputHash, StatusReason);
+
+		switch (TDSStatus)
 		{
-			CreatedTaggedDialogueSet = LoadObject<UObject>(nullptr, *PackagePath);
-			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
-			SuccessCount++;
-		}
-		else if (TDSClass)
-		{
-			UPackage* Package = CreatePackage(*PackagePath);
-			if (Package)
-			{
-				CreatedTaggedDialogueSet = NewObject<UObject>(Package, TDSClass, *AssetName, RF_Public | RF_Standalone);
-				if (CreatedTaggedDialogueSet)
+			case ENPCAssetStatus::Create:
+				if (TDSClass)
 				{
-					FAssetRegistryModule::AssetCreated(CreatedTaggedDialogueSet);
-					AppendLog(FString::Printf(TEXT("[NEW] %s (UTaggedDialogueSet)"), *AssetName));
-					SuccessCount++;
+					UPackage* Package = CreatePackage(*PackagePath);
+					if (Package)
+					{
+						CreatedTaggedDialogueSet = NewObject<UObject>(Package, TDSClass, *AssetName, RF_Public | RF_Standalone);
+						if (CreatedTaggedDialogueSet)
+						{
+							FAssetRegistryModule::AssetCreated(CreatedTaggedDialogueSet);
+							AppendLog(FString::Printf(TEXT("[CREATE] %s (UTaggedDialogueSet)"), *AssetName));
+							SuccessCount++;
+						}
+						else
+						{
+							AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create object"), *AssetName));
+							FailCount++;
+						}
+					}
 				}
 				else
 				{
-					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create object"), *AssetName));
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - UTaggedDialogueSet class not found"), *AssetName));
 					FailCount++;
 				}
-			}
-		}
-		else
-		{
-			AppendLog(FString::Printf(TEXT("[FAIL] %s - UTaggedDialogueSet class not found"), *AssetName));
-			FailCount++;
+				break;
+
+			case ENPCAssetStatus::Modify:
+				CreatedTaggedDialogueSet = LoadObject<UObject>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *StatusReason));
+				ModifyCount++;
+				break;
+
+			case ENPCAssetStatus::Skip:
+				CreatedTaggedDialogueSet = LoadObject<UObject>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[SKIP] %s - %s"), *AssetName, *StatusReason));
+				SkipCount++;
+				break;
+
+			case ENPCAssetStatus::Conflict:
+				CreatedTaggedDialogueSet = LoadObject<UObject>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[CONFLICT] %s - %s"), *AssetName, *StatusReason));
+				ConflictCount++;
+				break;
 		}
 	}
 
@@ -1182,37 +1369,57 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		FString AssetName = FString::Printf(TEXT("DBP_%s_Greetings"), *NPCName);
 		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
 
-		if (FPackageName::DoesPackageExist(PackagePath))
+		FString StatusReason;
+		GreetingsStatus = CheckNPCAssetStatus(PackagePath, InputHash, StatusReason);
+
+		switch (GreetingsStatus)
 		{
-			CreatedGreetingsDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
-			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
-			SuccessCount++;
-		}
-		else if (DialogueClass)
-		{
-			UPackage* Package = CreatePackage(*PackagePath);
-			if (Package)
-			{
-				CreatedGreetingsDialogue = FKismetEditorUtilities::CreateBlueprint(
-					DialogueClass, Package, *AssetName, BPTYPE_Normal,
-					UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
-				if (CreatedGreetingsDialogue)
+			case ENPCAssetStatus::Create:
+				if (DialogueClass)
 				{
-					FAssetRegistryModule::AssetCreated(CreatedGreetingsDialogue);
-					AppendLog(FString::Printf(TEXT("[NEW] %s (UDialogue - Greeting)"), *AssetName));
-					SuccessCount++;
+					UPackage* Package = CreatePackage(*PackagePath);
+					if (Package)
+					{
+						CreatedGreetingsDialogue = FKismetEditorUtilities::CreateBlueprint(
+							DialogueClass, Package, *AssetName, BPTYPE_Normal,
+							UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+						if (CreatedGreetingsDialogue)
+						{
+							FAssetRegistryModule::AssetCreated(CreatedGreetingsDialogue);
+							AppendLog(FString::Printf(TEXT("[CREATE] %s (UDialogue - Greeting)"), *AssetName));
+							SuccessCount++;
+						}
+						else
+						{
+							AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+							FailCount++;
+						}
+					}
 				}
 				else
 				{
-					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - UDialogue class not found"), *AssetName));
 					FailCount++;
 				}
-			}
-		}
-		else
-		{
-			AppendLog(FString::Printf(TEXT("[FAIL] %s - UDialogue class not found"), *AssetName));
-			FailCount++;
+				break;
+
+			case ENPCAssetStatus::Modify:
+				CreatedGreetingsDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *StatusReason));
+				ModifyCount++;
+				break;
+
+			case ENPCAssetStatus::Skip:
+				CreatedGreetingsDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[SKIP] %s - %s"), *AssetName, *StatusReason));
+				SkipCount++;
+				break;
+
+			case ENPCAssetStatus::Conflict:
+				CreatedGreetingsDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[CONFLICT] %s - %s"), *AssetName, *StatusReason));
+				ConflictCount++;
+				break;
 		}
 	}
 
@@ -1222,102 +1429,96 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		FString AssetName = FString::Printf(TEXT("ItemLoadout_%s"), *NPCName);
 		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
 
-		if (FPackageName::DoesPackageExist(PackagePath))
+		FString StatusReason;
+		ItemLoadoutStatus = CheckNPCAssetStatus(PackagePath, InputHash, StatusReason);
+
+		switch (ItemLoadoutStatus)
 		{
-			CreatedItemLoadout = LoadObject<UDataTable>(nullptr, *PackagePath);
-			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
-			SuccessCount++;
-		}
-		else if (LootTableRowStruct)
-		{
-			UPackage* Package = CreatePackage(*PackagePath);
-			if (Package)
-			{
-				CreatedItemLoadout = NewObject<UDataTable>(Package, *AssetName, RF_Public | RF_Standalone);
-				if (CreatedItemLoadout)
+			case ENPCAssetStatus::Create:
+				if (LootTableRowStruct)
 				{
-					CreatedItemLoadout->RowStruct = LootTableRowStruct;
-
-					// Add default row with Item Collections (like Seth's loadout)
-					// FLootTableRow has: ItemCollectionsToGrant (TArray<TObjectPtr<UItemCollection>>), Chance (float)
-					uint8* RowData = (uint8*)FMemory::Malloc(LootTableRowStruct->GetStructureSize());
-					LootTableRowStruct->InitializeStruct(RowData);
-
-					// Load Item Collections (like Seth uses)
-					UObject* IC_RifleWithAmmo = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/IC_RifleWithAmmo.IC_RifleWithAmmo"));
-					UObject* IC_ExampleArmorSet = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/IC_ExampleArmorSet.IC_ExampleArmorSet"));
-
-					// Find ItemCollectionsToGrant array property
-					if (FProperty* ItemCollectionsProp = LootTableRowStruct->FindPropertyByName(TEXT("ItemCollectionsToGrant")))
+					UPackage* Package = CreatePackage(*PackagePath);
+					if (Package)
 					{
-						FArrayProperty* ArrayProp = CastField<FArrayProperty>(ItemCollectionsProp);
-						if (ArrayProp)
+						CreatedItemLoadout = NewObject<UDataTable>(Package, *AssetName, RF_Public | RF_Standalone);
+						if (CreatedItemLoadout)
 						{
-							FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(RowData));
+							CreatedItemLoadout->RowStruct = LootTableRowStruct;
 
-							// Count how many collections we found
-							int32 NumCollections = 0;
-							if (IC_RifleWithAmmo) NumCollections++;
-							if (IC_ExampleArmorSet) NumCollections++;
+							// Add default row with Item Collections (like Seth's loadout)
+							uint8* RowData = (uint8*)FMemory::Malloc(LootTableRowStruct->GetStructureSize());
+							LootTableRowStruct->InitializeStruct(RowData);
 
-							if (NumCollections > 0)
+							// Load Item Collections
+							UObject* IC_RifleWithAmmo = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/IC_RifleWithAmmo.IC_RifleWithAmmo"));
+							UObject* IC_ExampleArmorSet = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/IC_ExampleArmorSet.IC_ExampleArmorSet"));
+
+							if (FProperty* ItemCollectionsProp = LootTableRowStruct->FindPropertyByName(TEXT("ItemCollectionsToGrant")))
 							{
-								ArrayHelper.Resize(NumCollections);
-
-								// ItemCollectionsToGrant is TArray<TObjectPtr<UItemCollection>>
-								FObjectProperty* InnerObjProp = CastField<FObjectProperty>(ArrayProp->Inner);
-								if (InnerObjProp)
+								FArrayProperty* ArrayProp = CastField<FArrayProperty>(ItemCollectionsProp);
+								if (ArrayProp)
 								{
-									int32 Index = 0;
-									if (IC_RifleWithAmmo)
+									FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(RowData));
+									int32 NumCollections = (IC_RifleWithAmmo ? 1 : 0) + (IC_ExampleArmorSet ? 1 : 0);
+									if (NumCollections > 0)
 									{
-										InnerObjProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(Index), IC_RifleWithAmmo);
-										AppendLog(TEXT("[LINK] ItemLoadout += IC_RifleWithAmmo"));
-										Index++;
-									}
-									if (IC_ExampleArmorSet)
-									{
-										InnerObjProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(Index), IC_ExampleArmorSet);
-										AppendLog(TEXT("[LINK] ItemLoadout += IC_ExampleArmorSet"));
-										Index++;
+										ArrayHelper.Resize(NumCollections);
+										FObjectProperty* InnerObjProp = CastField<FObjectProperty>(ArrayProp->Inner);
+										if (InnerObjProp)
+										{
+											int32 Index = 0;
+											if (IC_RifleWithAmmo) { InnerObjProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(Index++), IC_RifleWithAmmo); }
+											if (IC_ExampleArmorSet) { InnerObjProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(Index++), IC_ExampleArmorSet); }
+										}
 									}
 								}
 							}
-							else
+
+							if (FProperty* ChanceProp = LootTableRowStruct->FindPropertyByName(TEXT("Chance")))
 							{
-								AppendLog(TEXT("[WARN] No Item Collections found - ItemLoadout left empty"));
+								float* ChancePtr = ChanceProp->ContainerPtrToValuePtr<float>(RowData);
+								*ChancePtr = 1.0f;
 							}
+
+							CreatedItemLoadout->AddRow(FName(TEXT("NewRow")), *(FTableRowBase*)RowData);
+							LootTableRowStruct->DestroyStruct(RowData);
+							FMemory::Free(RowData);
+
+							FAssetRegistryModule::AssetCreated(CreatedItemLoadout);
+							AppendLog(FString::Printf(TEXT("[CREATE] %s (UDataTable - ItemLoadout)"), *AssetName));
+							SuccessCount++;
+						}
+						else
+						{
+							AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create DataTable"), *AssetName));
+							FailCount++;
 						}
 					}
-
-					// Set Chance = 1.0
-					if (FProperty* ChanceProp = LootTableRowStruct->FindPropertyByName(TEXT("Chance")))
-					{
-						float* ChancePtr = ChanceProp->ContainerPtrToValuePtr<float>(RowData);
-						*ChancePtr = 1.0f;
-					}
-
-					// Add the row to the DataTable
-					CreatedItemLoadout->AddRow(FName(TEXT("NewRow")), *(FTableRowBase*)RowData);
-
-					LootTableRowStruct->DestroyStruct(RowData);
-					FMemory::Free(RowData);
-
-					FAssetRegistryModule::AssetCreated(CreatedItemLoadout);
-					AppendLog(FString::Printf(TEXT("[NEW] %s (UDataTable - ItemLoadout)"), *AssetName));
-					SuccessCount++;
 				}
 				else
 				{
-					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create DataTable"), *AssetName));
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - FLootTableRow struct not found"), *AssetName));
 					FailCount++;
 				}
-			}
-		}
-		else
-		{
-			AppendLog(FString::Printf(TEXT("[FAIL] %s - FLootTableRow struct not found"), *AssetName));
-			FailCount++;
+				break;
+
+			case ENPCAssetStatus::Modify:
+				CreatedItemLoadout = LoadObject<UDataTable>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *StatusReason));
+				ModifyCount++;
+				break;
+
+			case ENPCAssetStatus::Skip:
+				CreatedItemLoadout = LoadObject<UDataTable>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[SKIP] %s - %s"), *AssetName, *StatusReason));
+				SkipCount++;
+				break;
+
+			case ENPCAssetStatus::Conflict:
+				CreatedItemLoadout = LoadObject<UDataTable>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[CONFLICT] %s - %s"), *AssetName, *StatusReason));
+				ConflictCount++;
+				break;
 		}
 	}
 
@@ -1332,40 +1533,63 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		FString AssetName = FString::Printf(TEXT("BP_Trigger_Cinematic_%s"), *NPCName);
 		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
 
-		if (FPackageName::DoesPackageExist(PackagePath))
+		FString StatusReason;
+		TriggerBPStatus = CheckNPCAssetStatus(PackagePath, InputHash, StatusReason);
+
+		switch (TriggerBPStatus)
 		{
-			CreatedTriggerBP = LoadObject<UBlueprint>(nullptr, *PackagePath);
-			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
-			SuccessCount++;
-		}
-		else
-		{
-			UPackage* Package = CreatePackage(*PackagePath);
-			if (Package)
+			case ENPCAssetStatus::Create:
 			{
-				CreatedTriggerBP = FKismetEditorUtilities::CreateBlueprint(
-					AActor::StaticClass(), Package, *AssetName, BPTYPE_Normal,
-					UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
-				if (CreatedTriggerBP)
+				UPackage* Package = CreatePackage(*PackagePath);
+				if (Package)
 				{
-					FAssetRegistryModule::AssetCreated(CreatedTriggerBP);
-					AppendLog(FString::Printf(TEXT("[NEW] %s (AActor Blueprint - Trigger)"), *AssetName));
-					SuccessCount++;
+					CreatedTriggerBP = FKismetEditorUtilities::CreateBlueprint(
+						AActor::StaticClass(), Package, *AssetName, BPTYPE_Normal,
+						UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+					if (CreatedTriggerBP)
+					{
+						FAssetRegistryModule::AssetCreated(CreatedTriggerBP);
+						AppendLog(FString::Printf(TEXT("[CREATE] %s (AActor Blueprint - Trigger)"), *AssetName));
+						SuccessCount++;
+					}
+					else
+					{
+						AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+						FailCount++;
+					}
 				}
-				else
-				{
-					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
-					FailCount++;
-				}
+				break;
 			}
+
+			case ENPCAssetStatus::Modify:
+				CreatedTriggerBP = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *StatusReason));
+				ModifyCount++;
+				break;
+
+			case ENPCAssetStatus::Skip:
+				CreatedTriggerBP = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[SKIP] %s - %s"), *AssetName, *StatusReason));
+				SkipCount++;
+				break;
+
+			case ENPCAssetStatus::Conflict:
+				CreatedTriggerBP = LoadObject<UBlueprint>(nullptr, *PackagePath);
+				AppendLog(FString::Printf(TEXT("[CONFLICT] %s - %s"), *AssetName, *StatusReason));
+				ConflictCount++;
+				break;
 		}
 	}
 
-	// ========== PHASE 2: Link assets together ==========
+	// ========== PHASE 2: Link assets together (only for CREATE or MODIFY) ==========
 	AppendLog(TEXT(""));
 	AppendLog(TEXT("--- Phase 2: Linking Assets ---"));
 
-	if (CreatedNPCDef && NPCDefClass)
+	// v3.7: Only link NPC Definition if status is CREATE or MODIFY
+	bool bShouldLinkNPCDef = (NPCDefStatus == ENPCAssetStatus::Create || NPCDefStatus == ENPCAssetStatus::Modify);
+	bool bShouldLinkTDS = (TDSStatus == ENPCAssetStatus::Create || TDSStatus == ENPCAssetStatus::Modify);
+
+	if (bShouldLinkNPCDef && CreatedNPCDef && NPCDefClass)
 	{
 		// Set NPCID
 		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("NPCID")))
@@ -1658,8 +1882,8 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		CreatedNPCDef->GetOutermost()->MarkPackageDirty();
 	}
 
-	// Link TaggedDialogueSet -> Add Greetings dialogue to its Dialogues array
-	if (CreatedTaggedDialogueSet && CreatedGreetingsDialogue && TDSClass)
+	// Link TaggedDialogueSet -> Add Greetings dialogue to its Dialogues array (only for CREATE or MODIFY)
+	if (bShouldLinkTDS && CreatedTaggedDialogueSet && CreatedGreetingsDialogue && TDSClass)
 	{
 		if (FProperty* Prop = TDSClass->FindPropertyByName(TEXT("Dialogues")))
 		{
@@ -1692,40 +1916,44 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		CreatedTaggedDialogueSet->GetOutermost()->MarkPackageDirty();
 	}
 
-	// ========== PHASE 3: Save all assets ==========
+	// ========== PHASE 3: Save all assets and store metadata ==========
 	AppendLog(TEXT(""));
 	AppendLog(TEXT("--- Phase 3: Saving Assets ---"));
 
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 
-	auto SaveAsset = [&](UObject* Asset, const FString& AssetName)
+	// v3.7: Lambda to save asset and store metadata
+	auto SaveAssetWithMetadata = [&](UObject* Asset, const FString& AssetName, const FString& GeneratorId, ENPCAssetStatus Status)
 	{
-		if (Asset)
+		if (Asset && (Status == ENPCAssetStatus::Create || Status == ENPCAssetStatus::Modify))
 		{
 			UPackage* Package = Asset->GetOutermost();
 			FString PackageFileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
 			if (UPackage::SavePackage(Package, Asset, *PackageFileName, SaveArgs))
 			{
+				// Store metadata for v3.0 hash safety
+				StoreNPCAssetMetadata(Asset, GeneratorId, AssetName, InputHash);
 				AppendLog(FString::Printf(TEXT("[SAVED] %s"), *AssetName));
 			}
 		}
 	};
 
-	SaveAsset(CreatedNPCDef, FString::Printf(TEXT("NPC_%s"), *NPCName));
-	SaveAsset(CreatedDialogue, FString::Printf(TEXT("DBP_%s"), *NPCName));
-	SaveAsset(CreatedTaggedDialogueSet, FString::Printf(TEXT("%s_TaggedDialogue"), *NPCName));
-	SaveAsset(CreatedGreetingsDialogue, FString::Printf(TEXT("DBP_%s_Greetings"), *NPCName));
-	SaveAsset(CreatedItemLoadout, FString::Printf(TEXT("ItemLoadout_%s"), *NPCName));
-	SaveAsset(CreatedTriggerBP, FString::Printf(TEXT("BP_Trigger_Cinematic_%s"), *NPCName));
+	SaveAssetWithMetadata(CreatedNPCDef, FString::Printf(TEXT("NPC_%s"), *NPCName), TEXT("NPC_UI"), NPCDefStatus);
+	SaveAssetWithMetadata(CreatedDialogue, FString::Printf(TEXT("DBP_%s"), *NPCName), TEXT("DBP_UI"), DialogueStatus);
+	SaveAssetWithMetadata(CreatedTaggedDialogueSet, FString::Printf(TEXT("%s_TaggedDialogue"), *NPCName), TEXT("TDS_UI"), TDSStatus);
+	SaveAssetWithMetadata(CreatedGreetingsDialogue, FString::Printf(TEXT("DBP_%s_Greetings"), *NPCName), TEXT("DBP_UI"), GreetingsStatus);
+	SaveAssetWithMetadata(CreatedItemLoadout, FString::Printf(TEXT("ItemLoadout_%s"), *NPCName), TEXT("DT_UI"), ItemLoadoutStatus);
+	SaveAssetWithMetadata(CreatedTriggerBP, FString::Printf(TEXT("BP_Trigger_Cinematic_%s"), *NPCName), TEXT("BP_UI"), TriggerBPStatus);
 
 	AppendLog(TEXT(""));
 	AppendLog(TEXT("----------------------------------------------"));
-	AppendLog(FString::Printf(TEXT("NPC Creation Complete: %d created, %d failed"), SuccessCount, FailCount));
-	AppendLog(FString::Printf(TEXT("Assets created in: %s"), *BasePath));
+	AppendLog(FString::Printf(TEXT("NPC Creation Complete: %d created, %d modified, %d skipped, %d conflicts, %d failed"),
+		SuccessCount, ModifyCount, SkipCount, ConflictCount, FailCount));
+	AppendLog(FString::Printf(TEXT("Assets in: %s"), *BasePath));
 	AppendLog(TEXT("----------------------------------------------"));
 
-	UpdateStatus(FString::Printf(TEXT("NPC '%s' created - %d assets"), *NPCName, SuccessCount));
+	UpdateStatus(FString::Printf(TEXT("NPC '%s' - %d created, %d modified, %d skipped"), *NPCName, SuccessCount, ModifyCount, SkipCount));
 }
 
 #undef LOCTEXT_NAMESPACE
