@@ -8986,6 +8986,122 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 		}
 	}
 
+	// v3.7: Auto-create dialogue blueprint if requested
+	if (Definition.bAutoCreateDialogue)
+	{
+		// Derive dialogue name from NPC name: NPCDef_Blacksmith -> DBP_BlacksmithDialogue
+		FString NPCBaseName = Definition.Name;
+		NPCBaseName.RemoveFromStart(TEXT("NPCDef_"));
+		FString DialogueName = FString::Printf(TEXT("DBP_%sDialogue"), *NPCBaseName);
+		FString DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s_C"), *GetProjectRoot(), *DialogueName, *DialogueName);
+
+		// Set the dialogue reference on the NPC
+		NPCDef->Dialogue = TSoftClassPtr<UDialogue>(FSoftObjectPath(DialoguePath));
+		LogGeneration(FString::Printf(TEXT("  [v3.7] Auto-create Dialogue: %s (will be generated separately)"), *DialogueName));
+	}
+
+	// v3.7: Auto-create tagged dialogue set if requested
+	if (Definition.bAutoCreateTaggedDialogue)
+	{
+		// Derive tagged dialogue name from NPC name: NPCDef_Blacksmith -> Blacksmith_TaggedDialogue
+		FString NPCBaseName = Definition.Name;
+		NPCBaseName.RemoveFromStart(TEXT("NPCDef_"));
+		FString TDSName = FString::Printf(TEXT("%s_TaggedDialogue"), *NPCBaseName);
+		FString TDSPath = FString::Printf(TEXT("%s/Dialogues/%s"), *GetProjectRoot(), *TDSName);
+
+		// Set the tagged dialogue set reference on the NPC
+		NPCDef->TaggedDialogueSet = TSoftObjectPtr<UTaggedDialogueSet>(FSoftObjectPath(TDSPath));
+		LogGeneration(FString::Printf(TEXT("  [v3.7] Auto-create TaggedDialogueSet: %s (will be generated separately)"), *TDSName));
+	}
+
+	// v3.7: Auto-populate DefaultItemLoadout with item collections if requested
+	if (Definition.bAutoCreateItemLoadout && Definition.DefaultItemLoadoutCollections.Num() > 0)
+	{
+		// DefaultItemLoadout is FLootTableRoll struct containing ItemCollectionsToGrant (TArray<TObjectPtr<UItemCollection>>)
+		FStructProperty* ItemLoadoutProp = CastField<FStructProperty>(NPCDef->GetClass()->FindPropertyByName(TEXT("DefaultItemLoadout")));
+		if (ItemLoadoutProp)
+		{
+			void* ItemLoadoutPtr = ItemLoadoutProp->ContainerPtrToValuePtr<void>(NPCDef);
+
+			// Find the ItemCollectionsToGrant array inside the FLootTableRoll struct
+			FArrayProperty* CollectionsArrayProp = CastField<FArrayProperty>(ItemLoadoutProp->Struct->FindPropertyByName(TEXT("ItemCollectionsToGrant")));
+			if (CollectionsArrayProp)
+			{
+				FScriptArrayHelper ArrayHelper(CollectionsArrayProp, CollectionsArrayProp->ContainerPtrToValuePtr<void>(ItemLoadoutPtr));
+
+				for (const FString& CollectionName : Definition.DefaultItemLoadoutCollections)
+				{
+					// Try to load the item collection
+					FString CollectionPath = CollectionName;
+					if (!CollectionPath.Contains(TEXT("/")))
+					{
+						// Try common paths
+						TArray<FString> SearchPaths = {
+							FString::Printf(TEXT("%s/Items/%s"), *GetProjectRoot(), *CollectionName),
+							FString::Printf(TEXT("%s/Items/Collections/%s"), *GetProjectRoot(), *CollectionName),
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/%s"), *CollectionName),
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/%s"), *CollectionName)
+						};
+
+						UObject* LoadedCollection = nullptr;
+						for (const FString& SearchPath : SearchPaths)
+						{
+							LoadedCollection = LoadObject<UObject>(nullptr, *SearchPath);
+							if (LoadedCollection)
+							{
+								CollectionPath = SearchPath;
+								break;
+							}
+						}
+
+						if (LoadedCollection)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							TObjectPtr<UObject>* ObjPtr = reinterpret_cast<TObjectPtr<UObject>*>(ArrayHelper.GetRawPtr(NewIndex));
+							if (ObjPtr)
+							{
+								*ObjPtr = LoadedCollection;
+								LogGeneration(FString::Printf(TEXT("  [v3.7] Added ItemCollection: %s"), *CollectionName));
+							}
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  [v3.7 WARNING] ItemCollection not found: %s"), *CollectionName));
+						}
+					}
+					else
+					{
+						// Full path provided
+						UObject* LoadedCollection = LoadObject<UObject>(nullptr, *CollectionPath);
+						if (LoadedCollection)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							TObjectPtr<UObject>* ObjPtr = reinterpret_cast<TObjectPtr<UObject>*>(ArrayHelper.GetRawPtr(NewIndex));
+							if (ObjPtr)
+							{
+								*ObjPtr = LoadedCollection;
+								LogGeneration(FString::Printf(TEXT("  [v3.7] Added ItemCollection: %s"), *CollectionName));
+							}
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  [v3.7 WARNING] ItemCollection not found: %s"), *CollectionPath));
+						}
+					}
+				}
+				LogGeneration(FString::Printf(TEXT("  [v3.7] Set %d DefaultItemLoadout collections"), ArrayHelper.Num()));
+			}
+			else
+			{
+				LogGeneration(TEXT("  [v3.7 WARNING] ItemCollectionsToGrant property not found in FLootTableRoll"));
+			}
+		}
+		else
+		{
+			LogGeneration(TEXT("  [v3.7 WARNING] DefaultItemLoadout property not found on UNPCDefinition"));
+		}
+	}
+
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(NPCDef);
 

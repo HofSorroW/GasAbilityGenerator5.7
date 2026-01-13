@@ -1018,12 +1018,12 @@ FReply SGasAbilityGeneratorWindow::OnCreateNPCClicked()
 		return FReply::Handled();
 	}
 
-	// Validate NPC name (alphanumeric and underscores only)
-	FRegexPattern Pattern(TEXT("^[a-zA-Z][a-zA-Z0-9_]*$"));
+	// Validate NPC name (alphanumeric and underscores, can start with number)
+	FRegexPattern Pattern(TEXT("^[a-zA-Z0-9_]+$"));
 	FRegexMatcher Matcher(Pattern, NPCName);
 	if (!Matcher.FindNext())
 	{
-		AppendLog(TEXT("ERROR: NPC Name must start with a letter and contain only letters, numbers, and underscores"));
+		AppendLog(TEXT("ERROR: NPC Name must contain only letters, numbers, and underscores"));
 		return FReply::Handled();
 	}
 
@@ -1217,6 +1217,7 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 	}
 
 	// Asset 5: Item Loadout DataTable - ItemLoadout_{Name}.uasset
+	// Uses ItemCollectionsToGrant like Seth's example (IC_RifleWithAmmo, IC_ExampleArmorSet)
 	{
 		FString AssetName = FString::Printf(TEXT("ItemLoadout_%s"), *NPCName);
 		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
@@ -1237,68 +1238,67 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 				{
 					CreatedItemLoadout->RowStruct = LootTableRowStruct;
 
-					// Add default row with rifle (like Seth's loadout)
-					// FLootTableRow has: ItemsToGrant (TArray<FItemWithQuantity>), Chance (float)
-					// FItemWithQuantity has: Item (TSoftClassPtr<UNarrativeItem>), Quantity (int32)
+					// Add default row with Item Collections (like Seth's loadout)
+					// FLootTableRow has: ItemCollectionsToGrant (TArray<TObjectPtr<UItemCollection>>), Chance (float)
 					uint8* RowData = (uint8*)FMemory::Malloc(LootTableRowStruct->GetStructureSize());
 					LootTableRowStruct->InitializeStruct(RowData);
 
-					// Load default weapon (Weapon_DemoRifle like Seth uses with AC_RunAndGun)
-					UClass* RifleClass = LoadClass<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/Weapon_DemoRifle.Weapon_DemoRifle_C"));
+					// Load Item Collections (like Seth uses)
+					UObject* IC_RifleWithAmmo = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/IC_RifleWithAmmo.IC_RifleWithAmmo"));
+					UObject* IC_ExampleArmorSet = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/IC_ExampleArmorSet.IC_ExampleArmorSet"));
 
-					if (RifleClass)
+					// Find ItemCollectionsToGrant array property
+					if (FProperty* ItemCollectionsProp = LootTableRowStruct->FindPropertyByName(TEXT("ItemCollectionsToGrant")))
 					{
-						// Find ItemsToGrant array property
-						if (FProperty* ItemsToGrantProp = LootTableRowStruct->FindPropertyByName(TEXT("ItemsToGrant")))
+						FArrayProperty* ArrayProp = CastField<FArrayProperty>(ItemCollectionsProp);
+						if (ArrayProp)
 						{
-							FArrayProperty* ArrayProp = CastField<FArrayProperty>(ItemsToGrantProp);
-							if (ArrayProp)
+							FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(RowData));
+
+							// Count how many collections we found
+							int32 NumCollections = 0;
+							if (IC_RifleWithAmmo) NumCollections++;
+							if (IC_ExampleArmorSet) NumCollections++;
+
+							if (NumCollections > 0)
 							{
-								FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(RowData));
-								ArrayHelper.Resize(1);
+								ArrayHelper.Resize(NumCollections);
 
-								// Get the inner struct (FItemWithQuantity)
-								FStructProperty* InnerStructProp = CastField<FStructProperty>(ArrayProp->Inner);
-								if (InnerStructProp)
+								// ItemCollectionsToGrant is TArray<TObjectPtr<UItemCollection>>
+								FObjectProperty* InnerObjProp = CastField<FObjectProperty>(ArrayProp->Inner);
+								if (InnerObjProp)
 								{
-									void* ElementPtr = ArrayHelper.GetRawPtr(0);
-
-									// Set Item (TSoftClassPtr)
-									if (FProperty* ItemProp = InnerStructProp->Struct->FindPropertyByName(TEXT("Item")))
+									int32 Index = 0;
+									if (IC_RifleWithAmmo)
 									{
-										FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(ItemProp);
-										if (SoftClassProp)
-										{
-											FSoftObjectPtr* Ptr = SoftClassProp->GetPropertyValuePtr_InContainer(ElementPtr);
-											*Ptr = FSoftObjectPtr(RifleClass);
-										}
+										InnerObjProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(Index), IC_RifleWithAmmo);
+										AppendLog(TEXT("[LINK] ItemLoadout += IC_RifleWithAmmo"));
+										Index++;
 									}
-
-									// Set Quantity = 1
-									if (FProperty* QuantityProp = InnerStructProp->Struct->FindPropertyByName(TEXT("Quantity")))
+									if (IC_ExampleArmorSet)
 									{
-										int32* QuantityPtr = QuantityProp->ContainerPtrToValuePtr<int32>(ElementPtr);
-										*QuantityPtr = 1;
+										InnerObjProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(Index), IC_ExampleArmorSet);
+										AppendLog(TEXT("[LINK] ItemLoadout += IC_ExampleArmorSet"));
+										Index++;
 									}
 								}
 							}
+							else
+							{
+								AppendLog(TEXT("[WARN] No Item Collections found - ItemLoadout left empty"));
+							}
 						}
-
-						// Set Chance = 1.0
-						if (FProperty* ChanceProp = LootTableRowStruct->FindPropertyByName(TEXT("Chance")))
-						{
-							float* ChancePtr = ChanceProp->ContainerPtrToValuePtr<float>(RowData);
-							*ChancePtr = 1.0f;
-						}
-
-						// Add the row to the DataTable
-						CreatedItemLoadout->AddRow(FName(TEXT("DefaultWeapon")), *(FTableRowBase*)RowData);
-						AppendLog(TEXT("[LINK] ItemLoadout += Weapon_DemoRifle (Quantity: 1)"));
 					}
-					else
+
+					// Set Chance = 1.0
+					if (FProperty* ChanceProp = LootTableRowStruct->FindPropertyByName(TEXT("Chance")))
 					{
-						AppendLog(TEXT("[WARN] Weapon_DemoRifle not found - ItemLoadout left empty"));
+						float* ChancePtr = ChanceProp->ContainerPtrToValuePtr<float>(RowData);
+						*ChancePtr = 1.0f;
 					}
+
+					// Add the row to the DataTable
+					CreatedItemLoadout->AddRow(FName(TEXT("NewRow")), *(FTableRowBase*)RowData);
 
 					LootTableRowStruct->DestroyStruct(RowData);
 					FMemory::Free(RowData);
@@ -1432,36 +1432,81 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 			AppendLog(TEXT("[WARN] AC_NPC_Default not found - AbilityConfiguration not set"));
 		}
 
-		// Set DefaultItemLoadout -> ItemLoadout_{Name} (TArray<FLootTableRoll>)
-		if (CreatedItemLoadout)
+		// Set DefaultItemLoadout with ItemCollections directly (like Seth)
+		// DefaultItemLoadout is TArray<FLootTableRoll> from CharacterDefinition - items NPC spawns with
 		{
+			// Load Item Collections (like Seth uses)
+			UObject* IC_RifleWithAmmo = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/IC_RifleWithAmmo.IC_RifleWithAmmo"));
+			UObject* IC_ExampleArmorSet = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/IC_ExampleArmorSet.IC_ExampleArmorSet"));
+
 			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("DefaultItemLoadout")))
 			{
 				FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop);
 				if (ArrayProp)
 				{
-					// DefaultItemLoadout is TArray<FLootTableRoll> where FLootTableRoll has LootTable property
 					FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(CreatedNPCDef));
 					ArrayHelper.Resize(1);
 
-					// Get the inner struct type
+					// Get the inner struct type (FLootTableRoll)
 					FStructProperty* InnerStructProp = CastField<FStructProperty>(ArrayProp->Inner);
 					if (InnerStructProp)
 					{
 						void* ElementPtr = ArrayHelper.GetRawPtr(0);
-						// Find LootTable property in FLootTableRoll
-						if (FProperty* LootTableProp = InnerStructProp->Struct->FindPropertyByName(TEXT("LootTable")))
+						InnerStructProp->Struct->InitializeStruct(ElementPtr);
+
+						// Find ItemCollectionsToGrant array in FLootTableRoll
+						if (FProperty* ICProp = InnerStructProp->Struct->FindPropertyByName(TEXT("ItemCollectionsToGrant")))
 						{
-							FSoftObjectProperty* SoftObjProp = CastField<FSoftObjectProperty>(LootTableProp);
-							if (SoftObjProp)
+							FArrayProperty* ICArrayProp = CastField<FArrayProperty>(ICProp);
+							if (ICArrayProp)
 							{
-								FSoftObjectPtr* Ptr = SoftObjProp->GetPropertyValuePtr_InContainer(ElementPtr);
-								*Ptr = FSoftObjectPtr(CreatedItemLoadout);
-								AppendLog(FString::Printf(TEXT("[LINK] DefaultItemLoadout -> ItemLoadout_%s"), *NPCName));
+								FScriptArrayHelper ICArrayHelper(ICArrayProp, ICArrayProp->ContainerPtrToValuePtr<void>(ElementPtr));
+
+								int32 NumCollections = 0;
+								if (IC_RifleWithAmmo) NumCollections++;
+								if (IC_ExampleArmorSet) NumCollections++;
+
+								if (NumCollections > 0)
+								{
+									ICArrayHelper.Resize(NumCollections);
+									FObjectProperty* InnerObjProp = CastField<FObjectProperty>(ICArrayProp->Inner);
+									if (InnerObjProp)
+									{
+										int32 Index = 0;
+										if (IC_RifleWithAmmo)
+										{
+											InnerObjProp->SetObjectPropertyValue(ICArrayHelper.GetRawPtr(Index), IC_RifleWithAmmo);
+											AppendLog(TEXT("[LINK] DefaultItemLoadout[0].ItemCollectionsToGrant += IC_RifleWithAmmo"));
+											Index++;
+										}
+										if (IC_ExampleArmorSet)
+										{
+											InnerObjProp->SetObjectPropertyValue(ICArrayHelper.GetRawPtr(Index), IC_ExampleArmorSet);
+											AppendLog(TEXT("[LINK] DefaultItemLoadout[0].ItemCollectionsToGrant += IC_ExampleArmorSet"));
+											Index++;
+										}
+									}
+								}
+								else
+								{
+									AppendLog(TEXT("[WARN] No Item Collections found for DefaultItemLoadout"));
+								}
 							}
+						}
+						else
+						{
+							AppendLog(TEXT("[WARN] ItemCollectionsToGrant property not found in FLootTableRoll"));
 						}
 					}
 				}
+				else
+				{
+					AppendLog(TEXT("[WARN] DefaultItemLoadout is not an array property"));
+				}
+			}
+			else
+			{
+				AppendLog(TEXT("[WARN] DefaultItemLoadout property not found on NPCDefinition"));
 			}
 		}
 
@@ -1489,17 +1534,22 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 			}
 		}
 
-		// Set ActivityConfiguration -> AC_RunAndGun (like Seth)
+		// Set ActivityConfiguration -> AC_RunAndGun (like Seth) - TSoftObjectPtr
 		UObject* DefaultActivityConfig = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Core/AI/Configs/AC_RunAndGun.AC_RunAndGun"));
 		if (DefaultActivityConfig)
 		{
 			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("ActivityConfiguration")))
 			{
-				FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop);
-				if (ObjProp)
+				FSoftObjectProperty* SoftObjProp = CastField<FSoftObjectProperty>(Prop);
+				if (SoftObjProp)
 				{
-					ObjProp->SetObjectPropertyValue_InContainer(CreatedNPCDef, DefaultActivityConfig);
+					FSoftObjectPtr* Ptr = SoftObjProp->GetPropertyValuePtr_InContainer(CreatedNPCDef);
+					*Ptr = FSoftObjectPtr(DefaultActivityConfig);
 					AppendLog(TEXT("[LINK] ActivityConfiguration -> AC_RunAndGun"));
+				}
+				else
+				{
+					AppendLog(TEXT("[WARN] ActivityConfiguration is not FSoftObjectProperty"));
 				}
 			}
 		}
@@ -1526,6 +1576,82 @@ void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
 		else
 		{
 			AppendLog(TEXT("[WARN] Apperance_Manny not found - DefaultAppearance not set"));
+		}
+
+		// Set NPCClassPath -> BP_NarrativeNPCCharacter (default NPC blueprint like Seth)
+		UClass* DefaultNPCClass = LoadClass<AActor>(nullptr, TEXT("/NarrativePro/Pro/Core/Character/Biped/BP_NarrativeNPCCharacter.BP_NarrativeNPCCharacter_C"));
+		if (DefaultNPCClass)
+		{
+			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("NPCClassPath")))
+			{
+				FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(Prop);
+				if (SoftClassProp)
+				{
+					FSoftObjectPtr* Ptr = SoftClassProp->GetPropertyValuePtr_InContainer(CreatedNPCDef);
+					*Ptr = FSoftObjectPtr(DefaultNPCClass);
+					AppendLog(TEXT("[LINK] NPCClassPath -> BP_NarrativeNPCCharacter"));
+				}
+			}
+		}
+		else
+		{
+			AppendLog(TEXT("[WARN] BP_NarrativeNPCCharacter not found - NPCClassPath not set"));
+		}
+
+		// Set MinLevel = 1 (like Seth)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("MinLevel")))
+		{
+			int32* Ptr = Prop->ContainerPtrToValuePtr<int32>(CreatedNPCDef);
+			*Ptr = 1;
+			AppendLog(TEXT("[LINK] MinLevel = 1"));
+		}
+
+		// Set MaxLevel = 100 (like Seth)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("MaxLevel")))
+		{
+			int32* Ptr = Prop->ContainerPtrToValuePtr<int32>(CreatedNPCDef);
+			*Ptr = 100;
+			AppendLog(TEXT("[LINK] MaxLevel = 100"));
+		}
+
+		// Set bAllowMultipleInstances = false (unique NPC like Seth)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("bAllowMultipleInstances")))
+		{
+			bool* Ptr = Prop->ContainerPtrToValuePtr<bool>(CreatedNPCDef);
+			*Ptr = false;
+			AppendLog(TEXT("[LINK] bAllowMultipleInstances = false"));
+		}
+
+		// Set bIsVendor = false (not a vendor by default)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("bIsVendor")))
+		{
+			bool* Ptr = Prop->ContainerPtrToValuePtr<bool>(CreatedNPCDef);
+			*Ptr = false;
+			AppendLog(TEXT("[LINK] bIsVendor = false"));
+		}
+
+		// Set TradingCurrency = 0 (no currency for non-vendor)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("TradingCurrency")))
+		{
+			int32* Ptr = Prop->ContainerPtrToValuePtr<int32>(CreatedNPCDef);
+			*Ptr = 0;
+			AppendLog(TEXT("[LINK] TradingCurrency = 0"));
+		}
+
+		// Set BuyItemPercentage = 0.5 (50% buy price like Seth)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("BuyItemPercentage")))
+		{
+			float* Ptr = Prop->ContainerPtrToValuePtr<float>(CreatedNPCDef);
+			*Ptr = 0.5f;
+			AppendLog(TEXT("[LINK] BuyItemPercentage = 0.5"));
+		}
+
+		// Set SellItemPercentage = 1.5 (150% sell price like Seth)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("SellItemPercentage")))
+		{
+			float* Ptr = Prop->ContainerPtrToValuePtr<float>(CreatedNPCDef);
+			*Ptr = 1.5f;
+			AppendLog(TEXT("[LINK] SellItemPercentage = 1.5"));
 		}
 
 		// Mark NPC Definition dirty and save

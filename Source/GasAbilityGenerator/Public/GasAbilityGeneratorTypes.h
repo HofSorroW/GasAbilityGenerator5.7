@@ -1839,7 +1839,13 @@ struct FManifestNPCDefinitionDefinition
 	// v3.6: Activity schedule support
 	TArray<FString> ActivitySchedules;   // TArray<TSoftObjectPtr<UNPCActivitySchedule>>
 
-	/** v3.6: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.7: Auto-create related assets (full NPC package)
+	bool bAutoCreateDialogue = false;           // Create DBP_{Name} dialogue blueprint
+	bool bAutoCreateTaggedDialogue = false;     // Create {Name}_TaggedDialogue set
+	bool bAutoCreateItemLoadout = false;        // Create ItemLoadout_{Name} DataTable
+	TArray<FString> DefaultItemLoadoutCollections;  // Item collections for DefaultItemLoadout (e.g., IC_RifleWithAmmo)
+
+	/** v3.7: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1886,6 +1892,15 @@ struct FManifestNPCDefinitionDefinition
 		for (const FString& Schedule : ActivitySchedules)
 		{
 			Hash ^= GetTypeHash(Schedule);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		// v3.7: Hash auto-create flags and item loadout collections
+		Hash ^= (bAutoCreateDialogue ? 1ULL : 0ULL) << 42;
+		Hash ^= (bAutoCreateTaggedDialogue ? 1ULL : 0ULL) << 43;
+		Hash ^= (bAutoCreateItemLoadout ? 1ULL : 0ULL) << 44;
+		for (const FString& Collection : DefaultItemLoadoutCollections)
+		{
+			Hash ^= GetTypeHash(Collection);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
 		return Hash;

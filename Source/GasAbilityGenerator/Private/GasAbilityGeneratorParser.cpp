@@ -4208,6 +4208,8 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 	bool bInOwnedTags = false;
 	bool bInFactions = false;
 	bool bInActivitySchedules = false;
+	// v3.7: Item loadout collections array state
+	bool bInItemLoadoutCollections = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -4243,6 +4245,7 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 			bInOwnedTags = false;
 			bInFactions = false;
 			bInActivitySchedules = false;
+			bInItemLoadoutCollections = false;
 		}
 		else if (bInItem)
 		{
@@ -4403,6 +4406,60 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 				bInActivitySchedules = true;
 				bInOwnedTags = false;
 				bInFactions = false;
+				bInItemLoadoutCollections = false;
+			}
+			// v3.7: Auto-create flags for related assets
+			else if (TrimmedLine.StartsWith(TEXT("auto_create_dialogue:")))
+			{
+				CurrentDef.bAutoCreateDialogue = GetLineValue(TrimmedLine).ToBool();
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInActivitySchedules = false;
+				bInItemLoadoutCollections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("auto_create_tagged_dialogue:")))
+			{
+				CurrentDef.bAutoCreateTaggedDialogue = GetLineValue(TrimmedLine).ToBool();
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInActivitySchedules = false;
+				bInItemLoadoutCollections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("auto_create_item_loadout:")))
+			{
+				CurrentDef.bAutoCreateItemLoadout = GetLineValue(TrimmedLine).ToBool();
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInActivitySchedules = false;
+				bInItemLoadoutCollections = false;
+			}
+			// v3.7: Default item loadout collections array
+			else if (TrimmedLine.StartsWith(TEXT("default_item_loadout_collections:")))
+			{
+				// Parse inline array [IC_1, IC_2] or start YAML list
+				FString CollectionsValue = GetLineValue(TrimmedLine);
+				if (CollectionsValue.StartsWith(TEXT("[")) && CollectionsValue.EndsWith(TEXT("]")))
+				{
+					CollectionsValue = CollectionsValue.Mid(1, CollectionsValue.Len() - 2);
+					TArray<FString> Collections;
+					CollectionsValue.ParseIntoArray(Collections, TEXT(","));
+					for (FString& Collection : Collections)
+					{
+						Collection = Collection.TrimStartAndEnd();
+						if (!Collection.IsEmpty())
+						{
+							CurrentDef.DefaultItemLoadoutCollections.Add(Collection);
+						}
+					}
+				}
+				else if (!CollectionsValue.IsEmpty())
+				{
+					CurrentDef.DefaultItemLoadoutCollections.Add(CollectionsValue);
+				}
+				bInItemLoadoutCollections = true;
+				bInOwnedTags = false;
+				bInFactions = false;
+				bInActivitySchedules = false;
 			}
 			// v3.6: Handle YAML list items for arrays
 			else if (TrimmedLine.StartsWith(TEXT("- ")) && !TrimmedLine.Contains(TEXT(":")))
@@ -4422,6 +4479,10 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 					{
 						CurrentDef.DefaultFactions.Add(ItemValue);
 					}
+					else if (bInItemLoadoutCollections)
+					{
+						CurrentDef.DefaultItemLoadoutCollections.Add(ItemValue);
+					}
 				}
 			}
 			else
@@ -4430,6 +4491,7 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 				bInOwnedTags = false;
 				bInFactions = false;
 				bInActivitySchedules = false;
+				bInItemLoadoutCollections = false;
 			}
 		}
 

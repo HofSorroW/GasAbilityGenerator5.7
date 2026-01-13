@@ -26,7 +26,7 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.6) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v3.7) that generates UE5 assets from YAML manifest definitions.
 
 ## Project Paths
 
@@ -98,27 +98,16 @@ The metadata system tracks changes to detect what needs regeneration:
 
 ## Automation Workflow
 
-PowerShell automation scripts in `Tools/`:
+PowerShell automation script: `Tools/claude_automation.ps1`
 
-```bash
-# Build the plugin
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action build
-
-# Launch Unreal Editor
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action run
-
-# Get generation logs (after closing editor)
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action logs
-
-# Full cycle (build + run)
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action full
-
-# Headless commandlet generation (no editor UI)
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action generate
-
-# Full automated cycle (build + commandlet generation)
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action cycle
-```
+| Action | Description |
+|--------|-------------|
+| `build` | Build the plugin |
+| `run` | Launch Unreal Editor |
+| `logs` | Get generation logs (after closing editor) |
+| `full` | Build + launch editor |
+| `generate` | Headless commandlet generation (no editor UI) |
+| `cycle` | Build + headless generation (most common) |
 
 **Development Cycle (Editor UI):**
 1. Edit source files
@@ -173,6 +162,7 @@ The following commands and paths are pre-approved and should be executed without
 **Read-Only Access (No Approval Needed):**
 - `C:\Program Files\Epic Games\UE_5.7\` - Full read access to all engine source, headers, and files
 - `C:\Unreal Projects\NP22B57\` - Full read access to all project files, plugins, content, and configs
+- `C:\Users\Erdem\OneDrive\Desktop\` - Full read access to desktop (screenshots, reference images, etc.)
 
 **UnrealEditor-Cmd.exe (Any Parameters):**
 ```bash
@@ -476,7 +466,7 @@ character_definitions:
       - TS_MerchantCombat
     ability_configuration: AC_Merchant            # FObjectProperty
 
-# v3.6: NPCDefinition with full property support
+# v3.7: NPCDefinition with full property support and auto-create
 npc_definitions:
   - name: NPCDef_Blacksmith
     folder: NPCs/Definitions
@@ -507,6 +497,13 @@ npc_definitions:
     activity_schedules:                           # TArray<TSoftObjectPtr<UNPCActivitySchedule>>
       - Schedule_BlacksmithDay
       - Schedule_BlacksmithNight
+    # v3.7: Auto-create related assets (full NPC package)
+    auto_create_dialogue: true                    # Creates DBP_BlacksmithDialogue
+    auto_create_tagged_dialogue: true             # Creates Blacksmith_TaggedDialogue
+    auto_create_item_loadout: true                # Populates DefaultItemLoadout
+    default_item_loadout_collections:             # Item collections for DefaultItemLoadout
+      - IC_RifleWithAmmo
+      - IC_ExampleArmorSet
 
 # v3.3: EquippableItem with full property support
 equippable_items:
@@ -697,6 +694,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v3.7 - NPC Auto-Create Related Assets: NPCDefinition gains auto_create_dialogue, auto_create_tagged_dialogue, and auto_create_item_loadout flags for one-manifest NPC package generation. When enabled: auto_create_dialogue creates DBP_{NPCName}Dialogue, auto_create_tagged_dialogue creates {NPCName}_TaggedDialogue, auto_create_item_loadout populates DefaultItemLoadout.ItemCollectionsToGrant with specified item collections. New manifest field default_item_loadout_collections for specifying item collections to grant. All v3.0 Regen/Diff Safety System hash safeguards included via updated ComputeHash().
 - v3.6 - NPCDefinition ActivitySchedules: NPCDefinition (NPCDef_) gains ActivitySchedules array support (TArray<TSoftObjectPtr<UNPCActivitySchedule>>) for defining NPC daily routines. Also adds YAML list parsing support for DefaultOwnedTags, DefaultFactions, and ActivitySchedules arrays in npc_definitions.
 - v3.5 - CharacterDefinition & DialogueBlueprint Enhancement: CharacterDefinition (CD_) gains full property support - DefaultOwnedTags/DefaultFactions now properly populate FGameplayTagContainer from arrays, added DefaultAppearance (TSoftObjectPtr), TriggerSets (array via FScriptArrayHelper reflection), AbilityConfiguration (FObjectProperty). DialogueBlueprint gains 3 additional UDialogue properties - DefaultHeadBoneName (FName), DialogueBlendOutTime (float), bAdjustPlayerTransform (bool). Both CD_ and DBP_ upgraded to High automation level.
 - v3.4 - WeaponItem Property Support: EquippableItem generator now supports full WeaponItem/MeleeWeaponItem/RangedWeaponItem property chain when using those parent classes. New properties: WeaponVisualClass (TSoftClassPtr), WeaponHand (EWeaponHandRule enum), WeaponAbilities/MainhandAbilities/OffhandAbilities arrays (TSubclassOf<UGameplayAbility>), bPawnFollowsControlRotation, bPawnOrientsRotationToMovement, AttackDamage, HeavyAttackDamageMultiplier, bAllowManualReload, RequiredAmmo, bBotsConsumeAmmo, BotAttackRange, ClipSize, AimFOVPct, BaseSpreadDegrees, MaxSpreadDegrees, SpreadFireBump, SpreadDecreaseSpeed. Enables complete weapon definition from YAML.
