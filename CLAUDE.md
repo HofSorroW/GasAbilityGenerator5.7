@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick Reference
+
+```bash
+# Build plugin
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action build
+
+# Build + headless generation (most common)
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action cycle
+
+# Check logs after generation
+powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action logs
+```
+
+**Key files:**
+- `ClaudeContext/manifest.yaml` - Single source of truth for all assets
+- `Source/GasAbilityGenerator/Private/GasAbilityGeneratorGenerators.cpp` - 25+ asset generators
+- `Tools/Logs/commandlet_output.log` - Generation results
+
+---
+
 ## Overview
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
@@ -222,7 +242,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v3.2)
+## GasAbilityGenerator Plugin (v3.6)
 
 Location: `Plugins/GasAbilityGenerator/`
 

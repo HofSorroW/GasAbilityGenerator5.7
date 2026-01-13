@@ -1,5 +1,6 @@
-// GasAbilityGenerator v3.0
+// GasAbilityGenerator v3.7
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v3.7: Added NPC Creation feature - one-click NPC asset generation
 // v3.0: Added Dry Run and Force checkboxes for metadata-aware regeneration
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
 // v2.3.0: Added 12 new asset type generators with dependency-based generation order
@@ -22,6 +23,10 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Styling/AppStyle.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "Internationalization/Regex.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Engine/DataTable.h"
+#include "Misc/PackageName.h"
 
 #define LOCTEXT_NAMESPACE "GasAbilityGenerator"
 
@@ -41,7 +46,7 @@ void SGasAbilityGeneratorWindow::Construct(const FArguments& InArgs)
 		.Padding(10, 10, 10, 5)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("Title", "GAS Ability Generator v3.0"))
+			.Text(LOCTEXT("Title", "GAS Ability Generator v3.7"))
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
 		]
 
@@ -189,6 +194,54 @@ void SGasAbilityGeneratorWindow::Construct(const FArguments& InArgs)
 				SNew(SButton)
 				.Text(LOCTEXT("Settings", "Settings"))
 				.OnClicked(this, &SGasAbilityGeneratorWindow::OnSettingsClicked)
+			]
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(10, 5)
+		[
+			SNew(SSeparator)
+		]
+
+		// v3.7: NPC Creation Section
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(10, 5)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0, 0, 10, 0)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("NPCName", "NPC Name:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(0.3f)
+			.Padding(0, 0, 10, 0)
+			[
+				SAssignNew(NPCNameTextBox, SEditableTextBox)
+				.HintText(LOCTEXT("NPCNameHint", "Enter NPC name..."))
+				.OnTextChanged(this, &SGasAbilityGeneratorWindow::OnNPCNameChanged)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SAssignNew(CreateNPCButton, SButton)
+				.Text(LOCTEXT("CreateNPC", "Create NPC"))
+				.OnClicked(this, &SGasAbilityGeneratorWindow::OnCreateNPCClicked)
+				.IsEnabled(this, &SGasAbilityGeneratorWindow::IsCreateNPCButtonEnabled)
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNullWidget::NullWidget
 			]
 		]
 
@@ -929,6 +982,624 @@ void SGasAbilityGeneratorWindow::ShowDryRunResultsDialog(const FDryRunSummary& D
 	AppendLog(ResultsMessage);
 
 	UE_LOG(LogTemp, Log, TEXT("\n%s"), *ResultsMessage);
+}
+
+// ============================================================================
+// v3.7: NPC Creation Functions
+// ============================================================================
+
+void SGasAbilityGeneratorWindow::OnNPCNameChanged(const FText& NewText)
+{
+	// The button will automatically update its enabled state via IsCreateNPCButtonEnabled
+}
+
+bool SGasAbilityGeneratorWindow::IsCreateNPCButtonEnabled() const
+{
+	if (!NPCNameTextBox.IsValid())
+	{
+		return false;
+	}
+
+	FString NPCName = NPCNameTextBox->GetText().ToString().TrimStartAndEnd();
+	return !NPCName.IsEmpty();
+}
+
+FReply SGasAbilityGeneratorWindow::OnCreateNPCClicked()
+{
+	if (!NPCNameTextBox.IsValid())
+	{
+		return FReply::Handled();
+	}
+
+	FString NPCName = NPCNameTextBox->GetText().ToString().TrimStartAndEnd();
+	if (NPCName.IsEmpty())
+	{
+		AppendLog(TEXT("ERROR: NPC Name is required"));
+		return FReply::Handled();
+	}
+
+	// Validate NPC name (alphanumeric and underscores only)
+	FRegexPattern Pattern(TEXT("^[a-zA-Z][a-zA-Z0-9_]*$"));
+	FRegexMatcher Matcher(Pattern, NPCName);
+	if (!Matcher.FindNext())
+	{
+		AppendLog(TEXT("ERROR: NPC Name must start with a letter and contain only letters, numbers, and underscores"));
+		return FReply::Handled();
+	}
+
+	CreateNPCAssets(NPCName);
+
+	return FReply::Handled();
+}
+
+void SGasAbilityGeneratorWindow::CreateNPCAssets(const FString& NPCName)
+{
+	AppendLog(TEXT(""));
+	AppendLog(TEXT("=============================================="));
+	AppendLog(FString::Printf(TEXT("Creating NPC: %s"), *NPCName));
+	AppendLog(TEXT("=============================================="));
+
+	// Base path: /Game/NPC/{NPCName}/
+	FString BasePath = FString::Printf(TEXT("/Game/NPC/%s"), *NPCName);
+
+	int32 SuccessCount = 0;
+	int32 FailCount = 0;
+
+	// Store created assets for linking
+	UObject* CreatedNPCDef = nullptr;
+	UBlueprint* CreatedDialogue = nullptr;
+	UObject* CreatedTaggedDialogueSet = nullptr;
+	UBlueprint* CreatedGreetingsDialogue = nullptr;
+	UDataTable* CreatedItemLoadout = nullptr;
+	UBlueprint* CreatedTriggerBP = nullptr;
+
+	// Get required classes
+	UClass* NPCDefClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.NPCDefinition"));
+	UClass* DialogueClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.Dialogue"));
+	UClass* TDSClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.TaggedDialogueSet"));
+	UClass* AbilityConfigClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.AbilityConfiguration"));
+	UScriptStruct* LootTableRowStruct = FindObject<UScriptStruct>(nullptr, TEXT("/Script/NarrativeArsenal.LootTableRow"));
+
+	// ========== PHASE 1: Create all assets ==========
+	AppendLog(TEXT("--- Phase 1: Creating Assets ---"));
+
+	// Asset 1: NPC Definition - NPC_{Name}.uasset
+	{
+		FString AssetName = FString::Printf(TEXT("NPC_%s"), *NPCName);
+		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
+
+		if (FPackageName::DoesPackageExist(PackagePath))
+		{
+			// Load existing asset for linking
+			CreatedNPCDef = LoadObject<UObject>(nullptr, *PackagePath);
+			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
+			SuccessCount++;
+		}
+		else if (NPCDefClass)
+		{
+			UPackage* Package = CreatePackage(*PackagePath);
+			if (Package)
+			{
+				CreatedNPCDef = NewObject<UObject>(Package, NPCDefClass, *AssetName, RF_Public | RF_Standalone);
+				if (CreatedNPCDef)
+				{
+					FAssetRegistryModule::AssetCreated(CreatedNPCDef);
+					AppendLog(FString::Printf(TEXT("[NEW] %s (UNPCDefinition)"), *AssetName));
+					SuccessCount++;
+				}
+				else
+				{
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create object"), *AssetName));
+					FailCount++;
+				}
+			}
+		}
+		else
+		{
+			AppendLog(FString::Printf(TEXT("[FAIL] %s - UNPCDefinition class not found"), *AssetName));
+			FailCount++;
+		}
+	}
+
+	// Asset 2: Main Dialogue - DBP_{Name}.uasset
+	{
+		FString AssetName = FString::Printf(TEXT("DBP_%s"), *NPCName);
+		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
+
+		if (FPackageName::DoesPackageExist(PackagePath))
+		{
+			CreatedDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
+			SuccessCount++;
+		}
+		else if (DialogueClass)
+		{
+			UPackage* Package = CreatePackage(*PackagePath);
+			if (Package)
+			{
+				CreatedDialogue = FKismetEditorUtilities::CreateBlueprint(
+					DialogueClass, Package, *AssetName, BPTYPE_Normal,
+					UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+				if (CreatedDialogue)
+				{
+					FAssetRegistryModule::AssetCreated(CreatedDialogue);
+					AppendLog(FString::Printf(TEXT("[NEW] %s (UDialogue - Main)"), *AssetName));
+					SuccessCount++;
+				}
+				else
+				{
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+					FailCount++;
+				}
+			}
+		}
+		else
+		{
+			AppendLog(FString::Printf(TEXT("[FAIL] %s - UDialogue class not found"), *AssetName));
+			FailCount++;
+		}
+	}
+
+	// Asset 3: Tagged Dialogue Set - {Name}_TaggedDialogue.uasset
+	{
+		FString AssetName = FString::Printf(TEXT("%s_TaggedDialogue"), *NPCName);
+		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
+
+		if (FPackageName::DoesPackageExist(PackagePath))
+		{
+			CreatedTaggedDialogueSet = LoadObject<UObject>(nullptr, *PackagePath);
+			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
+			SuccessCount++;
+		}
+		else if (TDSClass)
+		{
+			UPackage* Package = CreatePackage(*PackagePath);
+			if (Package)
+			{
+				CreatedTaggedDialogueSet = NewObject<UObject>(Package, TDSClass, *AssetName, RF_Public | RF_Standalone);
+				if (CreatedTaggedDialogueSet)
+				{
+					FAssetRegistryModule::AssetCreated(CreatedTaggedDialogueSet);
+					AppendLog(FString::Printf(TEXT("[NEW] %s (UTaggedDialogueSet)"), *AssetName));
+					SuccessCount++;
+				}
+				else
+				{
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create object"), *AssetName));
+					FailCount++;
+				}
+			}
+		}
+		else
+		{
+			AppendLog(FString::Printf(TEXT("[FAIL] %s - UTaggedDialogueSet class not found"), *AssetName));
+			FailCount++;
+		}
+	}
+
+	// Asset 4: Tagged Dialogue (Greetings) - DBP_{Name}_Greetings.uasset
+	{
+		FString AssetName = FString::Printf(TEXT("DBP_%s_Greetings"), *NPCName);
+		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
+
+		if (FPackageName::DoesPackageExist(PackagePath))
+		{
+			CreatedGreetingsDialogue = LoadObject<UBlueprint>(nullptr, *PackagePath);
+			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
+			SuccessCount++;
+		}
+		else if (DialogueClass)
+		{
+			UPackage* Package = CreatePackage(*PackagePath);
+			if (Package)
+			{
+				CreatedGreetingsDialogue = FKismetEditorUtilities::CreateBlueprint(
+					DialogueClass, Package, *AssetName, BPTYPE_Normal,
+					UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+				if (CreatedGreetingsDialogue)
+				{
+					FAssetRegistryModule::AssetCreated(CreatedGreetingsDialogue);
+					AppendLog(FString::Printf(TEXT("[NEW] %s (UDialogue - Greeting)"), *AssetName));
+					SuccessCount++;
+				}
+				else
+				{
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+					FailCount++;
+				}
+			}
+		}
+		else
+		{
+			AppendLog(FString::Printf(TEXT("[FAIL] %s - UDialogue class not found"), *AssetName));
+			FailCount++;
+		}
+	}
+
+	// Asset 5: Item Loadout DataTable - ItemLoadout_{Name}.uasset
+	{
+		FString AssetName = FString::Printf(TEXT("ItemLoadout_%s"), *NPCName);
+		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
+
+		if (FPackageName::DoesPackageExist(PackagePath))
+		{
+			CreatedItemLoadout = LoadObject<UDataTable>(nullptr, *PackagePath);
+			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
+			SuccessCount++;
+		}
+		else if (LootTableRowStruct)
+		{
+			UPackage* Package = CreatePackage(*PackagePath);
+			if (Package)
+			{
+				CreatedItemLoadout = NewObject<UDataTable>(Package, *AssetName, RF_Public | RF_Standalone);
+				if (CreatedItemLoadout)
+				{
+					CreatedItemLoadout->RowStruct = LootTableRowStruct;
+
+					// Add default row with rifle (like Seth's loadout)
+					// FLootTableRow has: ItemsToGrant (TArray<FItemWithQuantity>), Chance (float)
+					// FItemWithQuantity has: Item (TSoftClassPtr<UNarrativeItem>), Quantity (int32)
+					uint8* RowData = (uint8*)FMemory::Malloc(LootTableRowStruct->GetStructureSize());
+					LootTableRowStruct->InitializeStruct(RowData);
+
+					// Load default weapon (Weapon_DemoRifle like Seth uses with AC_RunAndGun)
+					UClass* RifleClass = LoadClass<UObject>(nullptr, TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/Weapon_DemoRifle.Weapon_DemoRifle_C"));
+
+					if (RifleClass)
+					{
+						// Find ItemsToGrant array property
+						if (FProperty* ItemsToGrantProp = LootTableRowStruct->FindPropertyByName(TEXT("ItemsToGrant")))
+						{
+							FArrayProperty* ArrayProp = CastField<FArrayProperty>(ItemsToGrantProp);
+							if (ArrayProp)
+							{
+								FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(RowData));
+								ArrayHelper.Resize(1);
+
+								// Get the inner struct (FItemWithQuantity)
+								FStructProperty* InnerStructProp = CastField<FStructProperty>(ArrayProp->Inner);
+								if (InnerStructProp)
+								{
+									void* ElementPtr = ArrayHelper.GetRawPtr(0);
+
+									// Set Item (TSoftClassPtr)
+									if (FProperty* ItemProp = InnerStructProp->Struct->FindPropertyByName(TEXT("Item")))
+									{
+										FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(ItemProp);
+										if (SoftClassProp)
+										{
+											FSoftObjectPtr* Ptr = SoftClassProp->GetPropertyValuePtr_InContainer(ElementPtr);
+											*Ptr = FSoftObjectPtr(RifleClass);
+										}
+									}
+
+									// Set Quantity = 1
+									if (FProperty* QuantityProp = InnerStructProp->Struct->FindPropertyByName(TEXT("Quantity")))
+									{
+										int32* QuantityPtr = QuantityProp->ContainerPtrToValuePtr<int32>(ElementPtr);
+										*QuantityPtr = 1;
+									}
+								}
+							}
+						}
+
+						// Set Chance = 1.0
+						if (FProperty* ChanceProp = LootTableRowStruct->FindPropertyByName(TEXT("Chance")))
+						{
+							float* ChancePtr = ChanceProp->ContainerPtrToValuePtr<float>(RowData);
+							*ChancePtr = 1.0f;
+						}
+
+						// Add the row to the DataTable
+						CreatedItemLoadout->AddRow(FName(TEXT("DefaultWeapon")), *(FTableRowBase*)RowData);
+						AppendLog(TEXT("[LINK] ItemLoadout += Weapon_DemoRifle (Quantity: 1)"));
+					}
+					else
+					{
+						AppendLog(TEXT("[WARN] Weapon_DemoRifle not found - ItemLoadout left empty"));
+					}
+
+					LootTableRowStruct->DestroyStruct(RowData);
+					FMemory::Free(RowData);
+
+					FAssetRegistryModule::AssetCreated(CreatedItemLoadout);
+					AppendLog(FString::Printf(TEXT("[NEW] %s (UDataTable - ItemLoadout)"), *AssetName));
+					SuccessCount++;
+				}
+				else
+				{
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create DataTable"), *AssetName));
+					FailCount++;
+				}
+			}
+		}
+		else
+		{
+			AppendLog(FString::Printf(TEXT("[FAIL] %s - FLootTableRow struct not found"), *AssetName));
+			FailCount++;
+		}
+	}
+
+	// Asset 6: Sound Wave placeholder
+	AppendLog(FString::Printf(TEXT("[INFO] %s_Voice (USoundWave) - Import audio manually"), *NPCName));
+
+	// Asset 7: Level Sequence placeholder
+	AppendLog(FString::Printf(TEXT("[INFO] LS_%s_Greet (ULevelSequence) - Create in Sequencer"), *NPCName));
+
+	// Asset 8: Cinematic Trigger Blueprint - BP_Trigger_Cinematic_{Name}.uasset
+	{
+		FString AssetName = FString::Printf(TEXT("BP_Trigger_Cinematic_%s"), *NPCName);
+		FString PackagePath = FString::Printf(TEXT("%s/%s"), *BasePath, *AssetName);
+
+		if (FPackageName::DoesPackageExist(PackagePath))
+		{
+			CreatedTriggerBP = LoadObject<UBlueprint>(nullptr, *PackagePath);
+			AppendLog(FString::Printf(TEXT("[SKIP] %s - already exists"), *AssetName));
+			SuccessCount++;
+		}
+		else
+		{
+			UPackage* Package = CreatePackage(*PackagePath);
+			if (Package)
+			{
+				CreatedTriggerBP = FKismetEditorUtilities::CreateBlueprint(
+					AActor::StaticClass(), Package, *AssetName, BPTYPE_Normal,
+					UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+				if (CreatedTriggerBP)
+				{
+					FAssetRegistryModule::AssetCreated(CreatedTriggerBP);
+					AppendLog(FString::Printf(TEXT("[NEW] %s (AActor Blueprint - Trigger)"), *AssetName));
+					SuccessCount++;
+				}
+				else
+				{
+					AppendLog(FString::Printf(TEXT("[FAIL] %s - Could not create blueprint"), *AssetName));
+					FailCount++;
+				}
+			}
+		}
+	}
+
+	// ========== PHASE 2: Link assets together ==========
+	AppendLog(TEXT(""));
+	AppendLog(TEXT("--- Phase 2: Linking Assets ---"));
+
+	if (CreatedNPCDef && NPCDefClass)
+	{
+		// Set NPCID
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("NPCID")))
+		{
+			FName* Ptr = Prop->ContainerPtrToValuePtr<FName>(CreatedNPCDef);
+			*Ptr = FName(*NPCName);
+			AppendLog(FString::Printf(TEXT("[LINK] NPCID = %s"), *NPCName));
+		}
+
+		// Set NPCName (display name)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("NPCName")))
+		{
+			FText* Ptr = Prop->ContainerPtrToValuePtr<FText>(CreatedNPCDef);
+			*Ptr = FText::FromString(NPCName);
+			AppendLog(FString::Printf(TEXT("[LINK] NPCName = %s"), *NPCName));
+		}
+
+		// Set Dialogue -> DBP_{Name} (TSoftClassPtr)
+		if (CreatedDialogue && CreatedDialogue->GeneratedClass)
+		{
+			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("Dialogue")))
+			{
+				FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(Prop);
+				if (SoftClassProp)
+				{
+					FSoftObjectPtr* Ptr = SoftClassProp->GetPropertyValuePtr_InContainer(CreatedNPCDef);
+					*Ptr = FSoftObjectPtr(CreatedDialogue->GeneratedClass);
+					AppendLog(FString::Printf(TEXT("[LINK] Dialogue -> DBP_%s"), *NPCName));
+				}
+			}
+		}
+
+		// Set TaggedDialogueSet -> {Name}_TaggedDialogue (TSoftObjectPtr)
+		if (CreatedTaggedDialogueSet)
+		{
+			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("TaggedDialogueSet")))
+			{
+				FSoftObjectProperty* SoftObjProp = CastField<FSoftObjectProperty>(Prop);
+				if (SoftObjProp)
+				{
+					FSoftObjectPtr* Ptr = SoftObjProp->GetPropertyValuePtr_InContainer(CreatedNPCDef);
+					*Ptr = FSoftObjectPtr(CreatedTaggedDialogueSet);
+					AppendLog(FString::Printf(TEXT("[LINK] TaggedDialogueSet -> %s_TaggedDialogue"), *NPCName));
+				}
+			}
+		}
+
+		// Set AbilityConfiguration -> AC_NPC_Default (shared default)
+		UObject* DefaultAbilityConfig = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Core/Abilities/Configurations/AC_NPC_Default.AC_NPC_Default"));
+		if (DefaultAbilityConfig)
+		{
+			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("AbilityConfiguration")))
+			{
+				FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop);
+				if (ObjProp)
+				{
+					ObjProp->SetObjectPropertyValue_InContainer(CreatedNPCDef, DefaultAbilityConfig);
+					AppendLog(TEXT("[LINK] AbilityConfiguration -> AC_NPC_Default"));
+				}
+			}
+		}
+		else
+		{
+			AppendLog(TEXT("[WARN] AC_NPC_Default not found - AbilityConfiguration not set"));
+		}
+
+		// Set DefaultItemLoadout -> ItemLoadout_{Name} (TArray<FLootTableRoll>)
+		if (CreatedItemLoadout)
+		{
+			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("DefaultItemLoadout")))
+			{
+				FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop);
+				if (ArrayProp)
+				{
+					// DefaultItemLoadout is TArray<FLootTableRoll> where FLootTableRoll has LootTable property
+					FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(CreatedNPCDef));
+					ArrayHelper.Resize(1);
+
+					// Get the inner struct type
+					FStructProperty* InnerStructProp = CastField<FStructProperty>(ArrayProp->Inner);
+					if (InnerStructProp)
+					{
+						void* ElementPtr = ArrayHelper.GetRawPtr(0);
+						// Find LootTable property in FLootTableRoll
+						if (FProperty* LootTableProp = InnerStructProp->Struct->FindPropertyByName(TEXT("LootTable")))
+						{
+							FSoftObjectProperty* SoftObjProp = CastField<FSoftObjectProperty>(LootTableProp);
+							if (SoftObjProp)
+							{
+								FSoftObjectPtr* Ptr = SoftObjProp->GetPropertyValuePtr_InContainer(ElementPtr);
+								*Ptr = FSoftObjectPtr(CreatedItemLoadout);
+								AppendLog(FString::Printf(TEXT("[LINK] DefaultItemLoadout -> ItemLoadout_%s"), *NPCName));
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Set DefaultOwnedTags (like Seth: Narrative.State.Invulnerable)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("DefaultOwnedTags")))
+		{
+			FStructProperty* StructProp = CastField<FStructProperty>(Prop);
+			if (StructProp && StructProp->Struct == FGameplayTagContainer::StaticStruct())
+			{
+				FGameplayTagContainer* TagContainer = StructProp->ContainerPtrToValuePtr<FGameplayTagContainer>(CreatedNPCDef);
+				TagContainer->AddTag(FGameplayTag::RequestGameplayTag(FName("Narrative.State.Invulnerable")));
+				AppendLog(TEXT("[LINK] DefaultOwnedTags = Narrative.State.Invulnerable"));
+			}
+		}
+
+		// Set DefaultFactions (like Seth: Narrative.Factions.Heroes)
+		if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("DefaultFactions")))
+		{
+			FStructProperty* StructProp = CastField<FStructProperty>(Prop);
+			if (StructProp && StructProp->Struct == FGameplayTagContainer::StaticStruct())
+			{
+				FGameplayTagContainer* TagContainer = StructProp->ContainerPtrToValuePtr<FGameplayTagContainer>(CreatedNPCDef);
+				TagContainer->AddTag(FGameplayTag::RequestGameplayTag(FName("Narrative.Factions.Heroes")));
+				AppendLog(TEXT("[LINK] DefaultFactions = Narrative.Factions.Heroes"));
+			}
+		}
+
+		// Set ActivityConfiguration -> AC_RunAndGun (like Seth)
+		UObject* DefaultActivityConfig = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Core/AI/Configs/AC_RunAndGun.AC_RunAndGun"));
+		if (DefaultActivityConfig)
+		{
+			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("ActivityConfiguration")))
+			{
+				FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop);
+				if (ObjProp)
+				{
+					ObjProp->SetObjectPropertyValue_InContainer(CreatedNPCDef, DefaultActivityConfig);
+					AppendLog(TEXT("[LINK] ActivityConfiguration -> AC_RunAndGun"));
+				}
+			}
+		}
+		else
+		{
+			AppendLog(TEXT("[WARN] AC_RunAndGun not found - ActivityConfiguration not set"));
+		}
+
+		// Set DefaultAppearance -> Apperance_Manny (like Seth)
+		UObject* DefaultAppearance = LoadObject<UObject>(nullptr, TEXT("/NarrativePro/Pro/Core/Character/Biped/Appearances/Mannequin/Apperance_Manny.Apperance_Manny"));
+		if (DefaultAppearance)
+		{
+			if (FProperty* Prop = NPCDefClass->FindPropertyByName(TEXT("DefaultAppearance")))
+			{
+				FSoftObjectProperty* SoftObjProp = CastField<FSoftObjectProperty>(Prop);
+				if (SoftObjProp)
+				{
+					FSoftObjectPtr* Ptr = SoftObjProp->GetPropertyValuePtr_InContainer(CreatedNPCDef);
+					*Ptr = FSoftObjectPtr(DefaultAppearance);
+					AppendLog(TEXT("[LINK] DefaultAppearance -> Apperance_Manny"));
+				}
+			}
+		}
+		else
+		{
+			AppendLog(TEXT("[WARN] Apperance_Manny not found - DefaultAppearance not set"));
+		}
+
+		// Mark NPC Definition dirty and save
+		CreatedNPCDef->GetOutermost()->MarkPackageDirty();
+	}
+
+	// Link TaggedDialogueSet -> Add Greetings dialogue to its Dialogues array
+	if (CreatedTaggedDialogueSet && CreatedGreetingsDialogue && TDSClass)
+	{
+		if (FProperty* Prop = TDSClass->FindPropertyByName(TEXT("Dialogues")))
+		{
+			FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop);
+			if (ArrayProp)
+			{
+				FScriptArrayHelper ArrayHelper(ArrayProp, ArrayProp->ContainerPtrToValuePtr<void>(CreatedTaggedDialogueSet));
+
+				// Get the inner struct (FTaggedDialogueEntry)
+				FStructProperty* InnerStructProp = CastField<FStructProperty>(ArrayProp->Inner);
+				if (InnerStructProp)
+				{
+					ArrayHelper.Resize(1);
+					void* ElementPtr = ArrayHelper.GetRawPtr(0);
+
+					// Set DialogueClass in the entry
+					if (FProperty* DialogueClassProp = InnerStructProp->Struct->FindPropertyByName(TEXT("DialogueClass")))
+					{
+						FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(DialogueClassProp);
+						if (SoftClassProp && CreatedGreetingsDialogue->GeneratedClass)
+						{
+							FSoftObjectPtr* Ptr = SoftClassProp->GetPropertyValuePtr_InContainer(ElementPtr);
+							*Ptr = FSoftObjectPtr(CreatedGreetingsDialogue->GeneratedClass);
+							AppendLog(FString::Printf(TEXT("[LINK] TaggedDialogueSet.Dialogues += DBP_%s_Greetings"), *NPCName));
+						}
+					}
+				}
+			}
+		}
+		CreatedTaggedDialogueSet->GetOutermost()->MarkPackageDirty();
+	}
+
+	// ========== PHASE 3: Save all assets ==========
+	AppendLog(TEXT(""));
+	AppendLog(TEXT("--- Phase 3: Saving Assets ---"));
+
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+
+	auto SaveAsset = [&](UObject* Asset, const FString& AssetName)
+	{
+		if (Asset)
+		{
+			UPackage* Package = Asset->GetOutermost();
+			FString PackageFileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
+			if (UPackage::SavePackage(Package, Asset, *PackageFileName, SaveArgs))
+			{
+				AppendLog(FString::Printf(TEXT("[SAVED] %s"), *AssetName));
+			}
+		}
+	};
+
+	SaveAsset(CreatedNPCDef, FString::Printf(TEXT("NPC_%s"), *NPCName));
+	SaveAsset(CreatedDialogue, FString::Printf(TEXT("DBP_%s"), *NPCName));
+	SaveAsset(CreatedTaggedDialogueSet, FString::Printf(TEXT("%s_TaggedDialogue"), *NPCName));
+	SaveAsset(CreatedGreetingsDialogue, FString::Printf(TEXT("DBP_%s_Greetings"), *NPCName));
+	SaveAsset(CreatedItemLoadout, FString::Printf(TEXT("ItemLoadout_%s"), *NPCName));
+	SaveAsset(CreatedTriggerBP, FString::Printf(TEXT("BP_Trigger_Cinematic_%s"), *NPCName));
+
+	AppendLog(TEXT(""));
+	AppendLog(TEXT("----------------------------------------------"));
+	AppendLog(FString::Printf(TEXT("NPC Creation Complete: %d created, %d failed"), SuccessCount, FailCount));
+	AppendLog(FString::Printf(TEXT("Assets created in: %s"), *BasePath));
+	AppendLog(TEXT("----------------------------------------------"));
+
+	UpdateStatus(FString::Printf(TEXT("NPC '%s' created - %d assets"), *NPCName, SuccessCount));
 }
 
 #undef LOCTEXT_NAMESPACE

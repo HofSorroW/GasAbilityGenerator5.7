@@ -9,14 +9,14 @@ param(
 $ErrorActionPreference = "Continue"
 
 # Paths
-$ProjectRoot = "C:\Unreal Projects\NP22Beta"
-$ProjectFile = "$ProjectRoot\NP22Beta.uproject"
-$UERoot = "C:\Program Files\Epic Games\UE_5.6"
+$ProjectRoot = "C:\Unreal Projects\NP22B57"
+$ProjectFile = "$ProjectRoot\NP22B57.uproject"
+$UERoot = "C:\Program Files\Epic Games\UE_5.7"
 $UBT = "$UERoot\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe"
 $Editor = "$UERoot\Engine\Binaries\Win64\UnrealEditor.exe"
 $PluginRoot = "$ProjectRoot\Plugins\GasAbilityGenerator"
 $LogDir = "$PluginRoot\Tools\Logs"
-$UELogPath = "$env:LOCALAPPDATA\UnrealEngine\5.6\Saved\Logs\NP22Beta.log"
+$UELogPath = "$env:LOCALAPPDATA\UnrealEngine\5.7\Saved\Logs\NP22B57.log"
 
 # Ensure log directory exists
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
@@ -38,7 +38,7 @@ function Write-StructuredOutput {
 function Invoke-UBTBuild {
     Write-Host "=== UBT BUILD START ==="
 
-    $output = & $UBT NP22BetaEditor Win64 Development "-Project=$ProjectFile" 2>&1
+    $output = & $UBT NP22B57Editor Win64 Development "-Project=$ProjectFile" 2>&1
     $exitCode = $LASTEXITCODE
 
     # Save full output
