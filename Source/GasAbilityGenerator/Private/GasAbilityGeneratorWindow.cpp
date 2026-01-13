@@ -28,6 +28,7 @@
 #include "Engine/DataTable.h"
 #include "Misc/PackageName.h"
 #include "Kismet2/KismetEditorUtilities.h"  // v3.7: For NPC Creation blueprint generation
+#include "UObject/SavePackage.h"             // v4.0: For FSavePackageArgs
 
 #define LOCTEXT_NAMESPACE "GasAbilityGenerator"
 
