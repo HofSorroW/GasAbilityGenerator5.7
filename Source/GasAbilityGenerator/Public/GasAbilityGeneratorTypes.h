@@ -1820,7 +1820,11 @@ struct FManifestEquippableItemDefinition
 	// v3.9.8: Clothing mesh configuration (for EquippableItem_Clothing parent class)
 	FManifestClothingMeshConfig ClothingMesh;
 
-	/** v3.9.8: Compute hash for change detection (excludes Folder - presentational only) */
+	// v3.9.12: Equipment effect values TMap<FGameplayTag, float>
+	// Used for SetByCaller armor, damage, and other stat values
+	TMap<FString, float> EquipmentEffectValues;
+
+	/** v3.9.12: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1938,6 +1942,14 @@ struct FManifestEquippableItemDefinition
 			Hash = (Hash << 5) | (Hash >> 59);
 		}
 
+
+		// v3.9.12: Hash equipment effect values
+		for (const auto& Pair : EquipmentEffectValues)
+		{
+			Hash ^= GetTypeHash(Pair.Key);
+			Hash ^= static_cast<uint64>(FMath::RoundToInt(Pair.Value * 100.f));
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
 		return Hash;
 	}
 };
@@ -3359,6 +3371,7 @@ struct FManifestPipelineItemDefinition
 			Hash ^= GetTypeHash(Stat.Value);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
+
 		return Hash;
 	}
 };

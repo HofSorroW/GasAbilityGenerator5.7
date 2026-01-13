@@ -3732,6 +3732,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInMorphs = false;
 	bool bInCurrentMorph = false;
 	bool bInMorphNames = false;
+	bool bInEquipmentEffectValues = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3780,6 +3781,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInMorphs = false;
 			bInCurrentMorph = false;
 			bInMorphNames = false;
+			bInEquipmentEffectValues = false;
 		}
 		else if (bInItem)
 		{
@@ -4054,6 +4056,20 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInWieldAttachments = false;
 				bInClothingMesh = false;
 			}
+			// v3.9.12: Equipment effect values section
+			else if (TrimmedLine.Equals(TEXT("equipment_effect_values:")) || TrimmedLine.StartsWith(TEXT("equipment_effect_values:")))
+			{
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInClothingMesh = false;
+				bInEquipmentEffectValues = true;
+			}
+
 			// v3.9.8: Clothing mesh section
 			else if (TrimmedLine.Equals(TEXT("clothing_mesh:")) || TrimmedLine.StartsWith(TEXT("clothing_mesh:")))
 			{
@@ -4072,6 +4088,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInMorphs = false;
 				bInCurrentMorph = false;
 				bInMorphNames = false;
+			bInEquipmentEffectValues = false;
 			}
 			// v3.9.8: Clothing mesh property parsing
 			else if (bInClothingMesh)
@@ -4086,6 +4103,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					bInMorphs = false;
 					bInCurrentMorph = false;
 					bInMorphNames = false;
+			bInEquipmentEffectValues = false;
 				}
 				else if (TrimmedLine.Equals(TEXT("morphs:")) || TrimmedLine.StartsWith(TEXT("morphs:")))
 				{
@@ -4096,6 +4114,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					bInMorphs = true;
 					bInCurrentMorph = false;
 					bInMorphNames = false;
+			bInEquipmentEffectValues = false;
 				}
 				else if (TrimmedLine.Equals(TEXT("vector_params:")) || TrimmedLine.StartsWith(TEXT("vector_params:")))
 				{
@@ -4134,6 +4153,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					CurrentDef.ClothingMesh.Morphs.Add(NewMorph);
 					bInCurrentMorph = true;
 					bInMorphNames = false;
+			bInEquipmentEffectValues = false;
 				}
 				// Parse vector_params array items
 				else if (bInVectorParams && bInCurrentMaterial && TrimmedLine.StartsWith(TEXT("- parameter_name:")))
@@ -4277,6 +4297,22 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				if (!Ability.IsEmpty())
 				{
 					CurrentDef.OffhandAbilities.Add(Ability);
+				}
+			}
+			// v3.9.12: Equipment effect values key:value parsing
+			else if (bInEquipmentEffectValues && TrimmedLine.Contains(TEXT(":")))
+			{
+				// Parse "Tag: Value" format (e.g., "SetByCaller.Armor: 15.0")
+				int32 ColonIndex;
+				if (TrimmedLine.FindChar(TEXT(':'), ColonIndex))
+				{
+					FString Key = TrimmedLine.Left(ColonIndex).TrimStartAndEnd();
+					FString ValueStr = TrimmedLine.Mid(ColonIndex + 1).TrimStartAndEnd();
+					if (!Key.IsEmpty() && !ValueStr.IsEmpty())
+					{
+						float Value = FCString::Atof(*ValueStr);
+						CurrentDef.EquipmentEffectValues.Add(Key, Value);
+					}
 				}
 			}
 			else if (bInAbilities && TrimmedLine.StartsWith(TEXT("-")))

@@ -8634,6 +8634,49 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
+
+			// v3.9.12: Handle EquipmentEffectValues TMap<FGameplayTag, float>
+			if (Definition.EquipmentEffectValues.Num() > 0)
+			{
+				FMapProperty* EffectValuesMapProp = CastField<FMapProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("EquipmentEffectValues")));
+				if (EffectValuesMapProp)
+				{
+					void* MapPtr = EffectValuesMapProp->ContainerPtrToValuePtr<void>(CDO);
+					FScriptMapHelper MapHelper(EffectValuesMapProp, MapPtr);
+					MapHelper.EmptyValues();
+
+					for (const auto& Pair : Definition.EquipmentEffectValues)
+					{
+						// Convert string key to FGameplayTag
+						FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*Pair.Key), false);
+						if (Tag.IsValid())
+						{
+							int32 NewIndex = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+							FGameplayTag* KeyPtr = reinterpret_cast<FGameplayTag*>(MapHelper.GetKeyPtr(NewIndex));
+							float* ValuePtr = reinterpret_cast<float*>(MapHelper.GetValuePtr(NewIndex));
+							*KeyPtr = Tag;
+							*ValuePtr = Pair.Value;
+							LogGeneration(FString::Printf(TEXT("  Set EquipmentEffectValues[%s] = %.2f"), *Pair.Key, Pair.Value));
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  [WARNING] Invalid GameplayTag for EquipmentEffectValues key: %s"), *Pair.Key));
+						}
+					}
+					MapHelper.Rehash();
+				}
+				else
+				{
+					LogGeneration(TEXT("  [WARNING] EquipmentEffectValues property not found on class"));
+					LogGeneration(TEXT("  [INFO] Logging values for manual setup:"));
+					for (const auto& Pair : Definition.EquipmentEffectValues)
+					{
+						LogGeneration(FString::Printf(TEXT("    %s: %.2f"), *Pair.Key, Pair.Value));
+					}
+				}
+			}
+
 			CDO->MarkPackageDirty();
 		}
 	}
