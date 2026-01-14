@@ -1,5 +1,8 @@
-// GasAbilityGenerator v3.10.0
+// GasAbilityGenerator v4.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+//
+// v4.0 Features:
+// - Added Quest Editor - visual editor for quest state machines
 //
 // v3.10.0 Features:
 // - Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
@@ -37,9 +40,15 @@ private:
 	/** Open the NPC Table Editor window */
 	void OpenNPCTableEditorWindow();
 
+	/** Open the Quest Editor window */
+	void OpenQuestEditorWindow();
+
 	/** Spawn the plugin tab */
 	TSharedRef<SDockTab> OnSpawnPluginTab(const FSpawnTabArgs& SpawnTabArgs);
 
 	/** Spawn the NPC Table Editor tab */
 	TSharedRef<SDockTab> OnSpawnNPCTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);
+
+	/** Spawn the Quest Editor tab */
+	TSharedRef<SDockTab> OnSpawnQuestEditorTab(const FSpawnTabArgs& SpawnTabArgs);
 };

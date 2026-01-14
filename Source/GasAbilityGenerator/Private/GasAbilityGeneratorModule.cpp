@@ -1,10 +1,12 @@
-// GasAbilityGenerator v3.10.0
+// GasAbilityGenerator v4.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.0: Added Quest Editor - visual editor for quest state machines
 // v3.10.0: Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
 
 #include "GasAbilityGeneratorModule.h"
 #include "GasAbilityGeneratorWindow.h"
 #include "NPCTableEditor/SNPCTableEditor.h"
+#include "QuestEditor/SQuestEditor.h"
 #include "Modules/ModuleManager.h"
 #include "ToolMenus.h"
 #include "Framework/Docking/TabManager.h"
@@ -14,6 +16,7 @@
 
 static const FName GasAbilityGeneratorTabName("GasAbilityGenerator");
 static const FName NPCTableEditorTabName("NPCTableEditor");
+static const FName QuestEditorTabName("QuestEditor");
 
 void FGasAbilityGeneratorModule::StartupModule()
 {
@@ -35,7 +38,14 @@ void FGasAbilityGeneratorModule::StartupModule()
 		.SetDisplayName(LOCTEXT("NPCTableEditorTabTitle", "NPC Table Editor"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
-	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v3.10.0 module loaded - NPC Table Editor"));
+	// Register the tab spawner for Quest Editor
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+		QuestEditorTabName,
+		FOnSpawnTab::CreateRaw(this, &FGasAbilityGeneratorModule::OnSpawnQuestEditorTab))
+		.SetDisplayName(LOCTEXT("QuestEditorTabTitle", "Quest Editor"))
+		.SetMenuType(ETabSpawnerMenuType::Hidden);
+
+	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v4.0 module loaded - Quest Editor"));
 }
 
 void FGasAbilityGeneratorModule::ShutdownModule()
@@ -45,6 +55,7 @@ void FGasAbilityGeneratorModule::ShutdownModule()
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GasAbilityGeneratorTabName);
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(NPCTableEditorTabName);
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(QuestEditorTabName);
 
 	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] Module shutdown"));
 }
@@ -72,6 +83,13 @@ void FGasAbilityGeneratorModule::RegisterMenus()
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenNPCTableEditorWindow))
 		);
+		Section.AddMenuEntry(
+			"QuestEditor",
+			LOCTEXT("QuestEditorMenuLabel", "Quest Editor"),
+			LOCTEXT("QuestEditorMenuTooltip", "Open the Quest Editor - visual editor for quest state machines"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenQuestEditorWindow))
+		);
 	}
 }
 
@@ -83,6 +101,11 @@ void FGasAbilityGeneratorModule::OpenPluginWindow()
 void FGasAbilityGeneratorModule::OpenNPCTableEditorWindow()
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(NPCTableEditorTabName);
+}
+
+void FGasAbilityGeneratorModule::OpenQuestEditorWindow()
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(QuestEditorTabName);
 }
 
 TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnPluginTab(const FSpawnTabArgs& SpawnTabArgs)
@@ -100,6 +123,15 @@ TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnNPCTableEditorTab(const 
 		.TabRole(ETabRole::NomadTab)
 		[
 			SNew(SNPCTableEditorWindow)
+		];
+}
+
+TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnQuestEditorTab(const FSpawnTabArgs& SpawnTabArgs)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		[
+			SNew(SQuestEditorWindow)
 		];
 }
 
