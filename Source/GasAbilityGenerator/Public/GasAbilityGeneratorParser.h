@@ -98,6 +98,7 @@ private:
 	static void ParseFunctionOverrides(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, TArray<FManifestFunctionOverrideDefinition>& OutOverrides);
 
 	// Helper functions
+	static FString StripYamlComment(const FString& Value);  // v3.9.10: Strip inline YAML comments
 	static FString GetLineValue(const FString& Line);
 	static int32 GetIndentLevel(const FString& Line);
 	static bool IsArrayItem(const FString& Line);

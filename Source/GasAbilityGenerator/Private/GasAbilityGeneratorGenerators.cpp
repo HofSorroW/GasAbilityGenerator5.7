@@ -11422,30 +11422,48 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	}
 
 	// v2.6.9: Check AbilityConfiguration dependency BEFORE creating asset
+	// v3.9.10: Fixed double-slash bug for absolute paths (paths starting with /)
 	UAbilityConfiguration* PreloadedAbilityConfig = nullptr;
 	if (!Definition.AbilityConfiguration.IsEmpty())
 	{
 		FString ConfigPath = Definition.AbilityConfiguration;
-		if (!ConfigPath.Contains(TEXT("/")))
+
+		// Check if this is an absolute path (starts with /)
+		bool bIsAbsolutePath = ConfigPath.StartsWith(TEXT("/"));
+
+		if (bIsAbsolutePath)
 		{
-			ConfigPath = FString::Printf(TEXT("%s/GAS/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration);
+			// Absolute path - load directly without prepending project root
+			PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *ConfigPath);
+			// Don't search alternate paths for absolute paths - they're explicit
 		}
-		PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *ConfigPath);
-
-		// Try alternate paths
-		if (!PreloadedAbilityConfig)
+		else if (!ConfigPath.Contains(TEXT("/")))
 		{
-			TArray<FString> SearchPaths = {
-				FString::Printf(TEXT("%s/Configs/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration),
-				FString::Printf(TEXT("%s/Abilities/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration),
-				FString::Printf(TEXT("%s/AI/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration)
-			};
+			// Simple name - search in standard locations
+			ConfigPath = FString::Printf(TEXT("%s/GAS/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration);
+			PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *ConfigPath);
 
-			for (const FString& SearchPath : SearchPaths)
+			// Try alternate paths for simple names only
+			if (!PreloadedAbilityConfig)
 			{
-				PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *SearchPath);
-				if (PreloadedAbilityConfig) break;
+				TArray<FString> SearchPaths = {
+					FString::Printf(TEXT("%s/Configs/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration),
+					FString::Printf(TEXT("%s/Abilities/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration),
+					FString::Printf(TEXT("%s/AI/Configurations/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration)
+				};
+
+				for (const FString& SearchPath : SearchPaths)
+				{
+					PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *SearchPath);
+					if (PreloadedAbilityConfig) break;
+				}
 			}
+		}
+		else
+		{
+			// Relative path with slashes (e.g., "Configs/AC_Something") - prepend project root once
+			ConfigPath = FString::Printf(TEXT("%s/%s"), *GetProjectRoot(), *Definition.AbilityConfiguration);
+			PreloadedAbilityConfig = LoadObject<UAbilityConfiguration>(nullptr, *ConfigPath);
 		}
 
 		// If still not found, defer
@@ -11504,12 +11522,22 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	}
 
 	// v2.6.0: Set ActivityConfiguration via TSoftObjectPtr
+	// v3.9.10: Fixed double-slash bug for absolute paths
 	if (!Definition.ActivityConfiguration.IsEmpty())
 	{
 		FString ConfigPath = Definition.ActivityConfiguration;
-		if (!ConfigPath.Contains(TEXT("/")))
+		if (ConfigPath.StartsWith(TEXT("/")))
+		{
+			// Absolute path - use directly
+		}
+		else if (!ConfigPath.Contains(TEXT("/")))
 		{
 			ConfigPath = FString::Printf(TEXT("%s/AI/Configurations/%s"), *GetProjectRoot(), *Definition.ActivityConfiguration);
+		}
+		else
+		{
+			// Relative path with slashes - prepend project root once
+			ConfigPath = FString::Printf(TEXT("%s/%s"), *GetProjectRoot(), *Definition.ActivityConfiguration);
 		}
 		NPCDef->ActivityConfiguration = TSoftObjectPtr<UNPCActivityConfiguration>(FSoftObjectPath(ConfigPath));
 		LogGeneration(FString::Printf(TEXT("  Set ActivityConfiguration: %s"), *ConfigPath));
@@ -11523,28 +11551,52 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	}
 
 	// v3.3: Set Dialogue via TSoftClassPtr
+	// v3.9.10: Fixed double-slash bug for absolute paths
 	if (!Definition.Dialogue.IsEmpty())
 	{
 		FString DialoguePath = Definition.Dialogue;
-		if (!DialoguePath.Contains(TEXT("/")))
+		if (DialoguePath.StartsWith(TEXT("/")))
+		{
+			// Absolute path - ensure it has _C suffix for Blueprint classes
+			if (!DialoguePath.EndsWith(TEXT("_C")))
+			{
+				DialoguePath = DialoguePath + TEXT("_C");
+			}
+		}
+		else if (!DialoguePath.Contains(TEXT("/")))
 		{
 			DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s_C"), *GetProjectRoot(), *Definition.Dialogue, *Definition.Dialogue);
 		}
-		else if (!DialoguePath.EndsWith(TEXT("_C")))
+		else
 		{
-			DialoguePath = DialoguePath + TEXT("_C");
+			// Relative path with slashes - prepend project root
+			if (!DialoguePath.EndsWith(TEXT("_C")))
+			{
+				DialoguePath = DialoguePath + TEXT("_C");
+			}
+			DialoguePath = FString::Printf(TEXT("%s/%s"), *GetProjectRoot(), *DialoguePath);
 		}
 		NPCDef->Dialogue = TSoftClassPtr<UDialogue>(FSoftObjectPath(DialoguePath));
 		LogGeneration(FString::Printf(TEXT("  Set Dialogue: %s"), *DialoguePath));
 	}
 
 	// v3.3: Set TaggedDialogueSet via TSoftObjectPtr
+	// v3.9.10: Fixed double-slash bug for absolute paths
 	if (!Definition.TaggedDialogueSet.IsEmpty())
 	{
 		FString TDSPath = Definition.TaggedDialogueSet;
-		if (!TDSPath.Contains(TEXT("/")))
+		if (TDSPath.StartsWith(TEXT("/")))
+		{
+			// Absolute path - use directly
+		}
+		else if (!TDSPath.Contains(TEXT("/")))
 		{
 			TDSPath = FString::Printf(TEXT("%s/Dialogues/%s"), *GetProjectRoot(), *Definition.TaggedDialogueSet);
+		}
+		else
+		{
+			// Relative path with slashes - prepend project root
+			TDSPath = FString::Printf(TEXT("%s/%s"), *GetProjectRoot(), *Definition.TaggedDialogueSet);
 		}
 		NPCDef->TaggedDialogueSet = TSoftObjectPtr<UTaggedDialogueSet>(FSoftObjectPath(TDSPath));
 		LogGeneration(FString::Printf(TEXT("  Set TaggedDialogueSet: %s"), *TDSPath));

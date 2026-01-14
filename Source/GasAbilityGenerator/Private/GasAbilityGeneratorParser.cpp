@@ -531,7 +531,8 @@ void FGasAbilityGeneratorParser::ParseEnumerations(const TArray<FString>& Lines,
 			else if (bInValues && TrimmedLine.StartsWith(TEXT("-")))
 			{
 				// Parse enum value
-				FString Value = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Value = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				// Remove quotes if present
 				if (Value.Len() >= 2 && Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\"")))
 				{
@@ -1176,7 +1177,8 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				else if (TrimmedLine.StartsWith(TEXT("-")) && CurrentTagArray != ECurrentTagArray::None)
 				{
 					// Parse tag value
-					FString TagValue = TrimmedLine.Mid(1).TrimStart();
+					// v3.9.10: Use StripYamlComment to remove inline comments
+					FString TagValue = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 					// Remove quotes if present
 					if (TagValue.Len() >= 2)
 					{
@@ -1958,7 +1960,8 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				}
 				else if (bInChildren && TrimmedLine.StartsWith(TEXT("-")))
 				{
-					FString ChildId = TrimmedLine.Mid(1).TrimStart();
+					// v3.9.10: Use StripYamlComment to remove inline comments
+					FString ChildId = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 					if (ChildId.Len() >= 2 && ((ChildId.StartsWith(TEXT("\"")) && ChildId.EndsWith(TEXT("\""))) ||
 						(ChildId.StartsWith(TEXT("'")) && ChildId.EndsWith(TEXT("'")))))
 					{
@@ -3291,7 +3294,8 @@ void FGasAbilityGeneratorParser::ParseAnimationMontages(const TArray<FString>& L
 			}
 			else if (bInSections && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Section = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Section = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Section.Len() >= 2 && ((Section.StartsWith(TEXT("\"")) && Section.EndsWith(TEXT("\""))) ||
 					(Section.StartsWith(TEXT("'")) && Section.EndsWith(TEXT("'")))))
 				{
@@ -4935,7 +4939,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				// Parse morph_names array items
 				else if (bInMorphNames && bInCurrentMorph && TrimmedLine.StartsWith(TEXT("-")))
 				{
-					FString MorphName = TrimmedLine.Mid(1).TrimStart();
+					// v3.9.10: Use StripYamlComment to remove inline comments
+					FString MorphName = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 					// Remove quotes if present
 					if (MorphName.Len() >= 2 && ((MorphName.StartsWith(TEXT("\"")) && MorphName.EndsWith(TEXT("\""))) ||
 						(MorphName.StartsWith(TEXT("'")) && MorphName.EndsWith(TEXT("'")))))
@@ -5051,7 +5056,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			}
 			else if (bInItemTags && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Tag = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Tag = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Tag.Len() >= 2 && ((Tag.StartsWith(TEXT("\"")) && Tag.EndsWith(TEXT("\""))) ||
 					(Tag.StartsWith(TEXT("'")) && Tag.EndsWith(TEXT("'")))))
 				{
@@ -5064,7 +5070,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			}
 			else if (bInWeaponAbilities && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Ability = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Ability = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
 					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
 				{
@@ -5077,7 +5084,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			}
 			else if (bInMainhandAbilities && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Ability = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Ability = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
 					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
 				{
@@ -5090,7 +5098,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			}
 			else if (bInOffhandAbilities && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Ability = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Ability = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
 					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
 				{
@@ -5109,7 +5118,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				if (TrimmedLine.FindChar(TEXT(':'), ColonIndex))
 				{
 					FString Key = TrimmedLine.Left(ColonIndex).TrimStartAndEnd();
-					FString ValueStr = TrimmedLine.Mid(ColonIndex + 1).TrimStartAndEnd();
+					FString ValueStr = StripYamlComment(TrimmedLine.Mid(ColonIndex + 1).TrimStartAndEnd());
 					if (!Key.IsEmpty() && !ValueStr.IsEmpty())
 					{
 						float Value = FCString::Atof(*ValueStr);
@@ -5119,7 +5128,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			}
 			else if (bInAbilities && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Ability = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Ability = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Ability.Len() >= 2 && ((Ability.StartsWith(TEXT("\"")) && Ability.EndsWith(TEXT("\""))) ||
 					(Ability.StartsWith(TEXT("'")) && Ability.EndsWith(TEXT("'")))))
 				{
@@ -5248,7 +5258,8 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 			}
 			else if ((bInOwnedTags || bInBlockTags || bInRequireTags) && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Tag = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Tag = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Tag.Len() >= 2 && ((Tag.StartsWith(TEXT("\"")) && Tag.EndsWith(TEXT("\""))) ||
 					(Tag.StartsWith(TEXT("'")) && Tag.EndsWith(TEXT("'")))))
 				{
@@ -5353,7 +5364,8 @@ void FGasAbilityGeneratorParser::ParseAbilityConfigurations(const TArray<FString
 			}
 			else if (TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Value = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Value = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Value.Len() >= 2 && ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
 					(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'")))))
 				{
@@ -5464,7 +5476,8 @@ void FGasAbilityGeneratorParser::ParseActivityConfigurations(const TArray<FStrin
 			}
 			else if (TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Value = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Value = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Value.Len() >= 2 && ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
 					(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'")))))
 				{
@@ -5546,7 +5559,8 @@ void FGasAbilityGeneratorParser::ParseItemCollections(const TArray<FString>& Lin
 			}
 			else if (bInItems && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Item = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Item = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Item.Len() >= 2 && ((Item.StartsWith(TEXT("\"")) && Item.EndsWith(TEXT("\""))) ||
 					(Item.StartsWith(TEXT("'")) && Item.EndsWith(TEXT("'")))))
 				{
@@ -6594,7 +6608,8 @@ void FGasAbilityGeneratorParser::ParseCharacterDefinitions(const TArray<FString>
 			}
 			else if (bInOwnedTags && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Tag = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Tag = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Tag.Len() >= 2 && ((Tag.StartsWith(TEXT("\"")) && Tag.EndsWith(TEXT("\""))) ||
 					(Tag.StartsWith(TEXT("'")) && Tag.EndsWith(TEXT("'")))))
 				{
@@ -6604,7 +6619,8 @@ void FGasAbilityGeneratorParser::ParseCharacterDefinitions(const TArray<FString>
 			}
 			else if (bInFactions && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Faction = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Faction = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (Faction.Len() >= 2 && ((Faction.StartsWith(TEXT("\"")) && Faction.EndsWith(TEXT("\""))) ||
 					(Faction.StartsWith(TEXT("'")) && Faction.EndsWith(TEXT("'")))))
 				{
@@ -6614,7 +6630,8 @@ void FGasAbilityGeneratorParser::ParseCharacterDefinitions(const TArray<FString>
 			}
 			else if (bInTriggerSets && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString TriggerSet = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString TriggerSet = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (TriggerSet.Len() >= 2 && ((TriggerSet.StartsWith(TEXT("\"")) && TriggerSet.EndsWith(TEXT("\""))) ||
 					(TriggerSet.StartsWith(TEXT("'")) && TriggerSet.EndsWith(TEXT("'")))))
 				{
@@ -6798,16 +6815,71 @@ void FGasAbilityGeneratorParser::ParseTaggedDialogueSets(const TArray<FString>& 
 	}
 }
 
+// v3.9.10: Strip YAML inline comments from values
+// Handles: "value  # comment" -> "value"
+// Preserves: "value with # in quotes" (when quoted)
+// Properly handles escape sequences inside quotes
+FString FGasAbilityGeneratorParser::StripYamlComment(const FString& Value)
+{
+	FString In = Value.TrimStartAndEnd();
+
+	bool bInSingle = false;
+	bool bInDouble = false;
+	bool bEscaped = false;
+
+	for (int32 i = 0; i < In.Len(); ++i)
+	{
+		const TCHAR C = In[i];
+
+		if (bEscaped)
+		{
+			bEscaped = false;
+			continue;
+		}
+
+		if (C == TEXT('\\'))
+		{
+			// Only treat backslash as escape inside quotes
+			if (bInSingle || bInDouble)
+			{
+				bEscaped = true;
+			}
+			continue;
+		}
+
+		if (C == TEXT('"') && !bInSingle)
+		{
+			bInDouble = !bInDouble;
+			continue;
+		}
+
+		if (C == TEXT('\'') && !bInDouble)
+		{
+			bInSingle = !bInSingle;
+			continue;
+		}
+
+		if (C == TEXT('#') && !bInSingle && !bInDouble)
+		{
+			// YAML inline comment starts here
+			return In.Left(i).TrimEnd();
+		}
+	}
+
+	return In.TrimEnd();
+}
+
 FString FGasAbilityGeneratorParser::GetLineValue(const FString& Line)
 {
 	int32 ColonIndex;
 	if (!Line.FindChar(TEXT(':'), ColonIndex))
 	{
-		return Line.TrimStartAndEnd();
+		// v3.9.10: Strip comments from bare values too
+		return StripYamlComment(Line);
 	}
-	
+
 	FString Value = Line.Mid(ColonIndex + 1).TrimStartAndEnd();
-	
+
 	// Remove quotes if present
 	if (Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\"")))
 	{
@@ -6817,8 +6889,9 @@ FString FGasAbilityGeneratorParser::GetLineValue(const FString& Line)
 	{
 		Value = Value.Mid(1, Value.Len() - 2);
 	}
-	
-	return Value;
+
+	// v3.9.10: Strip inline YAML comments
+	return StripYamlComment(Value);
 }
 
 int32 FGasAbilityGeneratorParser::GetIndentLevel(const FString& Line)
@@ -7008,7 +7081,8 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			}
 			else if (bInEmitters && TrimmedLine.StartsWith(TEXT("-")) && !bInUserParameters)
 			{
-				FString EmitterName = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString EmitterName = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				if (!EmitterName.IsEmpty())
 				{
 					CurrentDef.Emitters.Add(EmitterName);
@@ -8393,7 +8467,8 @@ void FGasAbilityGeneratorParser::ParsePipelineLoadouts(const TArray<FString>& Li
 			}
 			else if (bInCollections && TrimmedLine.StartsWith(TEXT("-")))
 			{
-				FString Collection = TrimmedLine.Mid(1).TrimStart();
+				// v3.9.10: Use StripYamlComment to remove inline comments
+				FString Collection = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
 				// Remove quotes if present
 				if (Collection.Len() >= 2 && ((Collection.StartsWith(TEXT("\"")) && Collection.EndsWith(TEXT("\""))) ||
 					(Collection.StartsWith(TEXT("'")) && Collection.EndsWith(TEXT("'")))))
