@@ -1,5 +1,5 @@
 // NPCTableEditorTypes.h
-// NPC Table Editor - Data types
+// NPC Table Editor - Data types (v4.1 - 18 column structure)
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #pragma once
@@ -10,7 +10,19 @@
 #include "NPCTableEditorTypes.generated.h"
 
 /**
- * Single row in the NPC Table Editor
+ * Row status enum for NPC table
+ */
+UENUM(BlueprintType)
+enum class ENPCTableRowStatus : uint8
+{
+	New UMETA(DisplayName = "New"),
+	Modified UMETA(DisplayName = "Modified"),
+	Synced UMETA(DisplayName = "Synced"),
+	Error UMETA(DisplayName = "Error")
+};
+
+/**
+ * Single row in the NPC Table Editor (v4.1 - 18 columns)
  * Represents one NPC with all its related asset references
  * Maps to UNPCDefinition + UCharacterDefinition fields
  */
@@ -24,83 +36,71 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	FGuid RowId;
 
 	//=========================================================================
-	// Identity (Required)
+	// Core Identity (5 columns)
 	//=========================================================================
+
+	/** Row status: New, Modified, Synced, Error (auto-calculated) */
+	UPROPERTY(VisibleAnywhere, Category = "Identity")
+	ENPCTableRowStatus Status = ENPCTableRowStatus::New;
 
 	/** NPC Name - used for asset naming (NPCDef_{NPCName}) */
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FString NPCName;
 
-	/** Unique NPC ID - runtime identifier (NPCID in NPCDefinition) */
+	/** Unique NPC ID - runtime identifier */
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FString NPCId;
 
-	/** Display name shown in-game (NPCName in NPCDefinition) */
+	/** Display name shown in-game */
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FString DisplayName;
 
-	/** Can spawn multiple instances of this NPC? (false = unique NPC) */
+	/** NPC Blueprint - TSoftClassPtr<ANarrativeNPCCharacter> */
 	UPROPERTY(EditAnywhere, Category = "Identity")
-	bool bAllowMultipleInstances = true;
+	FSoftObjectPath Blueprint;
 
 	//=========================================================================
-	// Asset References
+	// AI & Behavior (4 columns) - Dropdown asset pickers
 	//=========================================================================
 
-	/** NPC Blueprint - the character class (NPCClassPath) */
-	UPROPERTY(EditAnywhere, Category = "Assets")
-	FSoftObjectPath NPCBlueprint;
-
-	/** Ability Configuration (from CharacterDefinition) */
-	UPROPERTY(EditAnywhere, Category = "Assets")
+	/** Ability Configuration - AC_* DataAsset */
+	UPROPERTY(EditAnywhere, Category = "AI")
 	FSoftObjectPath AbilityConfig;
 
-	/** Activity Configuration */
-	UPROPERTY(EditAnywhere, Category = "Assets")
+	/** Activity Configuration - ActConfig_* DataAsset */
+	UPROPERTY(EditAnywhere, Category = "AI")
 	FSoftObjectPath ActivityConfig;
 
-	/** Activity Schedules (comma-separated asset names) */
-	UPROPERTY(EditAnywhere, Category = "Assets")
-	FString ActivitySchedules;
+	/** Activity Schedule - Schedule_* DataAsset */
+	UPROPERTY(EditAnywhere, Category = "AI")
+	FSoftObjectPath Schedule;
 
-	/** Default Appearance */
-	UPROPERTY(EditAnywhere, Category = "Assets")
-	FSoftObjectPath DefaultAppearance;
-
-	/** Trigger Sets (comma-separated asset names) */
-	UPROPERTY(EditAnywhere, Category = "Assets")
-	FString TriggerSets;
+	/** Behavior Tree override - BT_* asset (optional) */
+	UPROPERTY(EditAnywhere, Category = "AI")
+	FSoftObjectPath BehaviorTree;
 
 	//=========================================================================
-	// Spawning / Location
+	// Combat (3 columns)
 	//=========================================================================
 
-	/** POI or Spawner where this NPC appears (comma-separated list) */
-	UPROPERTY(EditAnywhere, Category = "Location")
-	FString SpawnerPOI;
+	/** Min level for NPC */
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	int32 MinLevel = 1;
 
-	/** Level/Map name */
-	UPROPERTY(EditAnywhere, Category = "Location")
-	FString LevelName;
+	/** Max level for NPC */
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	int32 MaxLevel = 10;
 
-	/** Discovered spawners that reference this NPC (populated by Sync) */
-	UPROPERTY(VisibleAnywhere, Category = "Location")
-	FString DiscoveredSpawners;
+	/** Faction tags (multi-select dropdown) */
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	FString Factions;
 
-	//=========================================================================
-	// Inventory & Currency
-	//=========================================================================
-
-	/** Default currency this NPC has */
-	UPROPERTY(EditAnywhere, Category = "Inventory")
-	int32 DefaultCurrency = 0;
-
-	/** Default item loadout (comma-separated: EI_Sword, IC_Weapons) */
-	UPROPERTY(EditAnywhere, Category = "Inventory")
-	FString DefaultItems;
+	/** Attack priority (0.0-1.0, higher = more likely to be targeted) */
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	float AttackPriority = 0.5f;
 
 	//=========================================================================
-	// Vendor Settings
+	// Vendor (2 columns)
 	//=========================================================================
 
 	/** Is this NPC a vendor/merchant */
@@ -111,69 +111,37 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	UPROPERTY(EditAnywhere, Category = "Vendor")
 	FString ShopName;
 
-	/** Vendor's trading currency (gold for buying/selling) */
-	UPROPERTY(EditAnywhere, Category = "Vendor")
-	int32 TradingCurrency = 500;
-
-	/** Buy percentage (0.5 = pays 50% of item value) */
-	UPROPERTY(EditAnywhere, Category = "Vendor")
-	float BuyItemPercentage = 0.5f;
-
-	/** Sell percentage (1.5 = charges 150% of item value) */
-	UPROPERTY(EditAnywhere, Category = "Vendor")
-	float SellItemPercentage = 1.5f;
-
-	/** Vendor inventory (comma-separated: IC_Weapons, IC_Potions) */
-	UPROPERTY(EditAnywhere, Category = "Vendor")
-	FString TradingItems;
-
 	//=========================================================================
-	// Tags & Factions
+	// Items & Spawning (2 columns)
 	//=========================================================================
 
-	/** Faction tags (comma-separated, short names OK: Friendly, Town) */
-	UPROPERTY(EditAnywhere, Category = "Tags")
-	FString Factions;
+	/** Default item loadout - IC_* collections (multi-select dropdown) */
+	UPROPERTY(EditAnywhere, Category = "Items")
+	FString DefaultItems;
 
-	/** Owned tags (comma-separated, short names OK: Invulnerable) */
-	UPROPERTY(EditAnywhere, Category = "Tags")
-	FString OwnedTags;
-
-	//=========================================================================
-	// Combat
-	//=========================================================================
-
-	/** Min level */
-	UPROPERTY(EditAnywhere, Category = "Combat")
-	int32 MinLevel = 1;
-
-	/** Max level */
-	UPROPERTY(EditAnywhere, Category = "Combat")
-	int32 MaxLevel = 10;
-
-	/** Attack priority (0.0-1.0, higher = more likely to be targeted) */
-	UPROPERTY(EditAnywhere, Category = "Combat")
-	float AttackPriority = 0.5f;
+	/** POI where this NPC spawns (dropdown from level POIs) */
+	UPROPERTY(EditAnywhere, Category = "Spawning")
+	FString SpawnerPOI;
 
 	//=========================================================================
-	// Status / Metadata
+	// Meta (2 columns)
 	//=========================================================================
 
-	/** Row status: New, Modified, Synced, Error */
-	UPROPERTY(VisibleAnywhere, Category = "Status")
-	FString Status = TEXT("New");
+	/** Appearance preset - dropdown asset picker */
+	UPROPERTY(EditAnywhere, Category = "Meta")
+	FSoftObjectPath Appearance;
 
-	/** Is this row from plugin content (read-only, can't be saved) */
-	UPROPERTY(VisibleAnywhere, Category = "Status")
-	bool bIsReadOnly = false;
+	/** Designer notes/comments */
+	UPROPERTY(EditAnywhere, Category = "Meta")
+	FString Notes;
+
+	//=========================================================================
+	// Internal (not displayed as columns)
+	//=========================================================================
 
 	/** Generated NPCDefinition asset path (after generation) */
-	UPROPERTY(VisibleAnywhere, Category = "Status")
+	UPROPERTY(VisibleAnywhere, Category = "Internal")
 	FSoftObjectPath GeneratedNPCDef;
-
-	/** Notes/comments */
-	UPROPERTY(EditAnywhere, Category = "Metadata")
-	FString Notes;
 
 	//=========================================================================
 	// Methods
@@ -189,18 +157,52 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 		return !NPCName.IsEmpty() && !NPCId.IsEmpty();
 	}
 
+	/** Get level range as display string "1-10" */
+	FString GetLevelRangeDisplay() const
+	{
+		return FString::Printf(TEXT("%d-%d"), MinLevel, MaxLevel);
+	}
+
+	/** Set level range from display string "1-10" */
+	void SetLevelRangeFromDisplay(const FString& DisplayString)
+	{
+		TArray<FString> Parts;
+		DisplayString.ParseIntoArray(Parts, TEXT("-"));
+		if (Parts.Num() >= 2)
+		{
+			MinLevel = FCString::Atoi(*Parts[0]);
+			MaxLevel = FCString::Atoi(*Parts[1]);
+		}
+	}
+
 	/** Get status color for UI */
 	FLinearColor GetStatusColor() const
 	{
-		if (Status == TEXT("New")) return FLinearColor(0.2f, 0.6f, 1.0f); // Blue
-		if (Status == TEXT("Modified")) return FLinearColor(1.0f, 0.8f, 0.2f); // Yellow
-		if (Status == TEXT("Synced")) return FLinearColor(0.2f, 0.8f, 0.2f); // Green
-		if (Status == TEXT("Error")) return FLinearColor(1.0f, 0.2f, 0.2f); // Red
-		return FLinearColor::White;
+		switch (Status)
+		{
+			case ENPCTableRowStatus::New: return FLinearColor(0.2f, 0.6f, 1.0f); // Blue
+			case ENPCTableRowStatus::Modified: return FLinearColor(1.0f, 0.8f, 0.2f); // Yellow
+			case ENPCTableRowStatus::Synced: return FLinearColor(0.2f, 0.8f, 0.2f); // Green
+			case ENPCTableRowStatus::Error: return FLinearColor(1.0f, 0.2f, 0.2f); // Red
+			default: return FLinearColor::White;
+		}
+	}
+
+	/** Get status as string for display */
+	FString GetStatusString() const
+	{
+		switch (Status)
+		{
+			case ENPCTableRowStatus::New: return TEXT("New");
+			case ENPCTableRowStatus::Modified: return TEXT("Modified");
+			case ENPCTableRowStatus::Synced: return TEXT("Synced");
+			case ENPCTableRowStatus::Error: return TEXT("Error");
+			default: return TEXT("Unknown");
+		}
 	}
 
 	//=========================================================================
-	// Tag Helpers - Convert short names to full tags
+	// Faction Tag Helpers
 	//=========================================================================
 
 	/** Convert short faction name to full tag (e.g., "Friendly" -> "Narrative.Factions.Friendly") */
@@ -212,34 +214,13 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 		return FString::Printf(TEXT("Narrative.Factions.%s"), *Trimmed);
 	}
 
-	/** Convert full faction tag to short name (e.g., "Narrative.Factions.Friendly" -> "Friendly") */
+	/** Convert full faction tag to short name */
 	static FString ToShortFactionName(const FString& FullTag)
 	{
 		FString Trimmed = FullTag.TrimStartAndEnd();
 		if (Trimmed.StartsWith(TEXT("Narrative.Factions.")))
 		{
-			return Trimmed.RightChop(19); // Length of "Narrative.Factions."
-		}
-		return Trimmed;
-	}
-
-	/** Convert short state tag to full tag (e.g., "Invulnerable" -> "Narrative.State.Invulnerable") */
-	static FString ToFullStateTag(const FString& ShortName)
-	{
-		FString Trimmed = ShortName.TrimStartAndEnd();
-		if (Trimmed.IsEmpty()) return TEXT("");
-		if (Trimmed.StartsWith(TEXT("Narrative.State."))) return Trimmed;
-		if (Trimmed.StartsWith(TEXT("State."))) return FString::Printf(TEXT("Narrative.%s"), *Trimmed);
-		return FString::Printf(TEXT("Narrative.State.%s"), *Trimmed);
-	}
-
-	/** Convert full state tag to short name */
-	static FString ToShortStateName(const FString& FullTag)
-	{
-		FString Trimmed = FullTag.TrimStartAndEnd();
-		if (Trimmed.StartsWith(TEXT("Narrative.State.")))
-		{
-			return Trimmed.RightChop(16); // Length of "Narrative.State."
+			return Trimmed.RightChop(19);
 		}
 		return Trimmed;
 	}
@@ -257,7 +238,7 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 		return FString::Join(ShortNames, TEXT(", "));
 	}
 
-	/** Set factions from short names, converting to full tags */
+	/** Set factions from short names */
 	void SetFactionsFromDisplay(const FString& DisplayString)
 	{
 		TArray<FString> Names;
@@ -272,36 +253,6 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 			}
 		}
 		Factions = FString::Join(FullTags, TEXT(", "));
-	}
-
-	/** Get owned tags as short display string */
-	FString GetOwnedTagsDisplay() const
-	{
-		TArray<FString> Tags;
-		OwnedTags.ParseIntoArray(Tags, TEXT(","));
-		TArray<FString> ShortNames;
-		for (const FString& Tag : Tags)
-		{
-			ShortNames.Add(ToShortStateName(Tag));
-		}
-		return FString::Join(ShortNames, TEXT(", "));
-	}
-
-	/** Set owned tags from short names, converting to full tags */
-	void SetOwnedTagsFromDisplay(const FString& DisplayString)
-	{
-		TArray<FString> Names;
-		DisplayString.ParseIntoArray(Names, TEXT(","));
-		TArray<FString> FullTags;
-		for (const FString& Name : Names)
-		{
-			FString FullTag = ToFullStateTag(Name);
-			if (!FullTag.IsEmpty())
-			{
-				FullTags.Add(FullTag);
-			}
-		}
-		OwnedTags = FString::Join(FullTags, TEXT(", "));
 	}
 };
 
@@ -340,7 +291,7 @@ public:
 	{
 		FNPCTableRow& NewRow = Rows.AddDefaulted_GetRef();
 		NewRow.RowId = FGuid::NewGuid();
-		NewRow.Status = TEXT("New");
+		NewRow.Status = ENPCTableRowStatus::New;
 		return NewRow;
 	}
 
@@ -353,7 +304,7 @@ public:
 			NewRow.RowId = FGuid::NewGuid();
 			NewRow.NPCName += TEXT("_Copy");
 			NewRow.NPCId += TEXT("_copy");
-			NewRow.Status = TEXT("New");
+			NewRow.Status = ENPCTableRowStatus::New;
 			NewRow.GeneratedNPCDef.Reset();
 			Rows.Add(NewRow);
 			return &Rows.Last();

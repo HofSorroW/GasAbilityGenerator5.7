@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
-// v4.2: Tree traversal flow order, Player speaker display, smart Add Node
+// v4.2.2: Phase 1.5 - Clear Filters, Delete Branch, Skippable/Notes columns, tooltips
 //
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
@@ -69,11 +69,11 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	}
 	if (ColumnName == TEXT("Text"))
 	{
-		return CreateTextCell(RowData->Text, TEXT("Dialogue text..."));
+		return CreateTextCell(RowData->Text, TEXT("Dialogue text..."), true);  // With tooltip
 	}
 	if (ColumnName == TEXT("OptionText"))
 	{
-		return CreateTextCell(RowData->OptionText, TEXT("Player choice text"));
+		return CreateTextCell(RowData->OptionText, TEXT("Player choice text"), true);  // With tooltip
 	}
 	if (ColumnName == TEXT("ParentNodeID"))
 	{
@@ -82,6 +82,14 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	if (ColumnName == TEXT("NextNodeIDs"))
 	{
 		return CreateNextNodesCell();
+	}
+	if (ColumnName == TEXT("Skippable"))
+	{
+		return CreateSkippableCell();
+	}
+	if (ColumnName == TEXT("Notes"))
+	{
+		return CreateNotesCell();
 	}
 
 	return SNullWidget::NullWidget;
@@ -130,20 +138,36 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNodeIDCell()
 		];
 }
 
-TSharedRef<SWidget> SDialogueTableRow::CreateTextCell(FString& Value, const FString& Hint)
+TSharedRef<SWidget> SDialogueTableRow::CreateTextCell(FString& Value, const FString& Hint, bool bWithTooltip)
 {
+	TSharedRef<SWidget> EditableText = SNew(SEditableText)
+		.Text_Lambda([&Value]() { return FText::FromString(Value); })
+		.HintText(FText::FromString(Hint))
+		.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
+		{
+			Value = NewText.ToString();
+			MarkModified();
+		})
+		.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9));
+
+	// Add tooltip for Text/OptionText columns to show full content on hover
+	if (bWithTooltip)
+	{
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			.ToolTipText_Lambda([&Value]()
+			{
+				return Value.IsEmpty() ? FText::GetEmpty() : FText::FromString(Value);
+			})
+			[
+				EditableText
+			];
+	}
+
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SEditableText)
-				.Text_Lambda([&Value]() { return FText::FromString(Value); })
-				.HintText(FText::FromString(Hint))
-				.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
-				{
-					Value = NewText.ToString();
-					MarkModified();
-				})
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			EditableText
 		];
 }
 
@@ -270,6 +294,51 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNextNodesCell()
 		];
 }
 
+TSharedRef<SWidget> SDialogueTableRow::CreateSkippableCell()
+{
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		.HAlign(HAlign_Center)
+		[
+			SNew(SCheckBox)
+				.IsChecked_Lambda([RowData]()
+				{
+					return RowData->bSkippable ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+				})
+				.OnCheckStateChanged_Lambda([this, RowData](ECheckBoxState NewState)
+				{
+					RowData->bSkippable = (NewState == ECheckBoxState::Checked);
+					MarkModified();
+				})
+				.ToolTipText(LOCTEXT("SkippableTip", "Whether player can skip this line"))
+		];
+}
+
+TSharedRef<SWidget> SDialogueTableRow::CreateNotesCell()
+{
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		.ToolTipText_Lambda([RowData]()
+		{
+			return RowData->Notes.IsEmpty() ? FText::GetEmpty() : FText::FromString(RowData->Notes);
+		})
+		[
+			SNew(SEditableText)
+				.Text_Lambda([RowData]() { return FText::FromString(RowData->Notes); })
+				.HintText(LOCTEXT("NotesHint", "Designer notes..."))
+				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
+				{
+					RowData->Notes = NewText.ToString();
+					MarkModified();
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+		];
+}
+
 void SDialogueTableRow::MarkModified()
 {
 	OnRowModified.ExecuteIfBound();
@@ -327,6 +396,7 @@ void SDialogueTableEditor::Construct(const FArguments& InArgs)
 	];
 
 	ApplyFlowOrder();
+	UpdateStatusBar();  // Initialize status bar with correct values
 }
 
 void SDialogueTableEditor::SetTableData(UDialogueTableData* InTableData)
@@ -335,6 +405,7 @@ void SDialogueTableEditor::SetTableData(UDialogueTableData* InTableData)
 	SyncFromTableData();
 	UpdateColumnFilterOptions();
 	ApplyFlowOrder();
+	UpdateStatusBar();
 }
 
 TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
@@ -352,7 +423,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
 		]
 
-		// Delete
+		// Delete (re-parents children)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
@@ -361,6 +432,28 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.Text(LOCTEXT("DeleteRows", "Delete"))
 				.OnClicked(this, &SDialogueTableEditor::OnDeleteRowsClicked)
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+				.ToolTipText(LOCTEXT("DeleteTip", "Delete selected node(s). Children are re-parented to grandparent."))
+		]
+
+		// Delete Branch (cascade delete)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("DeleteBranch", "Delete Branch"))
+				.OnClicked(this, &SDialogueTableEditor::OnDeleteBranchClicked)
+				.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+				.ToolTipText(LOCTEXT("DeleteBranchTip", "Delete selected node(s) AND all their children (cascade delete)"))
+		]
+
+		// Separator
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SSeparator)
+				.Orientation(Orient_Vertical)
 		]
 
 		// Reset Order
@@ -372,6 +465,17 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.Text(LOCTEXT("ResetOrder", "Reset Flow Order"))
 				.OnClicked(this, &SDialogueTableEditor::OnResetOrderClicked)
 				.ToolTipText(LOCTEXT("ResetOrderTip", "Sort by dialogue flow (root -> children -> grandchildren)"))
+		]
+
+		// Clear Filters
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("ClearFilters", "Clear Filters"))
+				.OnClicked(this, &SDialogueTableEditor::OnClearFiltersClicked)
+				.ToolTipText(LOCTEXT("ClearFiltersTip", "Clear all text and dropdown filters"))
 		]
 
 		// Spacer
@@ -453,32 +557,124 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildColumnHeaderContent(const FDialog
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
 		]
 
-		// Dropdown filter
+		// Multi-select filter with checkboxes in a menu
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		.Padding(2.0f, 1.0f)
 		[
-			SNew(SComboBox<TSharedPtr<FString>>)
-				.OptionsSource(&FilterState.DropdownOptions)
-				.OnSelectionChanged_Lambda([this, ColumnId = Col.ColumnId](TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
+			SNew(SComboButton)
+				.OnGetMenuContent_Lambda([this, ColumnId = Col.ColumnId]() -> TSharedRef<SWidget>
 				{
-					OnColumnDropdownFilterChanged(ColumnId, NewValue, SelectInfo);
+					FColumnFilterState* State = ColumnFilters.Find(ColumnId);
+					if (!State) return SNew(SBox);
+
+					TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+					// Add "Select All" / "Clear All" buttons
+					MenuContent->AddSlot()
+					.AutoHeight()
+					.Padding(4.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+								.Text(LOCTEXT("SelectAll", "All"))
+								.OnClicked_Lambda([this, ColumnId, State]()
+								{
+									State->SelectedValues.Empty();
+									ApplyFilters();
+									return FReply::Handled();
+								})
+								.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(4.0f, 0.0f)
+						[
+							SNew(SButton)
+								.Text(LOCTEXT("ClearSel", "None"))
+								.OnClicked_Lambda([this, ColumnId, State]()
+								{
+									// Select all options (which will filter to nothing if all are selected)
+									// Actually, we want "None" to mean clear selection = show all
+									State->SelectedValues.Empty();
+									ApplyFilters();
+									return FReply::Handled();
+								})
+								.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						]
+					];
+
+					MenuContent->AddSlot()
+					.AutoHeight()
+					[
+						SNew(SSeparator)
+					];
+
+					// Add checkbox for each option (skip the empty "(All)" option)
+					for (const TSharedPtr<FString>& Option : State->DropdownOptions)
+					{
+						if (!Option.IsValid() || Option->IsEmpty()) continue;  // Skip "(All)"
+
+						FString OptionValue = *Option;
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(4.0f, 1.0f)
+						[
+							SNew(SCheckBox)
+								.IsChecked_Lambda([State, OptionValue]()
+								{
+									return State->SelectedValues.Contains(OptionValue) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+								})
+								.OnCheckStateChanged_Lambda([this, State, OptionValue](ECheckBoxState NewState)
+								{
+									if (NewState == ECheckBoxState::Checked)
+									{
+										State->SelectedValues.Add(OptionValue);
+									}
+									else
+									{
+										State->SelectedValues.Remove(OptionValue);
+									}
+									ApplyFilters();
+								})
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(OptionValue))
+										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+								]
+						];
+					}
+
+					return SNew(SBox)
+						.MaxDesiredHeight(300.0f)
+						[
+							SNew(SScrollBox)
+							+ SScrollBox::Slot()
+							[
+								MenuContent
+							]
+						];
 				})
-				.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
-				{
-					return SNew(STextBlock)
-						.Text(Item.IsValid() && !Item->IsEmpty() ? FText::FromString(*Item) : LOCTEXT("All", "(All)"))
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8));
-				})
+				.ButtonContent()
 				[
 					SNew(STextBlock)
 						.Text_Lambda([&FilterState]()
 						{
-							if (FilterState.SelectedDropdownValue.IsValid() && !FilterState.SelectedDropdownValue->IsEmpty())
+							if (FilterState.SelectedValues.Num() == 0)
 							{
-								return FText::FromString(*FilterState.SelectedDropdownValue);
+								return LOCTEXT("AllFilter", "(All)");
 							}
-							return LOCTEXT("All", "(All)");
+							else if (FilterState.SelectedValues.Num() == 1)
+							{
+								for (const FString& Val : FilterState.SelectedValues)
+								{
+									return FText::FromString(Val);
+								}
+							}
+							return FText::Format(LOCTEXT("MultiSelect", "({0} selected)"), FText::AsNumber(FilterState.SelectedValues.Num()));
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
 				]
@@ -518,66 +714,89 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildStatusBar()
 		.AutoWidth()
 		.Padding(4.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					return FText::Format(
-						LOCTEXT("TotalNodes", "Total: {0} nodes"),
-						FText::AsNumber(AllRows.Num())
-					);
-				})
+			SAssignNew(StatusTotal, STextBlock)
+				.Text_Lambda([this]() { return GetStatusTotalText(); })
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					TSet<FName> UniqueDialogues;
-					for (const auto& Row : AllRows)
-					{
-						if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
-						{
-							UniqueDialogues.Add(Row->Data->DialogueID);
-						}
-					}
-					return FText::Format(
-						LOCTEXT("DialogueCount", "Dialogues: {0}"),
-						FText::AsNumber(UniqueDialogues.Num())
-					);
-				})
+			SAssignNew(StatusDialogues, STextBlock)
+				.Text_Lambda([this]() { return GetStatusDialoguesText(); })
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					return FText::Format(
-						LOCTEXT("ShowingCount", "Showing: {0}"),
-						FText::AsNumber(DisplayedRows.Num())
-					);
-				})
+			SAssignNew(StatusShowing, STextBlock)
+				.Text_Lambda([this]() { return GetStatusShowingText(); })
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					int32 Selected = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
-					return FText::Format(
-						LOCTEXT("SelectedCount", "Selected: {0}"),
-						FText::AsNumber(Selected)
-					);
-				})
+			SAssignNew(StatusSelected, STextBlock)
+				.Text_Lambda([this]() { return GetStatusSelectedText(); })
 		];
+}
+
+FText SDialogueTableEditor::GetStatusTotalText() const
+{
+	return FText::Format(LOCTEXT("TotalNodes", "Total: {0} nodes"), FText::AsNumber(AllRows.Num()));
+}
+
+FText SDialogueTableEditor::GetStatusDialoguesText() const
+{
+	TSet<FName> UniqueDialogues;
+	for (const auto& Row : AllRows)
+	{
+		if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
+		{
+			UniqueDialogues.Add(Row->Data->DialogueID);
+		}
+	}
+	return FText::Format(LOCTEXT("DialogueCount", "Dialogues: {0}"), FText::AsNumber(UniqueDialogues.Num()));
+}
+
+FText SDialogueTableEditor::GetStatusShowingText() const
+{
+	return FText::Format(LOCTEXT("ShowingCount", "Showing: {0}"), FText::AsNumber(DisplayedRows.Num()));
+}
+
+FText SDialogueTableEditor::GetStatusSelectedText() const
+{
+	int32 Selected = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
+	return FText::Format(LOCTEXT("SelectedCount", "Selected: {0}"), FText::AsNumber(Selected));
+}
+
+void SDialogueTableEditor::UpdateStatusBar()
+{
+	// UE5 Slate caching fix: Must use all three invalidation flags to force refresh
+	// See: https://forums.unrealengine.com/t/slate-widget-stextblock-does-not-refresh/553873
+	const EInvalidateWidgetReason InvalidateFlags =
+		EInvalidateWidgetReason::Paint |
+		EInvalidateWidgetReason::Volatility |
+		EInvalidateWidgetReason::Prepass;
+
+	if (StatusTotal.IsValid())
+	{
+		StatusTotal->Invalidate(InvalidateFlags);
+	}
+	if (StatusDialogues.IsValid())
+	{
+		StatusDialogues->Invalidate(InvalidateFlags);
+	}
+	if (StatusShowing.IsValid())
+	{
+		StatusShowing->Invalidate(InvalidateFlags);
+	}
+	if (StatusSelected.IsValid())
+	{
+		StatusSelected->Invalidate(InvalidateFlags);
+	}
 }
 
 TSharedRef<ITableRow> SDialogueTableEditor::OnGenerateRow(TSharedPtr<FDialogueTableRowEx> Item, const TSharedRef<STableViewBase>& OwnerTable)
@@ -589,6 +808,8 @@ TSharedRef<ITableRow> SDialogueTableEditor::OnGenerateRow(TSharedPtr<FDialogueTa
 
 void SDialogueTableEditor::OnSelectionChanged(TSharedPtr<FDialogueTableRowEx> Item, ESelectInfo::Type SelectInfo)
 {
+	// Update selected count in status bar
+	UpdateStatusBar();
 }
 
 EColumnSortMode::Type SDialogueTableEditor::GetColumnSortMode(FName ColumnId) const
@@ -610,6 +831,9 @@ void SDialogueTableEditor::RefreshList()
 	{
 		ListView->RequestListRefresh();
 	}
+
+	// Update status bar numbers directly
+	UpdateStatusBar();
 }
 
 TArray<TSharedPtr<FDialogueTableRowEx>> SDialogueTableEditor::GetSelectedRows() const
@@ -781,19 +1005,31 @@ void SDialogueTableEditor::UpdateColumnFilterOptions()
 		FColumnFilterState* State = ColumnFilters.Find(Col.ColumnId);
 		if (!State) continue;
 
-		TSharedPtr<FString> PreviousSelection = State->SelectedDropdownValue;
+		// Remember previous selections
+		TSet<FString> PreviousSelections = State->SelectedValues;
 
 		State->DropdownOptions.Empty();
-		State->DropdownOptions.Add(MakeShared<FString>(TEXT(""))); // "(All)"
+		State->DropdownOptions.Add(MakeShared<FString>(TEXT(""))); // "(All)" placeholder
 
 		TSet<FString> UniqueValues;
+		bool bHasEmptyValues = false;
 		for (const auto& RowEx : AllRows)
 		{
 			FString Value = GetColumnValue(*RowEx, Col.ColumnId);
-			if (!Value.IsEmpty())
+			if (Value.IsEmpty())
+			{
+				bHasEmptyValues = true;
+			}
+			else
 			{
 				UniqueValues.Add(Value);
 			}
+		}
+
+		// Add "(Empty)" option if there are empty values
+		if (bHasEmptyValues)
+		{
+			State->DropdownOptions.Add(MakeShared<FString>(TEXT("(Empty)")));
 		}
 
 		for (const FString& Value : UniqueValues)
@@ -801,24 +1037,20 @@ void SDialogueTableEditor::UpdateColumnFilterOptions()
 			State->DropdownOptions.Add(MakeShared<FString>(Value));
 		}
 
-		// Restore selection
-		if (PreviousSelection.IsValid())
+		// Restore valid selections (remove any that no longer exist)
+		TSet<FString> ValidSelections;
+		for (const FString& PrevSel : PreviousSelections)
 		{
-			bool bFound = false;
 			for (const auto& Option : State->DropdownOptions)
 			{
-				if (*Option == *PreviousSelection)
+				if (Option.IsValid() && *Option == PrevSel)
 				{
-					State->SelectedDropdownValue = Option;
-					bFound = true;
+					ValidSelections.Add(PrevSel);
 					break;
 				}
 			}
-			if (!bFound)
-			{
-				State->SelectedDropdownValue = State->DropdownOptions[0];
-			}
 		}
+		State->SelectedValues = ValidSelections;
 	}
 }
 
@@ -853,6 +1085,8 @@ FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, F
 		}
 		return Result;
 	}
+	if (ColumnId == TEXT("Skippable")) return Row.bSkippable ? TEXT("Yes") : TEXT("No");
+	if (ColumnId == TEXT("Notes")) return Row.Notes;
 	return TEXT("");
 }
 
@@ -868,10 +1102,12 @@ void SDialogueTableEditor::OnColumnTextFilterChanged(FName ColumnId, const FText
 
 void SDialogueTableEditor::OnColumnDropdownFilterChanged(FName ColumnId, TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
 {
+	// Legacy function - kept for compatibility but multi-select uses SelectedValues directly
 	FColumnFilterState* State = ColumnFilters.Find(ColumnId);
-	if (State)
+	if (State && NewValue.IsValid() && !NewValue->IsEmpty())
 	{
-		State->SelectedDropdownValue = NewValue;
+		State->SelectedValues.Empty();
+		State->SelectedValues.Add(*NewValue);
 		ApplyFilters();
 	}
 }
@@ -901,10 +1137,28 @@ void SDialogueTableEditor::ApplyFilters()
 				}
 			}
 
-			// Dropdown filter
-			if (FilterState.SelectedDropdownValue.IsValid() && !FilterState.SelectedDropdownValue->IsEmpty())
+			// Multi-select dropdown filter (empty = all pass, otherwise OR logic)
+			if (FilterState.SelectedValues.Num() > 0)
 			{
-				if (ColumnValue != *FilterState.SelectedDropdownValue)
+				bool bMatchesAny = false;
+				for (const FString& SelectedValue : FilterState.SelectedValues)
+				{
+					// Special handling for "(Empty)" filter
+					if (SelectedValue == TEXT("(Empty)"))
+					{
+						if (ColumnValue.IsEmpty())
+						{
+							bMatchesAny = true;
+							break;
+						}
+					}
+					else if (ColumnValue == SelectedValue)
+					{
+						bMatchesAny = true;
+						break;
+					}
+				}
+				if (!bMatchesAny)
 				{
 					bPassesAllFilters = false;
 					break;
@@ -968,10 +1222,28 @@ void SDialogueTableEditor::ApplyFlowOrder()
 				}
 			}
 
-			// Dropdown filter
-			if (FilterState.SelectedDropdownValue.IsValid() && !FilterState.SelectedDropdownValue->IsEmpty())
+			// Multi-select dropdown filter (empty = all pass, otherwise OR logic)
+			if (FilterState.SelectedValues.Num() > 0)
 			{
-				if (ColumnValue != *FilterState.SelectedDropdownValue)
+				bool bMatchesAny = false;
+				for (const FString& SelectedValue : FilterState.SelectedValues)
+				{
+					// Special handling for "(Empty)" filter
+					if (SelectedValue == TEXT("(Empty)"))
+					{
+						if (ColumnValue.IsEmpty())
+						{
+							bMatchesAny = true;
+							break;
+						}
+					}
+					else if (ColumnValue == SelectedValue)
+					{
+						bMatchesAny = true;
+						break;
+					}
+				}
+				if (!bMatchesAny)
 				{
 					bPassesAllFilters = false;
 					break;
@@ -1138,9 +1410,14 @@ FReply SDialogueTableEditor::OnAddRowClicked()
 	{
 		// No selection: Pre-fill DialogueID from filter if set
 		FColumnFilterState* DialogueFilter = ColumnFilters.Find(TEXT("DialogueID"));
-		if (DialogueFilter && DialogueFilter->SelectedDropdownValue.IsValid() && !DialogueFilter->SelectedDropdownValue->IsEmpty())
+		if (DialogueFilter && DialogueFilter->SelectedValues.Num() == 1)
 		{
-			NewRowEx->Data->DialogueID = FName(**DialogueFilter->SelectedDropdownValue);
+			// Use first selected value if only one is selected
+			for (const FString& Val : DialogueFilter->SelectedValues)
+			{
+				NewRowEx->Data->DialogueID = FName(*Val);
+				break;
+			}
 		}
 
 		// Generate unique NodeID for root node
@@ -1222,7 +1499,7 @@ FReply SDialogueTableEditor::OnDeleteRowsClicked()
 
 	// Show confirmation prompt
 	FText Message = FText::Format(
-		LOCTEXT("DeleteConfirm", "Are you sure you want to delete {0} node(s)?"),
+		LOCTEXT("DeleteConfirm", "Are you sure you want to delete {0} node(s)?\nChildren will be re-parented to the grandparent."),
 		FText::AsNumber(Selected.Num())
 	);
 
@@ -1231,7 +1508,7 @@ FReply SDialogueTableEditor::OnDeleteRowsClicked()
 		return FReply::Handled();
 	}
 
-	// Build node map for finding parents
+	// Build node map for finding parents and children
 	TMap<FName, TSharedPtr<FDialogueTableRowEx>> NodeMap;
 	for (const auto& Row : AllRows)
 	{
@@ -1247,15 +1524,41 @@ FReply SDialogueTableEditor::OnDeleteRowsClicked()
 	{
 		if (!RowEx->Data.IsValid()) continue;
 
-		// Remove this node's ID from parent's NextNodeIDs
-		if (!RowEx->Data->ParentNodeID.IsNone())
+		FName DeletedNodeID = RowEx->Data->NodeID;
+		FName GrandparentID = RowEx->Data->ParentNodeID;
+		FName DialogueID = RowEx->Data->DialogueID;
+
+		// Find parent and remove this node from parent's NextNodeIDs
+		TSharedPtr<FDialogueTableRowEx>* ParentPtr = nullptr;
+		if (!GrandparentID.IsNone())
 		{
 			FName ParentKey = FName(*FString::Printf(TEXT("%s.%s"),
-				*RowEx->Data->DialogueID.ToString(), *RowEx->Data->ParentNodeID.ToString()));
-			TSharedPtr<FDialogueTableRowEx>* ParentPtr = NodeMap.Find(ParentKey);
+				*DialogueID.ToString(), *GrandparentID.ToString()));
+			ParentPtr = NodeMap.Find(ParentKey);
 			if (ParentPtr && (*ParentPtr)->Data.IsValid())
 			{
-				(*ParentPtr)->Data->NextNodeIDs.Remove(RowEx->Data->NodeID);
+				(*ParentPtr)->Data->NextNodeIDs.Remove(DeletedNodeID);
+			}
+		}
+
+		// Re-parent children: update their ParentNodeID to grandparent, add them to grandparent's NextNodeIDs
+		for (const auto& Row : AllRows)
+		{
+			if (Row->Data.IsValid() &&
+				Row->Data->DialogueID == DialogueID &&
+				Row->Data->ParentNodeID == DeletedNodeID)
+			{
+				// This row's parent is being deleted - re-parent to grandparent
+				Row->Data->ParentNodeID = GrandparentID;
+
+				// Add this child to grandparent's NextNodeIDs (if grandparent exists)
+				if (ParentPtr && (*ParentPtr)->Data.IsValid())
+				{
+					if (!(*ParentPtr)->Data->NextNodeIDs.Contains(Row->Data->NodeID))
+					{
+						(*ParentPtr)->Data->NextNodeIDs.Add(Row->Data->NodeID);
+					}
+				}
 			}
 		}
 
@@ -1266,8 +1569,127 @@ FReply SDialogueTableEditor::OnDeleteRowsClicked()
 
 	CalculateSequences();
 	UpdateColumnFilterOptions();
-	RefreshList();  // Just refresh, don't re-sort
+	RefreshList();
 	MarkDirty();
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnDeleteBranchClicked()
+{
+	TArray<TSharedPtr<FDialogueTableRowEx>> Selected = GetSelectedRows();
+
+	if (Selected.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	// Collect all nodes to delete (selected + all descendants)
+	TSet<FName> NodesToDelete;  // DialogueID.NodeID keys
+
+	// Build node map
+	TMap<FName, TSharedPtr<FDialogueTableRowEx>> NodeMap;
+	for (const auto& Row : AllRows)
+	{
+		if (Row->Data.IsValid())
+		{
+			FName UniqueKey = FName(*FString::Printf(TEXT("%s.%s"),
+				*Row->Data->DialogueID.ToString(), *Row->Data->NodeID.ToString()));
+			NodeMap.Add(UniqueKey, Row);
+		}
+	}
+
+	// Recursive function to collect node and all descendants
+	TFunction<void(FName DialogueID, FName NodeID)> CollectBranch = [&](FName DialogueID, FName NodeID)
+	{
+		FName Key = FName(*FString::Printf(TEXT("%s.%s"), *DialogueID.ToString(), *NodeID.ToString()));
+		if (NodesToDelete.Contains(Key)) return;  // Already collected
+		NodesToDelete.Add(Key);
+
+		// Find all children (nodes whose ParentNodeID matches this NodeID)
+		for (const auto& Row : AllRows)
+		{
+			if (Row->Data.IsValid() &&
+				Row->Data->DialogueID == DialogueID &&
+				Row->Data->ParentNodeID == NodeID)
+			{
+				CollectBranch(DialogueID, Row->Data->NodeID);
+			}
+		}
+	};
+
+	// Collect all branches starting from selected nodes
+	for (const TSharedPtr<FDialogueTableRowEx>& RowEx : Selected)
+	{
+		if (RowEx->Data.IsValid())
+		{
+			CollectBranch(RowEx->Data->DialogueID, RowEx->Data->NodeID);
+		}
+	}
+
+	// Show confirmation with count
+	FText Message = FText::Format(
+		LOCTEXT("DeleteBranchConfirm", "Are you sure you want to delete {0} node(s) and ALL their descendants?\n(Total nodes to delete: {1})"),
+		FText::AsNumber(Selected.Num()),
+		FText::AsNumber(NodesToDelete.Num())
+	);
+
+	if (FMessageDialog::Open(EAppMsgType::YesNo, Message) != EAppReturnType::Yes)
+	{
+		return FReply::Handled();
+	}
+
+	// Remove from parent's NextNodeIDs for root nodes of deletion
+	for (const TSharedPtr<FDialogueTableRowEx>& RowEx : Selected)
+	{
+		if (!RowEx->Data.IsValid()) continue;
+
+		if (!RowEx->Data->ParentNodeID.IsNone())
+		{
+			FName ParentKey = FName(*FString::Printf(TEXT("%s.%s"),
+				*RowEx->Data->DialogueID.ToString(), *RowEx->Data->ParentNodeID.ToString()));
+			TSharedPtr<FDialogueTableRowEx>* ParentPtr = NodeMap.Find(ParentKey);
+			if (ParentPtr && (*ParentPtr)->Data.IsValid())
+			{
+				(*ParentPtr)->Data->NextNodeIDs.Remove(RowEx->Data->NodeID);
+			}
+		}
+	}
+
+	// Delete all collected nodes
+	AllRows.RemoveAll([&NodesToDelete](const TSharedPtr<FDialogueTableRowEx>& Row)
+	{
+		if (!Row->Data.IsValid()) return false;
+		FName Key = FName(*FString::Printf(TEXT("%s.%s"),
+			*Row->Data->DialogueID.ToString(), *Row->Data->NodeID.ToString()));
+		return NodesToDelete.Contains(Key);
+	});
+
+	DisplayedRows.RemoveAll([&NodesToDelete](const TSharedPtr<FDialogueTableRowEx>& Row)
+	{
+		if (!Row->Data.IsValid()) return false;
+		FName Key = FName(*FString::Printf(TEXT("%s.%s"),
+			*Row->Data->DialogueID.ToString(), *Row->Data->NodeID.ToString()));
+		return NodesToDelete.Contains(Key);
+	});
+
+	CalculateSequences();
+	UpdateColumnFilterOptions();
+	RefreshList();
+	MarkDirty();
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnClearFiltersClicked()
+{
+	// Clear all text and dropdown filters
+	for (auto& FilterPair : ColumnFilters)
+	{
+		FilterPair.Value.TextFilter.Empty();
+		FilterPair.Value.SelectedValues.Empty();  // Clear multi-select
+	}
+
+	// Apply filters to refresh the view
+	ApplyFlowOrder();
 	return FReply::Handled();
 }
 
@@ -1463,8 +1885,8 @@ bool SDialogueTableEditor::ExportToCSV(const FString& FilePath)
 {
 	FString CSV;
 
-	// Header
-	CSV += TEXT("DialogueID,NodeID,NodeType,Speaker,Text,OptionText,ParentNodeID,NextNodeIDs\n");
+	// Header (11 columns)
+	CSV += TEXT("DialogueID,NodeID,NodeType,Speaker,Text,OptionText,ParentNodeID,NextNodeIDs,Skippable,Notes\n");
 
 	// Rows
 	for (const TSharedPtr<FDialogueTableRowEx>& RowEx : AllRows)
@@ -1479,7 +1901,7 @@ bool SDialogueTableEditor::ExportToCSV(const FString& FilePath)
 			NextNodes += Row.NextNodeIDs[i].ToString();
 		}
 
-		CSV += FString::Printf(TEXT("%s,%s,%s,%s,%s,%s,%s,%s\n"),
+		CSV += FString::Printf(TEXT("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n"),
 			*EscapeCSVField(Row.DialogueID.ToString()),
 			*EscapeCSVField(Row.NodeID.ToString()),
 			Row.NodeType == EDialogueTableNodeType::NPC ? TEXT("npc") : TEXT("player"),
@@ -1487,7 +1909,9 @@ bool SDialogueTableEditor::ExportToCSV(const FString& FilePath)
 			*EscapeCSVField(Row.Text),
 			*EscapeCSVField(Row.OptionText),
 			*EscapeCSVField(Row.ParentNodeID.ToString()),
-			*EscapeCSVField(NextNodes)
+			*EscapeCSVField(NextNodes),
+			Row.bSkippable ? TEXT("yes") : TEXT("no"),
+			*EscapeCSVField(Row.Notes)
 		);
 	}
 
@@ -1567,6 +1991,19 @@ bool SDialogueTableEditor::ImportFromCSV(const FString& FilePath)
 				{
 					Row.NextNodeIDs.Add(FName(*Part));
 				}
+			}
+
+			// Skippable column (optional - default true)
+			if (Fields.Num() >= 9)
+			{
+				FString SkipVal = Fields[8].TrimStartAndEnd().ToLower();
+				Row.bSkippable = !SkipVal.Equals(TEXT("no")) && !SkipVal.Equals(TEXT("false")) && !SkipVal.Equals(TEXT("0"));
+			}
+
+			// Notes column (optional)
+			if (Fields.Num() >= 10)
+			{
+				Row.Notes = Fields[9].TrimStartAndEnd();
 			}
 
 			AllRows.Add(RowEx);

@@ -58,6 +58,14 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
 	TArray<FName> NextNodeIDs;
 
+	/** Whether the player can skip this dialogue line (default: true) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	bool bSkippable = true;
+
+	/** Designer notes - not exported to game, just for reference */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	FString Notes;
+
 	FDialogueTableRow()
 		: NodeType(EDialogueTableNodeType::NPC)
 	{

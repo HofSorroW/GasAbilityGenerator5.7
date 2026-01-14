@@ -1,5 +1,8 @@
-// GasAbilityGenerator v4.0
+// GasAbilityGenerator v4.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+//
+// v4.1 Features:
+// - Added Dialogue Table Editor - batch dialogue creation from CSV
 //
 // v4.0 Features:
 // - Added Quest Editor - visual editor for quest state machines
@@ -43,6 +46,9 @@ private:
 	/** Open the Quest Editor window */
 	void OpenQuestEditorWindow();
 
+	/** Open the Dialogue Table Editor window */
+	void OpenDialogueTableEditorWindow();
+
 	/** Spawn the plugin tab */
 	TSharedRef<SDockTab> OnSpawnPluginTab(const FSpawnTabArgs& SpawnTabArgs);
 
@@ -51,4 +57,7 @@ private:
 
 	/** Spawn the Quest Editor tab */
 	TSharedRef<SDockTab> OnSpawnQuestEditorTab(const FSpawnTabArgs& SpawnTabArgs);
+
+	/** Spawn the Dialogue Table Editor tab */
+	TSharedRef<SDockTab> OnSpawnDialogueTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);
 };

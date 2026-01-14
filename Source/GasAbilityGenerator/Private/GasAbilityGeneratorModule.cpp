@@ -1,5 +1,6 @@
-// GasAbilityGenerator v4.0
+// GasAbilityGenerator v4.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.1: Added Dialogue Table Editor - batch dialogue creation from CSV
 // v4.0: Added Quest Editor - visual editor for quest state machines
 // v3.10.0: Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
 
@@ -7,6 +8,7 @@
 #include "GasAbilityGeneratorWindow.h"
 #include "NPCTableEditor/SNPCTableEditor.h"
 #include "QuestEditor/SQuestEditor.h"
+#include "SDialogueTableEditor.h"
 #include "Modules/ModuleManager.h"
 #include "ToolMenus.h"
 #include "Framework/Docking/TabManager.h"
@@ -17,6 +19,7 @@
 static const FName GasAbilityGeneratorTabName("GasAbilityGenerator");
 static const FName NPCTableEditorTabName("NPCTableEditor");
 static const FName QuestEditorTabName("QuestEditor");
+static const FName DialogueTableEditorTabName("DialogueTableEditor");
 
 void FGasAbilityGeneratorModule::StartupModule()
 {
@@ -45,7 +48,14 @@ void FGasAbilityGeneratorModule::StartupModule()
 		.SetDisplayName(LOCTEXT("QuestEditorTabTitle", "Quest Editor"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
-	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v4.0 module loaded - Quest Editor"));
+	// Register the tab spawner for Dialogue Table Editor
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+		DialogueTableEditorTabName,
+		FOnSpawnTab::CreateRaw(this, &FGasAbilityGeneratorModule::OnSpawnDialogueTableEditorTab))
+		.SetDisplayName(LOCTEXT("DialogueTableEditorTabTitle", "Dialogue Table Editor"))
+		.SetMenuType(ETabSpawnerMenuType::Hidden);
+
+	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v4.1 module loaded - Dialogue Table Editor"));
 }
 
 void FGasAbilityGeneratorModule::ShutdownModule()
@@ -56,6 +66,7 @@ void FGasAbilityGeneratorModule::ShutdownModule()
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GasAbilityGeneratorTabName);
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(NPCTableEditorTabName);
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(QuestEditorTabName);
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(DialogueTableEditorTabName);
 
 	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] Module shutdown"));
 }
@@ -90,6 +101,13 @@ void FGasAbilityGeneratorModule::RegisterMenus()
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenQuestEditorWindow))
 		);
+		Section.AddMenuEntry(
+			"DialogueTableEditor",
+			LOCTEXT("DialogueTableEditorMenuLabel", "Dialogue Table Editor"),
+			LOCTEXT("DialogueTableEditorMenuTooltip", "Open the Dialogue Table Editor - batch dialogue creation from CSV"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenDialogueTableEditorWindow))
+		);
 	}
 }
 
@@ -106,6 +124,11 @@ void FGasAbilityGeneratorModule::OpenNPCTableEditorWindow()
 void FGasAbilityGeneratorModule::OpenQuestEditorWindow()
 {
 	FGlobalTabmanager::Get()->TryInvokeTab(QuestEditorTabName);
+}
+
+void FGasAbilityGeneratorModule::OpenDialogueTableEditorWindow()
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(DialogueTableEditorTabName);
 }
 
 TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnPluginTab(const FSpawnTabArgs& SpawnTabArgs)
@@ -132,6 +155,15 @@ TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnQuestEditorTab(const FSp
 		.TabRole(ETabRole::NomadTab)
 		[
 			SNew(SQuestEditorWindow)
+		];
+}
+
+TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnDialogueTableEditorTab(const FSpawnTabArgs& SpawnTabArgs)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		[
+			SNew(SDialogueTableEditorWindow)
 		];
 }
 

@@ -8,6 +8,8 @@
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Input/SNumericEntryBox.h"
+#include "Widgets/Input/SSlider.h"
+#include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -26,9 +28,16 @@
 #include "UObject/SavePackage.h"
 #include "AI/NPCDefinition.h"
 #include "GameplayTagContainer.h"
+#include "EngineUtils.h"  // For TActorIterator
 #include "GAS/AbilityConfiguration.h"
 #include "AI/Activities/NPCActivityConfiguration.h"
+#include "AI/Activities/NPCActivitySchedule.h"
+#include "BehaviorTree/BehaviorTree.h"
 #include "Spawners/NPCSpawner.h"
+#include "Spawners/NPCSpawnComponent.h"
+#include "Items/InventoryComponent.h"  // Contains UItemCollection
+#include "Character/CharacterAppearance.h"  // Contains UCharacterAppearanceBase
+#include "Navigation/POIActor.h"  // APOIActor for POI scanning
 #include "UnrealFramework/NarrativeNPCCharacter.h"
 #include "Engine/World.h"
 #include "Engine/Level.h"
@@ -59,118 +68,177 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 		return SNullWidget::NullWidget;
 	}
 
-	// 1. Status - colored indicator
+	//=========================================================================
+	// Core Identity (5 columns)
+	//=========================================================================
+
+	// 1. Status - read-only colored badge
 	if (ColumnName == TEXT("Status"))
 	{
 		return CreateStatusCell();
 	}
 
-	// 2. NPCName - asset name
+	// 2. NPCName - text input (required)
 	if (ColumnName == TEXT("NPCName"))
 	{
 		return CreateTextCell(RowData->NPCName, TEXT("NPC_Name"));
 	}
 
-	// 3. NPCId - unique identifier
+	// 3. NPCId - text input (required)
 	if (ColumnName == TEXT("NPCId"))
 	{
 		return CreateTextCell(RowData->NPCId, TEXT("npc_id"));
 	}
 
-	// 4. DisplayName - player-facing name
+	// 4. DisplayName - text input
 	if (ColumnName == TEXT("DisplayName"))
 	{
 		return CreateTextCell(RowData->DisplayName, TEXT("Display Name"));
 	}
 
-	// 5. Factions - use dedicated cell for short name <-> full tag conversion
-	if (ColumnName == TEXT("Factions"))
+	// 5. Blueprint - asset dropdown (NarrativeNPCCharacter classes)
+	if (ColumnName == TEXT("Blueprint"))
 	{
-		return CreateFactionsCell();
+		return CreateAssetDropdownCell(RowData->Blueprint, UBlueprint::StaticClass(), TEXT("BP_"));
 	}
 
-	// 6. OwnedTags - gameplay state tags (use similar pattern as Factions)
-	if (ColumnName == TEXT("OwnedTags"))
-	{
-		return CreateOwnedTagsCell();
-	}
+	//=========================================================================
+	// AI & Behavior (4 columns) - Asset dropdowns
+	//=========================================================================
 
-	// 7. AbilityConfig - dropdown select
+	// 6. AbilityConfig - asset dropdown (AC_*)
 	if (ColumnName == TEXT("AbilityConfig"))
 	{
 		return CreateAssetDropdownCell(RowData->AbilityConfig, UAbilityConfiguration::StaticClass(), TEXT("AC_"));
 	}
 
-	// 7. ActivityConfig - dropdown select
+	// 7. ActivityConfig - asset dropdown (ActConfig_*)
 	if (ColumnName == TEXT("ActivityConfig"))
 	{
 		return CreateAssetDropdownCell(RowData->ActivityConfig, UNPCActivityConfiguration::StaticClass(), TEXT("ActConfig_"));
 	}
 
-	// 9. NPCBlueprint - character blueprint dropdown
-	if (ColumnName == TEXT("NPCBlueprint"))
+	// 8. Schedule - asset dropdown (Schedule_*)
+	if (ColumnName == TEXT("Schedule"))
 	{
-		return CreateAssetDropdownCell(RowData->NPCBlueprint, UBlueprint::StaticClass(), TEXT("BP_"));
+		return CreateAssetDropdownCell(RowData->Schedule, UDataAsset::StaticClass(), TEXT("Schedule_"));
 	}
 
-	// 10. bIsVendor - vendor checkbox
+	// 9. BehaviorTree - asset dropdown (BT_*)
+	if (ColumnName == TEXT("BehaviorTree"))
+	{
+		return CreateAssetDropdownCell(RowData->BehaviorTree, UBehaviorTree::StaticClass(), TEXT("BT_"));
+	}
+
+	//=========================================================================
+	// Combat (3 columns)
+	//=========================================================================
+
+	// 10. LevelRange - dual spinbox "1-10"
+	if (ColumnName == TEXT("LevelRange"))
+	{
+		return CreateLevelRangeCell();
+	}
+
+	// 11. Factions - multi-select dropdown
+	if (ColumnName == TEXT("Factions"))
+	{
+		return CreateFactionsCell();
+	}
+
+	// 12. AttackPriority - float slider 0.0-1.0
+	if (ColumnName == TEXT("AttackPriority"))
+	{
+		return CreateFloatSliderCell(RowData->AttackPriority);
+	}
+
+	//=========================================================================
+	// Vendor (2 columns)
+	//=========================================================================
+
+	// 13. bIsVendor - checkbox
 	if (ColumnName == TEXT("bIsVendor"))
 	{
 		return CreateCheckboxCell(RowData->bIsVendor);
 	}
 
-	// 11. MinLevel - combat balance
-	if (ColumnName == TEXT("MinLevel"))
-	{
-		return CreateNumberCell(RowData->MinLevel);
-	}
-
-	// 12. MaxLevel - combat balance
-	if (ColumnName == TEXT("MaxLevel"))
-	{
-		return CreateNumberCell(RowData->MaxLevel);
-	}
-
-	// 13. AttackPriority - targeting priority (float)
-	if (ColumnName == TEXT("AttackPriority"))
-	{
-		return CreateFloatCell(RowData->AttackPriority);
-	}
-
-	// 14. DefaultCurrency - starting gold
-	if (ColumnName == TEXT("DefaultCurrency"))
-	{
-		return CreateNumberCell(RowData->DefaultCurrency);
-	}
-
-	// 15. TradingCurrency - vendor gold
-	if (ColumnName == TEXT("TradingCurrency"))
-	{
-		return CreateNumberCell(RowData->TradingCurrency);
-	}
-
-	// 16. ShopName - vendor shop name
+	// 14. ShopName - text input
 	if (ColumnName == TEXT("ShopName"))
 	{
 		return CreateTextCell(RowData->ShopName, TEXT("Shop Name"));
 	}
 
-	// 17. DefaultItems - starting equipment
+	//=========================================================================
+	// Items & Spawning (2 columns)
+	//=========================================================================
+
+	// 15. DefaultItems - multi-select dropdown (IC_*)
 	if (ColumnName == TEXT("DefaultItems"))
 	{
-		return CreateTextCell(RowData->DefaultItems, TEXT("EI_Sword, IC_Armor..."));
+		return CreateItemsCell();
 	}
 
-	// 18. Spawners - discovered spawners
-	if (ColumnName == TEXT("Spawners"))
+	// 16. SpawnerPOI - dropdown (POI tags)
+	if (ColumnName == TEXT("SpawnerPOI"))
 	{
-		return CreateTextCell(RowData->DiscoveredSpawners, TEXT("Spawner1, Spawner2..."));
+		return CreatePOIDropdownCell();
 	}
 
-	// 19. Notes - designer notes
+	//=========================================================================
+	// Meta (2 columns)
+	//=========================================================================
+
+	// 17. Appearance - asset dropdown
+	if (ColumnName == TEXT("Appearance"))
+	{
+		return CreateAssetDropdownCell(RowData->Appearance, UDataAsset::StaticClass(), TEXT("Appearance_"));
+	}
+
+	// 18. Notes - text input with tooltip preview for long text
 	if (ColumnName == TEXT("Notes"))
 	{
-		return CreateTextCell(RowData->Notes, TEXT("Notes..."));
+		// Store pointer to the string field for safe lambda capture
+		FString* ValuePtr = &RowData->Notes;
+
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			.ToolTipText_Lambda([ValuePtr]() -> FText
+			{
+				// Show full text as tooltip when hovering (useful for long notes)
+				if (ValuePtr->Len() > 30)
+				{
+					return FText::FromString(*ValuePtr);
+				}
+				return FText::GetEmpty();
+			})
+			[
+				SNew(SEditableTextBox)
+					.Text_Lambda([ValuePtr]() { return FText::FromString(*ValuePtr); })
+					.HintText(LOCTEXT("NotesHint", "Notes..."))
+					.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
+					{
+						if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+						{
+							FString NewValue = NewText.ToString();
+							if (NewValue != *ValuePtr)
+							{
+								// Confirmation prompt
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmNotes", "Change Notes from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
+										FText::FromString(ValuePtr->IsEmpty() ? TEXT("(Empty)") : *ValuePtr),
+										FText::FromString(NewValue.IsEmpty() ? TEXT("(Empty)") : NewValue)));
+
+								if (Result == EAppReturnType::Yes)
+								{
+									*ValuePtr = NewValue;
+									MarkModified();
+								}
+							}
+						}
+					})
+					.SelectAllTextWhenFocused(true)
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			];
 	}
 
 	return SNullWidget::NullWidget;
@@ -179,14 +247,7 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 TSharedRef<SWidget> SNPCTableRow::CreateStatusCell()
 {
 	FLinearColor StatusColor = RowData->GetStatusColor();
-
-	// If read-only (plugin content), show as "Plugin" with grey color
-	FString StatusText = RowData->Status;
-	if (RowData->bIsReadOnly)
-	{
-		StatusText = TEXT("Plugin");
-		StatusColor = FLinearColor(0.4f, 0.4f, 0.4f); // Grey
-	}
+	FString StatusText = RowData->GetStatusString();
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
@@ -208,7 +269,6 @@ TSharedRef<SWidget> SNPCTableRow::CreateTextCell(FString& Value, const FString& 
 {
 	// Store pointer to the string field for safe lambda capture
 	FString* ValuePtr = &Value;
-	bool bReadOnly = RowData.IsValid() && RowData->bIsReadOnly;
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
@@ -216,25 +276,36 @@ TSharedRef<SWidget> SNPCTableRow::CreateTextCell(FString& Value, const FString& 
 			SNew(SEditableTextBox)
 				.Text_Lambda([ValuePtr]() { return FText::FromString(*ValuePtr); })
 				.HintText(FText::FromString(Hint))
-				.IsReadOnly(bReadOnly)
-				.OnTextCommitted_Lambda([this, ValuePtr, bReadOnly](const FText& NewText, ETextCommit::Type)
+				.OnTextCommitted_Lambda([this, ValuePtr, Hint](const FText& NewText, ETextCommit::Type CommitType)
 				{
-					if (!bReadOnly)
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
 					{
-						*ValuePtr = NewText.ToString();
-						MarkModified();
+						FString NewValue = NewText.ToString();
+						if (NewValue != *ValuePtr)
+						{
+							// Confirmation prompt
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmTextChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the NPC as modified."),
+									FText::FromString(Hint),
+									FText::FromString(*ValuePtr),
+									FText::FromString(NewValue)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
 					}
 				})
-				.SelectAllTextWhenFocused(!bReadOnly)
+				.SelectAllTextWhenFocused(true)
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.ForegroundColor(bReadOnly ? FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)) : FSlateColor::UseForeground())
 		];
 }
 
 TSharedRef<SWidget> SNPCTableRow::CreateCheckboxCell(bool& Value)
 {
 	bool* ValuePtr = &Value;
-	bool bReadOnly = RowData.IsValid() && RowData->bIsReadOnly;
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
@@ -242,84 +313,23 @@ TSharedRef<SWidget> SNPCTableRow::CreateCheckboxCell(bool& Value)
 		[
 			SNew(SCheckBox)
 				.IsChecked_Lambda([ValuePtr]() { return *ValuePtr ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-				.IsEnabled(!bReadOnly)
-				.OnCheckStateChanged_Lambda([this, ValuePtr, bReadOnly](ECheckBoxState NewState)
+				.OnCheckStateChanged_Lambda([this, ValuePtr](ECheckBoxState NewState)
 				{
-					if (!bReadOnly)
+					bool bNewValue = (NewState == ECheckBoxState::Checked);
+					if (bNewValue != *ValuePtr)
 					{
-						*ValuePtr = (NewState == ECheckBoxState::Checked);
-						MarkModified();
+						// Confirmation prompt
+						FString Action = bNewValue ? TEXT("Enable") : TEXT("Disable");
+						EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+							FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmCheckbox", "{0} 'Is Vendor'?\n\nThis will mark the NPC as modified."),
+								FText::FromString(Action)));
+
+						if (Result == EAppReturnType::Yes)
+						{
+							*ValuePtr = bNewValue;
+							MarkModified();
+						}
 					}
-				})
-		];
-}
-
-TSharedRef<SWidget> SNPCTableRow::CreateNumberCell(int32& Value)
-{
-	int32* ValuePtr = &Value;
-
-	return SNew(SBox)
-		.Padding(FMargin(4.0f, 2.0f))
-		[
-			SNew(SEditableTextBox)
-				.Text_Lambda([ValuePtr]() { return FText::AsNumber(*ValuePtr); })
-				.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type)
-				{
-					*ValuePtr = FCString::Atoi(*NewText.ToString());
-					MarkModified();
-				})
-				.SelectAllTextWhenFocused(true)
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.Justification(ETextJustify::Right)
-		];
-}
-
-TSharedRef<SWidget> SNPCTableRow::CreateFloatCell(float& Value)
-{
-	return SNew(SBox)
-		.Padding(FMargin(4.0f, 2.0f))
-		[
-			SNew(SEditableText)
-				.Text_Lambda([&Value]() { return FText::AsNumber(Value); })
-				.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
-				{
-					Value = FCString::Atof(*NewText.ToString());
-					MarkModified();
-				})
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.Justification(ETextJustify::Right)
-		];
-}
-
-TSharedRef<SWidget> SNPCTableRow::CreateAssetPickerCell(FSoftObjectPath& Value, UClass* AllowedClass)
-{
-	// Display asset name as clickable text
-	// TODO: Could be improved with SObjectPropertyEntryBox for proper picker
-	return SNew(SBox)
-		.Padding(FMargin(4.0f, 2.0f))
-		[
-			SNew(SEditableText)
-				.Text_Lambda([&Value]()
-				{
-					if (Value.IsNull()) return FText::FromString(TEXT("(None)"));
-					return FText::FromString(Value.GetAssetName());
-				})
-				.HintText(LOCTEXT("PickAsset", "Click to pick asset..."))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.7f, 1.0f)))
-				.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
-				{
-					// Allow manual path entry for now
-					FString PathStr = NewText.ToString();
-					if (PathStr.IsEmpty() || PathStr == TEXT("(None)"))
-					{
-						Value.Reset();
-					}
-					else
-					{
-						Value.SetPath(PathStr);
-					}
-					MarkModified();
 				})
 		];
 }
@@ -328,8 +338,6 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 {
 	// Display short faction names (e.g., "Friendly, Town")
 	// When editing, user can enter short names and they get converted to full tags
-	bool bReadOnly = RowData.IsValid() && RowData->bIsReadOnly;
-
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
@@ -341,48 +349,200 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 				})
 				.HintText(LOCTEXT("FactionHint", "Friendly, Town"))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.IsReadOnly(bReadOnly)
-				.SelectAllTextWhenFocused(!bReadOnly)
-				.ForegroundColor(bReadOnly ? FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)) : FSlateColor::UseForeground())
-				.OnTextCommitted_Lambda([this, bReadOnly](const FText& NewText, ETextCommit::Type CommitType)
+				.SelectAllTextWhenFocused(true)
+				.OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type CommitType)
 				{
-					if (!bReadOnly && (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus))
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
 					{
-						// Convert short names to full tags when committed
-						RowData->SetFactionsFromDisplay(NewText.ToString());
-						MarkModified();
+						FString NewValue = NewText.ToString();
+						FString CurrentValue = RowData->GetFactionsDisplay();
+						if (NewValue != CurrentValue)
+						{
+							// Confirmation prompt
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmFactions", "Change Factions from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
+									FText::FromString(CurrentValue),
+									FText::FromString(NewValue)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								// Convert short names to full tags when committed
+								RowData->SetFactionsFromDisplay(NewValue);
+								MarkModified();
+							}
+						}
 					}
 				})
 		];
 }
 
-TSharedRef<SWidget> SNPCTableRow::CreateOwnedTagsCell()
+TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 {
-	// Display short tag names (e.g., "Invulnerable, Guard")
-	// When editing, user can enter short names and they get converted to full tags
-	bool bReadOnly = RowData.IsValid() && RowData->bIsReadOnly;
+	// Combined MinLevel-MaxLevel display using two spinboxes
+	return SNew(SBox)
+		.Padding(FMargin(2.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNew(SSpinBox<int32>)
+					.MinValue(1)
+					.MaxValue(100)
+					.Value_Lambda([this]() { return RowData->MinLevel; })
+					.OnValueChanged_Lambda([this](int32 NewValue)
+					{
+						RowData->MinLevel = NewValue;
+						// Ensure MaxLevel >= MinLevel
+						if (RowData->MaxLevel < NewValue)
+						{
+							RowData->MaxLevel = NewValue;
+						}
+						MarkModified();
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f, 0.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+					.Text(FText::FromString(TEXT("-")))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNew(SSpinBox<int32>)
+					.MinValue(1)
+					.MaxValue(100)
+					.Value_Lambda([this]() { return RowData->MaxLevel; })
+					.OnValueChanged_Lambda([this](int32 NewValue)
+					{
+						RowData->MaxLevel = NewValue;
+						// Ensure MinLevel <= MaxLevel
+						if (RowData->MinLevel > NewValue)
+						{
+							RowData->MinLevel = NewValue;
+						}
+						MarkModified();
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			]
+		];
+}
 
+TSharedRef<SWidget> SNPCTableRow::CreateFloatSliderCell(float& Value)
+{
+	float* ValuePtr = &Value;
+
+	return SNew(SBox)
+		.Padding(FMargin(2.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNew(SSlider)
+					.MinValue(0.0f)
+					.MaxValue(1.0f)
+					.Value_Lambda([ValuePtr]() { return *ValuePtr; })
+					.OnValueChanged_Lambda([this, ValuePtr](float NewValue)
+					{
+						*ValuePtr = NewValue;
+						MarkModified();
+					})
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+					.Text_Lambda([ValuePtr]()
+					{
+						return FText::FromString(FString::Printf(TEXT("%.1f"), *ValuePtr));
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+					.MinDesiredWidth(25.0f)
+			]
+		];
+}
+
+TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
+{
+	// Multi-select dropdown for IC_* item collections
+	// For now, simple text input (can be enhanced with actual dropdown later)
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableTextBox)
 				.Text_Lambda([this]() -> FText
 				{
-					// Show short names for display
-					return FText::FromString(RowData->GetOwnedTagsDisplay());
+					return FText::FromString(RowData->DefaultItems);
 				})
-				.HintText(LOCTEXT("OwnedTagsHint", "Invulnerable, Guard"))
+				.HintText(LOCTEXT("ItemsHint", "IC_Weapons, IC_Armor"))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.IsReadOnly(bReadOnly)
-				.SelectAllTextWhenFocused(!bReadOnly)
-				.ForegroundColor(bReadOnly ? FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)) : FSlateColor::UseForeground())
-				.OnTextCommitted_Lambda([this, bReadOnly](const FText& NewText, ETextCommit::Type CommitType)
+				.SelectAllTextWhenFocused(true)
+				.OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type CommitType)
 				{
-					if (!bReadOnly && (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus))
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
 					{
-						// Convert short names to full tags when committed
-						RowData->SetOwnedTagsFromDisplay(NewText.ToString());
-						MarkModified();
+						FString NewValue = NewText.ToString();
+						if (NewValue != RowData->DefaultItems)
+						{
+							// Confirmation prompt
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmItems", "Change Default Items from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
+									FText::FromString(RowData->DefaultItems),
+									FText::FromString(NewValue)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								RowData->DefaultItems = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+		];
+}
+
+TSharedRef<SWidget> SNPCTableRow::CreatePOIDropdownCell()
+{
+	// Dropdown for POI selection from level
+	// For now, simple text input (POI dropdown can be enhanced later)
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SEditableTextBox)
+				.Text_Lambda([this]() -> FText
+				{
+					return FText::FromString(RowData->SpawnerPOI);
+				})
+				.HintText(LOCTEXT("POIHint", "POI_Blacksmith"))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.SelectAllTextWhenFocused(true)
+				.OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						if (NewValue != RowData->SpawnerPOI)
+						{
+							// Confirmation prompt
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmPOI", "Change Spawner POI from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
+									FText::FromString(RowData->SpawnerPOI.IsEmpty() ? TEXT("(None)") : RowData->SpawnerPOI),
+									FText::FromString(NewValue.IsEmpty() ? TEXT("(None)") : NewValue)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								RowData->SpawnerPOI = NewValue;
+								MarkModified();
+							}
+						}
 					}
 				})
 		];
@@ -408,8 +568,17 @@ TSharedRef<SWidget> SNPCTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value
 						FSlateIcon(),
 						FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
 						{
-							ValuePtr->Reset();
-							MarkModified();
+							// Confirmation prompt
+							FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClear", "Clear '{0}' and set to (None)?\n\nThis will mark the NPC as modified."),
+									FText::FromString(CurrentValue)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								ValuePtr->Reset();
+								MarkModified();
+							}
 						}))
 					);
 
@@ -429,10 +598,20 @@ TSharedRef<SWidget> SNPCTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value
 							FText::FromString(AssetName),
 							FText::FromString(Asset.GetObjectPathString()),
 							FSlateIcon(),
-							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath]()
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
 							{
-								*ValuePtr = AssetPath;
-								MarkModified();
+								// Confirmation prompt
+								FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmChange", "Change from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
+										FText::FromString(CurrentValue),
+										FText::FromString(AssetName)));
+
+								if (Result == EAppReturnType::Yes)
+								{
+									*ValuePtr = AssetPath;
+									MarkModified();
+								}
 							}))
 						);
 					}
@@ -453,9 +632,9 @@ TSharedRef<SWidget> SNPCTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value
 
 void SNPCTableRow::MarkModified()
 {
-	if (RowData.IsValid() && RowData->Status != TEXT("New"))
+	if (RowData.IsValid() && RowData->Status != ENPCTableRowStatus::New)
 	{
-		RowData->Status = TEXT("Modified");
+		RowData->Status = ENPCTableRowStatus::Modified;
 	}
 	OnRowModified.ExecuteIfBound();
 }
@@ -468,6 +647,8 @@ void SNPCTableEditor::Construct(const FArguments& InArgs)
 {
 	TableData = InArgs._TableData;
 	SyncFromTableData();
+	InitializeColumnFilters();
+	UpdateColumnFilterOptions();
 
 	ChildSlot
 	[
@@ -481,34 +662,23 @@ void SNPCTableEditor::Construct(const FArguments& InArgs)
 			BuildToolbar()
 		]
 
-		// Separator (filters are now integrated into header row)
+		// Separator
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
 			SNew(SSeparator)
 		]
 
-		// Table - fills available space
+		// Table - fills entire width (no horizontal scroll wrapper)
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
 		[
-			SNew(SBox)
-			.HAlign(HAlign_Fill)
-			.VAlign(VAlign_Fill)
-			[
-				SNew(SScrollBox)
-					.Orientation(Orient_Horizontal)
-					+ SScrollBox::Slot()
-					.FillSize(1.0f)
-					[
-						SAssignNew(ListView, SListView<TSharedPtr<FNPCTableRow>>)
-							.ListItemsSource(&DisplayedRows)
-							.OnGenerateRow(this, &SNPCTableEditor::OnGenerateRow)
-							.OnSelectionChanged(this, &SNPCTableEditor::OnSelectionChanged)
-							.SelectionMode(ESelectionMode::Multi)
-							.HeaderRow(BuildHeaderRow())
-					]
-			]
+			SAssignNew(ListView, SListView<TSharedPtr<FNPCTableRow>>)
+				.ListItemsSource(&DisplayedRows)
+				.OnGenerateRow(this, &SNPCTableEditor::OnGenerateRow)
+				.OnSelectionChanged(this, &SNPCTableEditor::OnSelectionChanged)
+				.SelectionMode(ESelectionMode::Multi)
+				.HeaderRow(BuildHeaderRow())
 		]
 
 		// Status bar
@@ -527,12 +697,15 @@ void SNPCTableEditor::SetTableData(UNPCTableData* InTableData)
 {
 	TableData = InTableData;
 	SyncFromTableData();
+	UpdateColumnFilterOptions();
+	ApplyFilters();
 }
 
 TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 {
 	return SNew(SHorizontalBox)
 
+		// LEFT SIDE - Data actions
 		// Add Row
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -565,13 +738,34 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
 		]
 
-		// Spacer
+		// Vertical separator
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SSeparator)
+				.Orientation(Orient_Vertical)
+		]
+
+		// Clear Filters button
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("ClearFilters", "Clear Filters"))
+				.OnClicked(this, &SNPCTableEditor::OnClearFiltersClicked)
+				.ToolTipText(LOCTEXT("ClearFiltersTip", "Reset all column filters"))
+		]
+
+		// SPACER - pushes right side buttons to the right
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.0f)
 		[
 			SNullWidget::NullWidget
 		]
 
+		// RIGHT SIDE - Generation/IO actions
 		// Generate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -645,135 +839,15 @@ TSharedRef<SHeaderRow> SNPCTableEditor::BuildHeaderRow()
 
 	for (const FNPCTableColumn& Col : Columns)
 	{
-		// Create header content with column label + integrated filter
-		TSharedRef<SWidget> HeaderContent = SNew(SVerticalBox)
-			// Column label
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 2.0f)
-			[
-				SNew(STextBlock)
-					.Text(Col.DisplayName)
-					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
-			]
-			// Filter row (integrated into header)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 2.0f, 0.0f, 4.0f)
-			[
-				SNew(SBorder)
-					// Yellow background when filter is active
-					.BorderBackgroundColor_Lambda([this, ColumnId = Col.ColumnId]() -> FSlateColor
-					{
-						bool bHasTextFilter = ColumnFilters.Contains(ColumnId);
-						bool bHasSelectionFilter = ColumnSelectionFilters.Contains(ColumnId);
-						if (bHasTextFilter || bHasSelectionFilter)
-						{
-							return FSlateColor(FLinearColor(0.8f, 0.6f, 0.1f, 0.3f)); // Yellow tint
-						}
-						return FSlateColor(FLinearColor::Transparent);
-					})
-					.Padding(2.0f)
-					[
-						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot()
-						.FillWidth(1.0f)
-						[
-							SNew(SEditableTextBox)
-								.HintText(LOCTEXT("FilterHintShort", "Filter..."))
-								.OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText)
-								{
-									OnColumnFilterChanged(NewText, ColumnId);
-								})
-								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-						]
-						+ SHorizontalBox::Slot()
-						.AutoWidth()
-						[
-							SNew(SComboButton)
-								.HasDownArrow(true)
-								.ContentPadding(FMargin(1.0f, 0.0f))
-								.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-								.OnGetMenuContent_Lambda([this, ColumnId = Col.ColumnId]() -> TSharedRef<SWidget>
-								{
-									TArray<FString> UniqueValues = GetUniqueColumnValues(ColumnId);
-									TSet<FString>* SelectionSet = ColumnSelectionFilters.Find(ColumnId);
-
-							FMenuBuilder MenuBuilder(true, nullptr);
-							MenuBuilder.AddMenuEntry(
-								LOCTEXT("SelectAll", "Select All"),
-								FText::GetEmpty(),
-								FSlateIcon(),
-								FUIAction(FExecuteAction::CreateLambda([this, ColumnId]()
-								{
-									ColumnSelectionFilters.Remove(ColumnId);
-									ApplyFilters();
-								}))
-							);
-							MenuBuilder.AddMenuEntry(
-								LOCTEXT("ClearAll", "Clear All"),
-								FText::GetEmpty(),
-								FSlateIcon(),
-								FUIAction(FExecuteAction::CreateLambda([this, ColumnId]()
-								{
-									ColumnSelectionFilters.Add(ColumnId, TSet<FString>());
-									ApplyFilters();
-								}))
-							);
-							MenuBuilder.AddSeparator();
-							for (const FString& Value : UniqueValues)
-							{
-								MenuBuilder.AddMenuEntry(
-									FText::FromString(Value.IsEmpty() ? TEXT("(Empty)") : Value),
-									FText::GetEmpty(),
-									FSlateIcon(),
-									FUIAction(
-										FExecuteAction::CreateLambda([this, ColumnId, Value]()
-										{
-											TSet<FString>& Set = ColumnSelectionFilters.FindOrAdd(ColumnId);
-											if (Set.Num() == 0)
-											{
-												TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
-												for (const FString& V : AllValues) Set.Add(V);
-											}
-											if (Set.Contains(Value)) Set.Remove(Value);
-											else Set.Add(Value);
-											TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
-											if (Set.Num() == AllValues.Num()) ColumnSelectionFilters.Remove(ColumnId);
-											ApplyFilters();
-										}),
-										FCanExecuteAction(),
-										FIsActionChecked::CreateLambda([this, ColumnId, Value]()
-										{
-											TSet<FString>* Set = ColumnSelectionFilters.Find(ColumnId);
-											return !Set || Set->Contains(Value);
-										})
-									),
-									NAME_None,
-									EUserInterfaceActionType::ToggleButton
-								);
-							}
-							return MenuBuilder.MakeWidget();
-						})
-								.ButtonContent()
-								[
-									SNew(SImage)
-										.Image(FAppStyle::GetBrush("Icons.Filter"))
-										.DesiredSizeOverride(FVector2D(10, 10))
-								]
-						]
-					]  // Close SBorder
-				];
-
 		Header->AddColumn(
 			SHeaderRow::Column(Col.ColumnId)
-				.DefaultTooltip(Col.DisplayName)
-				.ManualWidth(Col.DefaultWidth)
+				.DefaultLabel(Col.DisplayName)
+				.FillWidth(Col.DefaultWidth)  // Proportional fill width
 				.SortMode(this, &SNPCTableEditor::GetColumnSortMode, Col.ColumnId)
 				.OnSort(this, &SNPCTableEditor::OnColumnSortModeChanged)
 				.HeaderContent()
 				[
-					HeaderContent
+					BuildColumnHeaderContent(Col)
 				]
 		);
 	}
@@ -782,183 +856,319 @@ TSharedRef<SHeaderRow> SNPCTableEditor::BuildHeaderRow()
 	return Header;
 }
 
-TSharedRef<SWidget> SNPCTableEditor::BuildFilterRow()
+TSharedRef<SWidget> SNPCTableEditor::BuildColumnHeaderContent(const FNPCTableColumn& Col)
 {
-	TSharedRef<SHorizontalBox> FilterRow = SNew(SHorizontalBox);
+	FNPCColumnFilterState& FilterState = ColumnFilters.FindOrAdd(Col.ColumnId);
 
+	return SNew(SVerticalBox)
+
+		// 1. Column name
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(2.0f)
+		[
+			SNew(STextBlock)
+				.Text(Col.DisplayName)
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+		]
+
+		// 2. Text filter (live filtering - OnTextChanged)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(2.0f, 1.0f)
+		[
+			SNew(SEditableText)
+				.HintText(LOCTEXT("FilterHint", "Filter..."))
+				.OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText)
+				{
+					OnColumnTextFilterChanged(ColumnId, NewText);
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+		]
+
+		// 3. Multi-select dropdown (SComboButton with checkbox menu)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(2.0f, 1.0f)
+		[
+			SNew(SComboButton)
+				.OnGetMenuContent_Lambda([this, ColumnId = Col.ColumnId]() -> TSharedRef<SWidget>
+				{
+					FNPCColumnFilterState* State = ColumnFilters.Find(ColumnId);
+					if (!State)
+					{
+						return SNullWidget::NullWidget;
+					}
+
+					TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+					// Header with All/None buttons
+					MenuContent->AddSlot()
+					.AutoHeight()
+					.Padding(4.0f, 2.0f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+								.Text(LOCTEXT("SelectAll", "All"))
+								.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+								.OnClicked_Lambda([this, ColumnId]()
+								{
+									FNPCColumnFilterState* S = ColumnFilters.Find(ColumnId);
+									if (S) S->SelectedValues.Empty();
+									ApplyFilters();
+									return FReply::Handled();
+								})
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(4.0f, 0.0f)
+						[
+							SNew(SButton)
+								.Text(LOCTEXT("ClearSel", "None"))
+								.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+								.OnClicked_Lambda([this, ColumnId]()
+								{
+									FNPCColumnFilterState* S = ColumnFilters.Find(ColumnId);
+									if (S)
+									{
+										// Mark all as deselected by putting empty string marker
+										S->SelectedValues.Empty();
+										S->SelectedValues.Add(TEXT("__NONE_SELECTED__"));
+									}
+									ApplyFilters();
+									return FReply::Handled();
+								})
+						]
+					];
+
+					// Separator
+					MenuContent->AddSlot()
+					.AutoHeight()
+					[
+						SNew(SSeparator)
+					];
+
+					// Get unique values for this column
+					TArray<FString> UniqueValues = GetUniqueColumnValues(ColumnId);
+
+					// Checkboxes for each option (including Empty)
+					for (const FString& OptionValue : UniqueValues)
+					{
+						FString DisplayText = OptionValue.IsEmpty() ? TEXT("(Empty)") : OptionValue;
+
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(4.0f, 1.0f)
+						[
+							SNew(SCheckBox)
+								.IsChecked_Lambda([this, ColumnId, OptionValue]()
+								{
+									FNPCColumnFilterState* S = ColumnFilters.Find(ColumnId);
+									if (!S || S->SelectedValues.Num() == 0)
+									{
+										return ECheckBoxState::Checked;  // Empty = all selected
+									}
+									if (S->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+									{
+										return ECheckBoxState::Unchecked;  // None selected marker
+									}
+									return S->SelectedValues.Contains(OptionValue)
+										? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+								})
+								.OnCheckStateChanged_Lambda([this, ColumnId, OptionValue](ECheckBoxState NewState)
+								{
+									OnColumnDropdownFilterChanged(ColumnId, OptionValue, NewState == ECheckBoxState::Checked);
+								})
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(DisplayText))
+										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+								]
+						];
+					}
+
+					return SNew(SBox)
+						.MaxDesiredHeight(300.0f)
+						[
+							SNew(SScrollBox)
+							+ SScrollBox::Slot()
+							[
+								MenuContent
+							]
+						];
+				})
+				.ButtonContent()
+				[
+					SNew(STextBlock)
+						.Text_Lambda([this, ColumnId = Col.ColumnId]()
+						{
+							FNPCColumnFilterState* State = ColumnFilters.Find(ColumnId);
+							if (!State || State->SelectedValues.Num() == 0)
+							{
+								return LOCTEXT("AllFilter", "(All)");
+							}
+							if (State->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+							{
+								return LOCTEXT("NoneFilter", "(None)");
+							}
+							if (State->SelectedValues.Num() == 1)
+							{
+								FString Val = *State->SelectedValues.CreateConstIterator();
+								return FText::FromString(Val.IsEmpty() ? TEXT("(Empty)") : Val);
+							}
+							return FText::Format(LOCTEXT("MultiSelect", "({0} selected)"),
+								FText::AsNumber(State->SelectedValues.Num()));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+				]
+		];
+}
+
+void SNPCTableEditor::InitializeColumnFilters()
+{
+	TArray<FNPCTableColumn> Columns = GetNPCTableColumns();
+	for (const FNPCTableColumn& Col : Columns)
+	{
+		FNPCColumnFilterState& State = ColumnFilters.Add(Col.ColumnId);
+		State.DropdownOptions.Add(MakeShared<FString>(TEXT(""))); // "(All)" option placeholder
+	}
+}
+
+void SNPCTableEditor::UpdateColumnFilterOptions()
+{
 	TArray<FNPCTableColumn> Columns = GetNPCTableColumns();
 
 	for (const FNPCTableColumn& Col : Columns)
 	{
-		FilterRow->AddSlot()
-			.AutoWidth()
-			.Padding(2.0f, 0.0f)
-			[
-				SNew(SBox)
-				.WidthOverride(Col.DefaultWidth)  // Match column width
-				[
-					SNew(SHorizontalBox)
+		FNPCColumnFilterState* State = ColumnFilters.Find(Col.ColumnId);
+		if (!State) continue;
 
-					// Text filter
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(SEditableTextBox)
-							.HintText(FText::Format(LOCTEXT("FilterHint", "Filter {0}..."), Col.DisplayName))
-							.OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText)
-							{
-								OnColumnFilterChanged(NewText, ColumnId);
-							})
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-					]
+		State->DropdownOptions.Empty();
+		State->DropdownOptions.Add(MakeShared<FString>(TEXT(""))); // "(All)"
 
-					// Checkbox dropdown button
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					[
-						SNew(SComboButton)
-							.HasDownArrow(true)
-							.ContentPadding(FMargin(2.0f, 0.0f))
-							.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-							.OnGetMenuContent_Lambda([this, ColumnId = Col.ColumnId]() -> TSharedRef<SWidget>
-						{
-							TArray<FString> UniqueValues = GetUniqueColumnValues(ColumnId);
-							TSet<FString>* SelectionSet = ColumnSelectionFilters.Find(ColumnId);
+		TSet<FString> UniqueValues;
+		for (const auto& Row : AllRows)
+		{
+			FString Value = GetColumnValue(Row, Col.ColumnId);
+			UniqueValues.Add(Value);
+		}
 
-							FMenuBuilder MenuBuilder(true, nullptr);
+		TArray<FString> SortedValues = UniqueValues.Array();
+		SortedValues.Sort();
 
-							// Select All / Clear All
-							MenuBuilder.AddMenuEntry(
-								LOCTEXT("SelectAll", "Select All"),
-								FText::GetEmpty(),
-								FSlateIcon(),
-								FUIAction(FExecuteAction::CreateLambda([this, ColumnId, UniqueValues]()
-								{
-									ColumnSelectionFilters.Remove(ColumnId);
-									ApplyFilters();
-								}))
-							);
-
-							MenuBuilder.AddMenuEntry(
-								LOCTEXT("ClearAll", "Clear All"),
-								FText::GetEmpty(),
-								FSlateIcon(),
-								FUIAction(FExecuteAction::CreateLambda([this, ColumnId]()
-								{
-									ColumnSelectionFilters.Add(ColumnId, TSet<FString>());
-									ApplyFilters();
-								}))
-							);
-
-							MenuBuilder.AddSeparator();
-
-							// Checkbox for each unique value
-							for (const FString& Value : UniqueValues)
-							{
-								bool bIsChecked = !SelectionSet || SelectionSet->Contains(Value);
-
-								MenuBuilder.AddMenuEntry(
-									FText::FromString(Value.IsEmpty() ? TEXT("(Empty)") : Value),
-									FText::GetEmpty(),
-									FSlateIcon(),
-									FUIAction(
-										FExecuteAction::CreateLambda([this, ColumnId, Value]()
-										{
-											TSet<FString>& Set = ColumnSelectionFilters.FindOrAdd(ColumnId);
-
-											// If set is empty, initialize with all values
-											if (Set.Num() == 0)
-											{
-												TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
-												for (const FString& V : AllValues)
-												{
-													Set.Add(V);
-												}
-											}
-
-											// Toggle the value
-											if (Set.Contains(Value))
-											{
-												Set.Remove(Value);
-											}
-											else
-											{
-												Set.Add(Value);
-											}
-
-											// If all values selected, remove the filter
-											TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
-											if (Set.Num() == AllValues.Num())
-											{
-												ColumnSelectionFilters.Remove(ColumnId);
-											}
-
-											ApplyFilters();
-										}),
-										FCanExecuteAction(),
-										FIsActionChecked::CreateLambda([this, ColumnId, Value]()
-										{
-											TSet<FString>* Set = ColumnSelectionFilters.Find(ColumnId);
-											return !Set || Set->Contains(Value);
-										})
-									),
-									NAME_None,
-									EUserInterfaceActionType::ToggleButton
-								);
-							}
-
-							return MenuBuilder.MakeWidget();
-						})
-						.ButtonContent()
-						[
-							SNew(SImage)
-								.Image(FAppStyle::GetBrush("Icons.Filter"))
-								.DesiredSizeOverride(FVector2D(12, 12))
-						]
-				]
-			]  // Close SBox
-		];
+		for (const FString& Value : SortedValues)
+		{
+			State->DropdownOptions.Add(MakeShared<FString>(Value));
+		}
 	}
-
-	return FilterRow;
 }
 
-void SNPCTableEditor::OnColumnFilterChanged(const FText& NewText, FName ColumnId)
+void SNPCTableEditor::OnColumnTextFilterChanged(FName ColumnId, const FText& NewText)
 {
-	FString FilterText = NewText.ToString();
-	if (FilterText.IsEmpty())
+	FNPCColumnFilterState* State = ColumnFilters.Find(ColumnId);
+	if (State)
 	{
-		ColumnFilters.Remove(ColumnId);
+		State->TextFilter = NewText.ToString();
+		ApplyFilters();
+	}
+}
+
+void SNPCTableEditor::OnColumnDropdownFilterChanged(FName ColumnId, const FString& Value, bool bIsSelected)
+{
+	FNPCColumnFilterState* State = ColumnFilters.Find(ColumnId);
+	if (!State) return;
+
+	// Handle special case: if currently showing all, initialize with all values then toggle
+	if (State->SelectedValues.Num() == 0 || State->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+	{
+		State->SelectedValues.Empty();
+		if (bIsSelected)
+		{
+			// Just add this single value
+			State->SelectedValues.Add(Value);
+		}
+		else
+		{
+			// Initialize with all values except this one
+			TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
+			for (const FString& V : AllValues)
+			{
+				if (V != Value)
+				{
+					State->SelectedValues.Add(V);
+				}
+			}
+		}
 	}
 	else
 	{
-		ColumnFilters.Add(ColumnId, FilterText);
+		// Toggle the specific value
+		if (bIsSelected)
+		{
+			State->SelectedValues.Add(Value);
+		}
+		else
+		{
+			State->SelectedValues.Remove(Value);
+		}
+	}
+
+	// If all values are selected, clear the filter (show all)
+	TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
+	if (State->SelectedValues.Num() == AllValues.Num())
+	{
+		State->SelectedValues.Empty();
+	}
+
+	ApplyFilters();
+}
+
+FReply SNPCTableEditor::OnClearFiltersClicked()
+{
+	for (auto& FilterPair : ColumnFilters)
+	{
+		FilterPair.Value.TextFilter.Empty();
+		FilterPair.Value.SelectedValues.Empty();
 	}
 	ApplyFilters();
+	return FReply::Handled();
 }
 
 FString SNPCTableEditor::GetColumnValue(const TSharedPtr<FNPCTableRow>& Row, FName ColumnId) const
 {
 	if (!Row.IsValid()) return TEXT("");
 
-	if (ColumnId == TEXT("Status")) return Row->bIsReadOnly ? TEXT("Plugin") : Row->Status;
+	// Core Identity (5)
+	if (ColumnId == TEXT("Status")) return Row->GetStatusString();
 	if (ColumnId == TEXT("NPCName")) return Row->NPCName;
 	if (ColumnId == TEXT("NPCId")) return Row->NPCId;
 	if (ColumnId == TEXT("DisplayName")) return Row->DisplayName;
-	if (ColumnId == TEXT("Factions")) return Row->GetFactionsDisplay();
-	if (ColumnId == TEXT("OwnedTags")) return Row->GetOwnedTagsDisplay();
+	if (ColumnId == TEXT("Blueprint")) return Row->Blueprint.IsNull() ? TEXT("") : Row->Blueprint.GetAssetName();
+
+	// AI & Behavior (4)
 	if (ColumnId == TEXT("AbilityConfig")) return Row->AbilityConfig.IsNull() ? TEXT("") : Row->AbilityConfig.GetAssetName();
 	if (ColumnId == TEXT("ActivityConfig")) return Row->ActivityConfig.IsNull() ? TEXT("") : Row->ActivityConfig.GetAssetName();
-	if (ColumnId == TEXT("NPCBlueprint")) return Row->NPCBlueprint.IsNull() ? TEXT("") : Row->NPCBlueprint.GetAssetName();
-	if (ColumnId == TEXT("bIsVendor")) return Row->bIsVendor ? TEXT("Yes") : TEXT("No");
-	if (ColumnId == TEXT("MinLevel")) return FString::FromInt(Row->MinLevel);
-	if (ColumnId == TEXT("MaxLevel")) return FString::FromInt(Row->MaxLevel);
+	if (ColumnId == TEXT("Schedule")) return Row->Schedule.IsNull() ? TEXT("") : Row->Schedule.GetAssetName();
+	if (ColumnId == TEXT("BehaviorTree")) return Row->BehaviorTree.IsNull() ? TEXT("") : Row->BehaviorTree.GetAssetName();
+
+	// Combat (3)
+	if (ColumnId == TEXT("LevelRange")) return Row->GetLevelRangeDisplay();
+	if (ColumnId == TEXT("Factions")) return Row->GetFactionsDisplay();
 	if (ColumnId == TEXT("AttackPriority")) return FString::SanitizeFloat(Row->AttackPriority);
-	if (ColumnId == TEXT("DefaultCurrency")) return FString::FromInt(Row->DefaultCurrency);
-	if (ColumnId == TEXT("TradingCurrency")) return FString::FromInt(Row->TradingCurrency);
+
+	// Vendor (2)
+	if (ColumnId == TEXT("bIsVendor")) return Row->bIsVendor ? TEXT("Yes") : TEXT("No");
 	if (ColumnId == TEXT("ShopName")) return Row->ShopName;
+
+	// Items & Spawning (2)
 	if (ColumnId == TEXT("DefaultItems")) return Row->DefaultItems;
-	if (ColumnId == TEXT("Spawners")) return Row->DiscoveredSpawners;
+	if (ColumnId == TEXT("SpawnerPOI")) return Row->SpawnerPOI;
+
+	// Meta (2)
+	if (ColumnId == TEXT("Appearance")) return Row->Appearance.IsNull() ? TEXT("") : Row->Appearance.GetAssetName();
 	if (ColumnId == TEXT("Notes")) return Row->Notes;
 
 	return TEXT("");
@@ -966,7 +1176,10 @@ FString SNPCTableEditor::GetColumnValue(const TSharedPtr<FNPCTableRow>& Row, FNa
 
 TArray<FString> SNPCTableEditor::GetUniqueColumnValues(FName ColumnId) const
 {
+	// Filter dropdowns show values from the current table data (AllRows)
+	// Cell edit dropdowns (CreateAssetDropdownCell) separately scan project for all available assets
 	TSet<FString> UniqueSet;
+	UniqueSet.Add(TEXT(""));  // Always include empty option
 
 	for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
 	{
@@ -1095,44 +1308,38 @@ void SNPCTableEditor::ApplyFilters()
 	{
 		bool bPassesFilters = true;
 
-		// Global search filter
-		if (!SearchText.IsEmpty())
+		// Check each column filter (text filter + multi-select dropdown)
+		for (const auto& FilterPair : ColumnFilters)
 		{
-			FString SearchLower = SearchText.ToLower();
-			bool bMatch =
-				Row->NPCName.ToLower().Contains(SearchLower) ||
-				Row->NPCId.ToLower().Contains(SearchLower) ||
-				Row->DisplayName.ToLower().Contains(SearchLower) ||
-				Row->Notes.ToLower().Contains(SearchLower);
+			const FName& ColumnId = FilterPair.Key;
+			const FNPCColumnFilterState& FilterState = FilterPair.Value;
+			FString ColumnValue = GetColumnValue(Row, ColumnId);
 
-			if (!bMatch) bPassesFilters = false;
-		}
-
-		// Per-column text filters
-		if (bPassesFilters)
-		{
-			for (const auto& Filter : ColumnFilters)
+			// 1. Text filter - case-insensitive contains
+			if (!FilterState.TextFilter.IsEmpty())
 			{
-				FString FilterLower = Filter.Value.ToLower();
-				FString ColumnValue = GetColumnValue(Row, Filter.Key);
-
-				if (!ColumnValue.ToLower().Contains(FilterLower))
+				if (!ColumnValue.ToLower().Contains(FilterState.TextFilter.ToLower()))
 				{
 					bPassesFilters = false;
 					break;
 				}
 			}
-		}
 
-		// Per-column selection filters (checkbox)
-		if (bPassesFilters)
-		{
-			for (const auto& SelectionFilter : ColumnSelectionFilters)
+			// 2. Multi-select dropdown filter
+			// Empty SelectedValues = show all (no filter)
+			// __NONE_SELECTED__ marker = show nothing
+			// Otherwise, only show rows where column value is in SelectedValues
+			if (FilterState.SelectedValues.Num() > 0)
 			{
-				FString ColumnValue = GetColumnValue(Row, SelectionFilter.Key);
+				if (FilterState.SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+				{
+					// None selected - filter out everything
+					bPassesFilters = false;
+					break;
+				}
 
-				// If the set exists and doesn't contain this value, filter it out
-				if (!SelectionFilter.Value.Contains(ColumnValue))
+				// Check if column value is in the selected values set
+				if (!FilterState.SelectedValues.Contains(ColumnValue))
 				{
 					bPassesFilters = false;
 					break;
@@ -1161,30 +1368,35 @@ void SNPCTableEditor::ApplySorting()
 
 	DisplayedRows.Sort([this, bAscending](const TSharedPtr<FNPCTableRow>& A, const TSharedPtr<FNPCTableRow>& B)
 	{
-		// String columns
+		// String-based columns
 		if (SortColumn == TEXT("NPCName") || SortColumn == TEXT("NPCId") ||
 			SortColumn == TEXT("DisplayName") || SortColumn == TEXT("Status") ||
-			SortColumn == TEXT("Factions") || SortColumn == TEXT("AbilityConfig") ||
-			SortColumn == TEXT("ActivityConfig"))
+			SortColumn == TEXT("Factions") || SortColumn == TEXT("ShopName") ||
+			SortColumn == TEXT("DefaultItems") || SortColumn == TEXT("SpawnerPOI") || SortColumn == TEXT("Notes"))
 		{
 			FString ValueA, ValueB;
 			if (SortColumn == TEXT("NPCName")) { ValueA = A->NPCName; ValueB = B->NPCName; }
 			else if (SortColumn == TEXT("NPCId")) { ValueA = A->NPCId; ValueB = B->NPCId; }
 			else if (SortColumn == TEXT("DisplayName")) { ValueA = A->DisplayName; ValueB = B->DisplayName; }
-			else if (SortColumn == TEXT("Status")) { ValueA = A->Status; ValueB = B->Status; }
+			else if (SortColumn == TEXT("Status")) { ValueA = A->GetStatusString(); ValueB = B->GetStatusString(); }
 			else if (SortColumn == TEXT("Factions")) { ValueA = A->Factions; ValueB = B->Factions; }
-			else if (SortColumn == TEXT("AbilityConfig")) { ValueA = A->AbilityConfig.GetAssetName(); ValueB = B->AbilityConfig.GetAssetName(); }
-			else if (SortColumn == TEXT("ActivityConfig")) { ValueA = A->ActivityConfig.GetAssetName(); ValueB = B->ActivityConfig.GetAssetName(); }
+			else if (SortColumn == TEXT("ShopName")) { ValueA = A->ShopName; ValueB = B->ShopName; }
+			else if (SortColumn == TEXT("DefaultItems")) { ValueA = A->DefaultItems; ValueB = B->DefaultItems; }
+			else if (SortColumn == TEXT("SpawnerPOI")) { ValueA = A->SpawnerPOI; ValueB = B->SpawnerPOI; }
+			else if (SortColumn == TEXT("Notes")) { ValueA = A->Notes; ValueB = B->Notes; }
 			return bAscending ? (ValueA < ValueB) : (ValueA > ValueB);
 		}
 
-		// Integer columns
-		if (SortColumn == TEXT("MinLevel") || SortColumn == TEXT("MaxLevel"))
+		// LevelRange - sort by MinLevel
+		if (SortColumn == TEXT("LevelRange"))
 		{
-			int32 ValueA = 0, ValueB = 0;
-			if (SortColumn == TEXT("MinLevel")) { ValueA = A->MinLevel; ValueB = B->MinLevel; }
-			else if (SortColumn == TEXT("MaxLevel")) { ValueA = A->MaxLevel; ValueB = B->MaxLevel; }
-			return bAscending ? (ValueA < ValueB) : (ValueA > ValueB);
+			return bAscending ? (A->MinLevel < B->MinLevel) : (A->MinLevel > B->MinLevel);
+		}
+
+		// Float columns
+		if (SortColumn == TEXT("AttackPriority"))
+		{
+			return bAscending ? (A->AttackPriority < B->AttackPriority) : (A->AttackPriority > B->AttackPriority);
 		}
 
 		// Boolean columns
@@ -1195,12 +1407,6 @@ void SNPCTableEditor::ApplySorting()
 
 		return false;
 	});
-}
-
-void SNPCTableEditor::OnSearchTextChanged(const FText& NewText)
-{
-	SearchText = NewText.ToString();
-	ApplyFilters();
 }
 
 void SNPCTableEditor::OnRowModified()
@@ -1313,7 +1519,7 @@ FReply SNPCTableEditor::OnGenerateClicked()
 	{
 		if (Row->IsValid())
 		{
-			Row->Status = TEXT("Synced");
+			Row->Status = ENPCTableRowStatus::Synced;
 			GeneratedCount++;
 			// Would call generators here:
 			// - FNPCDefinitionGenerator::Generate(Row)
@@ -1321,7 +1527,7 @@ FReply SNPCTableEditor::OnGenerateClicked()
 		}
 		else
 		{
-			Row->Status = TEXT("Error");
+			Row->Status = ENPCTableRowStatus::Error;
 			ErrorCount++;
 		}
 	}
@@ -1362,62 +1568,73 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 		return FReply::Handled();
 	}
 
-	// Build reverse lookup: NPCDefinition path -> Spawners that reference it
-	// This scans all level assets for NPCSpawner actors
-	TMap<FString, TArray<FString>> NPCToSpawnersMap;
+	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Found %d NPCDefinition assets"), AssetList.Num());
 
-	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Starting spawner discovery..."));
+	//=========================================================================
+	// Build POI mapping: NPCDefinition -> nearest POI tag
+	// Scan world for NPCSpawners and POIActors
+	//=========================================================================
+	TMap<UNPCDefinition*, FString> NPCToPOIMap;
 
-	// Get all referencers for each NPCDefinition
-	for (const FAssetData& NPCAsset : AssetList)
+	if (GEditor && GEditor->GetEditorWorldContext().World())
 	{
-		TArray<FAssetIdentifier> Referencers;
-		AssetRegistry.GetReferencers(NPCAsset.PackageName, Referencers);
+		UWorld* World = GEditor->GetEditorWorldContext().World();
 
-		TArray<FString> SpawnerNames;
-		for (const FAssetIdentifier& Ref : Referencers)
+		// Collect all POI actors and their locations
+		TArray<TPair<FVector, FString>> POILocations;
+		for (TActorIterator<APOIActor> POIIt(World); POIIt; ++POIIt)
 		{
-			FString RefPath = Ref.PackageName.ToString();
-
-			// Skip empty or invalid paths
-			if (RefPath.IsEmpty() || !RefPath.StartsWith(TEXT("/")))
+			APOIActor* POI = *POIIt;
+			if (POI && POI->POITag.IsValid())
 			{
-				continue;
+				POILocations.Add(TPair<FVector, FString>(POI->GetActorLocation(), POI->POITag.ToString()));
 			}
+		}
 
-			// Skip GUID-looking paths (contain long hex strings like "A1B2C3D4E5F6...")
-			FString BaseName = FPaths::GetBaseFilename(RefPath);
-			if (BaseName.Len() > 20 && !BaseName.Contains(TEXT("_")))
-			{
-				// Likely a GUID or hash, skip it
-				continue;
-			}
+		UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Found %d POI actors in world"), POILocations.Num());
 
-			// Check if this is a level or a spawner blueprint
-			if (RefPath.Contains(TEXT("/Maps/")) || RefPath.Contains(TEXT("/Levels/")))
+		// Scan NPCSpawners and map NPCDefinitions to their spawn locations
+		for (TActorIterator<ANPCSpawner> SpawnerIt(World); SpawnerIt; ++SpawnerIt)
+		{
+			ANPCSpawner* Spawner = *SpawnerIt;
+			if (!Spawner) continue;
+
+			FVector SpawnerLocation = Spawner->GetActorLocation();
+
+			// Get all NPCSpawnComponents on this spawner
+			TArray<UNPCSpawnComponent*> SpawnComponents;
+			Spawner->GetComponents<UNPCSpawnComponent>(SpawnComponents);
+
+			for (UNPCSpawnComponent* SpawnComp : SpawnComponents)
 			{
-				// It's a level - extract level name
-				FString LevelName = FPaths::GetBaseFilename(RefPath);
-				SpawnerNames.AddUnique(FString::Printf(TEXT("[%s]"), *LevelName));
-			}
-			else if (RefPath.Contains(TEXT("/Game/")))
-			{
-				// Only include assets from /Game/ folder
-				FString AssetName = FPaths::GetBaseFilename(RefPath);
-				if (AssetName.Contains(TEXT("Spawner")) || AssetName.StartsWith(TEXT("BP_")) || AssetName.StartsWith(TEXT("NPC")))
+				if (SpawnComp && SpawnComp->NPCToSpawn)
 				{
-					SpawnerNames.AddUnique(AssetName);
+					// Find nearest POI to this spawner
+					float NearestDistSq = FLT_MAX;
+					FString NearestPOI;
+
+					for (const auto& POIPair : POILocations)
+					{
+						float DistSq = FVector::DistSquared(SpawnerLocation, POIPair.Key);
+						if (DistSq < NearestDistSq)
+						{
+							NearestDistSq = DistSq;
+							NearestPOI = POIPair.Value;
+						}
+					}
+
+					if (!NearestPOI.IsEmpty())
+					{
+						NPCToPOIMap.Add(SpawnComp->NPCToSpawn, NearestPOI);
+						UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Mapped %s -> %s (dist: %.0f)"),
+							*SpawnComp->NPCToSpawn->GetName(), *NearestPOI, FMath::Sqrt(NearestDistSq));
+					}
 				}
 			}
 		}
-
-		if (SpawnerNames.Num() > 0)
-		{
-			NPCToSpawnersMap.Add(NPCAsset.GetObjectPathString(), SpawnerNames);
-		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Found spawner references for %d NPCs"), NPCToSpawnersMap.Num());
+	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Built POI map with %d entries"), NPCToPOIMap.Num());
 
 	// Clear existing rows and populate from assets
 	TableData->Rows.Empty();
@@ -1433,38 +1650,44 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 
 		FNPCTableRow& Row = TableData->AddRow();
 
-		// Identity
+		//=========================================================================
+		// Core Identity (5 columns)
+		//=========================================================================
 		Row.NPCName = AssetData.AssetName.ToString();
 		Row.NPCId = NPCDef->NPCID.ToString();
 		Row.DisplayName = NPCDef->NPCName.ToString();
-		Row.bAllowMultipleInstances = NPCDef->bAllowMultipleInstances;
 
-		// Combat
-		Row.MinLevel = NPCDef->MinLevel;
-		Row.MaxLevel = NPCDef->MaxLevel;
-		Row.AttackPriority = NPCDef->AttackPriority;
-
-		// Vendor
-		Row.bIsVendor = NPCDef->bIsVendor;
-		Row.ShopName = NPCDef->ShopFriendlyName.ToString();
-		Row.TradingCurrency = NPCDef->TradingCurrency;
-		Row.BuyItemPercentage = NPCDef->BuyItemPercentage;
-		Row.SellItemPercentage = NPCDef->SellItemPercentage;
-
-		// Assets - store paths
+		// Blueprint - NPCClassPath
 		if (!NPCDef->NPCClassPath.IsNull())
 		{
-			Row.NPCBlueprint = NPCDef->NPCClassPath.ToSoftObjectPath();
+			Row.Blueprint = NPCDef->NPCClassPath.ToSoftObjectPath();
 		}
-		if (!NPCDef->ActivityConfiguration.IsNull())
-		{
-			Row.ActivityConfig = NPCDef->ActivityConfiguration.ToSoftObjectPath();
-		}
+
+		//=========================================================================
+		// AI & Behavior (4 columns)
+		//=========================================================================
 		// AbilityConfiguration is on CharacterDefinition base class
 		if (NPCDef->AbilityConfiguration)
 		{
 			Row.AbilityConfig = FSoftObjectPath(NPCDef->AbilityConfiguration);
 		}
+		if (!NPCDef->ActivityConfiguration.IsNull())
+		{
+			Row.ActivityConfig = NPCDef->ActivityConfiguration.ToSoftObjectPath();
+		}
+		// Schedule - from ActivitySchedules array (take first if available)
+		if (NPCDef->ActivitySchedules.Num() > 0 && !NPCDef->ActivitySchedules[0].IsNull())
+		{
+			Row.Schedule = NPCDef->ActivitySchedules[0].ToSoftObjectPath();
+		}
+		// BehaviorTree - not directly on NPCDefinition, would need to come from ActivityConfiguration
+
+		//=========================================================================
+		// Combat (3 columns)
+		//=========================================================================
+		Row.MinLevel = NPCDef->MinLevel;
+		Row.MaxLevel = NPCDef->MaxLevel;
+		Row.AttackPriority = NPCDef->AttackPriority;
 
 		// Factions - convert FGameplayTagContainer to comma-separated short names for display
 		TArray<FString> FactionShortNames;
@@ -1474,33 +1697,47 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 		}
 		Row.Factions = FString::Join(FactionShortNames, TEXT(", "));
 
-		// Owned Tags - convert FGameplayTagContainer to comma-separated short names for display
-		TArray<FString> TagShortNames;
-		for (const FGameplayTag& OwnedTag : NPCDef->DefaultOwnedTags)
+		//=========================================================================
+		// Vendor (2 columns)
+		//=========================================================================
+		Row.bIsVendor = NPCDef->bIsVendor;
+		Row.ShopName = NPCDef->ShopFriendlyName.ToString();
+
+		//=========================================================================
+		// Items & Spawning (2 columns)
+		//=========================================================================
+		// DefaultItems - extract IC_ references from DefaultItemLoadout loot table rolls
+		TArray<FString> ItemCollectionNames;
+		for (const FLootTableRoll& Roll : NPCDef->DefaultItemLoadout)
 		{
-			TagShortNames.Add(FNPCTableRow::ToShortStateName(OwnedTag.ToString()));
+			for (const TObjectPtr<UItemCollection>& IC : Roll.ItemCollectionsToGrant)
+			{
+				if (IC)
+				{
+					ItemCollectionNames.Add(IC->GetName());
+				}
+			}
 		}
-		Row.OwnedTags = FString::Join(TagShortNames, TEXT(", "));
-
-		// Note: When generating, these short names will be converted back to full tags
-		// e.g., "Bandits" -> "Narrative.Factions.Bandits"
-
-		// Currency
-		Row.DefaultCurrency = NPCDef->DefaultCurrency;
-
-		// Discovered spawners
-		TArray<FString>* Spawners = NPCToSpawnersMap.Find(AssetData.GetObjectPathString());
-		if (Spawners && Spawners->Num() > 0)
+		Row.DefaultItems = FString::Join(ItemCollectionNames, TEXT(", "));
+		// SpawnerPOI - from NPCSpawner -> nearest POI mapping
+		if (FString* POITag = NPCToPOIMap.Find(NPCDef))
 		{
-			Row.DiscoveredSpawners = FString::Join(*Spawners, TEXT(", "));
+			Row.SpawnerPOI = *POITag;
 		}
 
-		// Generated asset reference
+		//=========================================================================
+		// Meta (2 columns)
+		//=========================================================================
+		// Appearance - from CharacterDefinition base class
+		if (!NPCDef->DefaultAppearance.IsNull())
+		{
+			Row.Appearance = NPCDef->DefaultAppearance.ToSoftObjectPath();
+		}
+		// Notes - user-added, not from assets
+
+		// Generated asset reference (internal tracking)
 		Row.GeneratedNPCDef = AssetData.GetSoftObjectPath();
-		Row.Status = TEXT("Synced");
-
-		// Check if this is plugin content (read-only)
-		Row.bIsReadOnly = !AssetData.PackageName.ToString().StartsWith(TEXT("/Game/"));
+		Row.Status = ENPCTableRowStatus::Synced;
 
 		SyncedCount++;
 	}
@@ -1521,32 +1758,40 @@ FReply SNPCTableEditor::OnExportCSVClicked()
 	// Build CSV content
 	FString CSV;
 
-	// Header row - matches the 10 columns displayed
-	CSV += TEXT("NPCName,DisplayName,Factions,SpawnerPOI,LevelName,IsVendor,MinLevel,MaxLevel,DefaultItems,Notes\n");
+	// Helper to escape CSV fields
+	auto EscapeCSV = [](const FString& Value) -> FString
+	{
+		if (Value.Contains(TEXT(",")) || Value.Contains(TEXT("\"")))
+		{
+			return FString::Printf(TEXT("\"%s\""), *Value.Replace(TEXT("\""), TEXT("\"\"")));
+		}
+		return Value;
+	};
+
+	// Header row - 18 columns matching v4.1 structure
+	CSV += TEXT("NPCName,NPCId,DisplayName,Blueprint,AbilityConfig,ActivityConfig,Schedule,BehaviorTree,MinLevel,MaxLevel,Factions,AttackPriority,IsVendor,ShopName,DefaultItems,SpawnerPOI,Appearance,Notes\n");
 
 	// Data rows
 	for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
 	{
-		// Escape fields that might contain commas
-		auto EscapeCSV = [](const FString& Value) -> FString
-		{
-			if (Value.Contains(TEXT(",")) || Value.Contains(TEXT("\"")))
-			{
-				return FString::Printf(TEXT("\"%s\""), *Value.Replace(TEXT("\""), TEXT("\"\"")));
-			}
-			return Value;
-		};
-
-		CSV += FString::Printf(TEXT("%s,%s,%s,%s,%s,%s,%d,%d,%s,%s\n"),
+		CSV += FString::Printf(TEXT("%s,%s,%s,%s,%s,%s,%s,%s,%d,%d,%s,%.2f,%s,%s,%s,%s,%s,%s\n"),
 			*EscapeCSV(Row->NPCName),
+			*EscapeCSV(Row->NPCId),
 			*EscapeCSV(Row->DisplayName),
-			*EscapeCSV(Row->GetFactionsDisplay()),
-			*EscapeCSV(Row->SpawnerPOI),
-			*EscapeCSV(Row->LevelName),
-			Row->bIsVendor ? TEXT("TRUE") : TEXT("FALSE"),
+			*EscapeCSV(Row->Blueprint.IsNull() ? TEXT("") : Row->Blueprint.GetAssetName()),
+			*EscapeCSV(Row->AbilityConfig.IsNull() ? TEXT("") : Row->AbilityConfig.GetAssetName()),
+			*EscapeCSV(Row->ActivityConfig.IsNull() ? TEXT("") : Row->ActivityConfig.GetAssetName()),
+			*EscapeCSV(Row->Schedule.IsNull() ? TEXT("") : Row->Schedule.GetAssetName()),
+			*EscapeCSV(Row->BehaviorTree.IsNull() ? TEXT("") : Row->BehaviorTree.GetAssetName()),
 			Row->MinLevel,
 			Row->MaxLevel,
+			*EscapeCSV(Row->GetFactionsDisplay()),
+			Row->AttackPriority,
+			Row->bIsVendor ? TEXT("TRUE") : TEXT("FALSE"),
+			*EscapeCSV(Row->ShopName),
 			*EscapeCSV(Row->DefaultItems),
+			*EscapeCSV(Row->SpawnerPOI),
+			*EscapeCSV(Row->Appearance.IsNull() ? TEXT("") : Row->Appearance.GetAssetName()),
 			*EscapeCSV(Row->Notes)
 		);
 	}
@@ -1606,26 +1851,47 @@ FReply SNPCTableEditor::OnImportCSVClicked()
 
 					if (Lines.Num() > 1)
 					{
+						int32 ImportedCount = 0;
 						// Skip header row
 						for (int32 i = 1; i < Lines.Num(); i++)
 						{
 							TArray<FString> Cells;
 							Lines[i].ParseIntoArray(Cells, TEXT(","));
 
-							if (Cells.Num() >= 10)
+							// CSV format (18 columns):
+							// 0:NPCName, 1:NPCId, 2:DisplayName, 3:Blueprint, 4:AbilityConfig,
+							// 5:ActivityConfig, 6:Schedule, 7:BehaviorTree, 8:MinLevel, 9:MaxLevel,
+							// 10:Factions, 11:AttackPriority, 12:IsVendor, 13:ShopName, 14:DefaultItems,
+							// 15:SpawnerPOI, 16:Appearance, 17:Notes
+							if (Cells.Num() >= 10) // Minimum columns to be useful
 							{
 								FNPCTableRow& NewRow = TableData->AddRow();
+
+								// Core Identity
 								NewRow.NPCName = Cells[0].TrimQuotes();
-								NewRow.NPCId = Cells[0].TrimQuotes().ToLower().Replace(TEXT(" "), TEXT("_")); // Auto-generate from name
-								NewRow.DisplayName = Cells[1].TrimQuotes();
-								NewRow.SetFactionsFromDisplay(Cells[2].TrimQuotes());
-								NewRow.SpawnerPOI = Cells[3].TrimQuotes();
-								NewRow.LevelName = Cells[4].TrimQuotes();
-								NewRow.bIsVendor = Cells[5].TrimQuotes().ToUpper() == TEXT("TRUE");
-								NewRow.MinLevel = FCString::Atoi(*Cells[6].TrimQuotes());
-								NewRow.MaxLevel = FCString::Atoi(*Cells[7].TrimQuotes());
-								NewRow.DefaultItems = Cells[8].TrimQuotes();
-								NewRow.Notes = Cells[9].TrimQuotes();
+								NewRow.NPCId = Cells.Num() > 1 ? Cells[1].TrimQuotes() : NewRow.NPCName.ToLower().Replace(TEXT(" "), TEXT("_"));
+								NewRow.DisplayName = Cells.Num() > 2 ? Cells[2].TrimQuotes() : NewRow.NPCName;
+								// Blueprint, AbilityConfig, ActivityConfig, Schedule, BehaviorTree - skip paths for now (indices 3-7)
+
+								// Combat
+								NewRow.MinLevel = Cells.Num() > 8 ? FCString::Atoi(*Cells[8].TrimQuotes()) : 1;
+								NewRow.MaxLevel = Cells.Num() > 9 ? FCString::Atoi(*Cells[9].TrimQuotes()) : 10;
+								if (Cells.Num() > 10) NewRow.SetFactionsFromDisplay(Cells[10].TrimQuotes());
+								NewRow.AttackPriority = Cells.Num() > 11 ? FCString::Atof(*Cells[11].TrimQuotes()) : 0.5f;
+
+								// Vendor
+								NewRow.bIsVendor = Cells.Num() > 12 && Cells[12].TrimQuotes().ToUpper() == TEXT("TRUE");
+								NewRow.ShopName = Cells.Num() > 13 ? Cells[13].TrimQuotes() : TEXT("");
+
+								// Items & Spawning
+								NewRow.DefaultItems = Cells.Num() > 14 ? Cells[14].TrimQuotes() : TEXT("");
+								NewRow.SpawnerPOI = Cells.Num() > 15 ? Cells[15].TrimQuotes() : TEXT("");
+
+								// Meta
+								// Appearance - skip path for now (index 16)
+								NewRow.Notes = Cells.Num() > 17 ? Cells[17].TrimQuotes() : TEXT("");
+
+								ImportedCount++;
 							}
 						}
 
@@ -1634,7 +1900,7 @@ FReply SNPCTableEditor::OnImportCSVClicked()
 
 						FMessageDialog::Open(EAppMsgType::Ok,
 							FText::Format(LOCTEXT("ImportSuccess", "Imported {0} NPCs from:\n{1}"),
-								FText::AsNumber(Lines.Num() - 1),
+								FText::AsNumber(ImportedCount),
 								FText::FromString(OutFiles[0])));
 					}
 				}
@@ -1663,7 +1929,7 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 		}
 
 		// Only apply changes to rows that were actually modified
-		if (Row->Status != TEXT("Modified") && Row->Status != TEXT("New"))
+		if (Row->Status != ENPCTableRowStatus::Modified && Row->Status != ENPCTableRowStatus::New)
 		{
 			NotModifiedSkipped++;
 			continue;
@@ -1691,19 +1957,40 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 			}
 		}
 
-		// Update properties from row
+		//=========================================================================
+		// Core Identity
+		//=========================================================================
 		NPCDef->NPCID = FName(*Row->NPCId);
 		NPCDef->NPCName = FText::FromString(Row->DisplayName);
-		NPCDef->bAllowMultipleInstances = Row->bAllowMultipleInstances;
+
+		// Update NPCBlueprint (NPCClassPath)
+		if (!Row->Blueprint.IsNull())
+		{
+			NPCDef->NPCClassPath = TSoftClassPtr<ANarrativeNPCCharacter>(FSoftObjectPath(Row->Blueprint));
+		}
+
+		//=========================================================================
+		// AI & Behavior
+		//=========================================================================
+		// Update AbilityConfiguration
+		if (!Row->AbilityConfig.IsNull())
+		{
+			NPCDef->AbilityConfiguration = Cast<UAbilityConfiguration>(Row->AbilityConfig.TryLoad());
+		}
+
+		// Update ActivityConfiguration
+		if (!Row->ActivityConfig.IsNull())
+		{
+			NPCDef->ActivityConfiguration = TSoftObjectPtr<UNPCActivityConfiguration>(Row->ActivityConfig);
+		}
+		// Schedule and BehaviorTree would be applied if NPCDefinition had those properties
+
+		//=========================================================================
+		// Combat
+		//=========================================================================
 		NPCDef->MinLevel = Row->MinLevel;
 		NPCDef->MaxLevel = Row->MaxLevel;
 		NPCDef->AttackPriority = Row->AttackPriority;
-		NPCDef->bIsVendor = Row->bIsVendor;
-		NPCDef->ShopFriendlyName = FText::FromString(Row->ShopName);
-		NPCDef->TradingCurrency = Row->TradingCurrency;
-		NPCDef->BuyItemPercentage = Row->BuyItemPercentage;
-		NPCDef->SellItemPercentage = Row->SellItemPercentage;
-		NPCDef->DefaultCurrency = Row->DefaultCurrency;
 
 		// Update Factions - convert from comma-separated short names to FGameplayTagContainer
 		NPCDef->DefaultFactions.Reset();
@@ -1722,42 +2009,21 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 			}
 		}
 
-		// Update OwnedTags
-		NPCDef->DefaultOwnedTags.Reset();
-		TArray<FString> TagNames;
-		Row->OwnedTags.ParseIntoArray(TagNames, TEXT(","));
-		for (const FString& TagName : TagNames)
-		{
-			FString FullStateTag = FNPCTableRow::ToFullStateTag(TagName);
-			if (!FullStateTag.IsEmpty())
-			{
-				FGameplayTag GameplayTag = FGameplayTag::RequestGameplayTag(FName(*FullStateTag), false);
-				if (GameplayTag.IsValid())
-				{
-					NPCDef->DefaultOwnedTags.AddTag(GameplayTag);
-				}
-			}
-		}
+		//=========================================================================
+		// Vendor
+		//=========================================================================
+		NPCDef->bIsVendor = Row->bIsVendor;
+		NPCDef->ShopFriendlyName = FText::FromString(Row->ShopName);
 
-		// Update asset references
-		if (!Row->ActivityConfig.IsNull())
-		{
-			NPCDef->ActivityConfiguration = TSoftObjectPtr<UNPCActivityConfiguration>(Row->ActivityConfig);
-		}
+		//=========================================================================
+		// Items & Spawning - DefaultItems and SpawnerPOI handled separately
+		//=========================================================================
 
-		// Update NPCBlueprint (NPCClassPath)
-		if (!Row->NPCBlueprint.IsNull())
-		{
-			NPCDef->NPCClassPath = TSoftClassPtr<ANarrativeNPCCharacter>(FSoftObjectPath(Row->NPCBlueprint));
-		}
+		//=========================================================================
+		// Meta - Appearance and Notes not stored on NPCDefinition
+		//=========================================================================
 
-		// Update AbilityConfiguration
-		if (!Row->AbilityConfig.IsNull())
-		{
-			NPCDef->AbilityConfiguration = Cast<UAbilityConfiguration>(Row->AbilityConfig.TryLoad());
-		}
-
-		// Mark package dirty and save (Package already in scope from read-only check above)
+		// Mark package dirty and save
 		if (Package)
 		{
 			Package->MarkPackageDirty();
@@ -1767,7 +2033,7 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 
 			if (UPackage::SavePackage(Package, NPCDef, *PackageFileName, SaveArgs))
 			{
-				Row->Status = TEXT("Synced");
+				Row->Status = ENPCTableRowStatus::Synced;
 				UpdatedCount++;
 			}
 			else

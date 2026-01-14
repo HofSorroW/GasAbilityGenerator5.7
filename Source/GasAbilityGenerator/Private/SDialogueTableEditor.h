@@ -27,29 +27,31 @@ struct FDialogueTableColumn
 		: ColumnId(InId), DisplayName(InName), DefaultWidth(InWidth) {}
 };
 
-/** Get default column definitions for dialogue table */
+/** Get default column definitions for dialogue table (11 columns) */
 inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 {
 	return {
-		{ TEXT("Seq"),          FText::FromString(TEXT("Seq")),            0.04f },
-		{ TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue ID")),    0.10f },
-		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        0.12f },
-		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           0.06f },
-		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        0.10f },
-		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           0.22f },
-		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    0.12f },
-		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         0.10f },
-		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     0.14f },
+		{ TEXT("Seq"),          FText::FromString(TEXT("Seq")),            0.03f },
+		{ TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue ID")),    0.09f },
+		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        0.10f },
+		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           0.05f },
+		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        0.08f },
+		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           0.20f },
+		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    0.10f },
+		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         0.08f },
+		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     0.10f },
+		{ TEXT("Skippable"),    FText::FromString(TEXT("Skip")),           0.04f },
+		{ TEXT("Notes"),        FText::FromString(TEXT("Notes")),          0.13f },
 	};
 }
 
 /**
- * Per-column filter state
+ * Per-column filter state (supports multi-select)
  */
 struct FColumnFilterState
 {
 	FString TextFilter;
-	TSharedPtr<FString> SelectedDropdownValue;
+	TSet<FString> SelectedValues;  // Multi-select: empty = all, otherwise OR logic
 	TArray<TSharedPtr<FString>> DropdownOptions;
 };
 
@@ -82,13 +84,15 @@ private:
 	TSharedPtr<FDialogueTableRowEx> RowDataEx;
 	FSimpleDelegate OnRowModified;
 
-	TSharedRef<SWidget> CreateTextCell(FString& Value, const FString& Hint = TEXT(""));
+	TSharedRef<SWidget> CreateTextCell(FString& Value, const FString& Hint = TEXT(""), bool bWithTooltip = false);
 	TSharedRef<SWidget> CreateFNameCell(FName& Value, const FString& Hint = TEXT(""));
 	TSharedRef<SWidget> CreateNodeTypeCell();
 	TSharedRef<SWidget> CreateSpeakerCell();  // Shows "Player" for player nodes
 	TSharedRef<SWidget> CreateNextNodesCell();
 	TSharedRef<SWidget> CreateSeqCell();
 	TSharedRef<SWidget> CreateNodeIDCell();  // With indentation
+	TSharedRef<SWidget> CreateSkippableCell();  // Yes/No checkbox
+	TSharedRef<SWidget> CreateNotesCell();  // Designer notes
 
 	void MarkModified();
 };
@@ -119,6 +123,12 @@ private:
 	TSharedPtr<SListView<TSharedPtr<FDialogueTableRowEx>>> ListView;
 	TSharedPtr<SHeaderRow> HeaderRow;
 
+	// Status bar text blocks (for immediate updates)
+	TSharedPtr<STextBlock> StatusTotal;
+	TSharedPtr<STextBlock> StatusDialogues;
+	TSharedPtr<STextBlock> StatusShowing;
+	TSharedPtr<STextBlock> StatusSelected;
+
 	FName SortColumn;
 	EColumnSortMode::Type SortMode = EColumnSortMode::None;
 	TMap<FName, FColumnFilterState> ColumnFilters;  // Per-column filter state
@@ -127,6 +137,13 @@ private:
 	TSharedRef<SWidget> BuildToolbar();
 	TSharedRef<SHeaderRow> BuildHeaderRow();
 	TSharedRef<SWidget> BuildStatusBar();
+	void UpdateStatusBar();  // Force status bar refresh
+
+	// Status bar text getters (for TAttribute bindings)
+	FText GetStatusTotalText() const;
+	FText GetStatusDialoguesText() const;
+	FText GetStatusShowingText() const;
+	FText GetStatusSelectedText() const;
 
 	// List View Callbacks
 	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FDialogueTableRowEx> Item, const TSharedRef<STableViewBase>& OwnerTable);
@@ -137,6 +154,8 @@ private:
 	// Actions
 	FReply OnAddRowClicked();
 	FReply OnDeleteRowsClicked();
+	FReply OnDeleteBranchClicked();  // Cascade delete
+	FReply OnClearFiltersClicked();  // Clear all filters
 	FReply OnGenerateClicked();
 	FReply OnExportCSVClicked();
 	FReply OnImportCSVClicked();

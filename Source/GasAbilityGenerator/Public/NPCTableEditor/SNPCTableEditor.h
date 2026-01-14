@@ -16,93 +16,136 @@ class SSearchBox;
 
 /**
  * Column definition for the NPC table
+ * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
  */
 struct FNPCTableColumn
 {
 	FName ColumnId;
 	FText DisplayName;
-	float DefaultWidth;
-	bool bCanSort;
+	float DefaultWidth;  // Proportional FillWidth (0.0-1.0)
 
-	FNPCTableColumn(FName InId, const FText& InName, float InWidth = 1.0f, bool bInCanSort = true)
+	FNPCTableColumn(FName InId, const FText& InName, float InWidth = 0.05f)
 		: ColumnId(InId)
 		, DisplayName(InName)
 		, DefaultWidth(InWidth)
-		, bCanSort(bInCanSort)
 	{}
 };
 
 /**
- * Get default column definitions for NPC table
- * Only columns that can sync from NPCDefinition
- * Width values are in pixels (fixed width, not fill width)
+ * Per-column filter state (multi-select support)
+ */
+struct FNPCColumnFilterState
+{
+	FString TextFilter;
+	TSet<FString> SelectedValues;  // Empty = all, populated = only these values shown
+	TArray<TSharedPtr<FString>> DropdownOptions;
+};
+
+/**
+ * Column input type for NPC table
+ */
+enum class ENPCColumnInputType : uint8
+{
+	ReadOnly,           // Status - auto-calculated
+	TextInput,          // NPC Name, NPC ID, Display Name, Shop Name, Notes
+	AssetDropdown,      // Blueprint, AbilityConfig, ActivityConfig, Schedule, BehaviorTree, Appearance
+	MultiSelectDropdown,// Factions, DefaultItems
+	LevelRange,         // Min-Max combined display
+	FloatSlider,        // AttackPriority (0.0-1.0)
+	Checkbox            // IsVendor
+};
+
+/**
+ * Get default column definitions for NPC table (v4.1 - 18 columns)
+ * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
  */
 inline TArray<FNPCTableColumn> GetNPCTableColumns()
 {
 	TArray<FNPCTableColumn> Columns;
 
-	// 1. Status - generation state (small badge)
-	Columns.Add(FNPCTableColumn(TEXT("Status"), NSLOCTEXT("NPCTableEditor", "ColStatus", "Status"), 55.0f));
+	//=========================================================================
+	// Core Identity (5 columns) - 0.30 total
+	//=========================================================================
 
-	// 2. NPCName - asset/internal name
-	Columns.Add(FNPCTableColumn(TEXT("NPCName"), NSLOCTEXT("NPCTableEditor", "ColNPCName", "NPC Name"), 140.0f));
+	// 1. Status - read-only badge (auto-calculated)
+	Columns.Add(FNPCTableColumn(TEXT("Status"), NSLOCTEXT("NPCTableEditor", "ColStatus", "Status"), 0.03f));
 
-	// 3. NPCId - unique identifier
-	Columns.Add(FNPCTableColumn(TEXT("NPCId"), NSLOCTEXT("NPCTableEditor", "ColNPCId", "NPC ID"), 120.0f));
+	// 2. NPCName - text input (required, no spaces)
+	Columns.Add(FNPCTableColumn(TEXT("NPCName"), NSLOCTEXT("NPCTableEditor", "ColNPCName", "NPC Name"), 0.07f));
 
-	// 4. DisplayName - what player sees
-	Columns.Add(FNPCTableColumn(TEXT("DisplayName"), NSLOCTEXT("NPCTableEditor", "ColDisplayName", "Display Name"), 130.0f));
+	// 3. NPCId - text input (required, unique)
+	Columns.Add(FNPCTableColumn(TEXT("NPCId"), NSLOCTEXT("NPCTableEditor", "ColNPCId", "NPC ID"), 0.06f));
 
-	// 5. Factions - friendly/hostile (critical for gameplay)
-	Columns.Add(FNPCTableColumn(TEXT("Factions"), NSLOCTEXT("NPCTableEditor", "ColFactions", "Factions"), 100.0f));
+	// 4. DisplayName - text input
+	Columns.Add(FNPCTableColumn(TEXT("DisplayName"), NSLOCTEXT("NPCTableEditor", "ColDisplayName", "Display Name"), 0.07f));
 
-	// 6. OwnedTags - gameplay state tags
-	Columns.Add(FNPCTableColumn(TEXT("OwnedTags"), NSLOCTEXT("NPCTableEditor", "ColOwnedTags", "Tags"), 100.0f));
+	// 5. Blueprint - asset dropdown (ANarrativeNPCCharacter classes)
+	Columns.Add(FNPCTableColumn(TEXT("Blueprint"), NSLOCTEXT("NPCTableEditor", "ColBlueprint", "Blueprint"), 0.07f));
 
-	// 7. AbilityConfig - dropdown select
-	Columns.Add(FNPCTableColumn(TEXT("AbilityConfig"), NSLOCTEXT("NPCTableEditor", "ColAbilityConfig", "Ability"), 110.0f, false));
+	//=========================================================================
+	// AI & Behavior (4 columns) - 0.21 total
+	//=========================================================================
 
-	// 8. ActivityConfig - dropdown select
-	Columns.Add(FNPCTableColumn(TEXT("ActivityConfig"), NSLOCTEXT("NPCTableEditor", "ColActivityConfig", "Activity"), 110.0f, false));
+	// 6. AbilityConfig - asset dropdown (AC_* DataAssets)
+	Columns.Add(FNPCTableColumn(TEXT("AbilityConfig"), NSLOCTEXT("NPCTableEditor", "ColAbilityConfig", "Ability Cfg"), 0.06f));
 
-	// 9. NPCBlueprint - character blueprint
-	Columns.Add(FNPCTableColumn(TEXT("NPCBlueprint"), NSLOCTEXT("NPCTableEditor", "ColNPCBlueprint", "Blueprint"), 120.0f, false));
+	// 7. ActivityConfig - asset dropdown (ActConfig_* DataAssets)
+	Columns.Add(FNPCTableColumn(TEXT("ActivityConfig"), NSLOCTEXT("NPCTableEditor", "ColActivityConfig", "Activity Cfg"), 0.06f));
 
-	// 10. bIsVendor - vendor type (checkbox)
-	Columns.Add(FNPCTableColumn(TEXT("bIsVendor"), NSLOCTEXT("NPCTableEditor", "ColIsVendor", "V"), 30.0f));
+	// 8. Schedule - asset dropdown (Schedule_* DataAssets)
+	Columns.Add(FNPCTableColumn(TEXT("Schedule"), NSLOCTEXT("NPCTableEditor", "ColSchedule", "Schedule"), 0.05f));
 
-	// 11. MinLevel - combat balance (small number)
-	Columns.Add(FNPCTableColumn(TEXT("MinLevel"), NSLOCTEXT("NPCTableEditor", "ColMinLevel", "Min"), 35.0f));
+	// 9. BehaviorTree - asset dropdown (BT_* assets, optional)
+	Columns.Add(FNPCTableColumn(TEXT("BehaviorTree"), NSLOCTEXT("NPCTableEditor", "ColBehaviorTree", "BT"), 0.04f));
 
-	// 12. MaxLevel - combat balance (small number)
-	Columns.Add(FNPCTableColumn(TEXT("MaxLevel"), NSLOCTEXT("NPCTableEditor", "ColMaxLevel", "Max"), 35.0f));
+	//=========================================================================
+	// Combat (3 columns) - 0.13 total
+	//=========================================================================
 
-	// 13. AttackPriority - targeting priority
-	Columns.Add(FNPCTableColumn(TEXT("AttackPriority"), NSLOCTEXT("NPCTableEditor", "ColAttackPriority", "Prio"), 40.0f));
+	// 10. LevelRange - dual spinbox "1-10"
+	Columns.Add(FNPCTableColumn(TEXT("LevelRange"), NSLOCTEXT("NPCTableEditor", "ColLevelRange", "Level"), 0.04f));
 
-	// 14. DefaultCurrency - starting gold
-	Columns.Add(FNPCTableColumn(TEXT("DefaultCurrency"), NSLOCTEXT("NPCTableEditor", "ColDefaultCurrency", "Gold"), 50.0f));
+	// 11. Factions - multi-select dropdown (gameplay tags)
+	Columns.Add(FNPCTableColumn(TEXT("Factions"), NSLOCTEXT("NPCTableEditor", "ColFactions", "Factions"), 0.06f));
 
-	// 15. TradingCurrency - vendor gold (for vendors)
-	Columns.Add(FNPCTableColumn(TEXT("TradingCurrency"), NSLOCTEXT("NPCTableEditor", "ColTradingCurrency", "Shop$"), 50.0f));
+	// 12. AttackPriority - slider 0.0-1.0
+	Columns.Add(FNPCTableColumn(TEXT("AttackPriority"), NSLOCTEXT("NPCTableEditor", "ColAttackPriority", "Prio"), 0.03f));
 
-	// 16. ShopName - vendor shop name
-	Columns.Add(FNPCTableColumn(TEXT("ShopName"), NSLOCTEXT("NPCTableEditor", "ColShopName", "Shop Name"), 100.0f));
+	//=========================================================================
+	// Vendor (2 columns) - 0.08 total
+	//=========================================================================
 
-	// 17. DefaultItems - starting equipment
-	Columns.Add(FNPCTableColumn(TEXT("DefaultItems"), NSLOCTEXT("NPCTableEditor", "ColDefaultItems", "Items"), 120.0f));
+	// 13. bIsVendor - checkbox
+	Columns.Add(FNPCTableColumn(TEXT("bIsVendor"), NSLOCTEXT("NPCTableEditor", "ColIsVendor", "V"), 0.02f));
 
-	// 18. Spawners - where this NPC can spawn
-	Columns.Add(FNPCTableColumn(TEXT("Spawners"), NSLOCTEXT("NPCTableEditor", "ColSpawners", "Spawners"), 180.0f, false));
+	// 14. ShopName - text input
+	Columns.Add(FNPCTableColumn(TEXT("ShopName"), NSLOCTEXT("NPCTableEditor", "ColShopName", "Shop Name"), 0.06f));
 
-	// 19. Notes - designer notes
-	Columns.Add(FNPCTableColumn(TEXT("Notes"), NSLOCTEXT("NPCTableEditor", "ColNotes", "Notes"), 150.0f));
+	//=========================================================================
+	// Items & Spawning (2 columns) - 0.12 total
+	//=========================================================================
+
+	// 15. DefaultItems - multi-select dropdown (IC_* collections)
+	Columns.Add(FNPCTableColumn(TEXT("DefaultItems"), NSLOCTEXT("NPCTableEditor", "ColDefaultItems", "Items"), 0.06f));
+
+	// 16. SpawnerPOI - asset dropdown (POI tags from level)
+	Columns.Add(FNPCTableColumn(TEXT("SpawnerPOI"), NSLOCTEXT("NPCTableEditor", "ColSpawnerPOI", "POI"), 0.06f));
+
+	//=========================================================================
+	// Meta (2 columns) - 0.16 total
+	//=========================================================================
+
+	// 17. Appearance - asset dropdown (Appearance_* assets)
+	Columns.Add(FNPCTableColumn(TEXT("Appearance"), NSLOCTEXT("NPCTableEditor", "ColAppearance", "Appearance"), 0.06f));
+
+	// 18. Notes - text input (free text, with tooltip)
+	Columns.Add(FNPCTableColumn(TEXT("Notes"), NSLOCTEXT("NPCTableEditor", "ColNotes", "Notes"), 0.10f));
 
 	return Columns;
 }
 
 /**
- * Row widget for the NPC table
+ * Row widget for the NPC table (v4.1 - 18 columns)
  * Handles display and inline editing of a single NPC row
  */
 class GASABILITYGENERATOR_API SNPCTableRow : public SMultiColumnTableRow<TSharedPtr<FNPCTableRow>>
@@ -122,32 +165,58 @@ private:
 	TSharedPtr<FNPCTableRow> RowData;
 	FSimpleDelegate OnRowModified;
 
+	//=========================================================================
+	// Cell Widget Creators
+	//=========================================================================
+
+	/** Create status indicator (read-only badge) */
+	TSharedRef<SWidget> CreateStatusCell();
+
 	/** Create text cell (editable) */
 	TSharedRef<SWidget> CreateTextCell(FString& Value, const FString& Hint = TEXT(""));
 
 	/** Create checkbox cell */
 	TSharedRef<SWidget> CreateCheckboxCell(bool& Value);
 
-	/** Create number cell */
-	TSharedRef<SWidget> CreateNumberCell(int32& Value);
+	/** Create level range cell (dual spinbox "1-10") */
+	TSharedRef<SWidget> CreateLevelRangeCell();
 
-	/** Create float cell */
-	TSharedRef<SWidget> CreateFloatCell(float& Value);
+	/** Create float slider cell (0.0-1.0) */
+	TSharedRef<SWidget> CreateFloatSliderCell(float& Value);
 
-	/** Create asset picker cell */
-	TSharedRef<SWidget> CreateAssetPickerCell(FSoftObjectPath& Value, UClass* AllowedClass);
+	/** Create asset dropdown cell - filtered by class/prefix */
+	TSharedRef<SWidget> CreateAssetDropdownCell(FSoftObjectPath& Value, UClass* AssetClass, const FString& AssetPrefix);
 
-	/** Create status indicator */
-	TSharedRef<SWidget> CreateStatusCell();
+	/** Create multi-select dropdown cell (comma-separated values) */
+	TSharedRef<SWidget> CreateMultiSelectDropdownCell(FString& Value, const TArray<FString>& Options);
 
-	/** Create factions cell - displays short names, converts to/from full tags */
+	/** Create factions multi-select dropdown */
 	TSharedRef<SWidget> CreateFactionsCell();
 
-	/** Create owned tags cell - displays short names, converts to/from full tags */
-	TSharedRef<SWidget> CreateOwnedTagsCell();
+	/** Create items multi-select dropdown (IC_* collections) */
+	TSharedRef<SWidget> CreateItemsCell();
 
-	/** Create asset dropdown cell - lists available assets of given class */
-	TSharedRef<SWidget> CreateAssetDropdownCell(FSoftObjectPath& Value, UClass* AssetClass, const FString& AssetPrefix);
+	/** Create POI dropdown (from level POIs) */
+	TSharedRef<SWidget> CreatePOIDropdownCell();
+
+	//=========================================================================
+	// Asset Scanning Helpers
+	//=========================================================================
+
+	/** Get all assets of given class with optional prefix filter */
+	static TArray<FString> GetAssetsOfClass(UClass* AssetClass, const FString& Prefix = TEXT(""));
+
+	/** Get all Blueprint classes inheriting from given class */
+	static TArray<FString> GetBlueprintClassesOf(UClass* ParentClass, const FString& Prefix = TEXT(""));
+
+	/** Get all faction gameplay tags */
+	static TArray<FString> GetFactionTags();
+
+	/** Get all item collection assets */
+	static TArray<FString> GetItemCollections();
+
+	/** Get all POI tags from level */
+	static TArray<FString> GetPOITags();
 
 	/** Mark row as modified */
 	void MarkModified();
@@ -191,17 +260,8 @@ private:
 	/** Header row */
 	TSharedPtr<SHeaderRow> HeaderRow;
 
-	/** Search box */
-	TSharedPtr<SSearchBox> SearchBox;
-
-	/** Current search text */
-	FString SearchText;
-
-	/** Per-column filter values (text) */
-	TMap<FName, FString> ColumnFilters;
-
-	/** Per-column filter values (selection - set of allowed values) */
-	TMap<FName, TSet<FString>> ColumnSelectionFilters;
+	/** Per-column filter state (text + multi-select) */
+	TMap<FName, FNPCColumnFilterState> ColumnFilters;
 
 	/** Current sort column */
 	FName SortColumn;
@@ -217,16 +277,28 @@ private:
 	/** Build the header row */
 	TSharedRef<SHeaderRow> BuildHeaderRow();
 
+	/** Build column header content (stacked: name + text filter + dropdown) */
+	TSharedRef<SWidget> BuildColumnHeaderContent(const FNPCTableColumn& Col);
+
 	/** Build status bar */
 	TSharedRef<SWidget> BuildStatusBar();
 
-	/** Build filter row */
-	TSharedRef<SWidget> BuildFilterRow();
+	/** Initialize column filter state for all columns */
+	void InitializeColumnFilters();
 
-	/** Column filter changed */
-	void OnColumnFilterChanged(const FText& NewText, FName ColumnId);
+	/** Update dropdown options for all column filters */
+	void UpdateColumnFilterOptions();
 
-	/** Get unique values for a column */
+	/** Column text filter changed */
+	void OnColumnTextFilterChanged(FName ColumnId, const FText& NewText);
+
+	/** Column dropdown filter selection changed */
+	void OnColumnDropdownFilterChanged(FName ColumnId, const FString& Value, bool bIsSelected);
+
+	/** Clear all filters */
+	FReply OnClearFiltersClicked();
+
+	/** Get unique values for a column (includes empty option) */
 	TArray<FString> GetUniqueColumnValues(FName ColumnId) const;
 
 	/** Get column value from row */
@@ -281,14 +353,11 @@ private:
 	// Filtering & Sorting
 	//=========================================================================
 
-	/** Apply search and filters */
+	/** Apply all filters and refresh display */
 	void ApplyFilters();
 
-	/** Apply sorting */
+	/** Apply sorting to displayed rows */
 	void ApplySorting();
-
-	/** Search text changed */
-	void OnSearchTextChanged(const FText& NewText);
 
 	//=========================================================================
 	// Data Management
