@@ -108,14 +108,14 @@ The metadata system tracks changes to detect what needs regeneration:
 
 PowerShell automation script: `Tools/claude_automation.ps1`
 
-| Action | Description |
-|--------|-------------|
-| `build` | Build the plugin |
-| `run` | Launch Unreal Editor |
-| `logs` | Get generation logs (after closing editor) |
-| `full` | Build + launch editor |
-| `generate` | Headless commandlet generation (no editor UI) |
-| `cycle` | Build + headless generation (most common) |
+| Action | Description | Internal Command |
+|--------|-------------|------------------|
+| `build` | Build the plugin | `UnrealBuildTool.exe NP22B57Editor Win64 Development` |
+| `run` | Launch Unreal Editor | `UnrealEditor.exe "{project}"` |
+| `logs` | Get generation logs (after closing editor) | Reads `NP22B57.log`, filters for GasAbilityGenerator entries |
+| `full` | Build + launch editor | `build` then `run` |
+| `generate` | Headless commandlet generation (no editor UI) | `UnrealEditor.exe -run=GasAbilityGenerator -manifest="..." -unattended -nosplash -nullrhi` |
+| `cycle` | Build + headless generation (most common) | `build` then `generate` |
 
 **Development Cycle (Editor UI):**
 1. Edit source files
@@ -248,16 +248,28 @@ Location: `Plugins/GasAbilityGenerator/`
 
 ```
 manifest.yaml → Parser → FManifestData → Generators → UE5 Assets
+     ↓                                        ↓
+CSV Dialogue → CSVParser ──────────────────────┘
+     ↓
+Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 ```
 
 | Class | Location | Purpose |
 |-------|----------|---------|
 | `FGasAbilityGeneratorModule` | GasAbilityGeneratorModule.cpp | Plugin lifecycle, menu registration |
-| `FGasAbilityGeneratorParser` | GasAbilityGeneratorParser.cpp | YAML parsing |
-| `SGasAbilityGeneratorWindow` | GasAbilityGeneratorWindow.cpp | Slate UI |
+| `FGasAbilityGeneratorParser` | GasAbilityGeneratorParser.cpp | YAML parsing to FManifestData |
+| `FDialogueCSVParser` | GasAbilityGeneratorDialogueCSVParser.cpp | v4.0 CSV dialogue parsing |
+| `SGasAbilityGeneratorWindow` | GasAbilityGeneratorWindow.cpp | Slate UI for editor |
 | `UGasAbilityGeneratorCommandlet` | GasAbilityGeneratorCommandlet.cpp | Command-line generation |
 | `F*Generator` classes | GasAbilityGeneratorGenerators.cpp | 25+ asset generators |
+| `FPipelineProcessor` | GasAbilityGeneratorPipeline.cpp | v3.9.8 Mesh-to-Item pipeline |
+| `UScheduledBehavior_AddNPCGoalByClass` | GasScheduledBehaviorHelpers.cpp | v3.9.1 Schedule behavior helper |
 | `GasAbilityGeneratorTypes.h` | Public/ | FManifest* structs, validation types |
+| `GasAbilityGeneratorMetadata.h` | Public/ | v3.0 Regen/Diff metadata classes |
+| `GasAbilityGeneratorFactories.h` | Public/ | Asset factory classes |
+| `GasAbilityGeneratorSpecs.h` | Public/ | Spec handling utilities |
+| `SNPCTableEditor` | NPCTableEditor/ | NPC table editor UI |
+| `SQuestEditor` | QuestEditor/ | Quest visual editor UI |
 
 **Naming Convention:** All structs use `FManifest*` prefix (e.g., `FManifestData`, `FManifestGameplayAbilityDefinition`).
 
