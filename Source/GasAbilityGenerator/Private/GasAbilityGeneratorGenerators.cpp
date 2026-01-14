@@ -8168,6 +8168,12 @@ static void CreateDialogueTree(
 			DialogueNode->DirectedAtSpeakerID = FName(*NodeDef.DirectedAt);
 		}
 
+		// v4.2: Set custom event callback function name
+		if (!NodeDef.OnPlayNodeFuncName.IsEmpty())
+		{
+			DialogueNode->OnPlayNodeFuncName = FName(*NodeDef.OnPlayNodeFuncName);
+		}
+
 		// Load audio if specified
 		if (!NodeDef.Audio.IsEmpty())
 		{
@@ -9857,6 +9863,62 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 					for (const auto& Pair : Definition.EquipmentEffectValues)
 					{
 						LogGeneration(FString::Printf(TEXT("    %s: %.2f"), *Pair.Key, Pair.Value));
+					}
+				}
+			}
+
+			// v4.2: Handle EquipmentAbilities TArray<TSubclassOf<UNarrativeGameplayAbility>>
+			if (Definition.EquipmentAbilities.Num() > 0)
+			{
+				FArrayProperty* AbilitiesArrayProp = CastField<FArrayProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("EquipmentAbilities")));
+				if (AbilitiesArrayProp)
+				{
+					FScriptArrayHelper ArrayHelper(AbilitiesArrayProp, AbilitiesArrayProp->ContainerPtrToValuePtr<void>(CDO));
+					ArrayHelper.EmptyValues();
+
+					for (const FString& AbilityName : Definition.EquipmentAbilities)
+					{
+						// Resolve ability class
+						UClass* AbilityClass = FindObject<UClass>(nullptr, *AbilityName);
+						if (!AbilityClass)
+						{
+							AbilityClass = LoadClass<UGameplayAbility>(nullptr, *AbilityName);
+						}
+						if (!AbilityClass)
+						{
+							// Try with _C suffix for blueprint classes
+							AbilityClass = LoadClass<UGameplayAbility>(nullptr, *FString::Printf(TEXT("%s_C"), *AbilityName));
+						}
+						if (!AbilityClass)
+						{
+							// Try as full path
+							AbilityClass = LoadClass<UGameplayAbility>(nullptr, *FString::Printf(TEXT("/Game/FatherCompanion/Abilities/%s.%s_C"),
+								*AbilityName, *AbilityName));
+						}
+
+						if (AbilityClass)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							FClassProperty* InnerProp = CastField<FClassProperty>(AbilitiesArrayProp->Inner);
+							if (InnerProp)
+							{
+								InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), AbilityClass);
+							}
+							LogGeneration(FString::Printf(TEXT("  Added EquipmentAbility: %s"), *AbilityName));
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve EquipmentAbility class: %s"), *AbilityName));
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(TEXT("  [INFO] EquipmentAbilities property not found - logging for manual setup:"));
+					for (const FString& AbilityName : Definition.EquipmentAbilities)
+					{
+						LogGeneration(FString::Printf(TEXT("    %s"), *AbilityName));
 					}
 				}
 			}
@@ -13107,6 +13169,123 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 		}
 	}
 
+	// v4.2: Set QuestDialogue (TSubclassOf<UDialogue>) if specified
+	if (!Definition.Dialogue.IsEmpty())
+	{
+		FClassProperty* DialogueProp = CastField<FClassProperty>(Quest->GetClass()->FindPropertyByName(TEXT("QuestDialogue")));
+		if (DialogueProp)
+		{
+			// Resolve dialogue class
+			UClass* DialogueClass = FindObject<UClass>(nullptr, *Definition.Dialogue);
+			if (!DialogueClass)
+			{
+				DialogueClass = LoadClass<UObject>(nullptr, *Definition.Dialogue);
+			}
+			if (!DialogueClass)
+			{
+				// Try with _C suffix for blueprint classes
+				DialogueClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("%s_C"), *Definition.Dialogue));
+			}
+			if (!DialogueClass)
+			{
+				// Try standard dialogue path
+				DialogueClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("/Game/FatherCompanion/Dialogues/%s.%s_C"),
+					*Definition.Dialogue, *Definition.Dialogue));
+			}
+
+			if (DialogueClass)
+			{
+				DialogueProp->SetObjectPropertyValue_InContainer(Quest, DialogueClass);
+				LogGeneration(FString::Printf(TEXT("  Set QuestDialogue: %s"), *Definition.Dialogue));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve dialogue class: %s"), *Definition.Dialogue));
+			}
+		}
+	}
+
+	// v4.2: Set QuestDialoguePlayParams if any overrides are specified
+	if (!Definition.DialoguePlayParams.IsDefault())
+	{
+		FStructProperty* PlayParamsProp = CastField<FStructProperty>(Quest->GetClass()->FindPropertyByName(TEXT("QuestDialoguePlayParams")));
+		if (PlayParamsProp)
+		{
+			void* ParamsPtr = PlayParamsProp->ContainerPtrToValuePtr<void>(Quest);
+			const auto& Params = Definition.DialoguePlayParams;
+
+			// Set StartFromID
+			if (!Params.StartFromID.IsEmpty())
+			{
+				if (FNameProperty* StartFromProp = CastField<FNameProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("StartFromID"))))
+				{
+					StartFromProp->SetPropertyValue_InContainer(ParamsPtr, FName(*Params.StartFromID));
+					LogGeneration(FString::Printf(TEXT("  Set QuestDialoguePlayParams.StartFromID: %s"), *Params.StartFromID));
+				}
+			}
+
+			// Set Priority
+			if (Params.Priority != -1)
+			{
+				if (FIntProperty* PriorityProp = CastField<FIntProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("Priority"))))
+				{
+					PriorityProp->SetPropertyValue_InContainer(ParamsPtr, Params.Priority);
+					LogGeneration(FString::Printf(TEXT("  Set QuestDialoguePlayParams.Priority: %d"), Params.Priority));
+				}
+			}
+
+			// Set override flags and values
+			if (Params.bOverride_bFreeMovement)
+			{
+				if (FBoolProperty* OverrideProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bOverride_bFreeMovement"))))
+				{
+					OverrideProp->SetPropertyValue_InContainer(ParamsPtr, true);
+				}
+				if (FBoolProperty* ValueProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bFreeMovement"))))
+				{
+					ValueProp->SetPropertyValue_InContainer(ParamsPtr, Params.bFreeMovement);
+					LogGeneration(FString::Printf(TEXT("  Set QuestDialoguePlayParams.bFreeMovement: %s"), Params.bFreeMovement ? TEXT("true") : TEXT("false")));
+				}
+			}
+			if (Params.bOverride_bStopMovement)
+			{
+				if (FBoolProperty* OverrideProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bOverride_bStopMovement"))))
+				{
+					OverrideProp->SetPropertyValue_InContainer(ParamsPtr, true);
+				}
+				if (FBoolProperty* ValueProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bStopMovement"))))
+				{
+					ValueProp->SetPropertyValue_InContainer(ParamsPtr, Params.bStopMovement);
+					LogGeneration(FString::Printf(TEXT("  Set QuestDialoguePlayParams.bStopMovement: %s"), Params.bStopMovement ? TEXT("true") : TEXT("false")));
+				}
+			}
+			if (Params.bOverride_bUnskippable)
+			{
+				if (FBoolProperty* OverrideProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bOverride_bUnskippable"))))
+				{
+					OverrideProp->SetPropertyValue_InContainer(ParamsPtr, true);
+				}
+				if (FBoolProperty* ValueProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bUnskippable"))))
+				{
+					ValueProp->SetPropertyValue_InContainer(ParamsPtr, Params.bUnskippable);
+					LogGeneration(FString::Printf(TEXT("  Set QuestDialoguePlayParams.bUnskippable: %s"), Params.bUnskippable ? TEXT("true") : TEXT("false")));
+				}
+			}
+			if (Params.bOverride_bCanBeExited)
+			{
+				if (FBoolProperty* OverrideProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bOverride_bCanBeExited"))))
+				{
+					OverrideProp->SetPropertyValue_InContainer(ParamsPtr, true);
+				}
+				if (FBoolProperty* ValueProp = CastField<FBoolProperty>(PlayParamsProp->Struct->FindPropertyByName(TEXT("bCanBeExited"))))
+				{
+					ValueProp->SetPropertyValue_InContainer(ParamsPtr, Params.bCanBeExited);
+					LogGeneration(FString::Printf(TEXT("  Set QuestDialoguePlayParams.bCanBeExited: %s"), Params.bCanBeExited ? TEXT("true") : TEXT("false")));
+				}
+			}
+		}
+	}
+
 	// State map for wiring
 	TMap<FString, UQuestState*> StateMap;
 	int32 TotalBranches = 0;
@@ -13129,6 +13308,12 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 			State->StateNodeType = EStateNodeType::Failure;
 		else
 			State->StateNodeType = EStateNodeType::Regular;
+
+		// v4.2: Set custom event callback function name
+		if (!StateDef.OnEnteredFuncName.IsEmpty())
+		{
+			State->OnEnteredFuncName = FName(*StateDef.OnEnteredFuncName);
+		}
 
 		// Add events to state
 		for (const auto& EventDef : StateDef.Events)
@@ -13173,6 +13358,12 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 			}
 
 			Branch->bHidden = BranchDef.bHidden;
+
+			// v4.2: Set custom event callback function name
+			if (!BranchDef.OnEnteredFuncName.IsEmpty())
+			{
+				Branch->OnEnteredFuncName = FName(*BranchDef.OnEnteredFuncName);
+			}
 
 			// Create tasks for this branch
 			for (const auto& TaskDef : BranchDef.Tasks)

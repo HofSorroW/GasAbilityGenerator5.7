@@ -3914,6 +3914,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 					{
 						CurrentDialogueNode.FailQuest = GetLineValue(TrimmedLine);
 					}
+					// v4.2: Custom event callback function name
+					else if (TrimmedLine.StartsWith(TEXT("on_play_node_func_name:")) || TrimmedLine.StartsWith(TEXT("on_play_func:")))
+					{
+						CurrentDialogueNode.OnPlayNodeFuncName = GetLineValue(TrimmedLine);
+					}
 					// NPC replies array
 					else if (TrimmedLine.Equals(TEXT("npc_replies:")) || TrimmedLine.StartsWith(TEXT("npc_replies:")))
 					{
@@ -4304,6 +4309,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInCurrentMorph = false;
 	bool bInMorphNames = false;
 	bool bInEquipmentEffectValues = false;
+	bool bInEquipmentAbilities = false;  // v4.2
 
 	while (LineIndex < Lines.Num())
 	{
@@ -4353,6 +4359,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInCurrentMorph = false;
 			bInMorphNames = false;
 			bInEquipmentEffectValues = false;
+			bInEquipmentAbilities = false;  // v4.2
 		}
 		else if (bInItem)
 		{
@@ -4773,6 +4780,46 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInWieldAttachments = false;
 				bInClothingMesh = false;
 				bInEquipmentEffectValues = true;
+				bInEquipmentAbilities = false;
+			}
+			// v4.2: Equipment abilities section (granted when equipped)
+			else if (TrimmedLine.Equals(TEXT("equipment_abilities:")) || TrimmedLine.StartsWith(TEXT("equipment_abilities:")))
+			{
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInClothingMesh = false;
+				bInEquipmentEffectValues = false;
+				bInEquipmentAbilities = true;
+				// Handle inline array format [GA_Ability1, GA_Ability2]
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Abilities;
+					ArrayContent.ParseIntoArray(Abilities, TEXT(","), true);
+					for (const FString& Ability : Abilities)
+					{
+						CurrentDef.EquipmentAbilities.Add(Ability.TrimStartAndEnd());
+					}
+					bInEquipmentAbilities = false;
+				}
+			}
+			// v4.2: Equipment abilities array items
+			else if (bInEquipmentAbilities)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- ")))
+				{
+					FString AbilityName = TrimmedLine.Mid(2).TrimStartAndEnd();
+					if (!AbilityName.IsEmpty())
+					{
+						CurrentDef.EquipmentAbilities.Add(AbilityName);
+					}
+				}
 			}
 
 			// v3.9.8: Clothing mesh section
@@ -7463,6 +7510,7 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 	bool bInEventProperties = false;
 	bool bInQuestRewards = false;   // v3.9.6: Rewards section
 	bool bInRewardItems = false;    // v3.9.6: Items in rewards
+	bool bInDialoguePlayParams = false;  // v4.2: Dialogue play params section
 
 	auto SaveCurrentTask = [&]()
 	{
@@ -7587,9 +7635,51 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 			{
 				CurrentQuest.Dialogue = GetLineValue(TrimmedLine);
 			}
+			// v4.2: Dialogue play params section
+			else if (TrimmedLine.Equals(TEXT("dialogue_play_params:")) || TrimmedLine.StartsWith(TEXT("dialogue_play_params:")))
+			{
+				bInDialoguePlayParams = true;
+			}
+			else if (bInDialoguePlayParams && !bInStates)
+			{
+				if (TrimmedLine.StartsWith(TEXT("start_from_id:")))
+				{
+					CurrentQuest.DialoguePlayParams.StartFromID = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("priority:")))
+				{
+					CurrentQuest.DialoguePlayParams.Priority = FCString::Atoi(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("free_movement:")))
+				{
+					CurrentQuest.DialoguePlayParams.bOverride_bFreeMovement = true;
+					CurrentQuest.DialoguePlayParams.bFreeMovement = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("stop_movement:")))
+				{
+					CurrentQuest.DialoguePlayParams.bOverride_bStopMovement = true;
+					CurrentQuest.DialoguePlayParams.bStopMovement = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("unskippable:")))
+				{
+					CurrentQuest.DialoguePlayParams.bOverride_bUnskippable = true;
+					CurrentQuest.DialoguePlayParams.bUnskippable = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("can_be_exited:")))
+				{
+					CurrentQuest.DialoguePlayParams.bOverride_bCanBeExited = true;
+					CurrentQuest.DialoguePlayParams.bCanBeExited = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (!TrimmedLine.StartsWith(TEXT("-")) && TrimmedLine.Contains(TEXT(":")))
+				{
+					// End of dialogue_play_params section (another field started)
+					bInDialoguePlayParams = false;
+				}
+			}
 			else if (TrimmedLine.StartsWith(TEXT("start_state:")))
 			{
 				CurrentQuest.StartState = GetLineValue(TrimmedLine);
+				bInDialoguePlayParams = false;
 			}
 			// v3.9.6: Questgiver
 			else if (TrimmedLine.StartsWith(TEXT("questgiver:")))
@@ -7674,6 +7764,11 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 					{
 						CurrentState.Type = GetLineValue(TrimmedLine);
 					}
+					// v4.2: State custom event callback
+					else if ((TrimmedLine.StartsWith(TEXT("on_entered_func_name:")) || TrimmedLine.StartsWith(TEXT("on_entered_func:"))) && !bInBranch)
+					{
+						CurrentState.OnEnteredFuncName = GetLineValue(TrimmedLine);
+					}
 					else if (TrimmedLine.StartsWith(TEXT("branches:")) && !bInTask)
 					{
 						SaveCurrentEvent();
@@ -7722,6 +7817,11 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 							else if (TrimmedLine.StartsWith(TEXT("hidden:")) && !bInTask)
 							{
 								CurrentBranch.bHidden = GetLineValue(TrimmedLine).ToBool();
+							}
+							// v4.2: Branch custom event callback
+							else if ((TrimmedLine.StartsWith(TEXT("on_entered_func_name:")) || TrimmedLine.StartsWith(TEXT("on_entered_func:"))) && !bInTask)
+							{
+								CurrentBranch.OnEnteredFuncName = GetLineValue(TrimmedLine);
 							}
 							else if (TrimmedLine.StartsWith(TEXT("tasks:")))
 							{

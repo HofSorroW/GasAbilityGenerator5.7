@@ -1578,6 +1578,9 @@ struct FManifestDialogueNodeDefinition
 	FString CompleteQuestBranch;         // Quest branch to complete
 	FString FailQuest;                   // Quest to fail
 
+	// v4.2: Custom event callback - FName of function to call when node plays
+	FString OnPlayNodeFuncName;          // Called when node starts/finishes playing
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Id);
@@ -1607,6 +1610,9 @@ struct FManifestDialogueNodeDefinition
 		Hash ^= static_cast<uint64>(GetTypeHash(CompleteQuestBranch));
 		Hash = (Hash << 3) | (Hash >> 61);
 		Hash ^= static_cast<uint64>(GetTypeHash(FailQuest));
+		Hash = (Hash << 3) | (Hash >> 61);
+		// v4.2: Include custom event callback in hash
+		Hash ^= static_cast<uint64>(GetTypeHash(OnPlayNodeFuncName));
 		return Hash;
 	}
 };
@@ -2037,6 +2043,9 @@ struct FManifestEquippableItemDefinition
 	// Used for SetByCaller armor, damage, and other stat values
 	TMap<FString, float> EquipmentEffectValues;
 
+	// v4.2: Equipment abilities - granted when item is equipped, removed when unequipped
+	TArray<FString> EquipmentAbilities;  // TArray<TSubclassOf<UNarrativeGameplayAbility>>
+
 	/** v3.9.12: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -2191,6 +2200,13 @@ struct FManifestEquippableItemDefinition
 			Hash ^= GetTypeHash(Pair.Key);
 			Hash ^= static_cast<uint64>(FMath::RoundToInt(Pair.Value * 100.f));
 			Hash = (Hash << 4) | (Hash >> 60);
+		}
+
+		// v4.2: Hash equipment abilities
+		for (const FString& Ability : EquipmentAbilities)
+		{
+			Hash ^= GetTypeHash(Ability);
+			Hash = (Hash << 3) | (Hash >> 61);
 		}
 		return Hash;
 	}
@@ -3550,6 +3566,9 @@ struct FManifestQuestBranchDefinition
 	TArray<FManifestDialogueEventDefinition> Events;  // Events fired on branch completion
 	bool bHidden = false;                // Hide from UI
 
+	// v4.2: Custom event callback - FName of function to call when branch is taken
+	FString OnEnteredFuncName;           // Called when branch is taken
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Id);
@@ -3565,6 +3584,8 @@ struct FManifestQuestBranchDefinition
 			Hash ^= Event.ComputeHash();
 			Hash = (Hash << 2) | (Hash >> 62);
 		}
+		// v4.2: Include custom event callback in hash
+		Hash ^= static_cast<uint64>(GetTypeHash(OnEnteredFuncName));
 		return Hash;
 	}
 };
@@ -3581,6 +3602,9 @@ struct FManifestQuestStateDefinition
 	TArray<FManifestQuestBranchDefinition> Branches;  // Outgoing transitions
 	TArray<FManifestDialogueEventDefinition> Events;  // Events fired when state is entered
 
+	// v4.2: Custom event callback - FName of function to call when state is entered/exited
+	FString OnEnteredFuncName;           // Called when state is activated/deactivated
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Id);
@@ -3596,6 +3620,48 @@ struct FManifestQuestStateDefinition
 			Hash ^= Event.ComputeHash();
 			Hash = (Hash << 2) | (Hash >> 62);
 		}
+		// v4.2: Include custom event callback in hash
+		Hash ^= static_cast<uint64>(GetTypeHash(OnEnteredFuncName));
+		return Hash;
+	}
+};
+
+/**
+ * v4.2: Quest dialogue play params - parameters for playing quest dialogue
+ * Maps to Narrative Pro's FDialoguePlayParams struct
+ */
+struct FManifestDialoguePlayParamsDefinition
+{
+	FString StartFromID;                 // Dialogue node ID to start from (empty = root)
+	int32 Priority = -1;                 // Dialogue priority (-1 = use dialogue default)
+	bool bOverride_bFreeMovement = false;
+	bool bFreeMovement = true;           // Allow movement during dialogue
+	bool bOverride_bStopMovement = false;
+	bool bStopMovement = false;          // Stop NPC movement
+	bool bOverride_bUnskippable = false;
+	bool bUnskippable = false;           // Cannot skip lines
+	bool bOverride_bCanBeExited = false;
+	bool bCanBeExited = true;            // Can exit via ESC
+
+	bool IsDefault() const
+	{
+		return StartFromID.IsEmpty() && Priority == -1 &&
+		       !bOverride_bFreeMovement && !bOverride_bStopMovement &&
+		       !bOverride_bUnskippable && !bOverride_bCanBeExited;
+	}
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(StartFromID);
+		Hash ^= static_cast<uint64>(Priority) << 8;
+		Hash ^= (bOverride_bFreeMovement ? 1ULL : 0ULL) << 16;
+		Hash ^= (bFreeMovement ? 1ULL : 0ULL) << 17;
+		Hash ^= (bOverride_bStopMovement ? 1ULL : 0ULL) << 18;
+		Hash ^= (bStopMovement ? 1ULL : 0ULL) << 19;
+		Hash ^= (bOverride_bUnskippable ? 1ULL : 0ULL) << 20;
+		Hash ^= (bUnskippable ? 1ULL : 0ULL) << 21;
+		Hash ^= (bOverride_bCanBeExited ? 1ULL : 0ULL) << 22;
+		Hash ^= (bCanBeExited ? 1ULL : 0ULL) << 23;
 		return Hash;
 	}
 };
@@ -3637,12 +3703,15 @@ struct FManifestQuestDefinition
 	FString QuestName;                   // Display name
 	FString QuestDescription;            // Journal description
 	bool bTracked = true;                // Show navigation markers
-	FString Dialogue;                    // Associated dialogue asset (optional)
+	FString Dialogue;                    // Associated dialogue asset - maps to QuestDialogue (TSubclassOf<UDialogue>)
 	FString StartState;                  // ID of starting state (defaults to first state)
 
 	// v4.1: Quest visibility and dialogue control
 	bool bHidden = false;                // Quest hidden from journal until discovered
 	bool bResumeDialogueAfterLoad = false;  // Resume quest dialogue on save load
+
+	// v4.2: Quest dialogue play params - how to play the quest dialogue
+	FManifestDialoguePlayParamsDefinition DialoguePlayParams;
 
 	// v3.9.6: Questgiver and rewards
 	FString Questgiver;                  // NPCDef_ who gives this quest
@@ -3662,6 +3731,9 @@ struct FManifestQuestDefinition
 		// v4.1: Include quest visibility and dialogue control in hash
 		Hash ^= (bHidden ? 1ULL : 0ULL) << 22;
 		Hash ^= (bResumeDialogueAfterLoad ? 1ULL : 0ULL) << 23;
+		// v4.2: Include dialogue play params in hash
+		Hash ^= DialoguePlayParams.ComputeHash();
+		Hash = (Hash << 5) | (Hash >> 59);
 		// v3.9.6: Include questgiver and rewards in hash
 		Hash ^= GetTypeHash(Questgiver) << 24;
 		Hash ^= Rewards.ComputeHash() << 28;
