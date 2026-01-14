@@ -1482,18 +1482,21 @@ struct FManifestAnimationNotifyDefinition
 
 /**
  * v3.7: Alternative dialogue line for variety in NPC responses
+ * v4.1: Added FacialAnimation for face mesh montages
  */
 struct FManifestDialogueLineDefinition
 {
 	FString Text;
-	FString Audio;    // Asset path to USoundBase
-	FString Montage;  // Asset path to UAnimMontage
+	FString Audio;            // Asset path to USoundBase
+	FString Montage;          // Asset path to UAnimMontage (body animation)
+	FString FacialAnimation;  // v4.1: Asset path to UAnimMontage (face animation)
 
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Text);
 		Hash ^= GetTypeHash(Audio) << 4;
 		Hash ^= GetTypeHash(Montage) << 8;
+		Hash ^= GetTypeHash(FacialAnimation) << 12;
 		return Hash;
 	}
 };
@@ -1545,6 +1548,7 @@ struct FManifestDialogueConditionDefinition
 /**
  * v3.7: Dialogue node definition (NPC or Player node)
  * v3.9.6: Added quest shortcuts (StartQuest, CompleteQuestBranch, FailQuest)
+ * v4.1: Added FacialAnimation, HintText for enhanced dialogue automation
  */
 struct FManifestDialogueNodeDefinition
 {
@@ -1553,8 +1557,10 @@ struct FManifestDialogueNodeDefinition
 	FString Speaker;                     // Speaker ID (for NPC nodes)
 	FString Text;                        // Dialogue line text
 	FString OptionText;                  // Short option text (player nodes)
+	FString HintText;                    // v4.1: Hint text after option (e.g., "(Lie)", "(Begin Quest)")
 	FString Audio;                       // Audio asset path
-	FString Montage;                     // Animation montage path
+	FString Montage;                     // Animation montage path (body)
+	FString FacialAnimation;             // v4.1: Facial animation montage path
 	FString Duration;                    // "Default", "WhenAudioEnds", "AfterDuration", etc.
 	float DurationSeconds = 0.0f;        // Duration override
 	bool bAutoSelect = false;            // Auto-select this option
@@ -1579,8 +1585,11 @@ struct FManifestDialogueNodeDefinition
 		Hash ^= GetTypeHash(Speaker) << 8;
 		Hash ^= static_cast<uint64>(GetTypeHash(Text)) << 12;
 		Hash ^= static_cast<uint64>(GetTypeHash(OptionText)) << 16;
+		// v4.1: Include HintText and FacialAnimation in hash
+		Hash ^= static_cast<uint64>(GetTypeHash(HintText)) << 18;
 		Hash ^= static_cast<uint64>(GetTypeHash(Audio)) << 20;
 		Hash ^= static_cast<uint64>(GetTypeHash(Montage)) << 24;
+		Hash ^= static_cast<uint64>(GetTypeHash(FacialAnimation)) << 26;
 		Hash ^= static_cast<uint64>(GetTypeHash(Duration)) << 28;
 		Hash ^= static_cast<uint64>(GetTypeHash(static_cast<int32>(DurationSeconds * 1000.f))) << 32;
 		Hash ^= (bAutoSelect ? 1ULL : 0ULL) << 36;
@@ -1694,6 +1703,9 @@ struct FManifestDialogueBlueprintDefinition
 	float DialogueBlendOutTime = 0.5f; // Camera blend out duration
 	bool bAdjustPlayerTransform = false; // Move player to face speaker
 
+	// v4.1: Camera shake for dialogue
+	FString CameraShake;             // UCameraShakeBase class reference for dialogue camera
+
 	// v3.2: Speakers configuration
 	TArray<FManifestDialogueSpeakerDefinition> Speakers;
 
@@ -1728,6 +1740,8 @@ struct FManifestDialogueBlueprintDefinition
 		Hash ^= GetTypeHash(DefaultHeadBoneName) << 26;
 		Hash ^= GetTypeHash(static_cast<int32>(DialogueBlendOutTime * 1000.f)) << 30;
 		Hash ^= (bAdjustPlayerTransform ? 1ULL : 0ULL) << 34;
+		// v4.1: Include camera shake in hash
+		Hash ^= static_cast<uint64>(GetTypeHash(CameraShake)) << 36;
 		for (const auto& Speaker : Speakers)
 		{
 			Hash ^= Speaker.ComputeHash();
@@ -2374,6 +2388,11 @@ struct FManifestNarrativeEventDefinition
 	TArray<FString> CharacterTargets;         // CharacterDefinition refs for Anyone filter
 	TArray<FString> PlayerTargets;            // PlayerDefinition refs for OnlyPlayers filter
 
+	// v4.1: Child class property introspection
+	// Maps property name to value string for child-specific properties
+	// e.g., NE_GiveXP: {"XPAmount": "100"}, NE_AddCurrency: {"Currency": "500"}
+	TMap<FString, FString> Properties;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -2402,6 +2421,13 @@ struct FManifestNarrativeEventDefinition
 		{
 			Hash ^= GetTypeHash(Target);
 			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		// v4.1: Include child class properties in hash
+		for (const auto& Pair : Properties)
+		{
+			Hash ^= GetTypeHash(Pair.Key);
+			Hash ^= GetTypeHash(Pair.Value);
+			Hash = (Hash << 5) | (Hash >> 59);
 		}
 		return Hash;
 	}
@@ -3614,6 +3640,10 @@ struct FManifestQuestDefinition
 	FString Dialogue;                    // Associated dialogue asset (optional)
 	FString StartState;                  // ID of starting state (defaults to first state)
 
+	// v4.1: Quest visibility and dialogue control
+	bool bHidden = false;                // Quest hidden from journal until discovered
+	bool bResumeDialogueAfterLoad = false;  // Resume quest dialogue on save load
+
 	// v3.9.6: Questgiver and rewards
 	FString Questgiver;                  // NPCDef_ who gives this quest
 	FManifestQuestRewardDefinition Rewards;  // Rewards on completion
@@ -3629,6 +3659,9 @@ struct FManifestQuestDefinition
 		Hash ^= (bTracked ? 1ULL : 0ULL) << 12;
 		Hash ^= GetTypeHash(Dialogue) << 16;
 		Hash ^= GetTypeHash(StartState) << 20;
+		// v4.1: Include quest visibility and dialogue control in hash
+		Hash ^= (bHidden ? 1ULL : 0ULL) << 22;
+		Hash ^= (bResumeDialogueAfterLoad ? 1ULL : 0ULL) << 23;
 		// v3.9.6: Include questgiver and rewards in hash
 		Hash ^= GetTypeHash(Questgiver) << 24;
 		Hash ^= Rewards.ComputeHash() << 28;

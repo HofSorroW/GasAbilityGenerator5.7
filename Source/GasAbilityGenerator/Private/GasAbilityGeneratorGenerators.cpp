@@ -161,6 +161,7 @@
 #include "Tales/QuestSM.h"      // v3.9: UQuestState, UQuestBranch for quest state machine
 #include "Tales/QuestTask.h"    // v3.9: UNarrativeTask for quest tasks
 #include "GasScheduledBehaviorHelpers.h"  // v3.9: Concrete helper for UScheduledBehavior_AddNPCGoal
+#include "Camera/CameraShakeBase.h"  // v4.1: UCameraShakeBase for dialogue camera shake
 
 // v2.3.0: Component includes for Actor Blueprint generation
 #include "Components/SceneComponent.h"
@@ -8124,6 +8125,17 @@ static void CreateDialogueTree(
 				}
 			}
 
+			// v4.1: Set HintText for player dialogue options
+			if (!NodeDef.HintText.IsEmpty())
+			{
+				FTextProperty* HintTextProp = CastField<FTextProperty>(
+					PlayerNode->GetClass()->FindPropertyByName(TEXT("HintText")));
+				if (HintTextProp)
+				{
+					HintTextProp->SetPropertyValue_InContainer(PlayerNode, FText::FromString(NodeDef.HintText));
+				}
+			}
+
 			FBoolProperty* AutoSelectProp = CastField<FBoolProperty>(
 				PlayerNode->GetClass()->FindPropertyByName(TEXT("bAutoSelect")));
 			if (AutoSelectProp && NodeDef.bAutoSelect)
@@ -8177,6 +8189,22 @@ static void CreateDialogueTree(
 			if (Montage)
 			{
 				DialogueNode->Line.DialogueMontage = Montage;
+			}
+		}
+
+		// v4.1: Load facial animation if specified
+		if (!NodeDef.FacialAnimation.IsEmpty())
+		{
+			UAnimMontage* FacialMontage = LoadObject<UAnimMontage>(nullptr, *NodeDef.FacialAnimation);
+			if (FacialMontage)
+			{
+				// Set via reflection since FDialogueLine::FacialAnimation may not be exposed
+				FObjectProperty* FacialProp = CastField<FObjectProperty>(
+					FDialogueLine::StaticStruct()->FindPropertyByName(TEXT("FacialAnimation")));
+				if (FacialProp)
+				{
+					FacialProp->SetObjectPropertyValue_InContainer(&DialogueNode->Line, FacialMontage);
+				}
 			}
 		}
 
@@ -8511,6 +8539,25 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			{
 				AdjustTransformP->SetPropertyValue_InContainer(CDO, true);
 				LogGeneration(TEXT("  Set bAdjustPlayerTransform: true"));
+			}
+		}
+
+		// v4.1: Set DialogueCameraShake if specified
+		if (!Definition.CameraShake.IsEmpty())
+		{
+			UClass* CameraShakeClass = LoadClass<UCameraShakeBase>(nullptr, *Definition.CameraShake);
+			if (CameraShakeClass)
+			{
+				FClassProperty* CameraShakeP = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DialogueCameraShake")));
+				if (CameraShakeP)
+				{
+					CameraShakeP->SetPropertyValue_InContainer(CDO, CameraShakeClass);
+					LogGeneration(FString::Printf(TEXT("  Set DialogueCameraShake: %s"), *Definition.CameraShake));
+				}
+			}
+			else
+			{
+				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load camera shake class: %s"), *Definition.CameraShake);
 			}
 		}
 
@@ -10690,8 +10737,61 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		LogGeneration(FString::Printf(TEXT("  Event '%s' PlayerTargets (%d): %s"), *Definition.Name, Definition.PlayerTargets.Num(), *FString::Join(Definition.PlayerTargets, TEXT(", "))));
 	}
 
-	// Recompile after setting target arrays
-	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0))
+	// v4.1: Set child class-specific properties via reflection introspection
+	if (Definition.Properties.Num() > 0 && CDO)
+	{
+		for (const auto& PropPair : Definition.Properties)
+		{
+			const FString& PropertyName = PropPair.Key;
+			const FString& PropertyValue = PropPair.Value;
+
+			FProperty* Prop = CDO->GetClass()->FindPropertyByName(FName(*PropertyName));
+			if (!Prop)
+			{
+				LogGeneration(FString::Printf(TEXT("  WARNING: Property '%s' not found on %s"), *PropertyName, *CDO->GetClass()->GetName()));
+				continue;
+			}
+
+			// Handle different property types
+			if (FIntProperty* IntProp = CastField<FIntProperty>(Prop))
+			{
+				IntProp->SetPropertyValue_InContainer(CDO, FCString::Atoi(*PropertyValue));
+				LogGeneration(FString::Printf(TEXT("  Set %s: %s (int)"), *PropertyName, *PropertyValue));
+			}
+			else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Prop))
+			{
+				FloatProp->SetPropertyValue_InContainer(CDO, FCString::Atof(*PropertyValue));
+				LogGeneration(FString::Printf(TEXT("  Set %s: %s (float)"), *PropertyName, *PropertyValue));
+			}
+			else if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
+			{
+				StrProp->SetPropertyValue_InContainer(CDO, PropertyValue);
+				LogGeneration(FString::Printf(TEXT("  Set %s: %s (string)"), *PropertyName, *PropertyValue));
+			}
+			else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Prop))
+			{
+				BoolProp->SetPropertyValue_InContainer(CDO, PropertyValue.ToBool());
+				LogGeneration(FString::Printf(TEXT("  Set %s: %s (bool)"), *PropertyName, *PropertyValue));
+			}
+			else if (FNameProperty* NameProp = CastField<FNameProperty>(Prop))
+			{
+				NameProp->SetPropertyValue_InContainer(CDO, FName(*PropertyValue));
+				LogGeneration(FString::Printf(TEXT("  Set %s: %s (name)"), *PropertyName, *PropertyValue));
+			}
+			else if (FTextProperty* TextProp = CastField<FTextProperty>(Prop))
+			{
+				TextProp->SetPropertyValue_InContainer(CDO, FText::FromString(PropertyValue));
+				LogGeneration(FString::Printf(TEXT("  Set %s: %s (text)"), *PropertyName, *PropertyValue));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("  WARNING: Unsupported property type for '%s'"), *PropertyName));
+			}
+		}
+	}
+
+	// Recompile after setting target arrays and properties
+	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0 || Definition.Properties.Num() > 0))
 	{
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
@@ -12985,6 +13085,26 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 	if (FBoolProperty* TrackedProp = CastField<FBoolProperty>(Quest->GetClass()->FindPropertyByName(TEXT("bTracked"))))
 	{
 		TrackedProp->SetPropertyValue_InContainer(Quest, Definition.bTracked);
+	}
+
+	// v4.1: Set bHidden if true
+	if (Definition.bHidden)
+	{
+		if (FBoolProperty* HiddenProp = CastField<FBoolProperty>(Quest->GetClass()->FindPropertyByName(TEXT("bHidden"))))
+		{
+			HiddenProp->SetPropertyValue_InContainer(Quest, true);
+			LogGeneration(TEXT("  Set bHidden: true"));
+		}
+	}
+
+	// v4.1: Set bResumeDialogueAfterLoad if true
+	if (Definition.bResumeDialogueAfterLoad)
+	{
+		if (FBoolProperty* ResumeProp = CastField<FBoolProperty>(Quest->GetClass()->FindPropertyByName(TEXT("bResumeDialogueAfterLoad"))))
+		{
+			ResumeProp->SetPropertyValue_InContainer(Quest, true);
+			LogGeneration(TEXT("  Set bResumeDialogueAfterLoad: true"));
+		}
 	}
 
 	// State map for wiring

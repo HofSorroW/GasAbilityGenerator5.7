@@ -3762,6 +3762,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			{
 				CurrentDef.bAdjustPlayerTransform = GetLineValue(TrimmedLine).ToBool();
 			}
+			// v4.1: Camera shake for dialogue
+			else if (TrimmedLine.StartsWith(TEXT("camera_shake:")))
+			{
+				CurrentDef.CameraShake = GetLineValue(TrimmedLine);
+			}
 			// v3.7: Dialogue tree parsing
 			else if (TrimmedLine.Equals(TEXT("dialogue_tree:")) || TrimmedLine.StartsWith(TEXT("dialogue_tree:")))
 			{
@@ -3854,6 +3859,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 					{
 						CurrentDialogueNode.OptionText = GetLineValue(TrimmedLine);
 					}
+					// v4.1: Hint text for player dialogue options
+					else if (TrimmedLine.StartsWith(TEXT("hint_text:")))
+					{
+						CurrentDialogueNode.HintText = GetLineValue(TrimmedLine);
+					}
 					else if (TrimmedLine.StartsWith(TEXT("audio:")))
 					{
 						CurrentDialogueNode.Audio = GetLineValue(TrimmedLine);
@@ -3861,6 +3871,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 					else if (TrimmedLine.StartsWith(TEXT("montage:")))
 					{
 						CurrentDialogueNode.Montage = GetLineValue(TrimmedLine);
+					}
+					// v4.1: Facial animation montage
+					else if (TrimmedLine.StartsWith(TEXT("facial_animation:")))
+					{
+						CurrentDialogueNode.FacialAnimation = GetLineValue(TrimmedLine);
 					}
 					else if (TrimmedLine.StartsWith(TEXT("duration:")))
 					{
@@ -5620,6 +5635,21 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 						CurrentDef.PlayerTargets.Add(Item.TrimStartAndEnd());
 					}
 					bInPlayerTargets = false;
+				}
+			}
+			// v4.1: Child class properties introspection
+			// Format: property_name: value (any key not recognized as standard property)
+			else
+			{
+				// Check if this looks like a property definition (contains colon, not an array item)
+				int32 ColonPos = TrimmedLine.Find(TEXT(":"));
+				if (ColonPos != INDEX_NONE && !TrimmedLine.StartsWith(TEXT("-")))
+				{
+					FString PropertyName = TrimmedLine.Left(ColonPos).TrimEnd();
+					FString PropertyValue = TrimmedLine.Mid(ColonPos + 1).TrimStart();
+					// Add to properties map for child class introspection
+					CurrentDef.Properties.Add(PropertyName, PropertyValue);
+					bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
 				}
 			}
 		}
@@ -7543,6 +7573,15 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 			else if (TrimmedLine.StartsWith(TEXT("tracked:")))
 			{
 				CurrentQuest.bTracked = GetLineValue(TrimmedLine).ToBool();
+			}
+			// v4.1: Quest visibility and dialogue control
+			else if (TrimmedLine.StartsWith(TEXT("hidden:")))
+			{
+				CurrentQuest.bHidden = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("resume_dialogue_after_load:")))
+			{
+				CurrentQuest.bResumeDialogueAfterLoad = GetLineValue(TrimmedLine).ToBool();
 			}
 			else if (TrimmedLine.StartsWith(TEXT("dialogue:")))
 			{
