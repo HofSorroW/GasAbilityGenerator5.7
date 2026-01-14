@@ -2409,6 +2409,10 @@ struct FManifestNarrativeEventDefinition
 	// e.g., NE_GiveXP: {"XPAmount": "100"}, NE_AddCurrency: {"Currency": "500"}
 	TMap<FString, FString> Properties;
 
+	// v4.3: Event conditions - event only fires if all conditions pass
+	// Reuses dialogue condition format: Type, bNot, Properties
+	TArray<FManifestDialogueConditionDefinition> Conditions;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -2444,6 +2448,12 @@ struct FManifestNarrativeEventDefinition
 			Hash ^= GetTypeHash(Pair.Key);
 			Hash ^= GetTypeHash(Pair.Value);
 			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		// v4.3: Include event conditions in hash
+		for (const auto& Condition : Conditions)
+		{
+			Hash ^= Condition.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
 		}
 		return Hash;
 	}
@@ -3532,6 +3542,29 @@ struct FManifestGoalItemDefinition
 };
 
 /**
+ * v4.3: Quest requirement definition - dynamic constraints on quests
+ * Maps to UQuestRequirement instanced objects
+ * Example: QR_StayNear (fail if too far from NPC), QR_KeepAlive (fail if NPC dies)
+ */
+struct FManifestQuestRequirementDefinition
+{
+	FString Type;                        // Requirement class name (e.g., "QR_StayNear", "QR_KeepAlive")
+	TMap<FString, FString> Properties;   // Requirement-specific properties
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Type);
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
  * v3.9.4: Quest task definition - objective within a branch
  * Based on UNarrativeTask properties
  */
@@ -3717,6 +3750,9 @@ struct FManifestQuestDefinition
 	FString Questgiver;                  // NPCDef_ who gives this quest
 	FManifestQuestRewardDefinition Rewards;  // Rewards on completion
 
+	// v4.3: Quest requirements - dynamic constraints (fail conditions)
+	TArray<FManifestQuestRequirementDefinition> Requirements;
+
 	TArray<FManifestQuestStateDefinition> States;
 
 	uint64 ComputeHash() const
@@ -3737,6 +3773,12 @@ struct FManifestQuestDefinition
 		// v3.9.6: Include questgiver and rewards in hash
 		Hash ^= GetTypeHash(Questgiver) << 24;
 		Hash ^= Rewards.ComputeHash() << 28;
+		// v4.3: Include requirements in hash
+		for (const auto& Req : Requirements)
+		{
+			Hash ^= Req.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
 		for (const auto& State : States)
 		{
 			Hash ^= State.ComputeHash();

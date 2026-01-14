@@ -5528,6 +5528,21 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 	bool bInNPCTargets = false;
 	bool bInCharacterTargets = false;
 	bool bInPlayerTargets = false;
+	// v4.3: Event conditions
+	bool bInConditions = false;
+	bool bInCondition = false;
+	bool bInConditionProperties = false;
+	FManifestDialogueConditionDefinition CurrentCondition;
+
+	// v4.3: Helper to save current condition
+	auto SaveCurrentCondition = [&]()
+	{
+		if (!CurrentCondition.Type.IsEmpty())
+		{
+			CurrentDef.Conditions.Add(CurrentCondition);
+			CurrentCondition = FManifestDialogueConditionDefinition();
+		}
+	};
 
 	while (LineIndex < Lines.Num())
 	{
@@ -5536,6 +5551,7 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			SaveCurrentCondition();  // v4.3: Save pending condition
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NarrativeEvents.Add(CurrentDef);
@@ -5552,6 +5568,7 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			SaveCurrentCondition();  // v4.3: Save pending condition before new item
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NarrativeEvents.Add(CurrentDef);
@@ -5562,6 +5579,9 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 			bInNPCTargets = false;
 			bInCharacterTargets = false;
 			bInPlayerTargets = false;
+			bInConditions = false;  // v4.3: Reset conditions state
+			bInCondition = false;
+			bInConditionProperties = false;
 		}
 		else if (bInItem)
 		{
@@ -5671,6 +5691,7 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 				bInNPCTargets = false;
 				bInCharacterTargets = false;
 				bInPlayerTargets = true;
+				bInConditions = false;  // v4.3
 				FString Value = GetLineValue(TrimmedLine);
 				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
 				{
@@ -5682,6 +5703,54 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 						CurrentDef.PlayerTargets.Add(Item.TrimStartAndEnd());
 					}
 					bInPlayerTargets = false;
+				}
+			}
+			// v4.3: Event conditions section
+			else if (TrimmedLine.StartsWith(TEXT("conditions:")))
+			{
+				SaveCurrentCondition();
+				bInConditions = true;
+				bInCondition = false;
+				bInConditionProperties = false;
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
+			else if (bInConditions)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- type:")) || TrimmedLine.StartsWith(TEXT("- class:")))
+				{
+					SaveCurrentCondition();
+					CurrentCondition.Type = GetLineValue(TrimmedLine);
+					bInCondition = true;
+					bInConditionProperties = false;
+				}
+				else if (bInCondition)
+				{
+					if (TrimmedLine.StartsWith(TEXT("type:")) || TrimmedLine.StartsWith(TEXT("class:")))
+					{
+						CurrentCondition.Type = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("not:")) || TrimmedLine.StartsWith(TEXT("invert:")))
+					{
+						CurrentCondition.bNot = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("properties:")))
+					{
+						bInConditionProperties = true;
+					}
+					else if (bInConditionProperties || (!TrimmedLine.StartsWith(TEXT("-")) && TrimmedLine.Contains(TEXT(":"))))
+					{
+						// Parse property
+						FString PropKey, PropValue;
+						if (TrimmedLine.Split(TEXT(":"), &PropKey, &PropValue))
+						{
+							PropKey = PropKey.TrimStart().TrimEnd();
+							PropValue = PropValue.TrimStart().TrimEnd().TrimQuotes();
+							if (!PropKey.IsEmpty() && !PropKey.StartsWith(TEXT("-")) && PropKey != TEXT("type") && PropKey != TEXT("class"))
+							{
+								CurrentCondition.Properties.Add(PropKey, PropValue);
+							}
+						}
+					}
 				}
 			}
 			// v4.1: Child class properties introspection
@@ -7511,6 +7580,10 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 	bool bInQuestRewards = false;   // v3.9.6: Rewards section
 	bool bInRewardItems = false;    // v3.9.6: Items in rewards
 	bool bInDialoguePlayParams = false;  // v4.2: Dialogue play params section
+	bool bInRequirements = false;   // v4.3: Requirements section
+	bool bInRequirement = false;    // v4.3: Inside a requirement item
+	bool bInRequirementProperties = false;  // v4.3: Inside requirement properties
+	FManifestQuestRequirementDefinition CurrentRequirement;  // v4.3: Current requirement being parsed
 
 	auto SaveCurrentTask = [&]()
 	{
@@ -7534,6 +7607,16 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 				CurrentState.Events.Add(CurrentEvent);
 			}
 			CurrentEvent = FManifestDialogueEventDefinition();
+		}
+	};
+
+	// v4.3: Save current requirement
+	auto SaveCurrentRequirement = [&]()
+	{
+		if (!CurrentRequirement.Type.IsEmpty())
+		{
+			CurrentQuest.Requirements.Add(CurrentRequirement);
+			CurrentRequirement = FManifestQuestRequirementDefinition();
 		}
 	};
 
@@ -7561,6 +7644,7 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 	auto SaveCurrentQuest = [&]()
 	{
 		SaveCurrentState();
+		SaveCurrentRequirement();  // v4.3: Save any pending requirement
 		if (!CurrentQuest.Name.IsEmpty())
 		{
 			OutData.Quests.Add(CurrentQuest);
@@ -7728,8 +7812,53 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 					}
 				}
 			}
+			// v4.3: Requirements section
+			else if (TrimmedLine.StartsWith(TEXT("requirements:")))
+			{
+				bInRequirements = true;
+				bInRequirement = false;
+				bInRequirementProperties = false;
+				bInQuestRewards = false;
+				bInRewardItems = false;
+			}
+			else if (bInRequirements && !bInStates)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- type:")) || TrimmedLine.StartsWith(TEXT("- class:")))
+				{
+					SaveCurrentRequirement();
+					CurrentRequirement.Type = GetLineValue(TrimmedLine);
+					bInRequirement = true;
+					bInRequirementProperties = false;
+				}
+				else if (bInRequirement)
+				{
+					if (TrimmedLine.StartsWith(TEXT("type:")) || TrimmedLine.StartsWith(TEXT("class:")))
+					{
+						CurrentRequirement.Type = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("properties:")))
+					{
+						bInRequirementProperties = true;
+					}
+					else if (bInRequirementProperties || (!TrimmedLine.StartsWith(TEXT("-")) && TrimmedLine.Contains(TEXT(":"))))
+					{
+						// Parse property
+						FString PropKey, PropValue;
+						if (TrimmedLine.Split(TEXT(":"), &PropKey, &PropValue))
+						{
+							PropKey = PropKey.TrimStart().TrimEnd();
+							PropValue = PropValue.TrimStart().TrimEnd().TrimQuotes();
+							if (!PropKey.IsEmpty() && !PropKey.StartsWith(TEXT("-")))
+							{
+								CurrentRequirement.Properties.Add(PropKey, PropValue);
+							}
+						}
+					}
+				}
+			}
 			else if (TrimmedLine.StartsWith(TEXT("states:")))
 			{
+				SaveCurrentRequirement();  // v4.3: Save any pending requirement
 				bInStates = true;
 				bInState = false;
 				bInStateBranches = false;
@@ -7737,6 +7866,8 @@ void FGasAbilityGeneratorParser::ParseQuests(const TArray<FString>& Lines, int32
 				bInBranchEvents = false;
 				bInQuestRewards = false;  // v3.9.6: Exit rewards section
 				bInRewardItems = false;
+				bInRequirements = false;  // v4.3: Exit requirements section
+				bInRequirement = false;
 			}
 			else if (bInStates)
 			{

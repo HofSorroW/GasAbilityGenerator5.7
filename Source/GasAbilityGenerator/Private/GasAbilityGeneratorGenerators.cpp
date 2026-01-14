@@ -1,5 +1,7 @@
-// GasAbilityGenerator v3.9
+// GasAbilityGenerator v4.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.0: Weapon Attachment TMap Automation - Fully automated HolsterAttachmentConfigs/WieldAttachmentConfigs
+//       population via FScriptMapHelper for TMap<FGameplayTag, FWeaponAttachmentConfig>
 // v3.9: NPC Pipeline - ActivitySchedule, GoalItem, Quest generators
 //       ActivitySchedule: Creates UNPCActivitySchedule with UScheduledBehavior_AddNPCGoalByClass
 //       instances for time-based goal assignment (concrete helper class replaces abstract base)
@@ -9655,24 +9657,124 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
-			// v3.9.6: Weapon attachments (HolsterAttachments, WieldAttachments)
-			// Log for manual setup as TMap<FGameplayTag, FWeaponAttachmentConfig> is complex
+			// v4.0: Weapon attachments TMap automation (HolsterAttachmentConfigs, WieldAttachmentConfigs)
+			// TMap<FGameplayTag, FWeaponAttachmentConfig> where FWeaponAttachmentConfig = { FName SocketName, FTransform Offset }
+			auto PopulateAttachmentTMap = [&CDO](
+				const TArray<FString>& Slots,
+				const TArray<FString>& Sockets,
+				const TArray<FVector>& Offsets,
+				const TArray<FRotator>& Rotations,
+				const TCHAR* MapPropertyName) -> int32
+			{
+				if (Slots.Num() == 0) return 0;
+
+				FMapProperty* MapProp = CastField<FMapProperty>(CDO->GetClass()->FindPropertyByName(MapPropertyName));
+				if (!MapProp)
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] TMap property %s not found on %s"), MapPropertyName, *CDO->GetClass()->GetName()));
+					return 0;
+				}
+
+				// Verify it's TMap<FGameplayTag, FWeaponAttachmentConfig>
+				FStructProperty* KeyProp = CastField<FStructProperty>(MapProp->KeyProp);
+				FStructProperty* ValueProp = CastField<FStructProperty>(MapProp->ValueProp);
+				if (!KeyProp || !ValueProp)
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] %s key or value is not struct type"), MapPropertyName));
+					return 0;
+				}
+
+				// Get the map helper
+				void* MapPtr = MapProp->ContainerPtrToValuePtr<void>(CDO);
+				FScriptMapHelper MapHelper(MapProp, MapPtr);
+
+				int32 EntriesAdded = 0;
+				for (int32 i = 0; i < Slots.Num(); i++)
+				{
+					const FString& SlotStr = Slots[i];
+					FName SocketName = Sockets.IsValidIndex(i) ? FName(*Sockets[i]) : NAME_None;
+					FVector Offset = Offsets.IsValidIndex(i) ? Offsets[i] : FVector::ZeroVector;
+					FRotator Rotation = Rotations.IsValidIndex(i) ? Rotations[i] : FRotator::ZeroRotator;
+
+					// Create FGameplayTag from slot string
+					FGameplayTag SlotTag = FGameplayTag::RequestGameplayTag(FName(*SlotStr), false);
+					if (!SlotTag.IsValid())
+					{
+						LogGeneration(FString::Printf(TEXT("    [WARNING] Invalid gameplay tag: %s"), *SlotStr));
+						continue;
+					}
+
+					// Add new entry to the map
+					int32 NewIndex = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+					uint8* PairPtr = MapHelper.GetPairPtr(NewIndex);
+
+					// Set the key (FGameplayTag)
+					FGameplayTag* KeyPtr = (FGameplayTag*)PairPtr;
+					*KeyPtr = SlotTag;
+
+					// Set the value (FWeaponAttachmentConfig)
+					void* ValuePtr = PairPtr + MapProp->MapLayout.ValueOffset;
+
+					// FWeaponAttachmentConfig has: SocketName (FName), Offset (FTransform)
+					if (ValueProp->Struct)
+					{
+						// Set SocketName
+						FNameProperty* SocketProp = CastField<FNameProperty>(ValueProp->Struct->FindPropertyByName(TEXT("SocketName")));
+						if (SocketProp)
+						{
+							SocketProp->SetPropertyValue_InContainer(ValuePtr, SocketName);
+						}
+
+						// Set Offset (FTransform)
+						FStructProperty* OffsetProp = CastField<FStructProperty>(ValueProp->Struct->FindPropertyByName(TEXT("Offset")));
+						if (OffsetProp && OffsetProp->Struct == TBaseStructure<FTransform>::Get())
+						{
+							FTransform* TransformPtr = OffsetProp->ContainerPtrToValuePtr<FTransform>(ValuePtr);
+							if (TransformPtr)
+							{
+								*TransformPtr = FTransform(Rotation, Offset);
+							}
+						}
+					}
+
+					EntriesAdded++;
+					LogGeneration(FString::Printf(TEXT("    Added %s[%s] = Socket:%s, Offset:(%s), Rotation:(%s)"),
+						MapPropertyName, *SlotStr, *SocketName.ToString(),
+						*Offset.ToString(), *Rotation.ToString()));
+				}
+
+				// Rehash the map after all additions
+				MapHelper.Rehash();
+				return EntriesAdded;
+			};
+
+			// Populate HolsterAttachmentConfigs
 			if (Definition.HolsterAttachmentSlots.Num() > 0)
 			{
-				LogGeneration(FString::Printf(TEXT("  [INFO] HolsterAttachments require manual setup: %d entries"), Definition.HolsterAttachmentSlots.Num()));
-				for (int32 i = 0; i < Definition.HolsterAttachmentSlots.Num(); i++)
+				int32 Count = PopulateAttachmentTMap(
+					Definition.HolsterAttachmentSlots,
+					Definition.HolsterAttachmentSockets,
+					Definition.HolsterAttachmentOffsets,
+					Definition.HolsterAttachmentRotations,
+					TEXT("HolsterAttachmentConfigs"));
+				if (Count > 0)
 				{
-					FString Socket = Definition.HolsterAttachmentSockets.IsValidIndex(i) ? Definition.HolsterAttachmentSockets[i] : TEXT("None");
-					LogGeneration(FString::Printf(TEXT("    [%d] Slot: %s, Socket: %s"), i, *Definition.HolsterAttachmentSlots[i], *Socket));
+					LogGeneration(FString::Printf(TEXT("  Set HolsterAttachmentConfigs: %d entries"), Count));
 				}
 			}
+
+			// Populate WieldAttachmentConfigs
 			if (Definition.WieldAttachmentSlots.Num() > 0)
 			{
-				LogGeneration(FString::Printf(TEXT("  [INFO] WieldAttachments require manual setup: %d entries"), Definition.WieldAttachmentSlots.Num()));
-				for (int32 i = 0; i < Definition.WieldAttachmentSlots.Num(); i++)
+				int32 Count = PopulateAttachmentTMap(
+					Definition.WieldAttachmentSlots,
+					Definition.WieldAttachmentSockets,
+					Definition.WieldAttachmentOffsets,
+					Definition.WieldAttachmentRotations,
+					TEXT("WieldAttachmentConfigs"));
+				if (Count > 0)
 				{
-					FString Socket = Definition.WieldAttachmentSockets.IsValidIndex(i) ? Definition.WieldAttachmentSockets[i] : TEXT("None");
-					LogGeneration(FString::Printf(TEXT("    [%d] Slot: %s, Socket: %s"), i, *Definition.WieldAttachmentSlots[i], *Socket));
+					LogGeneration(FString::Printf(TEXT("  Set WieldAttachmentConfigs: %d entries"), Count));
 				}
 			}
 
@@ -10852,8 +10954,85 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		}
 	}
 
-	// Recompile after setting target arrays and properties
-	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0 || Definition.Properties.Num() > 0))
+	// v4.3: Create Event Conditions (TArray<UNarrativeCondition*> instanced objects)
+	if (Definition.Conditions.Num() > 0 && CDO)
+	{
+		LogGeneration(FString::Printf(TEXT("  Processing %d event conditions..."), Definition.Conditions.Num()));
+
+		FArrayProperty* ConditionsArrayProp = CastField<FArrayProperty>(
+			CDO->GetClass()->FindPropertyByName(TEXT("Conditions")));
+
+		if (ConditionsArrayProp)
+		{
+			FScriptArrayHelper ArrayHelper(ConditionsArrayProp, ConditionsArrayProp->ContainerPtrToValuePtr<void>(CDO));
+			ArrayHelper.EmptyValues();
+
+			for (const auto& CondDef : Definition.Conditions)
+			{
+				// Try to load the condition class
+				UClass* CondClass = nullptr;
+				TArray<FString> SearchPaths;
+				SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *CondDef.Type));
+				SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type));
+				SearchPaths.Add(FString::Printf(TEXT("/Game/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type));
+				SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type));
+
+				for (const FString& Path : SearchPaths)
+				{
+					CondClass = LoadClass<UObject>(nullptr, *Path);
+					if (CondClass) break;
+				}
+
+				if (CondClass)
+				{
+					// Create instanced condition object
+					UObject* CondInstance = NewObject<UObject>(CDO, CondClass);
+					if (CondInstance)
+					{
+						// Set bNot property
+						if (CondDef.bNot)
+						{
+							if (FBoolProperty* NotProp = CastField<FBoolProperty>(CondClass->FindPropertyByName(TEXT("bNot"))))
+							{
+								NotProp->SetPropertyValue_InContainer(CondInstance, true);
+							}
+						}
+
+						// Set other properties via reflection
+						for (const auto& PropPair : CondDef.Properties)
+						{
+							FProperty* Prop = CondClass->FindPropertyByName(FName(*PropPair.Key));
+							if (Prop)
+							{
+								Prop->ImportText_Direct(*PropPair.Value, Prop->ContainerPtrToValuePtr<void>(CondInstance), nullptr, PPF_None);
+							}
+						}
+
+						// Add to array
+						FObjectProperty* InnerProp = CastField<FObjectProperty>(ConditionsArrayProp->Inner);
+						if (InnerProp)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), CondInstance);
+						}
+
+						LogGeneration(FString::Printf(TEXT("    Added condition: %s%s"), CondDef.bNot ? TEXT("NOT ") : TEXT(""), *CondDef.Type));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("    [WARNING] Could not load condition class: %s"), *CondDef.Type));
+				}
+			}
+		}
+		else
+		{
+			LogGeneration(TEXT("    [WARNING] Could not find Conditions array property"));
+		}
+	}
+
+	// Recompile after setting target arrays, properties, and conditions
+	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0 || Definition.Properties.Num() > 0 || Definition.Conditions.Num() > 0))
 	{
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
@@ -13283,6 +13462,71 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 					LogGeneration(FString::Printf(TEXT("  Set QuestDialoguePlayParams.bCanBeExited: %s"), Params.bCanBeExited ? TEXT("true") : TEXT("false")));
 				}
 			}
+		}
+	}
+
+	// v4.3: Create Quest Requirements (UQuestRequirement instanced objects)
+	if (Definition.Requirements.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Processing %d quest requirements..."), Definition.Requirements.Num()));
+
+		// Find the QuestRequirements array property
+		FArrayProperty* RequirementsArrayProp = CastField<FArrayProperty>(Quest->GetClass()->FindPropertyByName(TEXT("QuestRequirements")));
+		if (RequirementsArrayProp)
+		{
+			FScriptArrayHelper ArrayHelper(RequirementsArrayProp, RequirementsArrayProp->ContainerPtrToValuePtr<void>(Quest));
+
+			for (const auto& ReqDef : Definition.Requirements)
+			{
+				// Try to load the requirement class
+				UClass* ReqClass = nullptr;
+				TArray<FString> SearchPaths;
+				SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ReqDef.Type));
+				SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Requirements/%s.%s_C"), *ReqDef.Type, *ReqDef.Type));
+				SearchPaths.Add(FString::Printf(TEXT("/Game/Requirements/%s.%s_C"), *ReqDef.Type, *ReqDef.Type));
+
+				for (const FString& Path : SearchPaths)
+				{
+					ReqClass = LoadClass<UObject>(nullptr, *Path);
+					if (ReqClass) break;
+				}
+
+				if (ReqClass)
+				{
+					// Create instanced requirement object
+					UObject* ReqInstance = NewObject<UObject>(Quest, ReqClass);
+					if (ReqInstance)
+					{
+						// Set properties via reflection
+						for (const auto& PropPair : ReqDef.Properties)
+						{
+							FProperty* Prop = ReqClass->FindPropertyByName(FName(*PropPair.Key));
+							if (Prop)
+							{
+								Prop->ImportText_Direct(*PropPair.Value, Prop->ContainerPtrToValuePtr<void>(ReqInstance), nullptr, PPF_None);
+							}
+						}
+
+						// Add to array
+						int32 NewIndex = ArrayHelper.AddValue();
+						FObjectProperty* InnerProp = CastField<FObjectProperty>(RequirementsArrayProp->Inner);
+						if (InnerProp)
+						{
+							InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), ReqInstance);
+						}
+
+						LogGeneration(FString::Printf(TEXT("    Added requirement: %s"), *ReqDef.Type));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("    [WARNING] Could not load requirement class: %s"), *ReqDef.Type));
+				}
+			}
+		}
+		else
+		{
+			LogGeneration(TEXT("    [WARNING] Could not find QuestRequirements array property"));
 		}
 	}
 
