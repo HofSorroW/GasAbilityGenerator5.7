@@ -103,6 +103,7 @@
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/Composites/BTComposite_Selector.h"
 #include "BehaviorTree/Composites/BTComposite_Sequence.h"
+#include "BehaviorTree/Composites/BTComposite_SimpleParallel.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
 #include "BehaviorTree/Tasks/BTTask_MoveTo.h"
@@ -205,6 +206,9 @@
 #include "Components/PrimitiveComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+// v4.0: Gameplay Cue includes
+#include "GameplayCueNotify_Burst.h"
+#include "GameplayCueNotify_Actor.h"
 #include "Misc/App.h"  // v2.5.0: For FApp::GetProjectName()
 
 // v2.7.0: Narrative Pro includes for WellKnownFunctions table
@@ -2914,6 +2918,7 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 
 // ============================================================================
 // FBlackboardGenerator Implementation
+// v4.0: Added parent blackboard inheritance and base class for Object/Class keys
 // ============================================================================
 
 FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefinition& Definition)
@@ -2940,13 +2945,72 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
 	}
-	
+
 	// Create blackboard
 	UBlackboardData* Blackboard = NewObject<UBlackboardData>(Package, *Definition.Name, RF_Public | RF_Standalone);
 	if (!Blackboard)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Blackboard"));
 	}
+
+	// v4.0: Set parent blackboard if specified
+	if (!Definition.Parent.IsEmpty())
+	{
+		// Try to find parent blackboard asset
+		TArray<FString> SearchPaths = {
+			FString::Printf(TEXT("%s/AI/%s"), *GetProjectRoot(), *Definition.Parent),
+			FString::Printf(TEXT("%s/AI/Blackboards/%s"), *GetProjectRoot(), *Definition.Parent),
+			FString::Printf(TEXT("/Game/AI/%s"), *Definition.Parent),
+			FString::Printf(TEXT("/Game/%s"), *Definition.Parent)
+		};
+
+		UBlackboardData* ParentBB = nullptr;
+		for (const FString& SearchPath : SearchPaths)
+		{
+			ParentBB = LoadObject<UBlackboardData>(nullptr, *SearchPath);
+			if (ParentBB)
+			{
+				break;
+			}
+		}
+
+		if (ParentBB)
+		{
+			Blackboard->Parent = ParentBB;
+			LogGeneration(FString::Printf(TEXT("  Set parent blackboard: %s"), *Definition.Parent));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  WARNING: Parent blackboard '%s' not found"), *Definition.Parent));
+		}
+	}
+
+	// v4.0: Helper lambda to resolve base class for Object/Class keys
+	auto ResolveBaseClass = [](const FString& BaseClassStr) -> UClass*
+	{
+		if (BaseClassStr.IsEmpty())
+			return nullptr;
+
+		// Try to find the class (nullptr = search in all packages)
+		UClass* FoundClass = FindObject<UClass>(nullptr, *BaseClassStr);
+		if (FoundClass)
+			return FoundClass;
+
+		// Try common paths
+		FoundClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *BaseClassStr));
+		if (FoundClass)
+			return FoundClass;
+
+		FoundClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("/Script/CoreUObject.%s"), *BaseClassStr));
+		if (FoundClass)
+			return FoundClass;
+
+		FoundClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *BaseClassStr));
+		if (FoundClass)
+			return FoundClass;
+
+		return nullptr;
+	};
 
 	// v2.6.0: Add keys from manifest definition
 	int32 KeysCreated = 0;
@@ -2991,15 +3055,26 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 		         KeyDef.Type.Equals(TEXT("Actor"), ESearchCase::IgnoreCase))
 		{
 			UBlackboardKeyType_Object* ObjectKey = NewObject<UBlackboardKeyType_Object>(Blackboard);
-			// Default to AActor base class for Object keys
-			ObjectKey->BaseClass = AActor::StaticClass();
+			// v4.0: Use specified base class or default to AActor
+			UClass* BaseClass = ResolveBaseClass(KeyDef.BaseClass);
+			ObjectKey->BaseClass = BaseClass ? BaseClass : AActor::StaticClass();
 			Entry.KeyType = ObjectKey;
+			if (BaseClass && !KeyDef.BaseClass.IsEmpty())
+			{
+				LogGeneration(FString::Printf(TEXT("  Key '%s' base class: %s"), *KeyDef.Name, *KeyDef.BaseClass));
+			}
 		}
 		else if (KeyDef.Type.Equals(TEXT("Class"), ESearchCase::IgnoreCase))
 		{
 			UBlackboardKeyType_Class* ClassKey = NewObject<UBlackboardKeyType_Class>(Blackboard);
-			ClassKey->BaseClass = UObject::StaticClass();
+			// v4.0: Use specified base class or default to UObject
+			UClass* BaseClass = ResolveBaseClass(KeyDef.BaseClass);
+			ClassKey->BaseClass = BaseClass ? BaseClass : UObject::StaticClass();
 			Entry.KeyType = ClassKey;
+			if (BaseClass && !KeyDef.BaseClass.IsEmpty())
+			{
+				LogGeneration(FString::Printf(TEXT("  Key '%s' base class: %s"), *KeyDef.Name, *KeyDef.BaseClass));
+			}
 		}
 		else if (KeyDef.Type.Equals(TEXT("Enum"), ESearchCase::IgnoreCase))
 		{
@@ -3029,7 +3104,9 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, Blackboard, *PackageFileName, SaveArgs);
 
-	LogGeneration(FString::Printf(TEXT("Created Blackboard: %s with %d keys"), *Definition.Name, KeysCreated));
+	LogGeneration(FString::Printf(TEXT("Created Blackboard: %s with %d keys%s"),
+		*Definition.Name, KeysCreated,
+		Definition.Parent.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (Parent: %s)"), *Definition.Parent)));
 
 	// v3.0: Store metadata for regeneration tracking
 	StoreDataAssetMetadata(Blackboard, TEXT("BB"), Definition.Name, Definition.ComputeHash());
@@ -3107,7 +3184,123 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		}
 	}
 
-	// v3.1: Create root composite node if nodes are defined
+	// ============================================================================
+	// v4.0: Enhanced Behavior Tree Generation with Two-Pass System
+	// Pass 1: Create all nodes
+	// Pass 2: Wire parent-child relationships
+	// ============================================================================
+
+	// v4.0: Helper to convert FlowAbortMode string to enum
+	auto GetFlowAbortMode = [](const FString& Mode) -> EBTFlowAbortMode::Type
+	{
+		if (Mode.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+			return EBTFlowAbortMode::None;
+		else if (Mode.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
+			return EBTFlowAbortMode::Self;
+		else if (Mode.Equals(TEXT("LowerPriority"), ESearchCase::IgnoreCase))
+			return EBTFlowAbortMode::LowerPriority;
+		else if (Mode.Equals(TEXT("Both"), ESearchCase::IgnoreCase))
+			return EBTFlowAbortMode::Both;
+		return EBTFlowAbortMode::None;
+	};
+
+	// v4.0: Helper to set property via reflection
+	auto SetBTPropertyByReflection = [](UObject* Object, const FString& PropName, const FString& PropValue) -> bool
+	{
+		if (!Object) return false;
+
+		FProperty* Property = Object->GetClass()->FindPropertyByName(FName(*PropName));
+		if (!Property)
+		{
+			// Try with 'b' prefix for bools
+			Property = Object->GetClass()->FindPropertyByName(FName(*FString::Printf(TEXT("b%s"), *PropName)));
+		}
+		if (!Property)
+		{
+			// Try removing underscores
+			FString AltName = PropName;
+			AltName.ReplaceInline(TEXT("_"), TEXT(""));
+			Property = Object->GetClass()->FindPropertyByName(FName(*AltName));
+		}
+
+		if (!Property) return false;
+
+		void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Object);
+
+		if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+		{
+			BoolProp->SetPropertyValue(ValuePtr, PropValue.ToBool() || PropValue.Equals(TEXT("true"), ESearchCase::IgnoreCase));
+			return true;
+		}
+		else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+		{
+			FloatProp->SetPropertyValue(ValuePtr, FCString::Atof(*PropValue));
+			return true;
+		}
+		else if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Property))
+		{
+			DoubleProp->SetPropertyValue(ValuePtr, FCString::Atod(*PropValue));
+			return true;
+		}
+		else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+		{
+			IntProp->SetPropertyValue(ValuePtr, FCString::Atoi(*PropValue));
+			return true;
+		}
+		else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+		{
+			StrProp->SetPropertyValue(ValuePtr, PropValue);
+			return true;
+		}
+		else if (FNameProperty* NameProp = CastField<FNameProperty>(Property))
+		{
+			NameProp->SetPropertyValue(ValuePtr, FName(*PropValue));
+			return true;
+		}
+
+		return false;
+	};
+
+	// v4.0: Helper to set BlackboardKeySelector on an object
+	auto SetBlackboardKey = [](UObject* Object, const FString& KeyName) -> bool
+	{
+		if (!Object || KeyName.IsEmpty()) return false;
+
+		UClass* ObjClass = Object->GetClass();
+
+		// Try common blackboard key property names
+		TArray<FName> KeyPropNames = {
+			TEXT("BlackboardKey"),
+			TEXT("TargetBlackboardKey"),
+			TEXT("EnemyKey"),
+			TEXT("LocationKey"),
+			TEXT("TargetKey"),
+			TEXT("ActorKey")
+		};
+
+		for (const FName& PropName : KeyPropNames)
+		{
+			FProperty* BBKeyProp = ObjClass->FindPropertyByName(PropName);
+			if (BBKeyProp)
+			{
+				if (FStructProperty* StructProp = CastField<FStructProperty>(BBKeyProp))
+				{
+					if (StructProp->Struct && StructProp->Struct->GetFName() == TEXT("BlackboardKeySelector"))
+					{
+						FBlackboardKeySelector* Selector = StructProp->ContainerPtrToValuePtr<FBlackboardKeySelector>(Object);
+						if (Selector)
+						{
+							Selector->SelectedKeyName = FName(*KeyName);
+							return true;
+						}
+					}
+				}
+			}
+		}
+		return false;
+	};
+
+	// v3.1/v4.0: Create root composite node if nodes are defined
 	if (Definition.Nodes.Num() > 0 || !Definition.RootType.IsEmpty())
 	{
 		// Determine root composite type (default: Selector)
@@ -3129,20 +3322,17 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		{
 			BT->RootNode = RootNode;
 
-			// v3.1: Build node map for child reference resolution
-			TMap<FString, int32> NodeIndexMap;
-			for (int32 i = 0; i < Definition.Nodes.Num(); i++)
-			{
-				NodeIndexMap.Add(Definition.Nodes[i].Id, i);
-			}
+			// v4.0: Build node map for two-pass system
+			TMap<FString, UBTCompositeNode*> CompositeNodeMap;
+			TMap<FString, UBTTaskNode*> TaskNodeMap;
+			TMap<FString, TArray<UBTDecorator*>> NodeDecoratorsMap;
 
-			// v3.1: Process nodes and build tree structure
+			// ================================================================
+			// PASS 1: Create all nodes
+			// ================================================================
 			int32 NodesCreated = 0;
 			for (const FManifestBTNodeDefinition& NodeDef : Definition.Nodes)
 			{
-				// Create child entry for root
-				FBTCompositeChild ChildEntry;
-
 				// Determine if this is a composite or task node
 				bool bIsComposite = NodeDef.Type.Equals(TEXT("Selector"), ESearchCase::IgnoreCase) ||
 					NodeDef.Type.Equals(TEXT("Sequence"), ESearchCase::IgnoreCase) ||
@@ -3154,72 +3344,136 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 					UBTCompositeNode* CompositeNode = nullptr;
 					if (NodeDef.Type.Equals(TEXT("Sequence"), ESearchCase::IgnoreCase))
 					{
-						CompositeNode = NewObject<UBTComposite_Sequence>(RootNode);
+						CompositeNode = NewObject<UBTComposite_Sequence>(BT);
+					}
+					else if (NodeDef.Type.Equals(TEXT("SimpleParallel"), ESearchCase::IgnoreCase))
+					{
+						CompositeNode = NewObject<UBTComposite_SimpleParallel>(BT);
 					}
 					else
 					{
-						CompositeNode = NewObject<UBTComposite_Selector>(RootNode);
+						CompositeNode = NewObject<UBTComposite_Selector>(BT);
 					}
 
 					if (CompositeNode)
 					{
-						ChildEntry.ChildComposite = CompositeNode;
+						CompositeNodeMap.Add(NodeDef.Id, CompositeNode);
 						NodesCreated++;
 						LogGeneration(FString::Printf(TEXT("  Created composite node: %s (%s)"), *NodeDef.Id, *NodeDef.Type));
+
+						// v4.0: Add services to composite nodes
+						for (const FManifestBTServiceDefinition& ServiceDef : NodeDef.Services)
+						{
+							UClass* ServiceClass = nullptr;
+							TArray<FString> SvcPaths;
+							SvcPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *ServiceDef.Class));
+							SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
+							SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
+
+							for (const FString& Path : SvcPaths)
+							{
+								ServiceClass = LoadClass<UBTService>(nullptr, *Path);
+								if (ServiceClass) break;
+							}
+
+							if (ServiceClass)
+							{
+								UBTService* Service = NewObject<UBTService>(CompositeNode, ServiceClass);
+								if (Service)
+								{
+									// v4.0: Set service properties
+									if (FFloatProperty* IntervalProp = CastField<FFloatProperty>(ServiceClass->FindPropertyByName(TEXT("Interval"))))
+									{
+										IntervalProp->SetPropertyValue(IntervalProp->ContainerPtrToValuePtr<void>(Service), ServiceDef.Interval);
+									}
+									if (FFloatProperty* DeviationProp = CastField<FFloatProperty>(ServiceClass->FindPropertyByName(TEXT("RandomDeviation"))))
+									{
+										DeviationProp->SetPropertyValue(DeviationProp->ContainerPtrToValuePtr<void>(Service), ServiceDef.RandomDeviation);
+									}
+									if (FBoolProperty* TickStartProp = CastField<FBoolProperty>(ServiceClass->FindPropertyByName(TEXT("bCallTickOnSearchStart"))))
+									{
+										TickStartProp->SetPropertyValue(TickStartProp->ContainerPtrToValuePtr<void>(Service), ServiceDef.bCallTickOnSearchStart);
+									}
+									if (FBoolProperty* RestartProp = CastField<FBoolProperty>(ServiceClass->FindPropertyByName(TEXT("bRestartTimerOnEachActivation"))))
+									{
+										RestartProp->SetPropertyValue(RestartProp->ContainerPtrToValuePtr<void>(Service), ServiceDef.bRestartTimerOnActivation);
+									}
+
+									// v4.0: Apply custom properties
+									for (const auto& Prop : ServiceDef.Properties)
+									{
+										SetBTPropertyByReflection(Service, Prop.Key, Prop.Value);
+									}
+
+									CompositeNode->Services.Add(Service);
+									LogGeneration(FString::Printf(TEXT("    Added service: %s (interval=%.2f)"), *ServiceDef.Class, ServiceDef.Interval));
+								}
+							}
+						}
 					}
 				}
 				else
 				{
-					// Create task node - try to load specified class or use built-in
+					// Create task node
 					UBTTaskNode* TaskNode = nullptr;
 
 					if (!NodeDef.TaskClass.IsEmpty())
 					{
-						// Try to load the specified task class
 						TArray<FString> TaskPaths;
+						TaskPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *NodeDef.TaskClass));
 						TaskPaths.Add(FString::Printf(TEXT("%s/AI/Tasks/%s.%s_C"), *GetProjectRoot(), *NodeDef.TaskClass, *NodeDef.TaskClass));
 						TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
-						TaskPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *NodeDef.TaskClass));
 
 						UClass* TaskClass = nullptr;
 						for (const FString& Path : TaskPaths)
 						{
 							TaskClass = LoadClass<UBTTaskNode>(nullptr, *Path);
-							if (TaskClass)
-							{
-								break;
-							}
+							if (TaskClass) break;
 						}
 
 						if (TaskClass)
 						{
-							TaskNode = NewObject<UBTTaskNode>(RootNode, TaskClass);
+							TaskNode = NewObject<UBTTaskNode>(BT, TaskClass);
 							LogGeneration(FString::Printf(TEXT("  Created task node: %s (%s)"), *NodeDef.Id, *NodeDef.TaskClass));
 						}
 						else
 						{
 							LogGeneration(FString::Printf(TEXT("  [WARNING] Task class not found: %s, using BTTask_Wait"), *NodeDef.TaskClass));
-							TaskNode = NewObject<UBTTask_Wait>(RootNode);
+							TaskNode = NewObject<UBTTask_Wait>(BT);
 						}
 					}
 					else
 					{
-						// Default to Wait task
-						TaskNode = NewObject<UBTTask_Wait>(RootNode);
+						TaskNode = NewObject<UBTTask_Wait>(BT);
 						LogGeneration(FString::Printf(TEXT("  Created default Wait task: %s"), *NodeDef.Id));
 					}
 
 					if (TaskNode)
 					{
-						ChildEntry.ChildTask = TaskNode;
+						TaskNodeMap.Add(NodeDef.Id, TaskNode);
 						NodesCreated++;
+
+						// v4.0: Set blackboard key if specified
+						if (!NodeDef.BlackboardKey.IsEmpty())
+						{
+							SetBlackboardKey(TaskNode, NodeDef.BlackboardKey);
+						}
+
+						// v4.0: Apply task properties via reflection
+						for (const auto& Prop : NodeDef.Properties)
+						{
+							if (SetBTPropertyByReflection(TaskNode, Prop.Key, Prop.Value))
+							{
+								LogGeneration(FString::Printf(TEXT("    Set property %s = %s"), *Prop.Key, *Prop.Value));
+							}
+						}
 					}
 				}
 
-				// Add decorators to this child entry
+				// v4.0: Create decorators for this node
+				TArray<UBTDecorator*> NodeDecorators;
 				for (const FManifestBTDecoratorDefinition& DecoratorDef : NodeDef.Decorators)
 				{
-					// Try to load decorator class
 					UClass* DecoratorClass = nullptr;
 					if (DecoratorDef.Class.Equals(TEXT("BTDecorator_Blackboard"), ESearchCase::IgnoreCase))
 					{
@@ -3230,68 +3484,162 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						TArray<FString> DecPaths;
 						DecPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *DecoratorDef.Class));
 						DecPaths.Add(FString::Printf(TEXT("%s/AI/Decorators/%s.%s_C"), *GetProjectRoot(), *DecoratorDef.Class, *DecoratorDef.Class));
+						DecPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
 
 						for (const FString& Path : DecPaths)
 						{
 							DecoratorClass = LoadClass<UBTDecorator>(nullptr, *Path);
-							if (DecoratorClass)
-							{
-								break;
-							}
+							if (DecoratorClass) break;
 						}
 					}
 
 					if (DecoratorClass)
 					{
-						UBTDecorator* Decorator = NewObject<UBTDecorator>(RootNode, DecoratorClass);
+						UBTDecorator* Decorator = NewObject<UBTDecorator>(BT, DecoratorClass);
 						if (Decorator)
 						{
-							ChildEntry.Decorators.Add(Decorator);
-							LogGeneration(FString::Printf(TEXT("    Added decorator: %s"), *DecoratorDef.Class));
+							// v4.0: Set inverse condition
+							if (DecoratorDef.bInverseCondition)
+							{
+								if (FBoolProperty* InverseProp = CastField<FBoolProperty>(DecoratorClass->FindPropertyByName(TEXT("bInverseCondition"))))
+								{
+									InverseProp->SetPropertyValue(InverseProp->ContainerPtrToValuePtr<void>(Decorator), true);
+								}
+							}
+
+							// v4.0: Set flow abort mode
+							if (!DecoratorDef.FlowAbortMode.IsEmpty())
+							{
+								if (FByteProperty* AbortProp = CastField<FByteProperty>(DecoratorClass->FindPropertyByName(TEXT("FlowAbortMode"))))
+								{
+									AbortProp->SetPropertyValue(AbortProp->ContainerPtrToValuePtr<void>(Decorator), (uint8)GetFlowAbortMode(DecoratorDef.FlowAbortMode));
+								}
+								else if (FEnumProperty* EnumProp = CastField<FEnumProperty>(DecoratorClass->FindPropertyByName(TEXT("FlowAbortMode"))))
+								{
+									void* ValuePtr = EnumProp->ContainerPtrToValuePtr<void>(Decorator);
+									EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, (int64)GetFlowAbortMode(DecoratorDef.FlowAbortMode));
+								}
+							}
+
+							// v4.0: Set blackboard key
+							if (!DecoratorDef.BlackboardKey.IsEmpty())
+							{
+								SetBlackboardKey(Decorator, DecoratorDef.BlackboardKey);
+							}
+
+							// v4.0: Apply custom properties
+							for (const auto& Prop : DecoratorDef.Properties)
+							{
+								SetBTPropertyByReflection(Decorator, Prop.Key, Prop.Value);
+							}
+
+							NodeDecorators.Add(Decorator);
+							LogGeneration(FString::Printf(TEXT("    Added decorator: %s%s"),
+								*DecoratorDef.Class,
+								DecoratorDef.bInverseCondition ? TEXT(" (inverted)") : TEXT("")));
 						}
 					}
 				}
 
-				// Add services (only to composite nodes)
-				if (ChildEntry.ChildComposite)
+				if (NodeDecorators.Num() > 0)
 				{
-					for (const FManifestBTServiceDefinition& ServiceDef : NodeDef.Services)
-					{
-						UClass* ServiceClass = nullptr;
-						TArray<FString> SvcPaths;
-						SvcPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *ServiceDef.Class));
-						SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
-						SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
-
-						for (const FString& Path : SvcPaths)
-						{
-							ServiceClass = LoadClass<UBTService>(nullptr, *Path);
-							if (ServiceClass)
-							{
-								break;
-							}
-						}
-
-						if (ServiceClass)
-						{
-							UBTService* Service = NewObject<UBTService>(ChildEntry.ChildComposite, ServiceClass);
-							if (Service)
-							{
-								ChildEntry.ChildComposite->Services.Add(Service);
-								LogGeneration(FString::Printf(TEXT("    Added service: %s"), *ServiceDef.Class));
-							}
-						}
-					}
-				}
-
-				// Add child entry to root node
-				if (ChildEntry.ChildComposite || ChildEntry.ChildTask)
-				{
-					RootNode->Children.Add(ChildEntry);
+					NodeDecoratorsMap.Add(NodeDef.Id, NodeDecorators);
 				}
 			}
 
-			LogGeneration(FString::Printf(TEXT("  Created %d nodes in behavior tree"), NodesCreated));
+			// ================================================================
+			// PASS 2: Wire parent-child relationships
+			// ================================================================
+			int32 ConnectionsWired = 0;
+			for (const FManifestBTNodeDefinition& NodeDef : Definition.Nodes)
+			{
+				if (NodeDef.Children.Num() == 0) continue;
+
+				// Find parent node (must be composite)
+				UBTCompositeNode** ParentPtr = CompositeNodeMap.Find(NodeDef.Id);
+				if (!ParentPtr)
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] Parent node '%s' not found or not composite"), *NodeDef.Id));
+					continue;
+				}
+
+				UBTCompositeNode* ParentNode = *ParentPtr;
+
+				for (const FString& ChildId : NodeDef.Children)
+				{
+					FBTCompositeChild ChildEntry;
+
+					// Check if child is composite or task
+					if (UBTCompositeNode** ChildCompositePtr = CompositeNodeMap.Find(ChildId))
+					{
+						ChildEntry.ChildComposite = *ChildCompositePtr;
+					}
+					else if (UBTTaskNode** ChildTaskPtr = TaskNodeMap.Find(ChildId))
+					{
+						ChildEntry.ChildTask = *ChildTaskPtr;
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  [WARNING] Child node '%s' not found for parent '%s'"), *ChildId, *NodeDef.Id));
+						continue;
+					}
+
+					// Add decorators to child entry
+					if (TArray<UBTDecorator*>* Decorators = NodeDecoratorsMap.Find(ChildId))
+					{
+						ChildEntry.Decorators = *Decorators;
+					}
+
+					ParentNode->Children.Add(ChildEntry);
+					ConnectionsWired++;
+					LogGeneration(FString::Printf(TEXT("  Wired: %s -> %s"), *NodeDef.Id, *ChildId));
+				}
+			}
+
+			// ================================================================
+			// PASS 3: Add root-level nodes (nodes without parents)
+			// ================================================================
+			TSet<FString> ChildNodeIds;
+			for (const FManifestBTNodeDefinition& NodeDef : Definition.Nodes)
+			{
+				for (const FString& ChildId : NodeDef.Children)
+				{
+					ChildNodeIds.Add(ChildId);
+				}
+			}
+
+			for (const FManifestBTNodeDefinition& NodeDef : Definition.Nodes)
+			{
+				// Skip nodes that are children of other nodes
+				if (ChildNodeIds.Contains(NodeDef.Id)) continue;
+
+				// This is a root-level node, add to RootNode
+				FBTCompositeChild ChildEntry;
+
+				if (UBTCompositeNode** CompositePtr = CompositeNodeMap.Find(NodeDef.Id))
+				{
+					ChildEntry.ChildComposite = *CompositePtr;
+				}
+				else if (UBTTaskNode** TaskPtr = TaskNodeMap.Find(NodeDef.Id))
+				{
+					ChildEntry.ChildTask = *TaskPtr;
+				}
+				else
+				{
+					continue;
+				}
+
+				// Add decorators
+				if (TArray<UBTDecorator*>* Decorators = NodeDecoratorsMap.Find(NodeDef.Id))
+				{
+					ChildEntry.Decorators = *Decorators;
+				}
+
+				RootNode->Children.Add(ChildEntry);
+				LogGeneration(FString::Printf(TEXT("  Added root child: %s"), *NodeDef.Id));
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Created %d nodes, wired %d connections"), NodesCreated, ConnectionsWired));
 		}
 	}
 
@@ -3497,6 +3845,81 @@ UMaterialExpression* FMaterialGenerator::CreateExpression(UMaterial* Material, c
 		}
 		Expression = Panner;
 	}
+	// v4.0: TextureSample
+	else if (TypeLower == TEXT("texturesample") || TypeLower == TEXT("texture_sample"))
+	{
+		UMaterialExpressionTextureSample* TexSample = NewObject<UMaterialExpressionTextureSample>(Material);
+		// Load texture if specified
+		FString TexturePath = ExprDef.TexturePath;
+		if (TexturePath.IsEmpty() && ExprDef.Properties.Contains(TEXT("texture")))
+		{
+			TexturePath = ExprDef.Properties[TEXT("texture")];
+		}
+		if (!TexturePath.IsEmpty())
+		{
+			UTexture* Texture = LoadObject<UTexture>(nullptr, *TexturePath);
+			if (Texture)
+			{
+				TexSample->Texture = Texture;
+			}
+		}
+		// Set sampler type if specified
+		if (!ExprDef.SamplerType.IsEmpty())
+		{
+			FString SamplerLower = ExprDef.SamplerType.ToLower();
+			if (SamplerLower == TEXT("color"))
+				TexSample->SamplerType = SAMPLERTYPE_Color;
+			else if (SamplerLower == TEXT("linearcolor"))
+				TexSample->SamplerType = SAMPLERTYPE_LinearColor;
+			else if (SamplerLower == TEXT("normal"))
+				TexSample->SamplerType = SAMPLERTYPE_Normal;
+			else if (SamplerLower == TEXT("masks"))
+				TexSample->SamplerType = SAMPLERTYPE_Masks;
+			else if (SamplerLower == TEXT("grayscale"))
+				TexSample->SamplerType = SAMPLERTYPE_Grayscale;
+			else if (SamplerLower == TEXT("alpha"))
+				TexSample->SamplerType = SAMPLERTYPE_Alpha;
+		}
+		Expression = TexSample;
+	}
+	// v4.0: TextureSampleParameter2D
+	else if (TypeLower == TEXT("texturesampleparameter2d") || TypeLower == TEXT("textureparameter") || TypeLower == TEXT("texture_param"))
+	{
+		UMaterialExpressionTextureSampleParameter2D* TexParam = NewObject<UMaterialExpressionTextureSampleParameter2D>(Material);
+		TexParam->ParameterName = *ExprDef.Name;
+		// Load default texture if specified
+		FString TexturePath = ExprDef.TexturePath;
+		if (TexturePath.IsEmpty() && ExprDef.Properties.Contains(TEXT("texture")))
+		{
+			TexturePath = ExprDef.Properties[TEXT("texture")];
+		}
+		if (!TexturePath.IsEmpty())
+		{
+			UTexture* Texture = LoadObject<UTexture>(nullptr, *TexturePath);
+			if (Texture)
+			{
+				TexParam->Texture = Texture;
+			}
+		}
+		// Set sampler type if specified
+		if (!ExprDef.SamplerType.IsEmpty())
+		{
+			FString SamplerLower = ExprDef.SamplerType.ToLower();
+			if (SamplerLower == TEXT("color"))
+				TexParam->SamplerType = SAMPLERTYPE_Color;
+			else if (SamplerLower == TEXT("linearcolor"))
+				TexParam->SamplerType = SAMPLERTYPE_LinearColor;
+			else if (SamplerLower == TEXT("normal"))
+				TexParam->SamplerType = SAMPLERTYPE_Normal;
+			else if (SamplerLower == TEXT("masks"))
+				TexParam->SamplerType = SAMPLERTYPE_Masks;
+			else if (SamplerLower == TEXT("grayscale"))
+				TexParam->SamplerType = SAMPLERTYPE_Grayscale;
+			else if (SamplerLower == TEXT("alpha"))
+				TexParam->SamplerType = SAMPLERTYPE_Alpha;
+		}
+		Expression = TexParam;
+	}
 
 	if (Expression)
 	{
@@ -3680,6 +4103,98 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 	if (Definition.bTwoSided)
 	{
 		Material->TwoSided = true;
+	}
+
+	// ========================================================================
+	// v4.0: Extended material properties
+	// ========================================================================
+
+	// Material Domain
+	if (!Definition.MaterialDomain.IsEmpty())
+	{
+		if (Definition.MaterialDomain.Equals(TEXT("Surface"), ESearchCase::IgnoreCase))
+			Material->MaterialDomain = MD_Surface;
+		else if (Definition.MaterialDomain.Equals(TEXT("DeferredDecal"), ESearchCase::IgnoreCase))
+			Material->MaterialDomain = MD_DeferredDecal;
+		else if (Definition.MaterialDomain.Equals(TEXT("LightFunction"), ESearchCase::IgnoreCase))
+			Material->MaterialDomain = MD_LightFunction;
+		else if (Definition.MaterialDomain.Equals(TEXT("Volume"), ESearchCase::IgnoreCase))
+			Material->MaterialDomain = MD_Volume;
+		else if (Definition.MaterialDomain.Equals(TEXT("PostProcess"), ESearchCase::IgnoreCase))
+			Material->MaterialDomain = MD_PostProcess;
+		else if (Definition.MaterialDomain.Equals(TEXT("UI"), ESearchCase::IgnoreCase))
+			Material->MaterialDomain = MD_UI;
+	}
+
+	// Opacity mask clip value (for Masked blend mode)
+	if (Material->BlendMode == BLEND_Masked)
+	{
+		Material->OpacityMaskClipValue = Definition.OpacityMaskClipValue;
+	}
+
+	// Translucency settings
+	if (!Definition.TranslucencyPass.IsEmpty())
+	{
+		if (Definition.TranslucencyPass.Equals(TEXT("BeforeDOF"), ESearchCase::IgnoreCase))
+			Material->TranslucencyPass = MTP_BeforeDOF;
+		else if (Definition.TranslucencyPass.Equals(TEXT("AfterDOF"), ESearchCase::IgnoreCase))
+			Material->TranslucencyPass = MTP_AfterDOF;
+		else if (Definition.TranslucencyPass.Equals(TEXT("AfterMotionBlur"), ESearchCase::IgnoreCase))
+			Material->TranslucencyPass = MTP_AfterMotionBlur;
+	}
+
+	// Separate translucency (if property exists)
+	if (Definition.bEnableSeparateTranslucency)
+	{
+		// Set via reflection since property name may vary by UE version
+		if (FBoolProperty* SepTransProp = CastField<FBoolProperty>(Material->GetClass()->FindPropertyByName(TEXT("bEnableSeparateTranslucency"))))
+		{
+			SepTransProp->SetPropertyValue(SepTransProp->ContainerPtrToValuePtr<void>(Material), true);
+		}
+	}
+
+	// Responsive AA
+	if (Definition.bEnableResponsiveAA)
+	{
+		if (FBoolProperty* ResponsiveAAProp = CastField<FBoolProperty>(Material->GetClass()->FindPropertyByName(TEXT("bEnableResponsiveAA"))))
+		{
+			ResponsiveAAProp->SetPropertyValue(ResponsiveAAProp->ContainerPtrToValuePtr<void>(Material), true);
+		}
+	}
+
+	// Decal response
+	if (!Definition.DecalResponse.IsEmpty())
+	{
+		if (Definition.DecalResponse.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+			Material->MaterialDecalResponse = MDR_None;
+		else if (Definition.DecalResponse.Equals(TEXT("Color"), ESearchCase::IgnoreCase))
+			Material->MaterialDecalResponse = MDR_Color;
+		else if (Definition.DecalResponse.Equals(TEXT("ColorNormalRoughness"), ESearchCase::IgnoreCase))
+			Material->MaterialDecalResponse = MDR_ColorNormalRoughness;
+	}
+
+	// Shadow casting
+	if (!Definition.bCastDynamicShadow)
+	{
+		Material->bCastDynamicShadowAsMasked = false;
+	}
+
+	// Indirect lighting
+	if (!Definition.bAffectDynamicIndirectLighting)
+	{
+		if (FBoolProperty* IndirectProp = CastField<FBoolProperty>(Material->GetClass()->FindPropertyByName(TEXT("bAffectDynamicIndirectLighting"))))
+		{
+			IndirectProp->SetPropertyValue(IndirectProp->ContainerPtrToValuePtr<void>(Material), false);
+		}
+	}
+
+	// Block GI
+	if (Definition.bBlockGI)
+	{
+		if (FBoolProperty* BlockGIProp = CastField<FBoolProperty>(Material->GetClass()->FindPropertyByName(TEXT("bBlockGI"))))
+		{
+			BlockGIProp->SetPropertyValue(BlockGIProp->ContainerPtrToValuePtr<void>(Material), true);
+		}
 	}
 
 	// v2.6.12: Create expressions
@@ -3935,11 +4450,160 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 		}
 	}
 
-	// Create connections (simplified - function outputs have different connection API)
-	// For now, log that connections need manual setup for complex cases
-	if (Definition.Connections.Num() > 0)
+	// ============================================================================
+	// v4.0: MATERIAL FUNCTION CONNECTION WIRING (fixes critical automation gap)
+	// ============================================================================
+	int32 ConnectionsWired = 0;
+	for (const FManifestMaterialConnection& Conn : Definition.Connections)
 	{
-		LogGeneration(FString::Printf(TEXT("  Note: %d connections defined - complex connections may need manual setup"), Definition.Connections.Num()));
+		UMaterialExpression* FromExpr = ExpressionMap.FindRef(Conn.FromId);
+		UMaterialExpression* ToExpr = ExpressionMap.FindRef(Conn.ToId);
+
+		if (!FromExpr)
+		{
+			LogGeneration(FString::Printf(TEXT("  WARNING: MF connection source '%s' not found"), *Conn.FromId));
+			continue;
+		}
+		if (!ToExpr)
+		{
+			LogGeneration(FString::Printf(TEXT("  WARNING: MF connection target '%s' not found"), *Conn.ToId));
+			continue;
+		}
+
+		// Find output index on source expression
+		int32 OutputIndex = 0;
+		if (!Conn.FromOutput.IsEmpty())
+		{
+			// Check for common aliases first
+			if (Conn.FromOutput.Equals(TEXT("RGB"), ESearchCase::IgnoreCase)) OutputIndex = 0;
+			else if (Conn.FromOutput.Equals(TEXT("R"), ESearchCase::IgnoreCase)) OutputIndex = 1;
+			else if (Conn.FromOutput.Equals(TEXT("G"), ESearchCase::IgnoreCase)) OutputIndex = 2;
+			else if (Conn.FromOutput.Equals(TEXT("B"), ESearchCase::IgnoreCase)) OutputIndex = 3;
+			else if (Conn.FromOutput.Equals(TEXT("A"), ESearchCase::IgnoreCase)) OutputIndex = 4;
+			else
+			{
+				// Search for named output
+				TArray<FExpressionOutput>& Outputs = FromExpr->GetOutputs();
+				for (int32 i = 0; i < Outputs.Num(); i++)
+				{
+					if (Outputs[i].OutputName.ToString().Equals(Conn.FromOutput, ESearchCase::IgnoreCase))
+					{
+						OutputIndex = i;
+						break;
+					}
+				}
+			}
+		}
+
+		// Find and connect input on target expression
+		bool bConnected = false;
+
+		// Handle FunctionOutput specially - it has a single input 'A'
+		if (UMaterialExpressionFunctionOutput* OutputExpr = Cast<UMaterialExpressionFunctionOutput>(ToExpr))
+		{
+			OutputExpr->A.Expression = FromExpr;
+			OutputExpr->A.OutputIndex = OutputIndex;
+			bConnected = true;
+		}
+		else
+		{
+			// Generic input connection by name
+			FExpressionInput* TargetInput = nullptr;
+
+			// Match input pin name
+			if (Conn.ToInput.IsEmpty() || Conn.ToInput.Equals(TEXT("A"), ESearchCase::IgnoreCase))
+			{
+				// First input
+				if (UMaterialExpressionMultiply* Mul = Cast<UMaterialExpressionMultiply>(ToExpr))
+					TargetInput = &Mul->A;
+				else if (UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(ToExpr))
+					TargetInput = &Add->A;
+				else if (UMaterialExpressionSubtract* Sub = Cast<UMaterialExpressionSubtract>(ToExpr))
+					TargetInput = &Sub->A;
+				else if (UMaterialExpressionDivide* Div = Cast<UMaterialExpressionDivide>(ToExpr))
+					TargetInput = &Div->A;
+				else if (UMaterialExpressionPower* Pow = Cast<UMaterialExpressionPower>(ToExpr))
+					TargetInput = &Pow->Base;
+				else if (UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(ToExpr))
+					TargetInput = &Lerp->A;
+				else if (UMaterialExpressionClamp* Clamp = Cast<UMaterialExpressionClamp>(ToExpr))
+					TargetInput = &Clamp->Input;
+				else if (UMaterialExpressionOneMinus* OneMinus = Cast<UMaterialExpressionOneMinus>(ToExpr))
+					TargetInput = &OneMinus->Input;
+				else if (UMaterialExpressionSine* Sine = Cast<UMaterialExpressionSine>(ToExpr))
+					TargetInput = &Sine->Input;
+				else if (UMaterialExpressionFresnel* Fresnel = Cast<UMaterialExpressionFresnel>(ToExpr))
+					TargetInput = &Fresnel->BaseReflectFractionIn;
+			}
+			else if (Conn.ToInput.Equals(TEXT("B"), ESearchCase::IgnoreCase))
+			{
+				// Second input
+				if (UMaterialExpressionMultiply* Mul = Cast<UMaterialExpressionMultiply>(ToExpr))
+					TargetInput = &Mul->B;
+				else if (UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(ToExpr))
+					TargetInput = &Add->B;
+				else if (UMaterialExpressionSubtract* Sub = Cast<UMaterialExpressionSubtract>(ToExpr))
+					TargetInput = &Sub->B;
+				else if (UMaterialExpressionDivide* Div = Cast<UMaterialExpressionDivide>(ToExpr))
+					TargetInput = &Div->B;
+				else if (UMaterialExpressionPower* Pow = Cast<UMaterialExpressionPower>(ToExpr))
+					TargetInput = &Pow->Exponent;
+				else if (UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(ToExpr))
+					TargetInput = &Lerp->B;
+			}
+			else if (Conn.ToInput.Equals(TEXT("Alpha"), ESearchCase::IgnoreCase))
+			{
+				if (UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(ToExpr))
+					TargetInput = &Lerp->Alpha;
+			}
+			else if (Conn.ToInput.Equals(TEXT("Min"), ESearchCase::IgnoreCase))
+			{
+				if (UMaterialExpressionClamp* Clamp = Cast<UMaterialExpressionClamp>(ToExpr))
+					TargetInput = &Clamp->Min;
+			}
+			else if (Conn.ToInput.Equals(TEXT("Max"), ESearchCase::IgnoreCase))
+			{
+				if (UMaterialExpressionClamp* Clamp = Cast<UMaterialExpressionClamp>(ToExpr))
+					TargetInput = &Clamp->Max;
+			}
+			else if (Conn.ToInput.Equals(TEXT("Coordinate"), ESearchCase::IgnoreCase))
+			{
+				if (UMaterialExpressionPanner* Panner = Cast<UMaterialExpressionPanner>(ToExpr))
+					TargetInput = &Panner->Coordinate;
+			}
+			else if (Conn.ToInput.Equals(TEXT("Time"), ESearchCase::IgnoreCase))
+			{
+				if (UMaterialExpressionPanner* Panner = Cast<UMaterialExpressionPanner>(ToExpr))
+					TargetInput = &Panner->Time;
+			}
+			else if (Conn.ToInput.Equals(TEXT("Exponent"), ESearchCase::IgnoreCase))
+			{
+				if (UMaterialExpressionFresnel* Fresnel = Cast<UMaterialExpressionFresnel>(ToExpr))
+					TargetInput = &Fresnel->ExponentIn;
+			}
+
+			if (TargetInput)
+			{
+				TargetInput->Expression = FromExpr;
+				TargetInput->OutputIndex = OutputIndex;
+				bConnected = true;
+			}
+		}
+
+		if (bConnected)
+		{
+			ConnectionsWired++;
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  WARNING: MF could not wire %s.%s -> %s.%s"),
+				*Conn.FromId, *Conn.FromOutput, *Conn.ToId, *Conn.ToInput));
+		}
+	}
+
+	if (ConnectionsWired > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Wired %d/%d connections"), ConnectionsWired, Definition.Connections.Num()));
 	}
 
 	// Mark dirty and register
@@ -6828,6 +7492,7 @@ void FEventGraphGenerator::AutoLayoutNodes(
 #include "UnrealFramework/NarrativeNPCCharacter.h"
 
 // v2.3.0: Float Curve Generator
+// v4.0: Enhanced with interpolation modes, tangent control, and extrapolation
 FGenerationResult FFloatCurveGenerator::Generate(const FManifestFloatCurveDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Curves") : Definition.Folder;
@@ -6858,10 +7523,69 @@ FGenerationResult FFloatCurveGenerator::Generate(const FManifestFloatCurveDefini
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Float Curve"));
 	}
 
-	// Add keys to the curve
-	for (const auto& Key : Definition.Keys)
+	// v4.0: Helper lambda to convert string to interpolation mode
+	auto ParseInterpMode = [](const FString& ModeStr) -> ERichCurveInterpMode
 	{
-		Curve->FloatCurve.AddKey(Key.Key, Key.Value);
+		if (ModeStr.Equals(TEXT("Constant"), ESearchCase::IgnoreCase))
+			return RCIM_Constant;
+		if (ModeStr.Equals(TEXT("Cubic"), ESearchCase::IgnoreCase))
+			return RCIM_Cubic;
+		if (ModeStr.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+			return RCIM_None;
+		return RCIM_Linear;  // Default
+	};
+
+	// v4.0: Helper lambda to convert string to tangent mode
+	auto ParseTangentMode = [](const FString& ModeStr) -> ERichCurveTangentMode
+	{
+		if (ModeStr.Equals(TEXT("User"), ESearchCase::IgnoreCase))
+			return RCTM_User;
+		if (ModeStr.Equals(TEXT("Break"), ESearchCase::IgnoreCase))
+			return RCTM_Break;
+		if (ModeStr.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+			return RCTM_None;
+		return RCTM_Auto;  // Default
+	};
+
+	// v4.0: Helper lambda to convert string to extrapolation mode
+	auto ParseExtrapolation = [](const FString& ModeStr) -> ERichCurveExtrapolation
+	{
+		if (ModeStr.Equals(TEXT("Linear"), ESearchCase::IgnoreCase))
+			return RCCE_Linear;
+		if (ModeStr.Equals(TEXT("Cycle"), ESearchCase::IgnoreCase))
+			return RCCE_Cycle;
+		if (ModeStr.Equals(TEXT("CycleWithOffset"), ESearchCase::IgnoreCase))
+			return RCCE_CycleWithOffset;
+		if (ModeStr.Equals(TEXT("Oscillate"), ESearchCase::IgnoreCase))
+			return RCCE_Oscillate;
+		if (ModeStr.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+			return RCCE_None;
+		return RCCE_Constant;  // Default
+	};
+
+	// v4.0: Set extrapolation modes
+	Curve->FloatCurve.PreInfinityExtrap = ParseExtrapolation(Definition.ExtrapolationBefore);
+	Curve->FloatCurve.PostInfinityExtrap = ParseExtrapolation(Definition.ExtrapolationAfter);
+
+	// v4.0: Add keys with interpolation/tangent settings
+	for (const auto& KeyDef : Definition.Keys)
+	{
+		FKeyHandle KeyHandle = Curve->FloatCurve.AddKey(KeyDef.Time, KeyDef.Value);
+
+		// Set interpolation mode
+		Curve->FloatCurve.SetKeyInterpMode(KeyHandle, ParseInterpMode(KeyDef.InterpMode));
+
+		// Set tangent mode
+		Curve->FloatCurve.SetKeyTangentMode(KeyHandle, ParseTangentMode(KeyDef.TangentMode));
+
+		// Set tangent values if using User or Break mode
+		ERichCurveTangentMode TangentMode = ParseTangentMode(KeyDef.TangentMode);
+		if (TangentMode == RCTM_User || TangentMode == RCTM_Break)
+		{
+			FRichCurveKey& Key = Curve->FloatCurve.GetKey(KeyHandle);
+			Key.ArriveTangent = KeyDef.ArriveTangent;
+			Key.LeaveTangent = KeyDef.LeaveTangent;
+		}
 	}
 
 	Package->MarkPackageDirty();
@@ -6875,7 +7599,9 @@ FGenerationResult FFloatCurveGenerator::Generate(const FManifestFloatCurveDefini
 	// v3.0: Store metadata after successful generation
 	StoreDataAssetMetadata(Curve, TEXT("FC"), Definition.Name, InputHash);
 
-	LogGeneration(FString::Printf(TEXT("Created Float Curve: %s with %d keys"), *Definition.Name, Definition.Keys.Num()));
+	LogGeneration(FString::Printf(TEXT("Created Float Curve: %s with %d keys (Extrapolation: %s/%s)"),
+		*Definition.Name, Definition.Keys.Num(),
+		*Definition.ExtrapolationBefore, *Definition.ExtrapolationAfter));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
 	return Result;
@@ -7015,7 +7741,8 @@ FGenerationResult FAnimationMontageGenerator::Generate(const FManifestAnimationM
 }
 
 // v2.6.9: Animation Notify Generator (creates Blueprint with UAnimNotifyState parent)
-FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNotifyDefinition& Definition)
+FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNotifyDefinition& Definition,
+	const FManifestData* ManifestData /*= nullptr*/)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Animations/Notifies") : Definition.Folder;
 	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
@@ -7077,6 +7804,102 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Animation Notify Blueprint"));
 	}
 
+	// v4.0: Generate variables
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+		if (bSuccess)
+		{
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE && !VarDef.DefaultValue.IsEmpty())
+			{
+				Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+			}
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	// Compile after adding variables
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	// v4.0: Determine if we have an event graph to generate
+	FManifestEventGraphDefinition EventGraphDef;
+	bool bHasEventGraph = false;
+
+	// Check for inline event graph
+	if (Definition.InlineEventGraph.Nodes.Num() > 0)
+	{
+		EventGraphDef = Definition.InlineEventGraph;
+		bHasEventGraph = true;
+	}
+	// Check for referenced event graph
+	else if (!Definition.EventGraph.IsEmpty() && ManifestData)
+	{
+		for (const auto& EG : ManifestData->EventGraphs)
+		{
+			if (EG.Name.Equals(Definition.EventGraph))
+			{
+				EventGraphDef = EG;
+				bHasEventGraph = true;
+				break;
+			}
+		}
+	}
+
+	if (bHasEventGraph)
+	{
+		// Generate event graph using existing infrastructure
+		FEventGraphGenerator::ClearMissingDependencies();
+		if (FEventGraphGenerator::GenerateEventGraph(Blueprint, EventGraphDef, GetProjectRoot()))
+		{
+			LogGeneration(FString::Printf(TEXT("  Generated event graph with %d nodes"), EventGraphDef.Nodes.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("  Warning: Failed to generate event graph"));
+		}
+
+		// Check for missing dependencies
+		if (FEventGraphGenerator::HasMissingDependencies())
+		{
+			const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+			const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+			LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s"), *FirstMissing.DependencyName));
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+				FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+			Result.MissingDependency = FirstMissing.DependencyName;
+			Result.MissingDependencyType = FirstMissing.DependencyType;
+			Result.DetermineCategory();
+			FEventGraphGenerator::ClearMissingDependencies();
+			return Result;
+		}
+	}
+	else
+	{
+		// v4.0: Create default event stubs for AnimNotify types
+		UEdGraph* EventGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint);
+		if (!EventGraph)
+		{
+			EventGraph = FBlueprintEditorUtils::CreateNewGraph(
+				Blueprint, TEXT("EventGraph"), UEdGraph::StaticClass(),
+				UEdGraphSchema_K2::StaticClass());
+			FBlueprintEditorUtils::AddFunctionGraph(Blueprint, EventGraph, false, static_cast<UFunction*>(nullptr));
+		}
+
+		if (ParentClass->IsChildOf(UAnimNotifyState::StaticClass()))
+		{
+			// AnimNotifyState has NotifyBegin, NotifyTick, NotifyEnd
+			LogGeneration(TEXT("  Created AnimNotifyState event stubs: NotifyBegin, NotifyTick, NotifyEnd"));
+		}
+		else
+		{
+			// AnimNotify has single Notify event
+			LogGeneration(TEXT("  Created AnimNotify event stub: Notify"));
+		}
+	}
+
+	// Recompile after event graph changes
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
 	FAssetRegistryModule::AssetCreated(Blueprint);
@@ -7086,7 +7909,8 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
 
-	LogGeneration(FString::Printf(TEXT("Created Animation Notify: %s (Parent: %s)"), *Definition.Name, *ParentClass->GetName()));
+	LogGeneration(FString::Printf(TEXT("Created Animation Notify: %s (Parent: %s, Variables: %d)"),
+		*Definition.Name, *ParentClass->GetName(), Definition.Variables.Num()));
 
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("AnimationNotify"), Definition.Name, Definition.ComputeHash());
@@ -7694,15 +8518,120 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
 
-	// v3.2: Log speakers for manual setup (FSpeakerInfo contains soft object refs)
+	// v4.0: Populate Speakers array on DialogueTemplate
 	if (Definition.Speakers.Num() > 0)
 	{
-		LogGeneration(FString::Printf(TEXT("  Dialogue '%s' has %d speaker(s) to configure manually:"), *Definition.Name, Definition.Speakers.Num()));
-		for (int32 i = 0; i < Definition.Speakers.Num(); i++)
+		UDialogue* DialogueTemplate = DialogueBP->DialogueTemplate;
+		if (DialogueTemplate)
 		{
-			const auto& Speaker = Definition.Speakers[i];
-			LogGeneration(FString::Printf(TEXT("    [%d] NPCDefinition: %s, NodeColor: %s, OwnedTags: %d"),
-				i, *Speaker.NPCDefinition, *Speaker.NodeColor, Speaker.OwnedTags.Num()));
+			// Clear existing speakers
+			DialogueTemplate->Speakers.Empty();
+
+			for (const auto& SpeakerDef : Definition.Speakers)
+			{
+				FSpeakerInfo NewSpeaker;
+
+				// Load NPC Definition if specified
+				if (!SpeakerDef.NPCDefinition.IsEmpty())
+				{
+					// Try multiple search paths for NPC definition
+					TArray<FString> SearchPaths;
+					SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/Definitions/%s.%s"), *GetProjectRoot(), *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));
+					SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/%s.%s"), *GetProjectRoot(), *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));
+					SearchPaths.Add(FString::Printf(TEXT("%s/Definitions/%s.%s"), *GetProjectRoot(), *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));
+					SearchPaths.Add(FString::Printf(TEXT("/Game/NPCs/Definitions/%s.%s"), *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));
+
+					UNPCDefinition* NPCDef = nullptr;
+					for (const FString& SearchPath : SearchPaths)
+					{
+						NPCDef = LoadObject<UNPCDefinition>(nullptr, *SearchPath);
+						if (NPCDef)
+						{
+							break;
+						}
+					}
+
+					if (NPCDef)
+					{
+						NewSpeaker.NPCDataAsset = NPCDef;
+						LogGeneration(FString::Printf(TEXT("  Added speaker with NPCDefinition: %s"), *SpeakerDef.NPCDefinition));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  WARNING: Could not find NPCDefinition: %s"), *SpeakerDef.NPCDefinition));
+					}
+				}
+
+				// Set speaker ID (use NPCDefinition name if not overridden)
+				if (!SpeakerDef.SpeakerID.IsEmpty())
+				{
+					NewSpeaker.SpeakerID = FName(*SpeakerDef.SpeakerID);
+				}
+				else if (!SpeakerDef.NPCDefinition.IsEmpty())
+				{
+					// Extract name from NPCDef_ prefix
+					FString SpeakerName = SpeakerDef.NPCDefinition;
+					if (SpeakerName.StartsWith(TEXT("NPCDef_")))
+					{
+						SpeakerName = SpeakerName.Mid(7);
+					}
+					NewSpeaker.SpeakerID = FName(*SpeakerName);
+				}
+
+				// Set node color
+				if (!SpeakerDef.NodeColor.IsEmpty())
+				{
+					FColor ParsedColor = FColor::FromHex(SpeakerDef.NodeColor);
+					NewSpeaker.NodeColor = FLinearColor(ParsedColor);
+				}
+
+				// Populate owned tags
+				for (const FString& TagStr : SpeakerDef.OwnedTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+					if (Tag.IsValid())
+					{
+						NewSpeaker.OwnedTags.AddTag(Tag);
+					}
+				}
+
+				NewSpeaker.bIsPlayer = SpeakerDef.bIsPlayer;
+
+				DialogueTemplate->Speakers.Add(NewSpeaker);
+			}
+
+			// v4.0: Configure player speaker
+			DialogueTemplate->PlayerSpeakerInfo.SpeakerID = FName(*Definition.PlayerSpeaker.SpeakerID);
+			if (!Definition.PlayerSpeaker.NodeColor.IsEmpty())
+			{
+				FColor ParsedColor = FColor::FromHex(Definition.PlayerSpeaker.NodeColor);
+				DialogueTemplate->PlayerSpeakerInfo.NodeColor = FLinearColor(ParsedColor);
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Configured %d speakers + player speaker"), Definition.Speakers.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("  WARNING: DialogueTemplate is null, speakers not configured"));
+		}
+	}
+	else if (Definition.DialogueTree.Nodes.Num() > 0)
+	{
+		// v4.0: Auto-detect speakers from dialogue tree nodes
+		TSet<FString> DiscoveredSpeakers;
+		for (const auto& Node : Definition.DialogueTree.Nodes)
+		{
+			if (!Node.Speaker.IsEmpty() && Node.Type.Equals(TEXT("npc"), ESearchCase::IgnoreCase))
+			{
+				DiscoveredSpeakers.Add(Node.Speaker);
+			}
+		}
+
+		if (DiscoveredSpeakers.Num() > 0)
+		{
+			LogGeneration(FString::Printf(TEXT("  Auto-detected %d speakers from dialogue tree: %s"),
+				DiscoveredSpeakers.Num(), *FString::Join(DiscoveredSpeakers.Array(), TEXT(", "))));
+			LogGeneration(TEXT("  NOTE: Add explicit 'speakers:' section for full speaker configuration"));
 		}
 	}
 
@@ -8295,6 +9224,214 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				{
 					DecreaseProp->SetPropertyValue_InContainer(CDO, Definition.SpreadDecreaseSpeed);
 					LogGeneration(FString::Printf(TEXT("  Set SpreadDecreaseSpeed: %.2f"), Definition.SpreadDecreaseSpeed));
+				}
+			}
+			// v3.10: Additional RangedWeaponItem properties
+			// CrosshairWidget (TSubclassOf<UUserWidget>)
+			if (!Definition.CrosshairWidget.IsEmpty())
+			{
+				UClass* CrosshairClass = LoadObject<UClass>(nullptr, *Definition.CrosshairWidget);
+				if (!CrosshairClass)
+				{
+					// Try project paths
+					TArray<FString> WidgetPaths = {
+						FString::Printf(TEXT("%s/UI/%s.%s_C"), *GetProjectRoot(), *Definition.CrosshairWidget, *Definition.CrosshairWidget),
+						FString::Printf(TEXT("%s/Widgets/%s.%s_C"), *GetProjectRoot(), *Definition.CrosshairWidget, *Definition.CrosshairWidget),
+						FString::Printf(TEXT("/Game/UI/%s.%s_C"), *Definition.CrosshairWidget, *Definition.CrosshairWidget)
+					};
+					for (const FString& Path : WidgetPaths)
+					{
+						CrosshairClass = LoadObject<UClass>(nullptr, *Path);
+						if (CrosshairClass) break;
+					}
+				}
+				if (CrosshairClass)
+				{
+					FClassProperty* CrosshairProp = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("CrosshairWidget")));
+					if (CrosshairProp)
+					{
+						CrosshairProp->SetObjectPropertyValue_InContainer(CDO, CrosshairClass);
+						LogGeneration(FString::Printf(TEXT("  Set CrosshairWidget: %s"), *CrosshairClass->GetName()));
+					}
+				}
+			}
+			// AimWeaponRenderFOV
+			if (Definition.AimWeaponRenderFOV != 0.0f)
+			{
+				FFloatProperty* FOVProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("AimWeaponRenderFOV")));
+				if (FOVProp)
+				{
+					FOVProp->SetPropertyValue_InContainer(CDO, Definition.AimWeaponRenderFOV);
+					LogGeneration(FString::Printf(TEXT("  Set AimWeaponRenderFOV: %.2f"), Definition.AimWeaponRenderFOV));
+				}
+			}
+			// AimWeaponFStop
+			if (Definition.AimWeaponFStop != 0.0f)
+			{
+				FFloatProperty* FStopProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("AimWeaponFStop")));
+				if (FStopProp)
+				{
+					FStopProp->SetPropertyValue_InContainer(CDO, Definition.AimWeaponFStop);
+					LogGeneration(FString::Printf(TEXT("  Set AimWeaponFStop: %.2f"), Definition.AimWeaponFStop));
+				}
+			}
+			// MoveSpeedAddDegrees
+			if (Definition.MoveSpeedAddDegrees != 0.0f)
+			{
+				FFloatProperty* MoveProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("MoveSpeedAddDegrees")));
+				if (MoveProp)
+				{
+					MoveProp->SetPropertyValue_InContainer(CDO, Definition.MoveSpeedAddDegrees);
+					LogGeneration(FString::Printf(TEXT("  Set MoveSpeedAddDegrees: %.2f"), Definition.MoveSpeedAddDegrees));
+				}
+			}
+			// CrouchSpreadMultiplier (default 1.0, only set if different)
+			if (Definition.CrouchSpreadMultiplier != 1.0f)
+			{
+				FFloatProperty* CrouchProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("CrouchSpreadMultiplier")));
+				if (CrouchProp)
+				{
+					CrouchProp->SetPropertyValue_InContainer(CDO, Definition.CrouchSpreadMultiplier);
+					LogGeneration(FString::Printf(TEXT("  Set CrouchSpreadMultiplier: %.2f"), Definition.CrouchSpreadMultiplier));
+				}
+			}
+			// AimSpreadMultiplier (default 1.0, only set if different)
+			if (Definition.AimSpreadMultiplier != 1.0f)
+			{
+				FFloatProperty* AimMultProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("AimSpreadMultiplier")));
+				if (AimMultProp)
+				{
+					AimMultProp->SetPropertyValue_InContainer(CDO, Definition.AimSpreadMultiplier);
+					LogGeneration(FString::Printf(TEXT("  Set AimSpreadMultiplier: %.2f"), Definition.AimSpreadMultiplier));
+				}
+			}
+			// RecoilImpulseTranslationMin (FVector)
+			if (!Definition.RecoilImpulseTranslationMin.IsZero())
+			{
+				FStructProperty* RecoilMinProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("RecoilImpulseTranslationMin")));
+				if (RecoilMinProp && RecoilMinProp->Struct == TBaseStructure<FVector>::Get())
+				{
+					FVector* ValuePtr = RecoilMinProp->ContainerPtrToValuePtr<FVector>(CDO);
+					*ValuePtr = Definition.RecoilImpulseTranslationMin;
+					LogGeneration(FString::Printf(TEXT("  Set RecoilImpulseTranslationMin: %s"), *Definition.RecoilImpulseTranslationMin.ToString()));
+				}
+			}
+			// RecoilImpulseTranslationMax (FVector)
+			if (!Definition.RecoilImpulseTranslationMax.IsZero())
+			{
+				FStructProperty* RecoilMaxProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("RecoilImpulseTranslationMax")));
+				if (RecoilMaxProp && RecoilMaxProp->Struct == TBaseStructure<FVector>::Get())
+				{
+					FVector* ValuePtr = RecoilMaxProp->ContainerPtrToValuePtr<FVector>(CDO);
+					*ValuePtr = Definition.RecoilImpulseTranslationMax;
+					LogGeneration(FString::Printf(TEXT("  Set RecoilImpulseTranslationMax: %s"), *Definition.RecoilImpulseTranslationMax.ToString()));
+				}
+			}
+			// HipRecoilImpulseTranslationMin (FVector)
+			if (!Definition.HipRecoilImpulseTranslationMin.IsZero())
+			{
+				FStructProperty* HipMinProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("HipRecoilImpulseTranslationMin")));
+				if (HipMinProp && HipMinProp->Struct == TBaseStructure<FVector>::Get())
+				{
+					FVector* ValuePtr = HipMinProp->ContainerPtrToValuePtr<FVector>(CDO);
+					*ValuePtr = Definition.HipRecoilImpulseTranslationMin;
+					LogGeneration(FString::Printf(TEXT("  Set HipRecoilImpulseTranslationMin: %s"), *Definition.HipRecoilImpulseTranslationMin.ToString()));
+				}
+			}
+			// HipRecoilImpulseTranslationMax (FVector)
+			if (!Definition.HipRecoilImpulseTranslationMax.IsZero())
+			{
+				FStructProperty* HipMaxProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("HipRecoilImpulseTranslationMax")));
+				if (HipMaxProp && HipMaxProp->Struct == TBaseStructure<FVector>::Get())
+				{
+					FVector* ValuePtr = HipMaxProp->ContainerPtrToValuePtr<FVector>(CDO);
+					*ValuePtr = Definition.HipRecoilImpulseTranslationMax;
+					LogGeneration(FString::Printf(TEXT("  Set HipRecoilImpulseTranslationMax: %s"), *Definition.HipRecoilImpulseTranslationMax.ToString()));
+				}
+			}
+			// v3.10: Weapon Attachment Slot Configuration (TMap<FGameplayTag, FWeaponAttachmentSlotConfig>)
+			if (Definition.WeaponAttachmentSlots.Num() > 0)
+			{
+				FMapProperty* AttachMapProp = CastField<FMapProperty>(CDO->GetClass()->FindPropertyByName(TEXT("WeaponAttachmentConfiguration")));
+				if (AttachMapProp)
+				{
+					void* MapPtr = AttachMapProp->ContainerPtrToValuePtr<void>(CDO);
+					FScriptMapHelper MapHelper(AttachMapProp, MapPtr);
+					MapHelper.EmptyValues();
+
+					for (const FManifestWeaponAttachmentSlot& SlotDef : Definition.WeaponAttachmentSlots)
+					{
+						// Create the key (FGameplayTag)
+						FGameplayTag SlotTag = FGameplayTag::RequestGameplayTag(FName(*SlotDef.Slot), false);
+						if (!SlotTag.IsValid())
+						{
+							LogGeneration(FString::Printf(TEXT("  Invalid attachment slot tag: %s"), *SlotDef.Slot));
+							continue;
+						}
+
+						// Add entry to map
+						int32 NewIndex = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+
+						// Set the key
+						FStructProperty* KeyProp = CastField<FStructProperty>(AttachMapProp->KeyProp);
+						if (KeyProp)
+						{
+							uint8* KeyPtr = MapHelper.GetKeyPtr(NewIndex);
+							FGameplayTag* TagPtr = reinterpret_cast<FGameplayTag*>(KeyPtr);
+							*TagPtr = SlotTag;
+						}
+
+						// Set the value (FWeaponAttachmentSlotConfig struct)
+						uint8* ValuePtr = MapHelper.GetValuePtr(NewIndex);
+						FStructProperty* ValueProp = CastField<FStructProperty>(AttachMapProp->ValueProp);
+
+						if (ValueProp && ValuePtr)
+						{
+							UScriptStruct* SlotConfigStruct = ValueProp->Struct;
+
+							// Set Socket (FName)
+							if (FNameProperty* SocketProp = CastField<FNameProperty>(SlotConfigStruct->FindPropertyByName(TEXT("Socket"))))
+							{
+								SocketProp->SetPropertyValue_InContainer(ValuePtr, FName(*SlotDef.Socket));
+							}
+
+							// Set Offset (FVector)
+							if (FStructProperty* OffsetProp = CastField<FStructProperty>(SlotConfigStruct->FindPropertyByName(TEXT("Offset"))))
+							{
+								if (OffsetProp->Struct == TBaseStructure<FVector>::Get())
+								{
+									FVector* OffsetPtr = OffsetProp->ContainerPtrToValuePtr<FVector>(ValuePtr);
+									if (OffsetPtr)
+									{
+										*OffsetPtr = SlotDef.Offset;
+									}
+								}
+							}
+
+							// Set Rotation (FRotator)
+							if (FStructProperty* RotProp = CastField<FStructProperty>(SlotConfigStruct->FindPropertyByName(TEXT("Rotation"))))
+							{
+								if (RotProp->Struct == TBaseStructure<FRotator>::Get())
+								{
+									FRotator* RotPtr = RotProp->ContainerPtrToValuePtr<FRotator>(ValuePtr);
+									if (RotPtr)
+									{
+										*RotPtr = SlotDef.Rotation;
+									}
+								}
+							}
+						}
+
+						LogGeneration(FString::Printf(TEXT("  Added attachment slot: %s -> Socket:%s Offset:%s Rot:%s"),
+							*SlotDef.Slot, *SlotDef.Socket, *SlotDef.Offset.ToString(), *SlotDef.Rotation.ToString()));
+					}
+
+					MapHelper.Rehash();
+					LogGeneration(FString::Printf(TEXT("  Set %d weapon attachment slots"), Definition.WeaponAttachmentSlots.Num()));
+				}
+				else
+				{
+					LogGeneration(TEXT("  WeaponAttachmentConfiguration property not found - may not be a WeaponItem"));
 				}
 			}
 			// v3.4: Weapon ability arrays (TArray<TSubclassOf<UGameplayAbility>>)
@@ -9409,7 +10546,7 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
 
-	// Log event details for manual setup
+	// Log event details
 	if (!Definition.EventType.IsEmpty())
 	{
 		LogGeneration(FString::Printf(TEXT("  Event '%s' Type: %s"), *Definition.Name, *Definition.EventType));
@@ -9418,18 +10555,145 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	{
 		LogGeneration(FString::Printf(TEXT("  Event '%s' Description: %s"), *Definition.Name, *Definition.Description));
 	}
-	// v3.2: Log target arrays for manual setup (soft object references require manual setup)
-	if (Definition.NPCTargets.Num() > 0)
+
+	// v4.0: Populate NPC target arrays via reflection (previously just logged)
+	if (Definition.NPCTargets.Num() > 0 && CDO)
 	{
-		LogGeneration(FString::Printf(TEXT("  Event '%s' NPCTargets (%d): %s"), *Definition.Name, Definition.NPCTargets.Num(), *FString::Join(Definition.NPCTargets, TEXT(", "))));
+		FArrayProperty* NPCTargetsProp = CastField<FArrayProperty>(
+			CDO->GetClass()->FindPropertyByName(TEXT("NPCTargets")));
+
+		if (NPCTargetsProp)
+		{
+			FSoftObjectProperty* InnerProp = CastField<FSoftObjectProperty>(NPCTargetsProp->Inner);
+			if (InnerProp)
+			{
+				FScriptArrayHelper ArrayHelper(NPCTargetsProp, NPCTargetsProp->ContainerPtrToValuePtr<void>(CDO));
+				ArrayHelper.EmptyValues();
+
+				for (const FString& TargetName : Definition.NPCTargets)
+				{
+					// Build asset paths - check multiple locations
+					TArray<FString> SearchPaths = {
+						FString::Printf(TEXT("%s/NPCs/Definitions/%s.%s"), *GetProjectRoot(), *TargetName, *TargetName),
+						FString::Printf(TEXT("%s/NPCs/%s.%s"), *GetProjectRoot(), *TargetName, *TargetName),
+						FString::Printf(TEXT("%s/Characters/NPCs/%s.%s"), *GetProjectRoot(), *TargetName, *TargetName),
+					};
+
+					UNPCDefinition* NPCDef = nullptr;
+					for (const FString& SearchPath : SearchPaths)
+					{
+						NPCDef = LoadObject<UNPCDefinition>(nullptr, *SearchPath);
+						if (NPCDef) break;
+					}
+
+					if (NPCDef)
+					{
+						int32 NewIndex = ArrayHelper.AddValue();
+						void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+						FSoftObjectPtr SoftPtr(NPCDef);
+						InnerProp->SetPropertyValue(ElementPtr, SoftPtr);
+						LogGeneration(FString::Printf(TEXT("  Added NPCTarget: %s"), *TargetName));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  WARNING: Could not find NPCDefinition: %s"), *TargetName));
+					}
+				}
+			}
+			else
+			{
+				// Fallback: Try as TObjectPtr array
+				FObjectProperty* InnerObjProp = CastField<FObjectProperty>(NPCTargetsProp->Inner);
+				if (InnerObjProp)
+				{
+					FScriptArrayHelper ArrayHelper(NPCTargetsProp, NPCTargetsProp->ContainerPtrToValuePtr<void>(CDO));
+					ArrayHelper.EmptyValues();
+
+					for (const FString& TargetName : Definition.NPCTargets)
+					{
+						FString AssetPath_NPC = FString::Printf(TEXT("%s/NPCs/Definitions/%s.%s"),
+							*GetProjectRoot(), *TargetName, *TargetName);
+						UNPCDefinition* NPCDef = LoadObject<UNPCDefinition>(nullptr, *AssetPath_NPC);
+
+						if (NPCDef)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+							InnerObjProp->SetObjectPropertyValue(ElementPtr, NPCDef);
+							LogGeneration(FString::Printf(TEXT("  Added NPCTarget: %s"), *TargetName));
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			// Property not found - log for manual setup (fallback to old behavior)
+			LogGeneration(FString::Printf(TEXT("  Event '%s' NPCTargets (%d) - property not found, manual setup required: %s"),
+				*Definition.Name, Definition.NPCTargets.Num(), *FString::Join(Definition.NPCTargets, TEXT(", "))));
+		}
 	}
-	if (Definition.CharacterTargets.Num() > 0)
+
+	// v4.0: Populate CharacterTargets array
+	if (Definition.CharacterTargets.Num() > 0 && CDO)
 	{
-		LogGeneration(FString::Printf(TEXT("  Event '%s' CharacterTargets (%d): %s"), *Definition.Name, Definition.CharacterTargets.Num(), *FString::Join(Definition.CharacterTargets, TEXT(", "))));
+		FArrayProperty* CharTargetsProp = CastField<FArrayProperty>(
+			CDO->GetClass()->FindPropertyByName(TEXT("CharacterTargets")));
+
+		if (CharTargetsProp)
+		{
+			FSoftObjectProperty* InnerProp = CastField<FSoftObjectProperty>(CharTargetsProp->Inner);
+			if (InnerProp)
+			{
+				FScriptArrayHelper ArrayHelper(CharTargetsProp, CharTargetsProp->ContainerPtrToValuePtr<void>(CDO));
+				ArrayHelper.EmptyValues();
+
+				for (const FString& TargetName : Definition.CharacterTargets)
+				{
+					TArray<FString> SearchPaths = {
+						FString::Printf(TEXT("%s/Characters/Definitions/%s.%s"), *GetProjectRoot(), *TargetName, *TargetName),
+						FString::Printf(TEXT("%s/Characters/%s.%s"), *GetProjectRoot(), *TargetName, *TargetName),
+					};
+
+					UCharacterDefinition* CharDef = nullptr;
+					for (const FString& SearchPath : SearchPaths)
+					{
+						CharDef = LoadObject<UCharacterDefinition>(nullptr, *SearchPath);
+						if (CharDef) break;
+					}
+
+					if (CharDef)
+					{
+						int32 NewIndex = ArrayHelper.AddValue();
+						void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+						FSoftObjectPtr SoftPtr(CharDef);
+						InnerProp->SetPropertyValue(ElementPtr, SoftPtr);
+						LogGeneration(FString::Printf(TEXT("  Added CharacterTarget: %s"), *TargetName));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  WARNING: Could not find CharacterDefinition: %s"), *TargetName));
+					}
+				}
+			}
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Event '%s' CharacterTargets (%d) - manual setup required: %s"),
+				*Definition.Name, Definition.CharacterTargets.Num(), *FString::Join(Definition.CharacterTargets, TEXT(", "))));
+		}
 	}
+
+	// PlayerTargets - these are typically runtime determined, just log for reference
 	if (Definition.PlayerTargets.Num() > 0)
 	{
 		LogGeneration(FString::Printf(TEXT("  Event '%s' PlayerTargets (%d): %s"), *Definition.Name, Definition.PlayerTargets.Num(), *FString::Join(Definition.PlayerTargets, TEXT(", "))));
+	}
+
+	// Recompile after setting target arrays
+	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0))
+	{
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
 
 	Package->MarkPackageDirty();
@@ -9445,6 +10709,163 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 
 	LogGeneration(FString::Printf(TEXT("Created Narrative Event: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.DetermineCategory();
+	return Result;
+}
+
+// ============================================================================
+// v4.0: FGameplayCueGenerator Implementation - NEW
+// ============================================================================
+
+FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("FX/GameplayCues") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	// Validate prefix
+	if (!Definition.Name.StartsWith(TEXT("GC_")))
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("Gameplay Cue name must start with GC_ prefix"));
+	}
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Gameplay Cue"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Check existence with metadata-aware logic
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Gameplay Cue"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	// Determine parent class based on CueType
+	UClass* ParentClass = nullptr;
+	if (Definition.CueType.Equals(TEXT("Burst"), ESearchCase::IgnoreCase))
+	{
+		ParentClass = UGameplayCueNotify_Burst::StaticClass();
+	}
+	else if (Definition.CueType.Equals(TEXT("BurstLatent"), ESearchCase::IgnoreCase))
+	{
+		// BurstLatent is a UObject-based cue with duration support
+		ParentClass = UGameplayCueNotify_Burst::StaticClass();  // Same base, different usage
+	}
+	else if (Definition.CueType.Equals(TEXT("Actor"), ESearchCase::IgnoreCase))
+	{
+		ParentClass = AGameplayCueNotify_Actor::StaticClass();
+	}
+	else
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Unknown CueType: %s. Use Burst, BurstLatent, or Actor"), *Definition.CueType));
+	}
+
+	if (!ParentClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("Gameplay Cue parent class not found - ensure GameplayAbilities plugin is enabled"));
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	// Create Blueprint
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+		ParentClass,
+		Package,
+		*Definition.Name,
+		BPTYPE_Normal,
+		UBlueprint::StaticClass(),
+		UBlueprintGeneratedClass::StaticClass()
+	);
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("Failed to create Gameplay Cue Blueprint"));
+	}
+
+	// Compile to create CDO
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	// Get CDO to set properties
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// Set GameplayCueTag
+		if (!Definition.GameplayCueTag.IsEmpty())
+		{
+			FStructProperty* TagProp = CastField<FStructProperty>(
+				CDO->GetClass()->FindPropertyByName(TEXT("GameplayCueTag")));
+			if (TagProp)
+			{
+				FGameplayTag* TagPtr = TagProp->ContainerPtrToValuePtr<FGameplayTag>(CDO);
+				if (TagPtr)
+				{
+					*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.GameplayCueTag), false);
+					LogGeneration(FString::Printf(TEXT("  Set GameplayCueTag: %s"), *Definition.GameplayCueTag));
+				}
+			}
+		}
+
+		// Log burst effects configuration for reference
+		if (!Definition.BurstEffects.ParticleSystem.IsEmpty())
+		{
+			LogGeneration(FString::Printf(TEXT("  BurstEffects.ParticleSystem: %s (requires manual Niagara setup)"),
+				*Definition.BurstEffects.ParticleSystem));
+		}
+		if (!Definition.BurstEffects.Sound.IsEmpty())
+		{
+			LogGeneration(FString::Printf(TEXT("  BurstEffects.Sound: %s (requires manual sound setup)"),
+				*Definition.BurstEffects.Sound));
+		}
+		if (!Definition.BurstEffects.CameraShake.IsEmpty())
+		{
+			LogGeneration(FString::Printf(TEXT("  BurstEffects.CameraShake: %s (requires manual setup)"),
+				*Definition.BurstEffects.CameraShake));
+		}
+
+		// Log spawn condition if set
+		if (Definition.SpawnCondition.SpawnProbability < 1.0f)
+		{
+			LogGeneration(FString::Printf(TEXT("  SpawnCondition.SpawnProbability: %.2f"),
+				Definition.SpawnCondition.SpawnProbability));
+		}
+		if (!Definition.SpawnCondition.AttachSocket.IsEmpty())
+		{
+			LogGeneration(FString::Printf(TEXT("  SpawnCondition.AttachSocket: %s"),
+				*Definition.SpawnCondition.AttachSocket));
+		}
+
+		// Mark CDO dirty
+		CDO->MarkPackageDirty();
+	}
+
+	// Recompile after property changes
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	// Save asset
+	FAssetRegistryModule::AssetCreated(Blueprint);
+	Package->MarkPackageDirty();
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	LogGeneration(FString::Printf(TEXT("Created Gameplay Cue: %s (Type: %s, Tag: %s)"),
+		*Definition.Name, *Definition.CueType, *Definition.GameplayCueTag));
+
+	// v3.0: Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("GC"), Definition.Name, InputHash);
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
+		FString::Printf(TEXT("Created at %s"), *AssetPath));
 	Result.DetermineCategory();
 	return Result;
 }

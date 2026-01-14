@@ -954,6 +954,7 @@ struct FManifestWidgetBlueprintDefinition
 
 /**
  * Blackboard key definition
+ * v4.0: Added BaseClass for Object/Class key types
  */
 struct FManifestBlackboardKeyDefinition
 {
@@ -961,28 +962,38 @@ struct FManifestBlackboardKeyDefinition
 	FString Type;  // Bool, Int, Float, String, Name, Vector, Rotator, Object, Class, Enum
 	bool bInstanceSynced = false;
 
+	// v4.0: Base class for Object/Class key types (e.g., "Actor", "Pawn", "NarrativeNPCCharacter")
+	// Only used when Type is "Object" or "Class"
+	FString BaseClass;
+
 	/** v3.0: Compute hash for change detection */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
 		Hash ^= GetTypeHash(Type) << 8;
 		Hash ^= (bInstanceSynced ? 1ULL : 0ULL) << 16;
+		Hash ^= GetTypeHash(BaseClass) << 24;  // v4.0
 		return Hash;
 	}
 };
 
 /**
  * Blackboard definition
+ * v4.0: Added Parent blackboard for inheritance
  */
 struct FManifestBlackboardDefinition
 {
 	FString Name;
 	TArray<FManifestBlackboardKeyDefinition> Keys;
 
+	// v4.0: Parent blackboard for inheritance (keys are inherited from parent)
+	FString Parent;
+
 	/** v3.0: Compute hash for change detection */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Parent) << 4;  // v4.0
 		for (const auto& Key : Keys)
 		{
 			Hash ^= Key.ComputeHash();
@@ -994,6 +1005,7 @@ struct FManifestBlackboardDefinition
 
 /**
  * v3.1: BehaviorTree decorator definition
+ * v4.0: Added bInverseCondition, FlowAbortMode for enhanced decorator configuration
  */
 struct FManifestBTDecoratorDefinition
 {
@@ -1002,17 +1014,29 @@ struct FManifestBTDecoratorDefinition
 	FString Operation;                    // Condition operation (IsSet, IsNotSet, etc.)
 	TMap<FString, FString> Properties;    // Additional properties
 
+	// v4.0: Enhanced decorator configuration
+	bool bInverseCondition = false;       // Invert the decorator condition
+	FString FlowAbortMode;                // None, Self, LowerPriority, Both
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Class);
 		Hash ^= GetTypeHash(BlackboardKey) << 8;
 		Hash ^= GetTypeHash(Operation) << 16;
+		Hash ^= static_cast<uint64>(bInverseCondition ? 1 : 0) << 24;
+		Hash ^= GetTypeHash(FlowAbortMode) << 28;
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+		}
 		return Hash;
 	}
 };
 
 /**
  * v3.1: BehaviorTree service definition
+ * v4.0: Added RandomDeviation, bCallTickOnSearchStart, bRestartTimerOnActivation
  */
 struct FManifestBTServiceDefinition
 {
@@ -1020,16 +1044,30 @@ struct FManifestBTServiceDefinition
 	float Interval = 0.5f;                // Tick interval
 	TMap<FString, FString> Properties;    // Additional properties
 
+	// v4.0: Enhanced service configuration
+	float RandomDeviation = 0.0f;         // Random deviation for interval
+	bool bCallTickOnSearchStart = false;  // Call tick when search starts
+	bool bRestartTimerOnActivation = true; // Restart timer on activation
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Class);
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(Interval * 1000.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(RandomDeviation * 1000.f)) << 16;
+		Hash ^= static_cast<uint64>(bCallTickOnSearchStart ? 1 : 0) << 24;
+		Hash ^= static_cast<uint64>(bRestartTimerOnActivation ? 1 : 0) << 28;
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+		}
 		return Hash;
 	}
 };
 
 /**
  * v3.1: BehaviorTree node definition (task or composite)
+ * v4.0: Properties now included in hash for change detection
  */
 struct FManifestBTNodeDefinition
 {
@@ -1040,7 +1078,7 @@ struct FManifestBTNodeDefinition
 	TArray<FString> Children;             // Child node IDs (for composites)
 	TArray<FManifestBTDecoratorDefinition> Decorators;  // Decorators on this node
 	TArray<FManifestBTServiceDefinition> Services;      // Services on this node (composites only)
-	TMap<FString, FString> Properties;    // Additional task properties
+	TMap<FString, FString> Properties;    // Additional task properties (v4.0: set via reflection)
 
 	uint64 ComputeHash() const
 	{
@@ -1062,6 +1100,13 @@ struct FManifestBTNodeDefinition
 		{
 			Hash ^= Service.ComputeHash();
 			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		// v4.0: Include properties in hash
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+			Hash = (Hash << 2) | (Hash >> 62);
 		}
 		return Hash;
 	}
@@ -1097,6 +1142,7 @@ struct FManifestBehaviorTreeDefinition
 
 /**
  * v2.6.12: Material Expression (node in material graph)
+ * v4.0: Added TexturePath, SamplerType for texture expressions
  */
 struct FManifestMaterialExpression
 {
@@ -1106,7 +1152,11 @@ struct FManifestMaterialExpression
 	FString DefaultValue;    // Default value as string (parsed based on type)
 	int32 PosX = 0;          // Node position X in graph
 	int32 PosY = 0;          // Node position Y in graph
-	TMap<FString, FString> Properties;  // Additional properties (e.g., Texture path, Exponent, etc.)
+	TMap<FString, FString> Properties;  // Additional properties (e.g., Exponent, etc.)
+
+	// v4.0: Texture-specific properties
+	FString TexturePath;     // Path to texture asset (e.g., "/Game/Textures/T_Fire")
+	FString SamplerType;     // Color, LinearColor, Normal, Masks, Grayscale, Alpha, DistanceFieldFont
 
 	/** v3.0: Compute hash for change detection (excludes PosX, PosY - presentational only) */
 	uint64 ComputeHash() const
@@ -1121,6 +1171,9 @@ struct FManifestMaterialExpression
 			Hash ^= GetTypeHash(Prop.Key);
 			Hash ^= GetTypeHash(Prop.Value) << 4;
 		}
+		// v4.0: Include texture properties in hash
+		Hash ^= GetTypeHash(TexturePath) << 16;
+		Hash ^= GetTypeHash(SamplerType) << 20;
 		return Hash;
 	}
 };
@@ -1148,6 +1201,7 @@ struct FManifestMaterialConnection
 
 /**
  * v2.6.12: Enhanced Material definition with expression graph support
+ * v4.0: Added MaterialDomain, CullMode, translucency/decal/lighting properties
  */
 struct FManifestMaterialDefinition
 {
@@ -1161,6 +1215,18 @@ struct FManifestMaterialDefinition
 	// v2.6.12: Expression graph
 	TArray<FManifestMaterialExpression> Expressions;   // Nodes in the material graph
 	TArray<FManifestMaterialConnection> Connections;   // Connections between nodes
+
+	// v4.0: Extended material properties
+	FString MaterialDomain = TEXT("Surface");     // Surface, DeferredDecal, LightFunction, Volume, PostProcess, UI
+	FString CullMode;                             // None, Front, Back (empty = default for blend mode)
+	float OpacityMaskClipValue = 0.333f;          // Opacity mask clip threshold
+	FString TranslucencyPass;                     // BeforeDOF, AfterDOF, AfterMotionBlur
+	bool bEnableSeparateTranslucency = false;     // Render in separate translucency pass
+	bool bEnableResponsiveAA = false;             // Enable responsive AA for translucent objects
+	FString DecalResponse;                        // None, Color, Normal, ColorNormalRoughness, etc.
+	bool bCastDynamicShadow = true;               // Cast dynamic shadows
+	bool bAffectDynamicIndirectLighting = true;   // Affect indirect lighting
+	bool bBlockGI = false;                        // Block global illumination
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -1185,6 +1251,17 @@ struct FManifestMaterialDefinition
 			Hash ^= Conn.ComputeHash();
 			Hash = (Hash << 5) | (Hash >> 59);
 		}
+		// v4.0: Include extended properties
+		Hash ^= GetTypeHash(MaterialDomain) << 16;
+		Hash ^= GetTypeHash(CullMode) << 20;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(OpacityMaskClipValue * 1000.f)) << 24;
+		Hash ^= GetTypeHash(TranslucencyPass) << 28;
+		Hash ^= (bEnableSeparateTranslucency ? 1ULL : 0ULL) << 32;
+		Hash ^= (bEnableResponsiveAA ? 1ULL : 0ULL) << 33;
+		Hash ^= static_cast<uint64>(GetTypeHash(DecalResponse)) << 36;
+		Hash ^= (bCastDynamicShadow ? 1ULL : 0ULL) << 40;
+		Hash ^= (bAffectDynamicIndirectLighting ? 1ULL : 0ULL) << 41;
+		Hash ^= (bBlockGI ? 1ULL : 0ULL) << 42;
 		return Hash;
 	}
 };
@@ -1279,23 +1356,64 @@ struct FManifestMaterialFunctionDefinition
 // ============================================================================
 
 /**
+ * v4.0: Float curve key definition with interpolation and tangent support
+ */
+struct FManifestFloatCurveKeyDefinition
+{
+	float Time = 0.0f;
+	float Value = 0.0f;
+
+	// v4.0: Interpolation mode (maps to ERichCurveInterpMode)
+	// Values: "Linear" (default), "Constant", "Cubic", "None"
+	FString InterpMode = TEXT("Linear");
+
+	// v4.0: Tangent mode (maps to ERichCurveTangentMode)
+	// Values: "Auto" (default), "User", "Break", "None"
+	FString TangentMode = TEXT("Auto");
+
+	// v4.0: Tangent values (only used when TangentMode is User or Break)
+	float ArriveTangent = 0.0f;
+	float LeaveTangent = 0.0f;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(FMath::RoundToInt(Time * 1000.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Value * 1000.f)) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(InterpMode)) << 32;
+		Hash ^= static_cast<uint64>(GetTypeHash(TangentMode)) << 40;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ArriveTangent * 100.f)) << 48;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(LeaveTangent * 100.f)) << 56;
+		return Hash;
+	}
+};
+
+/**
  * Float curve definition
+ * v4.0: Enhanced with interpolation modes, tangent control, and extrapolation
  */
 struct FManifestFloatCurveDefinition
 {
 	FString Name;
 	FString Folder;
-	TArray<TPair<float, float>> Keys;  // Time, Value pairs
+
+	// v4.0: Keys with full interpolation/tangent support (replaces TPair array)
+	TArray<FManifestFloatCurveKeyDefinition> Keys;
+
+	// v4.0: Extrapolation modes (maps to ERichCurveExtrapolation)
+	// Values: "Constant" (default), "Linear", "Cycle", "CycleWithOffset", "Oscillate", "None"
+	FString ExtrapolationBefore = TEXT("Constant");
+	FString ExtrapolationAfter = TEXT("Constant");
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
 		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(ExtrapolationBefore) << 4;
+		Hash ^= GetTypeHash(ExtrapolationAfter) << 8;
 		for (const auto& Key : Keys)
 		{
-			Hash ^= static_cast<uint64>(FMath::RoundToInt(Key.Key * 1000.f));
-			Hash ^= static_cast<uint64>(FMath::RoundToInt(Key.Value * 1000.f)) << 32;
+			Hash ^= Key.ComputeHash();
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
 		return Hash;
@@ -1329,12 +1447,20 @@ struct FManifestAnimationMontageDefinition
 
 /**
  * Animation notify state definition
+ * v4.0: Enhanced with event graph and variables support
  */
 struct FManifestAnimationNotifyDefinition
 {
 	FString Name;
-	FString Folder;
-	FString NotifyClass;
+	FString Folder = TEXT("Animations/Notifies");
+	FString NotifyClass;  // AnimNotify or AnimNotifyState parent
+
+	// v4.0: Variables for the notify Blueprint
+	TArray<FManifestActorVariableDefinition> Variables;
+
+	// v4.0: Event graph definition (inline or reference)
+	FString EventGraph;  // Reference to named event_graph
+	FManifestEventGraphDefinition InlineEventGraph;  // Inline definition
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -1342,6 +1468,14 @@ struct FManifestAnimationNotifyDefinition
 		uint64 Hash = GetTypeHash(Name);
 		// NOTE: Folder excluded - presentational only
 		Hash ^= GetTypeHash(NotifyClass) << 8;
+		// v4.0: Include variables and event graph in hash
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		Hash ^= GetTypeHash(EventGraph) << 16;
+		Hash ^= InlineEventGraph.ComputeHash() << 24;
 		return Hash;
 	}
 };
@@ -1490,22 +1624,45 @@ struct FManifestDialogueTreeDefinition
 
 /**
  * v3.2: Dialogue speaker definition for UDialogue::Speakers array
+ * v4.0: Added SpeakerID and bIsPlayer fields
  */
 struct FManifestDialogueSpeakerDefinition
 {
 	FString NPCDefinition;  // Reference to NPCDef_ asset
+	FString SpeakerID;      // v4.0: Optional override for speaker ID
 	FString NodeColor;      // Hex color e.g. "#0066FF"
 	TArray<FString> OwnedTags;  // Tags applied during dialogue
+	bool bIsPlayer = false; // v4.0: True for player speaker
 
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(NPCDefinition);
-		Hash ^= GetTypeHash(NodeColor) << 4;
+		Hash ^= GetTypeHash(SpeakerID) << 4;
+		Hash ^= GetTypeHash(NodeColor) << 8;
+		Hash ^= (bIsPlayer ? 1ULL : 0ULL) << 12;
 		for (const auto& Tag : OwnedTags)
 		{
 			Hash ^= GetTypeHash(Tag);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
+		return Hash;
+	}
+};
+
+/**
+ * v4.0: Player speaker configuration for dialogue
+ */
+struct FManifestPlayerSpeakerDefinition
+{
+	FString SpeakerID = TEXT("Player");
+	FString NodeColor = TEXT("#0066FF");
+	FString SelectingReplyShot;  // Optional camera shot reference
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(SpeakerID);
+		Hash ^= GetTypeHash(NodeColor) << 8;
+		Hash ^= GetTypeHash(SelectingReplyShot) << 16;
 		return Hash;
 	}
 };
@@ -1540,6 +1697,9 @@ struct FManifestDialogueBlueprintDefinition
 	// v3.2: Speakers configuration
 	TArray<FManifestDialogueSpeakerDefinition> Speakers;
 
+	// v4.0: Player speaker configuration
+	FManifestPlayerSpeakerDefinition PlayerSpeaker;
+
 	// v3.7: Full dialogue tree
 	FManifestDialogueTreeDefinition DialogueTree;
 
@@ -1573,8 +1733,10 @@ struct FManifestDialogueBlueprintDefinition
 			Hash ^= Speaker.ComputeHash();
 			Hash = (Hash << 5) | (Hash >> 59);
 		}
+		// v4.0: Include player speaker in hash
+		Hash ^= PlayerSpeaker.ComputeHash() << 40;
 		// v3.7: Include dialogue tree in hash
-		Hash ^= DialogueTree.ComputeHash() << 38;
+		Hash ^= DialogueTree.ComputeHash() << 44;
 		return Hash;
 	}
 };
@@ -1744,10 +1906,32 @@ struct FManifestClothingMeshConfig
 };
 
 /**
+ * v3.10: Weapon attachment slot configuration for TMap automation
+ * Maps to TMap<FGameplayTag, FWeaponAttachmentSlotConfig>
+ */
+struct FManifestWeaponAttachmentSlot
+{
+	FString Slot;      // GameplayTag string e.g. "Narrative.Equipment.Weapon.AttachSlot.Sight"
+	FString Socket;    // Socket name on mesh
+	FVector Offset = FVector::ZeroVector;
+	FRotator Rotation = FRotator::ZeroRotator;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Slot);
+		Hash ^= GetTypeHash(Socket) << 4;
+		Hash ^= GetTypeHash(Offset.ToString()) << 8;
+		Hash ^= GetTypeHash(Rotation.ToString()) << 12;
+		return Hash;
+	}
+};
+
+/**
  * Equippable item definition
  * v3.3: Enhanced with full NarrativeItem + EquippableItem property support
  * v3.4: Added WeaponItem and RangedWeaponItem property support
  * v3.9.8: Added ClothingMesh for EquippableItem_Clothing support
+ * v3.10: Added WeaponAttachmentSlots TMap support
  */
 struct FManifestEquippableItemDefinition
 {
@@ -1797,6 +1981,21 @@ struct FManifestEquippableItemDefinition
 	float MaxSpreadDegrees = 5.0f;       // Maximum spread
 	float SpreadFireBump = 0.5f;         // Spread increase per shot
 	float SpreadDecreaseSpeed = 5.0f;    // Spread recovery speed
+
+	// v3.10: Additional RangedWeaponItem properties
+	FString CrosshairWidget;             // TSubclassOf<UUserWidget> - Custom crosshair widget class
+	float AimWeaponRenderFOV = 0.0f;     // FOV for weapon render texture when aiming
+	float AimWeaponFStop = 0.0f;         // F-stop for weapon DOF when aiming
+	float MoveSpeedAddDegrees = 0.0f;    // Spread added based on movement speed
+	float CrouchSpreadMultiplier = 1.0f; // Spread multiplier when crouching
+	float AimSpreadMultiplier = 1.0f;    // Spread multiplier when aiming
+	FVector RecoilImpulseTranslationMin = FVector::ZeroVector;  // Min recoil translation when aiming
+	FVector RecoilImpulseTranslationMax = FVector::ZeroVector;  // Max recoil translation when aiming
+	FVector HipRecoilImpulseTranslationMin = FVector::ZeroVector; // Min recoil translation from hip
+	FVector HipRecoilImpulseTranslationMax = FVector::ZeroVector; // Max recoil translation from hip
+
+	// v3.10: Weapon attachment slots TMap automation (replaces parallel array approach)
+	TArray<FManifestWeaponAttachmentSlot> WeaponAttachmentSlots;
 
 	// v3.9.6: NarrativeItem usage properties
 	bool bAddDefaultUseOption = true;    // Add default "Use" option to context menu
@@ -1909,6 +2108,35 @@ struct FManifestEquippableItemDefinition
 		Hash = (Hash << 5) | (Hash >> 59);
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(SpreadDecreaseSpeed * 100.f));
 		Hash = (Hash << 5) | (Hash >> 59);
+
+		// v3.10: Hash additional RangedWeaponItem properties
+		Hash ^= GetTypeHash(CrosshairWidget);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AimWeaponRenderFOV * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AimWeaponFStop * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(MoveSpeedAddDegrees * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(CrouchSpreadMultiplier * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AimSpreadMultiplier * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(RecoilImpulseTranslationMin.ToString());
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(RecoilImpulseTranslationMax.ToString());
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(HipRecoilImpulseTranslationMin.ToString());
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(HipRecoilImpulseTranslationMax.ToString());
+		Hash = (Hash << 5) | (Hash >> 59);
+
+		// v3.10: Hash weapon attachment slots TMap
+		for (const FManifestWeaponAttachmentSlot& Slot : WeaponAttachmentSlots)
+		{
+			Hash ^= Slot.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
 
 		// v3.9.6: Hash usage properties
 		Hash ^= (bAddDefaultUseOption ? 1ULL : 0ULL) << 11;
@@ -2175,6 +2403,103 @@ struct FManifestNarrativeEventDefinition
 			Hash ^= GetTypeHash(Target);
 			Hash = (Hash << 7) | (Hash >> 57);
 		}
+		return Hash;
+	}
+};
+
+// ============================================================================
+// v4.0: GAMEPLAY CUE DEFINITIONS (NEW)
+// ============================================================================
+
+/**
+ * v4.0: Gameplay Cue spawn condition configuration
+ */
+struct FManifestGameplayCueSpawnCondition
+{
+	FString AttachPolicy = TEXT("AttachToTarget");  // AttachToTarget, DoNotAttach
+	FString AttachSocket = TEXT("");
+	float SpawnProbability = 1.0f;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(AttachPolicy);
+		Hash ^= GetTypeHash(AttachSocket) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(SpawnProbability * 1000.f)) << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v4.0: Gameplay Cue placement configuration
+ */
+struct FManifestGameplayCuePlacement
+{
+	FString SocketName = TEXT("");
+	bool bAttachToOwner = true;
+	FVector RelativeOffset = FVector::ZeroVector;
+	FRotator RelativeRotation = FRotator::ZeroRotator;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(SocketName);
+		Hash ^= (bAttachToOwner ? 1ULL : 0ULL) << 8;
+		Hash ^= GetTypeHash(RelativeOffset.ToString()) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(RelativeRotation.ToString())) << 32;
+		return Hash;
+	}
+};
+
+/**
+ * v4.0: Gameplay Cue burst effects configuration
+ */
+struct FManifestGameplayCueBurstEffects
+{
+	FString ParticleSystem = TEXT("");   // NS_ asset reference
+	FString Sound = TEXT("");             // Sound asset reference
+	FString CameraShake = TEXT("");       // Camera shake class
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(ParticleSystem);
+		Hash ^= GetTypeHash(Sound) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(CameraShake)) << 32;
+		return Hash;
+	}
+};
+
+/**
+ * v4.0: Gameplay Cue definition
+ * Generates GC_ prefixed Blueprints inheriting from GameplayCueNotify_Burst/BurstLatent/Actor
+ */
+struct FManifestGameplayCueDefinition
+{
+	FString Name;
+	FString Folder = TEXT("FX/GameplayCues");
+
+	// Cue type determines parent class:
+	// - "Burst" -> UGameplayCueNotify_Burst (one-off, instant)
+	// - "BurstLatent" -> UGameplayCueNotify_BurstLatent (one-off with duration)
+	// - "Actor" -> AGameplayCueNotify_Actor (persistent, looping)
+	FString CueType = TEXT("Burst");
+
+	// The gameplay cue tag this responds to (e.g., GameplayCue.Father.Attack)
+	FString GameplayCueTag;
+
+	// Optional configuration
+	FManifestGameplayCueSpawnCondition SpawnCondition;
+	FManifestGameplayCuePlacement Placement;
+	FManifestGameplayCueBurstEffects BurstEffects;
+
+	/** v4.0: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(CueType) << 4;
+		Hash ^= GetTypeHash(GameplayCueTag) << 8;
+		Hash ^= SpawnCondition.ComputeHash() << 16;
+		Hash ^= Placement.ComputeHash() << 24;
+		Hash ^= BurstEffects.ComputeHash() << 32;
 		return Hash;
 	}
 };
@@ -3583,6 +3908,7 @@ struct FManifestData
 	TArray<FManifestActivityConfigurationDefinition> ActivityConfigurations;
 	TArray<FManifestItemCollectionDefinition> ItemCollections;
 	TArray<FManifestNarrativeEventDefinition> NarrativeEvents;
+	TArray<FManifestGameplayCueDefinition> GameplayCues;  // v4.0: Gameplay Cues
 	TArray<FManifestNPCDefinitionDefinition> NPCDefinitions;
 	TArray<FManifestCharacterDefinitionDefinition> CharacterDefinitions;
 	TArray<FManifestTaggedDialogueSetDefinition> TaggedDialogueSets;
@@ -3636,6 +3962,7 @@ struct FManifestData
 		for (const auto& Def : ActivityConfigurations) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : ItemCollections) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : NarrativeEvents) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : GameplayCues) AssetWhitelist.Add(Def.Name);  // v4.0
 		for (const auto& Def : NPCDefinitions) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : CharacterDefinitions) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TaggedDialogueSets) AssetWhitelist.Add(Def.Name);

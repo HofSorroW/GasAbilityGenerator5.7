@@ -68,6 +68,7 @@ private:
 	static void ParseActivityConfigurations(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseItemCollections(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseNarrativeEvents(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseGameplayCues(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.0
 	static void ParseNPCDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseCharacterDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseTaggedDialogueSets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);

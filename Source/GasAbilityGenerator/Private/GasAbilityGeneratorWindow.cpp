@@ -748,10 +748,11 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 			*Result.AssetName));
 	}
 
+	// v4.0: Pass ManifestData for event graph reference lookup
 	for (const auto& Definition : ManifestData.AnimationNotifies)
 	{
 		UpdateStatus(FString::Printf(TEXT("Generating: %s"), *Definition.Name));
-		FGenerationResult Result = FAnimationNotifyGenerator::Generate(Definition);
+		FGenerationResult Result = FAnimationNotifyGenerator::Generate(Definition, &ManifestData);
 		Summary.AddResult(Result);
 		AppendLog(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :

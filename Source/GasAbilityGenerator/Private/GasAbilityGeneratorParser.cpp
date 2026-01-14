@@ -174,6 +174,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseNarrativeEvents(Lines, i, OutData);
 		}
+		// v4.0: Gameplay Cues
+		else if (IsSectionHeader(TrimmedLine, TEXT("gameplay_cues:")))
+		{
+			ParseGameplayCues(Lines, i, OutData);
+		}
 		else if (IsSectionHeader(TrimmedLine, TEXT("npc_definitions:")))
 		{
 			ParseNPCDefinitions(Lines, i, OutData);
@@ -1642,17 +1647,26 @@ void FGasAbilityGeneratorParser::ParseBlackboards(const TArray<FString>& Lines, 
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
 	LineIndex++;
-	
+
 	FManifestBlackboardDefinition CurrentDef;
 	bool bInItem = false;
-	
+	bool bInKeys = false;
+	// v4.0: Track current key being parsed
+	FManifestBlackboardKeyDefinition CurrentKey;
+	bool bInKeyDef = false;
+
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
 		FString TrimmedLine = Line.TrimStart();
-		
+
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// v4.0: Save any pending key
+			if (bInKeyDef && !CurrentKey.Name.IsEmpty())
+			{
+				CurrentDef.Keys.Add(CurrentKey);
+			}
 			// v2.6.14: Prefix validation - only add if BB_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BB_")))
 			{
@@ -1670,6 +1684,11 @@ void FGasAbilityGeneratorParser::ParseBlackboards(const TArray<FString>& Lines, 
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// v4.0: Save any pending key
+			if (bInKeyDef && !CurrentKey.Name.IsEmpty())
+			{
+				CurrentDef.Keys.Add(CurrentKey);
+			}
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BB_")))
 			{
@@ -1678,11 +1697,78 @@ void FGasAbilityGeneratorParser::ParseBlackboards(const TArray<FString>& Lines, 
 			CurrentDef = FManifestBlackboardDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			bInKeys = false;
+			bInKeyDef = false;
+		}
+		else if (bInItem)
+		{
+			// v4.0: Parent blackboard
+			if (TrimmedLine.StartsWith(TEXT("parent:")))
+			{
+				CurrentDef.Parent = GetLineValue(TrimmedLine);
+				bInKeys = false;
+				bInKeyDef = false;
+			}
+			// Keys section start
+			else if (TrimmedLine.Equals(TEXT("keys:")) || TrimmedLine.StartsWith(TEXT("keys:")))
+			{
+				bInKeys = true;
+				bInKeyDef = false;
+			}
+			else if (bInKeys)
+			{
+				// New key starts with "- name:" or "- type:"
+				if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- type:")))
+				{
+					// Save previous key if exists
+					if (bInKeyDef && !CurrentKey.Name.IsEmpty())
+					{
+						CurrentDef.Keys.Add(CurrentKey);
+					}
+					CurrentKey = FManifestBlackboardKeyDefinition();
+					bInKeyDef = true;
+
+					if (TrimmedLine.StartsWith(TEXT("- name:")))
+					{
+						CurrentKey.Name = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- type:")))
+					{
+						CurrentKey.Type = GetLineValue(TrimmedLine.Mid(2));
+					}
+				}
+				else if (bInKeyDef)
+				{
+					// Parse key properties
+					if (TrimmedLine.StartsWith(TEXT("name:")))
+					{
+						CurrentKey.Name = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentKey.Type = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("instance_synced:")))
+					{
+						CurrentKey.bInstanceSynced = GetLineValue(TrimmedLine).ToBool();
+					}
+					// v4.0: Base class for Object/Class types
+					else if (TrimmedLine.StartsWith(TEXT("base_class:")))
+					{
+						CurrentKey.BaseClass = GetLineValue(TrimmedLine);
+					}
+				}
+			}
 		}
 
 		LineIndex++;
 	}
 
+	// v4.0: Save any pending key
+	if (bInKeyDef && !CurrentKey.Name.IsEmpty())
+	{
+		CurrentDef.Keys.Add(CurrentKey);
+	}
 	// v2.6.14: Prefix validation - only add if BB_ prefix
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BB_")))
 	{
@@ -1701,6 +1787,7 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 	bool bInChildren = false;
 	bool bInDecorators = false;
 	bool bInServices = false;
+	bool bInNodeProperties = false;  // v4.0: Node properties flag
 	FManifestBTNodeDefinition CurrentNode;
 	FManifestBTDecoratorDefinition CurrentDecorator;
 	FManifestBTServiceDefinition CurrentService;
@@ -1794,6 +1881,7 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 					bInChildren = false;
 					bInDecorators = false;
 					bInServices = false;
+					bInNodeProperties = false;
 				}
 				else if (TrimmedLine.StartsWith(TEXT("type:")))
 				{
@@ -1801,6 +1889,7 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 					bInChildren = false;
 					bInDecorators = false;
 					bInServices = false;
+					bInNodeProperties = false;
 				}
 				else if (TrimmedLine.StartsWith(TEXT("task_class:")))
 				{
@@ -1808,6 +1897,7 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 					bInChildren = false;
 					bInDecorators = false;
 					bInServices = false;
+					bInNodeProperties = false;
 				}
 				else if (TrimmedLine.StartsWith(TEXT("blackboard_key:")))
 				{
@@ -1815,24 +1905,56 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 					bInChildren = false;
 					bInDecorators = false;
 					bInServices = false;
+					bInNodeProperties = false;
 				}
 				else if (TrimmedLine.Equals(TEXT("children:")) || TrimmedLine.StartsWith(TEXT("children:")))
 				{
 					bInChildren = true;
 					bInDecorators = false;
 					bInServices = false;
+					bInNodeProperties = false;
 				}
 				else if (TrimmedLine.Equals(TEXT("decorators:")) || TrimmedLine.StartsWith(TEXT("decorators:")))
 				{
 					bInDecorators = true;
 					bInChildren = false;
 					bInServices = false;
+					bInNodeProperties = false;
 				}
 				else if (TrimmedLine.Equals(TEXT("services:")) || TrimmedLine.StartsWith(TEXT("services:")))
 				{
 					bInServices = true;
 					bInChildren = false;
 					bInDecorators = false;
+					bInNodeProperties = false;
+				}
+				// v4.0: Node properties section
+				else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+				{
+					bInNodeProperties = true;
+					bInChildren = false;
+					bInDecorators = false;
+					bInServices = false;
+				}
+				// v4.0: Parse node properties (key: value format)
+				else if (bInNodeProperties && TrimmedLine.Contains(TEXT(":")))
+				{
+					FString Key, Value;
+					if (TrimmedLine.Split(TEXT(":"), &Key, &Value))
+					{
+						Key = Key.TrimStartAndEnd();
+						Value = Value.TrimStartAndEnd();
+						// Remove quotes from value
+						if (Value.Len() >= 2 && ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
+							(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'")))))
+						{
+							Value = Value.Mid(1, Value.Len() - 2);
+						}
+						if (!Key.IsEmpty())
+						{
+							CurrentNode.Properties.Add(Key, Value);
+						}
+					}
 				}
 				else if (bInChildren && TrimmedLine.StartsWith(TEXT("-")))
 				{
@@ -1861,9 +1983,23 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				{
 					CurrentDecorator.BlackboardKey = GetLineValue(TrimmedLine);
 				}
+				else if (bInDecorators && TrimmedLine.StartsWith(TEXT("blackboard_key:")))
+				{
+					CurrentDecorator.BlackboardKey = GetLineValue(TrimmedLine);
+				}
 				else if (bInDecorators && TrimmedLine.StartsWith(TEXT("operation:")))
 				{
 					CurrentDecorator.Operation = GetLineValue(TrimmedLine);
+				}
+				// v4.0: Enhanced decorator properties
+				else if (bInDecorators && (TrimmedLine.StartsWith(TEXT("inverse_condition:")) || TrimmedLine.StartsWith(TEXT("binversecondition:"))))
+				{
+					FString Value = GetLineValue(TrimmedLine);
+					CurrentDecorator.bInverseCondition = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				}
+				else if (bInDecorators && (TrimmedLine.StartsWith(TEXT("flow_abort_mode:")) || TrimmedLine.StartsWith(TEXT("flowabortmode:"))))
+				{
+					CurrentDecorator.FlowAbortMode = GetLineValue(TrimmedLine);
 				}
 				else if (bInServices && TrimmedLine.StartsWith(TEXT("- class:")))
 				{
@@ -1878,6 +2014,21 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				else if (bInServices && TrimmedLine.StartsWith(TEXT("interval:")))
 				{
 					CurrentService.Interval = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				// v4.0: Enhanced service properties
+				else if (bInServices && (TrimmedLine.StartsWith(TEXT("random_deviation:")) || TrimmedLine.StartsWith(TEXT("randomdeviation:"))))
+				{
+					CurrentService.RandomDeviation = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (bInServices && (TrimmedLine.StartsWith(TEXT("call_tick_on_search_start:")) || TrimmedLine.StartsWith(TEXT("bcalltickonssearchstart:"))))
+				{
+					FString Value = GetLineValue(TrimmedLine);
+					CurrentService.bCallTickOnSearchStart = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				}
+				else if (bInServices && (TrimmedLine.StartsWith(TEXT("restart_timer_on_activation:")) || TrimmedLine.StartsWith(TEXT("brestarttimeronactivation:"))))
+				{
+					FString Value = GetLineValue(TrimmedLine);
+					CurrentService.bRestartTimerOnActivation = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
 				}
 			}
 		}
@@ -2007,6 +2158,72 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 				bInExpressions = false;
 				bInConnections = false;
 			}
+			// v4.0: Extended material properties
+			else if (TrimmedLine.StartsWith(TEXT("material_domain:")))
+			{
+				CurrentDef.MaterialDomain = GetLineValue(TrimmedLine);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cull_mode:")))
+			{
+				CurrentDef.CullMode = GetLineValue(TrimmedLine);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("opacity_mask_clip_value:")))
+			{
+				CurrentDef.OpacityMaskClipValue = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("translucency_pass:")))
+			{
+				CurrentDef.TranslucencyPass = GetLineValue(TrimmedLine);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("enable_separate_translucency:")) || TrimmedLine.StartsWith(TEXT("separate_translucency:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				CurrentDef.bEnableSeparateTranslucency = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("enable_responsive_aa:")) || TrimmedLine.StartsWith(TEXT("responsive_aa:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				CurrentDef.bEnableResponsiveAA = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("decal_response:")))
+			{
+				CurrentDef.DecalResponse = GetLineValue(TrimmedLine);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cast_dynamic_shadow:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				CurrentDef.bCastDynamicShadow = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("affect_dynamic_indirect_lighting:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				CurrentDef.bAffectDynamicIndirectLighting = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				bInExpressions = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("block_gi:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				CurrentDef.bBlockGI = Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+				bInExpressions = false;
+				bInConnections = false;
+			}
 			// v2.6.12: Expressions section
 			else if (TrimmedLine.StartsWith(TEXT("expressions:")))
 			{
@@ -2067,6 +2284,17 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 			else if (bInExpression && TrimmedLine.StartsWith(TEXT("pos_y:")))
 			{
 				CurrentExpr.PosY = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInProperties = false;
+			}
+			// v4.0: Texture-specific expression properties
+			else if (bInExpression && (TrimmedLine.StartsWith(TEXT("texture_path:")) || TrimmedLine.StartsWith(TEXT("texture:"))))
+			{
+				CurrentExpr.TexturePath = GetLineValue(TrimmedLine);
+				bInProperties = false;
+			}
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("sampler_type:")))
+			{
+				CurrentExpr.SamplerType = GetLineValue(TrimmedLine);
 				bInProperties = false;
 			}
 			else if (bInExpression && TrimmedLine.StartsWith(TEXT("properties:")))
@@ -2852,6 +3080,9 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 	FManifestFloatCurveDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInKeys = false;
+	// v4.0: Track current key being parsed (for multi-line key format)
+	FManifestFloatCurveKeyDefinition CurrentKey;
+	bool bInKeyDef = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -2860,6 +3091,11 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// v4.0: Save any pending key
+			if (bInKeyDef && (CurrentKey.Time != 0.0f || CurrentKey.Value != 0.0f))
+			{
+				CurrentDef.Keys.Add(CurrentKey);
+			}
 			// v2.6.14: Prefix validation - only add if FC_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("FC_")))
 			{
@@ -2877,6 +3113,11 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// v4.0: Save any pending key
+			if (bInKeyDef && (CurrentKey.Time != 0.0f || CurrentKey.Value != 0.0f))
+			{
+				CurrentDef.Keys.Add(CurrentKey);
+			}
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("FC_")))
 			{
@@ -2886,29 +3127,92 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
 			bInKeys = false;
+			bInKeyDef = false;
 		}
 		else if (bInItem)
 		{
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInKeys = false;
+				bInKeyDef = false;
+			}
+			// v4.0: Extrapolation modes
+			else if (TrimmedLine.StartsWith(TEXT("extrapolation_before:")))
+			{
+				CurrentDef.ExtrapolationBefore = GetLineValue(TrimmedLine);
+				bInKeys = false;
+				bInKeyDef = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("extrapolation_after:")))
+			{
+				CurrentDef.ExtrapolationAfter = GetLineValue(TrimmedLine);
+				bInKeys = false;
+				bInKeyDef = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("keys:")) || TrimmedLine.StartsWith(TEXT("keys:")))
 			{
 				bInKeys = true;
+				bInKeyDef = false;
 			}
-			else if (bInKeys && TrimmedLine.StartsWith(TEXT("-")))
+			else if (bInKeys)
 			{
-				// Parse key as [time, value]
-				FString KeyValue = TrimmedLine.Mid(1).TrimStart();
-				KeyValue = KeyValue.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
-				TArray<FString> Parts;
-				KeyValue.ParseIntoArray(Parts, TEXT(","));
-				if (Parts.Num() >= 2)
+				// v4.0: Handle both simple [time, value] and expanded key format
+				if (TrimmedLine.StartsWith(TEXT("- time:")) || TrimmedLine.StartsWith(TEXT("- [")))
 				{
-					float Time = FCString::Atof(*Parts[0].TrimStartAndEnd());
-					float Value = FCString::Atof(*Parts[1].TrimStartAndEnd());
-					CurrentDef.Keys.Add(TPair<float, float>(Time, Value));
+					// Save previous key if exists
+					if (bInKeyDef && (CurrentKey.Time != 0.0f || CurrentKey.Value != 0.0f))
+					{
+						CurrentDef.Keys.Add(CurrentKey);
+					}
+					CurrentKey = FManifestFloatCurveKeyDefinition();
+					bInKeyDef = true;
+
+					// Check for simple format: - [time, value]
+					if (TrimmedLine.StartsWith(TEXT("- [")))
+					{
+						FString KeyValue = TrimmedLine.Mid(2).TrimStart();
+						KeyValue = KeyValue.Replace(TEXT("["), TEXT("")).Replace(TEXT("]"), TEXT(""));
+						TArray<FString> Parts;
+						KeyValue.ParseIntoArray(Parts, TEXT(","));
+						if (Parts.Num() >= 2)
+						{
+							CurrentKey.Time = FCString::Atof(*Parts[0].TrimStartAndEnd());
+							CurrentKey.Value = FCString::Atof(*Parts[1].TrimStartAndEnd());
+						}
+						CurrentDef.Keys.Add(CurrentKey);
+						CurrentKey = FManifestFloatCurveKeyDefinition();
+						bInKeyDef = false;
+					}
+					else
+					{
+						// Expanded format: - time: value
+						CurrentKey.Time = FCString::Atof(*GetLineValue(TrimmedLine.Mid(2)));
+					}
+				}
+				else if (bInKeyDef)
+				{
+					// Parse key properties
+					if (TrimmedLine.StartsWith(TEXT("value:")))
+					{
+						CurrentKey.Value = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("interp_mode:")))
+					{
+						CurrentKey.InterpMode = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("tangent_mode:")))
+					{
+						CurrentKey.TangentMode = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("arrive_tangent:")))
+					{
+						CurrentKey.ArriveTangent = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("leave_tangent:")))
+					{
+						CurrentKey.LeaveTangent = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
 				}
 			}
 		}
@@ -2916,6 +3220,11 @@ void FGasAbilityGeneratorParser::ParseFloatCurves(const TArray<FString>& Lines, 
 		LineIndex++;
 	}
 
+	// v4.0: Save any pending key
+	if (bInKeyDef && (CurrentKey.Time != 0.0f || CurrentKey.Value != 0.0f))
+	{
+		CurrentDef.Keys.Add(CurrentKey);
+	}
 	// v2.6.14: Prefix validation - only add if FC_ prefix
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("FC_")))
 	{
@@ -3012,6 +3321,15 @@ void FGasAbilityGeneratorParser::ParseAnimationNotifies(const TArray<FString>& L
 
 	FManifestAnimationNotifyDefinition CurrentDef;
 	bool bInItem = false;
+	// v4.0: Enhanced parsing states
+	bool bInVariables = false;
+	bool bInEventGraph = false;
+	bool bInEventNodes = false;
+	bool bInEventConnections = false;
+	bool bInNodeProperties = false;
+	FManifestActorVariableDefinition CurrentVar;
+	FManifestGraphNodeDefinition CurrentNode;
+	FManifestGraphConnectionDefinition CurrentConn;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -3020,6 +3338,11 @@ void FGasAbilityGeneratorParser::ParseAnimationNotifies(const TArray<FString>& L
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// Save pending node before exit
+			if (bInEventNodes && !CurrentNode.Id.IsEmpty())
+			{
+				CurrentDef.InlineEventGraph.Nodes.Add(CurrentNode);
+			}
 			// v2.6.14: Prefix validation - valid prefixes: AN_, NAS_
 			if (bInItem && !CurrentDef.Name.IsEmpty() &&
 				(CurrentDef.Name.StartsWith(TEXT("AN_")) || CurrentDef.Name.StartsWith(TEXT("NAS_"))))
@@ -3038,6 +3361,12 @@ void FGasAbilityGeneratorParser::ParseAnimationNotifies(const TArray<FString>& L
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// Save pending node before new item
+			if (bInEventNodes && !CurrentNode.Id.IsEmpty())
+			{
+				CurrentDef.InlineEventGraph.Nodes.Add(CurrentNode);
+				CurrentNode = FManifestGraphNodeDefinition();
+			}
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() &&
 				(CurrentDef.Name.StartsWith(TEXT("AN_")) || CurrentDef.Name.StartsWith(TEXT("NAS_"))))
@@ -3047,22 +3376,205 @@ void FGasAbilityGeneratorParser::ParseAnimationNotifies(const TArray<FString>& L
 			CurrentDef = FManifestAnimationNotifyDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
 			bInItem = true;
+			bInVariables = false;
+			bInEventGraph = false;
+			bInEventNodes = false;
+			bInEventConnections = false;
+			bInNodeProperties = false;
 		}
 		else if (bInItem)
 		{
 			if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInVariables = false;
+				bInEventGraph = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("notify_class:")))
 			{
 				CurrentDef.NotifyClass = GetLineValue(TrimmedLine);
+				bInVariables = false;
+				bInEventGraph = false;
+			}
+			// v4.0: Variables section
+			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				bInVariables = true;
+				bInEventGraph = false;
+				bInEventNodes = false;
+				bInEventConnections = false;
+			}
+			// v4.0: Event graph reference (single line)
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")) && TrimmedLine.Len() > 12 && !TrimmedLine.Contains(TEXT("event_graph:\n")))
+			{
+				FString GraphValue = GetLineValue(TrimmedLine);
+				if (!GraphValue.IsEmpty())
+				{
+					CurrentDef.EventGraph = GraphValue;
+					bInVariables = false;
+					bInEventGraph = false;
+				}
+				else
+				{
+					// Inline event graph starting
+					bInEventGraph = true;
+					bInVariables = false;
+				}
+			}
+			// v4.0: Inline event graph section
+			else if (TrimmedLine.Equals(TEXT("event_graph:")))
+			{
+				bInEventGraph = true;
+				bInVariables = false;
+				bInEventNodes = false;
+				bInEventConnections = false;
+			}
+			// v4.0: Parse variables
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					// Save previous variable
+					if (!CurrentVar.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVar);
+					}
+					CurrentVar = FManifestActorVariableDefinition();
+					CurrentVar.Name = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVar.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")))
+				{
+					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("object_class:")) || TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					CurrentVar.Class = GetLineValue(TrimmedLine);
+				}
+				// Check for section exit
+				else if (!TrimmedLine.StartsWith(TEXT("-")) && GetIndentLevel(Line) <= SectionIndent + 4)
+				{
+					if (!CurrentVar.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVar);
+						CurrentVar = FManifestActorVariableDefinition();
+					}
+					bInVariables = false;
+					// Don't consume line - let other handlers process it
+					continue;
+				}
+			}
+			// v4.0: Parse inline event graph
+			else if (bInEventGraph)
+			{
+				if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
+				{
+					bInEventNodes = true;
+					bInEventConnections = false;
+					bInNodeProperties = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("connections:")) || TrimmedLine.StartsWith(TEXT("connections:")))
+				{
+					// Save pending node
+					if (!CurrentNode.Id.IsEmpty())
+					{
+						CurrentDef.InlineEventGraph.Nodes.Add(CurrentNode);
+						CurrentNode = FManifestGraphNodeDefinition();
+					}
+					bInEventConnections = true;
+					bInEventNodes = false;
+					bInNodeProperties = false;
+				}
+				else if (bInEventNodes)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- id:")))
+					{
+						// Save previous node
+						if (!CurrentNode.Id.IsEmpty())
+						{
+							CurrentDef.InlineEventGraph.Nodes.Add(CurrentNode);
+						}
+						CurrentNode = FManifestGraphNodeDefinition();
+						CurrentNode.Id = GetLineValue(TrimmedLine.Mid(2));
+						bInNodeProperties = false;
+					}
+					else if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentNode.Type = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+					{
+						bInNodeProperties = true;
+					}
+					else if (bInNodeProperties)
+					{
+						// Parse key: value properties
+						int32 ColonPos = TrimmedLine.Find(TEXT(":"));
+						if (ColonPos > 0)
+						{
+							FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+							FString Value = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+							CurrentNode.Properties.Add(Key, Value);
+						}
+					}
+				}
+				else if (bInEventConnections)
+				{
+					// Parse connections: - from: [NodeId, PinName] to: [NodeId, PinName]
+					if (TrimmedLine.StartsWith(TEXT("- from:")))
+					{
+						CurrentConn = FManifestGraphConnectionDefinition();
+						// Parse [NodeId, PinName] format
+						FString FromValue = GetLineValue(TrimmedLine.Mid(2));
+						FromValue.ReplaceInline(TEXT("["), TEXT(""));
+						FromValue.ReplaceInline(TEXT("]"), TEXT(""));
+						TArray<FString> Parts;
+						FromValue.ParseIntoArray(Parts, TEXT(","), true);
+						if (Parts.Num() >= 2)
+						{
+							CurrentConn.From.NodeId = Parts[0].TrimStartAndEnd();
+							CurrentConn.From.PinName = Parts[1].TrimStartAndEnd();
+						}
+					}
+					else if (TrimmedLine.StartsWith(TEXT("to:")))
+					{
+						FString ToValue = GetLineValue(TrimmedLine);
+						ToValue.ReplaceInline(TEXT("["), TEXT(""));
+						ToValue.ReplaceInline(TEXT("]"), TEXT(""));
+						TArray<FString> Parts;
+						ToValue.ParseIntoArray(Parts, TEXT(","), true);
+						if (Parts.Num() >= 2)
+						{
+							CurrentConn.To.NodeId = Parts[0].TrimStartAndEnd();
+							CurrentConn.To.PinName = Parts[1].TrimStartAndEnd();
+						}
+						// Add connection when we have both from and to
+						if (!CurrentConn.From.NodeId.IsEmpty() && !CurrentConn.To.NodeId.IsEmpty())
+						{
+							CurrentDef.InlineEventGraph.Connections.Add(CurrentConn);
+							CurrentConn = FManifestGraphConnectionDefinition();
+						}
+					}
+				}
 			}
 		}
 
 		LineIndex++;
 	}
 
+	// Save pending variable
+	if (bInVariables && !CurrentVar.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVar);
+	}
+	// Save pending node
+	if (bInEventNodes && !CurrentNode.Id.IsEmpty())
+	{
+		CurrentDef.InlineEventGraph.Nodes.Add(CurrentNode);
+	}
 	// v2.6.14: Prefix validation - valid prefixes: AN_, NAS_
 	if (bInItem && !CurrentDef.Name.IsEmpty() &&
 		(CurrentDef.Name.StartsWith(TEXT("AN_")) || CurrentDef.Name.StartsWith(TEXT("NAS_"))))
@@ -3082,6 +3594,7 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
 	bool bInSpeakers = false;  // v3.2: Speaker array parsing
 	bool bInOwnedTags = false;  // v3.2: Speaker owned tags array
+	bool bInPlayerSpeaker = false;  // v4.0: Player speaker parsing
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestDialogueSpeakerDefinition CurrentSpeaker;  // v3.2: Current speaker being parsed
@@ -3261,6 +3774,7 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 				bInSpeakers = false;
 				bInVariables = false;
 				bInOwnedTags = false;
+				bInPlayerSpeaker = false;  // v4.0: Reset player speaker parsing
 				bInDialogueTree = true;
 				bInDialogueNodes = false;
 			}
@@ -3607,9 +4121,19 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 				{
 					CurrentSpeaker.NPCDefinition = GetLineValue(TrimmedLine);
 				}
+				// v4.0: Speaker ID override
+				else if (TrimmedLine.StartsWith(TEXT("speaker_id:")))
+				{
+					CurrentSpeaker.SpeakerID = GetLineValue(TrimmedLine);
+				}
 				else if (TrimmedLine.StartsWith(TEXT("node_color:")))
 				{
 					CurrentSpeaker.NodeColor = GetLineValue(TrimmedLine);
+				}
+				// v4.0: Is player flag
+				else if (TrimmedLine.StartsWith(TEXT("is_player:")))
+				{
+					CurrentSpeaker.bIsPlayer = GetLineValue(TrimmedLine).ToBool();
 				}
 				else if (TrimmedLine.Equals(TEXT("owned_tags:")) || TrimmedLine.StartsWith(TEXT("owned_tags:")))
 				{
@@ -3637,6 +4161,34 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 					}
 				}
 			}
+			// v4.0: Player speaker configuration
+			else if (TrimmedLine.Equals(TEXT("player_speaker:")) || TrimmedLine.StartsWith(TEXT("player_speaker:")))
+			{
+				// Save any pending speaker
+				if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
+				{
+					CurrentDef.Speakers.Add(CurrentSpeaker);
+					CurrentSpeaker = FManifestDialogueSpeakerDefinition();
+				}
+				bInSpeakers = false;
+				bInOwnedTags = false;
+				bInPlayerSpeaker = true;
+			}
+			else if (bInPlayerSpeaker)
+			{
+				if (TrimmedLine.StartsWith(TEXT("speaker_id:")))
+				{
+					CurrentDef.PlayerSpeaker.SpeakerID = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("node_color:")))
+				{
+					CurrentDef.PlayerSpeaker.NodeColor = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("selecting_reply_shot:")))
+				{
+					CurrentDef.PlayerSpeaker.SelectingReplyShot = GetLineValue(TrimmedLine);
+				}
+			}
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
 				// Save pending speaker when entering variables
@@ -3647,6 +4199,7 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 				}
 				bInSpeakers = false;
 				bInOwnedTags = false;
+				bInPlayerSpeaker = false;  // v4.0: Reset player speaker parsing
 				bInVariables = true;
 			}
 			else if (bInVariables)
@@ -3723,6 +4276,9 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	// v3.9.6: Weapon attachment parsing states
 	bool bInHolsterAttachments = false;
 	bool bInWieldAttachments = false;
+	// v3.10: Weapon attachment slots TMap parsing
+	bool bInWeaponAttachmentSlots = false;
+	FManifestWeaponAttachmentSlot CurrentAttachmentSlot;
 	// v3.9.8: Clothing mesh parsing states
 	bool bInClothingMesh = false;
 	bool bInClothingMaterials = false;
@@ -3921,6 +4477,140 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			else if (TrimmedLine.StartsWith(TEXT("spread_decrease_speed:")))
 			{
 				CurrentDef.SpreadDecreaseSpeed = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// v3.10: Additional RangedWeaponItem properties
+			else if (TrimmedLine.StartsWith(TEXT("crosshair_widget:")))
+			{
+				CurrentDef.CrosshairWidget = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("aim_weapon_render_fov:")))
+			{
+				CurrentDef.AimWeaponRenderFOV = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("aim_weapon_fstop:")))
+			{
+				CurrentDef.AimWeaponFStop = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("move_speed_add_degrees:")))
+			{
+				CurrentDef.MoveSpeedAddDegrees = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("crouch_spread_multiplier:")))
+			{
+				CurrentDef.CrouchSpreadMultiplier = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("aim_spread_multiplier:")))
+			{
+				CurrentDef.AimSpreadMultiplier = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("recoil_impulse_translation_min:")))
+			{
+				// Parse FVector from "(X=0,Y=0,Z=0)" or "0,0,0" format
+				FString VecStr = GetLineValue(TrimmedLine);
+				CurrentDef.RecoilImpulseTranslationMin.InitFromString(VecStr);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("recoil_impulse_translation_max:")))
+			{
+				FString VecStr = GetLineValue(TrimmedLine);
+				CurrentDef.RecoilImpulseTranslationMax.InitFromString(VecStr);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("hip_recoil_impulse_translation_min:")))
+			{
+				FString VecStr = GetLineValue(TrimmedLine);
+				CurrentDef.HipRecoilImpulseTranslationMin.InitFromString(VecStr);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("hip_recoil_impulse_translation_max:")))
+			{
+				FString VecStr = GetLineValue(TrimmedLine);
+				CurrentDef.HipRecoilImpulseTranslationMax.InitFromString(VecStr);
+			}
+			// v3.10: Weapon attachment slots TMap parsing
+			else if (TrimmedLine.Equals(TEXT("weapon_attachment_slots:")) || TrimmedLine.StartsWith(TEXT("weapon_attachment_slots:")))
+			{
+				bInWeaponAttachmentSlots = true;
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				CurrentAttachmentSlot = FManifestWeaponAttachmentSlot();
+			}
+			else if (bInWeaponAttachmentSlots)
+			{
+				// Check for new slot entry (starts with "- slot:")
+				if (TrimmedLine.StartsWith(TEXT("- slot:")))
+				{
+					// Save previous slot if valid
+					if (!CurrentAttachmentSlot.Slot.IsEmpty())
+					{
+						CurrentDef.WeaponAttachmentSlots.Add(CurrentAttachmentSlot);
+					}
+					// Start new slot
+					CurrentAttachmentSlot = FManifestWeaponAttachmentSlot();
+					CurrentAttachmentSlot.Slot = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("socket:")))
+				{
+					CurrentAttachmentSlot.Socket = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("offset:")))
+				{
+					FString VecStr = GetLineValue(TrimmedLine);
+					// Support both [x,y,z] and (X=x,Y=y,Z=z) formats
+					VecStr.ReplaceInline(TEXT("["), TEXT(""));
+					VecStr.ReplaceInline(TEXT("]"), TEXT(""));
+					TArray<FString> Parts;
+					VecStr.ParseIntoArray(Parts, TEXT(","), true);
+					if (Parts.Num() >= 3)
+					{
+						CurrentAttachmentSlot.Offset = FVector(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd())
+						);
+					}
+					else
+					{
+						CurrentAttachmentSlot.Offset.InitFromString(VecStr);
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("rotation:")))
+				{
+					FString RotStr = GetLineValue(TrimmedLine);
+					// Support [pitch,yaw,roll] format
+					RotStr.ReplaceInline(TEXT("["), TEXT(""));
+					RotStr.ReplaceInline(TEXT("]"), TEXT(""));
+					TArray<FString> Parts;
+					RotStr.ParseIntoArray(Parts, TEXT(","), true);
+					if (Parts.Num() >= 3)
+					{
+						CurrentAttachmentSlot.Rotation = FRotator(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),  // Pitch
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),  // Yaw
+							FCString::Atof(*Parts[2].TrimStartAndEnd())   // Roll
+						);
+					}
+					else
+					{
+						CurrentAttachmentSlot.Rotation.InitFromString(RotStr);
+					}
+				}
+				// Exit section on next top-level property (not indented enough or doesn't start with space/dash)
+				else if (!TrimmedLine.IsEmpty() && !TrimmedLine.StartsWith(TEXT("-")) &&
+				         (Line.Len() == TrimmedLine.Len() || (Line.Len() - TrimmedLine.Len()) <= 4))
+				{
+					// Save last slot and exit section
+					if (!CurrentAttachmentSlot.Slot.IsEmpty())
+					{
+						CurrentDef.WeaponAttachmentSlots.Add(CurrentAttachmentSlot);
+						CurrentAttachmentSlot = FManifestWeaponAttachmentSlot();
+					}
+					bInWeaponAttachmentSlots = false;
+					// Don't consume the line - let it be processed by other handlers
+					continue;
+				}
 			}
 			// v3.9.6: NarrativeItem usage properties
 			else if (TrimmedLine.StartsWith(TEXT("add_default_use_option:")))
@@ -4940,6 +5630,180 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.NarrativeEvents.Add(CurrentDef);
+	}
+}
+
+// ============================================================================
+// v4.0: ParseGameplayCues - NEW GENERATOR
+// ============================================================================
+void FGasAbilityGeneratorParser::ParseGameplayCues(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestGameplayCueDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInSpawnCondition = false;
+	bool bInPlacement = false;
+	bool bInBurstEffects = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.GameplayCues.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// New item
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.GameplayCues.Add(CurrentDef);
+			}
+			CurrentDef = FManifestGameplayCueDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInSpawnCondition = false;
+			bInPlacement = false;
+			bInBurstEffects = false;
+		}
+		else if (bInItem)
+		{
+			// Check for subsection starts
+			if (TrimmedLine.StartsWith(TEXT("spawn_condition:")))
+			{
+				bInSpawnCondition = true;
+				bInPlacement = false;
+				bInBurstEffects = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("placement:")))
+			{
+				bInSpawnCondition = false;
+				bInPlacement = true;
+				bInBurstEffects = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("burst_effects:")))
+			{
+				bInSpawnCondition = false;
+				bInPlacement = false;
+				bInBurstEffects = true;
+			}
+			// Main properties
+			else if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInSpawnCondition = bInPlacement = bInBurstEffects = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cue_type:")))
+			{
+				CurrentDef.CueType = GetLineValue(TrimmedLine);
+				bInSpawnCondition = bInPlacement = bInBurstEffects = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("gameplay_cue_tag:")))
+			{
+				CurrentDef.GameplayCueTag = GetLineValue(TrimmedLine);
+				bInSpawnCondition = bInPlacement = bInBurstEffects = false;
+			}
+			// Spawn condition properties
+			else if (bInSpawnCondition)
+			{
+				if (TrimmedLine.StartsWith(TEXT("attach_policy:")))
+				{
+					CurrentDef.SpawnCondition.AttachPolicy = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attach_socket:")))
+				{
+					CurrentDef.SpawnCondition.AttachSocket = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("spawn_probability:")))
+				{
+					CurrentDef.SpawnCondition.SpawnProbability = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+			}
+			// Placement properties
+			else if (bInPlacement)
+			{
+				if (TrimmedLine.StartsWith(TEXT("socket_name:")))
+				{
+					CurrentDef.Placement.SocketName = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attach_to_owner:")))
+				{
+					CurrentDef.Placement.bAttachToOwner = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("relative_offset:")))
+				{
+					// Parse "(X, Y, Z)" or "X, Y, Z" format
+					FString OffsetStr = GetLineValue(TrimmedLine);
+					OffsetStr.ReplaceInline(TEXT("("), TEXT(""));
+					OffsetStr.ReplaceInline(TEXT(")"), TEXT(""));
+					TArray<FString> Parts;
+					OffsetStr.ParseIntoArray(Parts, TEXT(","), true);
+					if (Parts.Num() >= 3)
+					{
+						CurrentDef.Placement.RelativeOffset = FVector(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd()));
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("relative_rotation:")))
+				{
+					// Parse "(P, Y, R)" or "P, Y, R" format
+					FString RotStr = GetLineValue(TrimmedLine);
+					RotStr.ReplaceInline(TEXT("("), TEXT(""));
+					RotStr.ReplaceInline(TEXT(")"), TEXT(""));
+					TArray<FString> Parts;
+					RotStr.ParseIntoArray(Parts, TEXT(","), true);
+					if (Parts.Num() >= 3)
+					{
+						CurrentDef.Placement.RelativeRotation = FRotator(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd()));
+					}
+				}
+			}
+			// Burst effects properties
+			else if (bInBurstEffects)
+			{
+				if (TrimmedLine.StartsWith(TEXT("particle_system:")))
+				{
+					CurrentDef.BurstEffects.ParticleSystem = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("sound:")))
+				{
+					CurrentDef.BurstEffects.Sound = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("camera_shake:")))
+				{
+					CurrentDef.BurstEffects.CameraShake = GetLineValue(TrimmedLine);
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Add final item
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.GameplayCues.Add(CurrentDef);
 	}
 }
 

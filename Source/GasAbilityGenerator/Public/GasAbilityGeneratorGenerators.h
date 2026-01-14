@@ -602,7 +602,10 @@ public:
 class GASABILITYGENERATOR_API FAnimationNotifyGenerator : public FGeneratorBase
 {
 public:
-	static FGenerationResult Generate(const FManifestAnimationNotifyDefinition& Definition);
+	// v4.0: Added ManifestData parameter for event graph reference lookup
+	static FGenerationResult Generate(
+		const FManifestAnimationNotifyDefinition& Definition,
+		const FManifestData* ManifestData = nullptr);
 };
 
 class GASABILITYGENERATOR_API FDialogueBlueprintGenerator : public FGeneratorBase
@@ -648,6 +651,13 @@ class GASABILITYGENERATOR_API FNarrativeEventGenerator : public FGeneratorBase
 {
 public:
 	static FGenerationResult Generate(const FManifestNarrativeEventDefinition& Definition);
+};
+
+// v4.0: Gameplay Cue Generator - creates GC_ prefixed Blueprints
+class GASABILITYGENERATOR_API FGameplayCueGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestGameplayCueDefinition& Definition);
 };
 
 class GASABILITYGENERATOR_API FNPCDefinitionGenerator : public FGeneratorBase

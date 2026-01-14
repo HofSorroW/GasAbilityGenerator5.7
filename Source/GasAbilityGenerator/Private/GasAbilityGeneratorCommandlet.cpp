@@ -729,10 +729,10 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
-	// v2.6.0: Animation Notifies
+	// v2.6.0: Animation Notifies (v4.0: Pass ManifestData for event graph reference lookup)
 	for (const auto& Definition : ManifestData.AnimationNotifies)
 	{
-		FGenerationResult Result = FAnimationNotifyGenerator::Generate(Definition);
+		FGenerationResult Result = FAnimationNotifyGenerator::Generate(Definition, &ManifestData);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
@@ -867,6 +867,18 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	for (const auto& Definition : ManifestData.NarrativeEvents)
 	{
 		FGenerationResult Result = FNarrativeEventGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v4.0: Gameplay Cues
+	for (const auto& Definition : ManifestData.GameplayCues)
+	{
+		FGenerationResult Result = FGameplayCueGenerator::Generate(Definition);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
