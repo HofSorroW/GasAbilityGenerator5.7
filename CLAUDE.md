@@ -26,7 +26,7 @@ powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\c
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v3.9.9) that generates UE5 assets from YAML manifest definitions.
+GasAbilityGenerator is an Editor plugin (v4.0) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -64,6 +64,7 @@ Generate assets from command line without launching the editor UI:
 | `-dryrun` | Preview what would be created/modified/skipped without making changes |
 | `-force` | Regenerate all assets even if they were manually edited (override conflicts) |
 | `-level="/Game/..."` | (v3.9.9) Load a World Partition level for POI/NPC Spawner placement |
+| `-dialoguecsv="..."` | (v4.0) Parse dialogue CSV file for batch dialogue generation |
 
 ```bash
 # Preview changes without generating
@@ -74,6 +75,9 @@ Generate assets from command line without launching the editor UI:
 
 # Generate assets AND place level actors (POIs, NPC Spawners)
 ... -run=GasAbilityGenerator -manifest="..." -level="/Game/Maps/MainWorld"
+
+# Generate dialogues from CSV (v4.0 Quest Pipeline)
+... -run=GasAbilityGenerator -manifest="..." -dialoguecsv="ClaudeContext/DialogueData.csv"
 ```
 
 ### v3.0/3.1 Regen/Diff Safety System
@@ -848,6 +852,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.0 - Quest Pipeline & CSV Dialogue: New `-dialoguecsv="..."` commandlet parameter for batch dialogue generation from Excel/CSV files. FDialogueCSVParser class parses CSV with columns: Dialogue, NodeID, Type, Speaker, Text, OptionText, Replies, Conditions, Events. Supports multiple dialogues per file (grouped by Dialogue column), automatic root node detection, NPC/Player node type resolution, reply connection validation, event/condition parsing (NE_*/NC_* format). CSV dialogues override YAML definitions with same name. Enables production-scale dialogue authoring via spreadsheets. Full v3.0 Regen/Diff Safety integration. Sample data: `ClaudeContext/DialogueData.csv`.
 - v3.9.9 - POI & NPC Spawner Automation: Level actor placement for World Partition worlds. New `-level="/Game/..."` commandlet parameter loads a world for actor placement. FPOIPlacementGenerator places APOIActor instances with POITag, DisplayName, MapIcon, LinkedPOIs (A* navigation). FNPCSpawnerPlacementGenerator places ANPCSpawner actors with UNPCSpawnComponent entries, supporting NearPOI resolution and spawn parameter configuration. New manifest sections: `poi_placements:` (poi_tag, location, rotation, display_name, map_icon, linked_pois) and `npc_spawner_placements:` (name, location/near_poi, npcs array with npc_definition, spawn_params, optional_goal). Idempotency via actor label/POI tag matching. World auto-saved after new placements.
 - v3.9.8 - Item Pipeline: Mesh-to-Item automation with clothing mesh support for auto-generating EI_ assets from mesh files
 - v3.9.7 - Parser & Manifest Fixes: Fixed ParseMaterialFunctions multi-item parsing bug where subsection flags (bInExpressions, etc.) prevented subsequent items from being recognized. Added indent-based detection to properly identify new items regardless of subsection state. Fixed manifest BP_FatherRifleWeapon/BP_FatherSwordWeapon prefix to EI_ (RangedWeaponItem/MeleeWeaponItem are UObject data assets, not Actors). Consolidated 33 prefixed manifest sections (warden_tags:, guard_formation_goals:, etc.) into standard section names with comments. Increases parsed asset count from 151 to 155.

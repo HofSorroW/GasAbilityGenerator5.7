@@ -6,6 +6,7 @@
 #include "GasAbilityGeneratorParser.h"
 #include "GasAbilityGeneratorGenerators.h"
 #include "GasAbilityGeneratorMetadata.h"  // v3.1: For metadata registry
+#include "GasAbilityGeneratorDialogueCSVParser.h"  // v4.0: CSV dialogue parsing
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformFilemanager.h"
@@ -188,6 +189,60 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		ManifestData.GameplayAbilities.Num(),
 		ManifestData.GameplayEffects.Num(),
 		ManifestData.ActorBlueprints.Num()));
+
+	// v4.0: Parse dialogue CSV if provided
+	FString DialogueCSVPath;
+	if (FParse::Value(*Params, TEXT("-dialoguecsv="), DialogueCSVPath))
+	{
+		DialogueCSVPath = DialogueCSVPath.TrimQuotes();
+	}
+	else
+	{
+		const FString* DialogueCSVVal = ParamVals.Find(TEXT("dialoguecsv"));
+		if (DialogueCSVVal)
+		{
+			DialogueCSVPath = DialogueCSVVal->TrimQuotes();
+		}
+	}
+
+	if (!DialogueCSVPath.IsEmpty())
+	{
+		// Resolve relative path
+		if (FPaths::IsRelative(DialogueCSVPath))
+		{
+			DialogueCSVPath = FPaths::GetPath(ManifestPath) / DialogueCSVPath;
+		}
+		FPaths::NormalizeFilename(DialogueCSVPath);
+
+		if (FPaths::FileExists(DialogueCSVPath))
+		{
+			LogMessage(FString::Printf(TEXT("Parsing dialogue CSV: %s"), *DialogueCSVPath));
+
+			TArray<FManifestDialogueBlueprintDefinition> CSVDialogues;
+			if (FDialogueCSVParser::ParseCSVFile(DialogueCSVPath, CSVDialogues))
+			{
+				LogMessage(FString::Printf(TEXT("Loaded %d dialogues from CSV"), CSVDialogues.Num()));
+
+				// Append to manifest data (CSV dialogues take precedence over YAML)
+				for (const auto& Dialogue : CSVDialogues)
+				{
+					// Remove existing definition with same name (CSV overrides YAML)
+					ManifestData.DialogueBlueprints.RemoveAll([&](const FManifestDialogueBlueprintDefinition& Existing) {
+						return Existing.Name == Dialogue.Name;
+					});
+					ManifestData.DialogueBlueprints.Add(Dialogue);
+				}
+			}
+			else
+			{
+				LogError(FString::Printf(TEXT("WARNING: Failed to parse dialogue CSV: %s"), *DialogueCSVPath));
+			}
+		}
+		else
+		{
+			LogError(FString::Printf(TEXT("WARNING: Dialogue CSV not found: %s"), *DialogueCSVPath));
+		}
+	}
 
 	// v3.9.9: Log POI and Spawner counts
 	if (ManifestData.POIPlacements.Num() > 0 || ManifestData.NPCSpawnerPlacements.Num() > 0)

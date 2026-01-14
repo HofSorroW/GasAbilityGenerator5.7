@@ -5779,5 +5779,220 @@ tagged_dialogue_sets:  # STALKER
         max_distance: 5000.0
 
 # ============================================================================
+# QUEST PIPELINE - CSV Dialogue NPCs and Quests
+# ============================================================================
+# These NPCs are referenced in DialogueData.csv for batch dialogue generation
+
+tags:  # QUEST PIPELINE
+  - tag: Quest.ForgeSupplies
+    comment: Quest state tag for blacksmith quest
+  - tag: Quest.ForgeSupplies.InProgress
+    comment: Quest is active
+  - tag: Quest.ForgeSupplies.Completed
+    comment: Quest completed successfully
+  - tag: Guard.Suspicious
+    comment: Applied when player is hostile to guard
+
+npc_definitions:  # QUEST PIPELINE
+  - name: NPCDef_Blacksmith
+    folder: NPCs/Town/Definitions
+    npc_id: Blacksmith_01
+    npc_name: Garrett the Blacksmith
+    ability_configuration: AC_Merchant
+    min_level: 1
+    max_level: 10
+    allow_multiple_instances: false
+    is_vendor: true
+    trading_currency: 500
+    buy_item_percentage: 0.5
+    sell_item_percentage: 1.5
+    shop_name: "Garrett's Forge"
+    default_currency: 100
+    default_owned_tags:
+      - State.Invulnerable
+    default_factions:
+      - Narrative.Factions.Friendly
+    auto_create_dialogue: false  # Using CSV instead
+    activity_schedules:
+      - Schedule_BlacksmithDay
+
+  - name: NPCDef_Guard
+    folder: NPCs/Town/Definitions
+    npc_id: Guard_01
+    npc_name: Town Guard
+    min_level: 5
+    max_level: 15
+    allow_multiple_instances: true
+    default_owned_tags:
+      - State.Invulnerable
+    default_factions:
+      - Narrative.Factions.Friendly
+      - Narrative.Factions.Town
+    auto_create_dialogue: false  # Using CSV instead
+
+  - name: NPCDef_Merchant
+    folder: NPCs/Town/Definitions
+    npc_id: Merchant_01
+    npc_name: Traveling Merchant
+    min_level: 1
+    max_level: 10
+    allow_multiple_instances: false
+    is_vendor: true
+    trading_currency: 1000
+    buy_item_percentage: 0.4
+    sell_item_percentage: 1.8
+    shop_name: "Rare Goods Emporium"
+    default_currency: 200
+    default_owned_tags:
+      - State.Invulnerable
+    default_factions:
+      - Narrative.Factions.Friendly
+    auto_create_dialogue: false  # Using CSV instead
+
+# Activity Schedules - NPC daily routines (v3.9 feature)
+activity_schedules:
+  - name: Schedule_BlacksmithDay
+    folder: AI/Schedules
+    behaviors:
+      - start_time: 600      # 6:00 AM
+        end_time: 1200       # 12:00 PM
+        goal_class: Goal_Work
+        score_override: 100.0
+        reselect: true
+        location: Forge
+      - start_time: 1200     # 12:00 PM
+        end_time: 1300       # 1:00 PM
+        goal_class: Goal_Eat
+        score_override: 90.0
+        reselect: true
+        location: Tavern
+      - start_time: 1300     # 1:00 PM
+        end_time: 1800       # 6:00 PM
+        goal_class: Goal_Work
+        score_override: 100.0
+        reselect: true
+        location: Forge
+      - start_time: 1800     # 6:00 PM
+        end_time: 2100       # 9:00 PM
+        goal_class: Goal_Relax
+        score_override: 80.0
+        reselect: true
+        location: Tavern
+      - start_time: 2100     # 9:00 PM
+        end_time: 600        # 6:00 AM next day
+        goal_class: Goal_Sleep
+        score_override: 100.0
+        reselect: true
+        location: BlacksmithHome
+
+# Goals for schedule behaviors
+goals:  # QUEST PIPELINE
+  - name: Goal_Work
+    folder: AI/Goals
+    parent_class: NPCGoalItem
+    default_score: 75.0
+    goal_lifetime: -1.0
+    remove_on_succeeded: false
+    save_goal: false
+    owned_tags:
+      - State.Working
+
+  - name: Goal_Eat
+    folder: AI/Goals
+    parent_class: NPCGoalItem
+    default_score: 60.0
+    goal_lifetime: 3600.0
+    remove_on_succeeded: true
+    save_goal: false
+    owned_tags:
+      - State.Eating
+
+  - name: Goal_Relax
+    folder: AI/Goals
+    parent_class: NPCGoalItem
+    default_score: 50.0
+    goal_lifetime: -1.0
+    remove_on_succeeded: false
+    save_goal: false
+    owned_tags:
+      - State.Relaxing
+
+  - name: Goal_Sleep
+    folder: AI/Goals
+    parent_class: NPCGoalItem
+    default_score: 90.0
+    goal_lifetime: -1.0
+    remove_on_succeeded: false
+    save_goal: false
+    owned_tags:
+      - State.Sleeping
+
+# Quests - Full state machine with tasks (v3.9.3 feature)
+quests:
+  - name: Quest_ForgeSupplies
+    folder: Quests/Town
+    quest_name: "Forge Supplies"
+    description: "The blacksmith needs iron ore from the northern mines."
+    is_tracked: true
+    questgiver: NPCDef_Blacksmith
+    states:
+      - id: Start
+        type: regular
+        description: "Talk to the blacksmith about work"
+      - id: Gathering
+        type: regular
+        description: "Gather 10 iron ore from the northern mines"
+      - id: Return
+        type: regular
+        description: "Return the iron ore to the blacksmith"
+      - id: Complete
+        type: success
+        description: "Quest completed!"
+      - id: Declined
+        type: failure
+        description: "You declined the quest"
+    branches:
+      - id: AcceptQuest
+        from_state: Start
+        to_state: Gathering
+        description: "Accept the blacksmith's request"
+        tasks:
+          - task_class: BPT_FinishDialogue
+            properties:
+              dialogue: DBP_Blacksmith
+      - id: DeclineQuest
+        from_state: Start
+        to_state: Declined
+        description: "Decline the blacksmith's request"
+      - id: GatherOre
+        from_state: Gathering
+        to_state: Return
+        description: "Find 10 iron ore"
+        tasks:
+          - task_class: BPT_FindItem
+            quantity: 10
+            properties:
+              item_class: IronOre
+      - id: ReturnOre
+        from_state: Return
+        to_state: Complete
+        description: "Deliver the ore"
+        tasks:
+          - task_class: BPT_FinishDialogue
+            properties:
+              dialogue: DBP_Blacksmith
+    rewards:
+      currency: 100
+      xp: 50
+
+# Narrative Events for quest integration
+narrative_events:  # QUEST PIPELINE
+  - name: NE_BeginQuest_ForgeSupplies
+    folder: Events/Quests
+    event_runtime: Start
+    event_filter: OnlyPlayers
+    party_policy: Party
+
+# ============================================================================
 # END OF MANIFEST
 # ============================================================================
