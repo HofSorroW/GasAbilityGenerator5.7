@@ -4715,6 +4715,56 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 						CurrentDef.WieldAttachmentSockets[CurrentDef.WieldAttachmentSockets.Num() - 1] = GetLineValue(TrimmedLine);
 					}
 				}
+				// v4.0: Parse offset (format: "x, y, z" or "{x: val, y: val, z: val}")
+				else if (TrimmedLine.StartsWith(TEXT("offset:")))
+				{
+					FString OffsetStr = GetLineValue(TrimmedLine);
+					FVector Offset = FVector::ZeroVector;
+
+					// Try parsing "x, y, z" format
+					TArray<FString> Parts;
+					OffsetStr.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 3)
+					{
+						Offset.X = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						Offset.Y = FCString::Atof(*Parts[1].TrimStartAndEnd());
+						Offset.Z = FCString::Atof(*Parts[2].TrimStartAndEnd());
+					}
+
+					if (bInHolsterAttachments && CurrentDef.HolsterAttachmentOffsets.Num() > 0)
+					{
+						CurrentDef.HolsterAttachmentOffsets[CurrentDef.HolsterAttachmentOffsets.Num() - 1] = Offset;
+					}
+					else if (bInWieldAttachments && CurrentDef.WieldAttachmentOffsets.Num() > 0)
+					{
+						CurrentDef.WieldAttachmentOffsets[CurrentDef.WieldAttachmentOffsets.Num() - 1] = Offset;
+					}
+				}
+				// v4.0: Parse rotation (format: "pitch, yaw, roll")
+				else if (TrimmedLine.StartsWith(TEXT("rotation:")))
+				{
+					FString RotStr = GetLineValue(TrimmedLine);
+					FRotator Rotation = FRotator::ZeroRotator;
+
+					// Try parsing "pitch, yaw, roll" format
+					TArray<FString> Parts;
+					RotStr.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 3)
+					{
+						Rotation.Pitch = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						Rotation.Yaw = FCString::Atof(*Parts[1].TrimStartAndEnd());
+						Rotation.Roll = FCString::Atof(*Parts[2].TrimStartAndEnd());
+					}
+
+					if (bInHolsterAttachments && CurrentDef.HolsterAttachmentRotations.Num() > 0)
+					{
+						CurrentDef.HolsterAttachmentRotations[CurrentDef.HolsterAttachmentRotations.Num() - 1] = Rotation;
+					}
+					else if (bInWieldAttachments && CurrentDef.WieldAttachmentRotations.Num() > 0)
+					{
+						CurrentDef.WieldAttachmentRotations[CurrentDef.WieldAttachmentRotations.Num() - 1] = Rotation;
+					}
+				}
 			}
 			// v3.4: Weapon ability arrays
 			else if (TrimmedLine.Equals(TEXT("weapon_abilities:")) || TrimmedLine.StartsWith(TEXT("weapon_abilities:")))

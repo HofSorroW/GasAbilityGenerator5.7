@@ -240,7 +240,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v3.9.9)
+## GasAbilityGenerator Plugin (v4.0)
 
 Location: `Plugins/GasAbilityGenerator/`
 
