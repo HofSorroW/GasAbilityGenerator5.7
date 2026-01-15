@@ -1092,27 +1092,87 @@ void SDialogueTableEditor::UpdateColumnFilterOptions()
 
 FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, FName ColumnId) const
 {
-	if (!RowEx.Data.IsValid()) return TEXT("");
+	if (!RowEx.Data.IsValid()) return TEXT("(None)");
 	const FDialogueTableRow& Row = *RowEx.Data;
 
 	if (ColumnId == TEXT("Seq")) return RowEx.SeqDisplay;
-	if (ColumnId == TEXT("DialogueID")) return Row.DialogueID.ToString();
-	if (ColumnId == TEXT("NodeID")) return Row.NodeID.ToString();
+
+	// DialogueID - required field, show (None) if empty
+	if (ColumnId == TEXT("DialogueID"))
+	{
+		if (Row.DialogueID.IsNone() || Row.DialogueID.ToString().IsEmpty() || Row.DialogueID.ToString() == TEXT("None"))
+		{
+			return TEXT("(None)");
+		}
+		return Row.DialogueID.ToString();
+	}
+
+	// NodeID - required field, show (None) if empty
+	if (ColumnId == TEXT("NodeID"))
+	{
+		if (Row.NodeID.IsNone() || Row.NodeID.ToString().IsEmpty() || Row.NodeID.ToString() == TEXT("None"))
+		{
+			return TEXT("(None)");
+		}
+		return Row.NodeID.ToString();
+	}
+
 	if (ColumnId == TEXT("NodeType")) return Row.NodeType == EDialogueTableNodeType::NPC ? TEXT("NPC") : TEXT("Player");
+
+	// Speaker - show "Player" for player nodes, (None) for empty NPC speaker
 	if (ColumnId == TEXT("Speaker"))
 	{
-		// For Player nodes, show "Player" if Speaker is empty
-		if (Row.NodeType == EDialogueTableNodeType::Player && (Row.Speaker.IsNone() || Row.Speaker.ToString().IsEmpty()))
+		if (Row.NodeType == EDialogueTableNodeType::Player)
 		{
-			return TEXT("Player");
+			if (Row.Speaker.IsNone() || Row.Speaker.ToString().IsEmpty() || Row.Speaker.ToString() == TEXT("None"))
+			{
+				return TEXT("Player");
+			}
+		}
+		else // NPC node
+		{
+			if (Row.Speaker.IsNone() || Row.Speaker.ToString().IsEmpty() || Row.Speaker.ToString() == TEXT("None"))
+			{
+				return TEXT("(None)");
+			}
 		}
 		return Row.Speaker.ToString();
 	}
-	if (ColumnId == TEXT("Text")) return Row.Text;
-	if (ColumnId == TEXT("OptionText")) return Row.OptionText;
-	if (ColumnId == TEXT("ParentNodeID")) return Row.ParentNodeID.ToString();
+
+	// Text - show (None) if empty (important for dialogue)
+	if (ColumnId == TEXT("Text"))
+	{
+		return Row.Text.IsEmpty() ? TEXT("(None)") : Row.Text;
+	}
+
+	// OptionText - optional for NPC nodes, show (None) if empty for player nodes
+	if (ColumnId == TEXT("OptionText"))
+	{
+		if (Row.OptionText.IsEmpty())
+		{
+			// OptionText is expected for player nodes (choice text), optional for NPC
+			return (Row.NodeType == EDialogueTableNodeType::Player) ? TEXT("(None)") : TEXT("");
+		}
+		return Row.OptionText;
+	}
+
+	// ParentNodeID - empty for root nodes (expected), show (None) for non-root without parent
+	if (ColumnId == TEXT("ParentNodeID"))
+	{
+		if (Row.ParentNodeID.IsNone() || Row.ParentNodeID.ToString().IsEmpty() || Row.ParentNodeID.ToString() == TEXT("None"))
+		{
+			return TEXT("(Root)");  // Root nodes have no parent - this is expected
+		}
+		return Row.ParentNodeID.ToString();
+	}
+
+	// NextNodeIDs - empty for leaf nodes (expected)
 	if (ColumnId == TEXT("NextNodeIDs"))
 	{
+		if (Row.NextNodeIDs.Num() == 0)
+		{
+			return TEXT("(Leaf)");  // Leaf nodes have no children - this is expected
+		}
 		FString Result;
 		for (int32 i = 0; i < Row.NextNodeIDs.Num(); i++)
 		{
@@ -1121,9 +1181,16 @@ FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, F
 		}
 		return Result;
 	}
+
 	if (ColumnId == TEXT("Skippable")) return Row.bSkippable ? TEXT("Yes") : TEXT("No");
-	if (ColumnId == TEXT("Notes")) return Row.Notes;
-	return TEXT("");
+
+	// Notes - optional, show empty (blank) if not filled
+	if (ColumnId == TEXT("Notes"))
+	{
+		return Row.Notes;  // Keep blank for optional notes
+	}
+
+	return TEXT("(None)");
 }
 
 void SDialogueTableEditor::OnColumnTextFilterChanged(FName ColumnId, const FText& NewText)
