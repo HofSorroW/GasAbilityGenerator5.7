@@ -388,6 +388,46 @@ TArray<FDialogueValidationIssue> FDialogueTableValidator::ValidateRowAndCache(FD
 		Row.ConditionsValidationError.Empty();
 	}
 
+	// v4.5.2: Write full validation cache (aligned with NPC validator)
+	int32 ErrorCount = 0;
+	int32 WarningCount = 0;
+	for (const FDialogueValidationIssue& Issue : Issues)
+	{
+		if (Issue.Severity == EDialogueValidationSeverity::Error)
+		{
+			ErrorCount++;
+		}
+		else
+		{
+			WarningCount++;
+		}
+	}
+
+	// Build summary string
+	FString SummaryParts;
+	if (ErrorCount > 0)
+	{
+		SummaryParts = FString::Printf(TEXT("%d error(s)"), ErrorCount);
+	}
+	if (WarningCount > 0)
+	{
+		if (!SummaryParts.IsEmpty()) SummaryParts += TEXT(", ");
+		SummaryParts += FString::Printf(TEXT("%d warning(s)"), WarningCount);
+	}
+
+	// Write cache fields
+	Row.ValidationIssueCount = Issues.Num();
+	Row.ValidationSummary = SummaryParts;
+
+	if (ErrorCount > 0)
+	{
+		Row.ValidationState = EValidationState::Invalid;
+	}
+	else
+	{
+		Row.ValidationState = EValidationState::Valid;
+	}
+
 	// Compute and store validation input hash
 	Row.ValidationInputHash = ComputeValidationInputHash(Row, ListsVersionGuid);
 

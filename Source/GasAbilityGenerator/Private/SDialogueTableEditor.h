@@ -154,6 +154,7 @@ private:
 	// Actions
 	FReply OnAddRowClicked();
 	FReply OnDeleteRowsClicked();
+	FReply OnDuplicateRowClicked();  // v4.5.2: Aligned with NPC editor
 	FReply OnDeleteBranchClicked();  // Cascade delete
 	FReply OnClearFiltersClicked();  // Clear all filters
 	FReply OnGenerateClicked();

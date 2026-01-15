@@ -2158,22 +2158,32 @@ FReply SNPCTableEditor::OnValidateClicked()
 	{
 		Message = FString::Printf(TEXT("Validation found %d error(s) and %d warning(s):\n\n"), ErrorCount, WarningCount);
 
-		// Show errors first
+		// v4.5.2: Show errors first (up to 10 total) - aligned with Dialogue editor
+		int32 ShownCount = 0;
 		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
 		{
+			if (ShownCount >= 10) break;
 			if (Issue.Severity == ENPCValidationSeverity::Error)
 			{
 				Message += FString::Printf(TEXT("[ERROR] %s.%s: %s\n"), *Issue.NPCName, *Issue.FieldName, *Issue.Message);
+				ShownCount++;
 			}
 		}
 
 		// Then warnings
 		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
 		{
+			if (ShownCount >= 10) break;
 			if (Issue.Severity == ENPCValidationSeverity::Warning)
 			{
 				Message += FString::Printf(TEXT("[WARN] %s.%s: %s\n"), *Issue.NPCName, *Issue.FieldName, *Issue.Message);
+				ShownCount++;
 			}
+		}
+
+		if (ValidationResult.Issues.Num() > 10)
+		{
+			Message += FString::Printf(TEXT("\n... and %d more issues"), ValidationResult.Issues.Num() - 10);
 		}
 	}
 

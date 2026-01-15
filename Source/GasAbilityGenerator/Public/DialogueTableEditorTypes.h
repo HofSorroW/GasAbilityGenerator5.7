@@ -98,10 +98,23 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	FString ConditionsTokenStr;
 
 	//=========================================================================
-	// v4.5: Validation cache (Transient - UI only, not serialized)
+	// v4.5.2: Validation cache (Transient - UI only, not serialized)
+	// Aligned with NPC Table Editor for consistency
 	//=========================================================================
 
-	/** Whether EventsTokenStr passed validation */
+	/** Current validation state (Unknown/Valid/Invalid) - mirrors NPC */
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
+	EValidationState ValidationState = EValidationState::Unknown;
+
+	/** Summary of validation issues (e.g., "2 error(s), 1 warning(s)") - mirrors NPC */
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
+	FString ValidationSummary;
+
+	/** Count of validation issues - mirrors NPC */
+	UPROPERTY(Transient)
+	int32 ValidationIssueCount = 0;
+
+	/** Whether EventsTokenStr passed validation (token-specific) */
 	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
 	bool bEventsValid = true;
 
@@ -109,7 +122,7 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
 	FString EventsValidationError;
 
-	/** Whether ConditionsTokenStr passed validation */
+	/** Whether ConditionsTokenStr passed validation (token-specific) */
 	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
 	bool bConditionsValid = true;
 
@@ -124,16 +137,15 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	/** Check if all tokens are valid (for partial apply logic) */
 	bool AreTokensValid() const { return bEventsValid && bConditionsValid; }
 
-	/** Get combined validation state for UI tinting */
-	EValidationState GetValidationState() const
-	{
-		if (ValidationInputHash == 0) return EValidationState::Unknown;
-		return AreTokensValid() ? EValidationState::Valid : EValidationState::Invalid;
-	}
+	/** Get validation state - uses cached state (aligned with NPC) */
+	EValidationState GetValidationState() const { return ValidationState; }
 
 	/** Invalidate cached validation (call on row edit) */
 	void InvalidateValidation()
 	{
+		ValidationState = EValidationState::Unknown;
+		ValidationSummary.Empty();
+		ValidationIssueCount = 0;
 		bEventsValid = true;
 		EventsValidationError.Empty();
 		bConditionsValid = true;
@@ -257,6 +269,36 @@ public:
 			{
 				return &Row;
 			}
+		}
+		return nullptr;
+	}
+
+	//=========================================================================
+	// v4.5.2: Row management methods (aligned with NPC Table Editor)
+	//=========================================================================
+
+	/** Find row index by RowId GUID */
+	int32 FindRowIndexByGuid(const FGuid& InRowId) const
+	{
+		return Rows.IndexOfByPredicate([&InRowId](const FDialogueTableRow& Row)
+		{
+			return Row.RowId == InRowId;
+		});
+	}
+
+	/** Duplicate an existing row */
+	FDialogueTableRow* DuplicateRow(int32 SourceIndex)
+	{
+		if (Rows.IsValidIndex(SourceIndex))
+		{
+			FDialogueTableRow NewRow = Rows[SourceIndex];
+			NewRow.RowId = FGuid::NewGuid();
+			// Append _Copy to NodeID to make it unique
+			FString NewNodeIDStr = NewRow.NodeID.ToString() + TEXT("_Copy");
+			NewRow.NodeID = FName(*NewNodeIDStr);
+			NewRow.InvalidateValidation();
+			Rows.Add(NewRow);
+			return &Rows.Last();
 		}
 		return nullptr;
 	}

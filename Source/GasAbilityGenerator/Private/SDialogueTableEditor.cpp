@@ -580,6 +580,17 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
 		]
 
+		// v4.5.2: Duplicate (aligned with NPC editor)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("DuplicateRow", "Duplicate"))
+				.OnClicked(this, &SDialogueTableEditor::OnDuplicateRowClicked)
+				.ToolTipText(LOCTEXT("DuplicateTip", "Duplicate selected node with unique NodeID"))
+		]
+
 		// Delete (re-parents children)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -1027,23 +1038,41 @@ void SDialogueTableEditor::UpdateStatusBar()
 		));
 	}
 
-	// v4.4: Token validation errors
+	// v4.5.2: Validation status from cache (O(1) - aligned with NPC editor)
 	if (StatusValidationText.IsValid())
 	{
-		int32 ValidationErrorCount = 0;
+		int32 InvalidCount = 0;
+		int32 UnknownCount = 0;
+
 		for (const auto& Row : AllRows)
 		{
-			if (Row->Data.IsValid() && !Row->Data->AreTokensValid())
+			if (Row->Data.IsValid())
 			{
-				ValidationErrorCount++;
+				EValidationState State = Row->Data->GetValidationState();
+				if (State == EValidationState::Invalid)
+				{
+					InvalidCount++;
+				}
+				else if (State == EValidationState::Unknown)
+				{
+					UnknownCount++;
+				}
 			}
 		}
 
-		if (ValidationErrorCount > 0)
+		if (InvalidCount > 0)
 		{
 			StatusValidationText->SetText(FText::Format(
-				LOCTEXT("ValidationErrors", "Token Errors: {0}"),
-				FText::AsNumber(ValidationErrorCount)
+				LOCTEXT("ValidationErrors", "Errors: {0}"),
+				FText::AsNumber(InvalidCount)
+			));
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else if (UnknownCount > 0)
+		{
+			StatusValidationText->SetText(FText::Format(
+				LOCTEXT("ValidationUnknown", "Unvalidated: {0}"),
+				FText::AsNumber(UnknownCount)
 			));
 			StatusValidationText->SetVisibility(EVisibility::Visible);
 		}
@@ -1808,6 +1837,36 @@ FReply SDialogueTableEditor::OnAddRowClicked()
 	return FReply::Handled();
 }
 
+// v4.5.2: Duplicate row (aligned with NPC editor)
+FReply SDialogueTableEditor::OnDuplicateRowClicked()
+{
+	TArray<TSharedPtr<FDialogueTableRowEx>> Selected = GetSelectedRows();
+
+	if (Selected.Num() == 0 || !TableData)
+	{
+		return FReply::Handled();
+	}
+
+	// Find index in TableData
+	SyncToTableData();  // Ensure TableData is up to date
+	int32 SourceIndex = TableData->FindRowIndexByGuid(Selected[0]->Data->RowId);
+	if (SourceIndex != INDEX_NONE)
+	{
+		FDialogueTableRow* NewRow = TableData->DuplicateRow(SourceIndex);
+		if (NewRow)
+		{
+			// Create a new RowEx for the duplicated row
+			TSharedPtr<FDialogueTableRowEx> NewRowEx = MakeShared<FDialogueTableRowEx>();
+			NewRowEx->Data = MakeShared<FDialogueTableRow>(*NewRow);
+			AllRows.Add(NewRowEx);
+		}
+	}
+
+	ApplyFilters();
+	MarkDirty();
+	return FReply::Handled();
+}
+
 FReply SDialogueTableEditor::OnDeleteRowsClicked()
 {
 	TArray<TSharedPtr<FDialogueTableRowEx>> Selected = GetSelectedRows();
@@ -2024,6 +2083,12 @@ FReply SDialogueTableEditor::OnValidateClicked()
 		return FReply::Handled();
 	}
 
+	// v4.5.2: Ensure ListsVersionGuid is valid (aligned with NPC editor)
+	if (!TableData->ListsVersionGuid.IsValid())
+	{
+		TableData->ListsVersionGuid = FGuid::NewGuid();
+	}
+
 	// v4.5: Use cache-writing validation
 	FDialogueValidationResult Result = FDialogueTableValidator::ValidateAllAndCache(
 		TableData->Rows,
@@ -2034,28 +2099,49 @@ FReply SDialogueTableEditor::OnValidateClicked()
 	RefreshList();
 	UpdateStatusBar();
 
-	if (Result.Issues.Num() == 0)
+	// v4.5.2: Aligned message format with NPC editor
+	int32 ErrorCount = Result.GetErrorCount();
+	int32 WarningCount = Result.GetWarningCount();
+
+	FString Message;
+	if (ErrorCount == 0 && WarningCount == 0)
 	{
-		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("ValidationSuccess", "All dialogues are valid!"));
+		Message = TEXT("All rows passed validation!");
 	}
 	else
 	{
-		FString Message = FString::Printf(TEXT("Found %d errors, %d warnings:\n\n"),
-			Result.GetErrorCount(), Result.GetWarningCount());
+		Message = FString::Printf(TEXT("Validation found %d error(s) and %d warning(s):\n\n"), ErrorCount, WarningCount);
 
-		for (int32 i = 0; i < FMath::Min(Result.Issues.Num(), 10); i++)
+		// Show errors first (up to 10 total)
+		int32 ShownCount = 0;
+		for (const FDialogueValidationIssue& Issue : Result.Issues)
 		{
-			Message += Result.Issues[i].ToString() + TEXT("\n");
+			if (ShownCount >= 10) break;
+			if (Issue.Severity == EDialogueValidationSeverity::Error)
+			{
+				Message += Issue.ToString() + TEXT("\n");
+				ShownCount++;
+			}
+		}
+
+		// Then warnings
+		for (const FDialogueValidationIssue& Issue : Result.Issues)
+		{
+			if (ShownCount >= 10) break;
+			if (Issue.Severity == EDialogueValidationSeverity::Warning)
+			{
+				Message += Issue.ToString() + TEXT("\n");
+				ShownCount++;
+			}
 		}
 
 		if (Result.Issues.Num() > 10)
 		{
 			Message += FString::Printf(TEXT("\n... and %d more issues"), Result.Issues.Num() - 10);
 		}
-
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
 	}
 
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
 	return FReply::Handled();
 }
 
@@ -2067,6 +2153,12 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 	{
 		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoDataGenerate", "No dialogue data to generate."));
 		return FReply::Handled();
+	}
+
+	// v4.5.2: Ensure ListsVersionGuid is valid (aligned with NPC editor)
+	if (!TableData->ListsVersionGuid.IsValid())
+	{
+		TableData->ListsVersionGuid = FGuid::NewGuid();
 	}
 
 	// v4.5: Use cache-writing validation
