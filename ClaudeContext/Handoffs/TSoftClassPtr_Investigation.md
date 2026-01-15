@@ -87,3 +87,46 @@ Remove "_C" suffix addition from all 7 TSoftClassPtr storage locations.
 - NPCDefinition: NPCClassPath, Dialogue, auto-create Dialogue (3 locations)
 - TaggedDialogueSet: Dialogue (1 location)
 - Loot table items: 1 location
+
+---
+
+## NPC Table Editor Display Fix (v4.2.13)
+
+**Issue:** After v4.2.12 generator fix, NPC Table Editor Blueprint column still showed "_C" suffix.
+
+**Root Cause:** Using `GetAssetName()` on FSoftObjectPath from TSoftClassPtr returns the ObjectName (UClass name with "_C"), not the Blueprint asset name.
+
+**Key Technical Insight:**
+```
+FSoftObjectPath format: "/Package/Path/BP_Name.BP_Name_C"
+                        ├─ GetAssetPath() -> "/Package/Path/BP_Name" (Blueprint asset)
+                        └─ GetAssetName() -> "BP_Name_C" (UClass object)
+```
+
+**Fix Applied:** Use `FPaths::GetBaseFilename(Path.GetAssetPath().ToString())` to extract Blueprint name.
+
+### Fixed Locations (SNPCTableEditor.cpp)
+
+| Location | Fix Applied |
+|----------|-------------|
+| `GetAssetDisplayName()` helper | Added `bIsClassPath` parameter for TSoftClassPtr paths |
+| Blueprint cell display lambda | Changed to use `GetAssetPath()` |
+| `GetColumnValue()` Blueprint | Passes `true` to `GetAssetDisplayName()` |
+| Confirmation dialogs (2x) | Use `GetAssetPath()` for display |
+| CSV export Blueprint column | Use `GetAssetPath()` |
+
+### Codebase Audit (v4.2.13)
+
+**Audited Files:**
+- `SNPCTableEditor.cpp` - All GetAssetName() calls reviewed
+- `GasAbilityGeneratorGenerators.cpp` - All TSoftClassPtr operations reviewed
+- `SDialogueTableEditor.cpp` - No GetAssetName() usage (clean)
+- `SQuestEditor.cpp` - No asset path issues (clean)
+
+**Findings:**
+- `GetAssetName()` on DataAsset paths (TSoftObjectPtr) is correct
+- `GetAssetName()` on Blueprint paths (TSoftClassPtr) returns "_C" - must use GetAssetPath()
+- All generator storage locations correctly strip "_C" (v4.2.12 fix verified)
+- Hash functions using GetAssetName() are consistent with stored data (acceptable)
+
+**No Additional Issues Found.**

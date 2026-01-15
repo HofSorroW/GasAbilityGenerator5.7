@@ -963,7 +963,8 @@ TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 						FSlateIcon(),
 						FUIAction(FExecuteAction::CreateLambda([this]()
 						{
-							FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : RowData->Blueprint.GetAssetName();
+							// For TSoftClassPtr: extract Blueprint name from asset path
+							FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
 							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
 								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearBlueprint", "Clear Blueprint from '{0}'?"),
 									FText::FromString(CurrentValue)));
@@ -1004,7 +1005,8 @@ TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 									FSlateIcon(),
 									FUIAction(FExecuteAction::CreateLambda([this, AssetPath, AssetName]()
 									{
-										FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : RowData->Blueprint.GetAssetName();
+										// For TSoftClassPtr: extract Blueprint name from asset path
+										FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
 										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
 											FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmChangeBlueprint", "Change Blueprint from '{0}' to '{1}'?"),
 												FText::FromString(CurrentValue),
@@ -1032,7 +1034,10 @@ TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 							{
 								return FText::FromString(TEXT("(None)"));
 							}
-							FString AssetName = RowData->Blueprint.GetAssetName();
+							// For TSoftClassPtr: extract Blueprint name from asset path
+							// Path format: "/Package/Path/BP_Name.BP_Name_C"
+							// GetAssetPath() returns: "/Package/Path/BP_Name" -> extract "BP_Name"
+							FString AssetName = FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
 							if (AssetName.IsEmpty())
 							{
 								return FText::FromString(TEXT("(None)"));
@@ -1553,13 +1558,30 @@ FReply SNPCTableEditor::OnClearFiltersClicked()
 }
 
 // Helper to get asset name with "(None)" for null/empty
-static FString GetAssetDisplayName(const FSoftObjectPath& Path)
+// For TSoftObjectPtr paths (DataAssets): GetAssetName() returns the asset name
+// For TSoftClassPtr paths (Blueprints): GetAssetName() returns the UClass name (with "_C")
+//   so we use GetAssetPath() to get the Blueprint asset name instead
+static FString GetAssetDisplayName(const FSoftObjectPath& Path, bool bIsClassPath = false)
 {
 	if (Path.IsNull())
 	{
 		return TEXT("(None)");
 	}
-	FString AssetName = Path.GetAssetName();
+
+	FString AssetName;
+	if (bIsClassPath)
+	{
+		// For TSoftClassPtr: extract Blueprint name from asset path
+		// Path format: "/Package/Path/BP_Name.BP_Name_C"
+		// GetAssetPath() returns: "/Package/Path/BP_Name"
+		AssetName = FPaths::GetBaseFilename(Path.GetAssetPath().ToString());
+	}
+	else
+	{
+		// For TSoftObjectPtr: GetAssetName() returns the asset name directly
+		AssetName = Path.GetAssetName();
+	}
+
 	if (AssetName.IsEmpty())
 	{
 		return TEXT("(None)");
@@ -1576,7 +1598,7 @@ FString SNPCTableEditor::GetColumnValue(const TSharedPtr<FNPCTableRow>& Row, FNa
 	if (ColumnId == TEXT("NPCName")) return Row->NPCName.IsEmpty() ? TEXT("(None)") : Row->NPCName;
 	if (ColumnId == TEXT("NPCId")) return Row->NPCId.IsEmpty() ? TEXT("(None)") : Row->NPCId;
 	if (ColumnId == TEXT("DisplayName")) return Row->DisplayName.IsEmpty() ? TEXT("(None)") : Row->DisplayName;
-	if (ColumnId == TEXT("Blueprint")) return GetAssetDisplayName(Row->Blueprint);
+	if (ColumnId == TEXT("Blueprint")) return GetAssetDisplayName(Row->Blueprint, true);  // TSoftClassPtr - use asset path
 
 	// AI & Behavior (4)
 	if (ColumnId == TEXT("AbilityConfig")) return GetAssetDisplayName(Row->AbilityConfig);
@@ -2256,7 +2278,7 @@ FReply SNPCTableEditor::OnExportCSVClicked()
 			*EscapeCSV(Row->NPCName),
 			*EscapeCSV(Row->NPCId),
 			*EscapeCSV(Row->DisplayName),
-			*EscapeCSV(Row->Blueprint.IsNull() ? TEXT("") : Row->Blueprint.GetAssetName()),
+			*EscapeCSV(Row->Blueprint.IsNull() ? TEXT("") : FPaths::GetBaseFilename(Row->Blueprint.GetAssetPath().ToString())),
 			*EscapeCSV(Row->AbilityConfig.IsNull() ? TEXT("") : Row->AbilityConfig.GetAssetName()),
 			*EscapeCSV(Row->ActivityConfig.IsNull() ? TEXT("") : Row->ActivityConfig.GetAssetName()),
 			*EscapeCSV(Row->Schedule.IsNull() ? TEXT("") : Row->Schedule.GetAssetName()),
