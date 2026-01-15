@@ -678,8 +678,8 @@ void SNPCApplyPreview::LoadAndCompareData()
 		Entry->NPCId = Row.NPCId;
 		Entry->DisplayName = Row.DisplayName;
 
-		// Validate the row
-		TArray<FNPCValidationIssue> Issues = FNPCTableValidator::ValidateRow(Row);
+		// Validate the row (pass empty array for AllRows since we're validating individually)
+		TArray<FNPCValidationIssue> Issues = FNPCTableValidator::ValidateRow(Row, RowsToApply);
 		for (const FNPCValidationIssue& Issue : Issues)
 		{
 			if (Issue.Severity == ENPCValidationSeverity::Error)
