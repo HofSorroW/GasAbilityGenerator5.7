@@ -11,6 +11,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/SHeaderRow.h"
 #include "DialogueTableEditorTypes.h"
+#include "XLSXSupport/DialogueTokenRegistry.h"
 
 class SEditableText;
 class SSearchBox;
@@ -28,21 +29,23 @@ struct FDialogueTableColumn
 		: ColumnId(InId), DisplayName(InName), DefaultWidth(InWidth) {}
 };
 
-/** Get default column definitions for dialogue table (11 columns) */
+/** Get default column definitions for dialogue table (13 columns) */
 inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 {
 	return {
 		{ TEXT("Seq"),          FText::FromString(TEXT("Seq")),            0.03f },
-		{ TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue ID")),    0.09f },
-		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        0.10f },
-		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           0.05f },
-		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        0.08f },
-		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           0.20f },
-		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    0.10f },
-		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         0.08f },
-		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     0.10f },
-		{ TEXT("Skippable"),    FText::FromString(TEXT("Skip")),           0.04f },
-		{ TEXT("Notes"),        FText::FromString(TEXT("Notes")),          0.13f },
+		{ TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue ID")),    0.08f },
+		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        0.08f },
+		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           0.04f },
+		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        0.06f },
+		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           0.16f },
+		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    0.08f },
+		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         0.12f },  // v4.4: Token column
+		{ TEXT("Conditions"),   FText::FromString(TEXT("Conditions")),     0.12f },  // v4.4: Token column
+		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         0.06f },
+		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     0.07f },
+		{ TEXT("Skippable"),    FText::FromString(TEXT("Skip")),           0.03f },
+		{ TEXT("Notes"),        FText::FromString(TEXT("Notes")),          0.07f },
 	};
 }
 
@@ -94,6 +97,7 @@ private:
 	TSharedRef<SWidget> CreateNodeIDCell();  // With indentation
 	TSharedRef<SWidget> CreateSkippableCell();  // Yes/No checkbox
 	TSharedRef<SWidget> CreateNotesCell();  // Designer notes
+	TSharedRef<SWidget> CreateTokenCell(FString& TokenStr, bool& bValid, ETokenCategory Category);  // v4.4: Events/Conditions with autocomplete
 
 	void MarkModified();
 };

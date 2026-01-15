@@ -67,6 +67,12 @@ public:
 	/** Get the column definitions for dialogue export */
 	static TArray<FDialogueXLSXColumn> GetColumnDefinitions();
 
+	/**
+	 * Scan project assets and populate token registry with valid IDs
+	 * Call this before export to populate _Lists sheet with Quest/Item/NPC IDs
+	 */
+	static void ScanAssetsForValidIds();
+
 	/** Sentinel value for format detection */
 	static const FString SHEET_SENTINEL;
 

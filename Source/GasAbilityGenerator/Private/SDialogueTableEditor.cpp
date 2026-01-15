@@ -86,6 +86,14 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	{
 		return CreateTextCell(RowData->OptionText, TEXT("Player choice text"), true);  // With tooltip
 	}
+	if (ColumnName == TEXT("Events"))
+	{
+		return CreateTokenCell(RowData->EventsTokenStr, RowData->bEventsValid, ETokenCategory::Event);
+	}
+	if (ColumnName == TEXT("Conditions"))
+	{
+		return CreateTokenCell(RowData->ConditionsTokenStr, RowData->bConditionsValid, ETokenCategory::Condition);
+	}
 	if (ColumnName == TEXT("ParentNodeID"))
 	{
 		return CreateFNameCell(RowData->ParentNodeID, TEXT("parent_node"));
@@ -348,6 +356,143 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNotesCell()
 					MarkModified();
 				})
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+		];
+}
+
+TSharedRef<SWidget> SDialogueTableRow::CreateTokenCell(FString& TokenStr, bool& bValid, ETokenCategory Category)
+{
+	// v4.4: Token cell with autocomplete dropdown
+	// Red background for invalid tokens, normal for valid
+
+	// Build autocomplete options from registry
+	TArray<TSharedPtr<FString>> AutocompleteOptions;
+	const FDialogueTokenRegistry& Registry = FDialogueTokenRegistry::Get();
+	for (const FDialogueTokenSpec& Spec : Registry.GetAllSpecs())
+	{
+		if (Spec.Category == Category)
+		{
+			// Build token template with parameters
+			FString Template = Spec.TokenName + TEXT("(");
+			bool bFirst = true;
+			for (const FDialogueTokenParam& Param : Spec.Params)
+			{
+				if (!bFirst) Template += TEXT(", ");
+				Template += Param.ParamName.ToString() + TEXT("=");
+				bFirst = false;
+			}
+			Template += TEXT(")");
+			AutocompleteOptions.Add(MakeShared<FString>(Template));
+		}
+	}
+
+	FString* TokenStrPtr = &TokenStr;
+	bool* bValidPtr = &bValid;
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNew(SEditableText)
+					.Text_Lambda([TokenStrPtr]() { return FText::FromString(*TokenStrPtr); })
+					.HintText(Category == ETokenCategory::Event
+						? LOCTEXT("EventsHint", "NE_BeginQuest(...)")
+						: LOCTEXT("ConditionsHint", "NC_QuestState(...)"))
+					.OnTextCommitted_Lambda([this, TokenStrPtr, bValidPtr](const FText& NewText, ETextCommit::Type)
+					{
+						*TokenStrPtr = NewText.ToString();
+						// Validate the token
+						FDialogueTokenRegistry& Reg = FDialogueTokenRegistry::Get();
+						FTokenParseResult ParseResult = Reg.ParseTokenString(*TokenStrPtr);
+						*bValidPtr = ParseResult.bSuccess || TokenStrPtr->IsEmpty();
+						MarkModified();
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity_Lambda([bValidPtr]()
+					{
+						return *bValidPtr ? FSlateColor(FLinearColor::White) : FSlateColor(FLinearColor::Red);
+					})
+			]
+			// Autocomplete dropdown button
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+					.OnGetMenuContent_Lambda([this, TokenStrPtr, bValidPtr, AutocompleteOptions, Category]() -> TSharedRef<SWidget>
+					{
+						TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+						// Add CLEAR option at top
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(2.0f)
+						[
+							SNew(SButton)
+								.Text(LOCTEXT("ClearToken", "CLEAR"))
+								.ToolTipText(LOCTEXT("ClearTooltip", "Remove all events/conditions from this node"))
+								.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+								.OnClicked_Lambda([this, TokenStrPtr, bValidPtr]()
+								{
+									*TokenStrPtr = TEXT("CLEAR");
+									*bValidPtr = true;
+									MarkModified();
+									FSlateApplication::Get().DismissAllMenus();
+									return FReply::Handled();
+								})
+						];
+
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(2.0f)
+						[
+							SNew(SSeparator)
+						];
+
+						// Add token templates
+						for (const TSharedPtr<FString>& Option : AutocompleteOptions)
+						{
+							MenuContent->AddSlot()
+							.AutoHeight()
+							.Padding(2.0f, 1.0f)
+							[
+								SNew(SButton)
+									.Text(FText::FromString(*Option))
+									.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+									.OnClicked_Lambda([this, TokenStrPtr, bValidPtr, Option]()
+									{
+										// If existing text, append with semicolon
+										if (!TokenStrPtr->IsEmpty() && *TokenStrPtr != TEXT("CLEAR"))
+										{
+											*TokenStrPtr += TEXT("; ") + *Option;
+										}
+										else
+										{
+											*TokenStrPtr = *Option;
+										}
+										*bValidPtr = true;  // Template is valid structure
+										MarkModified();
+										FSlateApplication::Get().DismissAllMenus();
+										return FReply::Handled();
+									})
+							];
+						}
+
+						return SNew(SBox)
+							.MaxDesiredHeight(300.0f)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									MenuContent
+								]
+							];
+					})
+			]
 		];
 }
 

@@ -9,6 +9,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/DateTime.h"
 #include "Misc/Guid.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 
 #if WITH_ENGINE
 #include "FileUtilities/ZipArchiveWriter.h"
@@ -51,6 +52,9 @@ TArray<FDialogueXLSXColumn> FDialogueXLSXWriter::GetColumnDefinitions()
 bool FDialogueXLSXWriter::ExportToXLSX(const TArray<FDialogueTableRow>& Rows, const FString& FilePath, FString& OutError)
 {
 #if WITH_ENGINE
+	// Scan project assets to populate valid IDs for _Lists sheet
+	ScanAssetsForValidIds();
+
 	// Create the output file
 	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenWrite(*FilePath);
 	if (!FileHandle)
@@ -96,6 +100,9 @@ bool FDialogueXLSXWriter::ExportToXLSX(const TArray<FDialogueTableRow>& Rows, co
 	const FDialogueAssetSyncResult& AssetSync, FString& OutError)
 {
 #if WITH_ENGINE
+	// Scan project assets to populate valid IDs for _Lists sheet
+	ScanAssetsForValidIds();
+
 	// Create the output file
 	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenWrite(*FilePath);
 	if (!FileHandle)
@@ -568,4 +575,89 @@ int64 FDialogueXLSXWriter::ComputeRowHash(const FDialogueTableRow& Row)
 	}
 
 	return Hash;
+}
+
+void FDialogueXLSXWriter::ScanAssetsForValidIds()
+{
+	FDialogueTokenRegistry& Registry = FDialogueTokenRegistry::Get();
+	Registry.ClearValidIds();
+
+	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+
+	TSet<FString> QuestIds;
+	TSet<FString> ItemIds;
+	TSet<FString> NPCIds;
+
+	// Scan for Quest assets (UQuestBlueprint)
+	{
+		FARFilter Filter;
+		Filter.ClassPaths.Add(FTopLevelAssetPath(TEXT("/Script/NarrativeArsenal"), TEXT("QuestBlueprint")));
+		Filter.bRecursiveClasses = true;
+		Filter.bRecursivePaths = true;
+
+		TArray<FAssetData> AssetList;
+		AssetRegistry.GetAssets(Filter, AssetList);
+
+		for (const FAssetData& Asset : AssetList)
+		{
+			FString AssetName = Asset.AssetName.ToString();
+			// Remove Quest_ prefix if present for cleaner IDs
+			if (AssetName.StartsWith(TEXT("Quest_")))
+			{
+				AssetName = AssetName.RightChop(6);
+			}
+			QuestIds.Add(AssetName);
+		}
+		UE_LOG(LogTemp, Log, TEXT("ScanAssetsForValidIds: Found %d Quest assets"), QuestIds.Num());
+	}
+
+	// Scan for Item assets (EquippableItem, NarrativeItem)
+	{
+		FARFilter Filter;
+		Filter.ClassPaths.Add(FTopLevelAssetPath(TEXT("/Script/NarrativeArsenal"), TEXT("EquippableItem")));
+		Filter.ClassPaths.Add(FTopLevelAssetPath(TEXT("/Script/NarrativeArsenal"), TEXT("NarrativeItem")));
+		Filter.bRecursiveClasses = true;
+		Filter.bRecursivePaths = true;
+
+		TArray<FAssetData> AssetList;
+		AssetRegistry.GetAssets(Filter, AssetList);
+
+		for (const FAssetData& Asset : AssetList)
+		{
+			FString AssetName = Asset.AssetName.ToString();
+			ItemIds.Add(AssetName);
+		}
+		UE_LOG(LogTemp, Log, TEXT("ScanAssetsForValidIds: Found %d Item assets"), ItemIds.Num());
+	}
+
+	// Scan for NPC Definition assets
+	{
+		FARFilter Filter;
+		Filter.ClassPaths.Add(FTopLevelAssetPath(TEXT("/Script/NarrativeArsenal"), TEXT("NPCDefinition")));
+		Filter.bRecursiveClasses = true;
+		Filter.bRecursivePaths = true;
+
+		TArray<FAssetData> AssetList;
+		AssetRegistry.GetAssets(Filter, AssetList);
+
+		for (const FAssetData& Asset : AssetList)
+		{
+			FString AssetName = Asset.AssetName.ToString();
+			// Remove NPCDef_ prefix if present for cleaner IDs
+			if (AssetName.StartsWith(TEXT("NPCDef_")))
+			{
+				AssetName = AssetName.RightChop(7);
+			}
+			NPCIds.Add(AssetName);
+		}
+		UE_LOG(LogTemp, Log, TEXT("ScanAssetsForValidIds: Found %d NPC Definition assets"), NPCIds.Num());
+	}
+
+	// Register with token registry
+	Registry.SetValidIds(TEXT("QuestId"), QuestIds);
+	Registry.SetValidIds(TEXT("ItemId"), ItemIds);
+	Registry.SetValidIds(TEXT("NPCId"), NPCIds);
+
+	UE_LOG(LogTemp, Log, TEXT("ScanAssetsForValidIds: Registered %d quest IDs, %d item IDs, %d NPC IDs"),
+		QuestIds.Num(), ItemIds.Num(), NPCIds.Num());
 }
