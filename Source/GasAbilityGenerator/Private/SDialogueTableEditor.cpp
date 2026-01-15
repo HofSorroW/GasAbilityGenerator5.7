@@ -13,6 +13,8 @@
 #include "XLSXSupport/DialogueXLSXReader.h"
 #include "XLSXSupport/DialogueXLSXSyncEngine.h"
 #include "XLSXSupport/SDialogueXLSXSyncDialog.h"
+#include "XLSXSupport/SDialogueTokenApplyPreview.h"
+#include "XLSXSupport/DialogueAssetSync.h"
 #include "GasAbilityGeneratorTypes.h"
 #include "Widgets/Input/SEditableText.h"
 #include "Widgets/Input/SSearchBox.h"
@@ -2165,6 +2167,97 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 				FText::AsNumber(MergeResult.Deleted),
 				FText::AsNumber(MergeResult.Unchanged)));
 	}
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnApplyToAssetsClicked()
+{
+	// v4.4: Open preview window to review and apply token changes to UDialogueBlueprint assets
+
+	// First sync to ensure we have latest data
+	SyncToTableData();
+
+	// Get all rows with tokens
+	TArray<FDialogueTableRow> RowsWithTokens;
+	if (TableData)
+	{
+		for (const FDialogueTableRow& Row : TableData->Rows)
+		{
+			if (!Row.EventsTokenStr.IsEmpty() || !Row.ConditionsTokenStr.IsEmpty())
+			{
+				RowsWithTokens.Add(Row);
+			}
+		}
+	}
+
+	if (RowsWithTokens.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoTokensToApply", "No token changes to apply.\n\nAdd events or conditions to dialogue nodes in the EVENTS or CONDITIONS columns, then use this button to apply them to the dialogue assets."));
+		return FReply::Handled();
+	}
+
+	// Open preview window
+	TWeakPtr<SDialogueTableEditor> WeakEditor = SharedThis(this);
+
+	SDialogueTokenApplyPreview::OpenPreviewWindow(
+		RowsWithTokens,
+		TEXT("/Game/"),
+		FOnTokenApplyConfirmed::CreateLambda([WeakEditor](const FTokenApplyPreviewResult& Result)
+		{
+			if (!Result.bConfirmed || Result.ApprovedChanges.Num() == 0)
+			{
+				return;
+			}
+
+			// Build rows from approved changes
+			TArray<FDialogueTableRow> ApprovedRows;
+			for (const FTokenChangeEntry& Entry : Result.ApprovedChanges)
+			{
+				if (Entry.Row.IsValid())
+				{
+					// Only include approved fields
+					FDialogueTableRow ApplyRow = *Entry.Row;
+
+					// Clear unapproved tokens
+					if (!Entry.bEventsApproved)
+					{
+						ApplyRow.EventsTokenStr.Empty();
+					}
+					if (!Entry.bConditionsApproved)
+					{
+						ApplyRow.ConditionsTokenStr.Empty();
+					}
+
+					ApprovedRows.Add(ApplyRow);
+				}
+			}
+
+			// Apply to assets
+			FDialogueAssetApplySummary ApplySummary = FDialogueXLSXSyncEngine::ApplyTokensToAssets(
+				ApprovedRows,
+				TEXT("/Game/")
+			);
+
+			// Show result
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("ApplyComplete",
+					"Apply complete!\n\n"
+					"Assets processed: {0}\n"
+					"Assets modified: {1}\n"
+					"Nodes updated: {2}\n"
+					"Events applied: {3}\n"
+					"Conditions applied: {4}\n"
+					"Nodes skipped (invalid): {5}"),
+					FText::AsNumber(ApplySummary.AssetsProcessed),
+					FText::AsNumber(ApplySummary.AssetsModified),
+					FText::AsNumber(ApplySummary.TotalNodesUpdated),
+					FText::AsNumber(ApplySummary.TotalEventsApplied),
+					FText::AsNumber(ApplySummary.TotalConditionsApplied),
+					FText::AsNumber(ApplySummary.TotalNodesSkipped)));
+		})
+	);
 
 	return FReply::Handled();
 }
