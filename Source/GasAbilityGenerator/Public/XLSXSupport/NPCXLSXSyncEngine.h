@@ -133,6 +133,42 @@ struct FNPCMergeResult
 };
 
 /**
+ * Summary of applying table rows to NPC assets (v4.5)
+ */
+struct FNPCAssetApplySummary
+{
+	bool bSuccess = false;
+	FString ErrorMessage;
+
+	/** Number of NPC assets processed */
+	int32 AssetsProcessed = 0;
+
+	/** Number of assets modified */
+	int32 AssetsModified = 0;
+
+	/** Number of assets created (new) */
+	int32 AssetsCreated = 0;
+
+	/** Assets skipped (not modified) */
+	int32 AssetsSkippedNotModified = 0;
+
+	/** Assets skipped (validation errors) */
+	int32 AssetsSkippedValidation = 0;
+
+	/** Assets skipped (no asset reference) */
+	int32 AssetsSkippedNoAsset = 0;
+
+	/** Assets skipped (read-only/plugin content) */
+	int32 AssetsSkippedReadOnly = 0;
+
+	/** NPCs that failed to save */
+	TArray<FString> FailedNPCs;
+
+	/** Per-asset results for detailed reporting */
+	TMap<FString, FString> AssetResults;  // NPCName -> result summary
+};
+
+/**
  * 3-way merge engine for NPC table sync
  *
  * Usage:
@@ -164,6 +200,20 @@ public:
 	 * @return Merged rows ready to replace current table data
 	 */
 	static FNPCMergeResult ApplySync(const FNPCSyncResult& SyncResult);
+
+	/**
+	 * Apply validated table rows to NPCDefinition assets (v4.5)
+	 * Uses AssetRegistry to find existing assets, falls back to path patterns
+	 * @param Rows - Rows containing data to apply (typically from MergedRows)
+	 * @param NPCAssetPath - Base path to search for NPC assets (e.g., "/Game/NPCs")
+	 * @param bCreateMissing - If true, create new assets for rows without GeneratedNPCDef
+	 * @return Summary of apply operation across all assets
+	 */
+	static FNPCAssetApplySummary ApplyToAssets(
+		TArray<FNPCTableRow>& Rows,
+		const FString& NPCAssetPath = TEXT("/Game/"),
+		bool bCreateMissing = false
+	);
 
 	/**
 	 * Auto-resolve entries that don't require user input

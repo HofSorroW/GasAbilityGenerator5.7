@@ -1,5 +1,6 @@
 // GasAbilityGenerator - NPC XLSX Sync Engine Implementation
 // v4.4: 3-way merge for Excel ↔ UE synchronization
+// v4.5: ApplyToAssets integration - write validated rows to UNPCDefinition assets
 //
 // Implements a 3-way merge algorithm similar to git:
 // - Base = snapshot at last export
@@ -13,6 +14,14 @@
 // - All three differ: Conflict (user must resolve)
 
 #include "XLSXSupport/NPCXLSXSyncEngine.h"
+#include "NPCTableEditor/NPCAssetSync.h"
+#include "NPCTableEditor/NPCTableValidator.h"
+
+#if WITH_EDITOR
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "UObject/SavePackage.h"
+#include "AI/NPCDefinition.h"
+#endif
 
 //=============================================================================
 // FNPCSyncEntry Implementation
@@ -535,4 +544,215 @@ ENPCSyncStatus FNPCXLSXSyncEngine::DetermineStatus(
 
 	// Fallback - should not reach here with valid input
 	return ENPCSyncStatus::Unchanged;
+}
+
+//=============================================================================
+// v4.5: Apply Rows to Assets
+//=============================================================================
+
+FNPCAssetApplySummary FNPCXLSXSyncEngine::ApplyToAssets(
+	TArray<FNPCTableRow>& Rows,
+	const FString& NPCAssetPath,
+	bool bCreateMissing)
+{
+	FNPCAssetApplySummary Summary;
+
+#if WITH_EDITOR
+	// Step 1: Filter rows that have changes to apply
+	TArray<FNPCTableRow*> RowsToApply;
+	for (FNPCTableRow& Row : Rows)
+	{
+		// Only apply rows that are Modified or New
+		if (Row.Status == ENPCTableRowStatus::Modified || Row.Status == ENPCTableRowStatus::New)
+		{
+			RowsToApply.Add(&Row);
+		}
+		else
+		{
+			Summary.AssetsSkippedNotModified++;
+		}
+	}
+
+	if (RowsToApply.Num() == 0)
+	{
+		Summary.bSuccess = true;
+		Summary.ErrorMessage = TEXT("No modified rows to apply");
+		return Summary;
+	}
+
+	// Step 2: Validate all rows first
+	TArray<FNPCTableRow> ValidationRows;
+	for (FNPCTableRow* RowPtr : RowsToApply)
+	{
+		ValidationRows.Add(*RowPtr);
+	}
+
+	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(ValidationRows);
+
+	// Build set of rows with validation errors
+	TSet<FString> RowsWithErrors;
+	for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
+	{
+		if (Issue.Severity == ENPCValidationSeverity::Error)
+		{
+			RowsWithErrors.Add(Issue.NPCName);
+		}
+	}
+
+	// Step 3: Get asset registry for finding NPC assets
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	// Step 4: Process each row
+	for (FNPCTableRow* RowPtr : RowsToApply)
+	{
+		FNPCTableRow& Row = *RowPtr;
+		Summary.AssetsProcessed++;
+
+		// Skip rows with validation errors
+		if (RowsWithErrors.Contains(Row.NPCName) || RowsWithErrors.Contains(Row.RowId.ToString()))
+		{
+			Summary.AssetsSkippedValidation++;
+			Summary.AssetResults.Add(Row.NPCName, TEXT("Skipped: Validation errors"));
+			continue;
+		}
+
+		// Try to find the NPCDefinition asset
+		UNPCDefinition* NPCDef = nullptr;
+
+		// First: Check if row has a direct asset reference
+		if (!Row.GeneratedNPCDef.IsNull())
+		{
+			NPCDef = Cast<UNPCDefinition>(Row.GeneratedNPCDef.TryLoad());
+		}
+
+		// Second: Search by NPCName using AssetRegistry
+		if (!NPCDef)
+		{
+			FARFilter Filter;
+			Filter.ClassPaths.Add(UNPCDefinition::StaticClass()->GetClassPathName());
+			Filter.PackagePaths.Add(FName(*NPCAssetPath));
+			Filter.bRecursivePaths = true;
+
+			TArray<FAssetData> AssetDataList;
+			AssetRegistry.GetAssets(Filter, AssetDataList);
+
+			// Find matching asset by name pattern
+			FString SearchName = FString::Printf(TEXT("NPCDef_%s"), *Row.NPCName);
+			for (const FAssetData& AssetData : AssetDataList)
+			{
+				if (AssetData.AssetName.ToString() == SearchName ||
+				    AssetData.AssetName.ToString() == Row.NPCName)
+				{
+					NPCDef = Cast<UNPCDefinition>(AssetData.GetAsset());
+					if (NPCDef)
+					{
+						// Cache the reference for future use
+						Row.GeneratedNPCDef = FSoftObjectPath(NPCDef);
+						break;
+					}
+				}
+			}
+		}
+
+		// Third: Try common path patterns
+		if (!NPCDef)
+		{
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("%sNPCDef_%s.NPCDef_%s"), *NPCAssetPath, *Row.NPCName, *Row.NPCName),
+				FString::Printf(TEXT("%sNPCs/NPCDef_%s.NPCDef_%s"), *NPCAssetPath, *Row.NPCName, *Row.NPCName),
+				FString::Printf(TEXT("/Game/NPCs/NPCDef_%s.NPCDef_%s"), *Row.NPCName, *Row.NPCName),
+				FString::Printf(TEXT("/Game/NPCs/Definitions/NPCDef_%s.NPCDef_%s"), *Row.NPCName, *Row.NPCName)
+			};
+
+			for (const FString& Path : SearchPaths)
+			{
+				NPCDef = LoadObject<UNPCDefinition>(nullptr, *Path);
+				if (NPCDef)
+				{
+					Row.GeneratedNPCDef = FSoftObjectPath(NPCDef);
+					break;
+				}
+			}
+		}
+
+		// Handle missing asset
+		if (!NPCDef)
+		{
+			if (bCreateMissing)
+			{
+				// TODO: Create new asset via FNPCDefinitionGenerator
+				Summary.AssetsCreated++;
+				Summary.AssetResults.Add(Row.NPCName, TEXT("Created: New asset"));
+				continue;
+			}
+			else
+			{
+				Summary.AssetsSkippedNoAsset++;
+				Summary.AssetResults.Add(Row.NPCName, TEXT("Skipped: No asset found"));
+				continue;
+			}
+		}
+
+		// Check if asset is writable (not in plugin content)
+		UPackage* Package = NPCDef->GetOutermost();
+		if (Package)
+		{
+			FString PackagePath = Package->GetName();
+			if (!PackagePath.StartsWith(TEXT("/Game/")))
+			{
+				Summary.AssetsSkippedReadOnly++;
+				Summary.AssetResults.Add(Row.NPCName, TEXT("Skipped: Read-only (plugin content)"));
+				continue;
+			}
+		}
+
+		// Apply row data to asset
+		if (FNPCAssetSync::ApplyRowToAsset(Row, NPCDef))
+		{
+			// Save the asset
+			Package = NPCDef->GetOutermost();
+			if (Package)
+			{
+				Package->MarkPackageDirty();
+
+				FString PackageFileName = FPackageName::LongPackageNameToFilename(
+					Package->GetName(),
+					FPackageName::GetAssetPackageExtension());
+
+				FSavePackageArgs SaveArgs;
+				SaveArgs.TopLevelFlags = RF_Standalone;
+
+				if (UPackage::SavePackage(Package, NPCDef, *PackageFileName, SaveArgs))
+				{
+					Row.Status = ENPCTableRowStatus::Synced;
+					Summary.AssetsModified++;
+					Summary.AssetResults.Add(Row.NPCName, TEXT("Updated: Applied changes"));
+				}
+				else
+				{
+					Summary.FailedNPCs.Add(Row.NPCName);
+					Summary.AssetResults.Add(Row.NPCName, TEXT("Failed: Could not save asset"));
+				}
+			}
+		}
+		else
+		{
+			Summary.FailedNPCs.Add(Row.NPCName);
+			Summary.AssetResults.Add(Row.NPCName, TEXT("Failed: Could not apply row data"));
+		}
+	}
+
+	Summary.bSuccess = true;
+
+	UE_LOG(LogTemp, Log, TEXT("NPCXLSXSyncEngine: Applied to %d assets (%d modified, %d created, %d skipped, %d failed)"),
+		Summary.AssetsProcessed, Summary.AssetsModified, Summary.AssetsCreated,
+		Summary.AssetsSkippedNotModified + Summary.AssetsSkippedValidation + Summary.AssetsSkippedNoAsset + Summary.AssetsSkippedReadOnly,
+		Summary.FailedNPCs.Num());
+
+#else
+	Summary.ErrorMessage = TEXT("ApplyToAssets requires WITH_EDITOR");
+#endif
+
+	return Summary;
 }

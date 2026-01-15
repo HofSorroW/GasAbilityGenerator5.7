@@ -2905,7 +2905,7 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 
 FReply SNPCTableEditor::OnApplyToAssetsClicked()
 {
-	// v4.5: Use FNPCAssetSync for bidirectional sync with validation
+	// v4.5: Use FNPCXLSXSyncEngine for bidirectional sync with AssetRegistry lookup
 
 	// Step 1: Gather rows to apply
 	TArray<FNPCTableRow> RowsToApply;
@@ -2924,11 +2924,12 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 		return FReply::Handled();
 	}
 
-	// Step 2: Apply changes using FNPCAssetSync
-	FNPCAssetApplyResult Result = FNPCAssetSync::ApplyToAssets(
+	// Step 2: Apply changes using FNPCXLSXSyncEngine (with AssetRegistry lookup)
+	FString NPCAssetPath = TableData ? TableData->OutputFolder : TEXT("/Game/NPCs");
+	FNPCAssetApplySummary Result = FNPCXLSXSyncEngine::ApplyToAssets(
 		RowsToApply,
-		false,  // bCreateMissing - don't create new assets, use Generate for that
-		TableData ? TableData->OutputFolder : TEXT("/Game/NPCs"));
+		NPCAssetPath,
+		false);  // bCreateMissing - don't create new assets, use Generate for that
 
 	// Step 3: Update row statuses based on results
 	for (TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
@@ -2941,6 +2942,11 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 			if (AppliedRow.RowId == RowPtr->RowId)
 			{
 				RowPtr->Status = AppliedRow.Status;
+				// Also update GeneratedNPCDef if it was found via AssetRegistry
+				if (!AppliedRow.GeneratedNPCDef.IsNull())
+				{
+					RowPtr->GeneratedNPCDef = AppliedRow.GeneratedNPCDef;
+				}
 				break;
 			}
 		}
@@ -2950,31 +2956,37 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 	UpdateStatusBar();
 
 	// Step 4: Build result message
-	FString Message = FString::Printf(TEXT("Applied changes to %d NPCDefinition assets."), Result.NPCsUpdated);
+	FString Message = FString::Printf(TEXT("Applied changes to %d NPCDefinition assets."), Result.AssetsModified);
 
-	if (Result.NPCsSkippedNotModified > 0)
+	if (Result.AssetsSkippedNotModified > 0)
 	{
-		Message += FString::Printf(TEXT("\nUnchanged: %d"), Result.NPCsSkippedNotModified);
+		Message += FString::Printf(TEXT("\nUnchanged: %d"), Result.AssetsSkippedNotModified);
 	}
-	if (Result.NPCsSkippedValidation > 0)
+	if (Result.AssetsSkippedValidation > 0)
 	{
-		Message += FString::Printf(TEXT("\nSkipped (validation errors): %d"), Result.NPCsSkippedValidation);
+		Message += FString::Printf(TEXT("\nSkipped (validation errors): %d"), Result.AssetsSkippedValidation);
 	}
-	if (Result.NPCsSkippedNoAsset > 0)
+	if (Result.AssetsSkippedNoAsset > 0)
 	{
-		Message += FString::Printf(TEXT("\nNo asset reference: %d"), Result.NPCsSkippedNoAsset);
+		Message += FString::Printf(TEXT("\nNo asset found: %d"), Result.AssetsSkippedNoAsset);
 	}
-	if (Result.NPCsSkippedReadOnly > 0)
+	if (Result.AssetsSkippedReadOnly > 0)
 	{
-		Message += FString::Printf(TEXT("\nRead-only (plugin content): %d"), Result.NPCsSkippedReadOnly);
-		if (Result.ReadOnlyNPCs.Num() > 0 && Result.ReadOnlyNPCs.Num() <= 5)
-		{
-			Message += FString::Printf(TEXT(" (%s)"), *FString::Join(Result.ReadOnlyNPCs, TEXT(", ")));
-		}
+		Message += FString::Printf(TEXT("\nRead-only (plugin content): %d"), Result.AssetsSkippedReadOnly);
 	}
 	if (Result.FailedNPCs.Num() > 0)
 	{
 		Message += FString::Printf(TEXT("\nFailed to save: %s"), *FString::Join(Result.FailedNPCs, TEXT(", ")));
+	}
+
+	// Show per-asset details if there are only a few
+	if (Result.AssetResults.Num() > 0 && Result.AssetResults.Num() <= 10)
+	{
+		Message += TEXT("\n\nDetails:");
+		for (const auto& Pair : Result.AssetResults)
+		{
+			Message += FString::Printf(TEXT("\n  %s: %s"), *Pair.Key, *Pair.Value);
+		}
 	}
 
 	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
