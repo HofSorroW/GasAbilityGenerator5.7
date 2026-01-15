@@ -252,19 +252,17 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 
 TSharedRef<SWidget> SNPCTableRow::CreateStatusCell()
 {
-	FLinearColor StatusColor = RowData->GetStatusColor();
-	FString StatusText = RowData->GetStatusString();
-
+	// Use lambdas for dynamic color/text updates after validation
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		.HAlign(HAlign_Center)
 		[
 			SNew(SBorder)
-				.BorderBackgroundColor(StatusColor)
+				.BorderBackgroundColor_Lambda([this]() { return RowData->GetStatusColor(); })
 				.Padding(FMargin(6.0f, 2.0f))
 				[
 					SNew(STextBlock)
-						.Text(FText::FromString(StatusText))
+						.Text_Lambda([this]() { return FText::FromString(RowData->GetStatusString()); })
 						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
 						.ColorAndOpacity(FSlateColor(FLinearColor::White))
 				]
