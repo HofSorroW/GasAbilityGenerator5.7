@@ -50,6 +50,7 @@
 #include "XLSXSupport/NPCXLSXSyncEngine.h"
 #include "NPCTableEditor/NPCTableValidator.h"
 #include "NPCTableEditor/NPCTableConverter.h"
+#include "NPCTableEditor/NPCAssetSync.h"
 #include "GasAbilityGeneratorGenerators.h"
 
 #define LOCTEXT_NAMESPACE "NPCTableEditor"
@@ -2904,154 +2905,76 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 
 FReply SNPCTableEditor::OnApplyToAssetsClicked()
 {
-	int32 UpdatedCount = 0;
-	int32 SkippedCount = 0;
-	int32 ReadOnlySkipped = 0;
-	int32 NotModifiedSkipped = 0;
-	TArray<FString> FailedAssets;
-	TArray<FString> ReadOnlyAssets;
+	// v4.5: Use FNPCAssetSync for bidirectional sync with validation
 
-	for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
+	// Step 1: Gather rows to apply
+	TArray<FNPCTableRow> RowsToApply;
+	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
 	{
-		if (!Row.IsValid() || Row->GeneratedNPCDef.IsNull())
+		if (RowPtr.IsValid())
 		{
-			SkippedCount++;
-			continue;
+			RowsToApply.Add(*RowPtr);
 		}
+	}
 
-		// Only apply changes to rows that were actually modified
-		if (Row->Status != ENPCTableRowStatus::Modified && Row->Status != ENPCTableRowStatus::New)
-		{
-			NotModifiedSkipped++;
-			continue;
-		}
+	if (RowsToApply.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoRowsToApply", "No NPC rows to apply. Add NPCs first."));
+		return FReply::Handled();
+	}
 
-		// Load the NPCDefinition asset
-		UNPCDefinition* NPCDef = Cast<UNPCDefinition>(Row->GeneratedNPCDef.TryLoad());
-		if (!NPCDef)
-		{
-			FailedAssets.Add(Row->NPCName);
-			continue;
-		}
+	// Step 2: Apply changes using FNPCAssetSync
+	FNPCAssetApplyResult Result = FNPCAssetSync::ApplyToAssets(
+		RowsToApply,
+		false,  // bCreateMissing - don't create new assets, use Generate for that
+		TableData ? TableData->OutputFolder : TEXT("/Game/NPCs"));
 
-		// Check if asset is in a writable location (only /Game/ is writable, not plugin content)
-		UPackage* Package = NPCDef->GetOutermost();
-		if (Package)
+	// Step 3: Update row statuses based on results
+	for (TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
+	{
+		if (!RowPtr.IsValid()) continue;
+
+		// Find the corresponding row in the applied array
+		for (const FNPCTableRow& AppliedRow : RowsToApply)
 		{
-			FString PackagePath = Package->GetName();
-			// Skip assets in plugin folders (NarrativePro, etc.) - they're read-only
-			if (!PackagePath.StartsWith(TEXT("/Game/")))
+			if (AppliedRow.RowId == RowPtr->RowId)
 			{
-				ReadOnlySkipped++;
-				ReadOnlyAssets.Add(Row->NPCName);
-				continue;
-			}
-		}
-
-		//=========================================================================
-		// Core Identity
-		//=========================================================================
-		NPCDef->NPCID = FName(*Row->NPCId);
-		NPCDef->NPCName = FText::FromString(Row->DisplayName);
-
-		// Update NPCBlueprint (NPCClassPath)
-		if (!Row->Blueprint.IsNull())
-		{
-			NPCDef->NPCClassPath = TSoftClassPtr<ANarrativeNPCCharacter>(FSoftObjectPath(Row->Blueprint));
-		}
-
-		//=========================================================================
-		// AI & Behavior
-		//=========================================================================
-		// Update AbilityConfiguration
-		if (!Row->AbilityConfig.IsNull())
-		{
-			NPCDef->AbilityConfiguration = Cast<UAbilityConfiguration>(Row->AbilityConfig.TryLoad());
-		}
-
-		// Update ActivityConfiguration
-		if (!Row->ActivityConfig.IsNull())
-		{
-			NPCDef->ActivityConfiguration = TSoftObjectPtr<UNPCActivityConfiguration>(Row->ActivityConfig);
-		}
-		// Schedule and BehaviorTree would be applied if NPCDefinition had those properties
-
-		//=========================================================================
-		// Combat
-		//=========================================================================
-		NPCDef->MinLevel = Row->MinLevel;
-		NPCDef->MaxLevel = Row->MaxLevel;
-		NPCDef->AttackPriority = Row->AttackPriority;
-
-		// Update Factions - convert from comma-separated short names to FGameplayTagContainer
-		NPCDef->DefaultFactions.Reset();
-		TArray<FString> FactionNames;
-		Row->Factions.ParseIntoArray(FactionNames, TEXT(","));
-		for (const FString& FactionName : FactionNames)
-		{
-			FString FullFactionTag = FNPCTableRow::ToFullFactionTag(FactionName);
-			if (!FullFactionTag.IsEmpty())
-			{
-				FGameplayTag GameplayTag = FGameplayTag::RequestGameplayTag(FName(*FullFactionTag), false);
-				if (GameplayTag.IsValid())
-				{
-					NPCDef->DefaultFactions.AddTag(GameplayTag);
-				}
-			}
-		}
-
-		//=========================================================================
-		// Vendor
-		//=========================================================================
-		NPCDef->bIsVendor = Row->bIsVendor;
-		NPCDef->ShopFriendlyName = FText::FromString(Row->ShopName);
-
-		//=========================================================================
-		// Items & Spawning - DefaultItems and SpawnerPOI handled separately
-		//=========================================================================
-
-		//=========================================================================
-		// Meta - Appearance and Notes not stored on NPCDefinition
-		//=========================================================================
-
-		// Mark package dirty and save
-		if (Package)
-		{
-			Package->MarkPackageDirty();
-			FString PackageFileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
-			FSavePackageArgs SaveArgs;
-			SaveArgs.TopLevelFlags = RF_Standalone;
-
-			if (UPackage::SavePackage(Package, NPCDef, *PackageFileName, SaveArgs))
-			{
-				Row->Status = ENPCTableRowStatus::Synced;
-				UpdatedCount++;
-			}
-			else
-			{
-				FailedAssets.Add(Row->NPCName);
+				RowPtr->Status = AppliedRow.Status;
+				break;
 			}
 		}
 	}
 
 	RefreshList();
+	UpdateStatusBar();
 
-	FString Message = FString::Printf(TEXT("Applied changes to %d NPCDefinition assets."), UpdatedCount);
-	if (NotModifiedSkipped > 0)
+	// Step 4: Build result message
+	FString Message = FString::Printf(TEXT("Applied changes to %d NPCDefinition assets."), Result.NPCsUpdated);
+
+	if (Result.NPCsSkippedNotModified > 0)
 	{
-		Message += FString::Printf(TEXT("\nUnchanged: %d"), NotModifiedSkipped);
+		Message += FString::Printf(TEXT("\nUnchanged: %d"), Result.NPCsSkippedNotModified);
 	}
-	if (SkippedCount > 0)
+	if (Result.NPCsSkippedValidation > 0)
 	{
-		Message += FString::Printf(TEXT("\nNo asset reference: %d"), SkippedCount);
+		Message += FString::Printf(TEXT("\nSkipped (validation errors): %d"), Result.NPCsSkippedValidation);
 	}
-	if (ReadOnlySkipped > 0)
+	if (Result.NPCsSkippedNoAsset > 0)
 	{
-		Message += FString::Printf(TEXT("\nRead-only (plugin content): %d"), ReadOnlySkipped);
+		Message += FString::Printf(TEXT("\nNo asset reference: %d"), Result.NPCsSkippedNoAsset);
 	}
-	if (FailedAssets.Num() > 0)
+	if (Result.NPCsSkippedReadOnly > 0)
 	{
-		Message += FString::Printf(TEXT("\nFailed to save: %s"), *FString::Join(FailedAssets, TEXT(", ")));
+		Message += FString::Printf(TEXT("\nRead-only (plugin content): %d"), Result.NPCsSkippedReadOnly);
+		if (Result.ReadOnlyNPCs.Num() > 0 && Result.ReadOnlyNPCs.Num() <= 5)
+		{
+			Message += FString::Printf(TEXT(" (%s)"), *FString::Join(Result.ReadOnlyNPCs, TEXT(", ")));
+		}
+	}
+	if (Result.FailedNPCs.Num() > 0)
+	{
+		Message += FString::Printf(TEXT("\nFailed to save: %s"), *FString::Join(Result.FailedNPCs, TEXT(", ")));
 	}
 
 	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
