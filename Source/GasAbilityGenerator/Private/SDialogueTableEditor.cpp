@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
-// v4.2.2: Phase 1.5 - Clear Filters, Delete Branch, Skippable/Notes columns, tooltips
+// v4.2.7: Clean status bar - pure Text_Lambda pattern (matches working NPCTableEditor)
 //
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
@@ -708,95 +708,81 @@ TSharedRef<SHeaderRow> SDialogueTableEditor::BuildHeaderRow()
 
 TSharedRef<SWidget> SDialogueTableEditor::BuildStatusBar()
 {
+	// Simple Text_Lambda pattern - same as working NPCTableEditor
+	// No stored references, no UpdateStatusBar() - lambdas auto-update
 	return SNew(SHorizontalBox)
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(4.0f, 0.0f)
 		[
-			SAssignNew(StatusTotal, STextBlock)
-				.Text_Lambda([this]() { return GetStatusTotalText(); })
+			SNew(STextBlock)
+				.Text_Lambda([this]()
+				{
+					return FText::Format(
+						LOCTEXT("TotalNodes", "Total: {0} nodes"),
+						FText::AsNumber(AllRows.Num())
+					);
+				})
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SAssignNew(StatusDialogues, STextBlock)
-				.Text_Lambda([this]() { return GetStatusDialoguesText(); })
+			SNew(STextBlock)
+				.Text_Lambda([this]()
+				{
+					TSet<FName> UniqueDialogues;
+					for (const auto& Row : AllRows)
+					{
+						if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
+						{
+							UniqueDialogues.Add(Row->Data->DialogueID);
+						}
+					}
+					return FText::Format(
+						LOCTEXT("DialogueCount", "Dialogues: {0}"),
+						FText::AsNumber(UniqueDialogues.Num())
+					);
+				})
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SAssignNew(StatusShowing, STextBlock)
-				.Text_Lambda([this]() { return GetStatusShowingText(); })
+			SNew(STextBlock)
+				.Text_Lambda([this]()
+				{
+					return FText::Format(
+						LOCTEXT("ShowingCount", "Showing: {0}"),
+						FText::AsNumber(DisplayedRows.Num())
+					);
+				})
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SAssignNew(StatusSelected, STextBlock)
-				.Text_Lambda([this]() { return GetStatusSelectedText(); })
+			SNew(STextBlock)
+				.Text_Lambda([this]()
+				{
+					int32 Selected = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
+					return FText::Format(
+						LOCTEXT("SelectedCount", "Selected: {0}"),
+						FText::AsNumber(Selected)
+					);
+				})
 		];
-}
-
-FText SDialogueTableEditor::GetStatusTotalText() const
-{
-	return FText::Format(LOCTEXT("TotalNodes", "Total: {0} nodes"), FText::AsNumber(AllRows.Num()));
-}
-
-FText SDialogueTableEditor::GetStatusDialoguesText() const
-{
-	TSet<FName> UniqueDialogues;
-	for (const auto& Row : AllRows)
-	{
-		if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
-		{
-			UniqueDialogues.Add(Row->Data->DialogueID);
-		}
-	}
-	return FText::Format(LOCTEXT("DialogueCount", "Dialogues: {0}"), FText::AsNumber(UniqueDialogues.Num()));
-}
-
-FText SDialogueTableEditor::GetStatusShowingText() const
-{
-	return FText::Format(LOCTEXT("ShowingCount", "Showing: {0}"), FText::AsNumber(DisplayedRows.Num()));
-}
-
-FText SDialogueTableEditor::GetStatusSelectedText() const
-{
-	int32 Selected = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
-	return FText::Format(LOCTEXT("SelectedCount", "Selected: {0}"), FText::AsNumber(Selected));
 }
 
 void SDialogueTableEditor::UpdateStatusBar()
 {
-	// UE5 Slate caching fix: Must use all three invalidation flags to force refresh
-	// See: https://forums.unrealengine.com/t/slate-widget-stextblock-does-not-refresh/553873
-	const EInvalidateWidgetReason InvalidateFlags =
-		EInvalidateWidgetReason::Paint |
-		EInvalidateWidgetReason::Volatility |
-		EInvalidateWidgetReason::Prepass;
-
-	if (StatusTotal.IsValid())
-	{
-		StatusTotal->Invalidate(InvalidateFlags);
-	}
-	if (StatusDialogues.IsValid())
-	{
-		StatusDialogues->Invalidate(InvalidateFlags);
-	}
-	if (StatusShowing.IsValid())
-	{
-		StatusShowing->Invalidate(InvalidateFlags);
-	}
-	if (StatusSelected.IsValid())
-	{
-		StatusSelected->Invalidate(InvalidateFlags);
-	}
+	// With Text_Lambda pattern, status bar auto-updates when lambdas are re-evaluated
+	// This function is kept for API compatibility but does nothing
+	// The STextBlock widgets will re-evaluate their Text_Lambda on next paint
 }
 
 TSharedRef<ITableRow> SDialogueTableEditor::OnGenerateRow(TSharedPtr<FDialogueTableRowEx> Item, const TSharedRef<STableViewBase>& OwnerTable)

@@ -123,12 +123,6 @@ private:
 	TSharedPtr<SListView<TSharedPtr<FDialogueTableRowEx>>> ListView;
 	TSharedPtr<SHeaderRow> HeaderRow;
 
-	// Status bar text blocks (for immediate updates)
-	TSharedPtr<STextBlock> StatusTotal;
-	TSharedPtr<STextBlock> StatusDialogues;
-	TSharedPtr<STextBlock> StatusShowing;
-	TSharedPtr<STextBlock> StatusSelected;
-
 	FName SortColumn;
 	EColumnSortMode::Type SortMode = EColumnSortMode::None;
 	TMap<FName, FColumnFilterState> ColumnFilters;  // Per-column filter state
@@ -137,13 +131,7 @@ private:
 	TSharedRef<SWidget> BuildToolbar();
 	TSharedRef<SHeaderRow> BuildHeaderRow();
 	TSharedRef<SWidget> BuildStatusBar();
-	void UpdateStatusBar();  // Force status bar refresh
-
-	// Status bar text getters (for TAttribute bindings)
-	FText GetStatusTotalText() const;
-	FText GetStatusDialoguesText() const;
-	FText GetStatusShowingText() const;
-	FText GetStatusSelectedText() const;
+	void UpdateStatusBar();  // Kept for API compatibility (now no-op with Text_Lambda)
 
 	// List View Callbacks
 	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FDialogueTableRowEx> Item, const TSharedRef<STableViewBase>& OwnerTable);

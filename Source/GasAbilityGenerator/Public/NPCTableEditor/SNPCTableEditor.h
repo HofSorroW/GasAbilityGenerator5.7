@@ -95,14 +95,11 @@ inline TArray<FNPCTableColumn> GetNPCTableColumns()
 	// 8. Schedule - asset dropdown (Schedule_* DataAssets)
 	Columns.Add(FNPCTableColumn(TEXT("Schedule"), NSLOCTEXT("NPCTableEditor", "ColSchedule", "Schedule"), 0.05f));
 
-	// 9. BehaviorTree - asset dropdown (BT_* assets, optional)
-	Columns.Add(FNPCTableColumn(TEXT("BehaviorTree"), NSLOCTEXT("NPCTableEditor", "ColBehaviorTree", "BT"), 0.04f));
-
 	//=========================================================================
 	// Combat (3 columns) - 0.13 total
 	//=========================================================================
 
-	// 10. LevelRange - dual spinbox "1-10"
+	// 9. LevelRange - dual spinbox "1-10"
 	Columns.Add(FNPCTableColumn(TEXT("LevelRange"), NSLOCTEXT("NPCTableEditor", "ColLevelRange", "Level"), 0.04f));
 
 	// 11. Factions - multi-select dropdown (gameplay tags)
@@ -186,6 +183,9 @@ private:
 
 	/** Create asset dropdown cell - filtered by class/prefix */
 	TSharedRef<SWidget> CreateAssetDropdownCell(FSoftObjectPath& Value, UClass* AssetClass, const FString& AssetPrefix);
+
+	/** Create NPC blueprint dropdown - only shows ANarrativeNPCCharacter subclasses */
+	TSharedRef<SWidget> CreateNPCBlueprintDropdownCell();
 
 	/** Create multi-select dropdown cell (comma-separated values) */
 	TSharedRef<SWidget> CreateMultiSelectDropdownCell(FString& Value, const TArray<FString>& Options);
