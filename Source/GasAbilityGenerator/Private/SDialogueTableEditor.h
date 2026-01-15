@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor
+// v4.4: Added validation error feedback in status bar
 // v4.3: Slate widget for batch dialogue creation with XLSX sync support
 //
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
@@ -137,6 +138,7 @@ private:
 	TSharedPtr<STextBlock> StatusDialoguesText;
 	TSharedPtr<STextBlock> StatusShowingText;
 	TSharedPtr<STextBlock> StatusSelectedText;
+	TSharedPtr<STextBlock> StatusValidationText;  // v4.4: Token validation errors
 	void UpdateStatusBar();  // Explicitly update all status text
 
 	// List View Callbacks
