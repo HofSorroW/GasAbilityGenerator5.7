@@ -52,6 +52,7 @@
 #include "NPCTableEditor/NPCTableValidator.h"
 #include "NPCTableEditor/NPCTableConverter.h"
 #include "NPCTableEditor/NPCAssetSync.h"
+#include "NPCTableEditor/SNPCApplyPreview.h"
 #include "GasAbilityGeneratorGenerators.h"
 
 #define LOCTEXT_NAMESPACE "NPCTableEditor"
@@ -2895,7 +2896,7 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 
 FReply SNPCTableEditor::OnApplyToAssetsClicked()
 {
-	// v4.5: Use FNPCXLSXSyncEngine for bidirectional sync with AssetRegistry lookup
+	// v4.5: Open preview window to review and apply changes to UNPCDefinition assets
 
 	// Step 1: Gather rows to apply
 	TArray<FNPCTableRow> RowsToApply;
@@ -2914,72 +2915,80 @@ FReply SNPCTableEditor::OnApplyToAssetsClicked()
 		return FReply::Handled();
 	}
 
-	// Step 2: Apply changes using FNPCXLSXSyncEngine (with AssetRegistry lookup)
+	// Step 2: Open preview window
 	FString NPCAssetPath = TableData ? TableData->OutputFolder : TEXT("/Game/NPCs");
-	FNPCAssetApplySummary Result = FNPCXLSXSyncEngine::ApplyToAssets(
+	TWeakPtr<SNPCTableEditor> WeakEditor = SharedThis(this);
+
+	SNPCApplyPreview::OpenPreviewWindow(
 		RowsToApply,
 		NPCAssetPath,
-		false);  // bCreateMissing - don't create new assets, use Generate for that
-
-	// Step 3: Update row statuses based on results
-	for (TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
-	{
-		if (!RowPtr.IsValid()) continue;
-
-		// Find the corresponding row in the applied array
-		for (const FNPCTableRow& AppliedRow : RowsToApply)
+		FOnNPCApplyConfirmed::CreateLambda([WeakEditor, NPCAssetPath](const FNPCApplyPreviewResult& PreviewResult)
 		{
-			if (AppliedRow.RowId == RowPtr->RowId)
+			if (!PreviewResult.bConfirmed || PreviewResult.ApprovedChanges.Num() == 0)
 			{
-				RowPtr->Status = AppliedRow.Status;
-				// Also update GeneratedNPCDef if it was found via AssetRegistry
-				if (!AppliedRow.GeneratedNPCDef.IsNull())
-				{
-					RowPtr->GeneratedNPCDef = AppliedRow.GeneratedNPCDef;
-				}
-				break;
+				return;
 			}
-		}
-	}
 
-	RefreshList();
-	UpdateStatusBar();
+			// Build rows from approved changes
+			TArray<FNPCTableRow> ApprovedRows;
+			for (const FNPCChangeEntry& Entry : PreviewResult.ApprovedChanges)
+			{
+				if (Entry.Row.IsValid())
+				{
+					ApprovedRows.Add(*Entry.Row);
+				}
+			}
 
-	// Step 4: Build result message
-	FString Message = FString::Printf(TEXT("Applied changes to %d NPCDefinition assets."), Result.AssetsModified);
+			// Apply to assets
+			FNPCAssetApplySummary Result = FNPCXLSXSyncEngine::ApplyToAssets(
+				ApprovedRows,
+				NPCAssetPath,
+				false);  // bCreateMissing - don't create new assets, use Generate for that
 
-	if (Result.AssetsSkippedNotModified > 0)
-	{
-		Message += FString::Printf(TEXT("\nUnchanged: %d"), Result.AssetsSkippedNotModified);
-	}
-	if (Result.AssetsSkippedValidation > 0)
-	{
-		Message += FString::Printf(TEXT("\nSkipped (validation errors): %d"), Result.AssetsSkippedValidation);
-	}
-	if (Result.AssetsSkippedNoAsset > 0)
-	{
-		Message += FString::Printf(TEXT("\nNo asset found: %d"), Result.AssetsSkippedNoAsset);
-	}
-	if (Result.AssetsSkippedReadOnly > 0)
-	{
-		Message += FString::Printf(TEXT("\nRead-only (plugin content): %d"), Result.AssetsSkippedReadOnly);
-	}
-	if (Result.FailedNPCs.Num() > 0)
-	{
-		Message += FString::Printf(TEXT("\nFailed to save: %s"), *FString::Join(Result.FailedNPCs, TEXT(", ")));
-	}
+			// Update editor if still valid
+			if (TSharedPtr<SNPCTableEditor> Editor = WeakEditor.Pin())
+			{
+				// Update row statuses based on results
+				for (TSharedPtr<FNPCTableRow>& RowPtr : Editor->AllRows)
+				{
+					if (!RowPtr.IsValid()) continue;
 
-	// Show per-asset details if there are only a few
-	if (Result.AssetResults.Num() > 0 && Result.AssetResults.Num() <= 10)
-	{
-		Message += TEXT("\n\nDetails:");
-		for (const auto& Pair : Result.AssetResults)
-		{
-			Message += FString::Printf(TEXT("\n  %s: %s"), *Pair.Key, *Pair.Value);
-		}
-	}
+					for (const FNPCTableRow& AppliedRow : ApprovedRows)
+					{
+						if (AppliedRow.RowId == RowPtr->RowId)
+						{
+							RowPtr->Status = AppliedRow.Status;
+							if (!AppliedRow.GeneratedNPCDef.IsNull())
+							{
+								RowPtr->GeneratedNPCDef = AppliedRow.GeneratedNPCDef;
+							}
+							break;
+						}
+					}
+				}
 
-	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
+				Editor->RefreshList();
+				Editor->UpdateStatusBar();
+			}
+
+			// Show result summary
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("ApplyComplete",
+					"Apply complete!\n\n"
+					"Assets processed: {0}\n"
+					"Assets modified: {1}\n"
+					"Skipped (unchanged): {2}\n"
+					"Skipped (validation): {3}\n"
+					"Skipped (no asset): {4}\n"
+					"Skipped (read-only): {5}"),
+					FText::AsNumber(Result.AssetsProcessed),
+					FText::AsNumber(Result.AssetsModified),
+					FText::AsNumber(Result.AssetsSkippedNotModified),
+					FText::AsNumber(Result.AssetsSkippedValidation),
+					FText::AsNumber(Result.AssetsSkippedNoAsset),
+					FText::AsNumber(Result.AssetsSkippedReadOnly)));
+		})
+	);
 
 	return FReply::Handled();
 }

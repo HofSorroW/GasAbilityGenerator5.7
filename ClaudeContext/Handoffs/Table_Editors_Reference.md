@@ -845,6 +845,30 @@ The token system follows the same safety patterns as the v3.0 Regen/Diff system:
 2. **Manual validation** - Users should validate in-editor after applying tokens to confirm events fire correctly
 3. **No undo** - Applied changes cannot be undone; recommend saving assets before bulk apply
 
+### Future Enhancements (Dialogue Table Editor)
+
+**Token System Expansion:**
+| Item | Description |
+|------|-------------|
+| More Event tokens | NE_GiveXP, NE_PlaySound, NE_SpawnActor, NE_TeleportPlayer, etc. |
+| More Condition tokens | NC_HasCompletedQuest, NC_HasTag, NC_LevelCheck, NC_TimeOfDay, etc. |
+| _Lists sheet validation | Populate Quest IDs, Item IDs, NPC IDs from asset scan for autocomplete/validation |
+
+**Workflow Improvements:**
+| Item | Description |
+|------|-------------|
+| Bulk token copy | Copy events/conditions from one node to multiple selected nodes |
+| Token autocomplete | Dropdown suggestions while typing tokens in cells |
+| Validation on cell edit | Immediate feedback when typing invalid token syntax |
+| Token templates | Pre-defined token combinations for common patterns (e.g., "Start Quest + Give Item") |
+
+**Quality of Life:**
+| Item | Description |
+|------|-------------|
+| Keyboard shortcuts | Ctrl+D duplicate, Ctrl+Shift+V paste tokens only |
+| Undo/Redo | Track changes for reversal |
+| Diff view | Show what changed since last save/export |
+
 ---
 
 ## Development Guide
