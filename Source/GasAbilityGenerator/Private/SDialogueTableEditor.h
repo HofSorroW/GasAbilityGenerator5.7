@@ -13,6 +13,7 @@
 
 class SEditableText;
 class SSearchBox;
+class SHorizontalBox;
 
 /**
  * Column definition for the dialogue table
@@ -122,6 +123,7 @@ private:
 
 	TSharedPtr<SListView<TSharedPtr<FDialogueTableRowEx>>> ListView;
 	TSharedPtr<SHeaderRow> HeaderRow;
+	TSharedPtr<SHorizontalBox> StatusBar;  // v4.2.8: Stored for explicit invalidation
 
 	FName SortColumn;
 	EColumnSortMode::Type SortMode = EColumnSortMode::None;

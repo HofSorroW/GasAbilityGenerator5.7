@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
-// v4.2.7: Clean status bar - pure Text_Lambda pattern (matches working NPCTableEditor)
+// v4.2.8: Fixed status bar not updating - explicit invalidation required for sibling widgets
 //
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
@@ -12,6 +12,7 @@
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SBox.h"
 #include "Styling/AppStyle.h"
 #include "Misc/FileHelper.h"
 #include "DesktopPlatformModule.h"
@@ -708,9 +709,10 @@ TSharedRef<SHeaderRow> SDialogueTableEditor::BuildHeaderRow()
 
 TSharedRef<SWidget> SDialogueTableEditor::BuildStatusBar()
 {
-	// Simple Text_Lambda pattern - same as working NPCTableEditor
-	// No stored references, no UpdateStatusBar() - lambdas auto-update
-	return SNew(SHorizontalBox)
+	// v4.2.8: Use SAssignNew to store StatusBar reference for explicit invalidation
+	// Text_Lambda is evaluated during Paint, but ListView->RequestListRefresh() only
+	// invalidates the ListView, not sibling widgets. We must explicitly invalidate.
+	return SAssignNew(StatusBar, SHorizontalBox)
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -719,6 +721,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildStatusBar()
 			SNew(STextBlock)
 				.Text_Lambda([this]()
 				{
+					UE_LOG(LogTemp, Verbose, TEXT("[DialogueTableEditor] Status bar lambda called - AllRows: %d"), AllRows.Num());
 					return FText::Format(
 						LOCTEXT("TotalNodes", "Total: {0} nodes"),
 						FText::AsNumber(AllRows.Num())
@@ -780,9 +783,13 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildStatusBar()
 
 void SDialogueTableEditor::UpdateStatusBar()
 {
-	// With Text_Lambda pattern, status bar auto-updates when lambdas are re-evaluated
-	// This function is kept for API compatibility but does nothing
-	// The STextBlock widgets will re-evaluate their Text_Lambda on next paint
+	// v4.2.8: Explicitly invalidate status bar to trigger repaint
+	// Text_Lambda is only evaluated during Paint, so we must force a repaint.
+	// ListView->RequestListRefresh() only invalidates the ListView, not siblings.
+	if (StatusBar.IsValid())
+	{
+		StatusBar->Invalidate(EInvalidateWidgetReason::Paint);
+	}
 }
 
 TSharedRef<ITableRow> SDialogueTableEditor::OnGenerateRow(TSharedPtr<FDialogueTableRowEx> Item, const TSharedRef<STableViewBase>& OwnerTable)
