@@ -2024,7 +2024,15 @@ FReply SDialogueTableEditor::OnValidateClicked()
 		return FReply::Handled();
 	}
 
-	FDialogueValidationResult Result = FDialogueTableValidator::ValidateAll(TableData->Rows);
+	// v4.5: Use cache-writing validation
+	FDialogueValidationResult Result = FDialogueTableValidator::ValidateAllAndCache(
+		TableData->Rows,
+		TableData->ListsVersionGuid
+	);
+
+	// Refresh UI to show validation state
+	RefreshList();
+	UpdateStatusBar();
 
 	if (Result.Issues.Num() == 0)
 	{
@@ -2061,7 +2069,14 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 		return FReply::Handled();
 	}
 
-	FDialogueValidationResult ValidationResult = FDialogueTableValidator::ValidateAll(TableData->Rows);
+	// v4.5: Use cache-writing validation
+	FDialogueValidationResult ValidationResult = FDialogueTableValidator::ValidateAllAndCache(
+		TableData->Rows,
+		TableData->ListsVersionGuid
+	);
+	RefreshList();
+	UpdateStatusBar();
+
 	if (ValidationResult.HasErrors())
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,

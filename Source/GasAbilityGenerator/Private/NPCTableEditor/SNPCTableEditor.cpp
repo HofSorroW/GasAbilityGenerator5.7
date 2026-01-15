@@ -1781,27 +1781,40 @@ void SNPCTableEditor::UpdateStatusBar()
 		));
 	}
 
-	// v4.5: Validation errors count
+	// v4.5: Validation status from cache (O(1) - no re-validation)
 	if (StatusValidationText.IsValid())
 	{
-		// Quick validation check
-		TArray<FNPCTableRow> RowsToValidate;
+		int32 InvalidCount = 0;
+		int32 UnknownCount = 0;
+
 		for (const auto& RowPtr : AllRows)
 		{
 			if (RowPtr.IsValid())
 			{
-				RowsToValidate.Add(*RowPtr);
+				if (RowPtr->ValidationState == EValidationState::Invalid)
+				{
+					InvalidCount++;
+				}
+				else if (RowPtr->ValidationState == EValidationState::Unknown)
+				{
+					UnknownCount++;
+				}
 			}
 		}
 
-		FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(RowsToValidate);
-		int32 ErrorCount = ValidationResult.GetErrorCount();
-
-		if (ErrorCount > 0)
+		if (InvalidCount > 0)
 		{
 			StatusValidationText->SetText(FText::Format(
 				LOCTEXT("ValidationErrors", "Errors: {0}"),
-				FText::AsNumber(ErrorCount)
+				FText::AsNumber(InvalidCount)
+			));
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else if (UnknownCount > 0)
+		{
+			StatusValidationText->SetText(FText::Format(
+				LOCTEXT("ValidationUnknown", "Unvalidated: {0}"),
+				FText::AsNumber(UnknownCount)
 			));
 			StatusValidationText->SetVisibility(EVisibility::Visible);
 		}
@@ -2083,7 +2096,7 @@ FReply SNPCTableEditor::OnDuplicateRowClicked()
 
 FReply SNPCTableEditor::OnValidateClicked()
 {
-	// v4.5: Validate all rows and show detailed results
+	// v4.5: Validate all rows with cache-writing
 	TArray<FNPCTableRow> RowsToValidate;
 	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
 	{
@@ -2093,42 +2106,39 @@ FReply SNPCTableEditor::OnValidateClicked()
 		}
 	}
 
-	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(RowsToValidate);
-
-	// Update row status based on validation
-	for (TSharedPtr<FNPCTableRow>& Row : AllRows)
+	// Get ListsVersionGuid (ensure it's valid)
+	FGuid ListsVersionGuid = TableData ? TableData->ListsVersionGuid : FGuid();
+	if (!ListsVersionGuid.IsValid())
 	{
-		if (!Row.IsValid()) continue;
-
-		bool bHasError = false;
-		bool bHasWarning = false;
-
-		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
+		ListsVersionGuid = FGuid::NewGuid();
+		if (TableData)
 		{
-			if (Issue.NPCName == Row->NPCName || (Row->NPCName.IsEmpty() && Issue.NPCName == Row->RowId.ToString()))
+			TableData->ListsVersionGuid = ListsVersionGuid;
+		}
+	}
+
+	// v4.5: Use cache-writing validation
+	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAllAndCache(RowsToValidate, ListsVersionGuid);
+
+	// Copy validation cache back to AllRows (matching by RowId)
+	for (int32 i = 0; i < RowsToValidate.Num() && i < AllRows.Num(); i++)
+	{
+		if (AllRows[i].IsValid() && AllRows[i]->RowId == RowsToValidate[i].RowId)
+		{
+			AllRows[i]->ValidationState = RowsToValidate[i].ValidationState;
+			AllRows[i]->ValidationSummary = RowsToValidate[i].ValidationSummary;
+			AllRows[i]->ValidationIssueCount = RowsToValidate[i].ValidationIssueCount;
+			AllRows[i]->ValidationInputHash = RowsToValidate[i].ValidationInputHash;
+
+			// Also update Status for backward compatibility
+			if (RowsToValidate[i].ValidationState == EValidationState::Invalid)
 			{
-				if (Issue.Severity == ENPCValidationSeverity::Error)
-				{
-					bHasError = true;
-				}
-				else if (Issue.Severity == ENPCValidationSeverity::Warning)
-				{
-					bHasWarning = true;
-				}
+				AllRows[i]->Status = ENPCTableRowStatus::Error;
 			}
-		}
-
-		if (bHasError)
-		{
-			Row->Status = ENPCTableRowStatus::Error;
-		}
-		else if (bHasWarning)
-		{
-			Row->Status = ENPCTableRowStatus::Modified;  // Use Modified as warning indicator
-		}
-		else if (Row->Status == ENPCTableRowStatus::Error)
-		{
-			Row->Status = ENPCTableRowStatus::New;  // Clear previous error if now valid
+			else if (AllRows[i]->Status == ENPCTableRowStatus::Error)
+			{
+				AllRows[i]->Status = ENPCTableRowStatus::New;  // Clear previous error
+			}
 		}
 	}
 
@@ -2176,7 +2186,7 @@ FReply SNPCTableEditor::OnGenerateClicked()
 {
 	// v4.5: Validate first, then generate using FNPCDefinitionGenerator
 
-	// Step 1: Gather all valid rows
+	// Step 1: Gather all rows
 	TArray<FNPCTableRow> RowsToValidate;
 	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
 	{
@@ -2193,9 +2203,36 @@ FReply SNPCTableEditor::OnGenerateClicked()
 		return FReply::Handled();
 	}
 
-	// Step 2: Validate all rows
-	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(RowsToValidate);
+	// Step 2: Validate all rows with cache-writing
+	FGuid ListsVersionGuid = TableData ? TableData->ListsVersionGuid : FGuid();
+	if (!ListsVersionGuid.IsValid())
+	{
+		ListsVersionGuid = FGuid::NewGuid();
+		if (TableData)
+		{
+			TableData->ListsVersionGuid = ListsVersionGuid;
+		}
+	}
+
+	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAllAndCache(RowsToValidate, ListsVersionGuid);
 	int32 ValidationErrorCount = ValidationResult.GetErrorCount();
+
+	// Copy validation cache back to AllRows
+	for (int32 i = 0; i < RowsToValidate.Num() && i < AllRows.Num(); i++)
+	{
+		if (AllRows[i].IsValid() && AllRows[i]->RowId == RowsToValidate[i].RowId)
+		{
+			AllRows[i]->ValidationState = RowsToValidate[i].ValidationState;
+			AllRows[i]->ValidationSummary = RowsToValidate[i].ValidationSummary;
+			AllRows[i]->ValidationIssueCount = RowsToValidate[i].ValidationIssueCount;
+			AllRows[i]->ValidationInputHash = RowsToValidate[i].ValidationInputHash;
+
+			if (RowsToValidate[i].ValidationState == EValidationState::Invalid)
+			{
+				AllRows[i]->Status = ENPCTableRowStatus::Error;
+			}
+		}
+	}
 
 	if (ValidationErrorCount > 0)
 	{
@@ -2211,21 +2248,6 @@ FReply SNPCTableEditor::OnGenerateClicked()
 		ErrorMessage += TEXT("\nClick 'Validate' button for full details.");
 
 		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ErrorMessage));
-
-		// Update status on rows with errors
-		for (TSharedPtr<FNPCTableRow>& Row : AllRows)
-		{
-			if (!Row.IsValid()) continue;
-			for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
-			{
-				if (Issue.Severity == ENPCValidationSeverity::Error &&
-					(Issue.NPCName == Row->NPCName || (Row->NPCName.IsEmpty() && Issue.NPCName == Row->RowId.ToString())))
-				{
-					Row->Status = ENPCTableRowStatus::Error;
-					break;
-				}
-			}
-		}
 		RefreshList();
 		UpdateStatusBar();
 		return FReply::Handled();
