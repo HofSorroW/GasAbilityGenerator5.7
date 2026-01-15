@@ -245,3 +245,86 @@ bool FNPCTableValidator::IsNPCNameUnique(const FString& NPCName, const FGuid& Ro
 	}
 	return true;
 }
+
+//=============================================================================
+// v4.5: Cache-writing validation methods
+//=============================================================================
+
+uint32 FNPCTableValidator::ComputeValidationInputHash(const FNPCTableRow& Row, const FGuid& ListsVersionGuid)
+{
+	uint32 Hash = Row.ComputeEditableFieldsHash();
+	Hash = HashCombine(Hash, GetTypeHash(ListsVersionGuid));
+	// NPC doesn't use token registry, so no SpecVersion component
+	return Hash;
+}
+
+TArray<FNPCValidationIssue> FNPCTableValidator::ValidateRowAndCache(FNPCTableRow& Row, const TArray<FNPCTableRow>& AllRows, const FGuid& ListsVersionGuid)
+{
+	// Run standard validation
+	TArray<FNPCValidationIssue> Issues = ValidateRow(Row, AllRows);
+
+	// Count errors vs warnings
+	int32 ErrorCount = 0;
+	int32 WarningCount = 0;
+	FString SummaryParts;
+
+	for (const FNPCValidationIssue& Issue : Issues)
+	{
+		if (Issue.Severity == ENPCValidationSeverity::Error)
+		{
+			ErrorCount++;
+		}
+		else
+		{
+			WarningCount++;
+		}
+	}
+
+	// Build summary string
+	if (ErrorCount > 0)
+	{
+		SummaryParts = FString::Printf(TEXT("%d error(s)"), ErrorCount);
+	}
+	if (WarningCount > 0)
+	{
+		if (!SummaryParts.IsEmpty()) SummaryParts += TEXT(", ");
+		SummaryParts += FString::Printf(TEXT("%d warning(s)"), WarningCount);
+	}
+
+	// Write to cache
+	Row.ValidationIssueCount = Issues.Num();
+	Row.ValidationSummary = SummaryParts;
+
+	if (ErrorCount > 0)
+	{
+		Row.ValidationState = EValidationState::Invalid;
+	}
+	else if (WarningCount > 0)
+	{
+		// Warnings count as valid but with notes
+		Row.ValidationState = EValidationState::Valid;
+	}
+	else
+	{
+		Row.ValidationState = EValidationState::Valid;
+	}
+
+	// Compute and store validation input hash
+	Row.ValidationInputHash = ComputeValidationInputHash(Row, ListsVersionGuid);
+
+	return Issues;
+}
+
+FNPCValidationResult FNPCTableValidator::ValidateAllAndCache(TArray<FNPCTableRow>& Rows, const FGuid& ListsVersionGuid)
+{
+	FNPCValidationResult Result;
+
+	// Validate each row and write cache
+	for (FNPCTableRow& Row : Rows)
+	{
+		TArray<FNPCValidationIssue> RowIssues = ValidateRowAndCache(Row, Rows, ListsVersionGuid);
+		Result.Issues.Append(RowIssues);
+	}
+
+	return Result;
+}

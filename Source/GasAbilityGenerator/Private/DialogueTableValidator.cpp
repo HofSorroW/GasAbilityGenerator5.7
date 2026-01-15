@@ -325,3 +325,101 @@ bool FDialogueTableValidator::HasCircularReference(const FDialogueTableRow& Star
 
 	return false;
 }
+
+//=============================================================================
+// v4.5: Cache-writing validation methods
+//=============================================================================
+
+uint32 FDialogueTableValidator::ComputeValidationInputHash(const FDialogueTableRow& Row, const FGuid& ListsVersionGuid)
+{
+	uint32 Hash = Row.ComputeEditableFieldsHash();
+	Hash = HashCombine(Hash, GetTypeHash(ListsVersionGuid));
+	Hash = HashCombine(Hash, FDialogueTokenRegistry::SpecVersion);
+	return Hash;
+}
+
+TArray<FDialogueValidationIssue> FDialogueTableValidator::ValidateRowAndCache(FDialogueTableRow& Row, const TArray<FDialogueTableRow>& AllRows, const FGuid& ListsVersionGuid)
+{
+	// Run standard validation
+	TArray<FDialogueValidationIssue> Issues = ValidateRow(Row, AllRows);
+
+	// Also validate tokens if present
+	if (!Row.EventsTokenStr.IsEmpty())
+	{
+		FTokenParseResult ParseResult = FDialogueTokenRegistry::Get().ParseTokenString(Row.EventsTokenStr);
+		Row.bEventsValid = ParseResult.bSuccess;
+		Row.EventsValidationError = ParseResult.bSuccess ? TEXT("") : ParseResult.ErrorMessage;
+
+		if (!ParseResult.bSuccess)
+		{
+			Issues.Add(FDialogueValidationIssue(
+				EDialogueValidationSeverity::Error,
+				Row.DialogueID,
+				Row.NodeID,
+				FString::Printf(TEXT("Events: %s"), *ParseResult.ErrorMessage)
+			));
+		}
+	}
+	else
+	{
+		Row.bEventsValid = true;
+		Row.EventsValidationError.Empty();
+	}
+
+	if (!Row.ConditionsTokenStr.IsEmpty())
+	{
+		FTokenParseResult ParseResult = FDialogueTokenRegistry::Get().ParseTokenString(Row.ConditionsTokenStr);
+		Row.bConditionsValid = ParseResult.bSuccess;
+		Row.ConditionsValidationError = ParseResult.bSuccess ? TEXT("") : ParseResult.ErrorMessage;
+
+		if (!ParseResult.bSuccess)
+		{
+			Issues.Add(FDialogueValidationIssue(
+				EDialogueValidationSeverity::Error,
+				Row.DialogueID,
+				Row.NodeID,
+				FString::Printf(TEXT("Conditions: %s"), *ParseResult.ErrorMessage)
+			));
+		}
+	}
+	else
+	{
+		Row.bConditionsValid = true;
+		Row.ConditionsValidationError.Empty();
+	}
+
+	// Compute and store validation input hash
+	Row.ValidationInputHash = ComputeValidationInputHash(Row, ListsVersionGuid);
+
+	return Issues;
+}
+
+FDialogueValidationResult FDialogueTableValidator::ValidateAllAndCache(TArray<FDialogueTableRow>& Rows, const FGuid& ListsVersionGuid)
+{
+	FDialogueValidationResult Result;
+
+	// Validate each row and write cache
+	for (FDialogueTableRow& Row : Rows)
+	{
+		TArray<FDialogueValidationIssue> RowIssues = ValidateRowAndCache(Row, Rows, ListsVersionGuid);
+		Result.Issues.Append(RowIssues);
+	}
+
+	// Group rows by DialogueID and validate tree structure
+	TMap<FName, TArray<FDialogueTableRow>> DialogueGroups;
+	for (const FDialogueTableRow& Row : Rows)
+	{
+		if (!Row.DialogueID.IsNone())
+		{
+			DialogueGroups.FindOrAdd(Row.DialogueID).Add(Row);
+		}
+	}
+
+	for (const auto& Pair : DialogueGroups)
+	{
+		TArray<FDialogueValidationIssue> TreeIssues = ValidateDialogueTree(Pair.Key, Pair.Value);
+		Result.Issues.Append(TreeIssues);
+	}
+
+	return Result;
+}

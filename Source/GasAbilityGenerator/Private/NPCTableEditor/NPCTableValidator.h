@@ -123,6 +123,35 @@ public:
 	 */
 	static TArray<FNPCValidationIssue> ValidateRow(const FNPCTableRow& Row, const TArray<FNPCTableRow>& AllRows);
 
+	//=========================================================================
+	// v4.5: Cache-writing validation methods
+	//=========================================================================
+
+	/**
+	 * Validate all rows and write results to cache
+	 * @param Rows All NPC rows to validate (modified in place)
+	 * @param ListsVersionGuid Current lists version for staleness hash
+	 * @return Validation result with all issues
+	 */
+	static FNPCValidationResult ValidateAllAndCache(TArray<FNPCTableRow>& Rows, const FGuid& ListsVersionGuid);
+
+	/**
+	 * Validate a single row and write results to its cache fields
+	 * @param Row Row to validate (modified in place)
+	 * @param AllRows All rows (for uniqueness checking)
+	 * @param ListsVersionGuid Current lists version for staleness hash
+	 * @return Validation issues for this row
+	 */
+	static TArray<FNPCValidationIssue> ValidateRowAndCache(FNPCTableRow& Row, const TArray<FNPCTableRow>& AllRows, const FGuid& ListsVersionGuid);
+
+	/**
+	 * Compute validation input hash for staleness detection
+	 * @param Row Row to compute hash for
+	 * @param ListsVersionGuid Current lists version
+	 * @return Combined hash of editable fields + lists version
+	 */
+	static uint32 ComputeValidationInputHash(const FNPCTableRow& Row, const FGuid& ListsVersionGuid);
+
 private:
 	/** Check if NPCId is unique across all rows */
 	static bool IsNPCIdUnique(const FString& NPCId, const FGuid& RowId, const TArray<FNPCTableRow>& AllRows);

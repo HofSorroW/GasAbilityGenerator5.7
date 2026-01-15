@@ -1,10 +1,12 @@
 // GasAbilityGenerator - Dialogue Table Validator
+// v4.5: Validates dialogue table rows with cache support
 // v4.0: Validates dialogue table rows for correctness
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "DialogueTableEditorTypes.h"
+#include "XLSXSupport/DialogueTokenRegistry.h"
 
 /**
  * Validation issue severity
@@ -130,6 +132,35 @@ public:
 	 * @return Validation issues for the tree structure
 	 */
 	static TArray<FDialogueValidationIssue> ValidateDialogueTree(FName DialogueID, const TArray<FDialogueTableRow>& DialogueRows);
+
+	//=========================================================================
+	// v4.5: Cache-writing validation methods
+	//=========================================================================
+
+	/**
+	 * Validate all rows and write results to cache
+	 * @param Rows All dialogue rows to validate (modified in place)
+	 * @param ListsVersionGuid Current lists version for staleness hash
+	 * @return Validation result with all issues
+	 */
+	static FDialogueValidationResult ValidateAllAndCache(TArray<FDialogueTableRow>& Rows, const FGuid& ListsVersionGuid);
+
+	/**
+	 * Validate a single row and write results to its cache fields
+	 * @param Row Row to validate (modified in place)
+	 * @param AllRows All rows (for reference checking)
+	 * @param ListsVersionGuid Current lists version for staleness hash
+	 * @return Validation issues for this row
+	 */
+	static TArray<FDialogueValidationIssue> ValidateRowAndCache(FDialogueTableRow& Row, const TArray<FDialogueTableRow>& AllRows, const FGuid& ListsVersionGuid);
+
+	/**
+	 * Compute validation input hash for staleness detection
+	 * @param Row Row to compute hash for
+	 * @param ListsVersionGuid Current lists version
+	 * @return Combined hash of editable fields + lists version + spec version
+	 */
+	static uint32 ComputeValidationInputHash(const FDialogueTableRow& Row, const FGuid& ListsVersionGuid);
 
 private:
 	/** Check for circular references in dialogue tree */
