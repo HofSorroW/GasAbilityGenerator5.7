@@ -350,6 +350,126 @@ Node->SeqDisplay = FString::Printf(TEXT("%d*"), Node->Sequence);
 
 ---
 
+## XLSX Import/Export Design (v4.3)
+
+**Status:** Design Complete - Ready for Implementation
+
+### Design Goals
+
+1. **Foolproof parsing** - Sentinel row + column ID mapping = immune to Excel messiness
+2. **Safe sync** - 3-way merge with BASE_HASH = no silent overwrites
+3. **Safe deletion** - Explicit #STATE column = no accidental data loss
+4. **Round-trip** - Export = Import format = predictable workflow
+
+### XLSX Workbook Structure
+
+```
+TableData.xlsx (ZIP container with STORE mode)
+├── [Content_Types].xml
+├── _rels/.rels
+├── xl/
+│   ├── workbook.xml
+│   ├── worksheets/
+│   │   ├── sheet1.xml       <- Main data
+│   │   └── sheet2.xml       <- _Lists (dropdowns)
+│   └── _rels/workbook.xml.rels
+└── docProps/app.xml
+```
+
+### Sheet Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Row 1: #NPC_SHEET_V1 | #ROW_GUID | NPC_NAME | NPC_ID | ...     │  ← Sentinel + Column IDs
+│  Row 2: (Display)     | Row ID    | Name     | ID     | ...     │  ← Human headers
+│  Row 3+: (data)       | guid-1    | Seth     | seth_1 | ...     │  ← Data rows
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Safety Features
+
+| Feature | Implementation | Purpose |
+|---------|---------------|---------|
+| **Sentinel Row** | `#NPC_SHEET_V1`, `#DIALOGUE_SHEET_V1` | Detect sheet type/version |
+| **Column ID Row** | Machine-readable IDs in Row 1 | Map columns regardless of order |
+| **Row GUID** | `FGuid` per row | Track identity across edits |
+| **#STATE** | New/Modified/Synced/Deleted | Explicit deletion, no accidental loss |
+| **#BASE_HASH** | Hash at export time | 3-way merge baseline |
+
+### 3-Way Merge Logic
+
+```
+if (XL_HASH == BASE_HASH && UE_HASH == BASE_HASH):
+    # No changes - skip
+elif (XL_HASH != BASE_HASH && UE_HASH == BASE_HASH):
+    # Excel changed only - apply Excel → UE
+elif (XL_HASH == BASE_HASH && UE_HASH != BASE_HASH):
+    # UE changed only - update Excel hashes
+elif (XL_HASH != BASE_HASH && UE_HASH != BASE_HASH):
+    # CONFLICT - require manual resolution
+```
+
+### ID Format Alignment
+
+| Component | Type | Notes |
+|-----------|------|-------|
+| **Node ID** | FName | Matches Narrative Pro UDialogueNode.ID |
+| **NPC ID** | FName | Matches UNPCDefinition.NPCID |
+| **Row GUID** | FGuid | Internal sync tracking only |
+
+### Dependencies
+
+```cpp
+// GasAbilityGenerator.Build.cs
+PrivateDependencyModuleNames.AddRange(new string[] {
+    "FileUtilities",  // FZipArchiveReader/Writer
+    "XmlParser"       // FXmlFile
+});
+```
+
+| API | Availability |
+|-----|--------------|
+| `FZipArchiveWriter` | `WITH_ENGINE` (Editor builds) |
+| `FZipArchiveReader` | `WITH_EDITOR` only |
+| `FXmlFile` | Runtime |
+
+### Implementation Phases
+
+| Phase | Scope | Estimate |
+|-------|-------|----------|
+| 1 | Add FGuid RowId to FDialogueTableRow | 5 min |
+| 2 | XLSXWriter (export) | 2-3 hours |
+| 3 | XLSXReader (import) | 2-3 hours |
+| 4 | XLSXSyncEngine (3-way merge) | 3-4 hours |
+| 5 | UI integration (conflict resolution) | 4-6 hours |
+
+### Files to Create
+
+```
+Source/GasAbilityGenerator/
+├── Public/XLSXSupport/
+│   ├── XLSXReader.h
+│   ├── XLSXWriter.h
+│   └── XLSXSyncEngine.h
+└── Private/XLSXSupport/
+    ├── XLSXReader.cpp
+    ├── XLSXWriter.cpp
+    └── XLSXSyncEngine.cpp
+```
+
+### Pre-Implementation Change
+
+Add RowId to Dialogue table (NPC already has it):
+```cpp
+// DialogueTableEditorTypes.h
+UPROPERTY()
+FGuid RowId;
+
+FDialogueTableRow() { RowId = FGuid::NewGuid(); }
+```
+
+---
+
 ## Original Documents (Consolidated)
 
 - v4.1_DialogueTableEditor_Handoff.md (deleted)
