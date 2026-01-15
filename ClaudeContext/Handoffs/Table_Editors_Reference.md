@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-15
-**Status:** v4.5.1 Validation Cache System Complete
+**Status:** v4.5.3 Full Alignment Complete
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
@@ -12,14 +12,14 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 
 | Feature | Dialogue Table Editor | NPC Table Editor |
 |---------|----------------------|------------------|
-| **Columns** | 11 | 17 |
+| **Columns** | 13 | 17 |
 | **Primary Data** | Dialogue nodes | NPC definitions |
 | **Tree Structure** | Yes (Parent/NextNodes) | No (flat list) |
 | **Sequence Tracking** | Yes (Seq column) | No |
-| **Cell Types** | Text, Checkbox | Text, Checkbox, AssetDropdown, MultiSelect, LevelRange, FloatSlider |
+| **Cell Types** | Text, Checkbox, Token | Text, Checkbox, AssetDropdown, MultiSelect, LevelRange, FloatSlider |
 | **Add Row** | Smart (auto-populate from parent) | Basic |
 | **Delete Row** | Re-parent children or cascade | Simple delete |
-| **Duplicate Row** | No | Yes |
+| **Duplicate Row** | Yes (v4.5.2) | Yes |
 | **CSV Import/Export** | Yes (RFC 4180) | Yes |
 | **XLSX Export/Import** | Yes (v4.3) | Planned |
 | **XLSX 3-Way Sync** | Yes (v4.3) | Planned |
@@ -28,13 +28,14 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 | **Token Preview Window** | Yes (v4.4) | No |
 | **POI Scanning** | No | Yes (from loaded world) |
 | **Confirmation Prompts** | Delete only | All edits |
-| **Status Bar** | Row counts | Row counts + validation summary |
+| **Status Bar** | Row counts + validation | Row counts + validation |
 | **Validation Caching** | Yes (v4.5.1) | Yes (v4.5.1) |
 | **Staleness Detection** | Yes (hash-based) | Yes (hash-based) |
+| **Validation Coloring** | Yes (Seq column bar, v4.5.3) | Yes (Status column) |
 | **Multi-Select Filter** | Yes | Yes |
 | **Text Filter** | Yes (live) | Yes (live) |
 | **Save/Load Table** | Yes | Yes |
-| **Implementation Size** | ~1200 lines | ~2600 lines |
+| **Implementation Size** | ~1300 lines | ~2700 lines |
 
 ---
 
@@ -1099,6 +1100,8 @@ void UpdateStatusBar()
 | `64acc9f` | v4.5: Add validation cache fields and hash infrastructure |
 | `9ac4220` | v4.5: Wire up validators with cache-writing methods |
 | `e80a177` | v4.5.1: Wire editors to use ValidateAllAndCache |
+| `ff87352` | v4.5.2: NPC/Dialogue alignment (Duplicate, GUID handling, status bar) |
+| `c5d6d98` | v4.5.3: Minor consistency (GetValidationState, AddRow, validation coloring) |
 
 ---
 
