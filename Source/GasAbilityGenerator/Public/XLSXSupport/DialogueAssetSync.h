@@ -1,8 +1,8 @@
 // GasAbilityGenerator - Dialogue Asset Sync
-// v4.4 Phase 3: Read events/conditions from UDialogueBlueprint for [RO] columns
+// v4.4 Phase 4: Bidirectional sync - read from and write to UDialogueBlueprint
 //
-// Extracts event and condition data from dialogue assets and serializes
-// them to token strings for display in Excel's read-only columns.
+// Phase 3: Extract events/conditions from dialogue assets for [RO] columns
+// Phase 4: Apply validated tokens from Excel to dialogue assets
 
 #pragma once
 
@@ -62,16 +62,54 @@ struct FDialogueAssetSyncResult
 };
 
 /**
- * Reads dialogue blueprints and extracts events/conditions for XLSX export
+ * Result from applying tokens to a dialogue blueprint (Phase 4)
+ */
+struct FDialogueAssetApplyResult
+{
+	/** Whether the apply operation succeeded */
+	bool bSuccess = false;
+
+	/** Error message if apply failed */
+	FString ErrorMessage;
+
+	/** Number of nodes updated */
+	int32 NodesUpdated = 0;
+
+	/** Number of events applied */
+	int32 EventsApplied = 0;
+
+	/** Number of conditions applied */
+	int32 ConditionsApplied = 0;
+
+	/** Number of nodes where events were cleared */
+	int32 EventsCleared = 0;
+
+	/** Number of nodes where conditions were cleared */
+	int32 ConditionsCleared = 0;
+
+	/** Nodes that were skipped due to validation errors */
+	int32 NodesSkippedValidation = 0;
+
+	/** Nodes not found in asset */
+	int32 NodesNotFound = 0;
+};
+
+/**
+ * Bidirectional sync between UDialogueBlueprint and XLSX token strings
  *
- * This class bridges UDialogueBlueprint assets and the XLSX export system,
- * enabling the [RO]EVENTS_CURRENT and [RO]CONDITIONS_CURRENT columns to
- * show what's currently configured in the UE asset.
+ * Phase 3 (Read): Extract events/conditions from dialogue assets
+ * - SyncFromAsset() reads UDialogueBlueprint and returns token strings
+ * - Used to populate [RO]EVENTS_CURRENT and [RO]CONDITIONS_CURRENT columns
+ *
+ * Phase 4 (Write): Apply validated tokens to dialogue assets
+ * - ApplyTokensToAsset() writes validated tokens to UDialogueBlueprint
+ * - Only applies tokens that pass validation (partial apply)
+ * - Supports CLEAR token to remove all events/conditions
  *
  * Usage:
- * 1. Call SyncFromAsset() with a UDialogueBlueprint
- * 2. Pass result to Writer to populate [RO] columns
- * 3. Users see UE state vs their Excel edits side-by-side
+ * 1. SyncFromAsset() - Read current UE state for [RO] columns
+ * 2. User edits EVENTS/CONDITIONS columns in Excel
+ * 3. ApplyTokensToAsset() - Write validated changes back to UE
  */
 class GASABILITYGENERATOR_API FDialogueAssetSync
 {
@@ -105,6 +143,26 @@ public:
 	 */
 	static int32 PopulateAssetData(TArray<FDialogueTableRow>& Rows, const FDialogueAssetSyncResult& SyncResult);
 
+	//=========================================================================
+	// Phase 4: Apply tokens to dialogue assets
+	//=========================================================================
+
+	/**
+	 * Apply validated tokens from rows to a dialogue blueprint
+	 * @param DialogueBlueprint - The dialogue asset to modify
+	 * @param Rows - Rows containing EventsTokenStr and ConditionsTokenStr to apply
+	 * @return Result with counts of applied/skipped tokens
+	 */
+	static FDialogueAssetApplyResult ApplyTokensToAsset(UDialogueBlueprint* DialogueBlueprint, const TArray<FDialogueTableRow>& Rows);
+
+	/**
+	 * Apply tokens to a dialogue blueprint loaded by path
+	 * @param AssetPath - Path to the dialogue blueprint asset
+	 * @param Rows - Rows containing tokens to apply
+	 * @return Result with counts of applied/skipped tokens
+	 */
+	static FDialogueAssetApplyResult ApplyTokensToAssetPath(const FString& AssetPath, const TArray<FDialogueTableRow>& Rows);
+
 private:
 	/**
 	 * Extract data from a single dialogue node
@@ -126,4 +184,26 @@ private:
 	 * @return Token string representation
 	 */
 	static FString SerializeConditionsToTokens(const TArray<class UNarrativeCondition*>& Conditions);
+
+	//=========================================================================
+	// Phase 4: Apply helpers
+	//=========================================================================
+
+	/**
+	 * Apply events token string to a dialogue node
+	 * @param Node - The dialogue node to modify
+	 * @param EventsTokenStr - Token string to apply
+	 * @param OutResult - Result to update with counts
+	 * @return true if events were applied successfully
+	 */
+	static bool ApplyEventsToNode(class UDialogueNode* Node, const FString& EventsTokenStr, FDialogueAssetApplyResult& OutResult);
+
+	/**
+	 * Apply conditions token string to a dialogue node
+	 * @param Node - The dialogue node to modify
+	 * @param ConditionsTokenStr - Token string to apply
+	 * @param OutResult - Result to update with counts
+	 * @return true if conditions were applied successfully
+	 */
+	static bool ApplyConditionsToNode(class UDialogueNode* Node, const FString& ConditionsTokenStr, FDialogueAssetApplyResult& OutResult);
 };
