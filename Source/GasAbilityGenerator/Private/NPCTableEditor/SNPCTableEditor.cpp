@@ -48,6 +48,7 @@
 #include "XLSXSupport/NPCXLSXWriter.h"
 #include "XLSXSupport/NPCXLSXReader.h"
 #include "XLSXSupport/NPCXLSXSyncEngine.h"
+#include "XLSXSupport/SNPCXLSXSyncDialog.h"
 #include "NPCTableEditor/NPCTableValidator.h"
 #include "NPCTableEditor/NPCTableConverter.h"
 #include "NPCTableEditor/NPCAssetSync.h"
@@ -2840,27 +2841,16 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 				FNPCSyncResult SyncResult = FNPCXLSXSyncEngine::CompareSources(
 					BaseRows, UERows, ImportResult.Rows);
 
-				// For now, auto-resolve all non-conflicts and apply immediately
-				// TODO: Show SNPCXLSXSyncDialog for conflict resolution UI
+				// Auto-resolve non-conflicts first
 				FNPCXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
 
-				if (SyncResult.HasConflicts())
+				// Show sync dialog for review and conflict resolution
+				if (SyncResult.HasChanges() || SyncResult.HasConflicts())
 				{
-					// Show conflict summary for now (dialog UI coming in Phase 5)
-					FMessageDialog::Open(EAppMsgType::Ok,
-						FText::Format(LOCTEXT("ImportXLSXConflicts",
-							"Import found {0} conflicts that require resolution.\n\n"
-							"Conflict resolution UI coming soon.\n"
-							"For now, non-conflicting changes will be applied."),
-							FText::AsNumber(SyncResult.ConflictCount)));
-
-					// Resolve all conflicts as KeepExcel for now (Excel wins)
-					for (FNPCSyncEntry& Entry : SyncResult.Entries)
+					if (!SNPCXLSXSyncDialog::ShowModal(SyncResult))
 					{
-						if (Entry.RequiresResolution())
-						{
-							Entry.Resolution = ENPCConflictResolution::KeepExcel;
-						}
+						// User cancelled - don't apply changes
+						return FReply::Handled();
 					}
 				}
 

@@ -568,6 +568,27 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.OnClicked(this, &SDialogueTableEditor::OnSyncXLSXClicked)
 				.ToolTipText(LOCTEXT("SyncXLSXTooltip", "Merge Excel changes with UE (3-way merge with conflict resolution)"))
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+		]
+
+		// Separator before Apply
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SSeparator)
+				.Orientation(Orient_Vertical)
+		]
+
+		// Apply to Assets (v4.4 - write tokens to UDialogueBlueprint)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("ApplyToAssets", "Apply to Assets"))
+				.OnClicked(this, &SDialogueTableEditor::OnApplyToAssetsClicked)
+				.ToolTipText(LOCTEXT("ApplyToAssetsTooltip", "Preview and apply token changes to UDialogueBlueprint assets"))
+				.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
 		];
 }
 
