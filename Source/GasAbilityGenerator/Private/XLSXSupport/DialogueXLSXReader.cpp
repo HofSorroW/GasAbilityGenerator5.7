@@ -2,6 +2,7 @@
 // v4.4: Import dialogue table from Excel format with token support
 
 #include "XLSXSupport/DialogueXLSXReader.h"
+#include "XLSXSupport/DialogueTokenRegistry.h"
 #include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
 #include "XmlFile.h"
@@ -378,6 +379,89 @@ FDialogueTableRow FDialogueXLSXReader::ParseRowFromValues(const TMap<FString, in
 	// These come from the editable columns (not [RO] columns)
 	Row.EventsTokenStr = GetValue(TEXT("EVENTS"));
 	Row.ConditionsTokenStr = GetValue(TEXT("CONDITIONS"));
+
+	// v4.4 Phase 2: Validate tokens
+	const FDialogueTokenRegistry& Registry = FDialogueTokenRegistry::Get();
+
+	// Validate events
+	if (!Row.EventsTokenStr.IsEmpty())
+	{
+		FTokenParseResult EventResult = Registry.ParseTokenString(Row.EventsTokenStr);
+		if (!EventResult.bSuccess)
+		{
+			Row.bEventsValid = false;
+			Row.EventsValidationError = EventResult.ErrorMessage;
+		}
+		else
+		{
+			// Further validation - check each token against its spec
+			for (const FParsedToken& Token : EventResult.Tokens)
+			{
+				if (Token.bIsClear) continue;
+
+				const FDialogueTokenSpec* Spec = Registry.FindByTokenName(Token.TokenName);
+				if (!Spec)
+				{
+					Row.bEventsValid = false;
+					Row.EventsValidationError = FString::Printf(TEXT("Unknown event token: '%s'"), *Token.TokenName);
+					break;
+				}
+				if (Spec->Category != ETokenCategory::Event)
+				{
+					Row.bEventsValid = false;
+					Row.EventsValidationError = FString::Printf(TEXT("Token '%s' is not an event"), *Token.TokenName);
+					break;
+				}
+				FString ValidationErr;
+				if (!Registry.ValidateToken(Token, *Spec, ValidationErr))
+				{
+					Row.bEventsValid = false;
+					Row.EventsValidationError = ValidationErr;
+					break;
+				}
+			}
+		}
+	}
+
+	// Validate conditions
+	if (!Row.ConditionsTokenStr.IsEmpty())
+	{
+		FTokenParseResult CondResult = Registry.ParseTokenString(Row.ConditionsTokenStr);
+		if (!CondResult.bSuccess)
+		{
+			Row.bConditionsValid = false;
+			Row.ConditionsValidationError = CondResult.ErrorMessage;
+		}
+		else
+		{
+			// Further validation - check each token against its spec
+			for (const FParsedToken& Token : CondResult.Tokens)
+			{
+				if (Token.bIsClear) continue;
+
+				const FDialogueTokenSpec* Spec = Registry.FindByTokenName(Token.TokenName);
+				if (!Spec)
+				{
+					Row.bConditionsValid = false;
+					Row.ConditionsValidationError = FString::Printf(TEXT("Unknown condition token: '%s'"), *Token.TokenName);
+					break;
+				}
+				if (Spec->Category != ETokenCategory::Condition)
+				{
+					Row.bConditionsValid = false;
+					Row.ConditionsValidationError = FString::Printf(TEXT("Token '%s' is not a condition"), *Token.TokenName);
+					break;
+				}
+				FString ValidationErr;
+				if (!Registry.ValidateToken(Token, *Spec, ValidationErr))
+				{
+					Row.bConditionsValid = false;
+					Row.ConditionsValidationError = ValidationErr;
+					break;
+				}
+			}
+		}
+	}
 
 	// Parse NextNodeIDs (comma-separated)
 	FString NextNodesStr = GetValue(TEXT("NEXT_NODE_IDS"));

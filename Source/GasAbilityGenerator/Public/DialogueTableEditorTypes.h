@@ -84,6 +84,29 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Logic")
 	FString ConditionsTokenStr;
 
+	//=========================================================================
+	// v4.4 Phase 2: Validation results (set during import)
+	//=========================================================================
+
+	/** Whether EventsTokenStr passed validation */
+	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	bool bEventsValid = true;
+
+	/** Events validation error message (empty if valid) */
+	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	FString EventsValidationError;
+
+	/** Whether ConditionsTokenStr passed validation */
+	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	bool bConditionsValid = true;
+
+	/** Conditions validation error message (empty if valid) */
+	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	FString ConditionsValidationError;
+
+	/** Check if all tokens are valid (for partial apply logic) */
+	bool AreTokensValid() const { return bEventsValid && bConditionsValid; }
+
 	FDialogueTableRow()
 		: RowId(FGuid::NewGuid())
 		, NodeType(EDialogueTableNodeType::NPC)

@@ -1,5 +1,9 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Engine Implementation
 // v4.4: 3-way merge for Excel ↔ UE synchronization with token support
+//
+// Phase 2: Partial Apply Logic
+// - If TEXT valid but EVENTS invalid, apply TEXT only, preserve UE events
+// - Invalid token NEVER wipes UE data - it flags an error instead
 
 #include "XLSXSupport/DialogueXLSXSyncEngine.h"
 
@@ -377,8 +381,36 @@ FDialogueMergeResult FDialogueXLSXSyncEngine::ApplySync(const FDialogueSyncResul
 			case EDialogueConflictResolution::KeepExcel:
 				if (Entry.ExcelRow.IsValid())
 				{
-					Result.MergedRows.Add(*Entry.ExcelRow);
-					Result.AppliedFromExcel++;
+					// v4.4 Phase 2: Partial Apply Logic
+					// If tokens are invalid, apply text fields only, preserve UE's tokens
+					if (!Entry.ExcelRow->AreTokensValid() && Entry.UERow.IsValid())
+					{
+						// Create merged row: Excel text + UE tokens
+						FDialogueTableRow MergedRow = *Entry.ExcelRow;
+
+						// Preserve UE's token fields if Excel's are invalid
+						if (!Entry.ExcelRow->bEventsValid)
+						{
+							MergedRow.EventsTokenStr = Entry.UERow->EventsTokenStr;
+							MergedRow.bEventsValid = true;  // UE's tokens are assumed valid
+							MergedRow.EventsValidationError.Empty();
+						}
+						if (!Entry.ExcelRow->bConditionsValid)
+						{
+							MergedRow.ConditionsTokenStr = Entry.UERow->ConditionsTokenStr;
+							MergedRow.bConditionsValid = true;
+							MergedRow.ConditionsValidationError.Empty();
+						}
+
+						Result.MergedRows.Add(MergedRow);
+						Result.AppliedFromExcel++;  // Still counts as Excel apply (partial)
+					}
+					else
+					{
+						// All tokens valid OR no UE row to preserve from - apply as-is
+						Result.MergedRows.Add(*Entry.ExcelRow);
+						Result.AppliedFromExcel++;
+					}
 				}
 				break;
 
