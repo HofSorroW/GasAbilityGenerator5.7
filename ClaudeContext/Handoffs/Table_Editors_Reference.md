@@ -1,9 +1,10 @@
 # Table Editors Reference
 
 **Consolidated:** 2026-01-15
-**Status:** Implemented in GasAbilityGenerator v4.2
+**Updated:** 2026-01-15
+**Status:** v4.3 XLSX Complete, v4.4 Validated Tokens Design Locked
 
-This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs.
+This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
 ---
 
@@ -20,8 +21,10 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 | **Delete Row** | Re-parent children or cascade | Simple delete |
 | **Duplicate Row** | No | Yes |
 | **CSV Import/Export** | Yes (RFC 4180) | Yes |
-| **Sync from Assets** | No | Yes (scan NPCDefinitions) |
-| **Apply to Assets** | No (generates new) | Yes (update existing) |
+| **XLSX Export/Import** | Yes (v4.3) | Planned |
+| **XLSX 3-Way Sync** | Yes (v4.3) | Planned |
+| **Sync from Assets** | Planned (v4.4) | Yes (scan NPCDefinitions) |
+| **Apply to Assets** | Planned (v4.4) | Yes (update existing) |
 | **POI Scanning** | No | Yes (from loaded world) |
 | **Confirmation Prompts** | Delete only | All edits |
 | **Status Bar** | Row counts | Row counts |
@@ -350,9 +353,9 @@ Node->SeqDisplay = FString::Printf(TEXT("%d*"), Node->Sequence);
 
 ---
 
-## XLSX Import/Export Design (v4.3)
+## XLSX Import/Export (v4.3) - COMPLETED
 
-**Status:** Design Complete - Ready for Implementation
+**Status:** Implemented and committed (v4.3, 2026-01-15)
 
 ### Design Goals
 
@@ -433,40 +436,296 @@ PrivateDependencyModuleNames.AddRange(new string[] {
 | `FZipArchiveReader` | `WITH_EDITOR` only |
 | `FXmlFile` | Runtime |
 
-### Implementation Phases
+### Implementation Phases (All Complete)
 
-| Phase | Scope | Estimate |
-|-------|-------|----------|
-| 1 | Add FGuid RowId to FDialogueTableRow | 5 min |
-| 2 | XLSXWriter (export) | 2-3 hours |
-| 3 | XLSXReader (import) | 2-3 hours |
-| 4 | XLSXSyncEngine (3-way merge) | 3-4 hours |
-| 5 | UI integration (conflict resolution) | 4-6 hours |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | Add FGuid RowId to FDialogueTableRow | ✅ Complete |
+| 2 | DialogueXLSXWriter (export) | ✅ Complete |
+| 3 | DialogueXLSXReader (import) | ✅ Complete |
+| 4 | DialogueXLSXSyncEngine (3-way merge) + SDialogueXLSXSyncDialog | ✅ Complete |
 
-### Files to Create
+### Implemented Files
 
 ```
 Source/GasAbilityGenerator/
 ├── Public/XLSXSupport/
-│   ├── XLSXReader.h
-│   ├── XLSXWriter.h
-│   └── XLSXSyncEngine.h
+│   ├── DialogueXLSXWriter.h
+│   ├── DialogueXLSXReader.h
+│   └── DialogueXLSXSyncEngine.h
 └── Private/XLSXSupport/
-    ├── XLSXReader.cpp
-    ├── XLSXWriter.cpp
-    └── XLSXSyncEngine.cpp
+    ├── DialogueXLSXWriter.cpp
+    ├── DialogueXLSXReader.cpp
+    ├── DialogueXLSXSyncEngine.cpp
+    └── SDialogueXLSXSyncDialog.cpp
 ```
 
-### Pre-Implementation Change
+### Toolbar Buttons Added
 
-Add RowId to Dialogue table (NPC already has it):
+| Button | Function |
+|--------|----------|
+| Export XLSX | Creates workbook with dialogues + _Meta sheet |
+| Import XLSX | Parses and replaces table data |
+| Sync XLSX | 3-way merge with conflict resolution dialog |
+
+---
+
+## Validated Token System (v4.4) - DESIGN LOCKED
+
+**Status:** Design locked, awaiting implementation approval
+
+### Problem Statement
+
+The v4.3 XLSX sync only handles text fields. Complex dialogue data (Events, Conditions, Goals) cannot be authored in Excel, limiting the "author outside UE" goal.
+
+### Solution: Option 2 - Validated Tokens
+
+Instead of making Events/Conditions read-only (too limiting) or fully relational sheets (too complex), use **validated token syntax** that enables real authoring with safety guarantees.
+
+### Core Safety Principles
+
+| Principle | Implementation |
+|-----------|----------------|
+| **Invalid token never wipes UE** | Parse failure → preserve UE value, flag error |
+| **Partial apply** | If TEXT valid but EVENTS invalid, apply TEXT only |
+| **Empty = unchanged** | Blank cell preserves UE value (not clear) |
+| **Explicit clear** | `CLEAR` token required to remove all events |
+| **Replace semantics** | Valid token list becomes complete node events |
+
+### Column Structure (v4.4)
+
+| Column | Type | Behavior |
+|--------|------|----------|
+| `EVENTS` | Editable tokens | Validated on import, applied if valid |
+| `[RO]EVENTS_CURRENT` | Read-only | UE's current events (for reference/copy) |
+| `CONDITIONS` | Editable tokens | Same as EVENTS |
+| `[RO]CONDITIONS_CURRENT` | Read-only | UE's current conditions |
+| TEXT, SPEAKER, etc. | Editable | Same as v4.3 |
+
+### Token Grammar
+
+**Strict function-style syntax:**
+```
+TOKEN_TYPE(ParamName=Value, ParamName2=Value2)
+```
+
+**Multiple tokens separated by semicolon:**
+```
+NE_BeginQuest(QuestId=Q_Intro); NE_SetFlag(Name=TalkedToSeth, Value=true)
+```
+
+**Special tokens:**
+```
+CLEAR                    # Explicitly clear all events/conditions
+UNSUPPORTED(ClassName)   # Read-only fallback for unknown types
+```
+
+### Parameter Types
+
+| Type | Example | Validation |
+|------|---------|------------|
+| `IdRef` | `QuestId=Q_Intro` | Must exist in _Lists sheet |
+| `Bool` | `Value=true` | true/false only |
+| `Int` | `Count=5` | Integer value |
+| `Float` | `P=0.25` | Decimal value |
+| `Enum` | `State=Active` | Must match enum values |
+| `String` | `Name=TalkedToSeth` | Any text |
+
+### v4.4 Starter Token Set (Option A - Minimal)
+
+**Events (4 tokens):**
+
+| Token | Parameters | Maps To |
+|-------|------------|---------|
+| `NE_BeginQuest` | `QuestId` (IdRef, required) | TBD: UNE_* class |
+| `NE_CompleteQuestBranch` | `QuestId` (IdRef), `BranchId` (IdRef) | TBD: UNE_* class |
+| `NE_GiveItem` | `ItemId` (IdRef), `Count` (Int, default=1) | TBD: UNE_* class |
+| `NE_SetFlag` | `Name` (String), `Value` (Bool) | TBD: UNE_* class |
+
+**Conditions (3 tokens):**
+
+| Token | Parameters | Maps To |
+|-------|------------|---------|
+| `NC_QuestState` | `QuestId` (IdRef), `State` (Enum: Active/Complete/Failed) | TBD: UNC_* class |
+| `NC_HasItem` | `ItemId` (IdRef), `MinCount` (Int, default=1) | TBD: UNC_* class |
+| `NC_Flag` | `Name` (String), `Value` (Bool) | TBD: UNC_* class |
+
+**TBD:** Actual Narrative Pro class names to be determined from screenshots/headers.
+
+### Token Registry Architecture
+
 ```cpp
-// DialogueTableEditorTypes.h
-UPROPERTY()
-FGuid RowId;
+// Parameter definition
+struct FDialogueTokenParam
+{
+    FName ParamName;           // "QuestId"
+    ETokenParamType Type;      // IdRef, Bool, Int, Float, Enum, String
+    bool bRequired;            // Must be present
+    FName UEPropertyName;      // Maps to UObject property
+    FString DefaultValue;      // Optional default
+};
 
-FDialogueTableRow() { RowId = FGuid::NewGuid(); }
+// Token specification
+struct FDialogueTokenSpec
+{
+    FString TokenName;         // "NE_BeginQuest"
+    ETokenCategory Category;   // Event or Condition
+    UClass* UEClass;           // UNarrativeEvent subclass
+    TArray<FDialogueTokenParam> Params;
+
+    // Forward: Token string → UObject instance
+    UObject* Deserialize(const FString& TokenStr, FString& OutError);
+
+    // Reverse: UObject → Token string (for [RO] columns)
+    FString Serialize(UObject* EventObj);
+};
+
+// Registry (singleton)
+class FDialogueTokenRegistry
+{
+    TArray<FDialogueTokenSpec> Specs;
+
+    FDialogueTokenSpec* FindByTokenName(const FString& Name);
+    FDialogueTokenSpec* FindByClass(UClass* Class);
+
+    // Export: UE events → token strings (with UNSUPPORTED fallback)
+    FString SerializeEvents(const TArray<UObject*>& Events);
+
+    // Import: token strings → UE events (with validation)
+    bool DeserializeTokens(const FString& TokenStr,
+                           TArray<UObject*>& OutEvents,
+                           FString& OutError);
+
+    // Validation: check all IdRefs exist
+    bool ValidateIdRefs(const FString& TokenStr,
+                        const TSet<FString>& ValidIds,
+                        FString& OutError);
+};
 ```
+
+### Validation Flow
+
+```
+┌─────────────────┐
+│ Parse Token     │ → Syntax error? → Preserve UE, flag row
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Find Spec       │ → Unknown token? → Preserve UE, flag row
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Validate Params │ → Missing required? Wrong type? → Preserve UE, flag row
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Validate IdRefs │ → ID not in _Lists? → Preserve UE, flag row
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Instantiate     │ → Create UObject, set properties
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Apply to Node   │ → Replace node's event/condition list
+└─────────────────┘
+```
+
+### Partial Apply Behavior
+
+| Scenario | TEXT | EVENTS | Result |
+|----------|------|--------|--------|
+| Both valid | "Hello" | `NE_BeginQuest(Q_Intro)` | Apply both |
+| TEXT valid, EVENTS invalid | "Hello" | `NE_BginQuest(Q_Intro)` (typo) | Apply TEXT, preserve UE events, flag row |
+| TEXT empty, EVENTS valid | "" | `NE_BeginQuest(Q_Intro)` | Clear TEXT, apply EVENTS |
+| Both empty | "" | "" | Preserve both (empty = unchanged) |
+
+### [RO] Column Generation
+
+**For supported events:**
+```
+NE_BeginQuest(QuestId=Q_Intro)
+NE_SetFlag(Name=TalkedToSeth, Value=true)
+```
+
+**For unsupported events (no spec match):**
+```
+UNSUPPORTED(UNE_PlayMontage)
+UNSUPPORTED(UNE_CustomEvent)
+```
+
+This allows writers to see what's there without promising editability.
+
+### _Lists Sheet Enhancement
+
+Add valid ID lists for validation:
+
+| Column | Content |
+|--------|---------|
+| `QUEST_IDS` | Q_Intro, Q_ForgeSupplies, ... |
+| `ITEM_IDS` | EI_Sword, EI_Potion, ... |
+| `GOAL_IDS` | Goal_Work, Goal_Sleep, ... |
+| `QUEST_STATES` | Active, Complete, Failed |
+
+Generated from asset scan at export time.
+
+### Hash Calculation (Updated)
+
+Hash includes ALL editable columns:
+- TEXT, SPEAKER_ID, OPTION_TEXT, NOTES, SKIPPABLE (existing)
+- EVENTS, CONDITIONS (new in v4.4)
+
+[RO] columns NOT included in hash.
+
+### Implementation Phases (v4.4)
+
+| Phase | Scope | Dependencies |
+|-------|-------|--------------|
+| 1 | FDialogueTokenRegistry core | None |
+| 2 | Token specs for starter set | Narrative Pro class mapping |
+| 3 | Serializer (UE → tokens) | Registry |
+| 4 | Deserializer (tokens → UE) | Registry |
+| 5 | Update DialogueXLSXWriter | Serializer |
+| 6 | Update DialogueXLSXReader | Deserializer |
+| 7 | Update DialogueXLSXSyncEngine | Partial apply logic |
+| 8 | Update _Lists sheet generation | Asset scan for IDs |
+
+### Files to Create/Modify (v4.4)
+
+**New:**
+```
+Source/GasAbilityGenerator/
+├── Public/XLSXSupport/
+│   └── DialogueTokenRegistry.h
+└── Private/XLSXSupport/
+    └── DialogueTokenRegistry.cpp
+```
+
+**Modify:**
+```
+DialogueXLSXWriter.cpp    - Add [RO] columns, use registry
+DialogueXLSXReader.cpp    - Parse tokens, validate via registry
+DialogueXLSXSyncEngine.cpp - Partial apply logic
+```
+
+### Alignment with v3.0 Regen/Diff System
+
+The token system follows the same safety patterns as the v3.0 Regen/Diff system:
+
+| v3.0 Pattern | v4.4 Token Equivalent |
+|--------------|----------------------|
+| Input hash (manifest) | BASE_HASH (at export) |
+| Output hash (asset) | UE_HASH (current state) |
+| CONFLICT detection | XL_HASH ≠ BASE_HASH AND UE_HASH ≠ BASE_HASH |
+| SKIP if unchanged | XL_HASH == BASE_HASH AND UE_HASH == BASE_HASH |
+| --force override | User selects "Use Excel" in conflict dialog |
+| Per-asset metadata | Per-row GUID + hashes |
+
+### Open Items
+
+1. **Narrative Pro class mapping** - Need actual UNE_*/UNC_* class names from headers or screenshots
+2. **Property name mapping** - Need actual FName property names for QuestId, ItemId, etc.
+3. **ID type format** - Confirm whether IDs are FName, FString, or soft object paths
 
 ---
 
