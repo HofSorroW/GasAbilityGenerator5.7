@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-15
-**Status:** v4.5.3 Full Alignment Complete
+**Status:** v4.5.4 CSV Removed, XLSX Only
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
@@ -20,9 +20,8 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 | **Add Row** | Smart (auto-populate from parent) | Basic |
 | **Delete Row** | Re-parent children or cascade | Simple delete |
 | **Duplicate Row** | Yes (v4.5.2) | Yes |
-| **CSV Import/Export** | Yes (RFC 4180) | Yes |
-| **XLSX Export/Import** | Yes (v4.3) | Planned |
-| **XLSX 3-Way Sync** | Yes (v4.3) | Planned |
+| **XLSX Export/Import** | Yes (v4.3) | Yes (v4.4) |
+| **XLSX 3-Way Sync** | Yes (v4.3) | Yes (v4.4) |
 | **Sync from Assets** | Yes (v4.4) | Yes (scan NPCDefinitions) |
 | **Apply to Assets** | Yes (v4.4) | Yes (update existing) |
 | **Token Preview Window** | Yes (v4.4) | No |
@@ -51,19 +50,20 @@ Both editors share common UI patterns and integrate with the generation pipeline
 
 ## Dialogue Table Editor
 
-### Features (v4.2.8)
+### Features (v4.5.4)
 - 11 columns: Seq, DialogueID, NodeID, NodeType, Speaker, Text, OptionText, Parent, NextNodes, Skip, Notes
 - FillWidth columns with proportional widths
 - Live text filtering (OnTextChanged)
 - Multi-select dropdown filters with checkbox UI
 - (Empty) filter option for empty cells
 - Clear All Filters button
-- CSV Import/Export (RFC 4180 compliant)
+- XLSX Import/Export with 3-way sync support
 - Smart Add Node with auto-populated fields
 - Delete with re-parenting or cascade delete branch
 - Skippable and Notes columns
 - Preview tooltips for long text
 - Status bar with live counts
+- Validation coloring in Seq column
 
 ### Files
 - `SDialogueTableEditor.h` - Widget definitions
@@ -73,30 +73,34 @@ Both editors share common UI patterns and integrate with the generation pipeline
 - `DialogueTableValidator.h/cpp` - Validation rules
 
 ### Column Mapping to Narrative Pro
-| CSV Field | Narrative Pro Property |
+| XLSX Field | Narrative Pro Property |
 |-----------|----------------------|
-| DialogueID | UDialogueBlueprint asset name |
-| NodeID | Node identifier in DialogueTemplate |
-| NodeType=npc | UDialogueNode_NPC |
-| NodeType=player | UDialogueNode_Player |
-| Speaker | FSpeakerInfo.NPCDefinition |
-| Text | FDialogueLine.Text |
-| OptionText | Player choice label |
-| Parent/NextNodes | Node linking (PlayerReplies/NPCReplies) |
+| DIALOGUE_ID | UDialogueBlueprint asset name |
+| NODE_ID | Node identifier in DialogueTemplate |
+| NODE_TYPE=npc | UDialogueNode_NPC |
+| NODE_TYPE=player | UDialogueNode_Player |
+| SPEAKER | FSpeakerInfo.NPCDefinition |
+| TEXT | FDialogueLine.Text |
+| OPTION_TEXT | Player choice label |
+| EVENTS | Node Events (token format) |
+| CONDITIONS | Node Conditions (token format) |
+| PARENT_NODE_ID | Parent node link |
+| NEXT_NODE_IDS | Node linking (PlayerReplies/NPCReplies) |
 
 ---
 
 ## NPC Table Editor
 
-### Features (v4.1)
+### Features (v4.5.4)
 - 17 columns covering identity, AI, combat, vendor, spawning, meta
 - Sync from existing NPCDefinition assets
 - POI scanning from loaded world
 - Cell edit dropdowns with asset filtering
 - Confirmation prompts for all edits
-- CSV Export/Import
+- XLSX Export/Import with 3-way sync support
 - Apply to Assets (write changes back to NPCDefinitions)
 - Save/Open persistent table data
+- Validation coloring in Status column
 
 ### Column Structure
 

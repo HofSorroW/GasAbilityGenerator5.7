@@ -352,16 +352,10 @@ private:
 	/** Sync from existing assets */
 	FReply OnSyncFromAssetsClicked();
 
-	/** Export to CSV */
-	FReply OnExportCSVClicked();
-
-	/** Import from CSV */
-	FReply OnImportCSVClicked();
-
-	/** Export to XLSX (Excel format with sync support) */
+	/** Export to Excel (.xlsx) */
 	FReply OnExportXLSXClicked();
 
-	/** Import from XLSX (triggers 3-way merge if changes detected) */
+	/** Import from Excel (.xlsx) */
 	FReply OnImportXLSXClicked();
 
 	/** Save the table data */

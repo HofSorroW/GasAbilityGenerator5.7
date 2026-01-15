@@ -695,7 +695,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
 		]
 
-		// Export XLSX (primary format with sync support)
+		// Export XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
@@ -703,30 +703,10 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 			SNew(SButton)
 				.Text(LOCTEXT("ExportXLSX", "Export XLSX"))
 				.OnClicked(this, &SDialogueTableEditor::OnExportXLSXClicked)
-				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format with sync support"))
+				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx)"))
 		]
 
-		// Export CSV (legacy)
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(2.0f)
-		[
-			SNew(SButton)
-				.Text(LOCTEXT("ExportCSV", "Export CSV"))
-				.OnClicked(this, &SDialogueTableEditor::OnExportCSVClicked)
-		]
-
-		// Import CSV
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(2.0f)
-		[
-			SNew(SButton)
-				.Text(LOCTEXT("ImportCSV", "Import CSV"))
-				.OnClicked(this, &SDialogueTableEditor::OnImportCSVClicked)
-		]
-
-		// Import XLSX (primary format with sync support)
+		// Import XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
@@ -734,7 +714,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 			SNew(SButton)
 				.Text(LOCTEXT("ImportXLSX", "Import XLSX"))
 				.OnClicked(this, &SDialogueTableEditor::OnImportXLSXClicked)
-				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (replaces all rows)"))
+				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx)"))
 		]
 
 		// Sync XLSX (3-way merge with conflict resolution)
@@ -2216,32 +2196,6 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 	return FReply::Handled();
 }
 
-FReply SDialogueTableEditor::OnExportCSVClicked()
-{
-	SyncToTableData();
-
-	TArray<FString> OutFiles;
-	FDesktopPlatformModule::Get()->SaveFileDialog(
-		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
-		TEXT("Export Dialogue Table"),
-		FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_EXPORT),
-		TEXT("DialogueTable.csv"),
-		TEXT("CSV Files (*.csv)|*.csv"),
-		EFileDialogFlags::None,
-		OutFiles
-	);
-
-	if (OutFiles.Num() == 0)
-	{
-		return FReply::Handled();
-	}
-
-	ExportToCSV(OutFiles[0]);
-	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_EXPORT, FPaths::GetPath(OutFiles[0]));
-
-	return FReply::Handled();
-}
-
 FReply SDialogueTableEditor::OnExportXLSXClicked()
 {
 	SyncToTableData();
@@ -2671,243 +2625,6 @@ FReply SDialogueTableEditor::OnApplyToAssetsClicked()
 	return FReply::Handled();
 }
 
-FReply SDialogueTableEditor::OnImportCSVClicked()
-{
-	TArray<FString> OutFiles;
-	FDesktopPlatformModule::Get()->OpenFileDialog(
-		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
-		TEXT("Import Dialogue Table"),
-		FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_IMPORT),
-		TEXT(""),
-		TEXT("CSV Files (*.csv)|*.csv"),
-		EFileDialogFlags::None,
-		OutFiles
-	);
-
-	if (OutFiles.Num() == 0)
-	{
-		return FReply::Handled();
-	}
-
-	if (ImportFromCSV(OutFiles[0]))
-	{
-		FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
-		if (TableData)
-		{
-			TableData->SourceFilePath = OutFiles[0];
-		}
-	}
-
-	return FReply::Handled();
-}
-
-//=============================================================================
-// CSV Import/Export with proper RFC 4180 parsing
-//=============================================================================
-
-TArray<FString> SDialogueTableEditor::ParseCSVLine(const FString& Line)
-{
-	TArray<FString> Fields;
-	FString CurrentField;
-	bool bInQuotes = false;
-
-	for (int32 i = 0; i < Line.Len(); i++)
-	{
-		TCHAR c = Line[i];
-
-		if (bInQuotes)
-		{
-			if (c == TEXT('"'))
-			{
-				// Check for escaped quote ""
-				if (i + 1 < Line.Len() && Line[i + 1] == TEXT('"'))
-				{
-					CurrentField += TEXT('"');
-					i++; // Skip next quote
-				}
-				else
-				{
-					bInQuotes = false;
-				}
-			}
-			else
-			{
-				CurrentField += c;
-			}
-		}
-		else
-		{
-			if (c == TEXT('"'))
-			{
-				bInQuotes = true;
-			}
-			else if (c == TEXT(','))
-			{
-				Fields.Add(CurrentField);
-				CurrentField.Empty();
-			}
-			else
-			{
-				CurrentField += c;
-			}
-		}
-	}
-
-	// Add last field
-	Fields.Add(CurrentField);
-
-	return Fields;
-}
-
-bool SDialogueTableEditor::ExportToCSV(const FString& FilePath)
-{
-	FString CSV;
-
-	// Header (11 columns)
-	CSV += TEXT("DialogueID,NodeID,NodeType,Speaker,Text,OptionText,ParentNodeID,NextNodeIDs,Skippable,Notes\n");
-
-	// Rows
-	for (const TSharedPtr<FDialogueTableRowEx>& RowEx : AllRows)
-	{
-		if (!RowEx->Data.IsValid()) continue;
-		const FDialogueTableRow& Row = *RowEx->Data;
-
-		FString NextNodes;
-		for (int32 i = 0; i < Row.NextNodeIDs.Num(); i++)
-		{
-			if (i > 0) NextNodes += TEXT(";"); // Use semicolon for NextNodeIDs separator
-			NextNodes += Row.NextNodeIDs[i].ToString();
-		}
-
-		CSV += FString::Printf(TEXT("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n"),
-			*EscapeCSVField(Row.DialogueID.ToString()),
-			*EscapeCSVField(Row.NodeID.ToString()),
-			Row.NodeType == EDialogueTableNodeType::NPC ? TEXT("npc") : TEXT("player"),
-			*EscapeCSVField(Row.Speaker.ToString()),
-			*EscapeCSVField(Row.Text),
-			*EscapeCSVField(Row.OptionText),
-			*EscapeCSVField(Row.ParentNodeID.ToString()),
-			*EscapeCSVField(NextNodes),
-			Row.bSkippable ? TEXT("yes") : TEXT("no"),
-			*EscapeCSVField(Row.Notes)
-		);
-	}
-
-	if (FFileHelper::SaveStringToFile(CSV, *FilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
-	{
-		FMessageDialog::Open(EAppMsgType::Ok,
-			FText::Format(LOCTEXT("ExportSuccess", "Exported {0} rows to:\n{1}"),
-				FText::AsNumber(AllRows.Num()),
-				FText::FromString(FilePath)));
-		return true;
-	}
-
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("ExportFailed", "Failed to export CSV file."));
-	return false;
-}
-
-bool SDialogueTableEditor::ImportFromCSV(const FString& FilePath)
-{
-	FString FileContent;
-	if (!FFileHelper::LoadFileToString(FileContent, *FilePath))
-	{
-		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("ImportFailed", "Failed to read CSV file."));
-		return false;
-	}
-
-	TArray<FString> Lines;
-	FileContent.ParseIntoArrayLines(Lines);
-
-	if (Lines.Num() < 2)
-	{
-		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("ImportEmpty", "CSV file is empty or has no data rows."));
-		return false;
-	}
-
-	AllRows.Empty();
-
-	// Skip header, parse data rows
-	for (int32 i = 1; i < Lines.Num(); i++)
-	{
-		FString Line = Lines[i].TrimStartAndEnd();
-		if (Line.IsEmpty()) continue;
-
-		TArray<FString> Fields = ParseCSVLine(Line);
-
-		if (Fields.Num() >= 8)
-		{
-			TSharedPtr<FDialogueTableRowEx> RowEx = MakeShared<FDialogueTableRowEx>();
-			RowEx->Data = MakeShared<FDialogueTableRow>();
-			FDialogueTableRow& Row = *RowEx->Data;
-
-			Row.DialogueID = FName(*Fields[0].TrimStartAndEnd());
-			Row.NodeID = FName(*Fields[1].TrimStartAndEnd());
-			Row.NodeType = Fields[2].ToLower().Contains(TEXT("player"))
-				? EDialogueTableNodeType::Player
-				: EDialogueTableNodeType::NPC;
-			Row.Speaker = FName(*Fields[3].TrimStartAndEnd());
-			Row.Text = Fields[4].TrimStartAndEnd();
-			Row.OptionText = Fields[5].TrimStartAndEnd();
-			Row.ParentNodeID = FName(*Fields[6].TrimStartAndEnd());
-
-			// Parse NextNodeIDs - support both comma and semicolon separators
-			FString NextNodes = Fields[7].TrimStartAndEnd();
-			TArray<FString> NodeParts;
-			// First try semicolon (new format), then comma (old format)
-			if (NextNodes.Contains(TEXT(";")))
-			{
-				NextNodes.ParseIntoArray(NodeParts, TEXT(";"));
-			}
-			else
-			{
-				NextNodes.ParseIntoArray(NodeParts, TEXT(","));
-			}
-			for (FString& Part : NodeParts)
-			{
-				Part.TrimStartAndEndInline();
-				if (!Part.IsEmpty())
-				{
-					Row.NextNodeIDs.Add(FName(*Part));
-				}
-			}
-
-			// Skippable column (optional - default true)
-			if (Fields.Num() >= 9)
-			{
-				FString SkipVal = Fields[8].TrimStartAndEnd().ToLower();
-				Row.bSkippable = !SkipVal.Equals(TEXT("no")) && !SkipVal.Equals(TEXT("false")) && !SkipVal.Equals(TEXT("0"));
-			}
-
-			// Notes column (optional)
-			if (Fields.Num() >= 10)
-			{
-				Row.Notes = Fields[9].TrimStartAndEnd();
-			}
-
-			AllRows.Add(RowEx);
-		}
-	}
-
-	SyncToTableData();
-	CalculateSequences();
-	UpdateColumnFilterOptions();
-	ApplyFlowOrder();
-
-	FMessageDialog::Open(EAppMsgType::Ok,
-		FText::Format(LOCTEXT("ImportSuccess", "Imported {0} dialogue nodes from CSV."),
-			FText::AsNumber(AllRows.Num())));
-
-	return true;
-}
-
-FString SDialogueTableEditor::EscapeCSVField(const FString& Field)
-{
-	if (Field.Contains(TEXT(",")) || Field.Contains(TEXT("\"")) || Field.Contains(TEXT("\n")) || Field.Contains(TEXT(";")))
-	{
-		return TEXT("\"") + Field.Replace(TEXT("\""), TEXT("\"\"")) + TEXT("\"");
-	}
-	return Field;
-}
 
 //=============================================================================
 // SDialogueTableEditorWindow

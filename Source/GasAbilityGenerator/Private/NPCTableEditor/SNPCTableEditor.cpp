@@ -1228,46 +1228,26 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.OnClicked(this, &SNPCTableEditor::OnSyncFromAssetsClicked)
 		]
 
-		// Export CSV
+		// Export XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
 		[
 			SNew(SButton)
-				.Text(LOCTEXT("ExportCSV", "Export CSV"))
-				.OnClicked(this, &SNPCTableEditor::OnExportCSVClicked)
-		]
-
-		// Import CSV
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(2.0f)
-		[
-			SNew(SButton)
-				.Text(LOCTEXT("ImportCSV", "Import CSV"))
-				.OnClicked(this, &SNPCTableEditor::OnImportCSVClicked)
-		]
-
-		// Export XLSX (Excel with sync support)
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(2.0f)
-		[
-			SNew(SButton)
-				.Text(LOCTEXT("ExportXLSX", "Export Excel"))
+				.Text(LOCTEXT("ExportXLSX", "Export XLSX"))
 				.OnClicked(this, &SNPCTableEditor::OnExportXLSXClicked)
-				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx) with sync metadata for round-trip editing"))
+				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx)"))
 		]
 
-		// Import XLSX (triggers 3-way merge)
+		// Import XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
 		[
 			SNew(SButton)
-				.Text(LOCTEXT("ImportXLSX", "Import Excel"))
+				.Text(LOCTEXT("ImportXLSX", "Import XLSX"))
 				.OnClicked(this, &SNPCTableEditor::OnImportXLSXClicked)
-				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx) with 3-way merge for conflict detection"))
+				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx)"))
 		]
 
 		// Save Table button
@@ -2593,164 +2573,6 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 	FMessageDialog::Open(EAppMsgType::Ok,
 		FText::Format(LOCTEXT("SyncComplete", "Synced {0} NPCDefinition assets from project.\n\nYou can now edit them in the table and regenerate."),
 			FText::AsNumber(SyncedCount)));
-
-	return FReply::Handled();
-}
-
-FReply SNPCTableEditor::OnExportCSVClicked()
-{
-	// Build CSV content
-	FString CSV;
-
-	// Helper to escape CSV fields
-	auto EscapeCSV = [](const FString& Value) -> FString
-	{
-		if (Value.Contains(TEXT(",")) || Value.Contains(TEXT("\"")))
-		{
-			return FString::Printf(TEXT("\"%s\""), *Value.Replace(TEXT("\""), TEXT("\"\"")));
-		}
-		return Value;
-	};
-
-	// Header row - 18 columns matching v4.1 structure
-	CSV += TEXT("NPCName,NPCId,DisplayName,Blueprint,AbilityConfig,ActivityConfig,Schedule,BehaviorTree,MinLevel,MaxLevel,Factions,AttackPriority,IsVendor,ShopName,DefaultItems,SpawnerPOI,Appearance,Notes\n");
-
-	// Data rows
-	for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
-	{
-		CSV += FString::Printf(TEXT("%s,%s,%s,%s,%s,%s,%s,%s,%d,%d,%s,%.2f,%s,%s,%s,%s,%s,%s\n"),
-			*EscapeCSV(Row->NPCName),
-			*EscapeCSV(Row->NPCId),
-			*EscapeCSV(Row->DisplayName),
-			*EscapeCSV(Row->Blueprint.IsNull() ? TEXT("") : FPaths::GetBaseFilename(Row->Blueprint.GetAssetPath().ToString())),
-			*EscapeCSV(Row->AbilityConfig.IsNull() ? TEXT("") : Row->AbilityConfig.GetAssetName()),
-			*EscapeCSV(Row->ActivityConfig.IsNull() ? TEXT("") : Row->ActivityConfig.GetAssetName()),
-			*EscapeCSV(Row->Schedule.IsNull() ? TEXT("") : Row->Schedule.GetAssetName()),
-			*EscapeCSV(Row->BehaviorTree.IsNull() ? TEXT("") : Row->BehaviorTree.GetAssetName()),
-			Row->MinLevel,
-			Row->MaxLevel,
-			*EscapeCSV(Row->GetFactionsDisplay()),
-			Row->AttackPriority,
-			Row->bIsVendor ? TEXT("TRUE") : TEXT("FALSE"),
-			*EscapeCSV(Row->ShopName),
-			*EscapeCSV(Row->DefaultItems),
-			*EscapeCSV(Row->SpawnerPOI),
-			*EscapeCSV(Row->Appearance.IsNull() ? TEXT("") : Row->Appearance.GetAssetName()),
-			*EscapeCSV(Row->Notes)
-		);
-	}
-
-	// Open file dialog
-	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
-	if (DesktopPlatform)
-	{
-		TArray<FString> OutFiles;
-		if (DesktopPlatform->SaveFileDialog(
-			nullptr,
-			TEXT("Export NPC Table to CSV"),
-			FPaths::ProjectDir(),
-			TEXT("NPCTable.csv"),
-			TEXT("CSV Files (*.csv)|*.csv"),
-			0,
-			OutFiles))
-		{
-			if (OutFiles.Num() > 0)
-			{
-				FFileHelper::SaveStringToFile(CSV, *OutFiles[0]);
-				FMessageDialog::Open(EAppMsgType::Ok,
-					FText::Format(LOCTEXT("ExportSuccess", "Exported {0} NPCs to:\n{1}"),
-						FText::AsNumber(AllRows.Num()),
-						FText::FromString(OutFiles[0])));
-			}
-		}
-	}
-
-	return FReply::Handled();
-}
-
-FReply SNPCTableEditor::OnImportCSVClicked()
-{
-	// Open file dialog
-	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
-	if (DesktopPlatform && TableData)
-	{
-		TArray<FString> OutFiles;
-		if (DesktopPlatform->OpenFileDialog(
-			nullptr,
-			TEXT("Import NPC Table from CSV"),
-			FPaths::ProjectDir(),
-			TEXT(""),
-			TEXT("CSV Files (*.csv)|*.csv"),
-			0,
-			OutFiles))
-		{
-			if (OutFiles.Num() > 0)
-			{
-				FString FileContent;
-				if (FFileHelper::LoadFileToString(FileContent, *OutFiles[0]))
-				{
-					// Parse CSV (basic implementation)
-					TArray<FString> Lines;
-					FileContent.ParseIntoArrayLines(Lines);
-
-					if (Lines.Num() > 1)
-					{
-						int32 ImportedCount = 0;
-						// Skip header row
-						for (int32 i = 1; i < Lines.Num(); i++)
-						{
-							TArray<FString> Cells;
-							Lines[i].ParseIntoArray(Cells, TEXT(","));
-
-							// CSV format (18 columns):
-							// 0:NPCName, 1:NPCId, 2:DisplayName, 3:Blueprint, 4:AbilityConfig,
-							// 5:ActivityConfig, 6:Schedule, 7:BehaviorTree, 8:MinLevel, 9:MaxLevel,
-							// 10:Factions, 11:AttackPriority, 12:IsVendor, 13:ShopName, 14:DefaultItems,
-							// 15:SpawnerPOI, 16:Appearance, 17:Notes
-							if (Cells.Num() >= 10) // Minimum columns to be useful
-							{
-								FNPCTableRow& NewRow = TableData->AddRow();
-
-								// Core Identity
-								NewRow.NPCName = Cells[0].TrimQuotes();
-								NewRow.NPCId = Cells.Num() > 1 ? Cells[1].TrimQuotes() : NewRow.NPCName.ToLower().Replace(TEXT(" "), TEXT("_"));
-								NewRow.DisplayName = Cells.Num() > 2 ? Cells[2].TrimQuotes() : NewRow.NPCName;
-								// Blueprint, AbilityConfig, ActivityConfig, Schedule, BehaviorTree - skip paths for now (indices 3-7)
-
-								// Combat
-								NewRow.MinLevel = Cells.Num() > 8 ? FCString::Atoi(*Cells[8].TrimQuotes()) : 1;
-								NewRow.MaxLevel = Cells.Num() > 9 ? FCString::Atoi(*Cells[9].TrimQuotes()) : 10;
-								if (Cells.Num() > 10) NewRow.SetFactionsFromDisplay(Cells[10].TrimQuotes());
-								NewRow.AttackPriority = Cells.Num() > 11 ? FCString::Atof(*Cells[11].TrimQuotes()) : 0.5f;
-
-								// Vendor
-								NewRow.bIsVendor = Cells.Num() > 12 && Cells[12].TrimQuotes().ToUpper() == TEXT("TRUE");
-								NewRow.ShopName = Cells.Num() > 13 ? Cells[13].TrimQuotes() : TEXT("");
-
-								// Items & Spawning
-								NewRow.DefaultItems = Cells.Num() > 14 ? Cells[14].TrimQuotes() : TEXT("");
-								NewRow.SpawnerPOI = Cells.Num() > 15 ? Cells[15].TrimQuotes() : TEXT("");
-
-								// Meta
-								// Appearance - skip path for now (index 16)
-								NewRow.Notes = Cells.Num() > 17 ? Cells[17].TrimQuotes() : TEXT("");
-
-								ImportedCount++;
-							}
-						}
-
-						SyncFromTableData();
-						MarkDirty();
-
-						FMessageDialog::Open(EAppMsgType::Ok,
-							FText::Format(LOCTEXT("ImportSuccess", "Imported {0} NPCs from:\n{1}"),
-								FText::AsNumber(ImportedCount),
-								FText::FromString(OutFiles[0])));
-					}
-				}
-			}
-		}
-	}
 
 	return FReply::Handled();
 }

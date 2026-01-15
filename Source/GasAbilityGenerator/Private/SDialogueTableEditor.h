@@ -158,10 +158,8 @@ private:
 	FReply OnDeleteBranchClicked();  // Cascade delete
 	FReply OnClearFiltersClicked();  // Clear all filters
 	FReply OnGenerateClicked();
-	FReply OnExportCSVClicked();
-	FReply OnExportXLSXClicked();  // v4.3: XLSX export with sync support
-	FReply OnImportCSVClicked();
-	FReply OnImportXLSXClicked();  // v4.3: XLSX import with sync support
+	FReply OnExportXLSXClicked();  // Excel export
+	FReply OnImportXLSXClicked();  // Excel import
 	FReply OnSyncXLSXClicked();    // v4.3: XLSX sync with 3-way merge
 	FReply OnSyncFromAssetsClicked();  // v4.4: Pull tokens from UDialogueBlueprint
 	FReply OnApplyToAssetsClicked();  // v4.4: Apply tokens to UDialogueBlueprint
@@ -189,11 +187,6 @@ private:
 	void MarkDirty();
 	void OnRowModified();
 
-	// CSV Import/Export
-	bool ImportFromCSV(const FString& FilePath);
-	bool ExportToCSV(const FString& FilePath);
-	TArray<FString> ParseCSVLine(const FString& Line);  // Proper CSV parsing
-	FString EscapeCSVField(const FString& Field);
 };
 
 /**
