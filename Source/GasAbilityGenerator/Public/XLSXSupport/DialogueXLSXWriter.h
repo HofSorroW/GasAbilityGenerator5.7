@@ -1,16 +1,19 @@
 // GasAbilityGenerator - Dialogue XLSX Writer
-// v4.4: Export dialogue table to Excel format with token support
+// v4.4 Phase 3: Export dialogue table to Excel format with asset sync support
 //
 // Creates XLSX files with:
 // - Sentinel row for format detection
 // - Column ID mapping (immune to Excel reorder)
 // - _Lists sheet for dropdown validation
 // - _Meta sheet for sync metadata
+// - [RO] columns showing current UE asset state
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "DialogueTableEditorTypes.h"
+
+struct FDialogueAssetSyncResult;
 
 /**
  * Column definition for XLSX export
@@ -50,6 +53,17 @@ public:
 	 */
 	static bool ExportToXLSX(const TArray<FDialogueTableRow>& Rows, const FString& FilePath, FString& OutError);
 
+	/**
+	 * Export dialogue table to XLSX file with asset sync data for [RO] columns
+	 * @param Rows - Dialogue rows to export
+	 * @param FilePath - Output file path (.xlsx)
+	 * @param AssetSync - Asset sync result containing current UE events/conditions
+	 * @param OutError - Error message if export fails
+	 * @return true if export succeeded
+	 */
+	static bool ExportToXLSX(const TArray<FDialogueTableRow>& Rows, const FString& FilePath,
+		const FDialogueAssetSyncResult& AssetSync, FString& OutError);
+
 	/** Get the column definitions for dialogue export */
 	static TArray<FDialogueXLSXColumn> GetColumnDefinitions();
 
@@ -69,6 +83,7 @@ private:
 
 	// Sheet generators
 	static FString GenerateDialoguesSheet(const TArray<FDialogueTableRow>& Rows);
+	static FString GenerateDialoguesSheet(const TArray<FDialogueTableRow>& Rows, const FDialogueAssetSyncResult* AssetSync);
 	static FString GenerateListsSheet(const TArray<FDialogueTableRow>& Rows);
 	static FString GenerateMetaSheet(const TArray<FDialogueTableRow>& Rows);
 

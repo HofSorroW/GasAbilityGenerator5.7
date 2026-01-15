@@ -1,8 +1,9 @@
 // GasAbilityGenerator - Dialogue XLSX Writer Implementation
-// v4.4: Export dialogue table to Excel format with token columns
+// v4.4 Phase 3: Export dialogue table to Excel format with asset sync support
 
 #include "XLSXSupport/DialogueXLSXWriter.h"
 #include "XLSXSupport/DialogueTokenRegistry.h"
+#include "XLSXSupport/DialogueAssetSync.h"
 #include "HAL/PlatformFileManager.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
@@ -91,6 +92,51 @@ bool FDialogueXLSXWriter::ExportToXLSX(const TArray<FDialogueTableRow>& Rows, co
 #endif
 }
 
+bool FDialogueXLSXWriter::ExportToXLSX(const TArray<FDialogueTableRow>& Rows, const FString& FilePath,
+	const FDialogueAssetSyncResult& AssetSync, FString& OutError)
+{
+#if WITH_ENGINE
+	// Create the output file
+	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenWrite(*FilePath);
+	if (!FileHandle)
+	{
+		OutError = FString::Printf(TEXT("Failed to create file: %s"), *FilePath);
+		return false;
+	}
+
+	// Create ZIP writer with no compression (STORE mode)
+	FZipArchiveWriter ZipWriter(FileHandle, EZipArchiveOptions::None);
+	FDateTime Now = FDateTime::Now();
+
+	// Add all required XLSX files
+	auto AddXmlFile = [&ZipWriter, &Now](const FString& Path, const FString& Content)
+	{
+		TArray<uint8> Data;
+		FTCHARToUTF8 Converter(*Content);
+		Data.Append((const uint8*)Converter.Get(), Converter.Length());
+		ZipWriter.AddFile(Path, Data, Now);
+	};
+
+	// Core XLSX structure
+	AddXmlFile(TEXT("[Content_Types].xml"), GenerateContentTypesXml());
+	AddXmlFile(TEXT("_rels/.rels"), GenerateRelsXml());
+	AddXmlFile(TEXT("xl/workbook.xml"), GenerateWorkbookXml());
+	AddXmlFile(TEXT("xl/_rels/workbook.xml.rels"), GenerateWorkbookRelsXml());
+	AddXmlFile(TEXT("xl/styles.xml"), GenerateStylesXml());
+
+	// Worksheets - use overload with asset sync for dialogues sheet
+	AddXmlFile(TEXT("xl/worksheets/sheet1.xml"), GenerateDialoguesSheet(Rows, &AssetSync));
+	AddXmlFile(TEXT("xl/worksheets/sheet2.xml"), GenerateListsSheet(Rows));
+	AddXmlFile(TEXT("xl/worksheets/sheet3.xml"), GenerateMetaSheet(Rows));
+
+	// ZipWriter destructor will finalize and close the file
+	return true;
+#else
+	OutError = TEXT("XLSX export requires WITH_ENGINE");
+	return false;
+#endif
+}
+
 FString FDialogueXLSXWriter::GenerateContentTypesXml()
 {
 	return TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -164,6 +210,12 @@ FString FDialogueXLSXWriter::GenerateStylesXml()
 
 FString FDialogueXLSXWriter::GenerateDialoguesSheet(const TArray<FDialogueTableRow>& Rows)
 {
+	// Call overload with no asset sync data
+	return GenerateDialoguesSheet(Rows, nullptr);
+}
+
+FString FDialogueXLSXWriter::GenerateDialoguesSheet(const TArray<FDialogueTableRow>& Rows, const FDialogueAssetSyncResult* AssetSync)
+{
 	TArray<FDialogueXLSXColumn> Columns = GetColumnDefinitions();
 	FString SheetData;
 
@@ -200,13 +252,25 @@ FString FDialogueXLSXWriter::GenerateDialoguesSheet(const TArray<FDialogueTableR
 			NextNodesStr += Row.NextNodeIDs[i].ToString();
 		}
 
-		// v4.4: Token strings from row (authored in Excel or populated during "Sync from Assets")
-		// EVENTS/CONDITIONS = Editable tokens (what user authored)
-		// [RO]EVENTS_CURRENT/[RO]CONDITIONS_CURRENT = UE's current state (populated during asset sync)
+		// v4.4 Phase 3: Token strings from row and asset sync
+		// EVENTS/CONDITIONS = Editable tokens (what user authored in Excel)
+		// [RO]EVENTS_CURRENT/[RO]CONDITIONS_CURRENT = UE's current state from asset sync
 		FString EventsStr = Row.EventsTokenStr;           // Editable tokens
-		FString EventsCurrentStr;                         // [RO] UE's current state (populated during sync)
+		FString EventsCurrentStr;                         // [RO] UE's current state
 		FString ConditionsStr = Row.ConditionsTokenStr;   // Editable tokens
-		FString ConditionsCurrentStr;                     // [RO] UE's current state (populated during sync)
+		FString ConditionsCurrentStr;                     // [RO] UE's current state
+
+		// Lookup [RO] columns from asset sync if available
+		if (AssetSync && AssetSync->bSuccess)
+		{
+			FString Key = FDialogueAssetSyncResult::MakeKey(Row.DialogueID, Row.NodeID);
+			const FDialogueNodeAssetData* NodeData = AssetSync->NodeData.Find(Key);
+			if (NodeData && NodeData->bFoundInAsset)
+			{
+				EventsCurrentStr = NodeData->EventsTokenStr;
+				ConditionsCurrentStr = NodeData->ConditionsTokenStr;
+			}
+		}
 
 		// Compute hash for this row (includes editable fields only)
 		int64 RowHash = ComputeRowHash(Row);
