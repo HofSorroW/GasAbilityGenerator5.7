@@ -127,6 +127,9 @@ struct GASABILITYGENERATOR_API FTokenDeserializeResult
 class GASABILITYGENERATOR_API FDialogueTokenRegistry
 {
 public:
+	/** v4.5: Spec version - bump when token specs change (affects validation staleness) */
+	static constexpr uint32 SpecVersion = 1;
+
 	static FDialogueTokenRegistry& Get();
 
 	// Registration

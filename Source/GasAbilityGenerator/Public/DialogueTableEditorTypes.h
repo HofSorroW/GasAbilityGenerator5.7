@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Types
+// v4.5: Added EValidationState enum and validation cache fields
 // v4.4: Added EventsTokenStr/ConditionsTokenStr for token-based authoring
 // v4.3: Added FGuid RowId for XLSX sync identity tracking
 // v4.0: Minimal dialogue book system for batch dialogue creation
@@ -8,6 +9,18 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "DialogueTableEditorTypes.generated.h"
+
+/**
+ * Validation state for table rows (shared by Dialogue and NPC editors)
+ * Used for UI tinting and status bar display
+ */
+UENUM(BlueprintType)
+enum class EValidationState : uint8
+{
+	Unknown UMETA(DisplayName = "Unknown"),   // Yellow - not validated yet / invalidated
+	Valid UMETA(DisplayName = "Valid"),       // Green - passed validation
+	Invalid UMETA(DisplayName = "Invalid")    // Red - has errors
+};
 
 /**
  * Dialogue node type - NPC speaks or Player chooses
@@ -85,27 +98,68 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	FString ConditionsTokenStr;
 
 	//=========================================================================
-	// v4.4 Phase 2: Validation results (set during import)
+	// v4.5: Validation cache (Transient - UI only, not serialized)
 	//=========================================================================
 
 	/** Whether EventsTokenStr passed validation */
-	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
 	bool bEventsValid = true;
 
 	/** Events validation error message (empty if valid) */
-	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
 	FString EventsValidationError;
 
 	/** Whether ConditionsTokenStr passed validation */
-	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
 	bool bConditionsValid = true;
 
 	/** Conditions validation error message (empty if valid) */
-	UPROPERTY(VisibleAnywhere, Category = "Validation")
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
 	FString ConditionsValidationError;
+
+	/** Hash of inputs used for validation (staleness detection) */
+	UPROPERTY(Transient)
+	uint32 ValidationInputHash = 0;
 
 	/** Check if all tokens are valid (for partial apply logic) */
 	bool AreTokensValid() const { return bEventsValid && bConditionsValid; }
+
+	/** Get combined validation state for UI tinting */
+	EValidationState GetValidationState() const
+	{
+		if (ValidationInputHash == 0) return EValidationState::Unknown;
+		return AreTokensValid() ? EValidationState::Valid : EValidationState::Invalid;
+	}
+
+	/** Invalidate cached validation (call on row edit) */
+	void InvalidateValidation()
+	{
+		bEventsValid = true;
+		EventsValidationError.Empty();
+		bConditionsValid = true;
+		ConditionsValidationError.Empty();
+		ValidationInputHash = 0;
+	}
+
+	/** Compute hash of editable fields (for validation staleness detection) */
+	uint32 ComputeEditableFieldsHash() const
+	{
+		uint32 Hash = 0;
+		Hash = HashCombine(Hash, GetTypeHash(DialogueID));
+		Hash = HashCombine(Hash, GetTypeHash(NodeID));
+		Hash = HashCombine(Hash, GetTypeHash((uint8)NodeType));
+		Hash = HashCombine(Hash, GetTypeHash(Speaker));
+		Hash = HashCombine(Hash, GetTypeHash(Text));
+		Hash = HashCombine(Hash, GetTypeHash(OptionText));
+		Hash = HashCombine(Hash, GetTypeHash(EventsTokenStr));
+		Hash = HashCombine(Hash, GetTypeHash(ConditionsTokenStr));
+		Hash = HashCombine(Hash, GetTypeHash(ParentNodeID));
+		for (const FName& NextID : NextNodeIDs)
+		{
+			Hash = HashCombine(Hash, GetTypeHash(NextID));
+		}
+		return Hash;
+	}
 
 	FDialogueTableRow()
 		: RowId(FGuid::NewGuid())
@@ -149,6 +203,20 @@ public:
 	/** Path to the source file (XLSX or CSV, for re-import) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue Table")
 	FString SourceFilePath;
+
+	//=========================================================================
+	// v4.5: Validation versioning (persisted - staleness survives restart)
+	//=========================================================================
+
+	/** GUID updated when _Lists is regenerated (asset scan). Used for validation staleness detection. */
+	UPROPERTY(EditAnywhere, Category = "Validation")
+	FGuid ListsVersionGuid;
+
+	/** Bump ListsVersionGuid to invalidate all cached validation */
+	void BumpListsVersion()
+	{
+		ListsVersionGuid = FGuid::NewGuid();
+	}
 
 	/** Get all unique DialogueIDs in this table */
 	UFUNCTION(BlueprintCallable, Category = "Dialogue Table")

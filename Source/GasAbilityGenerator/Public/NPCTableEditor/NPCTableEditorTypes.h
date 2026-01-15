@@ -1,5 +1,5 @@
 // NPCTableEditorTypes.h
-// NPC Table Editor - Data types (v4.1 - 18 column structure)
+// NPC Table Editor - Data types (v4.5 - validation cache)
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #pragma once
@@ -7,10 +7,11 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "UObject/SoftObjectPath.h"
+#include "DialogueTableEditorTypes.h"  // For EValidationState (shared enum)
 #include "NPCTableEditorTypes.generated.h"
 
 /**
- * Row status enum for NPC table
+ * Row status enum for NPC table (sync state)
  */
 UENUM(BlueprintType)
 enum class ENPCTableRowStatus : uint8
@@ -142,6 +143,59 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	/** Generated NPCDefinition asset path (after generation) */
 	UPROPERTY(VisibleAnywhere, Category = "Internal")
 	FSoftObjectPath GeneratedNPCDef;
+
+	//=========================================================================
+	// v4.5: Validation cache (Transient - UI only, not serialized)
+	//=========================================================================
+
+	/** Current validation state (Unknown/Valid/Invalid) */
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
+	EValidationState ValidationState = EValidationState::Unknown;
+
+	/** Summary of validation issues (empty if valid) */
+	UPROPERTY(Transient, VisibleAnywhere, Category = "Validation")
+	FString ValidationSummary;
+
+	/** Count of validation issues */
+	UPROPERTY(Transient)
+	int32 ValidationIssueCount = 0;
+
+	/** Hash of inputs used for validation (staleness detection) */
+	UPROPERTY(Transient)
+	uint32 ValidationInputHash = 0;
+
+	/** Invalidate cached validation (call on row edit) */
+	void InvalidateValidation()
+	{
+		ValidationState = EValidationState::Unknown;
+		ValidationSummary.Empty();
+		ValidationIssueCount = 0;
+		ValidationInputHash = 0;
+	}
+
+	/** Compute hash of editable fields (for validation staleness detection) */
+	uint32 ComputeEditableFieldsHash() const
+	{
+		uint32 Hash = 0;
+		Hash = HashCombine(Hash, GetTypeHash(NPCName));
+		Hash = HashCombine(Hash, GetTypeHash(NPCId));
+		Hash = HashCombine(Hash, GetTypeHash(DisplayName));
+		Hash = HashCombine(Hash, GetTypeHash(Blueprint.ToString()));
+		Hash = HashCombine(Hash, GetTypeHash(AbilityConfig.ToString()));
+		Hash = HashCombine(Hash, GetTypeHash(ActivityConfig.ToString()));
+		Hash = HashCombine(Hash, GetTypeHash(Schedule.ToString()));
+		Hash = HashCombine(Hash, GetTypeHash(BehaviorTree.ToString()));
+		Hash = HashCombine(Hash, GetTypeHash(MinLevel));
+		Hash = HashCombine(Hash, GetTypeHash(MaxLevel));
+		Hash = HashCombine(Hash, GetTypeHash(Factions));
+		Hash = HashCombine(Hash, GetTypeHash(AttackPriority));
+		Hash = HashCombine(Hash, GetTypeHash(bIsVendor));
+		Hash = HashCombine(Hash, GetTypeHash(ShopName));
+		Hash = HashCombine(Hash, GetTypeHash(DefaultItems));
+		Hash = HashCombine(Hash, GetTypeHash(SpawnerPOI));
+		Hash = HashCombine(Hash, GetTypeHash(Appearance.ToString()));
+		return Hash;
+	}
 
 	//=========================================================================
 	// Methods
@@ -281,6 +335,20 @@ public:
 	/** Last sync timestamp */
 	UPROPERTY(VisibleAnywhere, Category = "Metadata")
 	FDateTime LastSyncTime;
+
+	//=========================================================================
+	// v4.5: Validation versioning (persisted - staleness survives restart)
+	//=========================================================================
+
+	/** GUID updated when asset lists are regenerated. Used for validation staleness detection. */
+	UPROPERTY(EditAnywhere, Category = "Validation")
+	FGuid ListsVersionGuid;
+
+	/** Bump ListsVersionGuid to invalidate all cached validation */
+	void BumpListsVersion()
+	{
+		ListsVersionGuid = FGuid::NewGuid();
+	}
 
 	//=========================================================================
 	// Row Management
