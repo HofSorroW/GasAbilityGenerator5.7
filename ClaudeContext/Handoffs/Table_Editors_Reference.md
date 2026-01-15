@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-15
-**Status:** v4.3 XLSX Complete, v4.4 Validated Tokens Design Locked
+**Status:** v4.4 Token Apply System Complete
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
@@ -23,8 +23,9 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 | **CSV Import/Export** | Yes (RFC 4180) | Yes |
 | **XLSX Export/Import** | Yes (v4.3) | Planned |
 | **XLSX 3-Way Sync** | Yes (v4.3) | Planned |
-| **Sync from Assets** | Planned (v4.4) | Yes (scan NPCDefinitions) |
-| **Apply to Assets** | Planned (v4.4) | Yes (update existing) |
+| **Sync from Assets** | Yes (v4.4) | Yes (scan NPCDefinitions) |
+| **Apply to Assets** | Yes (v4.4) | Yes (update existing) |
+| **Token Preview Window** | Yes (v4.4) | No |
 | **POI Scanning** | No | Yes (from loaded world) |
 | **Confirmation Prompts** | Delete only | All edits |
 | **Status Bar** | Row counts | Row counts |
@@ -462,25 +463,26 @@ Source/GasAbilityGenerator/
 
 ### Toolbar Buttons Added
 
-| Button | Function |
-|--------|----------|
-| Export XLSX | Creates workbook with dialogues + _Meta sheet |
-| Import XLSX | Parses and replaces table data |
-| Sync XLSX | 3-way merge with conflict resolution dialog |
+| Button | Version | Function |
+|--------|---------|----------|
+| Export XLSX | v4.3 | Creates workbook with dialogues + _Meta sheet |
+| Import XLSX | v4.3 | Parses and replaces table data |
+| Sync XLSX | v4.3 | 3-way merge with conflict resolution dialog |
+| Apply to Assets | v4.4 | Opens preview window, applies approved tokens to UDialogueBlueprint |
 
 ---
 
-## Validated Token System (v4.4) - DESIGN LOCKED
+## Validated Token System (v4.4) - IMPLEMENTED
 
-**Status:** Design locked, awaiting implementation approval
+**Status:** Fully implemented (2026-01-15)
 
 ### Problem Statement
 
 The v4.3 XLSX sync only handles text fields. Complex dialogue data (Events, Conditions, Goals) cannot be authored in Excel, limiting the "author outside UE" goal.
 
-### Solution: Option 2 - Validated Tokens
+### Solution: Validated Tokens with Preview Window
 
-Instead of making Events/Conditions read-only (too limiting) or fully relational sheets (too complex), use **validated token syntax** that enables real authoring with safety guarantees.
+Use **validated token syntax** that enables real authoring with safety guarantees, combined with a **full-screen preview window** for reviewing changes before applying to UDialogueBlueprint assets.
 
 ### Core Safety Principles
 
@@ -677,36 +679,146 @@ Hash includes ALL editable columns:
 
 [RO] columns NOT included in hash.
 
-### Implementation Phases (v4.4)
+### Implementation Phases (v4.4) - ALL COMPLETE
 
-| Phase | Scope | Dependencies |
-|-------|-------|--------------|
-| 1 | FDialogueTokenRegistry core | None |
-| 2 | Token specs for starter set | Narrative Pro class mapping |
-| 3 | Serializer (UE → tokens) | Registry |
-| 4 | Deserializer (tokens → UE) | Registry |
-| 5 | Update DialogueXLSXWriter | Serializer |
-| 6 | Update DialogueXLSXReader | Deserializer |
-| 7 | Update DialogueXLSXSyncEngine | Partial apply logic |
-| 8 | Update _Lists sheet generation | Asset scan for IDs |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | FDialogueTokenRegistry core | ✅ Complete |
+| 2 | Token specs for starter set | ✅ Complete |
+| 3 | Serializer (UE → tokens) | ✅ Complete |
+| 4 | Deserializer (tokens → UE) with Apply to Asset | ✅ Complete |
+| 5 | Update DialogueXLSXWriter | ✅ Complete |
+| 6 | Update DialogueXLSXReader | ✅ Complete |
+| 7 | Token Apply Preview Window | ✅ Complete |
+| 8 | Apply to Assets button integration | ✅ Complete |
 
-### Files to Create/Modify (v4.4)
+### Implemented Files (v4.4)
 
-**New:**
+**New Files:**
 ```
 Source/GasAbilityGenerator/
 ├── Public/XLSXSupport/
-│   └── DialogueTokenRegistry.h
+│   ├── DialogueTokenRegistry.h      - Token specs and validation
+│   ├── DialogueAssetSync.h          - Asset read/write operations
+│   └── SDialogueTokenApplyPreview.h - Preview window widget
 └── Private/XLSXSupport/
-    └── DialogueTokenRegistry.cpp
+    ├── DialogueTokenRegistry.cpp    - Token parsing and serialization
+    ├── DialogueAssetSync.cpp        - Apply tokens to UDialogueBlueprint
+    └── SDialogueTokenApplyPreview.cpp - Full-screen preview UI (~700 lines)
 ```
 
-**Modify:**
+**Modified Files:**
 ```
-DialogueXLSXWriter.cpp    - Add [RO] columns, use registry
-DialogueXLSXReader.cpp    - Parse tokens, validate via registry
-DialogueXLSXSyncEngine.cpp - Partial apply logic
+DialogueXLSXWriter.cpp     - Exports events/conditions as tokens
+DialogueXLSXReader.cpp     - Parses token columns from XLSX
+DialogueXLSXSyncEngine.cpp - ApplyTokensToAssets() integration
+SDialogueTableEditor.cpp   - "Apply to Assets" toolbar button
+SDialogueTableEditor.h     - OnApplyToAssetsClicked() handler
 ```
+
+### Token Apply Preview Window
+
+The preview window provides full visibility into token changes before applying to UDialogueBlueprint assets.
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Token Apply Preview                                  │
+├───────────────────────┬─────────────────────────────────────────────────────┤
+│ Context Panel         │  Change Cards (Scrollable)                          │
+│                       │                                                      │
+│ Quest: Q_Intro        │  ┌─────────────────────────────────────────────────┐│
+│ Dialogue: DBP_Seth    │  │ Node: greeting_01  Speaker: Seth                ││
+│ Speakers:             │  │ "Hello, traveler!"                              ││
+│  • Seth               │  ├──────────────────────┬──────────────────────────┤│
+│  • Player             │  │ CURRENT              │ NEW                      ││
+│                       │  │ (empty)              │ NE_BeginQuest(Q_Intro)   ││
+│ ─────────────────     │  │ [✓] Approve Events   │                          ││
+│ Summary:              │  ├──────────────────────┴──────────────────────────┤│
+│  Total Changes: 5     │  │ Notes: ________________________________         ││
+│  Events: 3            │  └─────────────────────────────────────────────────┘│
+│  Conditions: 2        │                                                      │
+│                       │  ┌─────────────────────────────────────────────────┐│
+│  Approved: 5          │  │ Node: choice_01  Speaker: Player                ││
+│  Denied: 0            │  │ "I'll help you."                                ││
+│                       │  ├──────────────────────┬──────────────────────────┤│
+│                       │  │ CURRENT              │ NEW                      ││
+│                       │  │ NC_HasItem(Sword)    │ NC_QuestState(Q_Intro,   ││
+│                       │  │                      │   State=Active)          ││
+│                       │  │ [✓] Approve Conds    │                          ││
+│                       │  └─────────────────────────────────────────────────┘│
+├───────────────────────┴─────────────────────────────────────────────────────┤
+│                    [ Cancel ]                    [ Apply Approved ]          │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+- Left panel shows Quest/Dialogue/Speaker context (always visible)
+- Live counters update as user approves/denies changes
+- Side-by-side Current vs New comparison for each change
+- Per-change approve/deny checkboxes with notes field
+- Only approved changes are applied when clicking "Apply Approved"
+- Validation errors shown inline (red highlight + error message)
+
+**Data Structures:**
+
+```cpp
+// Single token change entry
+struct FTokenChangeEntry
+{
+    TSharedPtr<FDialogueTableRow> Row;
+    FName NodeID;
+    FString Speaker;
+    FString DialogueText;
+
+    // Current state (from UE asset)
+    FString CurrentEvents;
+    FString CurrentConditions;
+
+    // New state (from Excel import)
+    FString NewEvents;
+    FString NewConditions;
+
+    // Change tracking
+    bool bEventsChanged;
+    bool bConditionsChanged;
+
+    // User approval
+    bool bEventsApproved = true;
+    bool bConditionsApproved = true;
+    FString ApprovalNotes;
+
+    // Validation
+    bool bEventsValid = true;
+    bool bConditionsValid = true;
+    FString EventsValidationError;
+    FString ConditionsValidationError;
+};
+
+// Context for left panel
+struct FTokenApplyContext
+{
+    FString QuestName;
+    FName DialogueID;
+    FString DialogueName;
+    TArray<FString> Speakers;
+
+    int32 TotalChanges;
+    int32 EventChanges;
+    int32 ConditionChanges;
+    int32 ApprovedCount;
+    int32 DeniedCount;
+};
+```
+
+**Workflow:**
+1. User clicks "Apply to Assets" button in Dialogue Table Editor
+2. System collects rows with EventsTokenStr or ConditionsTokenStr
+3. Preview window opens showing all changes with context
+4. User reviews each change, approves/denies, adds notes
+5. User clicks "Apply Approved" (or Cancel)
+6. Only approved changes are written to UDialogueBlueprint assets
+7. Summary dialog shows results
 
 ### Alignment with v3.0 Regen/Diff System
 
@@ -721,11 +833,17 @@ The token system follows the same safety patterns as the v3.0 Regen/Diff system:
 | --force override | User selects "Use Excel" in conflict dialog |
 | Per-asset metadata | Per-row GUID + hashes |
 
-### Open Items
+### Resolved Items
 
-1. **Narrative Pro class mapping** - Need actual UNE_*/UNC_* class names from headers or screenshots
-2. **Property name mapping** - Need actual FName property names for QuestId, ItemId, etc.
-3. **ID type format** - Confirm whether IDs are FName, FString, or soft object paths
+1. ✅ **Narrative Pro class mapping** - UNarrativeEvent and UNarrativeCondition base classes identified
+2. ✅ **Property name mapping** - Uses reflection to set properties on event/condition objects
+3. ✅ **ID type format** - Uses FString for token parameters, converted to appropriate types during deserialization
+
+### Known Limitations
+
+1. **UNSUPPORTED tokens** - Custom/unknown event/condition types shown as `UNSUPPORTED(ClassName)` - cannot be edited in Excel
+2. **Manual validation** - Users should validate in-editor after applying tokens to confirm events fire correctly
+3. **No undo** - Applied changes cannot be undone; recommend saving assets before bulk apply
 
 ---
 
