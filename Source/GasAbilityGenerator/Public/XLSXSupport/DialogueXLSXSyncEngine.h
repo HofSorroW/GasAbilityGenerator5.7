@@ -1,5 +1,6 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Engine
 // v4.4: 3-way merge for Excel ↔ UE synchronization with token support
+// v4.4 Phase 4: Asset apply integration - write validated tokens to UDialogueBlueprint
 //
 // Sync flow:
 // 1. Export creates base snapshot with per-row hashes
@@ -107,6 +108,45 @@ struct FDialogueMergeResult
 };
 
 /**
+ * Summary of applying tokens to dialogue assets (Phase 4)
+ */
+struct FDialogueAssetApplySummary
+{
+	bool bSuccess = false;
+	FString ErrorMessage;
+
+	/** Number of dialogue assets processed */
+	int32 AssetsProcessed = 0;
+
+	/** Number of assets modified */
+	int32 AssetsModified = 0;
+
+	/** Total nodes updated across all assets */
+	int32 TotalNodesUpdated = 0;
+
+	/** Total events applied */
+	int32 TotalEventsApplied = 0;
+
+	/** Total conditions applied */
+	int32 TotalConditionsApplied = 0;
+
+	/** Total events cleared (via CLEAR token) */
+	int32 TotalEventsCleared = 0;
+
+	/** Total conditions cleared (via CLEAR token) */
+	int32 TotalConditionsCleared = 0;
+
+	/** Nodes skipped due to validation errors */
+	int32 TotalNodesSkipped = 0;
+
+	/** Nodes not found in assets */
+	int32 TotalNodesNotFound = 0;
+
+	/** Per-asset results for detailed reporting */
+	TMap<FName, FString> AssetResults;  // DialogueID -> result summary
+};
+
+/**
  * 3-way merge engine for dialogue table sync
  */
 class GASABILITYGENERATOR_API FDialogueXLSXSyncEngine
@@ -132,6 +172,18 @@ public:
 	 * @return Merged rows ready to replace current data
 	 */
 	static FDialogueMergeResult ApplySync(const FDialogueSyncResult& SyncResult);
+
+	/**
+	 * Apply validated tokens from rows to dialogue assets (Phase 4)
+	 * Groups rows by DialogueID and applies to each UDialogueBlueprint
+	 * @param Rows - Rows containing tokens to apply (typically from MergedRows)
+	 * @param DialogueAssetPath - Base path to search for dialogue assets (e.g., "/Game/Dialogues")
+	 * @return Summary of apply operation across all assets
+	 */
+	static FDialogueAssetApplySummary ApplyTokensToAssets(
+		const TArray<FDialogueTableRow>& Rows,
+		const FString& DialogueAssetPath = TEXT("/Game/")
+	);
 
 	/**
 	 * Auto-resolve non-conflicting entries

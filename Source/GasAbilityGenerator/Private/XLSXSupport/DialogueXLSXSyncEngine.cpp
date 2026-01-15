@@ -1,11 +1,22 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Engine Implementation
 // v4.4: 3-way merge for Excel ↔ UE synchronization with token support
+// v4.4 Phase 4: Asset apply integration
 //
 // Phase 2: Partial Apply Logic
 // - If TEXT valid but EVENTS invalid, apply TEXT only, preserve UE events
 // - Invalid token NEVER wipes UE data - it flags an error instead
+//
+// Phase 4: Asset Apply Integration
+// - ApplyTokensToAssets() writes validated tokens to UDialogueBlueprint assets
+// - Groups rows by DialogueID and applies to each asset
 
 #include "XLSXSupport/DialogueXLSXSyncEngine.h"
+#include "XLSXSupport/DialogueAssetSync.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+
+#if WITH_EDITOR
+#include "DialogueBlueprint.h"
+#endif
 
 //=============================================================================
 // FDialogueSyncEntry
@@ -453,4 +464,129 @@ FDialogueMergeResult FDialogueXLSXSyncEngine::ApplySync(const FDialogueSyncResul
 	}
 
 	return Result;
+}
+
+//=============================================================================
+// Phase 4: Apply Tokens to Assets
+//=============================================================================
+
+FDialogueAssetApplySummary FDialogueXLSXSyncEngine::ApplyTokensToAssets(
+	const TArray<FDialogueTableRow>& Rows,
+	const FString& DialogueAssetPath)
+{
+	FDialogueAssetApplySummary Summary;
+
+#if WITH_EDITOR
+	// Group rows by DialogueID
+	TMap<FName, TArray<FDialogueTableRow>> RowsByDialogue;
+	for (const FDialogueTableRow& Row : Rows)
+	{
+		// Only include rows that have tokens to apply
+		if (!Row.EventsTokenStr.IsEmpty() || !Row.ConditionsTokenStr.IsEmpty())
+		{
+			RowsByDialogue.FindOrAdd(Row.DialogueID).Add(Row);
+		}
+	}
+
+	if (RowsByDialogue.Num() == 0)
+	{
+		Summary.bSuccess = true;
+		Summary.ErrorMessage = TEXT("No tokens to apply");
+		return Summary;
+	}
+
+	// Get asset registry for finding dialogue assets
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	// Process each dialogue
+	for (const auto& Pair : RowsByDialogue)
+	{
+		const FName& DialogueID = Pair.Key;
+		const TArray<FDialogueTableRow>& DialogueRows = Pair.Value;
+
+		Summary.AssetsProcessed++;
+
+		// Find the dialogue asset
+		// Search for DialogueBlueprint with matching name
+		FARFilter Filter;
+		Filter.ClassPaths.Add(UDialogueBlueprint::StaticClass()->GetClassPathName());
+		Filter.PackagePaths.Add(FName(*DialogueAssetPath));
+		Filter.bRecursivePaths = true;
+
+		TArray<FAssetData> AssetDataList;
+		AssetRegistry.GetAssets(Filter, AssetDataList);
+
+		// Find matching asset by name
+		UDialogueBlueprint* DialogueBlueprint = nullptr;
+		for (const FAssetData& AssetData : AssetDataList)
+		{
+			if (AssetData.AssetName == DialogueID)
+			{
+				DialogueBlueprint = Cast<UDialogueBlueprint>(AssetData.GetAsset());
+				break;
+			}
+		}
+
+		if (!DialogueBlueprint)
+		{
+			// Try loading directly by common path patterns
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("%s%s.%s"), *DialogueAssetPath, *DialogueID.ToString(), *DialogueID.ToString()),
+				FString::Printf(TEXT("%sDialogues/%s.%s"), *DialogueAssetPath, *DialogueID.ToString(), *DialogueID.ToString()),
+				FString::Printf(TEXT("/Game/Dialogues/%s.%s"), *DialogueID.ToString(), *DialogueID.ToString()),
+				FString::Printf(TEXT("/Game/%s.%s"), *DialogueID.ToString(), *DialogueID.ToString())
+			};
+
+			for (const FString& Path : SearchPaths)
+			{
+				DialogueBlueprint = LoadObject<UDialogueBlueprint>(nullptr, *Path);
+				if (DialogueBlueprint)
+				{
+					break;
+				}
+			}
+		}
+
+		if (!DialogueBlueprint)
+		{
+			FString ErrorMsg = FString::Printf(TEXT("Could not find dialogue asset: %s"), *DialogueID.ToString());
+			Summary.AssetResults.Add(DialogueID, ErrorMsg);
+			UE_LOG(LogTemp, Warning, TEXT("DialogueXLSXSyncEngine: %s"), *ErrorMsg);
+			continue;
+		}
+
+		// Apply tokens to the dialogue
+		FDialogueAssetApplyResult ApplyResult = FDialogueAssetSync::ApplyTokensToAsset(DialogueBlueprint, DialogueRows);
+
+		// Accumulate results
+		if (ApplyResult.NodesUpdated > 0)
+		{
+			Summary.AssetsModified++;
+		}
+		Summary.TotalNodesUpdated += ApplyResult.NodesUpdated;
+		Summary.TotalEventsApplied += ApplyResult.EventsApplied;
+		Summary.TotalConditionsApplied += ApplyResult.ConditionsApplied;
+		Summary.TotalEventsCleared += ApplyResult.EventsCleared;
+		Summary.TotalConditionsCleared += ApplyResult.ConditionsCleared;
+		Summary.TotalNodesSkipped += ApplyResult.NodesSkippedValidation;
+		Summary.TotalNodesNotFound += ApplyResult.NodesNotFound;
+
+		// Record per-asset result
+		FString ResultStr = FString::Printf(TEXT("%d nodes, %d events, %d conditions"),
+			ApplyResult.NodesUpdated, ApplyResult.EventsApplied, ApplyResult.ConditionsApplied);
+		Summary.AssetResults.Add(DialogueID, ResultStr);
+	}
+
+	Summary.bSuccess = true;
+
+	UE_LOG(LogTemp, Log, TEXT("DialogueXLSXSyncEngine: Applied tokens to %d assets (%d modified), %d nodes updated, %d events, %d conditions"),
+		Summary.AssetsProcessed, Summary.AssetsModified, Summary.TotalNodesUpdated,
+		Summary.TotalEventsApplied, Summary.TotalConditionsApplied);
+
+#else
+	Summary.ErrorMessage = TEXT("ApplyTokensToAssets requires WITH_EDITOR");
+#endif
+
+	return Summary;
 }
