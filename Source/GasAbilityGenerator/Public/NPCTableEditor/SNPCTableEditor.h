@@ -1,5 +1,6 @@
 // SNPCTableEditor.h
 // NPC Table Editor Slate Widget - Excel-like spreadsheet for managing NPCs
+// v4.5: Added validation and generation with FNPCDefinitionGenerator
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #pragma once
@@ -268,6 +269,17 @@ private:
 	EColumnSortMode::Type SortMode = EColumnSortMode::None;
 
 	//=========================================================================
+	// Status Bar (v4.5 - stored widget references for direct SetText() updates)
+	//=========================================================================
+	TSharedPtr<STextBlock> StatusTotalText;
+	TSharedPtr<STextBlock> StatusShowingText;
+	TSharedPtr<STextBlock> StatusSelectedText;
+	TSharedPtr<STextBlock> StatusValidationText;  // Validation errors (shown in red)
+
+	/** Explicitly update all status bar text */
+	void UpdateStatusBar();
+
+	//=========================================================================
 	// UI Construction
 	//=========================================================================
 
@@ -330,6 +342,9 @@ private:
 
 	/** Duplicate selected row */
 	FReply OnDuplicateRowClicked();
+
+	/** Validate all rows */
+	FReply OnValidateClicked();
 
 	/** Generate assets from selected/all rows */
 	FReply OnGenerateClicked();

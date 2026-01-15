@@ -48,6 +48,9 @@
 #include "XLSXSupport/NPCXLSXWriter.h"
 #include "XLSXSupport/NPCXLSXReader.h"
 #include "XLSXSupport/NPCXLSXSyncEngine.h"
+#include "NPCTableEditor/NPCTableValidator.h"
+#include "NPCTableEditor/NPCTableConverter.h"
+#include "GasAbilityGeneratorGenerators.h"
 
 #define LOCTEXT_NAMESPACE "NPCTableEditor"
 
@@ -1113,6 +1116,7 @@ void SNPCTableEditor::Construct(const FArguments& InArgs)
 	];
 
 	ApplyFilters();
+	UpdateStatusBar();  // v4.5: Initial status bar population
 }
 
 void SNPCTableEditor::SetTableData(UNPCTableData* InTableData)
@@ -1121,6 +1125,7 @@ void SNPCTableEditor::SetTableData(UNPCTableData* InTableData)
 	SyncFromTableData();
 	UpdateColumnFilterOptions();
 	ApplyFilters();
+	UpdateStatusBar();  // v4.5
 }
 
 TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
@@ -1188,6 +1193,17 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 		]
 
 		// RIGHT SIDE - Generation/IO actions
+		// Validate (v4.5)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Validate", "Validate"))
+				.OnClicked(this, &SNPCTableEditor::OnValidateClicked)
+				.ToolTipText(LOCTEXT("ValidateTip", "Validate all rows for errors and warnings"))
+		]
+
 		// Generate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -1692,50 +1708,106 @@ TArray<FString> SNPCTableEditor::GetUniqueColumnValues(FName ColumnId) const
 
 TSharedRef<SWidget> SNPCTableEditor::BuildStatusBar()
 {
+	// v4.5: Store STextBlock references for direct SetText() updates
+	// This bypasses all Slate caching/invalidation issues by updating text directly
 	return SNew(SHorizontalBox)
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(4.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					return FText::Format(
-						LOCTEXT("RowCount", "Total: {0} NPCs"),
-						FText::AsNumber(AllRows.Num())
-					);
-				})
+			SAssignNew(StatusTotalText, STextBlock)
+				.Text(LOCTEXT("InitTotal", "Total: 0 NPCs"))
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					return FText::Format(
-						LOCTEXT("DisplayedCount", "Showing: {0}"),
-						FText::AsNumber(DisplayedRows.Num())
-					);
-				})
+			SAssignNew(StatusShowingText, STextBlock)
+				.Text(LOCTEXT("InitShowing", "Showing: 0"))
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					int32 Selected = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
-					return FText::Format(
-						LOCTEXT("SelectedCount", "Selected: {0}"),
-						FText::AsNumber(Selected)
-					);
-				})
+			SAssignNew(StatusSelectedText, STextBlock)
+				.Text(LOCTEXT("InitSelected", "Selected: 0"))
+		]
+
+		// v4.5: Validation errors (shown in red when > 0)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(8.0f, 0.0f)
+		[
+			SAssignNew(StatusValidationText, STextBlock)
+				.Text(LOCTEXT("InitValidation", ""))
+				.ColorAndOpacity(FSlateColor(FLinearColor::Red))
 		];
+}
+
+// v4.5: Direct SetText() update - bypasses all Slate caching issues
+void SNPCTableEditor::UpdateStatusBar()
+{
+	// Total NPCs
+	if (StatusTotalText.IsValid())
+	{
+		StatusTotalText->SetText(FText::Format(
+			LOCTEXT("TotalNPCs", "Total: {0} NPCs"),
+			FText::AsNumber(AllRows.Num())
+		));
+	}
+
+	// Currently displayed rows (after filtering)
+	if (StatusShowingText.IsValid())
+	{
+		StatusShowingText->SetText(FText::Format(
+			LOCTEXT("ShowingCount", "Showing: {0}"),
+			FText::AsNumber(DisplayedRows.Num())
+		));
+	}
+
+	// Selected rows
+	if (StatusSelectedText.IsValid())
+	{
+		int32 SelectedCount = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
+		StatusSelectedText->SetText(FText::Format(
+			LOCTEXT("SelectedCount", "Selected: {0}"),
+			FText::AsNumber(SelectedCount)
+		));
+	}
+
+	// v4.5: Validation errors count
+	if (StatusValidationText.IsValid())
+	{
+		// Quick validation check
+		TArray<FNPCTableRow> RowsToValidate;
+		for (const auto& RowPtr : AllRows)
+		{
+			if (RowPtr.IsValid())
+			{
+				RowsToValidate.Add(*RowPtr);
+			}
+		}
+
+		FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(RowsToValidate);
+		int32 ErrorCount = ValidationResult.GetErrorCount();
+
+		if (ErrorCount > 0)
+		{
+			StatusValidationText->SetText(FText::Format(
+				LOCTEXT("ValidationErrors", "Errors: {0}"),
+				FText::AsNumber(ErrorCount)
+			));
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else
+		{
+			StatusValidationText->SetText(FText::GetEmpty());
+			StatusValidationText->SetVisibility(EVisibility::Collapsed);
+		}
+	}
 }
 
 TSharedRef<ITableRow> SNPCTableEditor::OnGenerateRow(TSharedPtr<FNPCTableRow> Item, const TSharedRef<STableViewBase>& OwnerTable)
@@ -1747,7 +1819,7 @@ TSharedRef<ITableRow> SNPCTableEditor::OnGenerateRow(TSharedPtr<FNPCTableRow> It
 
 void SNPCTableEditor::OnSelectionChanged(TSharedPtr<FNPCTableRow> Item, ESelectInfo::Type SelectInfo)
 {
-	// Could update a details panel here
+	UpdateStatusBar();  // v4.5: Update selected count
 }
 
 EColumnSortMode::Type SNPCTableEditor::GetColumnSortMode(FName ColumnId) const
@@ -1773,6 +1845,7 @@ void SNPCTableEditor::RefreshList()
 	{
 		ListView->RequestListRefresh();
 	}
+	UpdateStatusBar();  // v4.5: Explicit status bar update
 }
 
 TArray<TSharedPtr<FNPCTableRow>> SNPCTableEditor::GetSelectedRows() const
@@ -2005,39 +2078,250 @@ FReply SNPCTableEditor::OnDuplicateRowClicked()
 	return FReply::Handled();
 }
 
-FReply SNPCTableEditor::OnGenerateClicked()
+FReply SNPCTableEditor::OnValidateClicked()
 {
-	// TODO: Implement actual asset generation using existing generators
-	// For now, just mark valid rows as synced, invalid as error
+	// v4.5: Validate all rows and show detailed results
+	TArray<FNPCTableRow> RowsToValidate;
+	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
+	{
+		if (RowPtr.IsValid())
+		{
+			RowsToValidate.Add(*RowPtr);
+		}
+	}
 
-	int32 GeneratedCount = 0;
-	int32 ErrorCount = 0;
+	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(RowsToValidate);
 
+	// Update row status based on validation
 	for (TSharedPtr<FNPCTableRow>& Row : AllRows)
 	{
-		if (Row->IsValid())
+		if (!Row.IsValid()) continue;
+
+		bool bHasError = false;
+		bool bHasWarning = false;
+
+		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
 		{
-			Row->Status = ENPCTableRowStatus::Synced;
-			GeneratedCount++;
-			// Would call generators here:
-			// - FNPCDefinitionGenerator::Generate(Row)
-			// - etc.
+			if (Issue.NPCName == Row->NPCName || (Row->NPCName.IsEmpty() && Issue.NPCName == Row->RowId.ToString()))
+			{
+				if (Issue.Severity == ENPCValidationSeverity::Error)
+				{
+					bHasError = true;
+				}
+				else if (Issue.Severity == ENPCValidationSeverity::Warning)
+				{
+					bHasWarning = true;
+				}
+			}
 		}
-		else
+
+		if (bHasError)
 		{
 			Row->Status = ENPCTableRowStatus::Error;
+		}
+		else if (bHasWarning)
+		{
+			Row->Status = ENPCTableRowStatus::Modified;  // Use Modified as warning indicator
+		}
+		else if (Row->Status == ENPCTableRowStatus::Error)
+		{
+			Row->Status = ENPCTableRowStatus::New;  // Clear previous error if now valid
+		}
+	}
+
+	RefreshList();
+	UpdateStatusBar();
+
+	// Build message with all issues
+	int32 ErrorCount = ValidationResult.GetErrorCount();
+	int32 WarningCount = ValidationResult.Issues.Num() - ErrorCount;
+
+	FString Message;
+	if (ErrorCount == 0 && WarningCount == 0)
+	{
+		Message = TEXT("All rows passed validation!");
+	}
+	else
+	{
+		Message = FString::Printf(TEXT("Validation found %d error(s) and %d warning(s):\n\n"), ErrorCount, WarningCount);
+
+		// Show errors first
+		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
+		{
+			if (Issue.Severity == ENPCValidationSeverity::Error)
+			{
+				Message += FString::Printf(TEXT("[ERROR] %s.%s: %s\n"), *Issue.NPCName, *Issue.FieldName, *Issue.Message);
+			}
+		}
+
+		// Then warnings
+		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
+		{
+			if (Issue.Severity == ENPCValidationSeverity::Warning)
+			{
+				Message += FString::Printf(TEXT("[WARN] %s.%s: %s\n"), *Issue.NPCName, *Issue.FieldName, *Issue.Message);
+			}
+		}
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
+
+	return FReply::Handled();
+}
+
+FReply SNPCTableEditor::OnGenerateClicked()
+{
+	// v4.5: Validate first, then generate using FNPCDefinitionGenerator
+
+	// Step 1: Gather all valid rows
+	TArray<FNPCTableRow> RowsToValidate;
+	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
+	{
+		if (RowPtr.IsValid())
+		{
+			RowsToValidate.Add(*RowPtr);
+		}
+	}
+
+	if (RowsToValidate.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoRows", "No NPC rows to generate. Add NPCs first."));
+		return FReply::Handled();
+	}
+
+	// Step 2: Validate all rows
+	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(RowsToValidate);
+	int32 ValidationErrorCount = ValidationResult.GetErrorCount();
+
+	if (ValidationErrorCount > 0)
+	{
+		// Show validation errors and abort
+		FString ErrorMessage = FString::Printf(TEXT("Cannot generate: %d validation error(s) found.\n\nFix these errors first:\n\n"), ValidationErrorCount);
+		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
+		{
+			if (Issue.Severity == ENPCValidationSeverity::Error)
+			{
+				ErrorMessage += FString::Printf(TEXT("[ERROR] %s.%s: %s\n"), *Issue.NPCName, *Issue.FieldName, *Issue.Message);
+			}
+		}
+		ErrorMessage += TEXT("\nClick 'Validate' button for full details.");
+
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ErrorMessage));
+
+		// Update status on rows with errors
+		for (TSharedPtr<FNPCTableRow>& Row : AllRows)
+		{
+			if (!Row.IsValid()) continue;
+			for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
+			{
+				if (Issue.Severity == ENPCValidationSeverity::Error &&
+					(Issue.NPCName == Row->NPCName || (Row->NPCName.IsEmpty() && Issue.NPCName == Row->RowId.ToString())))
+				{
+					Row->Status = ENPCTableRowStatus::Error;
+					break;
+				}
+			}
+		}
+		RefreshList();
+		UpdateStatusBar();
+		return FReply::Handled();
+	}
+
+	// Step 3: Convert rows to manifest definitions
+	TArray<FManifestNPCDefinitionDefinition> Definitions = FNPCTableConverter::ConvertRowsToManifest(RowsToValidate);
+
+	// Step 4: Generate NPCDefinition assets
+	int32 GeneratedCount = 0;
+	int32 SkippedCount = 0;
+	int32 ErrorCount = 0;
+	TArray<FString> GenerationErrors;
+
+	for (const FManifestNPCDefinitionDefinition& Def : Definitions)
+	{
+		FGenerationResult Result = FNPCDefinitionGenerator::Generate(Def);
+
+		// Extract NPCName from definition name (remove "NPCDef_" prefix)
+		FString NPCNameFromDef = Def.Name;
+		if (NPCNameFromDef.StartsWith(TEXT("NPCDef_")))
+		{
+			NPCNameFromDef = NPCNameFromDef.Mid(7);
+		}
+
+		if (Result.Status == EGenerationStatus::New)
+		{
+			GeneratedCount++;
+
+			// Update row status
+			for (TSharedPtr<FNPCTableRow>& Row : AllRows)
+			{
+				if (Row.IsValid() && Row->NPCName == NPCNameFromDef)
+				{
+					Row->Status = ENPCTableRowStatus::Synced;
+					break;
+				}
+			}
+		}
+		else if (Result.Status == EGenerationStatus::Skipped)
+		{
+			SkippedCount++;
+
+			// Keep existing status for skipped rows
+			for (TSharedPtr<FNPCTableRow>& Row : AllRows)
+			{
+				if (Row.IsValid() && Row->NPCName == NPCNameFromDef)
+				{
+					if (Row->Status != ENPCTableRowStatus::Synced)
+					{
+						Row->Status = ENPCTableRowStatus::Synced;  // Already exists is also synced
+					}
+					break;
+				}
+			}
+		}
+		else  // Failed or Deferred
+		{
 			ErrorCount++;
+			GenerationErrors.Add(FString::Printf(TEXT("%s: %s"), *Def.Name, *Result.Message));
+
+			// Update row status
+			for (TSharedPtr<FNPCTableRow>& Row : AllRows)
+			{
+				if (Row.IsValid() && Row->NPCName == NPCNameFromDef)
+				{
+					Row->Status = ENPCTableRowStatus::Error;
+					break;
+				}
+			}
 		}
 	}
 
 	RefreshList();
 	MarkDirty();
+	UpdateStatusBar();
 
-	// Show message
-	FMessageDialog::Open(EAppMsgType::Ok,
-		FText::Format(LOCTEXT("GenerateComplete", "Asset generation complete!\n\nGenerated: {0}\nErrors: {1}"),
-			FText::AsNumber(GeneratedCount),
-			FText::AsNumber(ErrorCount)));
+	// Step 5: Show results
+	FString ResultMessage = FString::Printf(
+		TEXT("NPC Definition Generation Complete!\n\n")
+		TEXT("Generated: %d\n")
+		TEXT("Skipped (already exists): %d\n")
+		TEXT("Errors: %d\n")
+		TEXT("Warnings: %d"),
+		GeneratedCount,
+		SkippedCount,
+		ErrorCount,
+		ValidationResult.Issues.Num() - ValidationErrorCount);
+
+	if (GenerationErrors.Num() > 0)
+	{
+		ResultMessage += TEXT("\n\nGeneration Errors:\n");
+		for (const FString& Error : GenerationErrors)
+		{
+			ResultMessage += FString::Printf(TEXT("  - %s\n"), *Error);
+		}
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ResultMessage));
 
 	return FReply::Handled();
 }
