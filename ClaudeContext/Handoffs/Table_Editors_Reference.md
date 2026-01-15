@@ -468,7 +468,26 @@ Source/GasAbilityGenerator/
 | Export XLSX | v4.3 | Creates workbook with dialogues + _Meta sheet |
 | Import XLSX | v4.3 | Parses and replaces table data |
 | Sync XLSX | v4.3 | 3-way merge with conflict resolution dialog |
+| Sync from Assets | v4.4 | Pull current events/conditions from UDialogueBlueprint into table |
 | Apply to Assets | v4.4 | Opens preview window, applies approved tokens to UDialogueBlueprint |
+
+### Status Bar (v4.4)
+
+The status bar displays live counts and validation feedback:
+
+```
+Total: 45 nodes | Dialogues: 3 | Showing: 42 | Selected: 2 | Token Errors: 3
+```
+
+| Element | Description |
+|---------|-------------|
+| Total | All nodes in AllRows |
+| Dialogues | Unique DialogueID count |
+| Showing | Nodes after filtering (DisplayedRows) |
+| Selected | Currently selected rows |
+| Token Errors | Rows with invalid EventsTokenStr or ConditionsTokenStr (red, hidden if 0) |
+
+Validation errors are set during XLSX import when tokens fail parsing.
 
 ---
 
@@ -811,14 +830,33 @@ struct FTokenApplyContext
 };
 ```
 
-**Workflow:**
-1. User clicks "Apply to Assets" button in Dialogue Table Editor
-2. System collects rows with EventsTokenStr or ConditionsTokenStr
-3. Preview window opens showing all changes with context
-4. User reviews each change, approves/denies, adds notes
-5. User clicks "Apply Approved" (or Cancel)
-6. Only approved changes are written to UDialogueBlueprint assets
-7. Summary dialog shows results
+**Bidirectional Workflow:**
+
+```
+┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
+│  UDialogueBlueprint │ ←── │  Dialogue Table      │ ──→ │  UDialogueBlueprint │
+│  (UE Assets)        │     │  Editor              │     │  (UE Assets)        │
+└─────────────────────┘     └──────────────────────┘     └─────────────────────┘
+         ↑                           │                            ↑
+    Sync from Assets            Edit tokens                 Apply to Assets
+    (read current)              in table                    (write changes)
+```
+
+**Sync from Assets → Edit → Apply to Assets:**
+
+1. **Sync from Assets** - Pull current events/conditions from UDialogueBlueprint
+   - Searches `/Game/Dialogues/` and `/Game/` paths
+   - Only fills empty token cells (preserves existing edits)
+   - Shows summary: dialogues found/missing, nodes with events/conditions
+
+2. **Edit in Table** - Modify EventsTokenStr and ConditionsTokenStr columns
+   - Status bar shows "Token Errors: N" for invalid syntax
+   - Validation runs during XLSX import
+
+3. **Apply to Assets** - Write validated tokens to UDialogueBlueprint
+   - Preview window shows all changes with context
+   - User approves/denies each change individually
+   - Only approved changes are written to assets
 
 ### Alignment with v3.0 Regen/Diff System
 
