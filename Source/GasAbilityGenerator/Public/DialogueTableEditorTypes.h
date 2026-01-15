@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Types
+// v4.3: Added FGuid RowId for XLSX sync identity tracking
 // v4.0: Minimal dialogue book system for batch dialogue creation
 
 #pragma once
@@ -25,6 +26,10 @@ USTRUCT(BlueprintType)
 struct GASABILITYGENERATOR_API FDialogueTableRow
 {
 	GENERATED_BODY()
+
+	/** Stable row identifier for XLSX sync - survives reorder/filter operations */
+	UPROPERTY()
+	FGuid RowId;
 
 	/** Which dialogue this node belongs to (e.g., DBP_Seth, DBP_Blacksmith) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
@@ -67,7 +72,8 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	FString Notes;
 
 	FDialogueTableRow()
-		: NodeType(EDialogueTableNodeType::NPC)
+		: RowId(FGuid::NewGuid())
+		, NodeType(EDialogueTableNodeType::NPC)
 	{
 	}
 
@@ -92,7 +98,7 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 
 /**
  * DataAsset containing all dialogue rows - the "dialogue book"
- * Stored in Content folder, can be imported/exported as CSV
+ * Stored in Content folder, can be imported/exported as XLSX
  */
 UCLASS(BlueprintType)
 class GASABILITYGENERATOR_API UDialogueTableData : public UDataAsset
@@ -104,9 +110,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue Table")
 	TArray<FDialogueTableRow> Rows;
 
-	/** Path to the source CSV file (for re-import) */
+	/** Path to the source file (XLSX or CSV, for re-import) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue Table")
-	FString SourceCSVPath;
+	FString SourceFilePath;
 
 	/** Get all unique DialogueIDs in this table */
 	UFUNCTION(BlueprintCallable, Category = "Dialogue Table")

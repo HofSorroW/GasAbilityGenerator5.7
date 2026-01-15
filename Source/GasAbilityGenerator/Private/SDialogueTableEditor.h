@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor
-// v4.0: Slate widget for batch dialogue creation from CSV/table
+// v4.3: Slate widget for batch dialogue creation with XLSX sync support
 //
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
@@ -152,7 +152,10 @@ private:
 	FReply OnClearFiltersClicked();  // Clear all filters
 	FReply OnGenerateClicked();
 	FReply OnExportCSVClicked();
+	FReply OnExportXLSXClicked();  // v4.3: XLSX export with sync support
 	FReply OnImportCSVClicked();
+	FReply OnImportXLSXClicked();  // v4.3: XLSX import with sync support
+	FReply OnSyncXLSXClicked();    // v4.3: XLSX sync with 3-way merge
 	FReply OnValidateClicked();
 	FReply OnResetOrderClicked();
 

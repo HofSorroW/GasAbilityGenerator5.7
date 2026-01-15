@@ -75,7 +75,11 @@ public class GasAbilityGenerator : ModuleRules
 			"JsonUtilities",
 
 			// v2.6.5: Niagara editor for system creation
-			"NiagaraEditor"
+			"NiagaraEditor",
+
+			// v4.3: XLSX export/import support
+			"FileUtilities",
+			"XmlParser"
 		});
 
 		// Enable exceptions for YAML parsing

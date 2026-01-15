@@ -1,0 +1,412 @@
+// GasAbilityGenerator - Dialogue XLSX Writer Implementation
+// v4.3: Export dialogue table to Excel format
+
+#include "XLSXSupport/DialogueXLSXWriter.h"
+#include "HAL/PlatformFileManager.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/DateTime.h"
+#include "Misc/Guid.h"
+
+#if WITH_ENGINE
+#include "FileUtilities/ZipArchiveWriter.h"
+#endif
+
+// Static constants
+const FString FDialogueXLSXWriter::SHEET_SENTINEL = TEXT("#DIALOGUE_SHEET_V1");
+const FString FDialogueXLSXWriter::FORMAT_VERSION = TEXT("1.0");
+
+TArray<FDialogueXLSXColumn> FDialogueXLSXWriter::GetColumnDefinitions()
+{
+	return {
+		{ TEXT("#ROW_GUID"),      TEXT("Row ID"),       12.0f },
+		{ TEXT("DIALOGUE_ID"),    TEXT("Dialogue"),     15.0f },
+		{ TEXT("NODE_ID"),        TEXT("Node ID"),      15.0f },
+		{ TEXT("NODE_TYPE"),      TEXT("Type"),         8.0f },
+		{ TEXT("SPEAKER"),        TEXT("Speaker"),      12.0f },
+		{ TEXT("TEXT"),           TEXT("Text"),         50.0f },
+		{ TEXT("OPTION_TEXT"),    TEXT("Option Text"),  30.0f },
+		{ TEXT("PARENT_NODE_ID"), TEXT("Parent"),       15.0f },
+		{ TEXT("NEXT_NODE_IDS"),  TEXT("Next Nodes"),   20.0f },
+		{ TEXT("SKIPPABLE"),      TEXT("Skip"),         6.0f },
+		{ TEXT("NOTES"),          TEXT("Notes"),        30.0f },
+		{ TEXT("#STATE"),         TEXT("State"),        10.0f },
+		{ TEXT("#BASE_HASH"),     TEXT("Hash"),         15.0f },
+	};
+}
+
+bool FDialogueXLSXWriter::ExportToXLSX(const TArray<FDialogueTableRow>& Rows, const FString& FilePath, FString& OutError)
+{
+#if WITH_ENGINE
+	// Create the output file
+	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenWrite(*FilePath);
+	if (!FileHandle)
+	{
+		OutError = FString::Printf(TEXT("Failed to create file: %s"), *FilePath);
+		return false;
+	}
+
+	// Create ZIP writer with no compression (STORE mode)
+	FZipArchiveWriter ZipWriter(FileHandle, EZipArchiveOptions::None);
+	FDateTime Now = FDateTime::Now();
+
+	// Add all required XLSX files
+	auto AddXmlFile = [&ZipWriter, &Now](const FString& Path, const FString& Content)
+	{
+		TArray<uint8> Data;
+		FTCHARToUTF8 Converter(*Content);
+		Data.Append((const uint8*)Converter.Get(), Converter.Length());
+		ZipWriter.AddFile(Path, Data, Now);
+	};
+
+	// Core XLSX structure
+	AddXmlFile(TEXT("[Content_Types].xml"), GenerateContentTypesXml());
+	AddXmlFile(TEXT("_rels/.rels"), GenerateRelsXml());
+	AddXmlFile(TEXT("xl/workbook.xml"), GenerateWorkbookXml());
+	AddXmlFile(TEXT("xl/_rels/workbook.xml.rels"), GenerateWorkbookRelsXml());
+	AddXmlFile(TEXT("xl/styles.xml"), GenerateStylesXml());
+
+	// Worksheets
+	AddXmlFile(TEXT("xl/worksheets/sheet1.xml"), GenerateDialoguesSheet(Rows));
+	AddXmlFile(TEXT("xl/worksheets/sheet2.xml"), GenerateListsSheet(Rows));
+	AddXmlFile(TEXT("xl/worksheets/sheet3.xml"), GenerateMetaSheet(Rows));
+
+	// ZipWriter destructor will finalize and close the file
+	return true;
+#else
+	OutError = TEXT("XLSX export requires WITH_ENGINE");
+	return false;
+#endif
+}
+
+FString FDialogueXLSXWriter::GenerateContentTypesXml()
+{
+	return TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>)");
+}
+
+FString FDialogueXLSXWriter::GenerateRelsXml()
+{
+	return TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>)");
+}
+
+FString FDialogueXLSXWriter::GenerateWorkbookXml()
+{
+	return TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Dialogues" sheetId="1" r:id="rId1"/>
+    <sheet name="_Lists" sheetId="2" r:id="rId2"/>
+    <sheet name="_Meta" sheetId="3" r:id="rId3"/>
+  </sheets>
+</workbook>)");
+}
+
+FString FDialogueXLSXWriter::GenerateWorkbookRelsXml()
+{
+	return TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>)");
+}
+
+FString FDialogueXLSXWriter::GenerateStylesXml()
+{
+	// Minimal styles - header row bold
+	return TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="11"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <borders count="1">
+    <border/>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="2">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>
+  </cellXfs>
+</styleSheet>)");
+}
+
+FString FDialogueXLSXWriter::GenerateDialoguesSheet(const TArray<FDialogueTableRow>& Rows)
+{
+	TArray<FDialogueXLSXColumn> Columns = GetColumnDefinitions();
+	FString SheetData;
+
+	// Row 1: Sentinel with column IDs
+	SheetData += TEXT("<row r=\"1\">");
+	for (int32 i = 0; i < Columns.Num(); i++)
+	{
+		FString CellValue = (i == 0) ? SHEET_SENTINEL : Columns[i].ColumnId;
+		SheetData += FString::Printf(TEXT("<c r=\"%s\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+			*CellReference(i, 1), *EscapeXml(CellValue));
+	}
+	SheetData += TEXT("</row>");
+
+	// Row 2: Human-readable headers (bold - style 1)
+	SheetData += TEXT("<row r=\"2\">");
+	for (int32 i = 0; i < Columns.Num(); i++)
+	{
+		SheetData += FString::Printf(TEXT("<c r=\"%s\" t=\"inlineStr\" s=\"1\"><is><t>%s</t></is></c>"),
+			*CellReference(i, 2), *EscapeXml(Columns[i].DisplayName));
+	}
+	SheetData += TEXT("</row>");
+
+	// Data rows (starting at row 3)
+	int32 RowNum = 3;
+	for (const FDialogueTableRow& Row : Rows)
+	{
+		SheetData += FString::Printf(TEXT("<row r=\"%d\">"), RowNum);
+
+		// Build NextNodeIDs as comma-separated string
+		FString NextNodesStr;
+		for (int32 i = 0; i < Row.NextNodeIDs.Num(); i++)
+		{
+			if (i > 0) NextNodesStr += TEXT(",");
+			NextNodesStr += Row.NextNodeIDs[i].ToString();
+		}
+
+		// Compute hash for this row
+		int64 RowHash = ComputeRowHash(Row);
+
+		// Column values in order
+		TArray<FString> Values = {
+			Row.RowId.ToString(),                                           // #ROW_GUID
+			Row.DialogueID.ToString(),                                      // DIALOGUE_ID
+			Row.NodeID.ToString(),                                          // NODE_ID
+			Row.NodeType == EDialogueTableNodeType::NPC ? TEXT("NPC") : TEXT("Player"), // NODE_TYPE
+			Row.Speaker.ToString(),                                         // SPEAKER
+			Row.Text,                                                       // TEXT
+			Row.OptionText,                                                 // OPTION_TEXT
+			Row.ParentNodeID.ToString(),                                    // PARENT_NODE_ID
+			NextNodesStr,                                                   // NEXT_NODE_IDS
+			Row.bSkippable ? TEXT("Yes") : TEXT("No"),                      // SKIPPABLE
+			Row.Notes,                                                      // NOTES
+			TEXT("Synced"),                                                 // #STATE
+			FString::Printf(TEXT("%lld"), RowHash),                         // #BASE_HASH
+		};
+
+		for (int32 i = 0; i < Values.Num(); i++)
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"%s\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				*CellReference(i, RowNum), *EscapeXml(Values[i]));
+		}
+
+		SheetData += TEXT("</row>");
+		RowNum++;
+	}
+
+	// Build column widths
+	FString ColsXml = TEXT("<cols>");
+	for (int32 i = 0; i < Columns.Num(); i++)
+	{
+		ColsXml += FString::Printf(TEXT("<col min=\"%d\" max=\"%d\" width=\"%.1f\" customWidth=\"1\"/>"),
+			i + 1, i + 1, Columns[i].Width);
+	}
+	ColsXml += TEXT("</cols>");
+
+	// Full worksheet XML
+	return FString::Printf(TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  %s
+  <sheetData>%s</sheetData>
+</worksheet>)"), *ColsXml, *SheetData);
+}
+
+FString FDialogueXLSXWriter::GenerateListsSheet(const TArray<FDialogueTableRow>& Rows)
+{
+	// Collect unique values for dropdowns
+	TSet<FString> DialogueIds;
+	TSet<FString> Speakers;
+	TSet<FString> NodeTypes;
+	NodeTypes.Add(TEXT("NPC"));
+	NodeTypes.Add(TEXT("Player"));
+
+	for (const FDialogueTableRow& Row : Rows)
+	{
+		if (!Row.DialogueID.IsNone())
+		{
+			DialogueIds.Add(Row.DialogueID.ToString());
+		}
+		if (!Row.Speaker.IsNone())
+		{
+			Speakers.Add(Row.Speaker.ToString());
+		}
+	}
+
+	FString SheetData;
+
+	// Header row
+	SheetData += TEXT("<row r=\"1\">");
+	SheetData += FString::Printf(TEXT("<c r=\"A1\" t=\"inlineStr\" s=\"1\"><is><t>DIALOGUE_ID</t></is></c>"));
+	SheetData += FString::Printf(TEXT("<c r=\"B1\" t=\"inlineStr\" s=\"1\"><is><t>SPEAKER</t></is></c>"));
+	SheetData += FString::Printf(TEXT("<c r=\"C1\" t=\"inlineStr\" s=\"1\"><is><t>NODE_TYPE</t></is></c>"));
+	SheetData += TEXT("</row>");
+
+	// Data rows - fill each column with unique values
+	TArray<FString> DialogueIdArr = DialogueIds.Array();
+	TArray<FString> SpeakerArr = Speakers.Array();
+	TArray<FString> NodeTypeArr = NodeTypes.Array();
+
+	int32 MaxRows = FMath::Max3(DialogueIdArr.Num(), SpeakerArr.Num(), NodeTypeArr.Num());
+
+	for (int32 i = 0; i < MaxRows; i++)
+	{
+		int32 RowNum = i + 2;
+		SheetData += FString::Printf(TEXT("<row r=\"%d\">"), RowNum);
+
+		if (i < DialogueIdArr.Num())
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"A%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				RowNum, *EscapeXml(DialogueIdArr[i]));
+		}
+		if (i < SpeakerArr.Num())
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"B%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				RowNum, *EscapeXml(SpeakerArr[i]));
+		}
+		if (i < NodeTypeArr.Num())
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"C%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				RowNum, *EscapeXml(NodeTypeArr[i]));
+		}
+
+		SheetData += TEXT("</row>");
+	}
+
+	return FString::Printf(TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cols>
+    <col min="1" max="1" width="20" customWidth="1"/>
+    <col min="2" max="2" width="20" customWidth="1"/>
+    <col min="3" max="3" width="15" customWidth="1"/>
+  </cols>
+  <sheetData>%s</sheetData>
+</worksheet>)"), *SheetData);
+}
+
+FString FDialogueXLSXWriter::GenerateMetaSheet(const TArray<FDialogueTableRow>& Rows)
+{
+	FString ExportGuid = FGuid::NewGuid().ToString();
+	FString ExportTime = FDateTime::Now().ToString();
+
+	// Compute overall content hash
+	int64 ContentHash = 0;
+	for (const FDialogueTableRow& Row : Rows)
+	{
+		ContentHash ^= ComputeRowHash(Row);
+	}
+
+	FString SheetData;
+
+	// Headers
+	SheetData += TEXT("<row r=\"1\">");
+	SheetData += TEXT("<c r=\"A1\" t=\"inlineStr\" s=\"1\"><is><t>Property</t></is></c>");
+	SheetData += TEXT("<c r=\"B1\" t=\"inlineStr\" s=\"1\"><is><t>Value</t></is></c>");
+	SheetData += TEXT("</row>");
+
+	// Metadata values
+	TArray<TPair<FString, FString>> MetaValues = {
+		{ TEXT("EXPORT_GUID"), ExportGuid },
+		{ TEXT("EXPORTED_AT"), ExportTime },
+		{ TEXT("FORMAT_VERSION"), FORMAT_VERSION },
+		{ TEXT("ROW_COUNT"), FString::Printf(TEXT("%d"), Rows.Num()) },
+		{ TEXT("CONTENT_HASH"), FString::Printf(TEXT("%lld"), ContentHash) },
+		{ TEXT("TABLE_TYPE"), TEXT("Dialogue") },
+	};
+
+	for (int32 i = 0; i < MetaValues.Num(); i++)
+	{
+		int32 RowNum = i + 2;
+		SheetData += FString::Printf(TEXT("<row r=\"%d\">"), RowNum);
+		SheetData += FString::Printf(TEXT("<c r=\"A%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+			RowNum, *EscapeXml(MetaValues[i].Key));
+		SheetData += FString::Printf(TEXT("<c r=\"B%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+			RowNum, *EscapeXml(MetaValues[i].Value));
+		SheetData += TEXT("</row>");
+	}
+
+	return FString::Printf(TEXT(R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cols>
+    <col min="1" max="1" width="20" customWidth="1"/>
+    <col min="2" max="2" width="40" customWidth="1"/>
+  </cols>
+  <sheetData>%s</sheetData>
+</worksheet>)"), *SheetData);
+}
+
+FString FDialogueXLSXWriter::EscapeXml(const FString& Text)
+{
+	FString Result = Text;
+	Result.ReplaceInline(TEXT("&"), TEXT("&amp;"));
+	Result.ReplaceInline(TEXT("<"), TEXT("&lt;"));
+	Result.ReplaceInline(TEXT(">"), TEXT("&gt;"));
+	Result.ReplaceInline(TEXT("\""), TEXT("&quot;"));
+	Result.ReplaceInline(TEXT("'"), TEXT("&apos;"));
+	return Result;
+}
+
+FString FDialogueXLSXWriter::CellReference(int32 Col, int32 Row)
+{
+	return ColumnLetter(Col) + FString::Printf(TEXT("%d"), Row);
+}
+
+FString FDialogueXLSXWriter::ColumnLetter(int32 ColIndex)
+{
+	FString Result;
+	int32 Col = ColIndex;
+
+	do
+	{
+		Result = FString::Chr(TEXT('A') + (Col % 26)) + Result;
+		Col = Col / 26 - 1;
+	}
+	while (Col >= 0);
+
+	return Result;
+}
+
+int64 FDialogueXLSXWriter::ComputeRowHash(const FDialogueTableRow& Row)
+{
+	// Hash key fields that affect sync
+	int64 Hash = 0;
+	Hash ^= GetTypeHash(Row.DialogueID);
+	Hash ^= GetTypeHash(Row.NodeID);
+	Hash ^= GetTypeHash((uint8)Row.NodeType);
+	Hash ^= GetTypeHash(Row.Speaker);
+	Hash ^= GetTypeHash(Row.Text);
+	Hash ^= GetTypeHash(Row.OptionText);
+	Hash ^= GetTypeHash(Row.ParentNodeID);
+	Hash ^= GetTypeHash(Row.bSkippable);
+	Hash ^= GetTypeHash(Row.Notes);
+
+	for (const FName& NextId : Row.NextNodeIDs)
+	{
+		Hash ^= GetTypeHash(NextId);
+	}
+
+	return Hash;
+}

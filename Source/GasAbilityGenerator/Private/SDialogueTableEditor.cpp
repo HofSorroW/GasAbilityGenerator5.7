@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
+// v4.3: Added XLSX export/import with sync support
 // v4.2.14: Fixed Seq column not updating - changed to Text_Lambda for dynamic reads
 // v4.2.13: Fixed status bar - stored STextBlock refs + explicit SetText() calls
 //
@@ -7,6 +8,10 @@
 #include "SDialogueTableEditor.h"
 #include "DialogueTableValidator.h"
 #include "DialogueTableConverter.h"
+#include "XLSXSupport/DialogueXLSXWriter.h"
+#include "XLSXSupport/DialogueXLSXReader.h"
+#include "XLSXSupport/DialogueXLSXSyncEngine.h"
+#include "XLSXSupport/SDialogueXLSXSyncDialog.h"
 #include "GasAbilityGeneratorTypes.h"
 #include "Widgets/Input/SEditableText.h"
 #include "Widgets/Input/SSearchBox.h"
@@ -510,7 +515,18 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
 		]
 
-		// Export CSV
+		// Export XLSX (primary format with sync support)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("ExportXLSX", "Export XLSX"))
+				.OnClicked(this, &SDialogueTableEditor::OnExportXLSXClicked)
+				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format with sync support"))
+		]
+
+		// Export CSV (legacy)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
@@ -528,6 +544,29 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 			SNew(SButton)
 				.Text(LOCTEXT("ImportCSV", "Import CSV"))
 				.OnClicked(this, &SDialogueTableEditor::OnImportCSVClicked)
+		]
+
+		// Import XLSX (primary format with sync support)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("ImportXLSX", "Import XLSX"))
+				.OnClicked(this, &SDialogueTableEditor::OnImportXLSXClicked)
+				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (replaces all rows)"))
+		]
+
+		// Sync XLSX (3-way merge with conflict resolution)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("SyncXLSX", "Sync XLSX"))
+				.OnClicked(this, &SDialogueTableEditor::OnSyncXLSXClicked)
+				.ToolTipText(LOCTEXT("SyncXLSXTooltip", "Merge Excel changes with UE (3-way merge with conflict resolution)"))
+				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
 		];
 }
 
@@ -1791,6 +1830,197 @@ FReply SDialogueTableEditor::OnExportCSVClicked()
 	return FReply::Handled();
 }
 
+FReply SDialogueTableEditor::OnExportXLSXClicked()
+{
+	SyncToTableData();
+
+	TArray<FString> OutFiles;
+	FDesktopPlatformModule::Get()->SaveFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
+		TEXT("Export Dialogue Table to Excel"),
+		FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_EXPORT),
+		TEXT("DialogueTable.xlsx"),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		EFileDialogFlags::None,
+		OutFiles
+	);
+
+	if (OutFiles.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	// Get rows from TableData
+	TArray<FDialogueTableRow> Rows;
+	if (TableData)
+	{
+		Rows = TableData->Rows;
+	}
+
+	FString ErrorMsg;
+	if (FDialogueXLSXWriter::ExportToXLSX(Rows, OutFiles[0], ErrorMsg))
+	{
+		FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_EXPORT, FPaths::GetPath(OutFiles[0]));
+
+		// Update source file path
+		if (TableData)
+		{
+			TableData->SourceFilePath = OutFiles[0];
+		}
+
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("XLSXExportSuccess", "Exported {0} rows to:\n{1}"),
+				FText::AsNumber(Rows.Num()),
+				FText::FromString(OutFiles[0])));
+	}
+	else
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("XLSXExportFailed", "Export failed:\n{0}"),
+				FText::FromString(ErrorMsg)));
+	}
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnImportXLSXClicked()
+{
+	TArray<FString> OutFiles;
+	FDesktopPlatformModule::Get()->OpenFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
+		TEXT("Import Dialogue Table from Excel"),
+		FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_IMPORT),
+		TEXT(""),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		EFileDialogFlags::None,
+		OutFiles
+	);
+
+	if (OutFiles.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	FDialogueXLSXImportResult Result = FDialogueXLSXReader::ImportFromXLSX(OutFiles[0]);
+
+	if (Result.bSuccess)
+	{
+		FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
+
+		// Update TableData with imported rows
+		if (TableData)
+		{
+			TableData->Rows = Result.Rows;
+			TableData->SourceFilePath = OutFiles[0];
+			MarkDirty();
+		}
+
+		// Refresh the view
+		SyncFromTableData();
+		RefreshList();
+
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("XLSXImportSuccess", "Imported {0} rows from:\n{1}"),
+				FText::AsNumber(Result.Rows.Num()),
+				FText::FromString(OutFiles[0])));
+	}
+	else
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("XLSXImportFailed", "Import failed:\n{0}"),
+				FText::FromString(Result.ErrorMessage)));
+	}
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnSyncXLSXClicked()
+{
+	SyncToTableData();
+
+	// Open file dialog
+	TArray<FString> OutFiles;
+	FDesktopPlatformModule::Get()->OpenFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
+		TEXT("Sync Dialogue Table from Excel"),
+		FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_IMPORT),
+		TEXT(""),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		EFileDialogFlags::None,
+		OutFiles
+	);
+
+	if (OutFiles.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	// Import Excel file
+	FDialogueXLSXImportResult ImportResult = FDialogueXLSXReader::ImportFromXLSX(OutFiles[0]);
+	if (!ImportResult.bSuccess)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("SyncImportFailed", "Failed to read Excel file:\n{0}"),
+				FText::FromString(ImportResult.ErrorMessage)));
+		return FReply::Handled();
+	}
+
+	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
+
+	// Get current UE rows
+	TArray<FDialogueTableRow> UERows;
+	if (TableData)
+	{
+		UERows = TableData->Rows;
+	}
+
+	// For now, use empty base (first sync). In future, base would come from stored export snapshot.
+	// TODO: Store base rows in TableData after export for true 3-way merge
+	TArray<FDialogueTableRow> BaseRows;
+
+	// Perform 3-way comparison
+	FDialogueSyncResult SyncResult = FDialogueXLSXSyncEngine::CompareSources(BaseRows, UERows, ImportResult.Rows);
+
+	// Auto-resolve non-conflicts
+	FDialogueXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
+
+	// Check if there are any changes
+	if (!SyncResult.HasChanges())
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("SyncNoChanges", "No changes detected. Excel file matches current UE data."));
+		return FReply::Handled();
+	}
+
+	// Show sync dialog
+	if (SDialogueXLSXSyncDialog::ShowModal(SyncResult))
+	{
+		// User clicked Apply - merge changes
+		FDialogueMergeResult MergeResult = FDialogueXLSXSyncEngine::ApplySync(SyncResult);
+
+		// Update TableData
+		if (TableData)
+		{
+			TableData->Rows = MergeResult.MergedRows;
+			TableData->SourceFilePath = OutFiles[0];
+			MarkDirty();
+		}
+
+		// Refresh view
+		SyncFromTableData();
+		RefreshList();
+
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("SyncComplete", "Sync complete!\n\nApplied from UE: {0}\nApplied from Excel: {1}\nDeleted: {2}\nUnchanged: {3}"),
+				FText::AsNumber(MergeResult.AppliedFromUE),
+				FText::AsNumber(MergeResult.AppliedFromExcel),
+				FText::AsNumber(MergeResult.Deleted),
+				FText::AsNumber(MergeResult.Unchanged)));
+	}
+
+	return FReply::Handled();
+}
+
 FReply SDialogueTableEditor::OnImportCSVClicked()
 {
 	TArray<FString> OutFiles;
@@ -1814,7 +2044,7 @@ FReply SDialogueTableEditor::OnImportCSVClicked()
 		FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
 		if (TableData)
 		{
-			TableData->SourceCSVPath = OutFiles[0];
+			TableData->SourceFilePath = OutFiles[0];
 		}
 	}
 
@@ -2094,7 +2324,7 @@ void SDialogueTableEditorWindow::OnNewTable()
 {
 	CurrentTableData = GetOrCreateTableData();
 	CurrentTableData->Rows.Empty();
-	CurrentTableData->SourceCSVPath.Empty();
+	CurrentTableData->SourceFilePath.Empty();
 
 	if (TableEditor.IsValid())
 	{
