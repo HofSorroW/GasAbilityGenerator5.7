@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-15
-**Status:** v4.4 Token Apply System Complete
+**Status:** v4.5.1 Validation Cache System Complete
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
@@ -28,7 +28,9 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 | **Token Preview Window** | Yes (v4.4) | No |
 | **POI Scanning** | No | Yes (from loaded world) |
 | **Confirmation Prompts** | Delete only | All edits |
-| **Status Bar** | Row counts | Row counts |
+| **Status Bar** | Row counts | Row counts + validation summary |
+| **Validation Caching** | Yes (v4.5.1) | Yes (v4.5.1) |
+| **Staleness Detection** | Yes (hash-based) | Yes (hash-based) |
 | **Multi-Select Filter** | Yes | Yes |
 | **Text Filter** | Yes (live) | Yes (live) |
 | **Save/Load Table** | Yes | Yes |
@@ -906,6 +908,197 @@ The token system follows the same safety patterns as the v3.0 Regen/Diff system:
 | Keyboard shortcuts | Ctrl+D duplicate, Ctrl+Shift+V paste tokens only |
 | Undo/Redo | Track changes for reversal |
 | Diff view | Show what changed since last save/export |
+
+---
+
+## Validation Cache System (v4.5.1) - IMPLEMENTED
+
+**Status:** Fully implemented (2026-01-15)
+
+### Problem Statement
+
+The NPC and Dialogue table editors had inconsistent validation approaches:
+- Dialogue stored validation state directly on row struct (`bEventsValid`, `bConditionsValid`)
+- NPC computed validation on-demand via external validator class
+
+This caused:
+1. Inconsistent APIs between editors
+2. Status bar re-validating on every update (O(n) cost)
+3. No staleness detection when underlying data changed
+
+### Solution: Unified Validation Cache
+
+Both editors now use **Option A with discipline**: cache validation results on the row struct, but the validator remains the single source of truth.
+
+### Shared Components
+
+**EValidationState enum** (in `DialogueTableEditorTypes.h`):
+```cpp
+UENUM(BlueprintType)
+enum class EValidationState : uint8
+{
+    Unknown UMETA(DisplayName = "Unknown"),  // Yellow - needs validation
+    Valid UMETA(DisplayName = "Valid"),      // Green - passed validation
+    Invalid UMETA(DisplayName = "Invalid")   // Red - has errors
+};
+```
+
+**ListsVersionGuid** - Persisted on TableData, bumped when asset lists change:
+```cpp
+// In UDialogueTableData / UNPCTableData:
+UPROPERTY(EditAnywhere, Category = "Validation")
+FGuid ListsVersionGuid;
+
+void BumpListsVersion() { ListsVersionGuid = FGuid::NewGuid(); }
+```
+
+### Validation Cache Fields
+
+**Dialogue rows** (`FDialogueTableRow`):
+```cpp
+// Existing token validation (unchanged)
+UPROPERTY(Transient) bool bEventsValid = true;
+UPROPERTY(Transient) FString EventsValidationError;
+UPROPERTY(Transient) bool bConditionsValid = true;
+UPROPERTY(Transient) FString ConditionsValidationError;
+
+// New staleness detection
+UPROPERTY(Transient) uint32 ValidationInputHash = 0;
+```
+
+**NPC rows** (`FNPCTableRow`):
+```cpp
+UPROPERTY(Transient) EValidationState ValidationState = EValidationState::Unknown;
+UPROPERTY(Transient) FString ValidationSummary;  // e.g., "2 error(s), 1 warning(s)"
+UPROPERTY(Transient) int32 ValidationIssueCount = 0;
+UPROPERTY(Transient) uint32 ValidationInputHash = 0;
+```
+
+### Hash Recipe for Staleness Detection
+
+```cpp
+ValidationInputHash = Hash(
+    EditableFieldsHash +      // Row's editable fields
+    ListsVersionGuid +        // Asset lists version
+    SpecVersion               // Token registry version (Dialogue only)
+)
+```
+
+**Staleness rule:** If stored hash doesn't match computed hash → validation is stale (Unknown state).
+
+### Validator API (Cache-Writing Methods)
+
+**FDialogueTableValidator**:
+```cpp
+// Validate all rows and write results to cache
+static FDialogueValidationResult ValidateAllAndCache(
+    TArray<FDialogueTableRow>& Rows,
+    const FGuid& ListsVersionGuid
+);
+
+// Validate single row and write cache
+static TArray<FDialogueValidationIssue> ValidateRowAndCache(
+    FDialogueTableRow& Row,
+    const TArray<FDialogueTableRow>& AllRows,
+    const FGuid& ListsVersionGuid
+);
+
+// Compute hash for staleness detection
+static uint32 ComputeValidationInputHash(
+    const FDialogueTableRow& Row,
+    const FGuid& ListsVersionGuid
+);
+```
+
+**FNPCTableValidator**:
+```cpp
+// Same pattern
+static FNPCValidationResult ValidateAllAndCache(
+    TArray<FNPCTableRow>& Rows,
+    const FGuid& ListsVersionGuid
+);
+
+static TArray<FNPCValidationIssue> ValidateRowAndCache(
+    FNPCTableRow& Row,
+    const TArray<FNPCTableRow>& AllRows,
+    const FGuid& ListsVersionGuid
+);
+
+static uint32 ComputeValidationInputHash(
+    const FNPCTableRow& Row,
+    const FGuid& ListsVersionGuid
+);
+```
+
+### Editor Integration
+
+**OnValidateClicked / OnGenerateClicked:**
+```cpp
+// Call cache-writing validation
+FDialogueValidationResult Result = FDialogueTableValidator::ValidateAllAndCache(
+    TableData->Rows,
+    TableData->ListsVersionGuid
+);
+RefreshList();
+UpdateStatusBar();
+```
+
+**NPC editor note:** Since NPC uses `TSharedPtr` copies in `AllRows`, validation results must be copied back:
+```cpp
+// Validate a local copy
+TArray<FNPCTableRow> RowsToValidate;
+for (const auto& RowPtr : AllRows) { RowsToValidate.Add(*RowPtr); }
+
+FNPCValidationResult Result = FNPCTableValidator::ValidateAllAndCache(RowsToValidate, ListsVersionGuid);
+
+// Copy cache fields back by matching RowId
+for (int32 i = 0; i < RowsToValidate.Num() && i < AllRows.Num(); i++)
+{
+    if (AllRows[i]->RowId == RowsToValidate[i].RowId)
+    {
+        AllRows[i]->ValidationState = RowsToValidate[i].ValidationState;
+        AllRows[i]->ValidationSummary = RowsToValidate[i].ValidationSummary;
+        AllRows[i]->ValidationIssueCount = RowsToValidate[i].ValidationIssueCount;
+        AllRows[i]->ValidationInputHash = RowsToValidate[i].ValidationInputHash;
+    }
+}
+```
+
+**UpdateStatusBar (O(1) cache read):**
+```cpp
+void UpdateStatusBar()
+{
+    int32 InvalidCount = 0, UnknownCount = 0;
+    for (const auto& RowPtr : AllRows)
+    {
+        if (RowPtr->ValidationState == EValidationState::Invalid)
+            InvalidCount++;
+        else if (RowPtr->ValidationState == EValidationState::Unknown)
+            UnknownCount++;
+    }
+    // Update status text using cached counts
+}
+```
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `DialogueTableEditorTypes.h` | Added `EValidationState` enum, `ValidationInputHash` field, `ComputeEditableFieldsHash()` |
+| `NPCTableEditorTypes.h` | Added cache fields, `ComputeEditableFieldsHash()`, `InvalidateValidation()` |
+| `DialogueTokenRegistry.h` | Added `SpecVersion` constant |
+| `DialogueTableValidator.h/.cpp` | Added `ValidateAllAndCache()`, `ValidateRowAndCache()`, `ComputeValidationInputHash()` |
+| `NPCTableValidator.h/.cpp` | Same as above |
+| `SDialogueTableEditor.cpp` | Updated `OnValidateClicked()`, `OnGenerateClicked()` to use cache |
+| `SNPCTableEditor.cpp` | Updated same methods, plus `UpdateStatusBar()` for O(1) reads |
+
+### Commits
+
+| Commit | Description |
+|--------|-------------|
+| `64acc9f` | v4.5: Add validation cache fields and hash infrastructure |
+| `9ac4220` | v4.5: Wire up validators with cache-writing methods |
+| `e80a177` | v4.5.1: Wire editors to use ValidateAllAndCache |
 
 ---
 
