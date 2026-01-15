@@ -1033,7 +1033,11 @@ TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 								return FText::FromString(TEXT("(None)"));
 							}
 							FString AssetName = RowData->Blueprint.GetAssetName();
-							return FText::FromString(AssetName.IsEmpty() ? TEXT("(None)") : AssetName);
+							if (AssetName.IsEmpty())
+							{
+								return FText::FromString(TEXT("(None)"));
+							}
+							return FText::FromString(AssetName);
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				]
@@ -1556,7 +1560,11 @@ static FString GetAssetDisplayName(const FSoftObjectPath& Path)
 		return TEXT("(None)");
 	}
 	FString AssetName = Path.GetAssetName();
-	return AssetName.IsEmpty() ? TEXT("(None)") : AssetName;
+	if (AssetName.IsEmpty())
+	{
+		return TEXT("(None)");
+	}
+	return AssetName;
 }
 
 FString SNPCTableEditor::GetColumnValue(const TSharedPtr<FNPCTableRow>& Row, FName ColumnId) const
@@ -2101,9 +2109,11 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 		Row.DisplayName = NPCDef->NPCName.ToString();
 
 		// Blueprint - NPCClassPath
+		// Use ToString() to get the raw Blueprint asset path, not ToSoftObjectPath()
+		// which resolves to the generated UClass (adds "_C" suffix)
 		if (!NPCDef->NPCClassPath.IsNull())
 		{
-			Row.Blueprint = NPCDef->NPCClassPath.ToSoftObjectPath();
+			Row.Blueprint = FSoftObjectPath(NPCDef->NPCClassPath.ToString());
 		}
 
 		//=========================================================================
