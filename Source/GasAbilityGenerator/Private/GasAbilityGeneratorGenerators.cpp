@@ -11188,14 +11188,11 @@ FGenerationResult FItemCollectionGenerator::Generate(const FManifestItemCollecti
 	for (const FManifestItemWithQuantity& ItemDef : Definition.ItemsWithQuantity)
 	{
 		FString ItemPath = ItemDef.ItemClass;
-		// Build full path if relative
+		// Build full path if relative - NO "_C" suffix for TSoftClassPtr storage
+		// UE resolves Blueprint class internally when loading
 		if (!ItemPath.Contains(TEXT("/")))
 		{
-			ItemPath = FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemDef.ItemClass, *ItemDef.ItemClass);
-		}
-		else if (!ItemPath.EndsWith(TEXT("_C")))
-		{
-			ItemPath = ItemPath + TEXT("_C");
+			ItemPath = FString::Printf(TEXT("%s/Items/%s.%s"), *GetProjectRoot(), *ItemDef.ItemClass, *ItemDef.ItemClass);
 		}
 
 		FItemWithQuantity NewItem;
@@ -11210,13 +11207,10 @@ FGenerationResult FItemCollectionGenerator::Generate(const FManifestItemCollecti
 	for (const FString& ItemName : Definition.Items)
 	{
 		FString ItemPath = ItemName;
+		// NO "_C" suffix for TSoftClassPtr storage
 		if (!ItemPath.Contains(TEXT("/")))
 		{
-			ItemPath = FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemName, *ItemName);
-		}
-		else if (!ItemPath.EndsWith(TEXT("_C")))
-		{
-			ItemPath = ItemPath + TEXT("_C");
+			ItemPath = FString::Printf(TEXT("%s/Items/%s.%s"), *GetProjectRoot(), *ItemName, *ItemName);
 		}
 
 		FItemWithQuantity NewItem;
@@ -11990,34 +11984,37 @@ static void PopulateLootTableRollArray(
 						void* ItemPtr = ItemsHelper.GetRawPtr(ItemIndex);
 
 						// Set Item (TSoftClassPtr<UNarrativeItem>)
+						// For TSoftClassPtr storage, use path WITHOUT "_C" suffix
+						// UE resolves Blueprint class internally when loading
 						FString ItemPath = ItemDef.Item;
 						if (!ItemPath.Contains(TEXT("/")))
 						{
-							// Try to resolve short name to full path
+							// Try to resolve short name to full path - use "_C" for LoadClass verification
 							TArray<FString> SearchPaths = {
 								FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item),
 								FString::Printf(TEXT("%s/Items/Equipment/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item),
 								FString::Printf(TEXT("%s/Items/Weapons/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item)
 							};
 
-							for (const FString& SearchPath : SearchPaths)
+							FString FoundFolder = TEXT("Items");
+							for (int32 i = 0; i < SearchPaths.Num(); i++)
 							{
-								if (UClass* FoundClass = LoadClass<UObject>(nullptr, *SearchPath))
+								if (UClass* FoundClass = LoadClass<UObject>(nullptr, *SearchPaths[i]))
 								{
-									ItemPath = SearchPath;
+									// Found - determine folder for storage path
+									if (i == 1) FoundFolder = TEXT("Items/Equipment");
+									else if (i == 2) FoundFolder = TEXT("Items/Weapons");
 									break;
 								}
 							}
 
-							// If not found, build default path
-							if (!ItemPath.Contains(TEXT("/")))
-							{
-								ItemPath = FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemDef.Item, *ItemDef.Item);
-							}
+							// Build storage path WITHOUT "_C" for TSoftClassPtr
+							ItemPath = FString::Printf(TEXT("%s/%s/%s.%s"), *GetProjectRoot(), *FoundFolder, *ItemDef.Item, *ItemDef.Item);
 						}
-						else if (!ItemPath.EndsWith(TEXT("_C")))
+						// If full path provided, strip "_C" if present for consistent storage
+						if (ItemPath.EndsWith(TEXT("_C")))
 						{
-							ItemPath = ItemPath + TEXT("_C");
+							ItemPath = ItemPath.LeftChop(2);
 						}
 
 						// Set via FSoftClassPath on the "Item" property (TSoftClassPtr)
@@ -12205,22 +12202,19 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	NPCDef->bIsVendor = Definition.bIsVendor;
 
 	// v2.6.0: Set NPCClassPath via TSoftClassPtr
+	// v4.2.12: Store WITHOUT "_C" suffix - UE resolves Blueprint class internally
 	if (!Definition.NPCClassPath.IsEmpty())
 	{
 		FString ClassPath = Definition.NPCClassPath;
-		// Ensure it has _C suffix for Blueprint classes
-		if (!ClassPath.EndsWith(TEXT("_C")))
+		// Strip "_C" if provided (for consistency)
+		if (ClassPath.EndsWith(TEXT("_C")))
 		{
-			// Check if it's a relative path
-			if (!ClassPath.Contains(TEXT("/")))
-			{
-				ClassPath = FString::Printf(TEXT("%s/NPCs/%s.%s_C"), *GetProjectRoot(), *Definition.NPCClassPath, *Definition.NPCClassPath);
-			}
-			else if (!ClassPath.EndsWith(TEXT("_C")))
-			{
-				// Add _C suffix to the asset name
-				ClassPath = ClassPath + TEXT("_C");
-			}
+			ClassPath = ClassPath.LeftChop(2);
+		}
+		// Build full path if relative
+		if (!ClassPath.Contains(TEXT("/")))
+		{
+			ClassPath = FString::Printf(TEXT("%s/NPCs/%s.%s"), *GetProjectRoot(), *Definition.NPCClassPath, *Definition.NPCClassPath);
 		}
 		NPCDef->NPCClassPath = TSoftClassPtr<ANarrativeNPCCharacter>(FSoftObjectPath(ClassPath));
 		LogGeneration(FString::Printf(TEXT("  Set NPCClassPath: %s"), *ClassPath));
@@ -12257,28 +12251,26 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 
 	// v3.3: Set Dialogue via TSoftClassPtr
 	// v3.9.10: Fixed double-slash bug for absolute paths
+	// v4.2.12: Store WITHOUT "_C" suffix - UE resolves Blueprint class internally
 	if (!Definition.Dialogue.IsEmpty())
 	{
 		FString DialoguePath = Definition.Dialogue;
+		// Strip "_C" if provided (for consistency)
+		if (DialoguePath.EndsWith(TEXT("_C")))
+		{
+			DialoguePath = DialoguePath.LeftChop(2);
+		}
 		if (DialoguePath.StartsWith(TEXT("/")))
 		{
-			// Absolute path - ensure it has _C suffix for Blueprint classes
-			if (!DialoguePath.EndsWith(TEXT("_C")))
-			{
-				DialoguePath = DialoguePath + TEXT("_C");
-			}
+			// Absolute path - use directly
 		}
 		else if (!DialoguePath.Contains(TEXT("/")))
 		{
-			DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s_C"), *GetProjectRoot(), *Definition.Dialogue, *Definition.Dialogue);
+			DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s"), *GetProjectRoot(), *Definition.Dialogue, *Definition.Dialogue);
 		}
 		else
 		{
 			// Relative path with slashes - prepend project root
-			if (!DialoguePath.EndsWith(TEXT("_C")))
-			{
-				DialoguePath = DialoguePath + TEXT("_C");
-			}
 			DialoguePath = FString::Printf(TEXT("%s/%s"), *GetProjectRoot(), *DialoguePath);
 		}
 		NPCDef->Dialogue = TSoftClassPtr<UDialogue>(FSoftObjectPath(DialoguePath));
@@ -12404,13 +12396,14 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	}
 
 	// v3.7: Auto-create dialogue blueprint if requested
+	// v4.2.12: Store WITHOUT "_C" suffix - UE resolves Blueprint class internally
 	if (Definition.bAutoCreateDialogue)
 	{
 		// Derive dialogue name from NPC name: NPCDef_Blacksmith -> DBP_BlacksmithDialogue
 		FString NPCBaseName = Definition.Name;
 		NPCBaseName.RemoveFromStart(TEXT("NPCDef_"));
 		FString DialogueName = FString::Printf(TEXT("DBP_%sDialogue"), *NPCBaseName);
-		FString DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s_C"), *GetProjectRoot(), *DialogueName, *DialogueName);
+		FString DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s"), *GetProjectRoot(), *DialogueName, *DialogueName);
 
 		// Set the dialogue reference on the NPC
 		NPCDef->Dialogue = TSoftClassPtr<UDialogue>(FSoftObjectPath(DialoguePath));
@@ -12757,17 +12750,19 @@ FGenerationResult FTaggedDialogueSetGenerator::Generate(const FManifestTaggedDia
 		NewDialogue.MaxDistance = DialogueDef.MaxDistance;
 
 		// v2.6.0: Set Dialogue class via TSoftClassPtr
+		// v4.2.12: Store WITHOUT "_C" suffix - UE resolves Blueprint class internally
 		if (!DialogueDef.DialogueClass.IsEmpty())
 		{
 			FString DialoguePath = DialogueDef.DialogueClass;
+			// Strip "_C" if provided (for consistency)
+			if (DialoguePath.EndsWith(TEXT("_C")))
+			{
+				DialoguePath = DialoguePath.LeftChop(2);
+			}
 			// Build full path if relative
 			if (!DialoguePath.Contains(TEXT("/")))
 			{
-				DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s_C"), *GetProjectRoot(), *DialogueDef.DialogueClass, *DialogueDef.DialogueClass);
-			}
-			else if (!DialoguePath.EndsWith(TEXT("_C")))
-			{
-				DialoguePath = DialoguePath + TEXT("_C");
+				DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s"), *GetProjectRoot(), *DialogueDef.DialogueClass, *DialogueDef.DialogueClass);
 			}
 			NewDialogue.Dialogue = TSoftClassPtr<UDialogue>(FSoftObjectPath(DialoguePath));
 			LogGeneration(FString::Printf(TEXT("  Set dialogue '%s' -> %s"), *DialogueDef.Tag, *DialoguePath));
