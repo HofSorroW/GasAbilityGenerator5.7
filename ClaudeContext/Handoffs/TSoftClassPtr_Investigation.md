@@ -1,8 +1,8 @@
 # TSoftClassPtr "_C" Suffix Investigation
 
 **Date:** 2026-01-15
-**Version:** v4.2.11
-**Status:** Documented - Pending Decision
+**Version:** v4.2.12
+**Status:** FIXED - All 7 locations corrected
 
 ## Problem Discovery
 
@@ -73,6 +73,17 @@ Remove "_C" suffix addition from all 7 TSoftClassPtr storage locations.
 - **Medium Risk:** May break existing generated assets that were stored with "_C"
 - **Mitigation:** Regenerate assets after fix, or UE may resolve both formats
 
-### Decision Needed
+### Resolution (v4.2.12)
 
-Proceed with removing "_C" from TSoftClassPtr storage locations?
+**FIXED** - All 7 TSoftClassPtr storage locations now store paths WITHOUT "_C" suffix.
+
+**Test Results:**
+- 159 assets generated successfully
+- 0 failures
+- 1 deferred (unrelated manifest dependency issue)
+
+**Changes Made:**
+- ItemCollection: 2 locations
+- NPCDefinition: NPCClassPath, Dialogue, auto-create Dialogue (3 locations)
+- TaggedDialogueSet: Dialogue (1 location)
+- Loot table items: 1 location
