@@ -1,5 +1,6 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
-// v4.2.8: Fixed status bar not updating - explicit invalidation required for sibling widgets
+// v4.2.14: Fixed Seq column not updating - changed to Text_Lambda for dynamic reads
+// v4.2.13: Fixed status bar - stored STextBlock refs + explicit SetText() calls
 //
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
@@ -10,6 +11,7 @@
 #include "Widgets/Input/SEditableText.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Input/SComboBox.h"
+#include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Layout/SBox.h"
@@ -98,11 +100,12 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 
 TSharedRef<SWidget> SDialogueTableRow::CreateSeqCell()
 {
+	// Use Text_Lambda to dynamically read SeqDisplay (updates when sequences are recalculated)
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(STextBlock)
-				.Text(FText::FromString(RowDataEx->SeqDisplay))
+				.Text_Lambda([this]() { return FText::FromString(RowDataEx->SeqDisplay); })
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
 }
@@ -397,7 +400,7 @@ void SDialogueTableEditor::Construct(const FArguments& InArgs)
 	];
 
 	ApplyFlowOrder();
-	UpdateStatusBar();  // Initialize status bar with correct values
+	UpdateStatusBar();  // v4.2.13: Initial status bar population
 }
 
 void SDialogueTableEditor::SetTableData(UDialogueTableData* InTableData)
@@ -406,7 +409,7 @@ void SDialogueTableEditor::SetTableData(UDialogueTableData* InTableData)
 	SyncFromTableData();
 	UpdateColumnFilterOptions();
 	ApplyFlowOrder();
-	UpdateStatusBar();
+	UpdateStatusBar();  // v4.2.13
 }
 
 TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
@@ -709,86 +712,90 @@ TSharedRef<SHeaderRow> SDialogueTableEditor::BuildHeaderRow()
 
 TSharedRef<SWidget> SDialogueTableEditor::BuildStatusBar()
 {
-	// v4.2.8: Use SAssignNew to store StatusBar reference for explicit invalidation
-	// Text_Lambda is evaluated during Paint, but ListView->RequestListRefresh() only
-	// invalidates the ListView, not sibling widgets. We must explicitly invalidate.
-	return SAssignNew(StatusBar, SHorizontalBox)
+	// v4.2.13: Store STextBlock references for direct SetText() updates
+	// This bypasses all Slate caching/invalidation issues by updating text directly
+	return SNew(SHorizontalBox)
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(4.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					UE_LOG(LogTemp, Verbose, TEXT("[DialogueTableEditor] Status bar lambda called - AllRows: %d"), AllRows.Num());
-					return FText::Format(
-						LOCTEXT("TotalNodes", "Total: {0} nodes"),
-						FText::AsNumber(AllRows.Num())
-					);
-				})
+			SAssignNew(StatusTotalText, STextBlock)
+				.Text(LOCTEXT("InitTotal", "Total: 0 nodes"))
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					TSet<FName> UniqueDialogues;
-					for (const auto& Row : AllRows)
-					{
-						if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
-						{
-							UniqueDialogues.Add(Row->Data->DialogueID);
-						}
-					}
-					return FText::Format(
-						LOCTEXT("DialogueCount", "Dialogues: {0}"),
-						FText::AsNumber(UniqueDialogues.Num())
-					);
-				})
+			SAssignNew(StatusDialoguesText, STextBlock)
+				.Text(LOCTEXT("InitDialogues", "Dialogues: 0"))
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					return FText::Format(
-						LOCTEXT("ShowingCount", "Showing: {0}"),
-						FText::AsNumber(DisplayedRows.Num())
-					);
-				})
+			SAssignNew(StatusShowingText, STextBlock)
+				.Text(LOCTEXT("InitShowing", "Showing: 0"))
 		]
 
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
-			SNew(STextBlock)
-				.Text_Lambda([this]()
-				{
-					int32 Selected = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
-					return FText::Format(
-						LOCTEXT("SelectedCount", "Selected: {0}"),
-						FText::AsNumber(Selected)
-					);
-				})
+			SAssignNew(StatusSelectedText, STextBlock)
+				.Text(LOCTEXT("InitSelected", "Selected: 0"))
 		];
 }
 
+// v4.2.13: Direct SetText() update - bypasses all Slate caching issues
 void SDialogueTableEditor::UpdateStatusBar()
 {
-	// v4.2.8: Explicitly invalidate status bar to trigger repaint
-	// Text_Lambda is only evaluated during Paint, so we must force a repaint.
-	// ListView->RequestListRefresh() only invalidates the ListView, not siblings.
-	if (StatusBar.IsValid())
+	// Total nodes
+	if (StatusTotalText.IsValid())
 	{
-		StatusBar->Invalidate(EInvalidateWidgetReason::Paint);
+		int32 TotalCount = AllRows.Num();
+		StatusTotalText->SetText(FText::Format(
+			LOCTEXT("TotalNodes", "Total: {0} nodes"),
+			FText::AsNumber(TotalCount)
+		));
+	}
+
+	// Unique dialogues count
+	if (StatusDialoguesText.IsValid())
+	{
+		TSet<FName> UniqueDialogues;
+		for (const auto& Row : AllRows)
+		{
+			if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
+			{
+				UniqueDialogues.Add(Row->Data->DialogueID);
+			}
+		}
+		StatusDialoguesText->SetText(FText::Format(
+			LOCTEXT("DialogueCount", "Dialogues: {0}"),
+			FText::AsNumber(UniqueDialogues.Num())
+		));
+	}
+
+	// Currently displayed rows (after filtering)
+	if (StatusShowingText.IsValid())
+	{
+		StatusShowingText->SetText(FText::Format(
+			LOCTEXT("ShowingCount", "Showing: {0}"),
+			FText::AsNumber(DisplayedRows.Num())
+		));
+	}
+
+	// Selected rows
+	if (StatusSelectedText.IsValid())
+	{
+		int32 SelectedCount = ListView.IsValid() ? ListView->GetNumItemsSelected() : 0;
+		StatusSelectedText->SetText(FText::Format(
+			LOCTEXT("SelectedCount", "Selected: {0}"),
+			FText::AsNumber(SelectedCount)
+		));
 	}
 }
 
@@ -801,8 +808,7 @@ TSharedRef<ITableRow> SDialogueTableEditor::OnGenerateRow(TSharedPtr<FDialogueTa
 
 void SDialogueTableEditor::OnSelectionChanged(TSharedPtr<FDialogueTableRowEx> Item, ESelectInfo::Type SelectInfo)
 {
-	// Update selected count in status bar
-	UpdateStatusBar();
+	UpdateStatusBar();  // v4.2.13: Update selected count
 }
 
 EColumnSortMode::Type SDialogueTableEditor::GetColumnSortMode(FName ColumnId) const
@@ -824,9 +830,7 @@ void SDialogueTableEditor::RefreshList()
 	{
 		ListView->RequestListRefresh();
 	}
-
-	// Update status bar numbers directly
-	UpdateStatusBar();
+	UpdateStatusBar();  // v4.2.13: Explicit status bar update
 }
 
 TArray<TSharedPtr<FDialogueTableRowEx>> SDialogueTableEditor::GetSelectedRows() const
@@ -1564,6 +1568,7 @@ FReply SDialogueTableEditor::OnDeleteRowsClicked()
 	UpdateColumnFilterOptions();
 	RefreshList();
 	MarkDirty();
+
 	return FReply::Handled();
 }
 

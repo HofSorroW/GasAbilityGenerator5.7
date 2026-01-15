@@ -277,7 +277,7 @@ Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 
 **Naming Convention:** All structs use `FManifest*` prefix (e.g., `FManifestData`, `FManifestGameplayAbilityDefinition`).
 
-### Table Editors (v4.2)
+### Table Editors (v4.2.14)
 
 The plugin includes Excel-like table editors for bulk content authoring:
 
@@ -295,6 +295,379 @@ The plugin includes Excel-like table editors for bulk content authoring:
 - Export to YAML manifest format
 
 **Validation System (v2.9.1):** Pre-generation validation via `FValidationIssue`, `FPreValidationResult`. FX validation via `FFXValidationError`, `FFXValidationResult`. Generator metadata tracking via `FFXGeneratorMetadata` for regeneration safety.
+
+### Table Editor Development Guide (v4.2.14)
+
+When implementing Slate table editors (`SListView`, `SMultiColumnTableRow`), follow these patterns:
+
+#### Row Cell Text Updates - Use `Text_Lambda`
+
+For table row cells that display data which can change (e.g., sequence numbers, computed values), **always use `Text_Lambda`** to ensure the display updates when underlying data changes:
+
+```cpp
+// CORRECT - Dynamic text that updates when RowData changes
+TSharedRef<SWidget> CreateSeqCell()
+{
+    return SNew(SBox)
+        .Padding(FMargin(4.0f, 2.0f))
+        [
+            SNew(STextBlock)
+                .Text_Lambda([this]() { return FText::FromString(RowDataEx->SeqDisplay); })
+        ];
+}
+
+// CORRECT - Editable cells with dynamic display
+TSharedRef<SWidget> CreateNextNodesCell()
+{
+    return SNew(SEditableText)
+        .Text_Lambda([RowData]()
+        {
+            FString Result;
+            for (int32 i = 0; i < RowData->NextNodeIDs.Num(); i++)
+            {
+                if (i > 0) Result += TEXT(", ");
+                Result += RowData->NextNodeIDs[i].ToString();
+            }
+            return FText::FromString(Result);
+        })
+        .OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type) { ... });
+}
+
+// WRONG - Static text set once at construction, never updates
+TSharedRef<SWidget> CreateSeqCell()
+{
+    return SNew(STextBlock)
+        .Text(FText::FromString(RowDataEx->SeqDisplay))  // BUG: Won't update!
+}
+```
+
+**Why `Text_Lambda` is safe for row cells:**
+- Only evaluated when the row widget is visible
+- Just reads cached values (no expensive computation)
+- No logging or side effects in the lambda
+
+#### Status Bar / Global UI - Use Explicit `SetText()`
+
+For status bars and global UI elements that summarize data, **use stored widget references with explicit `SetText()` calls** to avoid performance issues:
+
+```cpp
+// In header:
+TSharedPtr<STextBlock> StatusTotalText;
+TSharedPtr<STextBlock> StatusSelectedText;
+
+// In BuildStatusBar():
+SAssignNew(StatusTotalText, STextBlock)
+    .Text(LOCTEXT("InitTotal", "Total: 0 nodes"))
+
+// Call UpdateStatusBar() explicitly when data changes:
+void UpdateStatusBar()
+{
+    if (StatusTotalText.IsValid())
+    {
+        StatusTotalText->SetText(FText::Format(
+            LOCTEXT("TotalNodes", "Total: {0} nodes"),
+            FText::AsNumber(AllRows.Num())
+        ));
+    }
+}
+
+// WRONG - Lambda with logging = thousands of log calls per second
+SNew(STextBlock)
+    .Text_Lambda([this]()
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Called every frame!"));  // PERFORMANCE BUG
+        return FText::Format(...);
+    })
+```
+
+**When to call `UpdateStatusBar()`:**
+- After adding/deleting rows
+- After selection changes (`OnSelectionChanged`)
+- After applying filters
+- After `RefreshList()`
+
+#### Summary: Pattern Selection
+
+| UI Element | Pattern | Reason |
+|------------|---------|--------|
+| Row cell (display only) | `Text_Lambda` | Updates when data changes, only evaluated when visible |
+| Row cell (editable) | `Text_Lambda` + `OnTextCommitted_Lambda` | Same as above + handles user edits |
+| Status bar | `SAssignNew` + `SetText()` | Avoids per-frame polling, explicit updates only |
+| Global counters | `SAssignNew` + `SetText()` | Same as status bar |
+
+#### Column Definitions with Proportional Widths
+
+Define columns with `FillWidth()` proportions that sum to ~1.0:
+
+```cpp
+// Column struct for reusability
+struct FDialogueTableColumn
+{
+    FName ColumnId;
+    FText DisplayName;
+    float DefaultWidth;  // Proportion of total width (0.0 - 1.0)
+};
+
+// Define columns (proportions should sum to ~1.0)
+inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
+{
+    return {
+        { TEXT("Seq"),          FText::FromString(TEXT("Seq")),          0.03f },  // Narrow
+        { TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue ID")),  0.09f },
+        { TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),      0.10f },
+        { TEXT("NodeType"),     FText::FromString(TEXT("Type")),         0.05f },  // Narrow
+        { TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),      0.08f },
+        { TEXT("Text"),         FText::FromString(TEXT("Text")),         0.20f },  // Wide - main content
+        { TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),  0.10f },
+        { TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),       0.08f },
+        { TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),   0.10f },
+        { TEXT("Skippable"),    FText::FromString(TEXT("Skip")),         0.04f },  // Narrow
+        { TEXT("Notes"),        FText::FromString(TEXT("Notes")),        0.13f },
+    };
+}
+
+// Build header row with proportional widths
+TSharedRef<SHeaderRow> BuildHeaderRow()
+{
+    TSharedRef<SHeaderRow> Header = SNew(SHeaderRow);
+    for (const FDialogueTableColumn& Col : GetDialogueTableColumns())
+    {
+        Header->AddColumn(
+            SHeaderRow::Column(Col.ColumnId)
+                .DefaultLabel(Col.DisplayName)
+                .FillWidth(Col.DefaultWidth)  // Proportional width
+                .SortMode(this, &SDialogueTableEditor::GetColumnSortMode, Col.ColumnId)
+                .OnSort(this, &SDialogueTableEditor::OnColumnSortModeChanged)
+                .HeaderContent()[ BuildColumnHeaderContent(Col) ]
+        );
+    }
+    return Header;
+}
+```
+
+#### Column Header with Filter Text + Multi-Select Dropdown
+
+Each column header contains: title, text filter, and multi-select dropdown:
+
+```cpp
+TSharedRef<SWidget> BuildColumnHeaderContent(const FDialogueTableColumn& Col)
+{
+    FColumnFilterState& FilterState = ColumnFilters.FindOrAdd(Col.ColumnId);
+
+    return SNew(SVerticalBox)
+        // Column title
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(2.0f)
+        [
+            SNew(STextBlock)
+                .Text(Col.DisplayName)
+                .Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+        ]
+
+        // Live text filter (filters as you type)
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(2.0f, 1.0f)
+        [
+            SNew(SEditableText)
+                .HintText(LOCTEXT("FilterHint", "Filter..."))
+                .OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText)
+                {
+                    OnColumnTextFilterChanged(ColumnId, NewText);
+                })
+                .Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+        ]
+
+        // Multi-select dropdown with checkboxes
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(2.0f, 1.0f)
+        [
+            SNew(SComboButton)
+                .OnGetMenuContent_Lambda([this, ColumnId = Col.ColumnId]() -> TSharedRef<SWidget>
+                {
+                    // Build scrollable checkbox menu from unique column values
+                    return BuildFilterDropdownMenu(ColumnId);
+                })
+                .ButtonContent()
+                [
+                    SNew(STextBlock)
+                        .Text_Lambda([&FilterState]()
+                        {
+                            if (FilterState.SelectedValues.Num() == 0)
+                                return LOCTEXT("AllFilter", "(All)");
+                            if (FilterState.SelectedValues.Num() == 1)
+                                return FText::FromString(*FilterState.SelectedValues.begin());
+                            return FText::Format(LOCTEXT("MultiSel", "({0} selected)"),
+                                FText::AsNumber(FilterState.SelectedValues.Num()));
+                        })
+                        .Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+                ]
+        ];
+}
+```
+
+#### Row Cell Styling Patterns
+
+```cpp
+// Standard text cell with padding and tooltip
+TSharedRef<SWidget> CreateTextCell(FString& Value, const FString& Hint, bool bWithTooltip)
+{
+    TSharedRef<SWidget> EditableText = SNew(SEditableText)
+        .Text_Lambda([&Value]() { return FText::FromString(Value); })
+        .HintText(FText::FromString(Hint))
+        .OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
+        {
+            Value = NewText.ToString();
+            MarkModified();
+        })
+        .Font(FCoreStyle::GetDefaultFontStyle("Regular", 9));
+
+    return SNew(SBox)
+        .Padding(FMargin(4.0f, 2.0f))
+        .ToolTipText_Lambda([&Value, bWithTooltip]()
+        {
+            return (bWithTooltip && !Value.IsEmpty()) ? FText::FromString(Value) : FText::GetEmpty();
+        })
+        [ EditableText ];
+}
+
+// Checkbox cell (centered)
+TSharedRef<SWidget> CreateCheckboxCell(bool& bValue, const FText& Tooltip)
+{
+    return SNew(SBox)
+        .Padding(FMargin(4.0f, 2.0f))
+        .HAlign(HAlign_Center)
+        [
+            SNew(SCheckBox)
+                .IsChecked_Lambda([&bValue]()
+                {
+                    return bValue ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+                })
+                .OnCheckStateChanged_Lambda([this, &bValue](ECheckBoxState NewState)
+                {
+                    bValue = (NewState == ECheckBoxState::Checked);
+                    MarkModified();
+                })
+                .ToolTipText(Tooltip)
+        ];
+}
+
+// Indented cell (for tree hierarchy display)
+TSharedRef<SWidget> CreateIndentedCell(FName& Value, int32 Depth, const FString& Hint)
+{
+    float IndentSize = Depth * 8.0f;  // 8px per tree level
+
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        [ SNew(SSpacer).Size(FVector2D(IndentSize, 1.0f)) ]
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(FMargin(4.0f, 2.0f))
+        [
+            SNew(SEditableText)
+                .Text_Lambda([&Value]() { return FText::FromName(Value); })
+                .HintText(FText::FromString(Hint))
+                .OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
+                {
+                    Value = FName(*NewText.ToString());
+                    MarkModified();
+                })
+                .Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+        ];
+}
+```
+
+#### Toolbar Button Styles
+
+```cpp
+TSharedRef<SWidget> BuildToolbar()
+{
+    return SNew(SHorizontalBox)
+        // Primary action (green)
+        + SHorizontalBox::Slot().AutoWidth().Padding(2.0f)
+        [
+            SNew(SButton)
+                .Text(LOCTEXT("AddRow", "+ Add Node"))
+                .OnClicked(this, &SDialogueTableEditor::OnAddRowClicked)
+                .ButtonStyle(FAppStyle::Get(), "FlatButton.Success")  // Green
+        ]
+        // Destructive action (red)
+        + SHorizontalBox::Slot().AutoWidth().Padding(2.0f)
+        [
+            SNew(SButton)
+                .Text(LOCTEXT("Delete", "Delete"))
+                .OnClicked(this, &SDialogueTableEditor::OnDeleteRowsClicked)
+                .ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")   // Red
+        ]
+        // Important action (blue)
+        + SHorizontalBox::Slot().AutoWidth().Padding(2.0f)
+        [
+            SNew(SButton)
+                .Text(LOCTEXT("Generate", "Generate"))
+                .OnClicked(this, &SDialogueTableEditor::OnGenerateClicked)
+                .ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")  // Blue
+        ]
+        // Neutral action (default style)
+        + SHorizontalBox::Slot().AutoWidth().Padding(2.0f)
+        [
+            SNew(SButton)
+                .Text(LOCTEXT("Export", "Export CSV"))
+                .OnClicked(this, &SDialogueTableEditor::OnExportCSVClicked)
+                // No ButtonStyle = default gray
+        ];
+}
+```
+
+#### Filter State Structure
+
+```cpp
+// Per-column filter state (supports text + multi-select)
+struct FColumnFilterState
+{
+    FString TextFilter;                      // Text substring match
+    TSet<FString> SelectedValues;            // Multi-select: empty = all, non-empty = OR logic
+    TArray<TSharedPtr<FString>> DropdownOptions;  // Unique values for dropdown
+};
+
+// Store per-column filters
+TMap<FName, FColumnFilterState> ColumnFilters;
+
+// Apply filters to DisplayedRows
+void ApplyFilters()
+{
+    DisplayedRows.Empty();
+    for (TSharedPtr<FRowType>& Row : AllRows)
+    {
+        bool bPassesAllFilters = true;
+        for (const auto& FilterPair : ColumnFilters)
+        {
+            const FColumnFilterState& Filter = FilterPair.Value;
+            FString Value = GetColumnValue(*Row, FilterPair.Key);
+
+            // Text filter (case-insensitive contains)
+            if (!Filter.TextFilter.IsEmpty() &&
+                !Value.ToLower().Contains(Filter.TextFilter.ToLower()))
+            {
+                bPassesAllFilters = false;
+                break;
+            }
+
+            // Multi-select filter (OR logic)
+            if (Filter.SelectedValues.Num() > 0 &&
+                !Filter.SelectedValues.Contains(Value))
+            {
+                bPassesAllFilters = false;
+                break;
+            }
+        }
+        if (bPassesAllFilters) DisplayedRows.Add(Row);
+    }
+    RefreshList();
+}
+```
 
 ### Supported Asset Types (Generated by Plugin)
 
