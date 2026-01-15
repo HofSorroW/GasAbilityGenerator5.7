@@ -278,7 +278,7 @@ private:
 	TSharedPtr<STextBlock> StatusTotalText;
 	TSharedPtr<STextBlock> StatusShowingText;
 	TSharedPtr<STextBlock> StatusSelectedText;
-	TSharedPtr<STextBlock> StatusValidationText;  // Validation errors (shown in red)
+	TSharedPtr<STextBlock> StatusValidationText;  // Validation errors (colored by state)
 
 	/** Explicitly update all status bar text */
 	void UpdateStatusBar();

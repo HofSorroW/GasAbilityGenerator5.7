@@ -267,6 +267,18 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 		}
 	}
 
+	/** Get validation color for row stripe (matches Dialogue table pattern) */
+	FLinearColor GetValidationColor() const
+	{
+		switch (ValidationState)
+		{
+			case EValidationState::Valid: return FLinearColor(0.2f, 0.8f, 0.2f);    // Green
+			case EValidationState::Invalid: return FLinearColor(1.0f, 0.2f, 0.2f);  // Red
+			case EValidationState::Unknown: return FLinearColor(1.0f, 0.8f, 0.2f);  // Yellow
+			default: return FLinearColor::White;
+		}
+	}
+
 	//=========================================================================
 	// Faction Tag Helpers
 	//=========================================================================

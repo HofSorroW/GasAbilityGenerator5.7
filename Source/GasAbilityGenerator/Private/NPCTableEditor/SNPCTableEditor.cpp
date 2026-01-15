@@ -254,7 +254,29 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 TSharedRef<SWidget> SNPCTableRow::CreateStatusCell()
 {
 	// Use lambdas for dynamic color/text updates after validation
-	return SNew(SBox)
+	// Layout: [4px validation stripe] [status badge]
+	return SNew(SHorizontalBox)
+		// Validation stripe (4px colored bar on left - matches Dialogue pattern)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SBox)
+				.WidthOverride(4.0f)
+				[
+					SNew(SBorder)
+						.BorderBackgroundColor_Lambda([this]()
+						{
+							if (RowData.IsValid())
+							{
+								return FSlateColor(RowData->GetValidationColor());
+							}
+							return FSlateColor(FLinearColor::White);
+						})
+				]
+		]
+		// Status badge
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
 		.Padding(FMargin(4.0f, 2.0f))
 		.HAlign(HAlign_Center)
 		[
@@ -372,14 +394,8 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 							{
 								if (!RowData->Factions.IsEmpty())
 								{
-									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-										FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearFactions", "Clear all factions?\n\nCurrent: {0}"),
-											FText::FromString(RowData->GetFactionsDisplay())));
-									if (Result == EAppReturnType::Yes)
-									{
-										RowData->Factions.Empty();
-										MarkModified();
-									}
+									RowData->Factions.Empty();
+									MarkModified();
 								}
 								return FReply::Handled();
 							})
@@ -431,9 +447,22 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 							.Padding(4.0f, 1.0f)
 							[
 								SNew(SCheckBox)
-									.IsChecked_Lambda([this, FullTag]()
+									.IsChecked_Lambda([this, FullTag, ShortName]()
 									{
-										return RowData->Factions.Contains(FullTag) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+										// Check for both full tag and short name to handle data format inconsistencies
+										TArray<FString> CurrentFactions;
+										RowData->Factions.ParseIntoArray(CurrentFactions, TEXT(","));
+										for (const FString& F : CurrentFactions)
+										{
+											FString Trimmed = F.TrimStartAndEnd();
+											// Match if it's the full tag OR the short name
+											if (Trimmed.Equals(FullTag, ESearchCase::IgnoreCase) ||
+												Trimmed.Equals(ShortName, ESearchCase::IgnoreCase))
+											{
+												return ECheckBoxState::Checked;
+											}
+										}
+										return ECheckBoxState::Unchecked;
 									})
 									.OnCheckStateChanged_Lambda([this, FullTag, ShortName](ECheckBoxState NewState)
 									{
@@ -441,25 +470,39 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 										RowData->Factions.ParseIntoArray(CurrentFactions, TEXT(","));
 										for (FString& F : CurrentFactions) { F = F.TrimStartAndEnd(); }
 
-										bool bIsAdding = (NewState == ECheckBoxState::Checked);
-										FText PromptText = bIsAdding
-											? FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmAddFaction", "Add '{0}' to Factions?"), FText::FromString(ShortName))
-											: FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmRemoveFaction", "Remove '{0}' from Factions?"), FText::FromString(ShortName));
-
-										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, PromptText);
-										if (Result == EAppReturnType::Yes)
+										// Check if already exists (either as full tag or short name)
+										bool bAlreadyExists = false;
+										int32 ExistingIndex = INDEX_NONE;
+										for (int32 i = 0; i < CurrentFactions.Num(); i++)
 										{
-											if (bIsAdding)
+											if (CurrentFactions[i].Equals(FullTag, ESearchCase::IgnoreCase) ||
+												CurrentFactions[i].Equals(ShortName, ESearchCase::IgnoreCase))
 											{
-												CurrentFactions.AddUnique(FullTag);
+												bAlreadyExists = true;
+												ExistingIndex = i;
+												break;
 											}
-											else
-											{
-												CurrentFactions.Remove(FullTag);
-											}
+										}
 
-											RowData->Factions = FString::Join(CurrentFactions, TEXT(", "));
-											MarkModified();
+										if (NewState == ECheckBoxState::Checked)
+										{
+											// Only add if not already present (prevents duplicates)
+											if (!bAlreadyExists)
+											{
+												CurrentFactions.Add(ShortName);  // Store as short name
+												RowData->Factions = FString::Join(CurrentFactions, TEXT(", "));
+												MarkModified();
+											}
+										}
+										else
+										{
+											// Remove if exists
+											if (bAlreadyExists && ExistingIndex != INDEX_NONE)
+											{
+												CurrentFactions.RemoveAt(ExistingIndex);
+												RowData->Factions = FString::Join(CurrentFactions, TEXT(", "));
+												MarkModified();
+											}
 										}
 									})
 									[
@@ -500,7 +543,7 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 
 TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 {
-	// Combined MinLevel-MaxLevel display using two spinboxes with confirmation prompts
+	// Combined MinLevel-MaxLevel display using simple text inputs (no slider)
 	return SNew(SBox)
 		.Padding(FMargin(2.0f, 2.0f))
 		[
@@ -508,19 +551,18 @@ TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
 			[
-				SNew(SSpinBox<int32>)
-					.MinValue(1)
-					.MaxValue(100)
-					.Value_Lambda([this]() { return RowData->MinLevel; })
-					.OnValueCommitted_Lambda([this](int32 NewValue, ETextCommit::Type CommitType)
+				SNew(SEditableTextBox)
+					.Text_Lambda([this]()
 					{
-						if (CommitType != ETextCommit::OnCleared && NewValue != RowData->MinLevel)
+						return FText::AsNumber(RowData->MinLevel);
+					})
+					.OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type CommitType)
+					{
+						if (CommitType != ETextCommit::OnCleared)
 						{
-							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmMinLevel", "Change Min Level from {0} to {1}?"),
-									FText::AsNumber(RowData->MinLevel),
-									FText::AsNumber(NewValue)));
-							if (Result == EAppReturnType::Yes)
+							int32 NewValue = FCString::Atoi(*NewText.ToString());
+							NewValue = FMath::Clamp(NewValue, 1, 100);
+							if (NewValue != RowData->MinLevel)
 							{
 								RowData->MinLevel = NewValue;
 								// Ensure MaxLevel >= MinLevel
@@ -533,6 +575,7 @@ TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 						}
 					})
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.Justification(ETextJustify::Center)
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -546,19 +589,18 @@ TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
 			[
-				SNew(SSpinBox<int32>)
-					.MinValue(1)
-					.MaxValue(100)
-					.Value_Lambda([this]() { return RowData->MaxLevel; })
-					.OnValueCommitted_Lambda([this](int32 NewValue, ETextCommit::Type CommitType)
+				SNew(SEditableTextBox)
+					.Text_Lambda([this]()
 					{
-						if (CommitType != ETextCommit::OnCleared && NewValue != RowData->MaxLevel)
+						return FText::AsNumber(RowData->MaxLevel);
+					})
+					.OnTextCommitted_Lambda([this](const FText& NewText, ETextCommit::Type CommitType)
+					{
+						if (CommitType != ETextCommit::OnCleared)
 						{
-							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmMaxLevel", "Change Max Level from {0} to {1}?"),
-									FText::AsNumber(RowData->MaxLevel),
-									FText::AsNumber(NewValue)));
-							if (Result == EAppReturnType::Yes)
+							int32 NewValue = FCString::Atoi(*NewText.ToString());
+							NewValue = FMath::Clamp(NewValue, 1, 100);
+							if (NewValue != RowData->MaxLevel)
 							{
 								RowData->MaxLevel = NewValue;
 								// Ensure MinLevel <= MaxLevel
@@ -571,6 +613,7 @@ TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 						}
 					})
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.Justification(ETextJustify::Center)
 			]
 		];
 }
@@ -592,21 +635,47 @@ TSharedRef<SWidget> SNPCTableRow::CreateFloatSliderCell(float& Value)
 				{
 					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
 					{
-						float NewValue = FCString::Atof(*NewText.ToString());
+						FString InputStr = NewText.ToString();
+
+						// Validate input format - must be a valid decimal number with period (not comma)
+						// Check for invalid characters (comma, letters, etc.)
+						bool bValidFormat = true;
+						bool bHasDecimal = false;
+						for (int32 i = 0; i < InputStr.Len(); i++)
+						{
+							TCHAR C = InputStr[i];
+							if (C == TEXT(','))
+							{
+								// Reject comma - user should use period for decimal
+								bValidFormat = false;
+								break;
+							}
+							if (C == TEXT('.'))
+							{
+								if (bHasDecimal) { bValidFormat = false; break; }  // Multiple decimals
+								bHasDecimal = true;
+							}
+							else if (!FChar::IsDigit(C) && C != TEXT('-') && C != TEXT('+'))
+							{
+								bValidFormat = false;
+								break;
+							}
+						}
+
+						if (!bValidFormat)
+						{
+							// Invalid format - don't change value, widget will refresh to show old value
+							return;
+						}
+
+						float NewValue = FCString::Atof(*InputStr);
 						// Clamp to valid range
 						NewValue = FMath::Clamp(NewValue, 0.0f, 1.0f);
 
 						if (FMath::Abs(NewValue - *ValuePtr) > KINDA_SMALL_NUMBER)
 						{
-							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmPriority", "Change Attack Priority from {0} to {1}?"),
-									FText::FromString(FString::Printf(TEXT("%.2f"), *ValuePtr)),
-									FText::FromString(FString::Printf(TEXT("%.2f"), NewValue))));
-							if (Result == EAppReturnType::Yes)
-							{
-								*ValuePtr = NewValue;
-								MarkModified();
-							}
+							*ValuePtr = NewValue;
+							MarkModified();
 						}
 					}
 				})
@@ -685,25 +754,38 @@ TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 									RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
 									for (FString& Item : Items) { Item = Item.TrimStartAndEnd(); }
 
-									bool bIsAdding = (NewState == ECheckBoxState::Checked);
-									FText PromptText = bIsAdding
-										? FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmAddItem", "Add '{0}' to Default Items?"), FText::FromString(AssetName))
-										: FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmRemoveItem", "Remove '{0}' from Default Items?"), FText::FromString(AssetName));
-
-									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, PromptText);
-									if (Result == EAppReturnType::Yes)
+									// Check if already exists (case-insensitive)
+									bool bAlreadyExists = false;
+									int32 ExistingIndex = INDEX_NONE;
+									for (int32 i = 0; i < Items.Num(); i++)
 									{
-										if (bIsAdding)
+										if (Items[i].Equals(AssetName, ESearchCase::IgnoreCase))
 										{
-											Items.AddUnique(AssetName);
+											bAlreadyExists = true;
+											ExistingIndex = i;
+											break;
 										}
-										else
-										{
-											Items.Remove(AssetName);
-										}
+									}
 
-										RowData->DefaultItems = FString::Join(Items, TEXT(", "));
-										MarkModified();
+									if (NewState == ECheckBoxState::Checked)
+									{
+										// Only add if not already present (prevents duplicates)
+										if (!bAlreadyExists)
+										{
+											Items.Add(AssetName);
+											RowData->DefaultItems = FString::Join(Items, TEXT(", "));
+											MarkModified();
+										}
+									}
+									else
+									{
+										// Remove if exists
+										if (bAlreadyExists && ExistingIndex != INDEX_NONE)
+										{
+											Items.RemoveAt(ExistingIndex);
+											RowData->DefaultItems = FString::Join(Items, TEXT(", "));
+											MarkModified();
+										}
 									}
 								})
 								[
@@ -1719,14 +1801,13 @@ TSharedRef<SWidget> SNPCTableEditor::BuildStatusBar()
 				.Text(LOCTEXT("InitSelected", "Selected: 0"))
 		]
 
-		// v4.5: Validation errors (shown in red when > 0)
+		// Validation status (color set dynamically in UpdateStatusBar)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(8.0f, 0.0f)
 		[
 			SAssignNew(StatusValidationText, STextBlock)
 				.Text(LOCTEXT("InitValidation", ""))
-				.ColorAndOpacity(FSlateColor(FLinearColor::Red))
 		];
 }
 
@@ -1761,8 +1842,7 @@ void SNPCTableEditor::UpdateStatusBar()
 		));
 	}
 
-	// v4.6: Status bar with precedence: Errors > Not validated > Out of date > Up to date
-	if (StatusValidationText.IsValid())
+	// v4.6.1: Update cached validation status (lambda bindings in BuildStatusBar will pick up changes)
 	{
 		int32 InvalidCount = 0;
 		int32 UnknownCount = 0;
@@ -1785,45 +1865,46 @@ void SNPCTableEditor::UpdateStatusBar()
 		}
 
 		// Precedence: Errors (red) > Not validated (yellow) > Out of date (amber) > Up to date (green)
+		// Using bright colors that work well in UE5 dark mode
+		FText ValidationText;
+		FSlateColor ValidationColor = FSlateColor(FLinearColor::White);
+
 		if (InvalidCount > 0)
 		{
 			// Red: Validation errors exist
-			StatusValidationText->SetText(FText::Format(
+			ValidationText = FText::Format(
 				LOCTEXT("ValidationErrors", "{0} errors"),
 				FText::AsNumber(InvalidCount)
-			));
-			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.2f, 0.2f)));  // Red
-			StatusValidationText->SetVisibility(EVisibility::Visible);
+			);
+			ValidationColor = FSlateColor(FLinearColor(1.0f, 0.3f, 0.3f));  // Bright red
 		}
 		else if (UnknownCount > 0)
 		{
 			// Yellow: Not yet validated
-			StatusValidationText->SetText(FText::Format(
+			ValidationText = FText::Format(
 				LOCTEXT("ValidationUnknown", "Not validated ({0})"),
 				FText::AsNumber(UnknownCount)
-			));
-			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.8f, 0.2f)));  // Yellow
-			StatusValidationText->SetVisibility(EVisibility::Visible);
+			);
+			ValidationColor = FSlateColor(FLinearColor(1.0f, 0.9f, 0.2f));  // Bright yellow
 		}
 		else if (TableData && TableData->AreAssetsOutOfDate())
 		{
 			// Amber: Validated but assets out of date
-			StatusValidationText->SetText(LOCTEXT("AssetsOutOfDate", "Out of date"));
-			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.6f, 0.0f)));  // Amber
-			StatusValidationText->SetVisibility(EVisibility::Visible);
+			ValidationText = LOCTEXT("AssetsOutOfDate", "Out of date");
+			ValidationColor = FSlateColor(FLinearColor(1.0f, 0.7f, 0.0f));  // Bright amber
 		}
 		else if (ActiveCount > 0)
 		{
 			// Green: All validated and up to date
-			StatusValidationText->SetText(LOCTEXT("AssetsUpToDate", "Up to date"));
-			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 0.8f, 0.2f)));  // Green
-			StatusValidationText->SetVisibility(EVisibility::Visible);
+			ValidationText = LOCTEXT("AssetsUpToDate", "Up to date");
+			ValidationColor = FSlateColor(FLinearColor(0.3f, 1.0f, 0.3f));  // Bright green
 		}
-		else
+
+		// Apply to widget (with validity check)
+		if (StatusValidationText.IsValid())
 		{
-			// No active rows
-			StatusValidationText->SetText(FText::GetEmpty());
-			StatusValidationText->SetVisibility(EVisibility::Collapsed);
+			StatusValidationText->SetText(ValidationText);
+			StatusValidationText->SetColorAndOpacity(ValidationColor);
 		}
 	}
 }
@@ -2125,24 +2206,34 @@ FReply SNPCTableEditor::OnValidateClicked()
 	// v4.5: Use cache-writing validation
 	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAllAndCache(RowsToValidate, ListsVersionGuid);
 
-	// Copy validation cache back to AllRows (matching by RowId)
-	for (int32 i = 0; i < RowsToValidate.Num() && i < AllRows.Num(); i++)
+	// Copy validation cache back to AllRows (using RowId map for proper matching)
+	TMap<FGuid, int32> RowIdToValidatedIndex;
+	for (int32 i = 0; i < RowsToValidate.Num(); i++)
 	{
-		if (AllRows[i].IsValid() && AllRows[i]->RowId == RowsToValidate[i].RowId)
+		RowIdToValidatedIndex.Add(RowsToValidate[i].RowId, i);
+	}
+
+	for (TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
+	{
+		if (!RowPtr.IsValid()) continue;
+
+		int32* ValidatedIdx = RowIdToValidatedIndex.Find(RowPtr->RowId);
+		if (ValidatedIdx)
 		{
-			AllRows[i]->ValidationState = RowsToValidate[i].ValidationState;
-			AllRows[i]->ValidationSummary = RowsToValidate[i].ValidationSummary;
-			AllRows[i]->ValidationIssueCount = RowsToValidate[i].ValidationIssueCount;
-			AllRows[i]->ValidationInputHash = RowsToValidate[i].ValidationInputHash;
+			const FNPCTableRow& ValidatedRow = RowsToValidate[*ValidatedIdx];
+			RowPtr->ValidationState = ValidatedRow.ValidationState;
+			RowPtr->ValidationSummary = ValidatedRow.ValidationSummary;
+			RowPtr->ValidationIssueCount = ValidatedRow.ValidationIssueCount;
+			RowPtr->ValidationInputHash = ValidatedRow.ValidationInputHash;
 
 			// Also update Status for backward compatibility
-			if (RowsToValidate[i].ValidationState == EValidationState::Invalid)
+			if (ValidatedRow.ValidationState == EValidationState::Invalid)
 			{
-				AllRows[i]->Status = ENPCTableRowStatus::Error;
+				RowPtr->Status = ENPCTableRowStatus::Error;
 			}
-			else if (AllRows[i]->Status == ENPCTableRowStatus::Error)
+			else if (RowPtr->Status == ENPCTableRowStatus::Error)
 			{
-				AllRows[i]->Status = ENPCTableRowStatus::New;  // Clear previous error
+				RowPtr->Status = ENPCTableRowStatus::New;  // Clear previous error
 			}
 		}
 	}
@@ -2259,19 +2350,29 @@ FReply SNPCTableEditor::OnGenerateClicked()
 	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAllAndCache(RowsToValidate, ListsVersionGuid);
 	int32 ValidationErrorCount = ValidationResult.GetErrorCount();
 
-	// Copy validation cache back to AllRows
-	for (int32 i = 0; i < RowsToValidate.Num() && i < AllRows.Num(); i++)
+	// Copy validation cache back to AllRows (using RowId map for proper matching)
+	TMap<FGuid, int32> RowIdToValidatedIndex;
+	for (int32 i = 0; i < RowsToValidate.Num(); i++)
 	{
-		if (AllRows[i].IsValid() && AllRows[i]->RowId == RowsToValidate[i].RowId)
-		{
-			AllRows[i]->ValidationState = RowsToValidate[i].ValidationState;
-			AllRows[i]->ValidationSummary = RowsToValidate[i].ValidationSummary;
-			AllRows[i]->ValidationIssueCount = RowsToValidate[i].ValidationIssueCount;
-			AllRows[i]->ValidationInputHash = RowsToValidate[i].ValidationInputHash;
+		RowIdToValidatedIndex.Add(RowsToValidate[i].RowId, i);
+	}
 
-			if (RowsToValidate[i].ValidationState == EValidationState::Invalid)
+	for (TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
+	{
+		if (!RowPtr.IsValid()) continue;
+
+		int32* ValidatedIdx = RowIdToValidatedIndex.Find(RowPtr->RowId);
+		if (ValidatedIdx)
+		{
+			const FNPCTableRow& ValidatedRow = RowsToValidate[*ValidatedIdx];
+			RowPtr->ValidationState = ValidatedRow.ValidationState;
+			RowPtr->ValidationSummary = ValidatedRow.ValidationSummary;
+			RowPtr->ValidationIssueCount = ValidatedRow.ValidationIssueCount;
+			RowPtr->ValidationInputHash = ValidatedRow.ValidationInputHash;
+
+			if (ValidatedRow.ValidationState == EValidationState::Invalid)
 			{
-				AllRows[i]->Status = ENPCTableRowStatus::Error;
+				RowPtr->Status = ENPCTableRowStatus::Error;
 			}
 		}
 	}
