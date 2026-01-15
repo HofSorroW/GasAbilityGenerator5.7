@@ -14,7 +14,7 @@ When syncing NPCDefinitions in the NPC Table Editor, the Blueprint column displa
 
 ## Deeper Investigation
 
-Found **7 locations** in generators that ADD "_C" suffix when storing to `TSoftClassPtr` properties. This creates inconsistency with how NarrativePro stores these references.
+Found **7 locations** in generators that were incorrectly adding "_C" suffix when storing to `TSoftClassPtr` properties. This created inconsistency with how NarrativePro stores these references.
 
 ### Evidence
 
@@ -24,23 +24,23 @@ NarrativePro's Seth NPCDefinition stores:
 ```
 (NO "_C" suffix)
 
-Our generator creates:
+Our generator was creating:
 ```
 /Game/Project/NPCs/BP_Name.BP_Name_C
 ```
 (WITH "_C" suffix - WRONG)
 
-### Affected Locations (GasAbilityGeneratorGenerators.cpp)
+### Fixed Locations (GasAbilityGeneratorGenerators.cpp)
 
-| Line | Property | Code Pattern |
-|------|----------|--------------|
-| 12207-12227 | `NPCDef->NPCClassPath` | Adds "_C" to path |
-| 12264-12284 | `NPCDef->Dialogue` | Adds "_C" to path |
-| 12411-12416 | Auto-create Dialogue | Adds "_C" to path |
-| 12764-12772 | `TaggedDialogueSet.Dialogue` | Adds "_C" to path |
-| 11192-11202 | ItemCollection Item | Adds "_C" to path |
-| 11213-11223 | ItemCollection Item (2nd) | Adds "_C" to path |
-| 12013-12023 | Loot table Item | Adds "_C" to path |
+| Line | Property | Status |
+|------|----------|--------|
+| 12207-12227 | `NPCDef->NPCClassPath` | FIXED - strips "_C" if present |
+| 12264-12284 | `NPCDef->Dialogue` | FIXED - strips "_C" if present |
+| 12411-12416 | Auto-create Dialogue | FIXED - builds path without "_C" |
+| 12764-12772 | `TaggedDialogueSet.Dialogue` | FIXED - strips "_C" if present |
+| 11192-11202 | ItemCollection Item | FIXED - builds path without "_C" |
+| 11213-11223 | ItemCollection Item (2nd) | FIXED - builds path without "_C" |
+| 12013-12023 | Loot table Item | FIXED - strips "_C" if present |
 
 ### Why This Matters
 
