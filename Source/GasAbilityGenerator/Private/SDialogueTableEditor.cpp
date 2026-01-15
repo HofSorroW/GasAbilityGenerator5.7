@@ -572,13 +572,24 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
 		]
 
-		// Separator before Apply
+		// Separator before Asset Sync
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(4.0f, 0.0f)
 		[
 			SNew(SSeparator)
 				.Orientation(Orient_Vertical)
+		]
+
+		// Sync from Assets (v4.4 - read tokens from UDialogueBlueprint)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("SyncFromAssets", "Sync from Assets"))
+				.OnClicked(this, &SDialogueTableEditor::OnSyncFromAssetsClicked)
+				.ToolTipText(LOCTEXT("SyncFromAssetsTooltip", "Pull current events/conditions from UDialogueBlueprint assets into table"))
 		]
 
 		// Apply to Assets (v4.4 - write tokens to UDialogueBlueprint)
@@ -2167,6 +2178,131 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 				FText::AsNumber(MergeResult.Deleted),
 				FText::AsNumber(MergeResult.Unchanged)));
 	}
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
+{
+	// v4.4: Pull current events/conditions from UDialogueBlueprint assets into table
+
+	if (!TableData || AllRows.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoRowsToSync", "No dialogue rows in table to sync.\n\nAdd dialogue rows first, then use this button to pull events/conditions from the dialogue assets."));
+		return FReply::Handled();
+	}
+
+	// Collect unique DialogueIDs
+	TSet<FName> UniqueDialogueIDs;
+	for (const auto& Row : AllRows)
+	{
+		if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
+		{
+			UniqueDialogueIDs.Add(Row->Data->DialogueID);
+		}
+	}
+
+	if (UniqueDialogueIDs.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoDialogueIDs", "No valid Dialogue IDs found in table.\n\nEnsure rows have Dialogue ID values set."));
+		return FReply::Handled();
+	}
+
+	// Sync from each dialogue asset
+	FDialogueAssetSyncResult CombinedResult;
+	CombinedResult.bSuccess = true;
+	int32 AssetsFound = 0;
+	int32 AssetsMissing = 0;
+
+	for (const FName& DialogueID : UniqueDialogueIDs)
+	{
+		// Try common asset paths
+		FString AssetName = DialogueID.ToString();
+		TArray<FString> SearchPaths = {
+			FString::Printf(TEXT("/Game/Dialogues/%s.%s"), *AssetName, *AssetName),
+			FString::Printf(TEXT("/Game/Dialogues/DBP_%s.DBP_%s"), *AssetName, *AssetName),
+			FString::Printf(TEXT("/Game/%s.%s"), *AssetName, *AssetName),
+			FString::Printf(TEXT("/Game/DBP_%s.DBP_%s"), *AssetName, *AssetName),
+		};
+
+		bool bFound = false;
+		for (const FString& Path : SearchPaths)
+		{
+			FDialogueAssetSyncResult SingleResult = FDialogueAssetSync::SyncFromAssetPath(Path);
+			if (SingleResult.bSuccess)
+			{
+				// Merge into combined result
+				for (const auto& Pair : SingleResult.NodeData)
+				{
+					CombinedResult.NodeData.Add(Pair.Key, Pair.Value);
+				}
+				CombinedResult.NodesFound += SingleResult.NodesFound;
+				CombinedResult.NodesWithEvents += SingleResult.NodesWithEvents;
+				CombinedResult.NodesWithConditions += SingleResult.NodesWithConditions;
+				AssetsFound++;
+				bFound = true;
+				break;
+			}
+		}
+
+		if (!bFound)
+		{
+			AssetsMissing++;
+			UE_LOG(LogTemp, Warning, TEXT("SyncFromAssets: Could not find asset for DialogueID '%s'"), *AssetName);
+		}
+	}
+
+	// Update table rows with synced data
+	int32 RowsUpdated = 0;
+	for (auto& Row : AllRows)
+	{
+		if (!Row->Data.IsValid())
+		{
+			continue;
+		}
+
+		FString Key = FDialogueAssetSyncResult::MakeKey(Row->Data->DialogueID, Row->Data->NodeID);
+		if (FDialogueNodeAssetData* NodeData = CombinedResult.NodeData.Find(Key))
+		{
+			// Update tokens from asset
+			if (Row->Data->EventsTokenStr.IsEmpty() && !NodeData->EventsTokenStr.IsEmpty())
+			{
+				Row->Data->EventsTokenStr = NodeData->EventsTokenStr;
+				Row->Data->bEventsValid = true;
+				RowsUpdated++;
+			}
+			if (Row->Data->ConditionsTokenStr.IsEmpty() && !NodeData->ConditionsTokenStr.IsEmpty())
+			{
+				Row->Data->ConditionsTokenStr = NodeData->ConditionsTokenStr;
+				Row->Data->bConditionsValid = true;
+				RowsUpdated++;
+			}
+		}
+	}
+
+	// Sync back to TableData and refresh
+	SyncToTableData();
+	RefreshList();
+	UpdateStatusBar();
+
+	// Show result
+	FMessageDialog::Open(EAppMsgType::Ok,
+		FText::Format(LOCTEXT("SyncFromAssetsComplete",
+			"Sync from Assets complete!\n\n"
+			"Dialogues found: {0}\n"
+			"Dialogues missing: {1}\n"
+			"Nodes found: {2}\n"
+			"Nodes with events: {3}\n"
+			"Nodes with conditions: {4}\n"
+			"Rows updated: {5}"),
+			FText::AsNumber(AssetsFound),
+			FText::AsNumber(AssetsMissing),
+			FText::AsNumber(CombinedResult.NodesFound),
+			FText::AsNumber(CombinedResult.NodesWithEvents),
+			FText::AsNumber(CombinedResult.NodesWithConditions),
+			FText::AsNumber(RowsUpdated)));
 
 	return FReply::Handled();
 }

@@ -158,6 +158,7 @@ private:
 	FReply OnImportCSVClicked();
 	FReply OnImportXLSXClicked();  // v4.3: XLSX import with sync support
 	FReply OnSyncXLSXClicked();    // v4.3: XLSX sync with 3-way merge
+	FReply OnSyncFromAssetsClicked();  // v4.4: Pull tokens from UDialogueBlueprint
 	FReply OnApplyToAssetsClicked();  // v4.4: Apply tokens to UDialogueBlueprint
 	FReply OnValidateClicked();
 	FReply OnResetOrderClicked();
