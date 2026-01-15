@@ -13,7 +13,6 @@
 
 class SEditableText;
 class SSearchBox;
-class SHorizontalBox;
 
 /**
  * Column definition for the dialogue table
@@ -123,7 +122,6 @@ private:
 
 	TSharedPtr<SListView<TSharedPtr<FDialogueTableRowEx>>> ListView;
 	TSharedPtr<SHeaderRow> HeaderRow;
-	TSharedPtr<SHorizontalBox> StatusBar;  // v4.2.8: Stored for explicit invalidation
 
 	FName SortColumn;
 	EColumnSortMode::Type SortMode = EColumnSortMode::None;
@@ -133,7 +131,13 @@ private:
 	TSharedRef<SWidget> BuildToolbar();
 	TSharedRef<SHeaderRow> BuildHeaderRow();
 	TSharedRef<SWidget> BuildStatusBar();
-	void UpdateStatusBar();  // Kept for API compatibility (now no-op with Text_Lambda)
+
+	// v4.2.13: Status bar with stored widget references for direct SetText() updates
+	TSharedPtr<STextBlock> StatusTotalText;
+	TSharedPtr<STextBlock> StatusDialoguesText;
+	TSharedPtr<STextBlock> StatusShowingText;
+	TSharedPtr<STextBlock> StatusSelectedText;
+	void UpdateStatusBar();  // Explicitly update all status text
 
 	// List View Callbacks
 	TSharedRef<ITableRow> OnGenerateRow(TSharedPtr<FDialogueTableRowEx> Item, const TSharedRef<STableViewBase>& OwnerTable);

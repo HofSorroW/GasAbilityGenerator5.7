@@ -1149,6 +1149,48 @@ quests:
       currency: 100
       xp: 50
       items: [EI_IronSword]
+
+# v4.3: Widget Blueprint with full widget tree layout
+widget_blueprints:
+  - name: WBP_UltimatePanel
+    folder: UI
+    parent_class: UserWidget
+    variables:
+      - name: CurrentCharge
+        type: Float
+        default: 0.0
+    widget_tree:
+      root_widget: RootCanvas
+      widgets:
+        - id: RootCanvas
+          type: CanvasPanel
+          children: [ContentBox]
+        - id: ContentBox
+          type: VerticalBox
+          is_variable: true                         # Exposes as Blueprint variable
+          slot:
+            anchors: BottomCenter                   # TopLeft, Center, BottomCenter, etc.
+            alignment: "0.5, 1.0"                   # Pivot point
+            position: "0, -50"                      # Offset from anchor
+          children: [ChargeLabel, ChargeBar]
+        - id: ChargeLabel
+          type: TextBlock
+          text: "ULTIMATE"
+          slot:
+            h_align: Center                         # Left, Center, Right, Fill
+            v_align: Center                         # Top, Center, Bottom, Fill
+          properties:
+            Font.Size: 18
+        - id: ChargeBar
+          type: ProgressBar
+          is_variable: true
+          slot:
+            h_align: Fill
+            size_rule: Fill                         # Auto or Fill
+            padding: "10, 5, 10, 5"                 # L, T, R, B
+          properties:
+            BarFillType: LeftToRight
+            Percent: 0.0
 ```
 
 ### Event Graph Generation
@@ -1261,6 +1303,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.3 - Widget Blueprint Layout Automation: FWidgetBlueprintGenerator now supports full widget tree construction from YAML via `widget_tree` manifest section. New structs: FManifestWidgetSlotDefinition (anchors, position, size, alignment, h_align, v_align, size_rule, fill_weight, padding), FManifestWidgetNodeDefinition (id, type, name, is_variable, slot, properties, children, text, image_path, style_class), FManifestWidgetTreeDefinition (root_widget, widgets array). Supports 25+ widget types: CanvasPanel, VerticalBox, HorizontalBox, Overlay, Border, Button, TextBlock, RichTextBlock, Image, ProgressBar, Slider, CheckBox, EditableText, EditableTextBox, ComboBox, Spacer, SizeBox, ScaleBox, ScrollBox, UniformGridPanel, GridPanel, WidgetSwitcher, Throbber, CircularThrobber, NativeWidgetHost. Three-pass construction: create widgets, build hierarchy via panel AddChild, set root. Slot configuration supports Canvas/VBox/HBox/Overlay panels with proper UCanvasPanelSlot/UVerticalBoxSlot/UHorizontalBoxSlot/UOverlaySlot population. Properties set via reflection. Upgrades WBP_ from Medium to High automation level.
 - v4.0 - Quest Pipeline & CSV Dialogue: New `-dialoguecsv="..."` commandlet parameter for batch dialogue generation from Excel/CSV files. FDialogueCSVParser class parses CSV with columns: Dialogue, NodeID, Type, Speaker, Text, OptionText, Replies, Conditions, Events. Supports multiple dialogues per file (grouped by Dialogue column), automatic root node detection, NPC/Player node type resolution, reply connection validation, event/condition parsing (NE_*/NC_* format). CSV dialogues override YAML definitions with same name. Enables production-scale dialogue authoring via spreadsheets. Full v3.0 Regen/Diff Safety integration. Sample data: `ClaudeContext/DialogueData.csv`.
 - v3.9.9 - POI & NPC Spawner Automation: Level actor placement for World Partition worlds. New `-level="/Game/..."` commandlet parameter loads a world for actor placement. FPOIPlacementGenerator places APOIActor instances with POITag, DisplayName, MapIcon, LinkedPOIs (A* navigation). FNPCSpawnerPlacementGenerator places ANPCSpawner actors with UNPCSpawnComponent entries, supporting NearPOI resolution and spawn parameter configuration. New manifest sections: `poi_placements:` (poi_tag, location, rotation, display_name, map_icon, linked_pois) and `npc_spawner_placements:` (name, location/near_poi, npcs array with npc_definition, spawn_params, optional_goal). Idempotency via actor label/POI tag matching. World auto-saved after new placements.
 - v3.9.8 - Item Pipeline: Mesh-to-Item automation with clothing mesh support for auto-generating EI_ assets from mesh files

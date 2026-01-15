@@ -1505,11 +1505,12 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 }
 
 // v2.1.7 FIX: Proper indent-based subsection exit logic
+// v4.3: Added widget_tree parsing for full visual layout automation
 void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
 	LineIndex++;
-	
+
 	FManifestWidgetBlueprintDefinition CurrentDef;
 	bool bInItem = false;
 	bool bInVariables = false;
@@ -1517,15 +1518,29 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 	int32 ItemIndent = -1;      // v2.1.7: Track widget item indent level
 	int32 VariablesIndent = 0;
 	FManifestWidgetVariableDefinition CurrentVar;
-	
+
+	// v4.3: Widget tree parsing state
+	bool bInWidgetTree = false;
+	bool bInWidgets = false;
+	bool bInWidgetDef = false;
+	bool bInSlot = false;
+	bool bInChildren = false;
+	bool bInProperties = false;
+	FManifestWidgetNodeDefinition CurrentWidget;
+
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
 		FString TrimmedLine = Line.TrimStart();
 		int32 CurrentIndent = GetIndentLevel(Line);
-		
+
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// v4.3: Save pending widget
+			if (bInWidgetDef && !CurrentWidget.Id.IsEmpty())
+			{
+				CurrentDef.WidgetTree.Widgets.Add(CurrentWidget);
+			}
 			if (bInVariables && !CurrentVar.Name.IsEmpty())
 			{
 				CurrentDef.Variables.Add(CurrentVar);
@@ -1555,12 +1570,24 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 		// If we detect a new widget item, close current subsections
 		if (bIsNewWidgetItem)
 		{
+			// v4.3: Save pending widget
+			if (bInWidgetDef && !CurrentWidget.Id.IsEmpty())
+			{
+				CurrentDef.WidgetTree.Widgets.Add(CurrentWidget);
+				CurrentWidget = FManifestWidgetNodeDefinition();
+			}
 			if (bInVariables && !CurrentVar.Name.IsEmpty())
 			{
 				CurrentDef.Variables.Add(CurrentVar);
 				CurrentVar = FManifestWidgetVariableDefinition();
 			}
 			bInVariables = false;
+			bInWidgetTree = false;
+			bInWidgets = false;
+			bInWidgetDef = false;
+			bInSlot = false;
+			bInChildren = false;
+			bInProperties = false;
 
 			// Save current widget and start new one - v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("WBP_")))
@@ -1584,20 +1611,206 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 			if (TrimmedLine.StartsWith(TEXT("parent_class:")))
 			{
 				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+				bInVariables = false;
+				bInWidgetTree = false;
 			}
 			else if (TrimmedLine.StartsWith(TEXT("folder:")))
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInVariables = false;
+				bInWidgetTree = false;
 			}
 			// v2.2.0: Parse event_graph reference
 			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
 			{
 				CurrentDef.EventGraphName = GetLineValue(TrimmedLine);
+				bInVariables = false;
+				bInWidgetTree = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
 				bInVariables = true;
+				bInWidgetTree = false;
 				VariablesIndent = CurrentIndent;
+			}
+			// v4.3: Widget tree section
+			else if (TrimmedLine.Equals(TEXT("widget_tree:")) || TrimmedLine.StartsWith(TEXT("widget_tree:")))
+			{
+				bInWidgetTree = true;
+				bInVariables = false;
+				bInWidgets = false;
+			}
+			// v4.3: Widget tree properties
+			else if (bInWidgetTree && !bInWidgets)
+			{
+				if (TrimmedLine.StartsWith(TEXT("root:")))
+				{
+					CurrentDef.WidgetTree.RootWidget = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.Equals(TEXT("widgets:")) || TrimmedLine.StartsWith(TEXT("widgets:")))
+				{
+					bInWidgets = true;
+					bInWidgetDef = false;
+				}
+			}
+			// v4.3: Widget definitions
+			else if (bInWidgets)
+			{
+				// New widget definition
+				if (TrimmedLine.StartsWith(TEXT("- id:")))
+				{
+					// Save previous widget
+					if (bInWidgetDef && !CurrentWidget.Id.IsEmpty())
+					{
+						CurrentDef.WidgetTree.Widgets.Add(CurrentWidget);
+					}
+					CurrentWidget = FManifestWidgetNodeDefinition();
+					CurrentWidget.Id = GetLineValue(TrimmedLine.Mid(2));
+					bInWidgetDef = true;
+					bInSlot = false;
+					bInChildren = false;
+					bInProperties = false;
+				}
+				else if (bInWidgetDef)
+				{
+					// Widget properties
+					if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentWidget.Type = GetLineValue(TrimmedLine);
+						bInSlot = false;
+						bInChildren = false;
+						bInProperties = false;
+					}
+					else if (TrimmedLine.StartsWith(TEXT("name:")))
+					{
+						CurrentWidget.Name = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("text:")))
+					{
+						CurrentWidget.Text = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("image_path:")) || TrimmedLine.StartsWith(TEXT("image:")))
+					{
+						CurrentWidget.ImagePath = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("style_class:")) || TrimmedLine.StartsWith(TEXT("style:")))
+					{
+						CurrentWidget.StyleClass = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("is_variable:")))
+					{
+						FString Val = GetLineValue(TrimmedLine);
+						CurrentWidget.bIsVariable = Val.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+					}
+					// Slot section
+					else if (TrimmedLine.Equals(TEXT("slot:")) || TrimmedLine.StartsWith(TEXT("slot:")))
+					{
+						bInSlot = true;
+						bInChildren = false;
+						bInProperties = false;
+					}
+					// Children section
+					else if (TrimmedLine.Equals(TEXT("children:")) || TrimmedLine.StartsWith(TEXT("children:")))
+					{
+						bInChildren = true;
+						bInSlot = false;
+						bInProperties = false;
+						// Check for inline array
+						FString InlineValue = GetLineValue(TrimmedLine);
+						if (!InlineValue.IsEmpty() && InlineValue.StartsWith(TEXT("[")))
+						{
+							// Parse inline array [id1, id2, id3]
+							FString ArrayContent = InlineValue.Mid(1);
+							ArrayContent = ArrayContent.LeftChop(1); // Remove ]
+							TArray<FString> Parts;
+							ArrayContent.ParseIntoArray(Parts, TEXT(","));
+							for (const FString& Part : Parts)
+							{
+								FString CleanPart = Part.TrimStartAndEnd();
+								if (!CleanPart.IsEmpty())
+								{
+									CurrentWidget.Children.Add(CleanPart);
+								}
+							}
+							bInChildren = false;
+						}
+					}
+					// Properties section
+					else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+					{
+						bInProperties = true;
+						bInSlot = false;
+						bInChildren = false;
+					}
+					// Slot properties
+					else if (bInSlot)
+					{
+						if (TrimmedLine.StartsWith(TEXT("anchors:")))
+						{
+							CurrentWidget.Slot.Anchors = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("position:")))
+						{
+							CurrentWidget.Slot.Position = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("size:")))
+						{
+							CurrentWidget.Slot.Size = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("alignment:")))
+						{
+							CurrentWidget.Slot.Alignment = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("auto_size:")))
+						{
+							FString Val = GetLineValue(TrimmedLine);
+							CurrentWidget.Slot.bAutoSize = Val.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("horizontal_alignment:")) || TrimmedLine.StartsWith(TEXT("h_align:")))
+						{
+							CurrentWidget.Slot.HorizontalAlignment = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("vertical_alignment:")) || TrimmedLine.StartsWith(TEXT("v_align:")))
+						{
+							CurrentWidget.Slot.VerticalAlignment = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("size_rule:")))
+						{
+							CurrentWidget.Slot.SizeRule = GetLineValue(TrimmedLine);
+						}
+						else if (TrimmedLine.StartsWith(TEXT("fill_weight:")))
+						{
+							CurrentWidget.Slot.FillWeight = FCString::Atof(*GetLineValue(TrimmedLine));
+						}
+						else if (TrimmedLine.StartsWith(TEXT("padding:")))
+						{
+							CurrentWidget.Slot.Padding = GetLineValue(TrimmedLine);
+						}
+					}
+					// Children list items
+					else if (bInChildren && TrimmedLine.StartsWith(TEXT("-")))
+					{
+						FString ChildId = TrimmedLine.Mid(1).TrimStartAndEnd();
+						if (!ChildId.IsEmpty())
+						{
+							CurrentWidget.Children.Add(ChildId);
+						}
+					}
+					// Custom properties
+					else if (bInProperties)
+					{
+						int32 ColonPos;
+						if (TrimmedLine.FindChar(':', ColonPos))
+						{
+							FString PropName = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+							FString PropValue = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+							if (!PropName.IsEmpty())
+							{
+								CurrentWidget.Properties.Add(PropName, PropValue);
+							}
+						}
+					}
+				}
 			}
 			else if (bInVariables)
 			{
@@ -1634,6 +1847,11 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 		LineIndex++;
 	}
 
+	// v4.3: Save pending widget
+	if (bInWidgetDef && !CurrentWidget.Id.IsEmpty())
+	{
+		CurrentDef.WidgetTree.Widgets.Add(CurrentWidget);
+	}
 	if (bInVariables && !CurrentVar.Name.IsEmpty())
 	{
 		CurrentDef.Variables.Add(CurrentVar);

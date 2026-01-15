@@ -909,7 +909,116 @@ struct FManifestWidgetVariableDefinition
 };
 
 /**
+ * v4.3: Widget slot configuration for panel children
+ * Supports CanvasPanel, VerticalBox, HorizontalBox, Overlay, etc.
+ */
+struct FManifestWidgetSlotDefinition
+{
+	// Canvas Panel slot properties
+	FString Anchors;              // TopLeft, TopCenter, TopRight, CenterLeft, Center, CenterRight, BottomLeft, BottomCenter, BottomRight, Stretch
+	FString Position;             // "X,Y" offset from anchor
+	FString Size;                 // "W,H" size override (for Canvas)
+	FString Alignment;            // "X,Y" pivot point (0-1)
+	bool bAutoSize = true;        // Auto-size to content
+
+	// Box slot properties (Vertical/Horizontal)
+	FString HorizontalAlignment;  // Left, Center, Right, Fill
+	FString VerticalAlignment;    // Top, Center, Bottom, Fill
+	FString SizeRule;             // Auto, Fill
+	float FillWeight = 1.0f;      // Weight when using Fill
+
+	// Padding (all slot types)
+	FString Padding;              // "L,T,R,B" or single value for all sides
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(GetTypeHash(Anchors));
+		Hash ^= static_cast<uint64>(GetTypeHash(Position)) << 4;
+		Hash ^= static_cast<uint64>(GetTypeHash(Size)) << 8;
+		Hash ^= static_cast<uint64>(GetTypeHash(Alignment)) << 12;
+		Hash ^= (bAutoSize ? 1ULL : 0ULL) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(HorizontalAlignment)) << 20;
+		Hash ^= static_cast<uint64>(GetTypeHash(VerticalAlignment)) << 24;
+		Hash ^= static_cast<uint64>(GetTypeHash(SizeRule)) << 28;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(FillWeight * 1000.f)) << 32;
+		Hash ^= static_cast<uint64>(GetTypeHash(Padding)) << 40;
+		return Hash;
+	}
+};
+
+/**
+ * v4.3: Widget node definition for widget tree construction
+ * Supports: CanvasPanel, VerticalBox, HorizontalBox, Overlay, Border, Button, TextBlock, Image, ProgressBar, etc.
+ */
+struct FManifestWidgetNodeDefinition
+{
+	FString Id;                   // Unique ID for this widget (becomes variable name if bIsVariable=true)
+	FString Type;                 // Widget class: CanvasPanel, VerticalBox, HorizontalBox, Overlay, Border, Button, TextBlock, Image, ProgressBar, Spacer, etc.
+	FString Name;                 // Display name in editor
+	bool bIsVariable = false;     // Expose as Blueprint variable (BindWidget)
+
+	// Slot configuration (how this widget sits in its parent)
+	FManifestWidgetSlotDefinition Slot;
+
+	// Common properties (set via reflection)
+	TMap<FString, FString> Properties;  // e.g., Text, ColorAndOpacity, Brush, Visibility, ToolTipText
+
+	// Child widgets (for panel types)
+	TArray<FString> Children;     // IDs of child widgets
+
+	// Specialized properties
+	FString Text;                 // For TextBlock
+	FString ImagePath;            // For Image (texture path)
+	FString StyleClass;           // For styled widgets
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(Name) << 8;
+		Hash ^= (bIsVariable ? 1ULL : 0ULL) << 12;
+		Hash ^= Slot.ComputeHash() << 16;
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value) << 4;
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const FString& Child : Children)
+		{
+			Hash ^= GetTypeHash(Child);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		Hash ^= GetTypeHash(Text) << 20;
+		Hash ^= GetTypeHash(ImagePath) << 24;
+		Hash ^= GetTypeHash(StyleClass) << 28;
+		return Hash;
+	}
+};
+
+/**
+ * v4.3: Widget tree definition for full visual layout
+ */
+struct FManifestWidgetTreeDefinition
+{
+	FString RootWidget;           // ID of root widget (usually a CanvasPanel)
+	TArray<FManifestWidgetNodeDefinition> Widgets;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(RootWidget);
+		for (const auto& Widget : Widgets)
+		{
+			Hash ^= Widget.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		return Hash;
+	}
+};
+
+/**
  * Widget blueprint definition
+ * v4.3: Added WidgetTree for full visual layout automation
  */
 struct FManifestWidgetBlueprintDefinition
 {
@@ -924,6 +1033,9 @@ struct FManifestWidgetBlueprintDefinition
 	// Inline event graph data (populated during parsing, used during generation)
 	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
 	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
+
+	// v4.3: Widget tree for visual layout
+	FManifestWidgetTreeDefinition WidgetTree;
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -948,6 +1060,8 @@ struct FManifestWidgetBlueprintDefinition
 			Hash ^= Conn.ComputeHash();
 			Hash = (Hash << 7) | (Hash >> 57);
 		}
+		// v4.3: Include widget tree in hash
+		Hash ^= WidgetTree.ComputeHash();
 		return Hash;
 	}
 };

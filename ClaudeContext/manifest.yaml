@@ -4674,6 +4674,45 @@ widget_blueprints:
       - name: MaxCharge
         type: Float
         default: 100.0
+    # v4.3: Widget tree layout automation - creates full widget hierarchy
+    widget_tree:
+      root_widget: RootCanvas
+      widgets:
+        - id: RootCanvas
+          type: CanvasPanel
+          name: RootCanvas
+          children: [ContentBox]
+        - id: ContentBox
+          type: VerticalBox
+          name: ContentBox
+          is_variable: true
+          slot:
+            anchors: BottomCenter
+            alignment: "0.5, 1.0"
+            position: "0, -50"
+          children: [ChargeLabel, ChargeBar]
+        - id: ChargeLabel
+          type: TextBlock
+          name: UltimateLabel
+          text: "ULTIMATE"
+          slot:
+            h_align: Center
+            v_align: Center
+          properties:
+            Font.Size: 18
+            ColorAndOpacity: "(R=1.0, G=0.8, B=0.2, A=1.0)"
+        - id: ChargeBar
+          type: ProgressBar
+          name: ChargeProgressBar
+          is_variable: true
+          slot:
+            h_align: Fill
+            size_rule: Fill
+            padding: "10, 5, 10, 5"
+          properties:
+            BarFillType: LeftToRight
+            Percent: 0.0
+            FillColorAndOpacity: "(R=1.0, G=0.6, B=0.0, A=1.0)"
 
   - name: WBP_FormWheel
     folder: UI

@@ -137,6 +137,36 @@
 #include "WidgetBlueprint.h"
 #include "WidgetBlueprintFactory.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+// v4.3: UMG Widget classes for programmatic layout
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
+#include "Components/Border.h"
+#include "Components/Button.h"
+#include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "Components/ProgressBar.h"
+#include "Components/Spacer.h"
+#include "Components/SizeBox.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScrollBox.h"
+#include "Components/GridPanel.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/WrapBox.h"
+#include "Components/Slider.h"
+#include "Components/CheckBox.h"
+#include "Components/ComboBoxString.h"
+#include "Components/EditableText.h"
+#include "Components/EditableTextBox.h"
+#include "Components/RichTextBlock.h"
+#include "Components/CircularThrobber.h"
+#include "Components/Throbber.h"
 #include "EdGraphSchema_K2.h"
 // v2.6.0: Reflection for setting protected properties
 #include "UObject/UnrealType.h"
@@ -2853,6 +2883,420 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 
 			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
 		}
+	}
+
+	// ============================================================================
+	// v4.3: Widget Tree Construction - Programmatic visual layout
+	// ============================================================================
+	if (Definition.WidgetTree.Widgets.Num() > 0 && WidgetBP->WidgetTree)
+	{
+		UWidgetTree* Tree = WidgetBP->WidgetTree;
+
+		// Helper: Create widget by type
+		auto CreateWidgetByType = [Tree](const FString& TypeName, const FName& WidgetName) -> UWidget*
+		{
+			FString TypeLower = TypeName.ToLower();
+
+			// Panel types
+			if (TypeLower == TEXT("canvaspanel") || TypeLower == TEXT("canvas"))
+				return Tree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("verticalbox") || TypeLower == TEXT("vbox"))
+				return Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("horizontalbox") || TypeLower == TEXT("hbox"))
+				return Tree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("overlay"))
+				return Tree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("gridpanel") || TypeLower == TEXT("grid"))
+				return Tree->ConstructWidget<UGridPanel>(UGridPanel::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("uniformgridpanel") || TypeLower == TEXT("uniformgrid"))
+				return Tree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("wrapbox") || TypeLower == TEXT("wrap"))
+				return Tree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("scrollbox") || TypeLower == TEXT("scroll"))
+				return Tree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), WidgetName);
+
+			// Container types
+			else if (TypeLower == TEXT("border"))
+				return Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("sizebox"))
+				return Tree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("scalebox"))
+				return Tree->ConstructWidget<UScaleBox>(UScaleBox::StaticClass(), WidgetName);
+
+			// Interactive types
+			else if (TypeLower == TEXT("button"))
+				return Tree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("checkbox"))
+				return Tree->ConstructWidget<UCheckBox>(UCheckBox::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("slider"))
+				return Tree->ConstructWidget<USlider>(USlider::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("combobox") || TypeLower == TEXT("comboboxstring"))
+				return Tree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("editabletext"))
+				return Tree->ConstructWidget<UEditableText>(UEditableText::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("editabletextbox") || TypeLower == TEXT("textbox"))
+				return Tree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), WidgetName);
+
+			// Display types
+			else if (TypeLower == TEXT("textblock") || TypeLower == TEXT("text"))
+				return Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("richtextblock") || TypeLower == TEXT("richtext"))
+				return Tree->ConstructWidget<URichTextBlock>(URichTextBlock::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("image"))
+				return Tree->ConstructWidget<UImage>(UImage::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("progressbar") || TypeLower == TEXT("progress"))
+				return Tree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("throbber"))
+				return Tree->ConstructWidget<UThrobber>(UThrobber::StaticClass(), WidgetName);
+			else if (TypeLower == TEXT("circularthrobber"))
+				return Tree->ConstructWidget<UCircularThrobber>(UCircularThrobber::StaticClass(), WidgetName);
+
+			// Layout helpers
+			else if (TypeLower == TEXT("spacer"))
+				return Tree->ConstructWidget<USpacer>(USpacer::StaticClass(), WidgetName);
+
+			return nullptr;
+		};
+
+		// Helper: Configure slot based on parent type
+		auto ConfigureSlot = [](UWidget* Widget, UPanelWidget* Parent, const FManifestWidgetSlotDefinition& SlotDef)
+		{
+			UPanelSlot* Slot = Widget->Slot;
+			if (!Slot) return;
+
+			// Canvas Panel Slot
+			if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Slot))
+			{
+				// Anchors
+				if (!SlotDef.Anchors.IsEmpty())
+				{
+					FString AnchorsLower = SlotDef.Anchors.ToLower();
+					FAnchors Anchors;
+					if (AnchorsLower == TEXT("topleft")) Anchors = FAnchors(0.f, 0.f, 0.f, 0.f);
+					else if (AnchorsLower == TEXT("topcenter")) Anchors = FAnchors(0.5f, 0.f, 0.5f, 0.f);
+					else if (AnchorsLower == TEXT("topright")) Anchors = FAnchors(1.f, 0.f, 1.f, 0.f);
+					else if (AnchorsLower == TEXT("centerleft") || AnchorsLower == TEXT("left")) Anchors = FAnchors(0.f, 0.5f, 0.f, 0.5f);
+					else if (AnchorsLower == TEXT("center")) Anchors = FAnchors(0.5f, 0.5f, 0.5f, 0.5f);
+					else if (AnchorsLower == TEXT("centerright") || AnchorsLower == TEXT("right")) Anchors = FAnchors(1.f, 0.5f, 1.f, 0.5f);
+					else if (AnchorsLower == TEXT("bottomleft")) Anchors = FAnchors(0.f, 1.f, 0.f, 1.f);
+					else if (AnchorsLower == TEXT("bottomcenter") || AnchorsLower == TEXT("bottom")) Anchors = FAnchors(0.5f, 1.f, 0.5f, 1.f);
+					else if (AnchorsLower == TEXT("bottomright")) Anchors = FAnchors(1.f, 1.f, 1.f, 1.f);
+					else if (AnchorsLower == TEXT("stretch") || AnchorsLower == TEXT("fill")) Anchors = FAnchors(0.f, 0.f, 1.f, 1.f);
+					CanvasSlot->SetAnchors(Anchors);
+				}
+
+				// Position
+				if (!SlotDef.Position.IsEmpty())
+				{
+					TArray<FString> Parts;
+					SlotDef.Position.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 2)
+					{
+						CanvasSlot->SetPosition(FVector2D(FCString::Atof(*Parts[0].TrimStartAndEnd()), FCString::Atof(*Parts[1].TrimStartAndEnd())));
+					}
+				}
+
+				// Size
+				if (!SlotDef.Size.IsEmpty())
+				{
+					TArray<FString> Parts;
+					SlotDef.Size.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 2)
+					{
+						CanvasSlot->SetSize(FVector2D(FCString::Atof(*Parts[0].TrimStartAndEnd()), FCString::Atof(*Parts[1].TrimStartAndEnd())));
+					}
+				}
+
+				// Alignment
+				if (!SlotDef.Alignment.IsEmpty())
+				{
+					TArray<FString> Parts;
+					SlotDef.Alignment.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 2)
+					{
+						CanvasSlot->SetAlignment(FVector2D(FCString::Atof(*Parts[0].TrimStartAndEnd()), FCString::Atof(*Parts[1].TrimStartAndEnd())));
+					}
+				}
+
+				CanvasSlot->SetAutoSize(SlotDef.bAutoSize);
+			}
+			// Vertical Box Slot
+			else if (UVerticalBoxSlot* VBoxSlot = Cast<UVerticalBoxSlot>(Slot))
+			{
+				// Horizontal Alignment
+				if (!SlotDef.HorizontalAlignment.IsEmpty())
+				{
+					FString AlignLower = SlotDef.HorizontalAlignment.ToLower();
+					if (AlignLower == TEXT("left")) VBoxSlot->SetHorizontalAlignment(HAlign_Left);
+					else if (AlignLower == TEXT("center")) VBoxSlot->SetHorizontalAlignment(HAlign_Center);
+					else if (AlignLower == TEXT("right")) VBoxSlot->SetHorizontalAlignment(HAlign_Right);
+					else if (AlignLower == TEXT("fill")) VBoxSlot->SetHorizontalAlignment(HAlign_Fill);
+				}
+				// Vertical Alignment
+				if (!SlotDef.VerticalAlignment.IsEmpty())
+				{
+					FString AlignLower = SlotDef.VerticalAlignment.ToLower();
+					if (AlignLower == TEXT("top")) VBoxSlot->SetVerticalAlignment(VAlign_Top);
+					else if (AlignLower == TEXT("center")) VBoxSlot->SetVerticalAlignment(VAlign_Center);
+					else if (AlignLower == TEXT("bottom")) VBoxSlot->SetVerticalAlignment(VAlign_Bottom);
+					else if (AlignLower == TEXT("fill")) VBoxSlot->SetVerticalAlignment(VAlign_Fill);
+				}
+				// Size Rule
+				if (!SlotDef.SizeRule.IsEmpty())
+				{
+					FString SizeLower = SlotDef.SizeRule.ToLower();
+					if (SizeLower == TEXT("auto"))
+						VBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+					else if (SizeLower == TEXT("fill"))
+						VBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				}
+				// Padding
+				if (!SlotDef.Padding.IsEmpty())
+				{
+					TArray<FString> Parts;
+					SlotDef.Padding.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() == 1)
+					{
+						float P = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						VBoxSlot->SetPadding(FMargin(P));
+					}
+					else if (Parts.Num() >= 4)
+					{
+						VBoxSlot->SetPadding(FMargin(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd()),
+							FCString::Atof(*Parts[3].TrimStartAndEnd())));
+					}
+				}
+			}
+			// Horizontal Box Slot
+			else if (UHorizontalBoxSlot* HBoxSlot = Cast<UHorizontalBoxSlot>(Slot))
+			{
+				// Horizontal Alignment
+				if (!SlotDef.HorizontalAlignment.IsEmpty())
+				{
+					FString AlignLower = SlotDef.HorizontalAlignment.ToLower();
+					if (AlignLower == TEXT("left")) HBoxSlot->SetHorizontalAlignment(HAlign_Left);
+					else if (AlignLower == TEXT("center")) HBoxSlot->SetHorizontalAlignment(HAlign_Center);
+					else if (AlignLower == TEXT("right")) HBoxSlot->SetHorizontalAlignment(HAlign_Right);
+					else if (AlignLower == TEXT("fill")) HBoxSlot->SetHorizontalAlignment(HAlign_Fill);
+				}
+				// Vertical Alignment
+				if (!SlotDef.VerticalAlignment.IsEmpty())
+				{
+					FString AlignLower = SlotDef.VerticalAlignment.ToLower();
+					if (AlignLower == TEXT("top")) HBoxSlot->SetVerticalAlignment(VAlign_Top);
+					else if (AlignLower == TEXT("center")) HBoxSlot->SetVerticalAlignment(VAlign_Center);
+					else if (AlignLower == TEXT("bottom")) HBoxSlot->SetVerticalAlignment(VAlign_Bottom);
+					else if (AlignLower == TEXT("fill")) HBoxSlot->SetVerticalAlignment(VAlign_Fill);
+				}
+				// Size Rule
+				if (!SlotDef.SizeRule.IsEmpty())
+				{
+					FString SizeLower = SlotDef.SizeRule.ToLower();
+					if (SizeLower == TEXT("auto"))
+						HBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+					else if (SizeLower == TEXT("fill"))
+						HBoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				}
+				// Padding
+				if (!SlotDef.Padding.IsEmpty())
+				{
+					TArray<FString> Parts;
+					SlotDef.Padding.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() == 1)
+					{
+						float P = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						HBoxSlot->SetPadding(FMargin(P));
+					}
+					else if (Parts.Num() >= 4)
+					{
+						HBoxSlot->SetPadding(FMargin(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd()),
+							FCString::Atof(*Parts[3].TrimStartAndEnd())));
+					}
+				}
+			}
+			// Overlay Slot
+			else if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(Slot))
+			{
+				if (!SlotDef.HorizontalAlignment.IsEmpty())
+				{
+					FString AlignLower = SlotDef.HorizontalAlignment.ToLower();
+					if (AlignLower == TEXT("left")) OverlaySlot->SetHorizontalAlignment(HAlign_Left);
+					else if (AlignLower == TEXT("center")) OverlaySlot->SetHorizontalAlignment(HAlign_Center);
+					else if (AlignLower == TEXT("right")) OverlaySlot->SetHorizontalAlignment(HAlign_Right);
+					else if (AlignLower == TEXT("fill")) OverlaySlot->SetHorizontalAlignment(HAlign_Fill);
+				}
+				if (!SlotDef.VerticalAlignment.IsEmpty())
+				{
+					FString AlignLower = SlotDef.VerticalAlignment.ToLower();
+					if (AlignLower == TEXT("top")) OverlaySlot->SetVerticalAlignment(VAlign_Top);
+					else if (AlignLower == TEXT("center")) OverlaySlot->SetVerticalAlignment(VAlign_Center);
+					else if (AlignLower == TEXT("bottom")) OverlaySlot->SetVerticalAlignment(VAlign_Bottom);
+					else if (AlignLower == TEXT("fill")) OverlaySlot->SetVerticalAlignment(VAlign_Fill);
+				}
+				if (!SlotDef.Padding.IsEmpty())
+				{
+					TArray<FString> Parts;
+					SlotDef.Padding.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() == 1)
+					{
+						float P = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						OverlaySlot->SetPadding(FMargin(P));
+					}
+					else if (Parts.Num() >= 4)
+					{
+						OverlaySlot->SetPadding(FMargin(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd()),
+							FCString::Atof(*Parts[3].TrimStartAndEnd())));
+					}
+				}
+			}
+		};
+
+		// Helper: Configure widget properties
+		auto ConfigureWidgetProperties = [](UWidget* Widget, const FManifestWidgetNodeDefinition& NodeDef)
+		{
+			// Set text for TextBlock
+			if (UTextBlock* TextBlock = Cast<UTextBlock>(Widget))
+			{
+				if (!NodeDef.Text.IsEmpty())
+				{
+					TextBlock->SetText(FText::FromString(NodeDef.Text));
+				}
+			}
+			// Set text for RichTextBlock
+			else if (URichTextBlock* RichText = Cast<URichTextBlock>(Widget))
+			{
+				if (!NodeDef.Text.IsEmpty())
+				{
+					RichText->SetText(FText::FromString(NodeDef.Text));
+				}
+			}
+
+			// Apply custom properties via reflection
+			for (const auto& Prop : NodeDef.Properties)
+			{
+				FProperty* Property = Widget->GetClass()->FindPropertyByName(FName(*Prop.Key));
+				if (!Property)
+				{
+					// Try with common variations
+					Property = Widget->GetClass()->FindPropertyByName(FName(*FString::Printf(TEXT("b%s"), *Prop.Key)));
+				}
+				if (!Property) continue;
+
+				void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Widget);
+
+				if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+				{
+					BoolProp->SetPropertyValue(ValuePtr, Prop.Value.ToBool() || Prop.Value.Equals(TEXT("true"), ESearchCase::IgnoreCase));
+				}
+				else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+				{
+					FloatProp->SetPropertyValue(ValuePtr, FCString::Atof(*Prop.Value));
+				}
+				else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+				{
+					IntProp->SetPropertyValue(ValuePtr, FCString::Atoi(*Prop.Value));
+				}
+				else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+				{
+					StrProp->SetPropertyValue(ValuePtr, Prop.Value);
+				}
+				else if (FTextProperty* TextProp = CastField<FTextProperty>(Property))
+				{
+					TextProp->SetPropertyValue(ValuePtr, FText::FromString(Prop.Value));
+				}
+			}
+		};
+
+		// PASS 1: Create all widgets
+		TMap<FString, UWidget*> WidgetMap;
+		for (const FManifestWidgetNodeDefinition& NodeDef : Definition.WidgetTree.Widgets)
+		{
+			FName WidgetName = FName(*NodeDef.Id);
+			UWidget* Widget = CreateWidgetByType(NodeDef.Type, WidgetName);
+
+			if (Widget)
+			{
+				WidgetMap.Add(NodeDef.Id, Widget);
+
+				// Configure properties
+				ConfigureWidgetProperties(Widget, NodeDef);
+
+				// Mark as variable if requested (for BindWidget)
+				if (NodeDef.bIsVariable)
+				{
+					Widget->bIsVariable = true;
+				}
+
+				LogGeneration(FString::Printf(TEXT("  Created widget: %s (%s)%s"),
+					*NodeDef.Id, *NodeDef.Type, NodeDef.bIsVariable ? TEXT(" [Variable]") : TEXT("")));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("  [WARNING] Unknown widget type: %s"), *NodeDef.Type));
+			}
+		}
+
+		// PASS 2: Build hierarchy and configure slots
+		for (const FManifestWidgetNodeDefinition& NodeDef : Definition.WidgetTree.Widgets)
+		{
+			UWidget** WidgetPtr = WidgetMap.Find(NodeDef.Id);
+			if (!WidgetPtr) continue;
+
+			UPanelWidget* PanelWidget = Cast<UPanelWidget>(*WidgetPtr);
+			if (!PanelWidget) continue;
+
+			for (const FString& ChildId : NodeDef.Children)
+			{
+				UWidget** ChildPtr = WidgetMap.Find(ChildId);
+				if (!ChildPtr) continue;
+
+				// Add child to panel
+				UPanelSlot* Slot = PanelWidget->AddChild(*ChildPtr);
+				if (Slot)
+				{
+					// Find child definition for slot config
+					const FManifestWidgetNodeDefinition* ChildDef = Definition.WidgetTree.Widgets.FindByPredicate(
+						[&ChildId](const FManifestWidgetNodeDefinition& Def) { return Def.Id == ChildId; });
+
+					if (ChildDef)
+					{
+						ConfigureSlot(*ChildPtr, PanelWidget, ChildDef->Slot);
+					}
+				}
+			}
+		}
+
+		// PASS 3: Set root widget
+		if (!Definition.WidgetTree.RootWidget.IsEmpty())
+		{
+			UWidget** RootPtr = WidgetMap.Find(Definition.WidgetTree.RootWidget);
+			if (RootPtr && *RootPtr)
+			{
+				Tree->RootWidget = *RootPtr;
+				LogGeneration(FString::Printf(TEXT("  Set root widget: %s"), *Definition.WidgetTree.RootWidget));
+			}
+		}
+		else if (Definition.WidgetTree.Widgets.Num() > 0)
+		{
+			// Use first widget as root if not specified
+			UWidget** FirstPtr = WidgetMap.Find(Definition.WidgetTree.Widgets[0].Id);
+			if (FirstPtr && *FirstPtr)
+			{
+				Tree->RootWidget = *FirstPtr;
+				LogGeneration(FString::Printf(TEXT("  Set root widget (auto): %s"), *Definition.WidgetTree.Widgets[0].Id));
+			}
+		}
+
+		LogGeneration(FString::Printf(TEXT("  Built widget tree with %d widgets"), Definition.WidgetTree.Widgets.Num()));
 	}
 
 	// v2.2.0: Generate event graph if specified
