@@ -206,6 +206,9 @@ rm -rf "/c/Unreal Projects/NP22B57/Content/FatherCompanion"
 UnrealEditor-Cmd.exe ... -run=GasAbilityGenerator ...
 ```
 
+### Save Handoffs to ClaudeContext/Handoffs/
+All implementation guides, research notes, and session handoffs must be saved to `ClaudeContext/Handoffs/`. Never create handoff files in ClaudeContext/ root or other locations.
+
 ### Non-Asset Entries Must Be Nested
 Variables, properties, and parameters are NOT standalone assets. They must always be nested inside their parent asset definition:
 
@@ -270,8 +273,26 @@ Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 | `GasAbilityGeneratorSpecs.h` | Public/ | Spec handling utilities |
 | `SNPCTableEditor` | NPCTableEditor/ | NPC table editor UI |
 | `SQuestEditor` | QuestEditor/ | Quest visual editor UI |
+| `SDialogueTableEditor` | DialogueTableEditor/ | Dialogue table editor UI |
 
 **Naming Convention:** All structs use `FManifest*` prefix (e.g., `FManifestData`, `FManifestGameplayAbilityDefinition`).
+
+### Table Editors (v4.2)
+
+The plugin includes Excel-like table editors for bulk content authoring:
+
+**Dialogue Table Editor** (`SDialogueTableEditor`)
+- 11 columns: Dialogue, NodeID, Type, Speaker, Text, OptionText, Replies, Conditions, Events, Status, Actions
+- Row operations: Add/Delete/Move Up/Move Down/Duplicate
+- CSV import/export for spreadsheet workflow
+- Status indicators: Valid, Warning, Error
+- Keyboard shortcuts: Ctrl+S (save), Delete (remove row), Ctrl+D (duplicate)
+
+**NPC Table Editor** (`SNPCTableEditor`)
+- 17 columns covering identity, vendor, dialogue, combat properties
+- Sync from existing NPCDefinition assets in Content Browser
+- Bulk property editing across multiple NPCs
+- Export to YAML manifest format
 
 **Validation System (v2.9.1):** Pre-generation validation via `FValidationIssue`, `FPreValidationResult`. FX validation via `FFXValidationError`, `FFXValidationResult`. Generator metadata tracking via `FFXGeneratorMetadata` for regeneration safety.
 
@@ -822,8 +843,11 @@ When looking for classes/enums, the plugin searches:
 
 ### Key Files in ClaudeContext/
 
+**IMPORTANT:** All handoff documents must be saved to `ClaudeContext/Handoffs/`. This is the single location for implementation guides, research notes, and session handoffs.
+
 | File | Purpose |
 |------|---------|
+| `Handoffs/*.md` | All implementation guides and session handoffs |
 | `manifest.yaml` | Single source of truth for all assets |
 | `Father_Ability_Generator_Plugin_v7_8_2_Specification.md` | Plugin architecture and workflows |
 | `Father_Companion_Technical_Reference_v6_0.md` | GAS patterns, tags, Narrative Pro integration |

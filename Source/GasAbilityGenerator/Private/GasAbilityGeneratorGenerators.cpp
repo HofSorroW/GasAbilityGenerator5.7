@@ -4350,6 +4350,142 @@ UMaterialExpression* FMaterialFunctionGenerator::CreateExpressionInFunction(UMat
 		}
 		Expression = Panner;
 	}
+	// v4.1: Additional arithmetic expressions
+	// Subtract
+	else if (TypeLower == TEXT("subtract") || TypeLower == TEXT("sub"))
+	{
+		Expression = NewObject<UMaterialExpressionSubtract>(MaterialFunction);
+	}
+	// Divide
+	else if (TypeLower == TEXT("divide") || TypeLower == TEXT("div"))
+	{
+		Expression = NewObject<UMaterialExpressionDivide>(MaterialFunction);
+	}
+	// Clamp
+	else if (TypeLower == TEXT("clamp"))
+	{
+		UMaterialExpressionClamp* Clamp = NewObject<UMaterialExpressionClamp>(MaterialFunction);
+		if (ExprDef.Properties.Contains(TEXT("min")))
+		{
+			Clamp->MinDefault = FCString::Atof(*ExprDef.Properties[TEXT("min")]);
+		}
+		if (ExprDef.Properties.Contains(TEXT("max")))
+		{
+			Clamp->MaxDefault = FCString::Atof(*ExprDef.Properties[TEXT("max")]);
+		}
+		Expression = Clamp;
+	}
+	// OneMinus
+	else if (TypeLower == TEXT("oneminus") || TypeLower == TEXT("invert"))
+	{
+		Expression = NewObject<UMaterialExpressionOneMinus>(MaterialFunction);
+	}
+	// LinearInterpolate (Lerp)
+	else if (TypeLower == TEXT("lerp") || TypeLower == TEXT("linearinterpolate"))
+	{
+		UMaterialExpressionLinearInterpolate* Lerp = NewObject<UMaterialExpressionLinearInterpolate>(MaterialFunction);
+		if (ExprDef.Properties.Contains(TEXT("alpha")))
+		{
+			Lerp->ConstAlpha = FCString::Atof(*ExprDef.Properties[TEXT("alpha")]);
+		}
+		Expression = Lerp;
+	}
+	// v4.1: Texture expressions
+	// TextureCoordinate
+	else if (TypeLower == TEXT("texturecoordinate") || TypeLower == TEXT("texcoord") || TypeLower == TEXT("uv"))
+	{
+		UMaterialExpressionTextureCoordinate* TexCoord = NewObject<UMaterialExpressionTextureCoordinate>(MaterialFunction);
+		if (ExprDef.Properties.Contains(TEXT("utiling")))
+		{
+			TexCoord->UTiling = FCString::Atof(*ExprDef.Properties[TEXT("utiling")]);
+		}
+		if (ExprDef.Properties.Contains(TEXT("vtiling")))
+		{
+			TexCoord->VTiling = FCString::Atof(*ExprDef.Properties[TEXT("vtiling")]);
+		}
+		if (ExprDef.Properties.Contains(TEXT("coordinate_index")))
+		{
+			TexCoord->CoordinateIndex = FCString::Atoi(*ExprDef.Properties[TEXT("coordinate_index")]);
+		}
+		Expression = TexCoord;
+	}
+	// TextureSampleParameter2D (named texture parameter)
+	else if (TypeLower == TEXT("texturesampleparameter2d") || TypeLower == TEXT("textureparam") || TypeLower == TEXT("texturesample"))
+	{
+		UMaterialExpressionTextureSampleParameter2D* TexSample = NewObject<UMaterialExpressionTextureSampleParameter2D>(MaterialFunction);
+		TexSample->ParameterName = *ExprDef.Name;
+		// Load default texture if specified
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			UTexture* DefaultTex = LoadObject<UTexture>(nullptr, *ExprDef.DefaultValue);
+			if (DefaultTex)
+			{
+				TexSample->Texture = DefaultTex;
+			}
+		}
+		Expression = TexSample;
+	}
+	// v4.1: Vector expressions
+	// VectorParameter
+	else if (TypeLower == TEXT("vectorparameter") || TypeLower == TEXT("vectorparam"))
+	{
+		UMaterialExpressionVectorParameter* VecParam = NewObject<UMaterialExpressionVectorParameter>(MaterialFunction);
+		VecParam->ParameterName = *ExprDef.Name;
+		// Parse default value as "R,G,B,A" or "R,G,B"
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			TArray<FString> Components;
+			ExprDef.DefaultValue.ParseIntoArray(Components, TEXT(","));
+			if (Components.Num() >= 3)
+			{
+				VecParam->DefaultValue.R = FCString::Atof(*Components[0]);
+				VecParam->DefaultValue.G = FCString::Atof(*Components[1]);
+				VecParam->DefaultValue.B = FCString::Atof(*Components[2]);
+				if (Components.Num() >= 4)
+				{
+					VecParam->DefaultValue.A = FCString::Atof(*Components[3]);
+				}
+			}
+		}
+		Expression = VecParam;
+	}
+	// Constant3Vector
+	else if (TypeLower == TEXT("constant3vector") || TypeLower == TEXT("vec3") || TypeLower == TEXT("color"))
+	{
+		UMaterialExpressionConstant3Vector* Vec3 = NewObject<UMaterialExpressionConstant3Vector>(MaterialFunction);
+		// Parse value as "R,G,B"
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			TArray<FString> Components;
+			ExprDef.DefaultValue.ParseIntoArray(Components, TEXT(","));
+			if (Components.Num() >= 3)
+			{
+				Vec3->Constant.R = FCString::Atof(*Components[0]);
+				Vec3->Constant.G = FCString::Atof(*Components[1]);
+				Vec3->Constant.B = FCString::Atof(*Components[2]);
+			}
+		}
+		Expression = Vec3;
+	}
+	// Constant4Vector
+	else if (TypeLower == TEXT("constant4vector") || TypeLower == TEXT("vec4"))
+	{
+		UMaterialExpressionConstant4Vector* Vec4 = NewObject<UMaterialExpressionConstant4Vector>(MaterialFunction);
+		// Parse value as "R,G,B,A"
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			TArray<FString> Components;
+			ExprDef.DefaultValue.ParseIntoArray(Components, TEXT(","));
+			if (Components.Num() >= 4)
+			{
+				Vec4->Constant.R = FCString::Atof(*Components[0]);
+				Vec4->Constant.G = FCString::Atof(*Components[1]);
+				Vec4->Constant.B = FCString::Atof(*Components[2]);
+				Vec4->Constant.A = FCString::Atof(*Components[3]);
+			}
+		}
+		Expression = Vec4;
+	}
 
 	if (Expression)
 	{
@@ -4583,6 +4719,22 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 			{
 				if (UMaterialExpressionFresnel* Fresnel = Cast<UMaterialExpressionFresnel>(ToExpr))
 					TargetInput = &Fresnel->ExponentIn;
+			}
+			// v4.1: Additional input connections
+			else if (Conn.ToInput.Equals(TEXT("Input"), ESearchCase::IgnoreCase))
+			{
+				// Generic "Input" for single-input nodes
+				if (UMaterialExpressionOneMinus* OneMinus = Cast<UMaterialExpressionOneMinus>(ToExpr))
+					TargetInput = &OneMinus->Input;
+				else if (UMaterialExpressionSine* Sine = Cast<UMaterialExpressionSine>(ToExpr))
+					TargetInput = &Sine->Input;
+				else if (UMaterialExpressionClamp* Clamp = Cast<UMaterialExpressionClamp>(ToExpr))
+					TargetInput = &Clamp->Input;
+			}
+			else if (Conn.ToInput.Equals(TEXT("UVs"), ESearchCase::IgnoreCase) || Conn.ToInput.Equals(TEXT("Coordinates"), ESearchCase::IgnoreCase))
+			{
+				if (UMaterialExpressionTextureSampleParameter2D* TexSample = Cast<UMaterialExpressionTextureSampleParameter2D>(ToExpr))
+					TargetInput = &TexSample->Coordinates;
 			}
 
 			if (TargetInput)
@@ -11155,21 +11307,130 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 			}
 		}
 
-		// Log burst effects configuration for reference
-		if (!Definition.BurstEffects.ParticleSystem.IsEmpty())
+		// v4.0.1: Set BurstEffects properties via reflection
+		FStructProperty* BurstEffectsProp = CastField<FStructProperty>(
+			CDO->GetClass()->FindPropertyByName(TEXT("BurstEffects")));
+		if (BurstEffectsProp)
 		{
-			LogGeneration(FString::Printf(TEXT("  BurstEffects.ParticleSystem: %s (requires manual Niagara setup)"),
-				*Definition.BurstEffects.ParticleSystem));
-		}
-		if (!Definition.BurstEffects.Sound.IsEmpty())
-		{
-			LogGeneration(FString::Printf(TEXT("  BurstEffects.Sound: %s (requires manual sound setup)"),
-				*Definition.BurstEffects.Sound));
-		}
-		if (!Definition.BurstEffects.CameraShake.IsEmpty())
-		{
-			LogGeneration(FString::Printf(TEXT("  BurstEffects.CameraShake: %s (requires manual setup)"),
-				*Definition.BurstEffects.CameraShake));
+			void* BurstEffectsPtr = BurstEffectsProp->ContainerPtrToValuePtr<void>(CDO);
+			UScriptStruct* BurstEffectsStruct = BurstEffectsProp->Struct;
+
+			// Set ParticleSystem (add to BurstParticles array)
+			if (!Definition.BurstEffects.ParticleSystem.IsEmpty())
+			{
+				// Load the Niagara system
+				UNiagaraSystem* NiagaraSys = LoadObject<UNiagaraSystem>(nullptr, *Definition.BurstEffects.ParticleSystem);
+				if (!NiagaraSys)
+				{
+					// Try with project root prefix
+					FString FullPath = FString::Printf(TEXT("%s/FX/%s.%s"),
+						*GetProjectRoot(), *Definition.BurstEffects.ParticleSystem, *Definition.BurstEffects.ParticleSystem);
+					NiagaraSys = LoadObject<UNiagaraSystem>(nullptr, *FullPath);
+				}
+
+				if (NiagaraSys)
+				{
+					FArrayProperty* ParticlesProp = CastField<FArrayProperty>(
+						BurstEffectsStruct->FindPropertyByName(TEXT("BurstParticles")));
+					if (ParticlesProp)
+					{
+						FScriptArrayHelper ArrayHelper(ParticlesProp, ParticlesProp->ContainerPtrToValuePtr<void>(BurstEffectsPtr));
+						int32 NewIdx = ArrayHelper.AddValue();
+						void* ParticleInfoPtr = ArrayHelper.GetRawPtr(NewIdx);
+
+						// Set NiagaraSystem on the ParticleInfo struct
+						FStructProperty* InnerStruct = CastField<FStructProperty>(ParticlesProp->Inner);
+						if (InnerStruct)
+						{
+							FObjectProperty* NiagaraProp = CastField<FObjectProperty>(
+								InnerStruct->Struct->FindPropertyByName(TEXT("NiagaraSystem")));
+							if (NiagaraProp)
+							{
+								NiagaraProp->SetObjectPropertyValue(
+									NiagaraProp->ContainerPtrToValuePtr<void>(ParticleInfoPtr), NiagaraSys);
+								LogGeneration(FString::Printf(TEXT("  Set BurstEffects.ParticleSystem: %s"), *Definition.BurstEffects.ParticleSystem));
+							}
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load ParticleSystem: %s"), *Definition.BurstEffects.ParticleSystem));
+				}
+			}
+
+			// Set Sound (add to BurstSounds array)
+			if (!Definition.BurstEffects.Sound.IsEmpty())
+			{
+				USoundBase* SoundAsset = LoadObject<USoundBase>(nullptr, *Definition.BurstEffects.Sound);
+				if (!SoundAsset)
+				{
+					FString FullPath = FString::Printf(TEXT("%s/Audio/%s.%s"),
+						*GetProjectRoot(), *Definition.BurstEffects.Sound, *Definition.BurstEffects.Sound);
+					SoundAsset = LoadObject<USoundBase>(nullptr, *FullPath);
+				}
+
+				if (SoundAsset)
+				{
+					FArrayProperty* SoundsProp = CastField<FArrayProperty>(
+						BurstEffectsStruct->FindPropertyByName(TEXT("BurstSounds")));
+					if (SoundsProp)
+					{
+						FScriptArrayHelper ArrayHelper(SoundsProp, SoundsProp->ContainerPtrToValuePtr<void>(BurstEffectsPtr));
+						int32 NewIdx = ArrayHelper.AddValue();
+						void* SoundInfoPtr = ArrayHelper.GetRawPtr(NewIdx);
+
+						FStructProperty* InnerStruct = CastField<FStructProperty>(SoundsProp->Inner);
+						if (InnerStruct)
+						{
+							FObjectProperty* SoundProp = CastField<FObjectProperty>(
+								InnerStruct->Struct->FindPropertyByName(TEXT("Sound")));
+							if (SoundProp)
+							{
+								SoundProp->SetObjectPropertyValue(
+									SoundProp->ContainerPtrToValuePtr<void>(SoundInfoPtr), SoundAsset);
+								LogGeneration(FString::Printf(TEXT("  Set BurstEffects.Sound: %s"), *Definition.BurstEffects.Sound));
+							}
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load Sound: %s"), *Definition.BurstEffects.Sound));
+				}
+			}
+
+			// Set CameraShake (on BurstCameraShake struct)
+			if (!Definition.BurstEffects.CameraShake.IsEmpty())
+			{
+				UClass* ShakeClass = LoadClass<UCameraShakeBase>(nullptr, *Definition.BurstEffects.CameraShake);
+				if (!ShakeClass)
+				{
+					FString FullPath = FString::Printf(TEXT("/Script/Engine.%s"), *Definition.BurstEffects.CameraShake);
+					ShakeClass = LoadClass<UCameraShakeBase>(nullptr, *FullPath);
+				}
+
+				if (ShakeClass)
+				{
+					FStructProperty* CameraShakeProp = CastField<FStructProperty>(
+						BurstEffectsStruct->FindPropertyByName(TEXT("BurstCameraShake")));
+					if (CameraShakeProp)
+					{
+						void* CameraShakePtr = CameraShakeProp->ContainerPtrToValuePtr<void>(BurstEffectsPtr);
+						FClassProperty* ShakeClassProp = CastField<FClassProperty>(
+							CameraShakeProp->Struct->FindPropertyByName(TEXT("CameraShake")));
+						if (ShakeClassProp)
+						{
+							ShakeClassProp->SetPropertyValue_InContainer(CameraShakePtr, ShakeClass);
+							LogGeneration(FString::Printf(TEXT("  Set BurstEffects.CameraShake: %s"), *Definition.BurstEffects.CameraShake));
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load CameraShake class: %s"), *Definition.BurstEffects.CameraShake));
+				}
+			}
 		}
 
 		// Log spawn condition if set
