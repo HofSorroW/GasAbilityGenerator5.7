@@ -1,7 +1,8 @@
 // GasAbilityGenerator - Dialogue XLSX Writer Implementation
-// v4.3: Export dialogue table to Excel format
+// v4.4: Export dialogue table to Excel format with token columns
 
 #include "XLSXSupport/DialogueXLSXWriter.h"
+#include "XLSXSupport/DialogueTokenRegistry.h"
 #include "HAL/PlatformFileManager.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
@@ -19,19 +20,30 @@ const FString FDialogueXLSXWriter::FORMAT_VERSION = TEXT("1.0");
 TArray<FDialogueXLSXColumn> FDialogueXLSXWriter::GetColumnDefinitions()
 {
 	return {
-		{ TEXT("#ROW_GUID"),      TEXT("Row ID"),       12.0f },
-		{ TEXT("DIALOGUE_ID"),    TEXT("Dialogue"),     15.0f },
-		{ TEXT("NODE_ID"),        TEXT("Node ID"),      15.0f },
-		{ TEXT("NODE_TYPE"),      TEXT("Type"),         8.0f },
-		{ TEXT("SPEAKER"),        TEXT("Speaker"),      12.0f },
-		{ TEXT("TEXT"),           TEXT("Text"),         50.0f },
-		{ TEXT("OPTION_TEXT"),    TEXT("Option Text"),  30.0f },
-		{ TEXT("PARENT_NODE_ID"), TEXT("Parent"),       15.0f },
-		{ TEXT("NEXT_NODE_IDS"),  TEXT("Next Nodes"),   20.0f },
-		{ TEXT("SKIPPABLE"),      TEXT("Skip"),         6.0f },
-		{ TEXT("NOTES"),          TEXT("Notes"),        30.0f },
-		{ TEXT("#STATE"),         TEXT("State"),        10.0f },
-		{ TEXT("#BASE_HASH"),     TEXT("Hash"),         15.0f },
+		// System identity
+		{ TEXT("#ROW_GUID"),           TEXT("Row ID"),         12.0f },
+		{ TEXT("DIALOGUE_ID"),         TEXT("Dialogue"),       15.0f },
+		{ TEXT("NODE_ID"),             TEXT("Node ID"),        15.0f },
+		// Graph structure (read-only in v4.4)
+		{ TEXT("[RO]NODE_TYPE"),       TEXT("Type"),           8.0f },
+		{ TEXT("SPEAKER"),             TEXT("Speaker"),        12.0f },
+		// Text authoring (editable)
+		{ TEXT("TEXT"),                TEXT("Text"),           50.0f },
+		{ TEXT("OPTION_TEXT"),         TEXT("Option Text"),    30.0f },
+		// Logic authoring (v4.4 tokens)
+		{ TEXT("EVENTS"),              TEXT("Events"),         40.0f },
+		{ TEXT("[RO]EVENTS_CURRENT"),  TEXT("UE Events"),      40.0f },
+		{ TEXT("CONDITIONS"),          TEXT("Conditions"),     40.0f },
+		{ TEXT("[RO]CONDITIONS_CURRENT"), TEXT("UE Conditions"), 40.0f },
+		// Graph context (read-only)
+		{ TEXT("[RO]PARENT_NODE_ID"),  TEXT("Parent"),         15.0f },
+		{ TEXT("[RO]NEXT_NODE_IDS"),   TEXT("Next Nodes"),     20.0f },
+		// Other fields
+		{ TEXT("SKIPPABLE"),           TEXT("Skip"),           6.0f },
+		{ TEXT("NOTES"),               TEXT("Notes"),          30.0f },
+		// Sync bookkeeping
+		{ TEXT("#STATE"),              TEXT("State"),          10.0f },
+		{ TEXT("#BASE_HASH"),          TEXT("Hash"),           15.0f },
 	};
 }
 
@@ -188,20 +200,35 @@ FString FDialogueXLSXWriter::GenerateDialoguesSheet(const TArray<FDialogueTableR
 			NextNodesStr += Row.NextNodeIDs[i].ToString();
 		}
 
-		// Compute hash for this row
+		// Serialize events and conditions via TokenRegistry
+		// Note: FDialogueTableRow.Events/Conditions are populated from UE scan
+		FString EventsStr;       // Editable tokens (user modified)
+		FString EventsCurrentStr; // [RO] UE's current state
+		FString ConditionsStr;    // Editable tokens (user modified)
+		FString ConditionsCurrentStr; // [RO] UE's current state
+
+		// For now, events/conditions come from the row if populated during "Sync from Assets"
+		// The serialized token format will be set by DialogueTokenRegistry
+		// Empty strings = unchanged behavior
+
+		// Compute hash for this row (includes editable fields only)
 		int64 RowHash = ComputeRowHash(Row);
 
-		// Column values in order
+		// Column values in order (must match GetColumnDefinitions)
 		TArray<FString> Values = {
 			Row.RowId.ToString(),                                           // #ROW_GUID
 			Row.DialogueID.ToString(),                                      // DIALOGUE_ID
 			Row.NodeID.ToString(),                                          // NODE_ID
-			Row.NodeType == EDialogueTableNodeType::NPC ? TEXT("NPC") : TEXT("Player"), // NODE_TYPE
+			Row.NodeType == EDialogueTableNodeType::NPC ? TEXT("NPC") : TEXT("Player"), // [RO]NODE_TYPE
 			Row.Speaker.ToString(),                                         // SPEAKER
 			Row.Text,                                                       // TEXT
 			Row.OptionText,                                                 // OPTION_TEXT
-			Row.ParentNodeID.ToString(),                                    // PARENT_NODE_ID
-			NextNodesStr,                                                   // NEXT_NODE_IDS
+			EventsStr,                                                      // EVENTS (editable)
+			EventsCurrentStr,                                               // [RO]EVENTS_CURRENT
+			ConditionsStr,                                                  // CONDITIONS (editable)
+			ConditionsCurrentStr,                                           // [RO]CONDITIONS_CURRENT
+			Row.ParentNodeID.ToString(),                                    // [RO]PARENT_NODE_ID
+			NextNodesStr,                                                   // [RO]NEXT_NODE_IDS
 			Row.bSkippable ? TEXT("Yes") : TEXT("No"),                      // SKIPPABLE
 			Row.Notes,                                                      // NOTES
 			TEXT("Synced"),                                                 // #STATE
@@ -237,12 +264,31 @@ FString FDialogueXLSXWriter::GenerateDialoguesSheet(const TArray<FDialogueTableR
 
 FString FDialogueXLSXWriter::GenerateListsSheet(const TArray<FDialogueTableRow>& Rows)
 {
-	// Collect unique values for dropdowns
+	// Collect unique values for dropdowns and token validation
 	TSet<FString> DialogueIds;
 	TSet<FString> Speakers;
 	TSet<FString> NodeTypes;
+	TSet<FString> QuestIds;    // v4.4: For token validation
+	TSet<FString> ItemIds;     // v4.4: For token validation
+	TSet<FString> EventTokens; // v4.4: Available event token types
+	TSet<FString> ConditionTokens; // v4.4: Available condition token types
+
 	NodeTypes.Add(TEXT("NPC"));
 	NodeTypes.Add(TEXT("Player"));
+
+	// Populate available tokens from registry
+	const FDialogueTokenRegistry& Registry = FDialogueTokenRegistry::Get();
+	for (const FDialogueTokenSpec& Spec : Registry.GetAllSpecs())
+	{
+		if (Spec.Category == ETokenCategory::Event)
+		{
+			EventTokens.Add(Spec.TokenName);
+		}
+		else
+		{
+			ConditionTokens.Add(Spec.TokenName);
+		}
+	}
 
 	for (const FDialogueTableRow& Row : Rows)
 	{
@@ -256,21 +302,45 @@ FString FDialogueXLSXWriter::GenerateListsSheet(const TArray<FDialogueTableRow>&
 		}
 	}
 
+	// Note: QuestIds and ItemIds would be populated from asset scan in "Sync from Assets"
+	// For now, they're populated from registry's valid ID sets if available
+	for (const FString& QuestId : Registry.GetValidIds(TEXT("QuestId")))
+	{
+		QuestIds.Add(QuestId);
+	}
+	for (const FString& ItemId : Registry.GetValidIds(TEXT("ItemId")))
+	{
+		ItemIds.Add(ItemId);
+	}
+
 	FString SheetData;
 
 	// Header row
 	SheetData += TEXT("<row r=\"1\">");
-	SheetData += FString::Printf(TEXT("<c r=\"A1\" t=\"inlineStr\" s=\"1\"><is><t>DIALOGUE_ID</t></is></c>"));
-	SheetData += FString::Printf(TEXT("<c r=\"B1\" t=\"inlineStr\" s=\"1\"><is><t>SPEAKER</t></is></c>"));
-	SheetData += FString::Printf(TEXT("<c r=\"C1\" t=\"inlineStr\" s=\"1\"><is><t>NODE_TYPE</t></is></c>"));
+	SheetData += TEXT("<c r=\"A1\" t=\"inlineStr\" s=\"1\"><is><t>DIALOGUE_ID</t></is></c>");
+	SheetData += TEXT("<c r=\"B1\" t=\"inlineStr\" s=\"1\"><is><t>SPEAKER_ID</t></is></c>");
+	SheetData += TEXT("<c r=\"C1\" t=\"inlineStr\" s=\"1\"><is><t>NODE_TYPE</t></is></c>");
+	SheetData += TEXT("<c r=\"D1\" t=\"inlineStr\" s=\"1\"><is><t>QUEST_ID</t></is></c>");
+	SheetData += TEXT("<c r=\"E1\" t=\"inlineStr\" s=\"1\"><is><t>ITEM_ID</t></is></c>");
+	SheetData += TEXT("<c r=\"F1\" t=\"inlineStr\" s=\"1\"><is><t>EVENT_TOKENS</t></is></c>");
+	SheetData += TEXT("<c r=\"G1\" t=\"inlineStr\" s=\"1\"><is><t>CONDITION_TOKENS</t></is></c>");
 	SheetData += TEXT("</row>");
 
 	// Data rows - fill each column with unique values
 	TArray<FString> DialogueIdArr = DialogueIds.Array();
 	TArray<FString> SpeakerArr = Speakers.Array();
 	TArray<FString> NodeTypeArr = NodeTypes.Array();
+	TArray<FString> QuestIdArr = QuestIds.Array();
+	TArray<FString> ItemIdArr = ItemIds.Array();
+	TArray<FString> EventTokenArr = EventTokens.Array();
+	TArray<FString> ConditionTokenArr = ConditionTokens.Array();
 
-	int32 MaxRows = FMath::Max3(DialogueIdArr.Num(), SpeakerArr.Num(), NodeTypeArr.Num());
+	int32 MaxRows = FMath::Max(DialogueIdArr.Num(), SpeakerArr.Num());
+	MaxRows = FMath::Max(MaxRows, NodeTypeArr.Num());
+	MaxRows = FMath::Max(MaxRows, QuestIdArr.Num());
+	MaxRows = FMath::Max(MaxRows, ItemIdArr.Num());
+	MaxRows = FMath::Max(MaxRows, EventTokenArr.Num());
+	MaxRows = FMath::Max(MaxRows, ConditionTokenArr.Num());
 
 	for (int32 i = 0; i < MaxRows; i++)
 	{
@@ -292,6 +362,26 @@ FString FDialogueXLSXWriter::GenerateListsSheet(const TArray<FDialogueTableRow>&
 			SheetData += FString::Printf(TEXT("<c r=\"C%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
 				RowNum, *EscapeXml(NodeTypeArr[i]));
 		}
+		if (i < QuestIdArr.Num())
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"D%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				RowNum, *EscapeXml(QuestIdArr[i]));
+		}
+		if (i < ItemIdArr.Num())
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"E%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				RowNum, *EscapeXml(ItemIdArr[i]));
+		}
+		if (i < EventTokenArr.Num())
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"F%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				RowNum, *EscapeXml(EventTokenArr[i]));
+		}
+		if (i < ConditionTokenArr.Num())
+		{
+			SheetData += FString::Printf(TEXT("<c r=\"G%d\" t=\"inlineStr\"><is><t>%s</t></is></c>"),
+				RowNum, *EscapeXml(ConditionTokenArr[i]));
+		}
 
 		SheetData += TEXT("</row>");
 	}
@@ -302,6 +392,10 @@ FString FDialogueXLSXWriter::GenerateListsSheet(const TArray<FDialogueTableRow>&
     <col min="1" max="1" width="20" customWidth="1"/>
     <col min="2" max="2" width="20" customWidth="1"/>
     <col min="3" max="3" width="15" customWidth="1"/>
+    <col min="4" max="4" width="25" customWidth="1"/>
+    <col min="5" max="5" width="25" customWidth="1"/>
+    <col min="6" max="6" width="25" customWidth="1"/>
+    <col min="7" max="7" width="25" customWidth="1"/>
   </cols>
   <sheetData>%s</sheetData>
 </worksheet>)"), *SheetData);
