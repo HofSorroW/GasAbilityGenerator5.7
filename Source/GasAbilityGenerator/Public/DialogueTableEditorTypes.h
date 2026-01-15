@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Types
+// v4.4: Added EventsTokenStr/ConditionsTokenStr for token-based authoring
 // v4.3: Added FGuid RowId for XLSX sync identity tracking
 // v4.0: Minimal dialogue book system for batch dialogue creation
 
@@ -70,6 +71,18 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	/** Designer notes - not exported to game, just for reference */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
 	FString Notes;
+
+	//=========================================================================
+	// v4.4: Token strings for Events/Conditions (authored in Excel)
+	//=========================================================================
+
+	/** Events token string - e.g., "NE_BeginQuest(QuestId=Q_Intro);NE_GiveItem(ItemId=Gold,Count=100)" */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Logic")
+	FString EventsTokenStr;
+
+	/** Conditions token string - e.g., "NC_QuestState(QuestId=Q_Intro,State=InProgress)" */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Logic")
+	FString ConditionsTokenStr;
 
 	FDialogueTableRow()
 		: RowId(FGuid::NewGuid())

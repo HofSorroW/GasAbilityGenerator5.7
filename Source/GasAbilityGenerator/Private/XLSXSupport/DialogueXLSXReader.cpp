@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue XLSX Reader Implementation
-// v4.3: Import dialogue table from Excel format
+// v4.4: Import dialogue table from Excel format with token support
 
 #include "XLSXSupport/DialogueXLSXReader.h"
 #include "HAL/PlatformFileManager.h"
@@ -373,6 +373,11 @@ FDialogueTableRow FDialogueXLSXReader::ParseRowFromValues(const TMap<FString, in
 	// Parse Skippable
 	FString SkippableStr = GetValue(TEXT("SKIPPABLE"));
 	Row.bSkippable = !SkippableStr.Equals(TEXT("No"), ESearchCase::IgnoreCase);
+
+	// v4.4: Parse token strings for events/conditions
+	// These come from the editable columns (not [RO] columns)
+	Row.EventsTokenStr = GetValue(TEXT("EVENTS"));
+	Row.ConditionsTokenStr = GetValue(TEXT("CONDITIONS"));
 
 	// Parse NextNodeIDs (comma-separated)
 	FString NextNodesStr = GetValue(TEXT("NEXT_NODE_IDS"));

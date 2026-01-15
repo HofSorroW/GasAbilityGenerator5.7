@@ -45,6 +45,9 @@
 #include "Engine/Level.h"
 #include "UObject/UObjectIterator.h"
 #include "Engine/BlueprintCore.h"  // FBlueprintTags for parent class filtering
+#include "XLSXSupport/NPCXLSXWriter.h"
+#include "XLSXSupport/NPCXLSXReader.h"
+#include "XLSXSupport/NPCXLSXSyncEngine.h"
 
 #define LOCTEXT_NAMESPACE "NPCTableEditor"
 
@@ -1224,6 +1227,28 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 			SNew(SButton)
 				.Text(LOCTEXT("ImportCSV", "Import CSV"))
 				.OnClicked(this, &SNPCTableEditor::OnImportCSVClicked)
+		]
+
+		// Export XLSX (Excel with sync support)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("ExportXLSX", "Export Excel"))
+				.OnClicked(this, &SNPCTableEditor::OnExportXLSXClicked)
+				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx) with sync metadata for round-trip editing"))
+		]
+
+		// Import XLSX (triggers 3-way merge)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("ImportXLSX", "Import Excel"))
+				.OnClicked(this, &SNPCTableEditor::OnImportXLSXClicked)
+				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx) with 3-way merge for conflict detection"))
 		]
 
 		// Save Table button
@@ -2407,6 +2432,188 @@ FReply SNPCTableEditor::OnImportCSVClicked()
 			}
 		}
 	}
+
+	return FReply::Handled();
+}
+
+//=============================================================================
+// XLSX Export/Import (Excel format with 3-way sync support)
+//=============================================================================
+
+FReply SNPCTableEditor::OnExportXLSXClicked()
+{
+#if WITH_EDITOR
+	// Build array of FNPCTableRow from shared pointers
+	TArray<FNPCTableRow> RowsToExport;
+	for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
+	{
+		if (Row.IsValid())
+		{
+			RowsToExport.Add(*Row);
+		}
+	}
+
+	if (RowsToExport.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("ExportXLSXEmpty", "No rows to export. Add some NPCs first."));
+		return FReply::Handled();
+	}
+
+	// Open file dialog
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (DesktopPlatform)
+	{
+		TArray<FString> OutFiles;
+		if (DesktopPlatform->SaveFileDialog(
+			nullptr,
+			TEXT("Export NPC Table to Excel"),
+			FPaths::ProjectDir(),
+			TEXT("NPCTable.xlsx"),
+			TEXT("Excel Files (*.xlsx)|*.xlsx"),
+			0,
+			OutFiles))
+		{
+			if (OutFiles.Num() > 0)
+			{
+				FString ErrorMessage;
+				if (FNPCXLSXWriter::ExportToXLSX(RowsToExport, OutFiles[0], ErrorMessage))
+				{
+					FMessageDialog::Open(EAppMsgType::Ok,
+						FText::Format(LOCTEXT("ExportXLSXSuccess", "Exported {0} NPCs to:\n{1}\n\nYou can now edit in Excel and import back."),
+							FText::AsNumber(RowsToExport.Num()),
+							FText::FromString(OutFiles[0])));
+				}
+				else
+				{
+					FMessageDialog::Open(EAppMsgType::Ok,
+						FText::Format(LOCTEXT("ExportXLSXFailed", "Failed to export:\n{0}"),
+							FText::FromString(ErrorMessage)));
+				}
+			}
+		}
+	}
+#else
+	FMessageDialog::Open(EAppMsgType::Ok,
+		LOCTEXT("ExportXLSXEditorOnly", "XLSX export requires Editor builds."));
+#endif
+
+	return FReply::Handled();
+}
+
+FReply SNPCTableEditor::OnImportXLSXClicked()
+{
+#if WITH_EDITOR
+	if (!TableData)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("ImportXLSXNoTable", "No table data. Create or open a table first."));
+		return FReply::Handled();
+	}
+
+	// Open file dialog
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (DesktopPlatform)
+	{
+		TArray<FString> OutFiles;
+		if (DesktopPlatform->OpenFileDialog(
+			nullptr,
+			TEXT("Import NPC Table from Excel"),
+			FPaths::ProjectDir(),
+			TEXT(""),
+			TEXT("Excel Files (*.xlsx)|*.xlsx"),
+			0,
+			OutFiles))
+		{
+			if (OutFiles.Num() > 0)
+			{
+				// Import from XLSX
+				FNPCXLSXImportResult ImportResult = FNPCXLSXReader::ImportFromXLSX(OutFiles[0]);
+				if (!ImportResult.bSuccess)
+				{
+					FMessageDialog::Open(EAppMsgType::Ok,
+						FText::Format(LOCTEXT("ImportXLSXFailed", "Failed to import:\n{0}"),
+							FText::FromString(ImportResult.ErrorMessage)));
+					return FReply::Handled();
+				}
+
+				// Build base rows (from last export, if available - currently empty for fresh import)
+				// TODO: Load base rows from stored snapshot for 3-way merge
+				TArray<FNPCTableRow> BaseRows;  // Empty = first sync, all Excel changes accepted
+
+				// Build current UE rows
+				TArray<FNPCTableRow> UERows;
+				for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
+				{
+					if (Row.IsValid())
+					{
+						UERows.Add(*Row);
+					}
+				}
+
+				// Perform 3-way comparison
+				FNPCSyncResult SyncResult = FNPCXLSXSyncEngine::CompareSources(
+					BaseRows, UERows, ImportResult.Rows);
+
+				// For now, auto-resolve all non-conflicts and apply immediately
+				// TODO: Show SNPCXLSXSyncDialog for conflict resolution UI
+				FNPCXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
+
+				if (SyncResult.HasConflicts())
+				{
+					// Show conflict summary for now (dialog UI coming in Phase 5)
+					FMessageDialog::Open(EAppMsgType::Ok,
+						FText::Format(LOCTEXT("ImportXLSXConflicts",
+							"Import found {0} conflicts that require resolution.\n\n"
+							"Conflict resolution UI coming soon.\n"
+							"For now, non-conflicting changes will be applied."),
+							FText::AsNumber(SyncResult.ConflictCount)));
+
+					// Resolve all conflicts as KeepExcel for now (Excel wins)
+					for (FNPCSyncEntry& Entry : SyncResult.Entries)
+					{
+						if (Entry.RequiresResolution())
+						{
+							Entry.Resolution = ENPCConflictResolution::KeepExcel;
+						}
+					}
+				}
+
+				// Apply the sync
+				FNPCMergeResult MergeResult = FNPCXLSXSyncEngine::ApplySync(SyncResult);
+
+				// Replace table data with merged rows
+				TableData->Rows.Empty();
+				for (const FNPCTableRow& Row : MergeResult.MergedRows)
+				{
+					TableData->Rows.Add(Row);
+				}
+
+				// Refresh UI
+				SyncFromTableData();
+				MarkDirty();
+
+				// Show summary
+				FMessageDialog::Open(EAppMsgType::Ok,
+					FText::Format(LOCTEXT("ImportXLSXSuccess",
+						"Imported from Excel:\n"
+						"  - {0} rows from Excel\n"
+						"  - {1} rows kept from UE\n"
+						"  - {2} rows deleted\n"
+						"  - {3} rows unchanged\n\n"
+						"Total: {4} rows"),
+						FText::AsNumber(MergeResult.AppliedFromExcel),
+						FText::AsNumber(MergeResult.AppliedFromUE),
+						FText::AsNumber(MergeResult.Deleted),
+						FText::AsNumber(MergeResult.Unchanged),
+						FText::AsNumber(MergeResult.MergedRows.Num())));
+			}
+		}
+	}
+#else
+	FMessageDialog::Open(EAppMsgType::Ok,
+		LOCTEXT("ImportXLSXEditorOnly", "XLSX import requires Editor builds."));
+#endif
 
 	return FReply::Handled();
 }

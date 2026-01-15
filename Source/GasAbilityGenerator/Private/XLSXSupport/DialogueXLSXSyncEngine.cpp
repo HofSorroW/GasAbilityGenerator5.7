@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Engine Implementation
-// v4.3: 3-way merge for Excel ↔ UE synchronization
+// v4.4: 3-way merge for Excel ↔ UE synchronization with token support
 
 #include "XLSXSupport/DialogueXLSXSyncEngine.h"
 
@@ -108,6 +108,10 @@ int64 FDialogueXLSXSyncEngine::ComputeRowHash(const FDialogueTableRow& Row)
 	Hash = HashCombine(Hash, GetTypeHash(Row.OptionText));
 	Hash = HashCombine(Hash, GetTypeHash(Row.Notes));
 	Hash = HashCombine(Hash, GetTypeHash(Row.bSkippable));
+
+	// v4.4: Include token strings in hash
+	Hash = HashCombine(Hash, GetTypeHash(Row.EventsTokenStr));
+	Hash = HashCombine(Hash, GetTypeHash(Row.ConditionsTokenStr));
 
 	// Hash NextNodeIDs array
 	for (const FName& NextNode : Row.NextNodeIDs)

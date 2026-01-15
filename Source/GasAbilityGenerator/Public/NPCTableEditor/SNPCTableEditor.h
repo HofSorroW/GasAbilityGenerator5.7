@@ -343,6 +343,12 @@ private:
 	/** Import from CSV */
 	FReply OnImportCSVClicked();
 
+	/** Export to XLSX (Excel format with sync support) */
+	FReply OnExportXLSXClicked();
+
+	/** Import from XLSX (triggers 3-way merge if changes detected) */
+	FReply OnImportXLSXClicked();
+
 	/** Save the table data */
 	FReply OnSaveClicked();
 

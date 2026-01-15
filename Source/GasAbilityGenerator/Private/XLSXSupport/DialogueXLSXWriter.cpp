@@ -200,16 +200,13 @@ FString FDialogueXLSXWriter::GenerateDialoguesSheet(const TArray<FDialogueTableR
 			NextNodesStr += Row.NextNodeIDs[i].ToString();
 		}
 
-		// Serialize events and conditions via TokenRegistry
-		// Note: FDialogueTableRow.Events/Conditions are populated from UE scan
-		FString EventsStr;       // Editable tokens (user modified)
-		FString EventsCurrentStr; // [RO] UE's current state
-		FString ConditionsStr;    // Editable tokens (user modified)
-		FString ConditionsCurrentStr; // [RO] UE's current state
-
-		// For now, events/conditions come from the row if populated during "Sync from Assets"
-		// The serialized token format will be set by DialogueTokenRegistry
-		// Empty strings = unchanged behavior
+		// v4.4: Token strings from row (authored in Excel or populated during "Sync from Assets")
+		// EVENTS/CONDITIONS = Editable tokens (what user authored)
+		// [RO]EVENTS_CURRENT/[RO]CONDITIONS_CURRENT = UE's current state (populated during asset sync)
+		FString EventsStr = Row.EventsTokenStr;           // Editable tokens
+		FString EventsCurrentStr;                         // [RO] UE's current state (populated during sync)
+		FString ConditionsStr = Row.ConditionsTokenStr;   // Editable tokens
+		FString ConditionsCurrentStr;                     // [RO] UE's current state (populated during sync)
 
 		// Compute hash for this row (includes editable fields only)
 		int64 RowHash = ComputeRowHash(Row);
@@ -496,6 +493,10 @@ int64 FDialogueXLSXWriter::ComputeRowHash(const FDialogueTableRow& Row)
 	Hash ^= GetTypeHash(Row.ParentNodeID);
 	Hash ^= GetTypeHash(Row.bSkippable);
 	Hash ^= GetTypeHash(Row.Notes);
+
+	// v4.4: Include token strings in hash
+	Hash ^= GetTypeHash(Row.EventsTokenStr);
+	Hash ^= GetTypeHash(Row.ConditionsTokenStr);
 
 	for (const FName& NextId : Row.NextNodeIDs)
 	{

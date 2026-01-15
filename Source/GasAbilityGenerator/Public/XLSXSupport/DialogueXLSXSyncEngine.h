@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Engine
-// v4.3: 3-way merge for Excel ↔ UE synchronization
+// v4.4: 3-way merge for Excel ↔ UE synchronization with token support
 //
 // Sync flow:
 // 1. Export creates base snapshot with per-row hashes

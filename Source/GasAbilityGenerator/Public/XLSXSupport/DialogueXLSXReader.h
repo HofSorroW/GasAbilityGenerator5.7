@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue XLSX Reader
-// v4.3: Import dialogue table from Excel format with sync support
+// v4.4: Import dialogue table from Excel format with token support
 //
 // Parses XLSX files with:
 // - Sentinel row detection (#DIALOGUE_SHEET_V1)

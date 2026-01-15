@@ -1,5 +1,5 @@
 // GasAbilityGenerator - Dialogue XLSX Writer
-// v4.3: Export dialogue table to Excel format with sync support
+// v4.4: Export dialogue table to Excel format with token support
 //
 // Creates XLSX files with:
 // - Sentinel row for format detection
