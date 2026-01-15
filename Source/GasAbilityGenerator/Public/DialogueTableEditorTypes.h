@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Types
+// v4.6: Added generation tracking (LastGeneratedHash), soft delete (bDeleted)
 // v4.5: Added EValidationState enum and validation cache fields
 // v4.4: Added EventsTokenStr/ConditionsTokenStr for token-based authoring
 // v4.3: Added FGuid RowId for XLSX sync identity tracking
@@ -84,6 +85,10 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	/** Designer notes - not exported to game, just for reference */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
 	FString Notes;
+
+	/** v4.6: Soft delete flag - row skipped during generation, asset untouched */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meta")
+	bool bDeleted = false;
 
 	//=========================================================================
 	// v4.4: Token strings for Events/Conditions (authored in Excel)
@@ -182,6 +187,7 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 		{
 			Hash = HashCombine(Hash, GetTypeHash(NextID));
 		}
+		Hash = HashCombine(Hash, GetTypeHash(bDeleted));  // v4.6: Include soft delete
 		return Hash;
 	}
 
@@ -240,6 +246,51 @@ public:
 	void BumpListsVersion()
 	{
 		ListsVersionGuid = FGuid::NewGuid();
+	}
+
+	//=========================================================================
+	// v4.6: Generation tracking (for "Assets out of date" indicator)
+	//=========================================================================
+
+	/** Hash of all authored fields at last successful generation */
+	UPROPERTY(VisibleAnywhere, Category = "Generation")
+	uint32 LastGeneratedHash = 0;
+
+	/** Timestamp of last generation attempt */
+	UPROPERTY(VisibleAnywhere, Category = "Generation")
+	FDateTime LastGeneratedTime;
+
+	/** Number of failures in last generation (0 = full success) */
+	UPROPERTY(VisibleAnywhere, Category = "Generation")
+	int32 LastGenerateFailureCount = 0;
+
+	/** Compute hash of all authored row data (excludes validation cache, transients) */
+	uint32 ComputeAllRowsHash() const
+	{
+		uint32 Hash = 0;
+		for (const FDialogueTableRow& Row : Rows)
+		{
+			Hash = HashCombine(Hash, Row.ComputeEditableFieldsHash());
+		}
+		return Hash;
+	}
+
+	/** Check if assets are out of date (need regeneration) */
+	bool AreAssetsOutOfDate() const
+	{
+		return ComputeAllRowsHash() != LastGeneratedHash;
+	}
+
+	/** Update generation tracking after successful generation */
+	void OnGenerationComplete(int32 FailureCount)
+	{
+		LastGeneratedTime = FDateTime::Now();
+		LastGenerateFailureCount = FailureCount;
+		if (FailureCount == 0)
+		{
+			LastGeneratedHash = ComputeAllRowsHash();
+		}
+		// If failures > 0, hash stays stale (correct behavior)
 	}
 
 	/** Get all unique DialogueIDs in this table */

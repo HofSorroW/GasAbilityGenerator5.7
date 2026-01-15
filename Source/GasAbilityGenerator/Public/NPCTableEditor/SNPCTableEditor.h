@@ -223,6 +223,9 @@ private:
 	void MarkModified();
 };
 
+/** v4.6: Delegate for dirty state changes */
+DECLARE_DELEGATE(FOnTableDirtyStateChanged);
+
 /**
  * Main NPC Table Editor Widget
  * Excel-like spreadsheet view for managing all NPCs
@@ -232,6 +235,7 @@ class GASABILITYGENERATOR_API SNPCTableEditor : public SCompoundWidget
 public:
 	SLATE_BEGIN_ARGS(SNPCTableEditor) {}
 		SLATE_ARGUMENT(UNPCTableData*, TableData)
+		SLATE_EVENT(FOnTableDirtyStateChanged, OnDirtyStateChanged)  // v4.6
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -386,10 +390,14 @@ private:
 
 	/** Row was modified callback */
 	void OnRowModified();
+
+	/** v4.6: Delegate for notifying owner of dirty state changes */
+	FOnTableDirtyStateChanged OnDirtyStateChanged;
 };
 
 /**
  * Tab/Window that hosts the NPC Table Editor
+ * v4.6: Added dirty indicator and save-on-close prompt
  */
 class GASABILITYGENERATOR_API SNPCTableEditorWindow : public SCompoundWidget
 {
@@ -399,12 +407,21 @@ public:
 
 	void Construct(const FArguments& InArgs);
 
+	/** v4.6: Set the parent tab for dirty indicator updates */
+	void SetParentTab(TSharedPtr<SDockTab> InTab);
+
 private:
 	/** The table editor widget */
 	TSharedPtr<SNPCTableEditor> TableEditor;
 
 	/** Current table data asset */
 	TWeakObjectPtr<UNPCTableData> CurrentTableData;
+
+	/** v4.6: Parent tab for dirty indicator */
+	TWeakPtr<SDockTab> ParentTab;
+
+	/** v4.6: Base tab label (without dirty indicator) */
+	FText BaseTabLabel;
 
 	/** Build menu bar */
 	TSharedRef<SWidget> BuildMenuBar();
@@ -417,4 +434,13 @@ private:
 
 	/** Create or get default table data */
 	UNPCTableData* GetOrCreateTableData();
+
+	/** v4.6: Update tab label with dirty indicator */
+	void UpdateTabLabel();
+
+	/** v4.6: Check if TableData is dirty */
+	bool IsTableDirty() const;
+
+	/** v4.6: Handle tab close request - prompt to save if dirty (FCanCloseTab delegate) */
+	bool CanCloseTab() const;
 };

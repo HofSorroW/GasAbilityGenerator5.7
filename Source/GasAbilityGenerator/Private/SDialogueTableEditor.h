@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor
+// v4.6: Added dirty indicator, save-on-close prompt, generation state display
 // v4.4: Added validation error feedback in status bar
 // v4.3: Slate widget for batch dialogue creation with XLSX sync support
 //
@@ -102,6 +103,9 @@ private:
 	void MarkModified();
 };
 
+/** v4.6: Delegate for dirty state changes */
+DECLARE_DELEGATE(FOnDialogueTableDirtyStateChanged);
+
 /**
  * Main Dialogue Table Editor Widget
  * 9-column table for managing dialogue trees with sequence tracking
@@ -111,6 +115,7 @@ class SDialogueTableEditor : public SCompoundWidget
 public:
 	SLATE_BEGIN_ARGS(SDialogueTableEditor) {}
 		SLATE_ARGUMENT(UDialogueTableData*, TableData)
+		SLATE_EVENT(FOnDialogueTableDirtyStateChanged, OnDirtyStateChanged)  // v4.6
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -187,10 +192,13 @@ private:
 	void MarkDirty();
 	void OnRowModified();
 
+	/** v4.6: Delegate for notifying owner of dirty state changes */
+	FOnDialogueTableDirtyStateChanged OnDirtyStateChanged;
 };
 
 /**
  * Window that hosts the Dialogue Table Editor
+ * v4.6: Added dirty indicator and save-on-close prompt
  */
 class SDialogueTableEditorWindow : public SCompoundWidget
 {
@@ -200,9 +208,18 @@ public:
 
 	void Construct(const FArguments& InArgs);
 
+	/** v4.6: Set the parent tab for dirty indicator updates */
+	void SetParentTab(TSharedPtr<SDockTab> InTab);
+
 private:
 	TSharedPtr<SDialogueTableEditor> TableEditor;
 	UDialogueTableData* CurrentTableData = nullptr;
+
+	/** v4.6: Parent tab for dirty indicator */
+	TWeakPtr<SDockTab> ParentTab;
+
+	/** v4.6: Base tab label (without dirty indicator) */
+	FText BaseTabLabel;
 
 	TSharedRef<SWidget> BuildMenuBar();
 
@@ -211,4 +228,13 @@ private:
 	void OnSaveTable();
 
 	UDialogueTableData* GetOrCreateTableData();
+
+	/** v4.6: Update tab label with dirty indicator */
+	void UpdateTabLabel();
+
+	/** v4.6: Check if TableData is dirty */
+	bool IsTableDirty() const;
+
+	/** v4.6: Handle tab close request - prompt to save if dirty (FCanCloseTab delegate) */
+	bool CanCloseTab() const;
 };

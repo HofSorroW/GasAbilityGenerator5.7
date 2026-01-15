@@ -54,6 +54,7 @@
 #include "NPCTableEditor/NPCAssetSync.h"
 #include "NPCTableEditor/SNPCApplyPreview.h"
 #include "GasAbilityGeneratorGenerators.h"
+#include "Widgets/Docking/SDockTab.h"  // v4.6: For dirty indicator
 
 #define LOCTEXT_NAMESPACE "NPCTableEditor"
 
@@ -1072,6 +1073,7 @@ void SNPCTableRow::MarkModified()
 void SNPCTableEditor::Construct(const FArguments& InArgs)
 {
 	TableData = InArgs._TableData;
+	OnDirtyStateChanged = InArgs._OnDirtyStateChanged;  // v4.6: Store delegate
 	SyncFromTableData();
 	InitializeColumnFilters();
 	UpdateColumnFilterOptions();
@@ -1759,16 +1761,18 @@ void SNPCTableEditor::UpdateStatusBar()
 		));
 	}
 
-	// v4.5: Validation status from cache (O(1) - no re-validation)
+	// v4.6: Status bar with precedence: Errors > Not validated > Out of date > Up to date
 	if (StatusValidationText.IsValid())
 	{
 		int32 InvalidCount = 0;
 		int32 UnknownCount = 0;
+		int32 ActiveCount = 0;  // Non-deleted rows
 
 		for (const auto& RowPtr : AllRows)
 		{
-			if (RowPtr.IsValid())
+			if (RowPtr.IsValid() && !RowPtr->bDeleted)
 			{
+				ActiveCount++;
 				if (RowPtr->ValidationState == EValidationState::Invalid)
 				{
 					InvalidCount++;
@@ -1780,24 +1784,44 @@ void SNPCTableEditor::UpdateStatusBar()
 			}
 		}
 
+		// Precedence: Errors (red) > Not validated (yellow) > Out of date (amber) > Up to date (green)
 		if (InvalidCount > 0)
 		{
+			// Red: Validation errors exist
 			StatusValidationText->SetText(FText::Format(
-				LOCTEXT("ValidationErrors", "Errors: {0}"),
+				LOCTEXT("ValidationErrors", "{0} errors"),
 				FText::AsNumber(InvalidCount)
 			));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.2f, 0.2f)));  // Red
 			StatusValidationText->SetVisibility(EVisibility::Visible);
 		}
 		else if (UnknownCount > 0)
 		{
+			// Yellow: Not yet validated
 			StatusValidationText->SetText(FText::Format(
-				LOCTEXT("ValidationUnknown", "Unvalidated: {0}"),
+				LOCTEXT("ValidationUnknown", "Not validated ({0})"),
 				FText::AsNumber(UnknownCount)
 			));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.8f, 0.2f)));  // Yellow
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else if (TableData && TableData->AreAssetsOutOfDate())
+		{
+			// Amber: Validated but assets out of date
+			StatusValidationText->SetText(LOCTEXT("AssetsOutOfDate", "Out of date"));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.6f, 0.0f)));  // Amber
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else if (ActiveCount > 0)
+		{
+			// Green: All validated and up to date
+			StatusValidationText->SetText(LOCTEXT("AssetsUpToDate", "Up to date"));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 0.8f, 0.2f)));  // Green
 			StatusValidationText->SetVisibility(EVisibility::Visible);
 		}
 		else
 		{
+			// No active rows
 			StatusValidationText->SetText(FText::GetEmpty());
 			StatusValidationText->SetVisibility(EVisibility::Collapsed);
 		}
@@ -2000,6 +2024,9 @@ void SNPCTableEditor::MarkDirty()
 	if (TableData)
 	{
 		TableData->MarkPackageDirty();
+
+		// v4.6: Notify owner of dirty state change
+		OnDirtyStateChanged.ExecuteIfBound();
 	}
 }
 
@@ -2172,22 +2199,49 @@ FReply SNPCTableEditor::OnValidateClicked()
 
 FReply SNPCTableEditor::OnGenerateClicked()
 {
-	// v4.5: Validate first, then generate using FNPCDefinitionGenerator
+	// v4.6: Save before Generate, validation gate dialog, soft delete support
 
-	// Step 1: Gather all rows
+	//=========================================================================
+	// Step 0: Silent save before generation (Rule #1)
+	//=========================================================================
+	if (TableData)
+	{
+		UPackage* Package = TableData->GetPackage();
+		if (Package && Package->IsDirty())
+		{
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Standalone;
+			FString PackageFileName = FPackageName::LongPackageNameToFilename(
+				Package->GetName(), FPackageName::GetAssetPackageExtension());
+			UPackage::SavePackage(Package, TableData, *PackageFileName, SaveArgs);
+			UE_LOG(LogTemp, Log, TEXT("NPC Table Editor: Auto-saved TableData before generation"));
+		}
+	}
+
+	//=========================================================================
+	// Step 1: Gather all rows (skip soft-deleted)
+	//=========================================================================
 	TArray<FNPCTableRow> RowsToValidate;
+	int32 DeletedCount = 0;
 	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
 	{
 		if (RowPtr.IsValid())
 		{
+			if (RowPtr->bDeleted)
+			{
+				DeletedCount++;
+				continue;  // v4.6: Skip soft-deleted rows
+			}
 			RowsToValidate.Add(*RowPtr);
 		}
 	}
 
 	if (RowsToValidate.Num() == 0)
 	{
-		FMessageDialog::Open(EAppMsgType::Ok,
-			LOCTEXT("NoRows", "No NPC rows to generate. Add NPCs first."));
+		FString Message = DeletedCount > 0
+			? FString::Printf(TEXT("No active NPC rows to generate. All %d rows are soft-deleted."), DeletedCount)
+			: TEXT("No NPC rows to generate. Add NPCs first.");
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
 		return FReply::Handled();
 	}
 
@@ -2224,21 +2278,37 @@ FReply SNPCTableEditor::OnGenerateClicked()
 
 	if (ValidationErrorCount > 0)
 	{
-		// Show validation errors and abort
-		FString ErrorMessage = FString::Printf(TEXT("Cannot generate: %d validation error(s) found.\n\nFix these errors first:\n\n"), ValidationErrorCount);
+		// v4.6: Show validation gate dialog with override option
+		FString ErrorMessage = FString::Printf(TEXT("Validation found %d error(s).\n\n"), ValidationErrorCount);
+
+		// Show first 5 errors
+		int32 ShownErrors = 0;
 		for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
 		{
-			if (Issue.Severity == ENPCValidationSeverity::Error)
+			if (Issue.Severity == ENPCValidationSeverity::Error && ShownErrors < 5)
 			{
 				ErrorMessage += FString::Printf(TEXT("[ERROR] %s.%s: %s\n"), *Issue.NPCName, *Issue.FieldName, *Issue.Message);
+				ShownErrors++;
 			}
 		}
-		ErrorMessage += TEXT("\nClick 'Validate' button for full details.");
+		if (ValidationErrorCount > 5)
+		{
+			ErrorMessage += FString::Printf(TEXT("\n... and %d more errors\n"), ValidationErrorCount - 5);
+		}
 
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ErrorMessage));
-		RefreshList();
-		UpdateStatusBar();
-		return FReply::Handled();
+		ErrorMessage += TEXT("\nErrors may cause incomplete or broken asset generation.\n\n");
+		ErrorMessage += TEXT("Click 'Yes' to generate anyway (not recommended)\n");
+		ErrorMessage += TEXT("Click 'No' to cancel and fix issues first");
+
+		EAppReturnType::Type Response = FMessageDialog::Open(EAppMsgType::YesNo, FText::FromString(ErrorMessage));
+		if (Response != EAppReturnType::Yes)
+		{
+			RefreshList();
+			UpdateStatusBar();
+			return FReply::Handled();
+		}
+		// User chose to generate anyway - continue with generation
+		UE_LOG(LogTemp, Warning, TEXT("NPC Table Editor: User overrode validation gate with %d errors"), ValidationErrorCount);
 	}
 
 	// Step 3: Convert rows to manifest definitions
@@ -2309,11 +2379,30 @@ FReply SNPCTableEditor::OnGenerateClicked()
 		}
 	}
 
+	//=========================================================================
+	// Step 5: Update generation tracking (v4.6)
+	//=========================================================================
+	if (TableData)
+	{
+		TableData->OnGenerationComplete(ErrorCount);  // Hash only updates if ErrorCount == 0
+		TableData->MarkPackageDirty();
+
+		// Save TableData after generation tracking update
+		UPackage* Package = TableData->GetPackage();
+		if (Package)
+		{
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Standalone;
+			FString PackageFileName = FPackageName::LongPackageNameToFilename(
+				Package->GetName(), FPackageName::GetAssetPackageExtension());
+			UPackage::SavePackage(Package, TableData, *PackageFileName, SaveArgs);
+		}
+	}
+
 	RefreshList();
-	MarkDirty();
 	UpdateStatusBar();
 
-	// Step 5: Show results
+	// Step 6: Show results
 	FString ResultMessage = FString::Printf(
 		TEXT("NPC Definition Generation Complete!\n\n")
 		TEXT("Generated: %d\n")
@@ -2325,6 +2414,11 @@ FReply SNPCTableEditor::OnGenerateClicked()
 		ErrorCount,
 		ValidationResult.Issues.Num() - ValidationErrorCount);
 
+	if (DeletedCount > 0)
+	{
+		ResultMessage += FString::Printf(TEXT("\nSoft-deleted (skipped): %d"), DeletedCount);
+	}
+
 	if (GenerationErrors.Num() > 0)
 	{
 		ResultMessage += TEXT("\n\nGeneration Errors:\n");
@@ -2332,6 +2426,16 @@ FReply SNPCTableEditor::OnGenerateClicked()
 		{
 			ResultMessage += FString::Printf(TEXT("  - %s\n"), *Error);
 		}
+	}
+
+	// v4.6: Show generation state in result
+	if (ErrorCount == 0)
+	{
+		ResultMessage += TEXT("\n\n✓ Assets are now up to date.");
+	}
+	else
+	{
+		ResultMessage += TEXT("\n\n⚠ Assets remain out of date due to errors.");
 	}
 
 	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ResultMessage));
@@ -2946,6 +3050,7 @@ FReply SNPCTableEditor::OnSaveClicked()
 void SNPCTableEditorWindow::Construct(const FArguments& InArgs)
 {
 	CurrentTableData = GetOrCreateTableData();
+	BaseTabLabel = LOCTEXT("NPCTableEditorTabLabel", "NPC Table Editor");
 
 	ChildSlot
 	[
@@ -2964,6 +3069,7 @@ void SNPCTableEditorWindow::Construct(const FArguments& InArgs)
 		[
 			SAssignNew(TableEditor, SNPCTableEditor)
 				.TableData(CurrentTableData.Get())
+				.OnDirtyStateChanged(FOnTableDirtyStateChanged::CreateSP(this, &SNPCTableEditorWindow::UpdateTabLabel))  // v4.6
 		]
 	];
 }
@@ -3062,6 +3168,9 @@ void SNPCTableEditorWindow::OnSaveTable()
 			FSavePackageArgs SaveArgs;
 			SaveArgs.TopLevelFlags = RF_Standalone;
 			UPackage::SavePackage(Package, CurrentTableData.Get(), *PackageFileName, SaveArgs);
+
+			// v4.6: Update tab label to remove dirty indicator
+			UpdateTabLabel();
 		}
 	}
 }
@@ -3085,6 +3194,81 @@ UNPCTableData* SNPCTableEditorWindow::GetOrCreateTableData()
 	}
 
 	return TableData;
+}
+
+//=========================================================================
+// v4.6: Dirty indicator and save-on-close prompt
+//=========================================================================
+
+void SNPCTableEditorWindow::SetParentTab(TSharedPtr<SDockTab> InTab)
+{
+	ParentTab = InTab;
+	BaseTabLabel = LOCTEXT("NPCTableEditorTabLabel", "NPC Table Editor");
+
+	if (InTab.IsValid())
+	{
+		// Set up tab close request handler (FCanCloseTab expects bool() signature)
+		InTab->SetCanCloseTab(SDockTab::FCanCloseTab::CreateSP(this, &SNPCTableEditorWindow::CanCloseTab));
+		UpdateTabLabel();
+	}
+}
+
+void SNPCTableEditorWindow::UpdateTabLabel()
+{
+	TSharedPtr<SDockTab> Tab = ParentTab.Pin();
+	if (!Tab.IsValid())
+	{
+		return;
+	}
+
+	if (IsTableDirty())
+	{
+		// Add asterisk to indicate dirty state
+		Tab->SetLabel(FText::Format(LOCTEXT("DirtyTabLabel", "*{0}"), BaseTabLabel));
+	}
+	else
+	{
+		Tab->SetLabel(BaseTabLabel);
+	}
+}
+
+bool SNPCTableEditorWindow::IsTableDirty() const
+{
+	if (CurrentTableData.IsValid())
+	{
+		UPackage* Package = CurrentTableData->GetPackage();
+		return Package && Package->IsDirty();
+	}
+	return false;
+}
+
+bool SNPCTableEditorWindow::CanCloseTab() const
+{
+	if (!IsTableDirty())
+	{
+		return true;  // Allow close
+	}
+
+	// Show save prompt
+	EAppReturnType::Type Response = FMessageDialog::Open(
+		EAppMsgType::YesNoCancel,
+		LOCTEXT("SaveBeforeClose", "NPC Table has unsaved changes.\n\nDo you want to save before closing?")
+	);
+
+	switch (Response)
+	{
+		case EAppReturnType::Yes:
+			// Call OnSaveTable via const_cast (FCanCloseTab requires const)
+			const_cast<SNPCTableEditorWindow*>(this)->OnSaveTable();
+			return true;  // Close after save
+
+		case EAppReturnType::No:
+			return true;  // Close without saving
+
+		case EAppReturnType::Cancel:
+		default:
+			return false;  // Don't close
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

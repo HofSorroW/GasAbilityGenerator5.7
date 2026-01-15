@@ -142,11 +142,21 @@ TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnPluginTab(const FSpawnTa
 
 TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnNPCTableEditorTab(const FSpawnTabArgs& SpawnTabArgs)
 {
-	return SNew(SDockTab)
+	TSharedPtr<SNPCTableEditorWindow> EditorWindow;
+
+	TSharedRef<SDockTab> Tab = SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
 		[
-			SNew(SNPCTableEditorWindow)
+			SAssignNew(EditorWindow, SNPCTableEditorWindow)
 		];
+
+	// v4.6: Pass tab reference for dirty indicator and save-on-close
+	if (EditorWindow.IsValid())
+	{
+		EditorWindow->SetParentTab(Tab);
+	}
+
+	return Tab;
 }
 
 TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnQuestEditorTab(const FSpawnTabArgs& SpawnTabArgs)
@@ -160,11 +170,21 @@ TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnQuestEditorTab(const FSp
 
 TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnDialogueTableEditorTab(const FSpawnTabArgs& SpawnTabArgs)
 {
-	return SNew(SDockTab)
+	TSharedPtr<SDialogueTableEditorWindow> EditorWindow;
+
+	TSharedRef<SDockTab> Tab = SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
 		[
-			SNew(SDialogueTableEditorWindow)
+			SAssignNew(EditorWindow, SDialogueTableEditorWindow)
 		];
+
+	// v4.6: Pass tab reference for dirty indicator and save-on-close
+	if (EditorWindow.IsValid())
+	{
+		EditorWindow->SetParentTab(Tab);
+	}
+
+	return Tab;
 }
 
 #undef LOCTEXT_NAMESPACE

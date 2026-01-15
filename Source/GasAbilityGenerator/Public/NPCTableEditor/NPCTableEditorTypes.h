@@ -1,5 +1,5 @@
 // NPCTableEditorTypes.h
-// NPC Table Editor - Data types (v4.5 - validation cache)
+// NPC Table Editor - Data types (v4.6 - generation tracking, soft delete)
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #pragma once
@@ -137,6 +137,14 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	FString Notes;
 
 	//=========================================================================
+	// Soft Delete (v4.6)
+	//=========================================================================
+
+	/** Soft delete flag - row skipped during generation, asset untouched */
+	UPROPERTY(EditAnywhere, Category = "Meta")
+	bool bDeleted = false;
+
+	//=========================================================================
 	// Internal (not displayed as columns)
 	//=========================================================================
 
@@ -197,6 +205,7 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 		Hash = HashCombine(Hash, GetTypeHash(DefaultItems));
 		Hash = HashCombine(Hash, GetTypeHash(SpawnerPOI));
 		Hash = HashCombine(Hash, GetTypeHash(Appearance.ToString()));
+		Hash = HashCombine(Hash, GetTypeHash(bDeleted));  // v4.6: Include soft delete
 		return Hash;
 	}
 
@@ -351,6 +360,51 @@ public:
 	void BumpListsVersion()
 	{
 		ListsVersionGuid = FGuid::NewGuid();
+	}
+
+	//=========================================================================
+	// v4.6: Generation tracking (for "Assets out of date" indicator)
+	//=========================================================================
+
+	/** Hash of all authored fields at last successful generation */
+	UPROPERTY(VisibleAnywhere, Category = "Generation")
+	uint32 LastGeneratedHash = 0;
+
+	/** Timestamp of last generation attempt */
+	UPROPERTY(VisibleAnywhere, Category = "Generation")
+	FDateTime LastGeneratedTime;
+
+	/** Number of failures in last generation (0 = full success) */
+	UPROPERTY(VisibleAnywhere, Category = "Generation")
+	int32 LastGenerateFailureCount = 0;
+
+	/** Compute hash of all authored row data (excludes validation cache, transients) */
+	uint32 ComputeAllRowsHash() const
+	{
+		uint32 Hash = 0;
+		for (const FNPCTableRow& Row : Rows)
+		{
+			Hash = HashCombine(Hash, Row.ComputeEditableFieldsHash());
+		}
+		return Hash;
+	}
+
+	/** Check if assets are out of date (need regeneration) */
+	bool AreAssetsOutOfDate() const
+	{
+		return ComputeAllRowsHash() != LastGeneratedHash;
+	}
+
+	/** Update generation tracking after successful generation */
+	void OnGenerationComplete(int32 FailureCount)
+	{
+		LastGeneratedTime = FDateTime::Now();
+		LastGenerateFailureCount = FailureCount;
+		if (FailureCount == 0)
+		{
+			LastGeneratedHash = ComputeAllRowsHash();
+		}
+		// If failures > 0, hash stays stale (correct behavior)
 	}
 
 	//=========================================================================

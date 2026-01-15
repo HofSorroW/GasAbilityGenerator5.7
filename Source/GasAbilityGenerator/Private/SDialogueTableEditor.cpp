@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
+// v4.6: Added dirty indicator, save-on-close prompt, generation state display, soft delete
 // v4.4: Added validation error feedback in status bar
 // v4.3: Added XLSX export/import with sync support
 // v4.2.14: Fixed Seq column not updating - changed to Text_Lambda for dynamic reads
@@ -30,6 +31,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/SavePackage.h"
 #include "Misc/MessageDialog.h"
+#include "Widgets/Docking/SDockTab.h"  // v4.6: For dirty indicator
 
 #define LOCTEXT_NAMESPACE "DialogueTableEditor"
 
@@ -529,6 +531,7 @@ void SDialogueTableRow::MarkModified()
 void SDialogueTableEditor::Construct(const FArguments& InArgs)
 {
 	TableData = InArgs._TableData;
+	OnDirtyStateChanged = InArgs._OnDirtyStateChanged;  // v4.6: Store delegate
 	SyncFromTableData();
 	InitializeColumnFilters();
 	UpdateColumnFilterOptions();
@@ -1039,16 +1042,18 @@ void SDialogueTableEditor::UpdateStatusBar()
 		));
 	}
 
-	// v4.5.2: Validation status from cache (O(1) - aligned with NPC editor)
+	// v4.6: Status bar with precedence: Errors > Not validated > Out of date > Up to date
 	if (StatusValidationText.IsValid())
 	{
 		int32 InvalidCount = 0;
 		int32 UnknownCount = 0;
+		int32 ActiveCount = 0;  // Non-deleted rows
 
 		for (const auto& Row : AllRows)
 		{
-			if (Row->Data.IsValid())
+			if (Row->Data.IsValid() && !Row->Data->bDeleted)
 			{
+				ActiveCount++;
 				EValidationState State = Row->Data->GetValidationState();
 				if (State == EValidationState::Invalid)
 				{
@@ -1061,24 +1066,44 @@ void SDialogueTableEditor::UpdateStatusBar()
 			}
 		}
 
+		// Precedence: Errors (red) > Not validated (yellow) > Out of date (amber) > Up to date (green)
 		if (InvalidCount > 0)
 		{
+			// Red: Validation errors exist
 			StatusValidationText->SetText(FText::Format(
-				LOCTEXT("ValidationErrors", "Errors: {0}"),
+				LOCTEXT("ValidationErrors", "{0} errors"),
 				FText::AsNumber(InvalidCount)
 			));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.2f, 0.2f)));  // Red
 			StatusValidationText->SetVisibility(EVisibility::Visible);
 		}
 		else if (UnknownCount > 0)
 		{
+			// Yellow: Not yet validated
 			StatusValidationText->SetText(FText::Format(
-				LOCTEXT("ValidationUnknown", "Unvalidated: {0}"),
+				LOCTEXT("ValidationUnknown", "Not validated ({0})"),
 				FText::AsNumber(UnknownCount)
 			));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.8f, 0.2f)));  // Yellow
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else if (TableData && TableData->AreAssetsOutOfDate())
+		{
+			// Amber: Validated but assets out of date
+			StatusValidationText->SetText(LOCTEXT("AssetsOutOfDate", "Out of date"));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.6f, 0.0f)));  // Amber
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else if (ActiveCount > 0)
+		{
+			// Green: All validated and up to date
+			StatusValidationText->SetText(LOCTEXT("AssetsUpToDate", "Up to date"));
+			StatusValidationText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 0.8f, 0.2f)));  // Green
 			StatusValidationText->SetVisibility(EVisibility::Visible);
 		}
 		else
 		{
+			// No active rows
 			StatusValidationText->SetText(FText::GetEmpty());
 			StatusValidationText->SetVisibility(EVisibility::Collapsed);
 		}
@@ -1639,6 +1664,9 @@ void SDialogueTableEditor::MarkDirty()
 	if (TableData)
 	{
 		TableData->MarkPackageDirty();
+
+		// v4.6: Notify owner of dirty state change
+		OnDirtyStateChanged.ExecuteIfBound();
 	}
 }
 
@@ -2148,37 +2176,110 @@ FReply SDialogueTableEditor::OnValidateClicked()
 
 FReply SDialogueTableEditor::OnGenerateClicked()
 {
+	// v4.6: Save before Generate, validation gate dialog, soft delete support
+
+	//=========================================================================
+	// Step 0: Silent save before generation (Rule #1)
+	//=========================================================================
 	SyncToTableData();
 
-	if (!TableData || TableData->Rows.Num() == 0)
+	if (TableData)
 	{
-		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoDataGenerate", "No dialogue data to generate."));
+		UPackage* Package = TableData->GetPackage();
+		if (Package && Package->IsDirty())
+		{
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Standalone;
+			FString PackageFileName = FPackageName::LongPackageNameToFilename(
+				Package->GetName(), FPackageName::GetAssetPackageExtension());
+			UPackage::SavePackage(Package, TableData, *PackageFileName, SaveArgs);
+			UE_LOG(LogTemp, Log, TEXT("Dialogue Table Editor: Auto-saved TableData before generation"));
+		}
+	}
+
+	//=========================================================================
+	// Step 1: Gather all rows (skip soft-deleted)
+	//=========================================================================
+	TArray<FDialogueTableRow> RowsToValidate;
+	int32 DeletedCount = 0;
+	if (TableData)
+	{
+		for (const FDialogueTableRow& Row : TableData->Rows)
+		{
+			if (Row.bDeleted)
+			{
+				DeletedCount++;
+				continue;  // v4.6: Skip soft-deleted rows
+			}
+			RowsToValidate.Add(Row);
+		}
+	}
+
+	if (RowsToValidate.Num() == 0)
+	{
+		FString Message = DeletedCount > 0
+			? FString::Printf(TEXT("No active dialogue rows to generate. All %d rows are soft-deleted."), DeletedCount)
+			: TEXT("No dialogue data to generate.");
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
 		return FReply::Handled();
 	}
 
-	// v4.5.2: Ensure ListsVersionGuid is valid (aligned with NPC editor)
+	//=========================================================================
+	// Step 2: Validate with cache-writing
+	//=========================================================================
 	if (!TableData->ListsVersionGuid.IsValid())
 	{
 		TableData->ListsVersionGuid = FGuid::NewGuid();
 	}
 
-	// v4.5: Use cache-writing validation
 	FDialogueValidationResult ValidationResult = FDialogueTableValidator::ValidateAllAndCache(
-		TableData->Rows,
+		RowsToValidate,
 		TableData->ListsVersionGuid
 	);
 	RefreshList();
 	UpdateStatusBar();
 
-	if (ValidationResult.HasErrors())
+	int32 ValidationErrorCount = ValidationResult.GetErrorCount();
+
+	if (ValidationErrorCount > 0)
 	{
-		FMessageDialog::Open(EAppMsgType::Ok,
-			LOCTEXT("ValidationErrors", "Cannot generate: validation errors found. Please run Validate to see details."));
-		return FReply::Handled();
+		// v4.6: Show validation gate dialog with override option
+		FString ErrorMessage = FString::Printf(TEXT("Validation found %d error(s).\n\n"), ValidationErrorCount);
+
+		// Show first 5 errors
+		int32 ShownErrors = 0;
+		for (const FDialogueValidationIssue& Issue : ValidationResult.Issues)
+		{
+			if (Issue.Severity == EDialogueValidationSeverity::Error && ShownErrors < 5)
+			{
+				ErrorMessage += FString::Printf(TEXT("[ERROR] %s.%s: %s\n"),
+					*Issue.DialogueID.ToString(), *Issue.NodeID.ToString(), *Issue.Message);
+				ShownErrors++;
+			}
+		}
+		if (ValidationErrorCount > 5)
+		{
+			ErrorMessage += FString::Printf(TEXT("\n... and %d more errors\n"), ValidationErrorCount - 5);
+		}
+
+		ErrorMessage += TEXT("\nErrors may cause incomplete or broken asset generation.\n\n");
+		ErrorMessage += TEXT("Click 'Yes' to generate anyway (not recommended)\n");
+		ErrorMessage += TEXT("Click 'No' to cancel and fix issues first");
+
+		EAppReturnType::Type Response = FMessageDialog::Open(EAppMsgType::YesNo, FText::FromString(ErrorMessage));
+		if (Response != EAppReturnType::Yes)
+		{
+			return FReply::Handled();
+		}
+		// User chose to generate anyway - continue with generation
+		UE_LOG(LogTemp, Warning, TEXT("Dialogue Table Editor: User overrode validation gate with %d errors"), ValidationErrorCount);
 	}
 
+	//=========================================================================
+	// Step 3: Convert and show generation preview
+	//=========================================================================
 	TMap<FName, FManifestDialogueBlueprintDefinition> Definitions =
-		FDialogueTableConverter::ConvertRowsToManifest(TableData->Rows);
+		FDialogueTableConverter::ConvertRowsToManifest(RowsToValidate);
 
 	FString Message = FString::Printf(TEXT("Ready to generate %d dialogue(s):\n\n"), Definitions.Num());
 	for (const auto& Pair : Definitions)
@@ -2188,8 +2289,16 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 			Pair.Value.DialogueTree.Nodes.Num());
 	}
 
+	if (DeletedCount > 0)
+	{
+		Message += FString::Printf(TEXT("\nSoft-deleted (skipped): %d"), DeletedCount);
+	}
+
 	Message += TEXT("\nGeneration would use FDialogueBlueprintGenerator.\n");
 	Message += TEXT("(Full generation integration coming in next update)");
+
+	// v4.6: Update generation tracking (preview mode - no actual generation yet)
+	// When actual generation is implemented, call TableData->OnGenerationComplete(ErrorCount)
 
 	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
 
@@ -2633,6 +2742,7 @@ FReply SDialogueTableEditor::OnApplyToAssetsClicked()
 void SDialogueTableEditorWindow::Construct(const FArguments& InArgs)
 {
 	CurrentTableData = GetOrCreateTableData();
+	BaseTabLabel = LOCTEXT("DialogueTableEditorTabLabel", "Dialogue Table Editor");
 
 	ChildSlot
 	[
@@ -2651,6 +2761,7 @@ void SDialogueTableEditorWindow::Construct(const FArguments& InArgs)
 		[
 			SAssignNew(TableEditor, SDialogueTableEditor)
 				.TableData(CurrentTableData)
+				.OnDirtyStateChanged(FOnDialogueTableDirtyStateChanged::CreateSP(this, &SDialogueTableEditorWindow::UpdateTabLabel))  // v4.6
 		]
 	];
 }
@@ -2716,6 +2827,9 @@ void SDialogueTableEditorWindow::OnSaveTable()
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 		UPackage::SavePackage(Package, CurrentTableData, *PackageFileName, SaveArgs);
 
+		// v4.6: Update tab label to remove dirty indicator
+		UpdateTabLabel();
+
 		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("Saved", "Dialogue table saved."));
 	}
 }
@@ -2738,6 +2852,81 @@ UDialogueTableData* SDialogueTableEditorWindow::GetOrCreateTableData()
 	}
 
 	return Data;
+}
+
+//=========================================================================
+// v4.6: Dirty indicator and save-on-close prompt
+//=========================================================================
+
+void SDialogueTableEditorWindow::SetParentTab(TSharedPtr<SDockTab> InTab)
+{
+	ParentTab = InTab;
+	BaseTabLabel = LOCTEXT("DialogueTableEditorTabLabel", "Dialogue Table Editor");
+
+	if (InTab.IsValid())
+	{
+		// Set up tab close request handler (FCanCloseTab expects bool() signature)
+		InTab->SetCanCloseTab(SDockTab::FCanCloseTab::CreateSP(this, &SDialogueTableEditorWindow::CanCloseTab));
+		UpdateTabLabel();
+	}
+}
+
+void SDialogueTableEditorWindow::UpdateTabLabel()
+{
+	TSharedPtr<SDockTab> Tab = ParentTab.Pin();
+	if (!Tab.IsValid())
+	{
+		return;
+	}
+
+	if (IsTableDirty())
+	{
+		// Add asterisk to indicate dirty state
+		Tab->SetLabel(FText::Format(LOCTEXT("DirtyTabLabel", "*{0}"), BaseTabLabel));
+	}
+	else
+	{
+		Tab->SetLabel(BaseTabLabel);
+	}
+}
+
+bool SDialogueTableEditorWindow::IsTableDirty() const
+{
+	if (CurrentTableData)
+	{
+		UPackage* Package = CurrentTableData->GetPackage();
+		return Package && Package->IsDirty();
+	}
+	return false;
+}
+
+bool SDialogueTableEditorWindow::CanCloseTab() const
+{
+	if (!IsTableDirty())
+	{
+		return true;  // Allow close
+	}
+
+	// Show save prompt
+	EAppReturnType::Type Response = FMessageDialog::Open(
+		EAppMsgType::YesNoCancel,
+		LOCTEXT("SaveBeforeClose", "Dialogue Table has unsaved changes.\n\nDo you want to save before closing?")
+	);
+
+	switch (Response)
+	{
+		case EAppReturnType::Yes:
+			// Call OnSaveTable via const_cast (FCanCloseTab requires const)
+			const_cast<SDialogueTableEditorWindow*>(this)->OnSaveTable();
+			return true;  // Close after save
+
+		case EAppReturnType::No:
+			return true;  // Close without saving
+
+		case EAppReturnType::Cancel:
+		default:
+			return false;  // Don't close
+	}
 }
 
 #undef LOCTEXT_NAMESPACE
