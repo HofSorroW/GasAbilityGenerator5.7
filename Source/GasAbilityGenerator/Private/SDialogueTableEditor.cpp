@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
+// v4.4: Added validation error feedback in status bar
 // v4.3: Added XLSX export/import with sync support
 // v4.2.14: Fixed Seq column not updating - changed to Text_Lambda for dynamic reads
 // v4.2.13: Fixed status bar - stored STextBlock refs + explicit SetText() calls
@@ -785,6 +786,16 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildStatusBar()
 		[
 			SAssignNew(StatusSelectedText, STextBlock)
 				.Text(LOCTEXT("InitSelected", "Selected: 0"))
+		]
+
+		// v4.4: Token validation errors (shown in red when > 0)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(8.0f, 0.0f)
+		[
+			SAssignNew(StatusValidationText, STextBlock)
+				.Text(LOCTEXT("InitValidation", ""))
+				.ColorAndOpacity(FSlateColor(FLinearColor::Red))
 		];
 }
 
@@ -835,6 +846,33 @@ void SDialogueTableEditor::UpdateStatusBar()
 			LOCTEXT("SelectedCount", "Selected: {0}"),
 			FText::AsNumber(SelectedCount)
 		));
+	}
+
+	// v4.4: Token validation errors
+	if (StatusValidationText.IsValid())
+	{
+		int32 ValidationErrorCount = 0;
+		for (const auto& Row : AllRows)
+		{
+			if (Row->Data.IsValid() && !Row->Data->AreTokensValid())
+			{
+				ValidationErrorCount++;
+			}
+		}
+
+		if (ValidationErrorCount > 0)
+		{
+			StatusValidationText->SetText(FText::Format(
+				LOCTEXT("ValidationErrors", "Token Errors: {0}"),
+				FText::AsNumber(ValidationErrorCount)
+			));
+			StatusValidationText->SetVisibility(EVisibility::Visible);
+		}
+		else
+		{
+			StatusValidationText->SetText(FText::GetEmpty());
+			StatusValidationText->SetVisibility(EVisibility::Collapsed);
+		}
 	}
 }
 
@@ -1986,10 +2024,32 @@ FReply SDialogueTableEditor::OnImportXLSXClicked()
 		SyncFromTableData();
 		RefreshList();
 
-		FMessageDialog::Open(EAppMsgType::Ok,
-			FText::Format(LOCTEXT("XLSXImportSuccess", "Imported {0} rows from:\n{1}"),
-				FText::AsNumber(Result.Rows.Num()),
-				FText::FromString(OutFiles[0])));
+		// v4.4: Count validation errors for feedback
+		int32 ValidationErrorCount = 0;
+		for (const FDialogueTableRow& Row : Result.Rows)
+		{
+			if (!Row.AreTokensValid())
+			{
+				ValidationErrorCount++;
+			}
+		}
+
+		if (ValidationErrorCount > 0)
+		{
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("XLSXImportSuccessWithErrors",
+					"Imported {0} rows from:\n{1}\n\nWarning: {2} rows have token validation errors.\nInvalid tokens will not be applied during sync."),
+					FText::AsNumber(Result.Rows.Num()),
+					FText::FromString(OutFiles[0]),
+					FText::AsNumber(ValidationErrorCount)));
+		}
+		else
+		{
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("XLSXImportSuccess", "Imported {0} rows from:\n{1}"),
+					FText::AsNumber(Result.Rows.Num()),
+					FText::FromString(OutFiles[0])));
+		}
 	}
 	else
 	{
