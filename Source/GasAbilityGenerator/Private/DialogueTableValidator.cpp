@@ -423,6 +423,11 @@ TArray<FDialogueValidationIssue> FDialogueTableValidator::ValidateRowAndCache(FD
 	{
 		Row.ValidationState = EValidationState::Invalid;
 	}
+	else if (WarningCount > 0)
+	{
+		// Warnings count as valid but with notes - aligned with NPC validator
+		Row.ValidationState = EValidationState::Valid;
+	}
 	else
 	{
 		Row.ValidationState = EValidationState::Valid;

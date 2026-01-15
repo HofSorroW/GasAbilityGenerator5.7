@@ -116,8 +116,29 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 
 TSharedRef<SWidget> SDialogueTableRow::CreateSeqCell()
 {
-	// Use Text_Lambda to dynamically read SeqDisplay (updates when sequences are recalculated)
-	return SNew(SBox)
+	// v4.5.2: Colored validation indicator + sequence display
+	return SNew(SHorizontalBox)
+		// Validation color indicator (thin colored bar)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SBox)
+				.WidthOverride(4.0f)
+				[
+					SNew(SBorder)
+						.BorderBackgroundColor_Lambda([this]()
+						{
+							if (RowDataEx.IsValid() && RowDataEx->Data.IsValid())
+							{
+								return FSlateColor(RowDataEx->Data->GetValidationColor());
+							}
+							return FSlateColor(FLinearColor::White);
+						})
+				]
+		]
+		// Sequence number
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(STextBlock)

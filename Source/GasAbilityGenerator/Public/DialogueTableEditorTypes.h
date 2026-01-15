@@ -140,6 +140,18 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	/** Get validation state - uses cached state (aligned with NPC) */
 	EValidationState GetValidationState() const { return ValidationState; }
 
+	/** Get color for validation state (for UI display) - aligned with NPC */
+	FLinearColor GetValidationColor() const
+	{
+		switch (ValidationState)
+		{
+			case EValidationState::Unknown: return FLinearColor(1.0f, 0.8f, 0.2f); // Yellow
+			case EValidationState::Valid:   return FLinearColor(0.2f, 0.8f, 0.2f); // Green
+			case EValidationState::Invalid: return FLinearColor(1.0f, 0.2f, 0.2f); // Red
+			default: return FLinearColor::White;
+		}
+	}
+
 	/** Invalidate cached validation (call on row edit) */
 	void InvalidateValidation()
 	{
@@ -284,6 +296,15 @@ public:
 		{
 			return Row.RowId == InRowId;
 		});
+	}
+
+	/** Add a new empty row - aligned with NPC */
+	FDialogueTableRow& AddRow()
+	{
+		FDialogueTableRow& NewRow = Rows.AddDefaulted_GetRef();
+		NewRow.RowId = FGuid::NewGuid();
+		NewRow.InvalidateValidation();
+		return NewRow;
 	}
 
 	/** Duplicate an existing row */

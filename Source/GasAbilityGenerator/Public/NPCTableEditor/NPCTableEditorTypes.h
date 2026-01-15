@@ -173,6 +173,9 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 		ValidationInputHash = 0;
 	}
 
+	/** Get validation state - accessor for consistency with Dialogue editor */
+	EValidationState GetValidationState() const { return ValidationState; }
+
 	/** Compute hash of editable fields (for validation staleness detection) */
 	uint32 ComputeEditableFieldsHash() const
 	{
