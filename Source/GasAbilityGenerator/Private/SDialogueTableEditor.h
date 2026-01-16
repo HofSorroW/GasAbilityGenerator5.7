@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor
+// v4.7: Added Status column with colored badge (matches NPC editor)
 // v4.6: Added dirty indicator, save-on-close prompt, generation state display
 // v4.4: Added validation error feedback in status bar
 // v4.3: Slate widget for batch dialogue creation with XLSX sync support
@@ -30,11 +31,12 @@ struct FDialogueTableColumn
 		: ColumnId(InId), DisplayName(InName), DefaultWidth(InWidth) {}
 };
 
-/** Get default column definitions for dialogue table (13 columns) */
+/** Get default column definitions for dialogue table (14 columns) - v4.7: Added Status */
 inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 {
 	return {
 		{ TEXT("Seq"),          FText::FromString(TEXT("Seq")),            0.03f },
+		{ TEXT("Status"),       FText::FromString(TEXT("Status")),         0.04f },  // v4.7: Row status (matches NPC)
 		{ TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue ID")),    0.08f },
 		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        0.08f },
 		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           0.04f },
@@ -95,6 +97,7 @@ private:
 	TSharedRef<SWidget> CreateSpeakerCell();  // Shows "Player" for player nodes
 	TSharedRef<SWidget> CreateNextNodesCell();
 	TSharedRef<SWidget> CreateSeqCell();
+	TSharedRef<SWidget> CreateStatusCell();  // v4.7: Status badge (matches NPC)
 	TSharedRef<SWidget> CreateNodeIDCell();  // With indentation
 	TSharedRef<SWidget> CreateSkippableCell();  // Yes/No checkbox
 	TSharedRef<SWidget> CreateNotesCell();  // Designer notes

@@ -64,6 +64,10 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	{
 		return CreateSeqCell();
 	}
+	if (ColumnName == TEXT("Status"))
+	{
+		return CreateStatusCell();
+	}
 	if (ColumnName == TEXT("DialogueID"))
 	{
 		return CreateFNameCell(RowData->DialogueID, TEXT("DBP_NPCName"));
@@ -149,6 +153,60 @@ TSharedRef<SWidget> SDialogueTableRow::CreateSeqCell()
 		];
 }
 
+// v4.7: Status cell with colored badge (matches NPC table editor)
+TSharedRef<SWidget> SDialogueTableRow::CreateStatusCell()
+{
+	return SNew(SHorizontalBox)
+		// Validation color stripe (4px)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SBox)
+				.WidthOverride(4.0f)
+				[
+					SNew(SBorder)
+						.BorderBackgroundColor_Lambda([this]()
+						{
+							if (RowDataEx.IsValid() && RowDataEx->Data.IsValid())
+							{
+								return FSlateColor(RowDataEx->Data->GetValidationColor());
+							}
+							return FSlateColor(FLinearColor::White);
+						})
+				]
+		]
+		// Status badge
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		.Padding(FMargin(4.0f, 2.0f))
+		.VAlign(VAlign_Center)
+		[
+			SNew(SBorder)
+				.BorderBackgroundColor_Lambda([this]()
+				{
+					if (RowDataEx.IsValid() && RowDataEx->Data.IsValid())
+					{
+						return FSlateColor(RowDataEx->Data->GetStatusColor());
+					}
+					return FSlateColor(FLinearColor::White);
+				})
+				.Padding(FMargin(4.0f, 1.0f))
+				[
+					SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							if (RowDataEx.IsValid() && RowDataEx->Data.IsValid())
+							{
+								return FText::FromString(RowDataEx->Data->GetStatusString());
+							}
+							return FText::FromString(TEXT("?"));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+						.ColorAndOpacity(FSlateColor(FLinearColor::White))
+				]
+		];
+}
+
 TSharedRef<SWidget> SDialogueTableRow::CreateNodeIDCell()
 {
 	FDialogueTableRow* RowData = RowDataEx->Data.Get();
@@ -183,13 +241,36 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNodeIDCell()
 
 TSharedRef<SWidget> SDialogueTableRow::CreateTextCell(FString& Value, const FString& Hint, bool bWithTooltip)
 {
+	// v4.7: Add confirmation prompt for text changes (matches NPC editor)
 	TSharedRef<SWidget> EditableText = SNew(SEditableText)
 		.Text_Lambda([&Value]() { return FText::FromString(Value); })
 		.HintText(FText::FromString(Hint))
-		.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
+		.OnTextCommitted_Lambda([this, &Value, Hint](const FText& NewText, ETextCommit::Type)
 		{
-			Value = NewText.ToString();
-			MarkModified();
+			FString NewValue = NewText.ToString();
+			if (NewValue == Value)
+			{
+				return; // No change
+			}
+
+			// Show confirmation dialog
+			FString DisplayOld = Value.IsEmpty() ? TEXT("(Empty)") : Value;
+			FString DisplayNew = NewValue.IsEmpty() ? TEXT("(Empty)") : NewValue;
+			// Truncate long strings for display
+			if (DisplayOld.Len() > 50) DisplayOld = DisplayOld.Left(47) + TEXT("...");
+			if (DisplayNew.Len() > 50) DisplayNew = DisplayNew.Left(47) + TEXT("...");
+
+			EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+				FText::Format(NSLOCTEXT("DialogueTableEditor", "ConfirmTextChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the node as modified."),
+					FText::FromString(Hint),
+					FText::FromString(DisplayOld),
+					FText::FromString(DisplayNew)));
+
+			if (Result == EAppReturnType::Yes)
+			{
+				Value = NewValue;
+				MarkModified();
+			}
 		})
 		.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9));
 
@@ -216,16 +297,35 @@ TSharedRef<SWidget> SDialogueTableRow::CreateTextCell(FString& Value, const FStr
 
 TSharedRef<SWidget> SDialogueTableRow::CreateFNameCell(FName& Value, const FString& Hint)
 {
+	// v4.7: Add confirmation prompt for FName changes (matches NPC editor)
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableText)
 				.Text_Lambda([&Value]() { return FText::FromName(Value); })
 				.HintText(FText::FromString(Hint))
-				.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type)
+				.OnTextCommitted_Lambda([this, &Value, Hint](const FText& NewText, ETextCommit::Type)
 				{
-					Value = FName(*NewText.ToString());
-					MarkModified();
+					FName NewValue = FName(*NewText.ToString());
+					if (NewValue == Value)
+					{
+						return; // No change
+					}
+
+					FString DisplayOld = Value.IsNone() ? TEXT("(None)") : Value.ToString();
+					FString DisplayNew = NewValue.IsNone() ? TEXT("(None)") : NewValue.ToString();
+
+					EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+						FText::Format(NSLOCTEXT("DialogueTableEditor", "ConfirmFNameChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the node as modified."),
+							FText::FromString(Hint),
+							FText::FromString(DisplayOld),
+							FText::FromString(DisplayNew)));
+
+					if (Result == EAppReturnType::Yes)
+					{
+						Value = NewValue;
+						MarkModified();
+					}
 				})
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
@@ -233,6 +333,7 @@ TSharedRef<SWidget> SDialogueTableRow::CreateFNameCell(FName& Value, const FStri
 
 TSharedRef<SWidget> SDialogueTableRow::CreateNodeTypeCell()
 {
+	// v4.7: Add confirmation prompt for node type toggle (matches NPC editor)
 	FDialogueTableRow* RowData = RowDataEx->Data.Get();
 
 	return SNew(SBox)
@@ -246,15 +347,28 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNodeTypeCell()
 				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
 				{
 					FString TypeStr = NewText.ToString().ToLower();
-					if (TypeStr.Contains(TEXT("player")) || TypeStr == TEXT("p"))
+					EDialogueTableNodeType NewType = (TypeStr.Contains(TEXT("player")) || TypeStr == TEXT("p"))
+						? EDialogueTableNodeType::Player
+						: EDialogueTableNodeType::NPC;
+
+					if (NewType == RowData->NodeType)
 					{
-						RowData->NodeType = EDialogueTableNodeType::Player;
+						return; // No change
 					}
-					else
+
+					FString OldTypeStr = RowData->NodeType == EDialogueTableNodeType::NPC ? TEXT("NPC") : TEXT("Player");
+					FString NewTypeStr = NewType == EDialogueTableNodeType::NPC ? TEXT("NPC") : TEXT("Player");
+
+					EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+						FText::Format(NSLOCTEXT("DialogueTableEditor", "ConfirmNodeType", "Change node type from '{0}' to '{1}'?\n\nThis will mark the node as modified."),
+							FText::FromString(OldTypeStr),
+							FText::FromString(NewTypeStr)));
+
+					if (Result == EAppReturnType::Yes)
 					{
-						RowData->NodeType = EDialogueTableNodeType::NPC;
+						RowData->NodeType = NewType;
+						MarkModified();
 					}
-					MarkModified();
 				})
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
@@ -339,6 +453,7 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNextNodesCell()
 
 TSharedRef<SWidget> SDialogueTableRow::CreateSkippableCell()
 {
+	// v4.7: Add confirmation prompt for checkbox (matches NPC editor)
 	FDialogueTableRow* RowData = RowDataEx->Data.Get();
 
 	return SNew(SBox)
@@ -352,8 +467,22 @@ TSharedRef<SWidget> SDialogueTableRow::CreateSkippableCell()
 				})
 				.OnCheckStateChanged_Lambda([this, RowData](ECheckBoxState NewState)
 				{
-					RowData->bSkippable = (NewState == ECheckBoxState::Checked);
-					MarkModified();
+					bool bNewValue = (NewState == ECheckBoxState::Checked);
+					if (bNewValue == RowData->bSkippable)
+					{
+						return; // No change
+					}
+
+					FString Action = bNewValue ? TEXT("Enable") : TEXT("Disable");
+					EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+						FText::Format(NSLOCTEXT("DialogueTableEditor", "ConfirmSkippable", "{0} 'Skippable'?\n\nThis will mark the node as modified."),
+							FText::FromString(Action)));
+
+					if (Result == EAppReturnType::Yes)
+					{
+						RowData->bSkippable = bNewValue;
+						MarkModified();
+					}
 				})
 				.ToolTipText(LOCTEXT("SkippableTip", "Whether player can skip this line"))
 		];
@@ -521,6 +650,11 @@ TSharedRef<SWidget> SDialogueTableRow::CreateTokenCell(FString& TokenStr, bool& 
 
 void SDialogueTableRow::MarkModified()
 {
+	// v4.7: Update row status to Modified (unless New)
+	if (RowDataEx.IsValid() && RowDataEx->Data.IsValid())
+	{
+		RowDataEx->Data->MarkModified();
+	}
 	OnRowModified.ExecuteIfBound();
 }
 
@@ -1368,6 +1502,7 @@ FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, F
 	const FDialogueTableRow& Row = *RowEx.Data;
 
 	if (ColumnId == TEXT("Seq")) return RowEx.SeqDisplay;
+	if (ColumnId == TEXT("Status")) return Row.GetStatusString();  // v4.7
 
 	// DialogueID - required field, show (None) if empty
 	if (ColumnId == TEXT("DialogueID"))
@@ -2520,29 +2655,13 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 
 FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 {
-	// v4.4: Pull current events/conditions from UDialogueBlueprint assets into table
+	// v4.7: Scan all DialogueBlueprint assets and create/update rows (matches NPC editor behavior)
+	// Previously only updated existing rows - now creates rows from discovered assets
 
-	if (!TableData || AllRows.Num() == 0)
+	if (!TableData)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,
-			LOCTEXT("NoRowsToSync", "No dialogue rows in table to sync.\n\nAdd dialogue rows first, then use this button to pull events/conditions from the dialogue assets."));
-		return FReply::Handled();
-	}
-
-	// Collect unique DialogueIDs
-	TSet<FName> UniqueDialogueIDs;
-	for (const auto& Row : AllRows)
-	{
-		if (Row->Data.IsValid() && !Row->Data->DialogueID.IsNone())
-		{
-			UniqueDialogueIDs.Add(Row->Data->DialogueID);
-		}
-	}
-
-	if (UniqueDialogueIDs.Num() == 0)
-	{
-		FMessageDialog::Open(EAppMsgType::Ok,
-			LOCTEXT("NoDialogueIDs", "No valid Dialogue IDs found in table.\n\nEnsure rows have Dialogue ID values set."));
+			LOCTEXT("NoTableData", "No table data available. Please create or open a table first."));
 		return FReply::Handled();
 	}
 
@@ -2556,82 +2675,127 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 	// =========================================================================
 
 	// Sync all dialogue assets using AssetRegistry (filtered by PathFilter)
-	FDialogueAssetSyncResult CombinedResult = FDialogueAssetSync::SyncFromAllAssets(PathFilter);
+	FDialogueAssetSyncResult SyncResult = FDialogueAssetSync::SyncFromAllAssets(PathFilter);
 
-	// Count how many of the requested dialogues we found
-	int32 AssetsFound = 0;
-	int32 AssetsMissing = 0;
-	for (const FName& DialogueID : UniqueDialogueIDs)
+	if (SyncResult.NodesFound == 0)
 	{
-		bool bFound = false;
-		for (const auto& Pair : CombinedResult.NodeData)
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoDialoguesFound", "No DialogueBlueprint assets found in the project.\n\nCreate DialogueBlueprint assets (DBP_*) first, then sync."));
+		return FReply::Handled();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[DialogueTableEditor] Found %d dialogue nodes from assets"), SyncResult.NodesFound);
+
+	// Build map of existing rows by DialogueID.NodeID key for quick lookup
+	TMap<FString, TSharedPtr<FDialogueTableRowEx>> ExistingRowMap;
+	for (auto& RowEx : AllRows)
+	{
+		if (RowEx->Data.IsValid())
 		{
-			if (Pair.Key.StartsWith(DialogueID.ToString()))
-			{
-				bFound = true;
-				break;
-			}
-		}
-		if (bFound)
-		{
-			AssetsFound++;
-		}
-		else
-		{
-			AssetsMissing++;
-			UE_LOG(LogTemp, Warning, TEXT("SyncFromAssets: Could not find asset for DialogueID '%s' in %s"), *DialogueID.ToString(), *PathFilter);
+			FString Key = FDialogueAssetSyncResult::MakeKey(RowEx->Data->DialogueID, RowEx->Data->NodeID);
+			ExistingRowMap.Add(Key, RowEx);
 		}
 	}
 
-	// Update table rows with synced data
+	int32 RowsCreated = 0;
 	int32 RowsUpdated = 0;
-	for (auto& Row : AllRows)
+
+	// Process each discovered node - create new rows or update existing
+	for (const auto& Pair : SyncResult.NodeData)
 	{
-		if (!Row->Data.IsValid())
+		const FString& Key = Pair.Key;
+		const FDialogueNodeAssetData& NodeData = Pair.Value;
+
+		// Parse DialogueID.NodeID from key
+		FString DialogueIDStr, NodeIDStr;
+		if (!Key.Split(TEXT("."), &DialogueIDStr, &NodeIDStr))
 		{
 			continue;
 		}
 
-		FString Key = FDialogueAssetSyncResult::MakeKey(Row->Data->DialogueID, Row->Data->NodeID);
-		if (FDialogueNodeAssetData* NodeData = CombinedResult.NodeData.Find(Key))
+		TSharedPtr<FDialogueTableRowEx>* ExistingRowPtr = ExistingRowMap.Find(Key);
+		if (ExistingRowPtr && ExistingRowPtr->IsValid())
 		{
-			// Update tokens from asset
-			if (Row->Data->EventsTokenStr.IsEmpty() && !NodeData->EventsTokenStr.IsEmpty())
+			// Update existing row
+			TSharedPtr<FDialogueTableRow> RowData = (*ExistingRowPtr)->Data;
+			if (RowData.IsValid())
 			{
-				Row->Data->EventsTokenStr = NodeData->EventsTokenStr;
-				Row->Data->bEventsValid = true;
-				RowsUpdated++;
+				// Update tokens from asset (only if table is empty - don't overwrite user edits)
+				bool bUpdated = false;
+				if (RowData->EventsTokenStr.IsEmpty() && !NodeData.EventsTokenStr.IsEmpty())
+				{
+					RowData->EventsTokenStr = NodeData.EventsTokenStr;
+					RowData->bEventsValid = true;
+					bUpdated = true;
+				}
+				if (RowData->ConditionsTokenStr.IsEmpty() && !NodeData.ConditionsTokenStr.IsEmpty())
+				{
+					RowData->ConditionsTokenStr = NodeData.ConditionsTokenStr;
+					RowData->bConditionsValid = true;
+					bUpdated = true;
+				}
+				// Update NodeType from asset
+				RowData->NodeType = NodeData.NodeType;
+				// Mark as synced
+				RowData->Status = EDialogueTableRowStatus::Synced;
+				if (bUpdated)
+				{
+					RowsUpdated++;
+				}
 			}
-			if (Row->Data->ConditionsTokenStr.IsEmpty() && !NodeData->ConditionsTokenStr.IsEmpty())
-			{
-				Row->Data->ConditionsTokenStr = NodeData->ConditionsTokenStr;
-				Row->Data->bConditionsValid = true;
-				RowsUpdated++;
-			}
+		}
+		else
+		{
+			// Create new row from asset data
+			TSharedPtr<FDialogueTableRow> NewRowData = MakeShared<FDialogueTableRow>();
+			NewRowData->RowId = FGuid::NewGuid();
+			NewRowData->DialogueID = FName(*DialogueIDStr);
+			NewRowData->NodeID = FName(*NodeIDStr);
+			NewRowData->NodeType = NodeData.NodeType;
+			NewRowData->EventsTokenStr = NodeData.EventsTokenStr;
+			NewRowData->ConditionsTokenStr = NodeData.ConditionsTokenStr;
+			NewRowData->bEventsValid = true;
+			NewRowData->bConditionsValid = true;
+			NewRowData->Status = EDialogueTableRowStatus::Synced;
+
+			// Create wrapper and add to list
+			TSharedPtr<FDialogueTableRowEx> NewRowEx = MakeShared<FDialogueTableRowEx>();
+			NewRowEx->Data = NewRowData;
+			NewRowEx->Sequence = 0;
+			NewRowEx->Depth = 0;
+			AllRows.Add(NewRowEx);
+
+			RowsCreated++;
 		}
 	}
 
-	// Sync back to TableData and refresh
+	// Recalculate sequences and refresh
+	CalculateSequences();
 	SyncToTableData();
+	UpdateColumnFilterOptions();
+	ApplyFilters();
 	RefreshList();
 	UpdateStatusBar();
 
+	if (RowsCreated > 0)
+	{
+		MarkDirty();
+	}
+
 	// Show result
 	FMessageDialog::Open(EAppMsgType::Ok,
-		FText::Format(LOCTEXT("SyncFromAssetsComplete",
-			"Sync from Assets complete!\n\n"
-			"Dialogues found: {0}\n"
-			"Dialogues missing: {1}\n"
-			"Nodes found: {2}\n"
+		FText::Format(LOCTEXT("SyncFromAssetsCompleteV47",
+			"Synced {0} DialogueBlueprint nodes from project.\n\n"
+			"Rows created: {1}\n"
+			"Rows updated: {2}\n"
 			"Nodes with events: {3}\n"
-			"Nodes with conditions: {4}\n"
-			"Rows updated: {5}"),
-			FText::AsNumber(AssetsFound),
-			FText::AsNumber(AssetsMissing),
-			FText::AsNumber(CombinedResult.NodesFound),
-			FText::AsNumber(CombinedResult.NodesWithEvents),
-			FText::AsNumber(CombinedResult.NodesWithConditions),
-			FText::AsNumber(RowsUpdated)));
+			"Nodes with conditions: {4}\n\n"
+			"You can now edit them in the table and regenerate."),
+			FText::AsNumber(SyncResult.NodesFound),
+			FText::AsNumber(RowsCreated),
+			FText::AsNumber(RowsUpdated),
+			FText::AsNumber(SyncResult.NodesWithEvents),
+			FText::AsNumber(SyncResult.NodesWithConditions)));
 
 	return FReply::Handled();
 }

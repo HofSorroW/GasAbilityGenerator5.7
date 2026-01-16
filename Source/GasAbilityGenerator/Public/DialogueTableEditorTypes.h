@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Types
+// v4.7: Added EDialogueTableRowStatus enum, Status field, asset discovery (matches NPC editor)
 // v4.6: Added generation tracking (LastGeneratedHash), soft delete (bDeleted)
 // v4.5: Added EValidationState enum and validation cache fields
 // v4.4: Added EventsTokenStr/ConditionsTokenStr for token-based authoring
@@ -9,6 +10,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "UObject/SoftObjectPath.h"
 #include "DialogueTableEditorTypes.generated.h"
 
 /**
@@ -21,6 +23,19 @@ enum class EValidationState : uint8
 	Unknown UMETA(DisplayName = "Unknown"),   // Yellow - not validated yet / invalidated
 	Valid UMETA(DisplayName = "Valid"),       // Green - passed validation
 	Invalid UMETA(DisplayName = "Invalid")    // Red - has errors
+};
+
+/**
+ * Row status enum for Dialogue table (sync state) - matches NPC table
+ * v4.7: Added for parity with NPC Table Editor
+ */
+UENUM(BlueprintType)
+enum class EDialogueTableRowStatus : uint8
+{
+	New UMETA(DisplayName = "New"),           // Blue - newly created, not yet generated
+	Modified UMETA(DisplayName = "Modified"), // Yellow - changed since last sync/generation
+	Synced UMETA(DisplayName = "Synced"),     // Green - successfully synced/generated
+	Error UMETA(DisplayName = "Error")        // Red - generation or sync failed
 };
 
 /**
@@ -45,6 +60,10 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	/** Stable row identifier for XLSX sync - survives reorder/filter operations */
 	UPROPERTY()
 	FGuid RowId;
+
+	/** v4.7: Row status - matches NPC table editor */
+	UPROPERTY(VisibleAnywhere, Category = "Status")
+	EDialogueTableRowStatus Status = EDialogueTableRowStatus::New;
 
 	/** Which dialogue this node belongs to (e.g., DBP_Seth, DBP_Blacksmith) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
@@ -89,6 +108,14 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	/** v4.6: Soft delete flag - row skipped during generation, asset untouched */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Meta")
 	bool bDeleted = false;
+
+	//=========================================================================
+	// v4.7: Internal (not displayed as columns) - matches NPC table
+	//=========================================================================
+
+	/** Generated DialogueBlueprint asset path (after generation) */
+	UPROPERTY(VisibleAnywhere, Category = "Internal")
+	FSoftObjectPath GeneratedDialogueBP;
 
 	//=========================================================================
 	// v4.4: Token strings for Events/Conditions (authored in Excel)
@@ -157,6 +184,46 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 		}
 	}
 
+	//=========================================================================
+	// v4.7: Status helpers (matches NPC table editor)
+	//=========================================================================
+
+	/** Get status color for UI */
+	FLinearColor GetStatusColor() const
+	{
+		switch (Status)
+		{
+			case EDialogueTableRowStatus::New: return FLinearColor(0.2f, 0.6f, 1.0f); // Blue
+			case EDialogueTableRowStatus::Modified: return FLinearColor(1.0f, 0.8f, 0.2f); // Yellow
+			case EDialogueTableRowStatus::Synced: return FLinearColor(0.2f, 0.8f, 0.2f); // Green
+			case EDialogueTableRowStatus::Error: return FLinearColor(1.0f, 0.2f, 0.2f); // Red
+			default: return FLinearColor::White;
+		}
+	}
+
+	/** Get status as string for display */
+	FString GetStatusString() const
+	{
+		switch (Status)
+		{
+			case EDialogueTableRowStatus::New: return TEXT("New");
+			case EDialogueTableRowStatus::Modified: return TEXT("Modified");
+			case EDialogueTableRowStatus::Synced: return TEXT("Synced");
+			case EDialogueTableRowStatus::Error: return TEXT("Error");
+			default: return TEXT("Unknown");
+		}
+	}
+
+	/** Mark row as modified (call on edit) */
+	void MarkModified()
+	{
+		if (Status != EDialogueTableRowStatus::New)
+		{
+			Status = EDialogueTableRowStatus::Modified;
+		}
+		InvalidateValidation();
+	}
+
 	/** Invalidate cached validation (call on row edit) */
 	void InvalidateValidation()
 	{
@@ -193,6 +260,7 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 
 	FDialogueTableRow()
 		: RowId(FGuid::NewGuid())
+		, Status(EDialogueTableRowStatus::New)
 		, NodeType(EDialogueTableNodeType::NPC)
 	{
 	}
@@ -354,11 +422,12 @@ public:
 	{
 		FDialogueTableRow& NewRow = Rows.AddDefaulted_GetRef();
 		NewRow.RowId = FGuid::NewGuid();
+		NewRow.Status = EDialogueTableRowStatus::New;
 		NewRow.InvalidateValidation();
 		return NewRow;
 	}
 
-	/** Duplicate an existing row */
+	/** Duplicate an existing row - aligned with NPC */
 	FDialogueTableRow* DuplicateRow(int32 SourceIndex)
 	{
 		if (Rows.IsValidIndex(SourceIndex))
@@ -368,6 +437,8 @@ public:
 			// Append _Copy to NodeID to make it unique
 			FString NewNodeIDStr = NewRow.NodeID.ToString() + TEXT("_Copy");
 			NewRow.NodeID = FName(*NewNodeIDStr);
+			NewRow.Status = EDialogueTableRowStatus::New;
+			NewRow.GeneratedDialogueBP.Reset();
 			NewRow.InvalidateValidation();
 			Rows.Add(NewRow);
 			return &Rows.Last();

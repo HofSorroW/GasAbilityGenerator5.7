@@ -2561,6 +2561,25 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 	TArray<FAssetData> AssetList;
 	AssetRegistry.GetAssetsByClass(UNPCDefinition::StaticClass()->GetClassPathName(), AssetList, true);
 
+	// =========================================================================
+	// TEST ONLY: Filter to /Game/TestData/ path for table editor testing
+	// REVERT THIS AFTER TESTING - Remove the filter loop below
+	// =========================================================================
+	TArray<FAssetData> FilteredAssetList;
+	for (const FAssetData& Asset : AssetList)
+	{
+		FString PackagePath = Asset.PackagePath.ToString();
+		if (PackagePath.StartsWith(TEXT("/Game/TestData")))
+		{
+			FilteredAssetList.Add(Asset);
+		}
+	}
+	AssetList = FilteredAssetList;
+	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] TEST MODE - Filtered to %d assets in /Game/TestData/"), AssetList.Num());
+	// =========================================================================
+	// END TEST ONLY
+	// =========================================================================
+
 	if (AssetList.Num() == 0)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,
