@@ -51,6 +51,9 @@ struct FNPCAssetData
 	/** Appearance */
 	FSoftObjectPath Appearance;
 
+	/** Default items as comma-separated collection names (extracted from TradingItemLoadout) */
+	FString DefaultItems;
+
 	/** Whether this NPC was found in assets */
 	bool bFoundInAsset = false;
 

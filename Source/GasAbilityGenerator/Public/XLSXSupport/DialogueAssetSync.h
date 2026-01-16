@@ -13,6 +13,7 @@ class UDialogueBlueprint;
 
 /**
  * Per-node event/condition data extracted from UDialogueBlueprint
+ * v4.8: Extended to include full dialogue content for sync
  */
 struct FDialogueNodeAssetData
 {
@@ -24,6 +25,28 @@ struct FDialogueNodeAssetData
 
 	/** Node type from asset */
 	EDialogueTableNodeType NodeType = EDialogueTableNodeType::NPC;
+
+	//=========================================================================
+	// v4.8: Full dialogue content sync
+	//=========================================================================
+
+	/** Speaker ID (for NPC nodes) */
+	FString Speaker;
+
+	/** Dialogue text (from Line.Text) */
+	FString Text;
+
+	/** Player option text (for Player nodes - shortened choice display) */
+	FString OptionText;
+
+	/** Whether this node is skippable */
+	bool bSkippable = true;
+
+	/** Child node IDs (NPCReplies + PlayerReplies) as comma-separated string */
+	FString NextNodeIDs;
+
+	/** Parent node ID (discovered by reverse lookup) */
+	FString ParentNodeID;
 
 	/** Whether this node was found in the asset */
 	bool bFoundInAsset = false;

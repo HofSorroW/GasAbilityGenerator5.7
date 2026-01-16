@@ -42,7 +42,63 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 	// Get dialogue ID from asset name
 	FName DialogueID = FName(*DialogueBlueprint->GetName());
 
+	//=========================================================================
+	// v4.8: Build parent node mapping (child ID -> parent ID)
+	// This requires scanning all nodes to find who references whom
+	//=========================================================================
+	TMap<FName, FName> ChildToParentMap;
+
+	// Scan NPC nodes for their children
+	for (UDialogueNode_NPC* NPCNode : DialogueTemplate->NPCReplies)
+	{
+		if (!NPCNode) continue;
+		FName ParentID = NPCNode->GetID();
+
+		// NPC replies (next NPC nodes in chain)
+		for (UDialogueNode_NPC* ChildNPC : NPCNode->NPCReplies)
+		{
+			if (ChildNPC)
+			{
+				ChildToParentMap.Add(ChildNPC->GetID(), ParentID);
+			}
+		}
+		// Player replies (choices after NPC speaks)
+		for (UDialogueNode_Player* ChildPlayer : NPCNode->PlayerReplies)
+		{
+			if (ChildPlayer)
+			{
+				ChildToParentMap.Add(ChildPlayer->GetID(), ParentID);
+			}
+		}
+	}
+
+	// Scan Player nodes for their children
+	for (UDialogueNode_Player* PlayerNode : DialogueTemplate->PlayerReplies)
+	{
+		if (!PlayerNode) continue;
+		FName ParentID = PlayerNode->GetID();
+
+		// NPC replies (NPC response to player choice)
+		for (UDialogueNode_NPC* ChildNPC : PlayerNode->NPCReplies)
+		{
+			if (ChildNPC)
+			{
+				ChildToParentMap.Add(ChildNPC->GetID(), ParentID);
+			}
+		}
+		// Player replies (followup choices)
+		for (UDialogueNode_Player* ChildPlayer : PlayerNode->PlayerReplies)
+		{
+			if (ChildPlayer)
+			{
+				ChildToParentMap.Add(ChildPlayer->GetID(), ParentID);
+			}
+		}
+	}
+
+	//=========================================================================
 	// Process NPC replies
+	//=========================================================================
 	for (UDialogueNode_NPC* NPCNode : DialogueTemplate->NPCReplies)
 	{
 		if (!NPCNode) continue;
@@ -51,6 +107,12 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 		ExtractNodeData(NPCNode, NodeData);
 		NodeData.NodeType = EDialogueTableNodeType::NPC;
 		NodeData.bFoundInAsset = true;
+
+		// Set parent from mapping
+		if (FName* ParentID = ChildToParentMap.Find(NPCNode->GetID()))
+		{
+			NodeData.ParentNodeID = ParentID->ToString();
+		}
 
 		FString Key = FDialogueAssetSyncResult::MakeKey(DialogueID, NPCNode->GetID());
 		Result.NodeData.Add(Key, NodeData);
@@ -66,7 +128,9 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 		}
 	}
 
+	//=========================================================================
 	// Process Player replies
+	//=========================================================================
 	for (UDialogueNode_Player* PlayerNode : DialogueTemplate->PlayerReplies)
 	{
 		if (!PlayerNode) continue;
@@ -75,6 +139,12 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 		ExtractNodeData(PlayerNode, NodeData);
 		NodeData.NodeType = EDialogueTableNodeType::Player;
 		NodeData.bFoundInAsset = true;
+
+		// Set parent from mapping
+		if (FName* ParentID = ChildToParentMap.Find(PlayerNode->GetID()))
+		{
+			NodeData.ParentNodeID = ParentID->ToString();
+		}
 
 		FString Key = FDialogueAssetSyncResult::MakeKey(DialogueID, PlayerNode->GetID());
 		Result.NodeData.Add(Key, NodeData);
@@ -436,6 +506,47 @@ void FDialogueAssetSync::ExtractNodeData(UDialogueNode* Node, FDialogueNodeAsset
 			OutData.ConditionsTokenStr += LineConditionsStr;
 		}
 	}
+
+	//=========================================================================
+	// v4.8: Extract full dialogue content
+	//=========================================================================
+
+	// Dialogue text from Line.Text
+	OutData.Text = Node->Line.Text.ToString();
+
+	// Skippable flag
+	OutData.bSkippable = Node->bIsSkippable;
+
+	// Extract Speaker for NPC nodes
+	if (UDialogueNode_NPC* NPCNode = Cast<UDialogueNode_NPC>(Node))
+	{
+		OutData.Speaker = NPCNode->GetSpeakerID().ToString();
+	}
+
+	// Extract OptionText for Player nodes
+	if (UDialogueNode_Player* PlayerNode = Cast<UDialogueNode_Player>(Node))
+	{
+		// OptionText is protected, use the public getter
+		OutData.OptionText = PlayerNode->GetOptionText(nullptr).ToString();
+	}
+
+	// Extract NextNodeIDs (child nodes)
+	TArray<FString> NextNodeNames;
+	for (UDialogueNode_NPC* NPCReply : Node->NPCReplies)
+	{
+		if (NPCReply)
+		{
+			NextNodeNames.Add(NPCReply->GetID().ToString());
+		}
+	}
+	for (UDialogueNode_Player* PlayerReply : Node->PlayerReplies)
+	{
+		if (PlayerReply)
+		{
+			NextNodeNames.Add(PlayerReply->GetID().ToString());
+		}
+	}
+	OutData.NextNodeIDs = FString::Join(NextNodeNames, TEXT(", "));
 }
 
 FString FDialogueAssetSync::SerializeEventsToTokens(const TArray<UNarrativeEvent*>& Events)

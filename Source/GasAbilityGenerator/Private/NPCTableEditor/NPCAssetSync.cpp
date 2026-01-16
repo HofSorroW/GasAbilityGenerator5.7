@@ -81,6 +81,26 @@ FNPCAssetData FNPCAssetSync::SyncFromAsset(UNPCDefinition* NPCDef)
 	Data.ShopName = NPCDef->ShopFriendlyName.ToString();
 
 	//=========================================================================
+	// Items - Extract from TradingItemLoadout
+	//=========================================================================
+	TArray<FString> ItemCollectionNames;
+	for (const FLootTableRoll& Roll : NPCDef->TradingItemLoadout)
+	{
+		// Extract item collection names
+		for (const TObjectPtr<UItemCollection>& Collection : Roll.ItemCollectionsToGrant)
+		{
+			if (Collection)
+			{
+				ItemCollectionNames.AddUnique(Collection->GetName());
+			}
+		}
+	}
+	if (ItemCollectionNames.Num() > 0)
+	{
+		Data.DefaultItems = FString::Join(ItemCollectionNames, TEXT(", "));
+	}
+
+	//=========================================================================
 	// Meta
 	//=========================================================================
 	if (!NPCDef->DefaultAppearance.IsNull())
@@ -201,6 +221,7 @@ int32 FNPCAssetSync::PopulateRowsFromAssets(TArray<FNPCTableRow>& Rows, const FN
 			Row.Factions = AssetData->Factions;
 			Row.bIsVendor = AssetData->bIsVendor;
 			Row.ShopName = AssetData->ShopName;
+			Row.DefaultItems = AssetData->DefaultItems;
 			Row.Appearance = AssetData->Appearance;
 			Row.Status = ENPCTableRowStatus::Synced;
 			UpdatedCount++;

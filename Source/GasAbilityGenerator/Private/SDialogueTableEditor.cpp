@@ -2684,17 +2684,47 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 	UE_LOG(LogTemp, Log, TEXT("[DialogueTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
 	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
 
-	// Sync all dialogue assets using AssetRegistry (filtered by PathFilter)
-	FDialogueAssetSyncResult SyncResult = FDialogueAssetSync::SyncFromAllAssets(PathFilter);
+	// =========================================================================
+	// v4.8: First, get all dialogue assets from AssetRegistry to handle empty dialogues
+	// =========================================================================
+	TArray<FAssetData> AllDialogueAssets;
+	FTopLevelAssetPath ClassPath(TEXT("/Script/NarrativeDialogueEditor"), TEXT("DialogueBlueprint"));
+	AssetRegistry.GetAssetsByClass(ClassPath, AllDialogueAssets, true);
 
-	if (SyncResult.NodesFound == 0)
+	// Filter to path
+	TArray<FAssetData> FilteredAssets;
+	for (const FAssetData& Asset : AllDialogueAssets)
+	{
+		if (PathFilter.IsEmpty() || Asset.PackagePath.ToString().Contains(PathFilter))
+		{
+			FilteredAssets.Add(Asset);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[DialogueTableEditor] Found %d DialogueBlueprint assets after filter"), FilteredAssets.Num());
+
+	if (FilteredAssets.Num() == 0)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,
 			LOCTEXT("NoDialoguesFound", "No DialogueBlueprint assets found in the project.\n\nCreate DialogueBlueprint assets (DBP_*) first, then sync."));
 		return FReply::Handled();
 	}
 
+	// Sync all dialogue assets using AssetRegistry (filtered by PathFilter)
+	FDialogueAssetSyncResult SyncResult = FDialogueAssetSync::SyncFromAllAssets(PathFilter);
+
 	UE_LOG(LogTemp, Log, TEXT("[DialogueTableEditor] Found %d dialogue nodes from assets"), SyncResult.NodesFound);
+
+	// Track which dialogues have nodes (for empty dialogue detection)
+	TSet<FString> DialoguesWithNodes;
+	for (const auto& Pair : SyncResult.NodeData)
+	{
+		FString DialogueIDStr, NodeIDStr;
+		if (Pair.Key.Split(TEXT("."), &DialogueIDStr, &NodeIDStr))
+		{
+			DialoguesWithNodes.Add(DialogueIDStr);
+		}
+	}
 
 	// Build map of existing rows by DialogueID.NodeID key for quick lookup
 	TMap<FString, TSharedPtr<FDialogueTableRowEx>> ExistingRowMap;
@@ -2746,6 +2776,43 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 				}
 				// Update NodeType from asset
 				RowData->NodeType = NodeData.NodeType;
+
+				// v4.8: Update full dialogue content from asset (only if table field is empty)
+				if (RowData->Speaker.IsNone() && !NodeData.Speaker.IsEmpty())
+				{
+					RowData->Speaker = FName(*NodeData.Speaker);
+					bUpdated = true;
+				}
+				if (RowData->Text.IsEmpty() && !NodeData.Text.IsEmpty())
+				{
+					RowData->Text = NodeData.Text;
+					bUpdated = true;
+				}
+				if (RowData->OptionText.IsEmpty() && !NodeData.OptionText.IsEmpty())
+				{
+					RowData->OptionText = NodeData.OptionText;
+					bUpdated = true;
+				}
+				if (RowData->ParentNodeID.IsNone() && !NodeData.ParentNodeID.IsEmpty())
+				{
+					RowData->ParentNodeID = FName(*NodeData.ParentNodeID);
+					bUpdated = true;
+				}
+				if (RowData->NextNodeIDs.Num() == 0 && !NodeData.NextNodeIDs.IsEmpty())
+				{
+					TArray<FString> NextIDStrings;
+					NodeData.NextNodeIDs.ParseIntoArray(NextIDStrings, TEXT(","));
+					for (const FString& IDStr : NextIDStrings)
+					{
+						FString Trimmed = IDStr.TrimStartAndEnd();
+						if (!Trimmed.IsEmpty())
+						{
+							RowData->NextNodeIDs.Add(FName(*Trimmed));
+						}
+					}
+					bUpdated = true;
+				}
+
 				// Mark as synced
 				RowData->Status = EDialogueTableRowStatus::Synced;
 				if (bUpdated)
@@ -2768,6 +2835,27 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 			NewRowData->bConditionsValid = true;
 			NewRowData->Status = EDialogueTableRowStatus::Synced;
 
+			// v4.8: Populate full dialogue content from asset sync
+			NewRowData->Speaker = FName(*NodeData.Speaker);
+			NewRowData->Text = NodeData.Text;
+			NewRowData->OptionText = NodeData.OptionText;
+			NewRowData->bSkippable = NodeData.bSkippable;
+			NewRowData->ParentNodeID = FName(*NodeData.ParentNodeID);
+			// Parse NextNodeIDs from comma-separated string to TArray<FName>
+			if (!NodeData.NextNodeIDs.IsEmpty())
+			{
+				TArray<FString> NextIDStrings;
+				NodeData.NextNodeIDs.ParseIntoArray(NextIDStrings, TEXT(","));
+				for (const FString& IDStr : NextIDStrings)
+				{
+					FString Trimmed = IDStr.TrimStartAndEnd();
+					if (!Trimmed.IsEmpty())
+					{
+						NewRowData->NextNodeIDs.Add(FName(*Trimmed));
+					}
+				}
+			}
+
 			// Create wrapper and add to list
 			TSharedPtr<FDialogueTableRowEx> NewRowEx = MakeShared<FDialogueTableRowEx>();
 			NewRowEx->Data = NewRowData;
@@ -2777,6 +2865,42 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 
 			RowsCreated++;
 		}
+	}
+
+	// =========================================================================
+	// v4.8: Create placeholder rows for empty dialogues (dialogues with no nodes)
+	// =========================================================================
+	int32 EmptyDialoguesFound = 0;
+	for (const FAssetData& Asset : FilteredAssets)
+	{
+		FString DialogueName = Asset.AssetName.ToString();
+		if (!DialoguesWithNodes.Contains(DialogueName))
+		{
+			// This dialogue exists but has no nodes - create placeholder row
+			UE_LOG(LogTemp, Log, TEXT("[DialogueTableEditor] Found empty dialogue: %s"), *DialogueName);
+
+			TSharedPtr<FDialogueTableRow> NewRowData = MakeShared<FDialogueTableRow>();
+			NewRowData->RowId = FGuid::NewGuid();
+			NewRowData->DialogueID = FName(*DialogueName);
+			NewRowData->NodeID = FName(TEXT("_root"));  // Placeholder node ID
+			NewRowData->NodeType = EDialogueTableNodeType::NPC;
+			NewRowData->Text = TEXT("(Empty dialogue - add nodes in Unreal Editor)");
+			NewRowData->Status = EDialogueTableRowStatus::Synced;
+
+			TSharedPtr<FDialogueTableRowEx> NewRowEx = MakeShared<FDialogueTableRowEx>();
+			NewRowEx->Data = NewRowData;
+			NewRowEx->Sequence = 0;
+			NewRowEx->Depth = 0;
+			AllRows.Add(NewRowEx);
+
+			EmptyDialoguesFound++;
+			RowsCreated++;
+		}
+	}
+
+	if (EmptyDialoguesFound > 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[DialogueTableEditor] Found %d empty dialogues (no nodes)"), EmptyDialoguesFound);
 	}
 
 	// Recalculate sequences and refresh
@@ -2794,14 +2918,18 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 
 	// Show result
 	FMessageDialog::Open(EAppMsgType::Ok,
-		FText::Format(LOCTEXT("SyncFromAssetsCompleteV47",
-			"Synced {0} DialogueBlueprint nodes from project.\n\n"
-			"Rows created: {1}\n"
-			"Rows updated: {2}\n"
-			"Nodes with events: {3}\n"
-			"Nodes with conditions: {4}\n\n"
+		FText::Format(LOCTEXT("SyncFromAssetsCompleteV48",
+			"Synced {0} DialogueBlueprint assets from project.\n\n"
+			"Dialogue nodes found: {1}\n"
+			"Empty dialogues: {2}\n"
+			"Rows created: {3}\n"
+			"Rows updated: {4}\n"
+			"Nodes with events: {5}\n"
+			"Nodes with conditions: {6}\n\n"
 			"You can now edit them in the table and regenerate."),
+			FText::AsNumber(FilteredAssets.Num()),
 			FText::AsNumber(SyncResult.NodesFound),
+			FText::AsNumber(EmptyDialoguesFound),
 			FText::AsNumber(RowsCreated),
 			FText::AsNumber(RowsUpdated),
 			FText::AsNumber(SyncResult.NodesWithEvents),
