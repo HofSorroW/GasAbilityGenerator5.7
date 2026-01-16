@@ -15320,11 +15320,29 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 		if (SuccessState)
 		{
 			// v3.9.11: Create actual reward events using Narrative Pro's built-in events
+			// v4.12: Added fallback search paths for event classes
+
+			// Helper lambda to find event class with multiple search paths
+			auto FindEventClass = [](const TArray<FString>& SearchPaths) -> UClass*
+			{
+				for (const FString& Path : SearchPaths)
+				{
+					UClass* EventClass = LoadClass<UNarrativeEvent>(nullptr, *Path);
+					if (EventClass) return EventClass;
+				}
+				return nullptr;
+			};
 
 			// XP Reward - NE_GiveXP
 			if (Definition.Rewards.XP > 0)
 			{
-				UClass* GiveXPClass = LoadClass<UNarrativeEvent>(nullptr, TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_GiveXP.NE_GiveXP_C"));
+				TArray<FString> XPEventPaths = {
+					TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_GiveXP.NE_GiveXP_C"),
+					TEXT("/NarrativePro/Tales/Events/NE_GiveXP.NE_GiveXP_C"),
+					TEXT("/NarrativePro/Events/NE_GiveXP.NE_GiveXP_C"),
+					TEXT("/Game/NarrativePro/Events/NE_GiveXP.NE_GiveXP_C")
+				};
+				UClass* GiveXPClass = FindEventClass(XPEventPaths);
 				if (GiveXPClass)
 				{
 					UNarrativeEvent* XPEvent = NewObject<UNarrativeEvent>(SuccessState, GiveXPClass);
@@ -15353,7 +15371,13 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 			// Currency Reward - BPE_AddCurrency
 			if (Definition.Rewards.Currency > 0)
 			{
-				UClass* AddCurrencyClass = LoadClass<UNarrativeEvent>(nullptr, TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"));
+				TArray<FString> CurrencyEventPaths = {
+					TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
+					TEXT("/NarrativePro/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
+					TEXT("/NarrativePro/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
+					TEXT("/Game/NarrativePro/Events/BPE_AddCurrency.BPE_AddCurrency_C")
+				};
+				UClass* AddCurrencyClass = FindEventClass(CurrencyEventPaths);
 				if (AddCurrencyClass)
 				{
 					UNarrativeEvent* CurrencyEvent = NewObject<UNarrativeEvent>(SuccessState, AddCurrencyClass);
@@ -15385,7 +15409,13 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				const FString& ItemName = Definition.Rewards.Items[i];
 				int32 Qty = Definition.Rewards.ItemQuantities.IsValidIndex(i) ? Definition.Rewards.ItemQuantities[i] : 1;
 
-				UClass* AddItemClass = LoadClass<UNarrativeEvent>(nullptr, TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"));
+				TArray<FString> ItemEventPaths = {
+					TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
+					TEXT("/NarrativePro/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
+					TEXT("/NarrativePro/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
+					TEXT("/Game/NarrativePro/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C")
+				};
+				UClass* AddItemClass = FindEventClass(ItemEventPaths);
 				if (AddItemClass)
 				{
 					UNarrativeEvent* ItemEvent = NewObject<UNarrativeEvent>(SuccessState, AddItemClass);

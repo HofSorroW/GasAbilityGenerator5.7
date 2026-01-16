@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor
+// v4.11.4: Split Conditions into Condition+Options columns, renamed DialogueID to Speaker
 // v4.7: Added Status column with colored badge (matches NPC editor)
 // v4.6: Added dirty indicator, save-on-close prompt, generation state display
 // v4.4: Added validation error feedback in status bar
@@ -31,20 +32,21 @@ struct FDialogueTableColumn
 		: ColumnId(InId), DisplayName(InName), DefaultWidth(InWidth) {}
 };
 
-/** Get default column definitions for dialogue table (14 columns) - v4.7: Added Status */
+/** Get default column definitions for dialogue table (15 columns) - v4.11.4: Split Conditions, renamed DialogueID to Speaker */
 inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 {
 	return {
 		{ TEXT("Seq"),          FText::FromString(TEXT("Seq")),            0.03f },
 		{ TEXT("Status"),       FText::FromString(TEXT("Status")),         0.04f },  // v4.7: Row status (matches NPC)
-		{ TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue ID")),    0.08f },
+		{ TEXT("DialogueID"),   FText::FromString(TEXT("Speaker")),        0.08f },  // v4.11.4: Renamed from "Dialogue ID" to "Speaker"
 		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        0.08f },
 		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           0.04f },
-		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        0.06f },
+		{ TEXT("Speaker"),      FText::FromString(TEXT("NPC")),            0.06f },  // v4.11.4: Renamed from "Speaker" to "NPC" to avoid confusion
 		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           0.16f },
 		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    0.08f },
-		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         0.12f },  // v4.4: Token column
-		{ TEXT("Conditions"),   FText::FromString(TEXT("Conditions")),     0.12f },  // v4.4: Token column
+		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         0.10f },  // v4.4: Token column
+		{ TEXT("Condition"),    FText::FromString(TEXT("Condition")),      0.08f },  // v4.11.4: Split from Conditions - shows condition type
+		{ TEXT("Options"),      FText::FromString(TEXT("Options")),        0.06f },  // v4.11.4: Split from Conditions - shows parameters
 		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         0.06f },
 		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     0.07f },
 		{ TEXT("Skippable"),    FText::FromString(TEXT("Skip")),           0.03f },
@@ -102,6 +104,8 @@ private:
 	TSharedRef<SWidget> CreateSkippableCell();  // Yes/No checkbox
 	TSharedRef<SWidget> CreateNotesCell();  // Designer notes
 	TSharedRef<SWidget> CreateTokenCell(FString& TokenStr, bool& bValid, ETokenCategory Category);  // v4.4: Events/Conditions with autocomplete
+	TSharedRef<SWidget> CreateConditionTypeCell();   // v4.11.4: Condition type (e.g., NC_HasDialogueNodePlayed)
+	TSharedRef<SWidget> CreateConditionOptionsCell(); // v4.11.4: Condition options (e.g., NodeId=X)
 
 	void MarkModified();
 };

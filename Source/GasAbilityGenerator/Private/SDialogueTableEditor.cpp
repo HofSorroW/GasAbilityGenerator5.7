@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Implementation
+// v4.11.4: Show "(None)" for empty values in all columns for consistency
 // v4.6: Added dirty indicator, save-on-close prompt, generation state display, soft delete
 // v4.4: Added validation error feedback in status bar
 // v4.3: Added XLSX export/import with sync support
@@ -99,9 +100,14 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	{
 		return CreateTokenCell(RowData->EventsTokenStr, RowData->bEventsValid, ETokenCategory::Event);
 	}
-	if (ColumnName == TEXT("Conditions"))
+	// v4.11.4: Split Conditions into Condition (type) and Options (parameters)
+	if (ColumnName == TEXT("Condition"))
 	{
-		return CreateTokenCell(RowData->ConditionsTokenStr, RowData->bConditionsValid, ETokenCategory::Condition);
+		return CreateConditionTypeCell();
+	}
+	if (ColumnName == TEXT("Options"))
+	{
+		return CreateConditionOptionsCell();
 	}
 	if (ColumnName == TEXT("ParentNodeID"))
 	{
@@ -231,11 +237,23 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNodeIDCell()
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableText)
-				.Text_Lambda([RowData]() { return FText::FromName(RowData->NodeID); })
+				.Text_Lambda([RowData]()
+				{
+					// v4.11.4: Show "(None)" for empty values for consistency
+					return (RowData->NodeID.IsNone() || RowData->NodeID.ToString().IsEmpty())
+						? FText::FromString(TEXT("(None)"))
+						: FText::FromName(RowData->NodeID);
+				})
 				.HintText(FText::FromString(TEXT("node_id")))
 				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
 				{
-					RowData->NodeID = FName(*NewText.ToString());
+					FString Value = NewText.ToString();
+					// Treat "(None)" input as clearing the field
+					if (Value == TEXT("(None)"))
+					{
+						Value = TEXT("");
+					}
+					RowData->NodeID = Value.IsEmpty() ? NAME_None : FName(*Value);
 					MarkModified();
 				})
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
@@ -245,20 +263,29 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNodeIDCell()
 TSharedRef<SWidget> SDialogueTableRow::CreateTextCell(FString& Value, const FString& Hint, bool bWithTooltip)
 {
 	// v4.7: Add confirmation prompt for text changes (matches NPC editor)
+	// v4.11.4: Show "(None)" for empty values for consistency
 	TSharedRef<SWidget> EditableText = SNew(SEditableText)
-		.Text_Lambda([&Value]() { return FText::FromString(Value); })
+		.Text_Lambda([&Value]()
+		{
+			return Value.IsEmpty() ? FText::FromString(TEXT("(None)")) : FText::FromString(Value);
+		})
 		.HintText(FText::FromString(Hint))
 		.OnTextCommitted_Lambda([this, &Value, Hint](const FText& NewText, ETextCommit::Type)
 		{
 			FString NewValue = NewText.ToString();
+			// Treat "(None)" input as clearing the field
+			if (NewValue == TEXT("(None)"))
+			{
+				NewValue = TEXT("");
+			}
 			if (NewValue == Value)
 			{
 				return; // No change
 			}
 
 			// Show confirmation dialog
-			FString DisplayOld = Value.IsEmpty() ? TEXT("(Empty)") : Value;
-			FString DisplayNew = NewValue.IsEmpty() ? TEXT("(Empty)") : NewValue;
+			FString DisplayOld = Value.IsEmpty() ? TEXT("(None)") : Value;
+			FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
 			// Truncate long strings for display
 			if (DisplayOld.Len() > 50) DisplayOld = DisplayOld.Left(47) + TEXT("...");
 			if (DisplayNew.Len() > 50) DisplayNew = DisplayNew.Left(47) + TEXT("...");
@@ -301,15 +328,25 @@ TSharedRef<SWidget> SDialogueTableRow::CreateTextCell(FString& Value, const FStr
 TSharedRef<SWidget> SDialogueTableRow::CreateFNameCell(FName& Value, const FString& Hint)
 {
 	// v4.7: Add confirmation prompt for FName changes (matches NPC editor)
+	// v4.11.4: Show "(None)" for empty values for consistency
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableText)
-				.Text_Lambda([&Value]() { return FText::FromName(Value); })
+				.Text_Lambda([&Value]()
+				{
+					return (Value.IsNone() || Value.ToString().IsEmpty()) ? FText::FromString(TEXT("(None)")) : FText::FromName(Value);
+				})
 				.HintText(FText::FromString(Hint))
 				.OnTextCommitted_Lambda([this, &Value, Hint](const FText& NewText, ETextCommit::Type)
 				{
-					FName NewValue = FName(*NewText.ToString());
+					FString ValueStr = NewText.ToString();
+					// Treat "(None)" input as clearing the field
+					if (ValueStr == TEXT("(None)"))
+					{
+						ValueStr = TEXT("");
+					}
+					FName NewValue = ValueStr.IsEmpty() ? NAME_None : FName(*ValueStr);
 					if (NewValue == Value)
 					{
 						return; // No change
@@ -387,12 +424,20 @@ TSharedRef<SWidget> SDialogueTableRow::CreateSpeakerCell()
 			SNew(SEditableText)
 				.Text_Lambda([RowData]()
 				{
+					// v4.11.4: Show "(None)" for empty values for consistency
 					// For Player nodes, show "Player" if Speaker is empty
 					if (RowData->NodeType == EDialogueTableNodeType::Player)
 					{
 						if (RowData->Speaker.IsNone() || RowData->Speaker.ToString().IsEmpty())
 						{
 							return FText::FromString(TEXT("Player"));
+						}
+					}
+					else // NPC node
+					{
+						if (RowData->Speaker.IsNone() || RowData->Speaker.ToString().IsEmpty())
+						{
+							return FText::FromString(TEXT("(None)"));
 						}
 					}
 					return FText::FromName(RowData->Speaker);
@@ -426,6 +471,11 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNextNodesCell()
 			SNew(SEditableText)
 				.Text_Lambda([RowData]()
 				{
+					// v4.11.4: Show "(None)" for empty values for consistency
+					if (RowData->NextNodeIDs.Num() == 0)
+					{
+						return FText::FromString(TEXT("(None)"));
+					}
 					FString Result;
 					for (int32 i = 0; i < RowData->NextNodeIDs.Num(); i++)
 					{
@@ -437,9 +487,15 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNextNodesCell()
 				.HintText(FText::FromString(TEXT("node1, node2, ...")))
 				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
 				{
+					FString Value = NewText.ToString();
+					// Treat "(None)" input as clearing the field
+					if (Value == TEXT("(None)"))
+					{
+						Value = TEXT("");
+					}
 					RowData->NextNodeIDs.Empty();
 					TArray<FString> Parts;
-					NewText.ToString().ParseIntoArray(Parts, TEXT(","));
+					Value.ParseIntoArray(Parts, TEXT(","));
 					for (FString& Part : Parts)
 					{
 						Part.TrimStartAndEndInline();
@@ -503,11 +559,21 @@ TSharedRef<SWidget> SDialogueTableRow::CreateNotesCell()
 		})
 		[
 			SNew(SEditableText)
-				.Text_Lambda([RowData]() { return FText::FromString(RowData->Notes); })
+				.Text_Lambda([RowData]()
+				{
+					// v4.11.4: Show "(None)" for empty values for consistency
+					return RowData->Notes.IsEmpty() ? FText::FromString(TEXT("(None)")) : FText::FromString(RowData->Notes);
+				})
 				.HintText(LOCTEXT("NotesHint", "Designer notes..."))
 				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
 				{
-					RowData->Notes = NewText.ToString();
+					FString Value = NewText.ToString();
+					// Treat "(None)" input as clearing the field
+					if (Value == TEXT("(None)"))
+					{
+						Value = TEXT("");
+					}
+					RowData->Notes = Value;
 					MarkModified();
 				})
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
@@ -658,6 +724,235 @@ TSharedRef<SWidget> SDialogueTableRow::CreateTokenCell(FString& TokenStr, bool& 
 							];
 					})
 			]
+		];
+}
+
+// v4.11.4: Helper to extract condition type from token string (e.g., "NC_HasDialogueNodePlayed" from "NC_HasDialogueNodePlayed(NodeId=X)")
+static FString ExtractConditionType(const FString& TokenStr)
+{
+	if (TokenStr.IsEmpty())
+	{
+		return TEXT("");
+	}
+	int32 ParenIndex;
+	if (TokenStr.FindChar(TEXT('('), ParenIndex))
+	{
+		return TokenStr.Left(ParenIndex);
+	}
+	return TokenStr;  // No parentheses, return as-is
+}
+
+// v4.11.4: Helper to extract options from token string (e.g., "NodeId=X" from "NC_HasDialogueNodePlayed(NodeId=X)")
+static FString ExtractConditionOptions(const FString& TokenStr)
+{
+	if (TokenStr.IsEmpty())
+	{
+		return TEXT("");
+	}
+	int32 OpenParen, CloseParen;
+	if (TokenStr.FindChar(TEXT('('), OpenParen) && TokenStr.FindLastChar(TEXT(')'), CloseParen))
+	{
+		if (CloseParen > OpenParen + 1)
+		{
+			return TokenStr.Mid(OpenParen + 1, CloseParen - OpenParen - 1);
+		}
+	}
+	return TEXT("");  // No options found
+}
+
+TSharedRef<SWidget> SDialogueTableRow::CreateConditionTypeCell()
+{
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	// Build autocomplete options from registry (conditions only)
+	TArray<TSharedPtr<FString>> AutocompleteOptions;
+	const FDialogueTokenRegistry& Registry = FDialogueTokenRegistry::Get();
+	for (const FDialogueTokenSpec& Spec : Registry.GetAllSpecs())
+	{
+		if (Spec.Category == ETokenCategory::Condition)
+		{
+			AutocompleteOptions.Add(MakeShared<FString>(Spec.TokenName));
+		}
+	}
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNew(SEditableText)
+					.Text_Lambda([RowData]()
+					{
+						FString CondType = ExtractConditionType(RowData->ConditionsTokenStr);
+						return CondType.IsEmpty() ? FText::FromString(TEXT("(None)")) : FText::FromString(CondType);
+					})
+					.HintText(LOCTEXT("ConditionTypeHint", "NC_..."))
+					.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
+					{
+						FString NewType = NewText.ToString();
+						if (NewType == TEXT("(None)"))
+						{
+							NewType = TEXT("");
+						}
+
+						// Get existing options
+						FString OldOptions = ExtractConditionOptions(RowData->ConditionsTokenStr);
+
+						// Rebuild token string
+						if (NewType.IsEmpty())
+						{
+							RowData->ConditionsTokenStr = TEXT("");
+						}
+						else if (OldOptions.IsEmpty())
+						{
+							RowData->ConditionsTokenStr = NewType + TEXT("()");
+						}
+						else
+						{
+							RowData->ConditionsTokenStr = NewType + TEXT("(") + OldOptions + TEXT(")");
+						}
+
+						// Validate
+						FDialogueTokenRegistry& Reg = FDialogueTokenRegistry::Get();
+						FTokenParseResult ParseResult = Reg.ParseTokenString(RowData->ConditionsTokenStr);
+						RowData->bConditionsValid = ParseResult.bSuccess || RowData->ConditionsTokenStr.IsEmpty();
+						MarkModified();
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity_Lambda([RowData]()
+					{
+						return RowData->bConditionsValid ? FSlateColor(FLinearColor::White) : FSlateColor(FLinearColor::Red);
+					})
+			]
+			// Autocomplete dropdown button
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+					.OnGetMenuContent_Lambda([this, RowData, AutocompleteOptions]() -> TSharedRef<SWidget>
+					{
+						TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+						// Add CLEAR option at top
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(2.0f)
+						[
+							SNew(SButton)
+								.Text(LOCTEXT("ClearCondition", "CLEAR"))
+								.ToolTipText(LOCTEXT("ClearConditionTooltip", "Remove condition from this node"))
+								.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+								.OnClicked_Lambda([this, RowData]()
+								{
+									RowData->ConditionsTokenStr = TEXT("");
+									RowData->bConditionsValid = true;
+									MarkModified();
+									FSlateApplication::Get().DismissAllMenus();
+									return FReply::Handled();
+								})
+						];
+
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(2.0f)
+						[
+							SNew(SSeparator)
+						];
+
+						// Add condition type templates
+						for (const TSharedPtr<FString>& Option : AutocompleteOptions)
+						{
+							MenuContent->AddSlot()
+							.AutoHeight()
+							.Padding(2.0f, 1.0f)
+							[
+								SNew(SButton)
+									.Text(FText::FromString(*Option))
+									.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+									.OnClicked_Lambda([this, RowData, Option]()
+									{
+										// Keep existing options
+										FString OldOptions = ExtractConditionOptions(RowData->ConditionsTokenStr);
+										if (OldOptions.IsEmpty())
+										{
+											RowData->ConditionsTokenStr = *Option + TEXT("()");
+										}
+										else
+										{
+											RowData->ConditionsTokenStr = *Option + TEXT("(") + OldOptions + TEXT(")");
+										}
+										RowData->bConditionsValid = true;
+										MarkModified();
+										FSlateApplication::Get().DismissAllMenus();
+										return FReply::Handled();
+									})
+							];
+						}
+
+						return SNew(SBox)
+							.MaxDesiredHeight(300.0f)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									MenuContent
+								]
+							];
+					})
+			]
+		];
+}
+
+TSharedRef<SWidget> SDialogueTableRow::CreateConditionOptionsCell()
+{
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SEditableText)
+				.Text_Lambda([RowData]()
+				{
+					FString Options = ExtractConditionOptions(RowData->ConditionsTokenStr);
+					return Options.IsEmpty() ? FText::FromString(TEXT("(None)")) : FText::FromString(Options);
+				})
+				.HintText(LOCTEXT("ConditionOptionsHint", "Param=Value"))
+				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
+				{
+					FString NewOptions = NewText.ToString();
+					if (NewOptions == TEXT("(None)"))
+					{
+						NewOptions = TEXT("");
+					}
+
+					// Get existing condition type
+					FString CondType = ExtractConditionType(RowData->ConditionsTokenStr);
+
+					// Rebuild token string
+					if (CondType.IsEmpty())
+					{
+						// No condition type, can't set options without a type
+						return;
+					}
+
+					RowData->ConditionsTokenStr = CondType + TEXT("(") + NewOptions + TEXT(")");
+
+					// Validate
+					FDialogueTokenRegistry& Reg = FDialogueTokenRegistry::Get();
+					FTokenParseResult ParseResult = Reg.ParseTokenString(RowData->ConditionsTokenStr);
+					RowData->bConditionsValid = ParseResult.bSuccess || RowData->ConditionsTokenStr.IsEmpty();
+					MarkModified();
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.ColorAndOpacity_Lambda([RowData]()
+				{
+					return RowData->bConditionsValid ? FSlateColor(FLinearColor::White) : FSlateColor(FLinearColor::Red);
+				})
 		];
 }
 
@@ -1573,33 +1868,30 @@ FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, F
 		return Row.Text.IsEmpty() ? TEXT("(None)") : Row.Text;
 	}
 
-	// OptionText - optional for NPC nodes, show (None) if empty for player nodes
+	// v4.11.4: Show "(None)" for empty values for consistency
+	// OptionText - show (None) if empty for all nodes
 	if (ColumnId == TEXT("OptionText"))
 	{
-		if (Row.OptionText.IsEmpty())
-		{
-			// OptionText is expected for player nodes (choice text), optional for NPC
-			return (Row.NodeType == EDialogueTableNodeType::Player) ? TEXT("(None)") : TEXT("");
-		}
-		return Row.OptionText;
+		return Row.OptionText.IsEmpty() ? TEXT("(None)") : Row.OptionText;
 	}
 
-	// ParentNodeID - empty for root nodes (expected), show (None) for non-root without parent
+	// v4.11.4: Show "(None)" for empty values for consistency
+	// ParentNodeID - empty for root nodes
 	if (ColumnId == TEXT("ParentNodeID"))
 	{
 		if (Row.ParentNodeID.IsNone() || Row.ParentNodeID.ToString().IsEmpty() || Row.ParentNodeID.ToString() == TEXT("None"))
 		{
-			return TEXT("(Root)");  // Root nodes have no parent - this is expected
+			return TEXT("(None)");
 		}
 		return Row.ParentNodeID.ToString();
 	}
 
-	// NextNodeIDs - empty for leaf nodes (expected)
+	// NextNodeIDs - empty for leaf nodes
 	if (ColumnId == TEXT("NextNodeIDs"))
 	{
 		if (Row.NextNodeIDs.Num() == 0)
 		{
-			return TEXT("(Leaf)");  // Leaf nodes have no children - this is expected
+			return TEXT("(None)");
 		}
 		FString Result;
 		for (int32 i = 0; i < Row.NextNodeIDs.Num(); i++)
@@ -1618,10 +1910,17 @@ FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, F
 		return Row.EventsTokenStr.IsEmpty() ? TEXT("(None)") : Row.EventsTokenStr;
 	}
 
-	// Conditions - show (None) if empty
-	if (ColumnId == TEXT("Conditions"))
+	// v4.11.4: Split Conditions into Condition (type) and Options (parameters)
+	if (ColumnId == TEXT("Condition"))
 	{
-		return Row.ConditionsTokenStr.IsEmpty() ? TEXT("(None)") : Row.ConditionsTokenStr;
+		FString CondType = ExtractConditionType(Row.ConditionsTokenStr);
+		return CondType.IsEmpty() ? TEXT("(None)") : CondType;
+	}
+
+	if (ColumnId == TEXT("Options"))
+	{
+		FString Options = ExtractConditionOptions(Row.ConditionsTokenStr);
+		return Options.IsEmpty() ? TEXT("(None)") : Options;
 	}
 
 	// Notes - optional, show (None) if empty for consistency
