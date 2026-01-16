@@ -2,9 +2,29 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-16
-**Status:** v4.9.1 (includes P3 determinism fixes and user notes)
+**Status:** v4.9.1 (GPT Safety Audit Complete)
 
-This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
+This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system, validated token design, and safety audit results.
+
+---
+
+## Version History
+
+| Version | Date | Summary |
+|---------|------|---------|
+| **v4.9.1** | 2026-01-16 | P3 Determinism: Sort Dialogue sync by DialogueID+NodeID, user documentation |
+| **v4.9** | 2026-01-16 | TriggerSet generator, button disable during busy state |
+| **v4.8.4** | 2026-01-16 | P1/P2 Safety: Re-entrancy guards, save-fail abort, version check |
+| **v4.7** | 2026-01-15 | Status column for Dialogue editor, asset discovery alignment |
+| **v4.6** | 2026-01-15 | UX safety system, status bar refinements |
+| **v4.5.4** | 2026-01-15 | XLSX-only format (CSV removed) |
+| **v4.5.3** | 2026-01-15 | Validation coloring in Seq/Status columns |
+| **v4.5.2** | 2026-01-15 | Duplicate row, GUID handling alignment |
+| **v4.5.1** | 2026-01-15 | Validation cache system |
+| **v4.4** | 2026-01-15 | Validated Token System, Apply to Assets, Sync from Assets |
+| **v4.3** | 2026-01-15 | XLSX 3-way sync system |
+| **v4.2** | 2026-01-14 | Status bar, filtering, multi-select dropdowns |
+| **v4.1** | 2026-01-14 | Initial Dialogue and NPC Table Editors |
 
 ---
 
@@ -42,11 +62,21 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 
 ---
 
-## Safety System (v4.8.4/v4.9)
+## Safety System (v4.8.4/v4.9/v4.9.1)
 
-The table editors implement a comprehensive safety system to prevent data corruption and ensure UI truthfulness.
+The table editors implement a comprehensive safety system based on a GPT-assisted audit. The audit identified potential issues across three priority levels.
+
+### GPT Audit Summary
+
+| Priority | Focus | Status |
+|----------|-------|--------|
+| **P1** | Truthfulness & Re-entrancy | ✅ Complete (v4.8.4) |
+| **P2** | Contract Correctness | ✅ Complete (v4.8.4/v4.9) |
+| **P3** | Determinism & User Expectations | ✅ Complete (v4.9.1) |
 
 ### P1 — Truthfulness & Re-entrancy
+
+Ensures UI always reflects true data state and prevents concurrent operation corruption.
 
 | Protection | Description | Implementation |
 |------------|-------------|----------------|
@@ -56,12 +86,94 @@ The table editors implement a comprehensive safety system to prevent data corrup
 | **Button Disable on Busy** | Visual feedback during operations | `.IsEnabled_Lambda([this]() { return !bIsBusy; })` |
 | **File-Locked Messaging** | Clear error when Excel has file open | "If the file is open in Excel, please close it and try again" |
 
+**Re-entrancy Guard Pattern:**
+```cpp
+// Member variable
+bool bIsBusy = false;
+
+// In operation handler
+FReply OnGenerateClicked()
+{
+    if (bIsBusy) return FReply::Handled();  // Early exit if busy
+    TGuardValue<bool> BusyGuard(bIsBusy, true);  // Auto-reset on scope exit
+
+    // ... perform operation ...
+    return FReply::Handled();
+}
+```
+
 ### P2 — Contract Correctness
+
+Ensures operations complete fully or abort cleanly with user notification.
 
 | Protection | Description | Implementation |
 |------------|-------------|----------------|
 | **Save-Fail Abort** | Generate aborts if pre-save fails | Checks `SavePackage()` return, shows error, returns early |
 | **FORMAT_VERSION Check** | Hard abort on newer file version | Compares `FormatVersion > FORMAT_VERSION`, shows "Please update plugin" |
+
+**Save-Fail Pattern:**
+```cpp
+bool bSaveSuccess = UPackage::SavePackage(Package, Asset, *PackageFilename, SaveArgs);
+if (!bSaveSuccess)
+{
+    FMessageDialog::Open(EAppMsgType::Ok,
+        LOCTEXT("SaveFailed", "Failed to save asset. Check if file is locked."));
+    return;  // Abort generation
+}
+```
+
+**Version Check Pattern:**
+```cpp
+if (!ImportResult.FormatVersion.IsEmpty() && ImportResult.FormatVersion > FORMAT_VERSION)
+{
+    FMessageDialog::Open(EAppMsgType::Ok,
+        FText::Format(LOCTEXT("NewerVersionAbort",
+            "This file was exported by a newer version (v{0}).\n"
+            "Your version supports up to v{1}.\n"
+            "Please update the plugin."),
+            FText::FromString(ImportResult.FormatVersion),
+            FText::FromString(FORMAT_VERSION)));
+    return FReply::Handled();  // Hard abort
+}
+```
+
+### P3 — Determinism & User Expectations (v4.9.1)
+
+Ensures consistent behavior and documents non-obvious system behaviors.
+
+| Item | Issue | Resolution |
+|------|-------|------------|
+| **Dialogue Sync Ordering** | TSet iteration produced non-deterministic preview order | Added sort by DialogueID+NodeID in `DialogueXLSXSyncEngine.cpp:309-330` |
+| **ID Rename Behavior** | Users may expect "rename = new row" | Documented GUID-based identity (see User Notes section) |
+| **Merged Cells** | Silent data loss on import | Documented as unsupported (see User Notes section) |
+
+**Determinism Audit Results:**
+
+| Area | Uses TSet/TMap | Deterministic? | Notes |
+|------|----------------|----------------|-------|
+| Data Row Export | No (TArray) | ✅ Yes | Rows exported in array order |
+| FString Columns | No (FString) | ✅ Yes | Multi-values preserve authored order |
+| NPC Sync Engine | Yes | ✅ Yes | Sorts by display name (line 196) |
+| Dialogue Sync Engine | Yes | ✅ Yes (v4.9.1) | Now sorts by DialogueID+NodeID |
+| _Lists Sheet | Yes | ⚠️ No | Reference data only, order irrelevant |
+
+**Sort Implementation (DialogueXLSXSyncEngine.cpp):**
+```cpp
+// v4.9.1: Sort entries by DialogueID + NodeID for consistent display order
+Result.Entries.Sort([](const FDialogueSyncEntry& A, const FDialogueSyncEntry& B)
+{
+    const FDialogueTableRow* RowA = A.UERow.Get() ? A.UERow.Get() :
+        (A.ExcelRow.Get() ? A.ExcelRow.Get() : A.BaseRow.Get());
+    const FDialogueTableRow* RowB = B.UERow.Get() ? B.UERow.Get() :
+        (B.ExcelRow.Get() ? B.ExcelRow.Get() : B.BaseRow.Get());
+
+    if (!RowA || !RowB) return A.RowId < B.RowId;  // Fallback to GUID
+
+    if (RowA->DialogueID != RowB->DialogueID)
+        return RowA->DialogueID.LexicalLess(RowB->DialogueID);
+    return RowA->NodeID.LexicalLess(RowB->NodeID);
+});
+```
 
 ### Protected Operations
 
@@ -73,6 +185,14 @@ Both editors apply `bIsBusy` guard and button disable to:
 - Sync XLSX (Dialogue only)
 - Sync from Assets
 - Apply to Assets
+
+### Items Explicitly Not Implemented
+
+| Item | Reason |
+|------|--------|
+| **P3.3: ID change reporting in Generate** | Sync preview already shows all changes before apply; adding post-generate reporting would duplicate information |
+| **_Lists sheet sorting** | Dropdown order has no semantic meaning; sorting adds code for zero user benefit |
+| **Merged cell detection** | Documentation warning is sufficient; detection code is non-trivial for a problem that rarely occurs in data tables |
 
 ---
 
@@ -1580,6 +1700,29 @@ void ApplyFilters()
 | Float 0-1 | `SSlider` with value display | Attack priority |
 | Asset reference | `SComboButton` with asset picker menu | Blueprint selection |
 | Multi-value | `SComboButton` with checkbox menu | Factions |
+
+---
+
+## Safety System Files Reference
+
+Files modified during the v4.8.4/v4.9/v4.9.1 safety audit:
+
+| File | Safety Features |
+|------|-----------------|
+| `SNPCTableEditor.cpp` | `bIsBusy` guard, `IsEnabled_Lambda` on 6 buttons, save-fail abort, version check |
+| `SDialogueTableEditor.cpp` | `bIsBusy` guard, `IsEnabled_Lambda` on 7 buttons, save-fail abort, version check (x2) |
+| `DialogueXLSXSyncEngine.cpp` | Sort entries by DialogueID+NodeID (v4.9.1) |
+| `NPCXLSXSyncEngine.cpp` | Already sorted by display name (no changes needed) |
+| `NPCTableEditorTypes.h` | `InvalidateValidation()` method |
+| `DialogueTableEditorTypes.h` | `InvalidateValidation()` method |
+
+**Key Patterns by Version:**
+
+| Version | Pattern | Location |
+|---------|---------|----------|
+| v4.8.4 | `TGuardValue<bool> BusyGuard(bIsBusy, true)` | All heavy operation handlers |
+| v4.9 | `.IsEnabled_Lambda([this]() { return !bIsBusy; })` | All heavy operation buttons |
+| v4.9.1 | `Result.Entries.Sort([](A, B) { ... })` | DialogueXLSXSyncEngine.cpp:309 |
 
 ---
 
