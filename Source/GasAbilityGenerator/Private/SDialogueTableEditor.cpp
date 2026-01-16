@@ -2579,9 +2579,16 @@ FReply SDialogueTableEditor::OnExportXLSXClicked()
 
 FReply SDialogueTableEditor::OnImportXLSXClicked()
 {
+	// v4.11: Import now uses sync comparison like NPC Table Editor
+	// Previously directly replaced TableData->Rows without comparing to UE data
+	// Now shows sync approval dialog for user to review all changes
+
 	// v4.8.4: Re-entrancy guard
 	if (bIsBusy) return FReply::Handled();
 	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Sync pending UI changes to TableData first
+	SyncToTableData();
 
 	TArray<FString> OutFiles;
 	FDesktopPlatformModule::Get()->OpenFileDialog(
@@ -2599,69 +2606,86 @@ FReply SDialogueTableEditor::OnImportXLSXClicked()
 		return FReply::Handled();
 	}
 
-	FDialogueXLSXImportResult Result = FDialogueXLSXReader::ImportFromXLSX(OutFiles[0]);
-
-	if (Result.bSuccess)
+	// Import Excel file
+	FDialogueXLSXImportResult ImportResult = FDialogueXLSXReader::ImportFromXLSX(OutFiles[0]);
+	if (!ImportResult.bSuccess)
 	{
-		// v4.8.4: Hard abort if file was created by a newer version of the tool
-		if (!Result.FormatVersion.IsEmpty() && Result.FormatVersion > FDialogueXLSXWriter::FORMAT_VERSION)
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("ImportXLSXFailed", "Failed to read Excel file:\n{0}"),
+				FText::FromString(ImportResult.ErrorMessage)));
+		return FReply::Handled();
+	}
+
+	// v4.8.4: Hard abort if file was created by a newer version of the tool
+	if (!ImportResult.FormatVersion.IsEmpty() && ImportResult.FormatVersion > FDialogueXLSXWriter::FORMAT_VERSION)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("NewerVersionAbortDialogueImport",
+				"This file was exported by a newer version of the plugin (v{0}).\n"
+				"Your version supports up to v{1}.\n\n"
+				"Please update the plugin before importing this file."),
+				FText::FromString(ImportResult.FormatVersion),
+				FText::FromString(FDialogueXLSXWriter::FORMAT_VERSION)));
+		return FReply::Handled();
+	}
+
+	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
+
+	// Get current UE rows
+	TArray<FDialogueTableRow> UERows;
+	if (TableData)
+	{
+		UERows = TableData->Rows;
+	}
+
+	// For now, use empty base (first sync). In future, base would come from LastSyncedHash comparison.
+	// TODO v4.11: Use per-row LastSyncedHash for true 3-way merge
+	TArray<FDialogueTableRow> BaseRows;
+
+	// Perform 3-way comparison
+	FDialogueSyncResult SyncResult = FDialogueXLSXSyncEngine::CompareSources(BaseRows, UERows, ImportResult.Rows);
+
+	// v4.11: Only Unchanged auto-resolves - all other statuses require user approval
+	FDialogueXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
+
+	// Check if there are any changes
+	if (!SyncResult.HasChanges())
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("ImportNoChanges", "No changes detected. Excel file matches current UE data."));
+		return FReply::Handled();
+	}
+
+	// Show sync dialog for user approval (v4.11: all non-Unchanged changes require approval)
+	if (SDialogueXLSXSyncDialog::ShowModal(SyncResult))
+	{
+		// User clicked Apply - merge changes
+		FDialogueMergeResult MergeResult = FDialogueXLSXSyncEngine::ApplySync(SyncResult);
+
+		// v4.8.4: Invalidate validation on all merged rows
+		for (FDialogueTableRow& Row : MergeResult.MergedRows)
 		{
-			FMessageDialog::Open(EAppMsgType::Ok,
-				FText::Format(LOCTEXT("NewerVersionAbortDialogueImport",
-					"This file was exported by a newer version of the plugin (v{0}).\n"
-					"Your version supports up to v{1}.\n\n"
-					"Please update the plugin before importing this file."),
-					FText::FromString(Result.FormatVersion),
-					FText::FromString(FDialogueXLSXWriter::FORMAT_VERSION)));
-			return FReply::Handled();
+			Row.InvalidateValidation();
 		}
 
-		FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
-
-		// Update TableData with imported rows
+		// Update TableData
 		if (TableData)
 		{
-			TableData->Rows = Result.Rows;
+			TableData->Rows = MergeResult.MergedRows;
 			TableData->SourceFilePath = OutFiles[0];
 			MarkDirty();
 		}
 
-		// Refresh the view
+		// Refresh view
 		SyncFromTableData();
 		RefreshList();
 
-		// v4.4: Count validation errors for feedback
-		int32 ValidationErrorCount = 0;
-		for (const FDialogueTableRow& Row : Result.Rows)
-		{
-			if (!Row.AreTokensValid())
-			{
-				ValidationErrorCount++;
-			}
-		}
-
-		if (ValidationErrorCount > 0)
-		{
-			FMessageDialog::Open(EAppMsgType::Ok,
-				FText::Format(LOCTEXT("XLSXImportSuccessWithErrors",
-					"Imported {0} rows from:\n{1}\n\nWarning: {2} rows have token validation errors.\nInvalid tokens will not be applied during sync."),
-					FText::AsNumber(Result.Rows.Num()),
-					FText::FromString(OutFiles[0]),
-					FText::AsNumber(ValidationErrorCount)));
-		}
-		else
-		{
-			FMessageDialog::Open(EAppMsgType::Ok,
-				FText::Format(LOCTEXT("XLSXImportSuccess", "Imported {0} rows from:\n{1}"),
-					FText::AsNumber(Result.Rows.Num()),
-					FText::FromString(OutFiles[0])));
-		}
-	}
-	else
-	{
 		FMessageDialog::Open(EAppMsgType::Ok,
-			FText::Format(LOCTEXT("XLSXImportFailed", "Import failed:\n{0}"),
-				FText::FromString(Result.ErrorMessage)));
+			FText::Format(LOCTEXT("ImportComplete", "Import complete!\n\nApplied from UE: {0}\nApplied from Excel: {1}\nDeleted: {2}\nUnchanged: {3}"),
+				FText::AsNumber(MergeResult.AppliedFromUE),
+				FText::AsNumber(MergeResult.AppliedFromExcel),
+				FText::AsNumber(MergeResult.Deleted),
+				FText::AsNumber(MergeResult.Unchanged)));
 	}
 
 	return FReply::Handled();
