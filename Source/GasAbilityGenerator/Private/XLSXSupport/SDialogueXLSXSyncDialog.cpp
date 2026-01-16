@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Dialog Implementation
+// v4.11: Show actual values, no pre-selection for non-Unchanged, row highlighting
 // v4.3: UI for reviewing and resolving sync conflicts
 
 #include "XLSXSupport/SDialogueXLSXSyncDialog.h"
@@ -469,41 +470,57 @@ TSharedRef<SWidget> SDialogueSyncEntryRow::CreateTextPreviewCell()
 
 TSharedRef<SWidget> SDialogueSyncEntryRow::CreateResolutionCell()
 {
-	// Only show dropdown for conflicts
+	// v4.11: All entries except Unchanged require explicit user selection
+	// Show actual values in buttons, not generic "UE"/"Excel" labels
+
+	// Helper to get truncated text preview
+	auto GetTextPreview = [](const TSharedPtr<FDialogueTableRow>& Row, int32 MaxLen) -> FString
+	{
+		if (!Row.IsValid()) return TEXT("(none)");
+		FString Text = Row->Text;
+		if (Text.IsEmpty()) Text = Row->OptionText;  // Player nodes use OptionText
+		if (Text.IsEmpty()) return TEXT("(empty)");
+		if (Text.Len() > MaxLen) return Text.Left(MaxLen - 3) + TEXT("...");
+		return Text;
+	};
+
+	// For Unchanged (doesn't require resolution), show auto-resolved
 	if (!Entry->RequiresResolution())
 	{
-		// Show auto-resolved choice as text
-		FString ResolutionText;
-		switch (Entry->Resolution)
-		{
-			case EDialogueConflictResolution::KeepUE:    ResolutionText = TEXT("Keep UE"); break;
-			case EDialogueConflictResolution::KeepExcel: ResolutionText = TEXT("Apply Excel"); break;
-			case EDialogueConflictResolution::Delete:    ResolutionText = TEXT("Delete"); break;
-			default: ResolutionText = TEXT("Auto"); break;
-		}
-
 		return SNew(SBox)
 			.Padding(FMargin(4.0f, 2.0f))
 			[
 				SNew(STextBlock)
-					.Text(FText::FromString(ResolutionText))
+					.Text(LOCTEXT("AutoResolved", "Unchanged"))
 					.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
 					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
 			];
 	}
 
-	// Use buttons instead of combo box to avoid lifetime issues
+	// Get actual values for buttons
+	FString UELabel = GetTextPreview(Entry->UERow, 20);
+	FString ExcelLabel = GetTextPreview(Entry->ExcelRow, 20);
+	FString UETooltip = Entry->UERow.IsValid() ? Entry->UERow->Text : TEXT("(deleted)");
+	FString ExcelTooltip = Entry->ExcelRow.IsValid() ? Entry->ExcelRow->Text : TEXT("(deleted)");
+
+	// Check if this is a delete scenario (one side missing)
+	bool bUEDeleted = !Entry->UERow.IsValid();
+	bool bExcelDeleted = !Entry->ExcelRow.IsValid();
+
+	// v4.11: Use buttons showing actual values, starts unselected
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SHorizontalBox)
 
+			// UE value button (if UE row exists)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(1.0f, 0.0f)
 			[
 				SNew(SButton)
-					.Text(FText::FromString(TEXT("UE")))
+					.Text(FText::FromString(bUEDeleted ? TEXT("(deleted)") : UELabel))
+					.ToolTipText(FText::FromString(FString::Printf(TEXT("UE: %s"), *UETooltip)))
 					.OnClicked_Lambda([this]()
 					{
 						Entry->Resolution = EDialogueConflictResolution::KeepUE;
@@ -511,14 +528,17 @@ TSharedRef<SWidget> SDialogueSyncEntryRow::CreateResolutionCell()
 						return FReply::Handled();
 					})
 					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == EDialogueConflictResolution::KeepUE ? "FlatButton.Primary" : "FlatButton.Default")
+					.IsEnabled(!bUEDeleted)  // Disabled if UE row doesn't exist
 			]
 
+			// Excel value button (if Excel row exists)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(1.0f, 0.0f)
 			[
 				SNew(SButton)
-					.Text(FText::FromString(TEXT("Excel")))
+					.Text(FText::FromString(bExcelDeleted ? TEXT("(deleted)") : ExcelLabel))
+					.ToolTipText(FText::FromString(FString::Printf(TEXT("Excel: %s"), *ExcelTooltip)))
 					.OnClicked_Lambda([this]()
 					{
 						Entry->Resolution = EDialogueConflictResolution::KeepExcel;
@@ -526,14 +546,17 @@ TSharedRef<SWidget> SDialogueSyncEntryRow::CreateResolutionCell()
 						return FReply::Handled();
 					})
 					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == EDialogueConflictResolution::KeepExcel ? "FlatButton.Success" : "FlatButton.Default")
+					.IsEnabled(!bExcelDeleted)  // Disabled if Excel row doesn't exist
 			]
 
+			// Delete button (for cases where deletion is an option)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(1.0f, 0.0f)
 			[
 				SNew(SButton)
-					.Text(FText::FromString(TEXT("Del")))
+					.Text(FText::FromString(TEXT("Remove")))
+					.ToolTipText(LOCTEXT("RemoveTooltip", "Remove this row from the table"))
 					.OnClicked_Lambda([this]()
 					{
 						Entry->Resolution = EDialogueConflictResolution::Delete;
@@ -541,7 +564,8 @@ TSharedRef<SWidget> SDialogueSyncEntryRow::CreateResolutionCell()
 						return FReply::Handled();
 					})
 					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == EDialogueConflictResolution::Delete ? "FlatButton.Danger" : "FlatButton.Default")
-					.Visibility(Entry->Status == EDialogueSyncStatus::DeleteConflict ? EVisibility::Visible : EVisibility::Collapsed)
+					// v4.11: Show Remove for any case where deletion makes sense (one side missing)
+					.Visibility((bUEDeleted || bExcelDeleted) ? EVisibility::Visible : EVisibility::Collapsed)
 			]
 		];
 }

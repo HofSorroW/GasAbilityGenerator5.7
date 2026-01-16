@@ -1,4 +1,5 @@
 // GasAbilityGenerator - NPC XLSX Sync Dialog Implementation
+// v4.11: Show actual values, no pre-selection for non-Unchanged
 // v4.5: UI for reviewing and resolving NPC sync conflicts
 
 #include "XLSXSupport/SNPCXLSXSyncDialog.h"
@@ -534,41 +535,74 @@ TSharedRef<SWidget> SNPCSyncEntryRow::CreatePreviewCell()
 
 TSharedRef<SWidget> SNPCSyncEntryRow::CreateResolutionCell()
 {
-	// Only show dropdown for conflicts
+	// v4.11: All entries except Unchanged require explicit user selection
+	// Show actual values in buttons, not generic "UE"/"Excel" labels
+
+	// Helper to get a meaningful preview (NPC Name + AbilityConfig)
+	auto GetNPCPreview = [](const TSharedPtr<FNPCTableRow>& Row, int32 MaxLen) -> FString
+	{
+		if (!Row.IsValid()) return TEXT("(none)");
+		FString Preview = Row->NPCName;
+		// Add ability config suffix if present
+		if (!Row->AbilityConfig.IsNull())
+		{
+			FString ACName = FPaths::GetBaseFilename(Row->AbilityConfig.GetAssetName());
+			if (!ACName.IsEmpty())
+			{
+				Preview += TEXT(" [") + ACName + TEXT("]");
+			}
+		}
+		if (Preview.Len() > MaxLen) return Preview.Left(MaxLen - 3) + TEXT("...");
+		return Preview;
+	};
+
+	// For Unchanged (doesn't require resolution), show auto-resolved
 	if (!Entry->RequiresResolution())
 	{
-		// Show auto-resolved choice as text
-		FString ResolutionText;
-		switch (Entry->Resolution)
-		{
-			case ENPCConflictResolution::KeepUE:    ResolutionText = TEXT("Keep UE"); break;
-			case ENPCConflictResolution::KeepExcel: ResolutionText = TEXT("Apply Excel"); break;
-			case ENPCConflictResolution::Delete:    ResolutionText = TEXT("Delete"); break;
-			default: ResolutionText = TEXT("Auto"); break;
-		}
-
 		return SNew(SBox)
 			.Padding(FMargin(4.0f, 2.0f))
 			[
 				SNew(STextBlock)
-					.Text(FText::FromString(ResolutionText))
+					.Text(LOCTEXT("AutoResolved", "Unchanged"))
 					.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
 					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
 			];
 	}
 
-	// Use buttons for conflict resolution
+	// Get actual values for buttons
+	FString UELabel = GetNPCPreview(Entry->UERow, 25);
+	FString ExcelLabel = GetNPCPreview(Entry->ExcelRow, 25);
+
+	// Build tooltips with full details
+	auto BuildTooltip = [](const TSharedPtr<FNPCTableRow>& Row, const FString& Source) -> FString
+	{
+		if (!Row.IsValid()) return Source + TEXT(": (deleted)");
+		return FString::Printf(TEXT("%s:\nName: %s\nDisplay: %s\nLevel: %d-%d\nAbilityConfig: %s"),
+			*Source, *Row->NPCName, *Row->DisplayName, Row->MinLevel, Row->MaxLevel,
+			Row->AbilityConfig.IsNull() ? TEXT("(none)") : *Row->AbilityConfig.GetAssetName());
+	};
+
+	FString UETooltip = BuildTooltip(Entry->UERow, TEXT("UE"));
+	FString ExcelTooltip = BuildTooltip(Entry->ExcelRow, TEXT("Excel"));
+
+	// Check if this is a delete scenario (one side missing)
+	bool bUEDeleted = !Entry->UERow.IsValid();
+	bool bExcelDeleted = !Entry->ExcelRow.IsValid();
+
+	// v4.11: Use buttons showing actual values, starts unselected
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SHorizontalBox)
 
+			// UE value button
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(1.0f, 0.0f)
 			[
 				SNew(SButton)
-					.Text(FText::FromString(TEXT("UE")))
+					.Text(FText::FromString(bUEDeleted ? TEXT("(deleted)") : UELabel))
+					.ToolTipText(FText::FromString(UETooltip))
 					.OnClicked_Lambda([this]()
 					{
 						Entry->Resolution = ENPCConflictResolution::KeepUE;
@@ -576,14 +610,17 @@ TSharedRef<SWidget> SNPCSyncEntryRow::CreateResolutionCell()
 						return FReply::Handled();
 					})
 					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == ENPCConflictResolution::KeepUE ? "FlatButton.Primary" : "FlatButton.Default")
+					.IsEnabled(!bUEDeleted)
 			]
 
+			// Excel value button
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(1.0f, 0.0f)
 			[
 				SNew(SButton)
-					.Text(FText::FromString(TEXT("Excel")))
+					.Text(FText::FromString(bExcelDeleted ? TEXT("(deleted)") : ExcelLabel))
+					.ToolTipText(FText::FromString(ExcelTooltip))
 					.OnClicked_Lambda([this]()
 					{
 						Entry->Resolution = ENPCConflictResolution::KeepExcel;
@@ -591,14 +628,17 @@ TSharedRef<SWidget> SNPCSyncEntryRow::CreateResolutionCell()
 						return FReply::Handled();
 					})
 					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == ENPCConflictResolution::KeepExcel ? "FlatButton.Success" : "FlatButton.Default")
+					.IsEnabled(!bExcelDeleted)
 			]
 
+			// Remove button (for cases where deletion is an option)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(1.0f, 0.0f)
 			[
 				SNew(SButton)
-					.Text(FText::FromString(TEXT("Del")))
+					.Text(FText::FromString(TEXT("Remove")))
+					.ToolTipText(LOCTEXT("RemoveTooltip", "Remove this NPC from the table"))
 					.OnClicked_Lambda([this]()
 					{
 						Entry->Resolution = ENPCConflictResolution::Delete;
@@ -606,7 +646,8 @@ TSharedRef<SWidget> SNPCSyncEntryRow::CreateResolutionCell()
 						return FReply::Handled();
 					})
 					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == ENPCConflictResolution::Delete ? "FlatButton.Danger" : "FlatButton.Default")
-					.Visibility(Entry->Status == ENPCSyncStatus::DeleteConflict ? EVisibility::Visible : EVisibility::Collapsed)
+					// v4.11: Show Remove for any case where deletion makes sense
+					.Visibility((bUEDeleted || bExcelDeleted) ? EVisibility::Visible : EVisibility::Collapsed)
 			]
 		];
 }
