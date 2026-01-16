@@ -10,6 +10,9 @@
 #include "SDialogueTableEditor.h"
 #include "DialogueTableValidator.h"
 #include "DialogueTableConverter.h"
+#include "GasAbilityGeneratorGenerators.h"  // v4.10: For FDialogueBlueprintGenerator
+
+DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);  // v4.10: Provenance logging
 #include "XLSXSupport/DialogueXLSXWriter.h"
 #include "XLSXSupport/DialogueXLSXReader.h"
 #include "XLSXSupport/DialogueXLSXSyncEngine.h"
@@ -2442,7 +2445,7 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 	}
 
 	//=========================================================================
-	// Step 3: Convert and show generation preview
+	// Step 3: Convert rows to manifest definitions
 	//=========================================================================
 	TMap<FName, FManifestDialogueBlueprintDefinition> Definitions =
 		FDialogueTableConverter::ConvertRowsToManifest(RowsToValidate);
@@ -2460,11 +2463,50 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 		Message += FString::Printf(TEXT("\nSoft-deleted (skipped): %d"), DeletedCount);
 	}
 
-	Message += TEXT("\nGeneration would use FDialogueBlueprintGenerator.\n");
-	Message += TEXT("(Full generation integration coming in next update)");
+	//=========================================================================
+	// Step 4: Generate dialogue assets (v4.10)
+	//=========================================================================
+	UE_LOG(LogGasAbilityGenerator, Log, TEXT("Generating Dialogue assets from Table Editor"));
 
-	// v4.6: Update generation tracking (preview mode - no actual generation yet)
-	// When actual generation is implemented, call TableData->OnGenerationComplete(ErrorCount)
+	int32 SuccessCount = 0;
+	int32 SkippedCount = 0;
+	int32 FailCount = 0;
+
+	for (const auto& Pair : Definitions)
+	{
+		FGenerationResult Result = FDialogueBlueprintGenerator::Generate(
+			Pair.Value,
+			TEXT(""),   // Empty = auto-detect via GetProjectRoot()
+			nullptr     // ManifestData not used
+		);
+
+		if (Result.Status == EGenerationStatus::New)
+		{
+			SuccessCount++;
+			UE_LOG(LogGasAbilityGenerator, Log, TEXT("Generated: %s"), *Pair.Key.ToString());
+		}
+		else if (Result.Status == EGenerationStatus::Skipped)
+		{
+			SkippedCount++;
+			UE_LOG(LogGasAbilityGenerator, Log, TEXT("Skipped (exists): %s"), *Pair.Key.ToString());
+		}
+		else if (Result.Status == EGenerationStatus::Failed)
+		{
+			FailCount++;
+			UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Failed: %s - %s"), *Pair.Key.ToString(), *Result.Message);
+		}
+	}
+
+	// v4.6: Update generation tracking
+	if (TableData)
+	{
+		TableData->OnGenerationComplete(FailCount);
+	}
+
+	Message += FString::Printf(TEXT("\n\nGeneration Complete:\n"));
+	Message += FString::Printf(TEXT("  Created: %d\n"), SuccessCount);
+	Message += FString::Printf(TEXT("  Skipped (exists): %d\n"), SkippedCount);
+	Message += FString::Printf(TEXT("  Failed: %d"), FailCount);
 
 	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Message));
 

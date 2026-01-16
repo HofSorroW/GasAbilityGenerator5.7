@@ -140,9 +140,83 @@ FManifestDialogueNodeDefinition FDialogueTableConverter::ConvertRowToNode(const 
 	// Node-level defaults
 	Node.Duration = TEXT("Default");
 	Node.DurationSeconds = 0.0f;
-	Node.bIsSkippable = true;
+	Node.bIsSkippable = Row.bSkippable;  // v4.10: Use row value instead of hardcoded default
 	Node.bAutoSelectIfOnly = true;
 	Node.bAutoSelect = false;
+
+	// v4.10: Parse EventsTokenStr → Node.Events
+	// Format: "NE_PlayerRude,NE_QuestStarted" or "NE_PlayerRude:Start,NE_QuestStarted:End"
+	if (!Row.EventsTokenStr.IsEmpty())
+	{
+		TArray<FString> EventTokens;
+		Row.EventsTokenStr.ParseIntoArray(EventTokens, TEXT(","));
+		for (const FString& Token : EventTokens)
+		{
+			FString TrimmedToken = Token.TrimStartAndEnd();
+			if (TrimmedToken.IsEmpty()) continue;
+
+			FManifestDialogueEventDefinition EventDef;
+			// Check for runtime suffix (:Start, :End, :Both)
+			int32 ColonIdx;
+			if (TrimmedToken.FindLastChar(TEXT(':'), ColonIdx) && ColonIdx > 0)
+			{
+				FString EventName = TrimmedToken.Left(ColonIdx).TrimStartAndEnd();
+				FString Runtime = TrimmedToken.Mid(ColonIdx + 1).TrimStartAndEnd();
+				// Validate runtime is a known value
+				if (Runtime.Equals(TEXT("Start"), ESearchCase::IgnoreCase) ||
+					Runtime.Equals(TEXT("End"), ESearchCase::IgnoreCase) ||
+					Runtime.Equals(TEXT("Both"), ESearchCase::IgnoreCase))
+				{
+					EventDef.Type = EventName;
+					EventDef.Runtime = Runtime;
+				}
+				else
+				{
+					// Not a runtime suffix, treat whole thing as event name
+					EventDef.Type = TrimmedToken;
+					EventDef.Runtime = TEXT("Start");
+				}
+			}
+			else
+			{
+				EventDef.Type = TrimmedToken;
+				EventDef.Runtime = TEXT("Start");  // Default
+			}
+			Node.Events.Add(EventDef);
+		}
+	}
+
+	// v4.10: Parse ConditionsTokenStr → Node.Conditions
+	// Format: "NC_HasTag,NC_QuestState" or "!NC_HasTag,NC_QuestState"
+	if (!Row.ConditionsTokenStr.IsEmpty())
+	{
+		TArray<FString> ConditionTokens;
+		Row.ConditionsTokenStr.ParseIntoArray(ConditionTokens, TEXT(","));
+		for (const FString& Token : ConditionTokens)
+		{
+			FString TrimmedToken = Token.TrimStartAndEnd();
+			if (TrimmedToken.IsEmpty()) continue;
+
+			FManifestDialogueConditionDefinition CondDef;
+			// Check for NOT prefix (!) or suffix (:!)
+			if (TrimmedToken.StartsWith(TEXT("!")))
+			{
+				CondDef.Type = TrimmedToken.Mid(1).TrimStartAndEnd();
+				CondDef.bNot = true;
+			}
+			else if (TrimmedToken.EndsWith(TEXT(":!")))
+			{
+				CondDef.Type = TrimmedToken.LeftChop(2).TrimStartAndEnd();
+				CondDef.bNot = true;
+			}
+			else
+			{
+				CondDef.Type = TrimmedToken;
+				CondDef.bNot = false;
+			}
+			Node.Conditions.Add(CondDef);
+		}
+	}
 
 	// NextNodeIDs will be categorized into NPCReplies/PlayerReplies
 	// in BuildDialogueTree after all nodes are created
