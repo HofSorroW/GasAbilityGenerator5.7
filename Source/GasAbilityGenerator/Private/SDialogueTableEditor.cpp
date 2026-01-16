@@ -3246,6 +3246,16 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 			TSharedPtr<FDialogueTableRow> RowData = (*ExistingRowPtr)->Data;
 			if (RowData.IsValid())
 			{
+				// v4.11.4: Debug logging for text sync
+				UE_LOG(LogTemp, Log, TEXT("[SyncFromAssets] UPDATE existing row: %s"), *Key);
+				UE_LOG(LogTemp, Log, TEXT("  Asset Text: '%s' (len=%d)"),
+					NodeData.Text.Len() > 50 ? *(NodeData.Text.Left(50) + TEXT("...")) : *NodeData.Text,
+					NodeData.Text.Len());
+				UE_LOG(LogTemp, Log, TEXT("  Row Text: '%s' (len=%d, empty=%d)"),
+					RowData->Text.Len() > 50 ? *(RowData->Text.Left(50) + TEXT("...")) : *RowData->Text,
+					RowData->Text.Len(),
+					RowData->Text.IsEmpty() ? 1 : 0);
+
 				// Update tokens from asset (only if table is empty - don't overwrite user edits)
 				bool bUpdated = false;
 				if (RowData->EventsTokenStr.IsEmpty() && !NodeData.EventsTokenStr.IsEmpty())
@@ -3271,6 +3281,7 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 				}
 				if (RowData->Text.IsEmpty() && !NodeData.Text.IsEmpty())
 				{
+					UE_LOG(LogTemp, Log, TEXT("  -> Updating Text from asset"));
 					RowData->Text = NodeData.Text;
 					bUpdated = true;
 				}
@@ -3310,6 +3321,12 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 		else
 		{
 			// Create new row from asset data
+			// v4.11.4: Debug logging for text sync
+			UE_LOG(LogTemp, Log, TEXT("[SyncFromAssets] CREATE new row: %s"), *Key);
+			UE_LOG(LogTemp, Log, TEXT("  Asset Text: '%s' (len=%d)"),
+				NodeData.Text.Len() > 50 ? *(NodeData.Text.Left(50) + TEXT("...")) : *NodeData.Text,
+				NodeData.Text.Len());
+
 			TSharedPtr<FDialogueTableRow> NewRowData = MakeShared<FDialogueTableRow>();
 			NewRowData->RowId = FGuid::NewGuid();
 			NewRowData->DialogueID = FName(*DialogueIDStr);

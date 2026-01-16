@@ -509,10 +509,17 @@ void FDialogueAssetSync::ExtractNodeData(UDialogueNode* Node, FDialogueNodeAsset
 
 	//=========================================================================
 	// v4.8: Extract full dialogue content
+	// v4.11.4: Check multiple sources for text (Line.Text, AlternativeLines, GetDialogueText)
 	//=========================================================================
 
-	// Dialogue text from Line.Text
-	OutData.Text = Node->Line.Text.ToString();
+	// v4.11.4: Use GetDialogueText() as primary source - it handles Line.Text and alternatives internally
+	OutData.Text = Node->GetDialogueText().ToString();
+
+	// Fallback to Line.Text directly if GetDialogueText() returned empty (shouldn't happen, but safe)
+	if (OutData.Text.IsEmpty())
+	{
+		OutData.Text = Node->Line.Text.ToString();
+	}
 
 	// Skippable flag
 	OutData.bSkippable = Node->bIsSkippable;

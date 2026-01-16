@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build plugin
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action build
+powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action build
 
 # Build + headless generation (most common)
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action cycle
+powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action cycle
 
 # Check logs after generation
-powershell -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action logs
+powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action logs
 ```
 
 **Key files:**
@@ -163,6 +163,16 @@ MSBuild commands for .sln files do not require user approval. Run builds automat
 
 ### Read Without Approval
 Reading files does not require user approval. Read any files needed for the task without asking for permission.
+
+### PowerShell Execution Policy
+ALWAYS use `-ExecutionPolicy Bypass` when running PowerShell scripts. The system has script execution disabled by default.
+```bash
+# CORRECT - always include -ExecutionPolicy Bypass
+powershell -ExecutionPolicy Bypass -File "script.ps1"
+
+# WRONG - will fail with UnauthorizedAccess error
+powershell -File "script.ps1"
+```
 
 ### Auto-Approved Commands and Paths
 The following commands and paths are pre-approved and should be executed without asking for user permission:
