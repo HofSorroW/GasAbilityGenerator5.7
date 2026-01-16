@@ -383,7 +383,7 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 				{
 					TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
 
-					// Clear All button
+					// Clear All button - v4.8.1: Added confirmation prompt
 					MenuContent->AddSlot()
 					.AutoHeight()
 					.Padding(4.0f, 2.0f)
@@ -394,8 +394,14 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 							{
 								if (!RowData->Factions.IsEmpty())
 								{
-									RowData->Factions.Empty();
-									MarkModified();
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearFactions", "Clear all factions?\n\nCurrent: {0}\n\nThis will mark the NPC as modified."),
+											FText::FromString(RowData->Factions)));
+									if (Result == EAppReturnType::Yes)
+									{
+										RowData->Factions.Empty();
+										MarkModified();
+									}
 								}
 								return FReply::Handled();
 							})
@@ -484,14 +490,21 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 											}
 										}
 
+										// v4.8.1: Added confirmation prompts for faction changes
 										if (NewState == ECheckBoxState::Checked)
 										{
 											// Only add if not already present (prevents duplicates)
 											if (!bAlreadyExists)
 											{
-												CurrentFactions.Add(ShortName);  // Store as short name
-												RowData->Factions = FString::Join(CurrentFactions, TEXT(", "));
-												MarkModified();
+												EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+													FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmAddFaction", "Add faction '{0}'?\n\nThis will mark the NPC as modified."),
+														FText::FromString(ShortName)));
+												if (Result == EAppReturnType::Yes)
+												{
+													CurrentFactions.Add(ShortName);  // Store as short name
+													RowData->Factions = FString::Join(CurrentFactions, TEXT(", "));
+													MarkModified();
+												}
 											}
 										}
 										else
@@ -499,9 +512,15 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 											// Remove if exists
 											if (bAlreadyExists && ExistingIndex != INDEX_NONE)
 											{
-												CurrentFactions.RemoveAt(ExistingIndex);
-												RowData->Factions = FString::Join(CurrentFactions, TEXT(", "));
-												MarkModified();
+												EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+													FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmRemoveFaction", "Remove faction '{0}'?\n\nThis will mark the NPC as modified."),
+														FText::FromString(ShortName)));
+												if (Result == EAppReturnType::Yes)
+												{
+													CurrentFactions.RemoveAt(ExistingIndex);
+													RowData->Factions = FString::Join(CurrentFactions, TEXT(", "));
+													MarkModified();
+												}
 											}
 										}
 									})
@@ -544,6 +563,7 @@ TSharedRef<SWidget> SNPCTableRow::CreateFactionsCell()
 TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 {
 	// Combined MinLevel-MaxLevel display using simple text inputs (no slider)
+	// v4.8.1: Added confirmation prompts
 	return SNew(SBox)
 		.Padding(FMargin(2.0f, 2.0f))
 		[
@@ -564,13 +584,27 @@ TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 							NewValue = FMath::Clamp(NewValue, 1, 100);
 							if (NewValue != RowData->MinLevel)
 							{
-								RowData->MinLevel = NewValue;
-								// Ensure MaxLevel >= MinLevel
+								// Build confirmation message
+								FString Message = FString::Printf(TEXT("Change Min Level from %d to %d?"), RowData->MinLevel, NewValue);
 								if (RowData->MaxLevel < NewValue)
 								{
-									RowData->MaxLevel = NewValue;
+									Message += FString::Printf(TEXT("\n\nMax Level will also be adjusted from %d to %d (Min cannot exceed Max)."), RowData->MaxLevel, NewValue);
 								}
-								MarkModified();
+								Message += TEXT("\n\nThis will mark the NPC as modified.");
+
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::FromString(Message));
+
+								if (Result == EAppReturnType::Yes)
+								{
+									RowData->MinLevel = NewValue;
+									// Ensure MaxLevel >= MinLevel
+									if (RowData->MaxLevel < NewValue)
+									{
+										RowData->MaxLevel = NewValue;
+									}
+									MarkModified();
+								}
 							}
 						}
 					})
@@ -602,13 +636,27 @@ TSharedRef<SWidget> SNPCTableRow::CreateLevelRangeCell()
 							NewValue = FMath::Clamp(NewValue, 1, 100);
 							if (NewValue != RowData->MaxLevel)
 							{
-								RowData->MaxLevel = NewValue;
-								// Ensure MinLevel <= MaxLevel
+								// Build confirmation message
+								FString Message = FString::Printf(TEXT("Change Max Level from %d to %d?"), RowData->MaxLevel, NewValue);
 								if (RowData->MinLevel > NewValue)
 								{
-									RowData->MinLevel = NewValue;
+									Message += FString::Printf(TEXT("\n\nMin Level will also be adjusted from %d to %d (Max cannot be less than Min)."), RowData->MinLevel, NewValue);
 								}
-								MarkModified();
+								Message += TEXT("\n\nThis will mark the NPC as modified.");
+
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::FromString(Message));
+
+								if (Result == EAppReturnType::Yes)
+								{
+									RowData->MaxLevel = NewValue;
+									// Ensure MinLevel <= MaxLevel
+									if (RowData->MinLevel > NewValue)
+									{
+										RowData->MinLevel = NewValue;
+									}
+									MarkModified();
+								}
 							}
 						}
 					})
@@ -772,9 +820,16 @@ TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 										// Only add if not already present (prevents duplicates)
 										if (!bAlreadyExists)
 										{
-											Items.Add(AssetName);
-											RowData->DefaultItems = FString::Join(Items, TEXT(", "));
-											MarkModified();
+											// Confirmation prompt for adding item
+											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+												FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmAddItem", "Add item collection '{0}' to this NPC?\n\nThis will mark the NPC as modified."),
+													FText::FromString(AssetName)));
+											if (Result == EAppReturnType::Yes)
+											{
+												Items.Add(AssetName);
+												RowData->DefaultItems = FString::Join(Items, TEXT(", "));
+												MarkModified();
+											}
 										}
 									}
 									else
@@ -782,9 +837,16 @@ TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 										// Remove if exists
 										if (bAlreadyExists && ExistingIndex != INDEX_NONE)
 										{
-											Items.RemoveAt(ExistingIndex);
-											RowData->DefaultItems = FString::Join(Items, TEXT(", "));
-											MarkModified();
+											// Confirmation prompt for removing item
+											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+												FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmRemoveItem", "Remove item collection '{0}' from this NPC?\n\nThis will mark the NPC as modified."),
+													FText::FromString(AssetName)));
+											if (Result == EAppReturnType::Yes)
+											{
+												Items.RemoveAt(ExistingIndex);
+												RowData->DefaultItems = FString::Join(Items, TEXT(", "));
+												MarkModified();
+											}
 										}
 									}
 								})
@@ -1028,7 +1090,18 @@ TSharedRef<SWidget> SNPCTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value
 								return FText::FromString(TEXT("(None)"));
 							}
 							FString AssetName = ValuePtr->GetAssetName();
-							return FText::FromString(AssetName.IsEmpty() ? TEXT("(None)") : AssetName);
+							if (AssetName.IsEmpty())
+							{
+								return FText::FromString(TEXT("(None)"));
+							}
+							// v4.8.1: Extract short name - strip any path prefix and extension
+							// GetAssetName() may return "AssetName.AssetName" format
+							int32 DotIndex;
+							if (AssetName.FindChar(TEXT('.'), DotIndex))
+							{
+								AssetName = AssetName.Left(DotIndex);
+							}
+							return FText::FromString(AssetName);
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				]
@@ -2682,6 +2755,44 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 
 	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Built POI map with %d entries"), NPCToPOIMap.Num());
 
+	// TODO(review): POI preservation logic - verify this handles all edge cases:
+	// - POI deleted from level → preserved value should be discarded (validated below)
+	// - No level loaded → all preserved POIs discarded (ValidPOITags empty)
+	// - User manually assigns POI with no spawner → preserved on next sync if POI still exists
+	// Build set of ALL valid POI tags currently in level (for validating preserved POIs)
+	TSet<FString> ValidPOITags;
+	if (GEditor && GEditor->GetEditorWorldContext().World())
+	{
+		UWorld* World = GEditor->GetEditorWorldContext().World();
+		for (TActorIterator<APOIActor> POIIt(World); POIIt; ++POIIt)
+		{
+			APOIActor* POI = *POIIt;
+			if (POI && POI->POITag.IsValid())
+			{
+				ValidPOITags.Add(POI->POITag.ToString());
+			}
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Found %d valid POI tags in level"), ValidPOITags.Num());
+
+	// Preserve existing SpawnerPOI and Notes values before clearing rows
+	// (POI is level-specific, Notes is user-entered - neither stored in NPCDefinition)
+	TMap<FString, FString> PreservedPOIs;
+	TMap<FString, FString> PreservedNotes;
+	for (const FNPCTableRow& ExistingRow : TableData->Rows)
+	{
+		if (!ExistingRow.SpawnerPOI.IsEmpty())
+		{
+			PreservedPOIs.Add(ExistingRow.NPCName, ExistingRow.SpawnerPOI);
+		}
+		if (!ExistingRow.Notes.IsEmpty())
+		{
+			PreservedNotes.Add(ExistingRow.NPCName, ExistingRow.Notes);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Preserved %d POI values and %d Notes before sync"),
+		PreservedPOIs.Num(), PreservedNotes.Num());
+
 	// Clear existing rows and populate from assets
 	TableData->Rows.Empty();
 	int32 SyncedCount = 0;
@@ -2787,10 +2898,26 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 		{
 			UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] %s: DefaultItems = %s"), *Row.NPCName, *Row.DefaultItems);
 		}
-		// SpawnerPOI - from NPCSpawner -> nearest POI mapping
+		// SpawnerPOI - from NPCSpawner -> nearest POI mapping (level-specific)
+		// Priority: 1) From current level's NPCSpawner actors, 2) Preserved from previous sync
 		if (FString* POITag = NPCToPOIMap.Find(NPCDef))
 		{
 			Row.SpawnerPOI = *POITag;
+		}
+		else if (FString* PreservedPOI = PreservedPOIs.Find(Row.NPCName))
+		{
+			// Only restore preserved POI if it still exists in the current level
+			// (prevents stale POI references from deleted POIs)
+			if (ValidPOITags.Contains(*PreservedPOI))
+			{
+				Row.SpawnerPOI = *PreservedPOI;
+				UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] %s: Restored preserved POI: %s"), *Row.NPCName, *Row.SpawnerPOI);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] %s: Discarded stale POI '%s' (no longer exists in level)"),
+					*Row.NPCName, **PreservedPOI);
+			}
 		}
 
 		//=========================================================================
@@ -2807,7 +2934,11 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 		{
 			UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] %s: DefaultAppearance is NULL"), *Row.NPCName);
 		}
-		// Notes - user-added, not from assets
+		// Notes - user-added, not from assets (restore preserved value)
+		if (FString* PreservedNote = PreservedNotes.Find(Row.NPCName))
+		{
+			Row.Notes = *PreservedNote;
+		}
 
 		// Generated asset reference (internal tracking)
 		Row.GeneratedNPCDef = AssetData.GetSoftObjectPath();
