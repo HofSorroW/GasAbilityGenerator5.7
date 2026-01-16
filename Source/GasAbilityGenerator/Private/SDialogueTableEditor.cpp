@@ -2557,6 +2557,18 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 		// Try common asset paths
 		FString AssetName = DialogueID.ToString();
 		TArray<FString> SearchPaths = {
+			// =========================================================================
+			// TEST ONLY: Added /Game/TestData/ paths for table editor testing
+			// REVERT THIS AFTER TESTING - Remove the TestData paths below
+			// =========================================================================
+			FString::Printf(TEXT("/Game/TestData/Dialogues/%s.%s"), *AssetName, *AssetName),
+			FString::Printf(TEXT("/Game/TestData/Dialogues/Luca/%s.%s"), *AssetName, *AssetName),
+			FString::Printf(TEXT("/Game/TestData/Dialogues/Seth/%s.%s"), *AssetName, *AssetName),
+			FString::Printf(TEXT("/Game/TestData/Dialogues/Nirvana/%s.%s"), *AssetName, *AssetName),
+			FString::Printf(TEXT("/Game/TestData/%s.%s"), *AssetName, *AssetName),
+			// =========================================================================
+			// END TEST ONLY - Original paths below
+			// =========================================================================
 			FString::Printf(TEXT("/Game/Dialogues/%s.%s"), *AssetName, *AssetName),
 			FString::Printf(TEXT("/Game/Dialogues/DBP_%s.DBP_%s"), *AssetName, *AssetName),
 			FString::Printf(TEXT("/Game/%s.%s"), *AssetName, *AssetName),
