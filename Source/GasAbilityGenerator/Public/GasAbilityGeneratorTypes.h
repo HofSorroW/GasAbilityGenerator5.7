@@ -2079,6 +2079,50 @@ struct FManifestWeaponAttachmentSlot
 };
 
 /**
+ * v4.8.2: Pickup mesh data for dropped items
+ * Maps to FPickupMeshData - defines visual when item is dropped in world
+ */
+struct FManifestPickupMeshDataDefinition
+{
+	FString PickupMesh;                      // TSoftObjectPtr<UStaticMesh> - the 3D model
+	TArray<FString> PickupMeshMaterials;     // TArray<TSoftObjectPtr<UMaterialInterface>> - override materials
+
+	bool IsEmpty() const { return PickupMesh.IsEmpty() && PickupMeshMaterials.Num() == 0; }
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(PickupMesh);
+		for (const FString& Mat : PickupMeshMaterials)
+		{
+			Hash ^= GetTypeHash(Mat);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v4.8.2: Combat trace data for ranged weapons
+ * Maps to FCombatTraceData - configures how weapon detects hits
+ */
+struct FManifestCombatTraceDataDefinition
+{
+	float TraceDistance = 500.0f;    // How far the weapon shoots
+	float TraceRadius = 0.0f;        // Trace width (0 = line trace, >0 = sphere trace)
+	bool bTraceMulti = false;        // Hit multiple targets or just first
+
+	bool IsDefault() const { return TraceDistance == 500.0f && TraceRadius == 0.0f && !bTraceMulti; }
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(FMath::RoundToInt(TraceDistance * 10.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TraceRadius * 100.f)) << 16;
+		Hash ^= (bTraceMulti ? 1ULL : 0ULL) << 32;
+		return Hash;
+	}
+};
+
+/**
  * v4.8: Item stat definition for UI display
  * Maps to FNarrativeItemStat used in item tooltips
  */
@@ -2202,7 +2246,15 @@ struct FManifestEquippableItemDefinition
 	TArray<FManifestItemStatDefinition> Stats;  // TArray<FNarrativeItemStat> - UI stat display
 	TArray<FString> ActivitiesToGrant;          // TArray<TSubclassOf<UNPCActivity>> - AI activities from item
 
-	/** v4.8: Compute hash for change detection (excludes Folder - presentational only) */
+	// v4.8.2: Additional NarrativeItem properties
+	FString ItemWidgetOverride;                 // TSubclassOf<UNarrativeInventoryItemButton> - custom inventory UI
+	bool bWantsTickByDefault = false;           // Enable item ticking for per-frame updates
+	FManifestPickupMeshDataDefinition PickupMeshData;  // FPickupMeshData - visual when dropped in world
+
+	// v4.8.2: RangedWeaponItem trace configuration
+	FManifestCombatTraceDataDefinition TraceData;      // FCombatTraceData - how weapon detects hits
+
+	/** v4.8.2: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -2376,6 +2428,24 @@ struct FManifestEquippableItemDefinition
 			Hash ^= GetTypeHash(Activity);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
+
+		// v4.8.2: Hash additional NarrativeItem properties
+		Hash ^= GetTypeHash(ItemWidgetOverride);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= (bWantsTickByDefault ? 1ULL : 0ULL) << 16;
+		if (!PickupMeshData.IsEmpty())
+		{
+			Hash ^= PickupMeshData.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		// v4.8.2: Hash TraceData for RangedWeaponItem
+		if (!TraceData.IsDefault())
+		{
+			Hash ^= TraceData.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
 		return Hash;
 	}
 };

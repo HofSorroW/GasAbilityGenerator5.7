@@ -10834,6 +10834,150 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
+			// v4.8.2: Handle ItemWidgetOverride TSubclassOf<UNarrativeInventoryItemButton>
+			if (!Definition.ItemWidgetOverride.IsEmpty())
+			{
+				FClassProperty* WidgetOverrideProp = CastField<FClassProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("ItemWidgetOverride")));
+				if (WidgetOverrideProp)
+				{
+					UClass* WidgetClass = LoadClass<UObject>(nullptr, *Definition.ItemWidgetOverride);
+					if (!WidgetClass)
+					{
+						WidgetClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("%s_C"), *Definition.ItemWidgetOverride));
+					}
+					if (WidgetClass)
+					{
+						WidgetOverrideProp->SetPropertyValue_InContainer(CDO, WidgetClass);
+						LogGeneration(FString::Printf(TEXT("  Set ItemWidgetOverride: %s"), *Definition.ItemWidgetOverride));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load ItemWidgetOverride class: %s"), *Definition.ItemWidgetOverride));
+					}
+				}
+			}
+
+			// v4.8.2: Handle bWantsTickByDefault
+			if (Definition.bWantsTickByDefault)
+			{
+				FBoolProperty* TickProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bWantsTickByDefault")));
+				if (TickProp)
+				{
+					TickProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bWantsTickByDefault: true"));
+				}
+			}
+
+			// v4.8.2: Handle PickupMeshData FPickupMeshData struct
+			if (!Definition.PickupMeshData.IsEmpty())
+			{
+				FStructProperty* PickupMeshDataProp = CastField<FStructProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("PickupMeshData")));
+				if (PickupMeshDataProp)
+				{
+					void* StructPtr = PickupMeshDataProp->ContainerPtrToValuePtr<void>(CDO);
+
+					// Set PickupMesh (TSoftObjectPtr<UStaticMesh>)
+					if (!Definition.PickupMeshData.PickupMesh.IsEmpty())
+					{
+						FSoftObjectProperty* MeshProp = CastField<FSoftObjectProperty>(
+							PickupMeshDataProp->Struct->FindPropertyByName(TEXT("PickupMesh")));
+						if (MeshProp)
+						{
+							FSoftObjectPtr* SoftPtr = MeshProp->GetPropertyValuePtr_InContainer(StructPtr);
+							if (SoftPtr)
+							{
+								*SoftPtr = FSoftObjectPath(Definition.PickupMeshData.PickupMesh);
+								LogGeneration(FString::Printf(TEXT("  Set PickupMeshData.PickupMesh: %s"), *Definition.PickupMeshData.PickupMesh));
+							}
+						}
+					}
+
+					// Set PickupMeshMaterials (TArray<TSoftObjectPtr<UMaterialInterface>>)
+					if (Definition.PickupMeshData.PickupMeshMaterials.Num() > 0)
+					{
+						FArrayProperty* MaterialsArrayProp = CastField<FArrayProperty>(
+							PickupMeshDataProp->Struct->FindPropertyByName(TEXT("PickupMeshMaterials")));
+						if (MaterialsArrayProp)
+						{
+							FScriptArrayHelper ArrayHelper(MaterialsArrayProp, MaterialsArrayProp->ContainerPtrToValuePtr<void>(StructPtr));
+							ArrayHelper.EmptyValues();
+
+							for (const FString& MatPath : Definition.PickupMeshData.PickupMeshMaterials)
+							{
+								int32 NewIndex = ArrayHelper.AddValue();
+								FSoftObjectProperty* InnerProp = CastField<FSoftObjectProperty>(MaterialsArrayProp->Inner);
+								if (InnerProp)
+								{
+									FSoftObjectPtr* SoftPtr = reinterpret_cast<FSoftObjectPtr*>(ArrayHelper.GetRawPtr(NewIndex));
+									if (SoftPtr)
+									{
+										*SoftPtr = FSoftObjectPath(MatPath);
+									}
+								}
+							}
+							LogGeneration(FString::Printf(TEXT("  Set PickupMeshData.PickupMeshMaterials: %d materials"), Definition.PickupMeshData.PickupMeshMaterials.Num()));
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(TEXT("  [INFO] PickupMeshData property not found - logging for manual setup:"));
+					LogGeneration(FString::Printf(TEXT("    Mesh: %s"), *Definition.PickupMeshData.PickupMesh));
+					for (const FString& Mat : Definition.PickupMeshData.PickupMeshMaterials)
+					{
+						LogGeneration(FString::Printf(TEXT("    Material: %s"), *Mat));
+					}
+				}
+			}
+
+			// v4.8.2: Handle TraceData FCombatTraceData struct (for RangedWeaponItem)
+			if (!Definition.TraceData.IsDefault())
+			{
+				FStructProperty* TraceDataProp = CastField<FStructProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("TraceData")));
+				if (TraceDataProp)
+				{
+					void* StructPtr = TraceDataProp->ContainerPtrToValuePtr<void>(CDO);
+
+					// Set TraceDistance
+					FFloatProperty* DistanceProp = CastField<FFloatProperty>(
+						TraceDataProp->Struct->FindPropertyByName(TEXT("TraceDistance")));
+					if (DistanceProp)
+					{
+						DistanceProp->SetPropertyValue_InContainer(StructPtr, Definition.TraceData.TraceDistance);
+					}
+
+					// Set TraceRadius
+					FFloatProperty* RadiusProp = CastField<FFloatProperty>(
+						TraceDataProp->Struct->FindPropertyByName(TEXT("TraceRadius")));
+					if (RadiusProp)
+					{
+						RadiusProp->SetPropertyValue_InContainer(StructPtr, Definition.TraceData.TraceRadius);
+					}
+
+					// Set bTraceMulti
+					FBoolProperty* MultiProp = CastField<FBoolProperty>(
+						TraceDataProp->Struct->FindPropertyByName(TEXT("bTraceMulti")));
+					if (MultiProp)
+					{
+						MultiProp->SetPropertyValue_InContainer(StructPtr, Definition.TraceData.bTraceMulti);
+					}
+
+					LogGeneration(FString::Printf(TEXT("  Set TraceData: Distance=%.1f, Radius=%.1f, Multi=%s"),
+						Definition.TraceData.TraceDistance, Definition.TraceData.TraceRadius,
+						Definition.TraceData.bTraceMulti ? TEXT("true") : TEXT("false")));
+				}
+				else
+				{
+					LogGeneration(TEXT("  [INFO] TraceData property not found on class (not a RangedWeaponItem?) - logging for manual setup:"));
+					LogGeneration(FString::Printf(TEXT("    Distance: %.1f, Radius: %.1f, Multi: %s"),
+						Definition.TraceData.TraceDistance, Definition.TraceData.TraceRadius,
+						Definition.TraceData.bTraceMulti ? TEXT("true") : TEXT("false")));
+				}
+			}
+
 			CDO->MarkPackageDirty();
 		}
 	}

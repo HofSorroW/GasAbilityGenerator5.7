@@ -4602,6 +4602,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInStats = false;
 	FManifestItemStatDefinition CurrentStat;
 	bool bInActivitiesToGrant = false;
+	// v4.8.2: PickupMeshData and TraceData parsing states
+	bool bInPickupMeshData = false;
+	bool bInPickupMeshMaterials = false;
+	bool bInTraceData = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -4656,6 +4660,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInStats = false;
 			CurrentStat = FManifestItemStatDefinition();
 			bInActivitiesToGrant = false;
+			// v4.8.2: Reset pickup mesh and trace data states
+			bInPickupMeshData = false;
+			bInPickupMeshMaterials = false;
+			bInTraceData = false;
 		}
 		else if (bInItem)
 		{
@@ -5250,6 +5258,93 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					{
 						CurrentDef.ActivitiesToGrant.Add(ActivityName);
 					}
+				}
+			}
+			// v4.8.2: ItemWidgetOverride - custom inventory UI widget
+			else if (TrimmedLine.StartsWith(TEXT("item_widget_override:")))
+			{
+				CurrentDef.ItemWidgetOverride = GetLineValue(TrimmedLine);
+			}
+			// v4.8.2: bWantsTickByDefault - enable item ticking
+			else if (TrimmedLine.StartsWith(TEXT("wants_tick_by_default:")) || TrimmedLine.StartsWith(TEXT("tick_by_default:")))
+			{
+				CurrentDef.bWantsTickByDefault = GetLineValue(TrimmedLine).ToBool();
+			}
+			// v4.8.2: PickupMeshData section
+			else if (TrimmedLine.Equals(TEXT("pickup_mesh_data:")) || TrimmedLine.StartsWith(TEXT("pickup_mesh_data:")))
+			{
+				bInPickupMeshData = true;
+				bInPickupMeshMaterials = false;
+				// Reset other states
+				bInAbilities = false;
+				bInItemTags = false;
+				bInStats = false;
+				bInActivitiesToGrant = false;
+			}
+			// v4.8.2: PickupMeshData property parsing
+			else if (bInPickupMeshData)
+			{
+				if (TrimmedLine.StartsWith(TEXT("mesh:")) || TrimmedLine.StartsWith(TEXT("pickup_mesh:")))
+				{
+					CurrentDef.PickupMeshData.PickupMesh = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.Equals(TEXT("materials:")) || TrimmedLine.StartsWith(TEXT("materials:")))
+				{
+					bInPickupMeshMaterials = true;
+					// Check for inline array
+					FString InlineValue = GetLineValue(TrimmedLine);
+					if (!InlineValue.IsEmpty() && InlineValue.StartsWith(TEXT("[")))
+					{
+						// Parse inline array [Mat1, Mat2, ...]
+						FString ArrayContent = InlineValue.Mid(1);
+						ArrayContent.RemoveFromEnd(TEXT("]"));
+						TArray<FString> Materials;
+						ArrayContent.ParseIntoArray(Materials, TEXT(","));
+						for (FString& Mat : Materials)
+						{
+							Mat = Mat.TrimStartAndEnd();
+							if (!Mat.IsEmpty())
+							{
+								CurrentDef.PickupMeshData.PickupMeshMaterials.Add(Mat);
+							}
+						}
+						bInPickupMeshMaterials = false;
+					}
+				}
+				else if (bInPickupMeshMaterials && TrimmedLine.StartsWith(TEXT("- ")))
+				{
+					FString MatPath = TrimmedLine.Mid(2).TrimStartAndEnd();
+					if (!MatPath.IsEmpty())
+					{
+						CurrentDef.PickupMeshData.PickupMeshMaterials.Add(MatPath);
+					}
+				}
+			}
+			// v4.8.2: TraceData section (for RangedWeaponItem)
+			else if (TrimmedLine.Equals(TEXT("trace_data:")) || TrimmedLine.StartsWith(TEXT("trace_data:")))
+			{
+				bInTraceData = true;
+				// Reset other states
+				bInAbilities = false;
+				bInItemTags = false;
+				bInStats = false;
+				bInActivitiesToGrant = false;
+				bInPickupMeshData = false;
+			}
+			// v4.8.2: TraceData property parsing
+			else if (bInTraceData)
+			{
+				if (TrimmedLine.StartsWith(TEXT("distance:")) || TrimmedLine.StartsWith(TEXT("trace_distance:")))
+				{
+					CurrentDef.TraceData.TraceDistance = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("radius:")) || TrimmedLine.StartsWith(TEXT("trace_radius:")))
+				{
+					CurrentDef.TraceData.TraceRadius = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("multi:")) || TrimmedLine.StartsWith(TEXT("trace_multi:")))
+				{
+					CurrentDef.TraceData.bTraceMulti = GetLineValue(TrimmedLine).ToBool();
 				}
 			}
 
