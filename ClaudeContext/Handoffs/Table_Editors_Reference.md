@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-16
-**Status:** v4.6.1 UX Safety System
+**Status:** v4.9 (includes v4.8.4 safety audit)
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
@@ -12,7 +12,7 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 
 | Feature | Dialogue Table Editor | NPC Table Editor |
 |---------|----------------------|------------------|
-| **Columns** | 13 | 17 |
+| **Columns** | 14 (v4.7 added Status) | 17 |
 | **Primary Data** | Dialogue nodes | NPC definitions |
 | **Tree Structure** | Yes (Parent/NextNodes) | No (flat list) |
 | **Sequence Tracking** | Yes (Seq column) | No |
@@ -34,7 +34,45 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 | **Multi-Select Filter** | Yes | Yes |
 | **Text Filter** | Yes (live) | Yes (live) |
 | **Save/Load Table** | Yes | Yes |
-| **Implementation Size** | ~1300 lines | ~2700 lines |
+| **Re-entrancy Guard** | Yes (v4.8.4) | Yes (v4.8.4) |
+| **Button Disable on Busy** | Yes (v4.9) | Yes (v4.9) |
+| **Save-Fail Abort** | Yes (v4.8.4) | Yes (v4.8.4) |
+| **Version Compatibility Check** | Yes (v4.8.4) | Yes (v4.8.4) |
+| **Implementation Size** | ~1400 lines | ~2800 lines |
+
+---
+
+## Safety System (v4.8.4/v4.9)
+
+The table editors implement a comprehensive safety system to prevent data corruption and ensure UI truthfulness.
+
+### P1 — Truthfulness & Re-entrancy
+
+| Protection | Description | Implementation |
+|------------|-------------|----------------|
+| **Validation Invalidation on Edit** | Cell edits clear cached validation state | `MarkModified()` calls `InvalidateValidation()` |
+| **Validation Invalidation on Import/Sync** | Merged rows have stale validation cleared | Loop after `ApplySync()` calls `InvalidateValidation()` on all rows |
+| **Re-entrancy Guard** | Prevents double-click corruption | `bIsBusy` flag with `TGuardValue` pattern |
+| **Button Disable on Busy** | Visual feedback during operations | `.IsEnabled_Lambda([this]() { return !bIsBusy; })` |
+| **File-Locked Messaging** | Clear error when Excel has file open | "If the file is open in Excel, please close it and try again" |
+
+### P2 — Contract Correctness
+
+| Protection | Description | Implementation |
+|------------|-------------|----------------|
+| **Save-Fail Abort** | Generate aborts if pre-save fails | Checks `SavePackage()` return, shows error, returns early |
+| **FORMAT_VERSION Check** | Hard abort on newer file version | Compares `FormatVersion > FORMAT_VERSION`, shows "Please update plugin" |
+
+### Protected Operations
+
+Both editors apply `bIsBusy` guard and button disable to:
+- Validate
+- Generate
+- Export XLSX
+- Import XLSX
+- Sync XLSX (Dialogue only)
+- Sync from Assets
+- Apply to Assets
 
 ---
 
