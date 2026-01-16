@@ -1435,6 +1435,41 @@ void FGeneratorBase::ConfigureGameplayAbilityPolicies(
 		}
 	}
 
+	// v4.8: Set InputTag for NarrativeGameplayAbility
+	if (!Definition.InputTag.IsEmpty())
+	{
+		FStructProperty* InputTagProperty = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("InputTag")));
+		if (InputTagProperty && InputTagProperty->Struct && InputTagProperty->Struct->GetName() == TEXT("GameplayTag"))
+		{
+			FGameplayTag* TagPtr = InputTagProperty->ContainerPtrToValuePtr<FGameplayTag>(AbilityCDO);
+			if (TagPtr)
+			{
+				*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.InputTag), false);
+				if (TagPtr->IsValid())
+				{
+					LogGeneration(FString::Printf(TEXT("  Set InputTag: %s"), *Definition.InputTag));
+					bPoliciesModified = true;
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  Warning: Invalid InputTag: %s"), *Definition.InputTag));
+				}
+			}
+		}
+	}
+
+	// v4.8: Set bActivateAbilityOnGranted for NarrativeGameplayAbility
+	if (Definition.bActivateAbilityOnGranted)
+	{
+		FBoolProperty* ActivateOnGrantedProperty = CastField<FBoolProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("bActivateAbilityOnGranted")));
+		if (ActivateOnGrantedProperty)
+		{
+			ActivateOnGrantedProperty->SetPropertyValue_InContainer(AbilityCDO, true);
+			LogGeneration(TEXT("  Set bActivateAbilityOnGranted: true"));
+			bPoliciesModified = true;
+		}
+	}
+
 	// Save CDO changes without recompiling (avoids triggering event graph errors on existing assets)
 	if (bPoliciesModified)
 	{
@@ -9259,6 +9294,61 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 				DialogueTemplate->PlayerSpeakerInfo.NodeColor = FLinearColor(ParsedColor);
 			}
 
+			// v4.8: Configure party speaker info (for multiplayer dialogues)
+			if (Definition.PartySpeakerInfo.Num() > 0)
+			{
+				FArrayProperty* PartySpeakersArrayProp = CastField<FArrayProperty>(
+					DialogueTemplate->GetClass()->FindPropertyByName(TEXT("PartySpeakerInfo")));
+				if (PartySpeakersArrayProp)
+				{
+					FScriptArrayHelper ArrayHelper(PartySpeakersArrayProp, PartySpeakersArrayProp->ContainerPtrToValuePtr<void>(DialogueTemplate));
+					ArrayHelper.EmptyValues();
+
+					for (const auto& PartySpeakerDef : Definition.PartySpeakerInfo)
+					{
+						int32 NewIndex = ArrayHelper.AddValue();
+						void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+
+						// FPlayerSpeakerInfo has SpeakerID and NodeColor like FManifestPlayerSpeakerDefinition
+						FStructProperty* StructProp = CastField<FStructProperty>(PartySpeakersArrayProp->Inner);
+						if (StructProp)
+						{
+							// Set SpeakerID
+							FNameProperty* SpeakerIDProp = CastField<FNameProperty>(StructProp->Struct->FindPropertyByName(TEXT("SpeakerID")));
+							if (SpeakerIDProp)
+							{
+								SpeakerIDProp->SetPropertyValue_InContainer(ElementPtr, FName(*PartySpeakerDef.SpeakerID));
+							}
+
+							// Set NodeColor
+							if (!PartySpeakerDef.NodeColor.IsEmpty())
+							{
+								FStructProperty* NodeColorProp = CastField<FStructProperty>(StructProp->Struct->FindPropertyByName(TEXT("NodeColor")));
+								if (NodeColorProp)
+								{
+									FColor ParsedColor = FColor::FromHex(PartySpeakerDef.NodeColor);
+									FLinearColor* ColorPtr = NodeColorProp->ContainerPtrToValuePtr<FLinearColor>(ElementPtr);
+									if (ColorPtr)
+									{
+										*ColorPtr = FLinearColor(ParsedColor);
+									}
+								}
+							}
+						}
+					}
+					LogGeneration(FString::Printf(TEXT("  Configured %d party speakers"), Definition.PartySpeakerInfo.Num()));
+				}
+				else
+				{
+					LogGeneration(TEXT("  [INFO] PartySpeakerInfo property not found on UDialogue - logging for manual setup:"));
+					for (const auto& PartySpeakerDef : Definition.PartySpeakerInfo)
+					{
+						LogGeneration(FString::Printf(TEXT("    SpeakerID: %s, NodeColor: %s"),
+							*PartySpeakerDef.SpeakerID, *PartySpeakerDef.NodeColor));
+					}
+				}
+			}
+
 			LogGeneration(FString::Printf(TEXT("  Configured %d speakers + player speaker"), Definition.Speakers.Num()));
 		}
 		else
@@ -10617,6 +10707,129 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 					for (const FString& AbilityName : Definition.EquipmentAbilities)
 					{
 						LogGeneration(FString::Printf(TEXT("    %s"), *AbilityName));
+					}
+				}
+			}
+
+			// v4.8: Handle Stats TArray<FNarrativeItemStat>
+			if (Definition.Stats.Num() > 0)
+			{
+				FArrayProperty* StatsArrayProp = CastField<FArrayProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("Stats")));
+				if (StatsArrayProp)
+				{
+					FScriptArrayHelper ArrayHelper(StatsArrayProp, StatsArrayProp->ContainerPtrToValuePtr<void>(CDO));
+					ArrayHelper.EmptyValues();
+
+					FStructProperty* StructProp = CastField<FStructProperty>(StatsArrayProp->Inner);
+					if (StructProp)
+					{
+						for (const FManifestItemStatDefinition& StatDef : Definition.Stats)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+
+							// Set StatName (FText)
+							FTextProperty* StatNameProp = CastField<FTextProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatName")));
+							if (StatNameProp)
+							{
+								StatNameProp->SetPropertyValue_InContainer(ElementPtr, FText::FromString(StatDef.StatName));
+							}
+
+							// Set StatValue (float)
+							FFloatProperty* StatValueProp = CastField<FFloatProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatValue")));
+							if (StatValueProp)
+							{
+								StatValueProp->SetPropertyValue_InContainer(ElementPtr, StatDef.StatValue);
+							}
+
+							// Set StatIcon (TSoftObjectPtr<UTexture2D>)
+							if (!StatDef.StatIcon.IsEmpty())
+							{
+								FSoftObjectProperty* StatIconProp = CastField<FSoftObjectProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatIcon")));
+								if (StatIconProp)
+								{
+									FSoftObjectPtr* SoftPtr = StatIconProp->GetPropertyValuePtr_InContainer(ElementPtr);
+									if (SoftPtr)
+									{
+										*SoftPtr = FSoftObjectPath(StatDef.StatIcon);
+									}
+								}
+							}
+
+							LogGeneration(FString::Printf(TEXT("  Added Stat: %s = %.2f"), *StatDef.StatName, StatDef.StatValue));
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(TEXT("  [INFO] Stats property not found on UNarrativeItem - logging for manual setup:"));
+					for (const FManifestItemStatDefinition& StatDef : Definition.Stats)
+					{
+						LogGeneration(FString::Printf(TEXT("    %s: %.2f (icon: %s)"), *StatDef.StatName, StatDef.StatValue, *StatDef.StatIcon));
+					}
+				}
+			}
+
+			// v4.8: Handle ActivitiesToGrant TArray<TSubclassOf<UNPCActivity>>
+			if (Definition.ActivitiesToGrant.Num() > 0)
+			{
+				FArrayProperty* ActivitiesArrayProp = CastField<FArrayProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("ActivitiesToGrant")));
+				if (ActivitiesArrayProp)
+				{
+					FScriptArrayHelper ArrayHelper(ActivitiesArrayProp, ActivitiesArrayProp->ContainerPtrToValuePtr<void>(CDO));
+					ArrayHelper.EmptyValues();
+
+					for (const FString& ActivityName : Definition.ActivitiesToGrant)
+					{
+						// Resolve activity class
+						UClass* ActivityClass = FindObject<UClass>(nullptr, *ActivityName);
+						if (!ActivityClass)
+						{
+							ActivityClass = LoadClass<UObject>(nullptr, *ActivityName);
+						}
+						if (!ActivityClass)
+						{
+							// Try with _C suffix for blueprint classes
+							ActivityClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("%s_C"), *ActivityName));
+						}
+						if (!ActivityClass)
+						{
+							// Try common paths
+							TArray<FString> SearchPaths = {
+								FString::Printf(TEXT("%s/AI/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName),
+								FString::Printf(TEXT("/Game/AI/Activities/%s.%s_C"), *ActivityName, *ActivityName)
+							};
+							for (const FString& SearchPath : SearchPaths)
+							{
+								ActivityClass = LoadClass<UObject>(nullptr, *SearchPath);
+								if (ActivityClass) break;
+							}
+						}
+
+						if (ActivityClass)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							FClassProperty* InnerProp = CastField<FClassProperty>(ActivitiesArrayProp->Inner);
+							if (InnerProp)
+							{
+								InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), ActivityClass);
+							}
+							LogGeneration(FString::Printf(TEXT("  Added ActivitiesToGrant: %s"), *ActivityName));
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve Activity class: %s"), *ActivityName));
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(TEXT("  [INFO] ActivitiesToGrant property not found - logging for manual setup:"));
+					for (const FString& ActivityName : Definition.ActivitiesToGrant)
+					{
+						LogGeneration(FString::Printf(TEXT("    %s"), *ActivityName));
 					}
 				}
 			}
@@ -12200,6 +12413,61 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	NPCDef->MaxLevel = Definition.MaxLevel;
 	NPCDef->bAllowMultipleInstances = Definition.bAllowMultipleInstances;
 	NPCDef->bIsVendor = Definition.bIsVendor;
+
+	// v4.8: Set UniqueNPCGUID (auto-generate if not provided and bAllowMultipleInstances is false)
+	if (!Definition.UniqueNPCGUID.IsEmpty())
+	{
+		FGuid ParsedGuid;
+		if (FGuid::Parse(Definition.UniqueNPCGUID, ParsedGuid))
+		{
+			NPCDef->UniqueNPCGUID = ParsedGuid;
+			LogGeneration(FString::Printf(TEXT("  Set UniqueNPCGUID: %s"), *Definition.UniqueNPCGUID));
+		}
+	}
+	else if (!Definition.bAllowMultipleInstances)
+	{
+		// Auto-generate a GUID for unique NPCs that don't have one specified
+		NPCDef->UniqueNPCGUID = FGuid::NewGuid();
+		LogGeneration(FString::Printf(TEXT("  Auto-generated UniqueNPCGUID: %s"), *NPCDef->UniqueNPCGUID.ToString()));
+	}
+
+	// v4.8: Set TriggerSets array (inherited from CharacterDefinition)
+	if (Definition.TriggerSets.Num() > 0)
+	{
+		FArrayProperty* TriggerSetsProperty = CastField<FArrayProperty>(NPCDef->GetClass()->FindPropertyByName(TEXT("TriggerSets")));
+		if (TriggerSetsProperty)
+		{
+			FScriptArrayHelper ArrayHelper(TriggerSetsProperty, TriggerSetsProperty->ContainerPtrToValuePtr<void>(NPCDef));
+			ArrayHelper.EmptyValues();
+
+			for (const FString& TriggerSetName : Definition.TriggerSets)
+			{
+				FString TriggerSetPath = TriggerSetName;
+				if (TriggerSetPath.StartsWith(TEXT("/")))
+				{
+					// Absolute path - use directly
+				}
+				else if (!TriggerSetPath.Contains(TEXT("/")))
+				{
+					// Search common locations
+					TriggerSetPath = FString::Printf(TEXT("%s/TriggerSets/%s"), *GetProjectRoot(), *TriggerSetName);
+				}
+				else
+				{
+					TriggerSetPath = FString::Printf(TEXT("%s/%s"), *GetProjectRoot(), *TriggerSetName);
+				}
+
+				int32 NewIndex = ArrayHelper.AddValue();
+				FSoftObjectProperty* InnerProp = CastField<FSoftObjectProperty>(TriggerSetsProperty->Inner);
+				if (InnerProp)
+				{
+					FSoftObjectPtr* SoftPtr = reinterpret_cast<FSoftObjectPtr*>(ArrayHelper.GetRawPtr(NewIndex));
+					*SoftPtr = FSoftObjectPath(TriggerSetPath);
+					LogGeneration(FString::Printf(TEXT("  Added TriggerSet: %s"), *TriggerSetPath));
+				}
+			}
+		}
+	}
 
 	// v2.6.0: Set NPCClassPath via TSoftClassPtr
 	// v4.2.12: Store WITHOUT "_C" suffix - UE resolves Blueprint class internally

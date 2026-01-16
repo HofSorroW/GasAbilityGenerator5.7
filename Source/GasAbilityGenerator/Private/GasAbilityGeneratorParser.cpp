@@ -1045,6 +1045,23 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				bInEventGraph = false;
 				CurrentTagArray = ECurrentTagArray::None;
 			}
+			// v4.8: Parse NarrativeGameplayAbility properties
+			else if (TrimmedLine.StartsWith(TEXT("input_tag:")))
+			{
+				CurrentDef.InputTag = GetLineValue(TrimmedLine);
+				bInTags = false;
+				bInVariables = false;
+				bInEventGraph = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("activate_on_granted:")))
+			{
+				CurrentDef.bActivateAbilityOnGranted = GetLineValue(TrimmedLine).ToBool();
+				bInTags = false;
+				bInVariables = false;
+				bInEventGraph = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
 			else if (TrimmedLine.Equals(TEXT("tags:")) || TrimmedLine.StartsWith(TEXT("tags:")))
 			{
 				// Save pending variable before switching sections
@@ -3817,6 +3834,9 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	bool bInSpeakers = false;  // v3.2: Speaker array parsing
 	bool bInOwnedTags = false;  // v3.2: Speaker owned tags array
 	bool bInPlayerSpeaker = false;  // v4.0: Player speaker parsing
+	// v4.8: Party speaker info parsing
+	bool bInPartySpeakerInfo = false;
+	FManifestPlayerSpeakerDefinition CurrentPartySpeaker;
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestDialogueSpeakerDefinition CurrentSpeaker;  // v3.2: Current speaker being parsed
@@ -3852,6 +3872,11 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			if (bInSpeakers && !CurrentSpeaker.NPCDefinition.IsEmpty())
 			{
 				CurrentDef.Speakers.Add(CurrentSpeaker);
+			}
+			// v4.8: Save any pending party speaker
+			if (bInPartySpeakerInfo && !CurrentPartySpeaker.SpeakerID.IsEmpty() && CurrentPartySpeaker.SpeakerID != TEXT("Player"))
+			{
+				CurrentDef.PartySpeakerInfo.Add(CurrentPartySpeaker);
 			}
 			// v3.7: Save pending dialogue tree node
 			if (bInDialogueTree && bInDialogueNodes && !CurrentDialogueNode.Id.IsEmpty())
@@ -4431,6 +4456,47 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 					CurrentDef.PlayerSpeaker.SelectingReplyShot = GetLineValue(TrimmedLine);
 				}
 			}
+			// v4.8: Party speaker info array (for multiplayer dialogues)
+			else if (TrimmedLine.Equals(TEXT("party_speaker_info:")) || TrimmedLine.StartsWith(TEXT("party_speaker_info:")))
+			{
+				bInSpeakers = false;
+				bInOwnedTags = false;
+				bInPlayerSpeaker = false;
+				bInPartySpeakerInfo = true;
+				CurrentPartySpeaker = FManifestPlayerSpeakerDefinition();
+			}
+			else if (bInPartySpeakerInfo)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- speaker_id:")) || TrimmedLine.StartsWith(TEXT("- ")))
+				{
+					// Save previous party speaker if valid
+					if (!CurrentPartySpeaker.SpeakerID.IsEmpty() && CurrentPartySpeaker.SpeakerID != TEXT("Player"))
+					{
+						CurrentDef.PartySpeakerInfo.Add(CurrentPartySpeaker);
+					}
+					CurrentPartySpeaker = FManifestPlayerSpeakerDefinition();
+					if (TrimmedLine.StartsWith(TEXT("- speaker_id:")))
+					{
+						CurrentPartySpeaker.SpeakerID = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else
+					{
+						CurrentPartySpeaker.SpeakerID = GetLineValue(TrimmedLine.Mid(2));
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("speaker_id:")))
+				{
+					CurrentPartySpeaker.SpeakerID = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("node_color:")))
+				{
+					CurrentPartySpeaker.NodeColor = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("selecting_reply_shot:")))
+				{
+					CurrentPartySpeaker.SelectingReplyShot = GetLineValue(TrimmedLine);
+				}
+			}
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
 				// Save pending speaker when entering variables
@@ -4532,6 +4598,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInMorphNames = false;
 	bool bInEquipmentEffectValues = false;
 	bool bInEquipmentAbilities = false;  // v4.2
+	// v4.8: Stats and ActivitiesToGrant parsing states
+	bool bInStats = false;
+	FManifestItemStatDefinition CurrentStat;
+	bool bInActivitiesToGrant = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -4582,6 +4652,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInMorphNames = false;
 			bInEquipmentEffectValues = false;
 			bInEquipmentAbilities = false;  // v4.2
+			// v4.8: Reset stats and activities states
+			bInStats = false;
+			CurrentStat = FManifestItemStatDefinition();
+			bInActivitiesToGrant = false;
 		}
 		else if (bInItem)
 		{
@@ -5090,6 +5164,91 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					if (!AbilityName.IsEmpty())
 					{
 						CurrentDef.EquipmentAbilities.Add(AbilityName);
+					}
+				}
+			}
+			// v4.8: Stats section (UI stat display)
+			else if (TrimmedLine.Equals(TEXT("stats:")) || TrimmedLine.StartsWith(TEXT("stats:")))
+			{
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInClothingMesh = false;
+				bInEquipmentEffectValues = false;
+				bInEquipmentAbilities = false;
+				bInStats = true;
+				bInActivitiesToGrant = false;
+			}
+			// v4.8: Stats array item parsing
+			else if (bInStats)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- stat_name:")) || TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					// Save previous stat if valid
+					if (!CurrentStat.StatName.IsEmpty())
+					{
+						CurrentDef.Stats.Add(CurrentStat);
+					}
+					CurrentStat = FManifestItemStatDefinition();
+					CurrentStat.StatName = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("stat_value:")) || TrimmedLine.StartsWith(TEXT("value:")))
+				{
+					CurrentStat.StatValue = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("stat_icon:")) || TrimmedLine.StartsWith(TEXT("icon:")))
+				{
+					CurrentStat.StatIcon = GetLineValue(TrimmedLine);
+				}
+			}
+			// v4.8: ActivitiesToGrant section
+			else if (TrimmedLine.Equals(TEXT("activities_to_grant:")) || TrimmedLine.StartsWith(TEXT("activities_to_grant:")))
+			{
+				// Save pending stat before switching sections
+				if (bInStats && !CurrentStat.StatName.IsEmpty())
+				{
+					CurrentDef.Stats.Add(CurrentStat);
+					CurrentStat = FManifestItemStatDefinition();
+				}
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInClothingMesh = false;
+				bInEquipmentEffectValues = false;
+				bInEquipmentAbilities = false;
+				bInStats = false;
+				bInActivitiesToGrant = true;
+				// Handle inline array format [BPA_Activity1, BPA_Activity2]
+				FString Value = GetLineValue(TrimmedLine);
+				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
+				{
+					FString ArrayContent = Value.Mid(1, Value.Len() - 2);
+					TArray<FString> Activities;
+					ArrayContent.ParseIntoArray(Activities, TEXT(","), true);
+					for (const FString& Activity : Activities)
+					{
+						CurrentDef.ActivitiesToGrant.Add(Activity.TrimStartAndEnd());
+					}
+					bInActivitiesToGrant = false;
+				}
+			}
+			// v4.8: ActivitiesToGrant array items
+			else if (bInActivitiesToGrant)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- ")))
+				{
+					FString ActivityName = TrimmedLine.Mid(2).TrimStartAndEnd();
+					if (!ActivityName.IsEmpty())
+					{
+						CurrentDef.ActivitiesToGrant.Add(ActivityName);
 					}
 				}
 			}
@@ -6377,6 +6536,35 @@ void FGasAbilityGeneratorParser::ParseNPCDefinitions(const TArray<FString>& Line
 			else if (TrimmedLine.StartsWith(TEXT("is_vendor:")))
 			{
 				CurrentDef.bIsVendor = GetLineValue(TrimmedLine).ToBool();
+			}
+			// v4.8: UniqueNPCGUID for save system
+			else if (TrimmedLine.StartsWith(TEXT("unique_npc_guid:")))
+			{
+				CurrentDef.UniqueNPCGUID = GetLineValue(TrimmedLine);
+			}
+			// v4.8: TriggerSets array (inherited from CharacterDefinition)
+			else if (TrimmedLine.StartsWith(TEXT("trigger_sets:")))
+			{
+				// Parse inline array [TS_Set1, TS_Set2] or single value
+				FString TriggerSetsValue = GetLineValue(TrimmedLine);
+				if (TriggerSetsValue.StartsWith(TEXT("[")) && TriggerSetsValue.EndsWith(TEXT("]")))
+				{
+					TriggerSetsValue = TriggerSetsValue.Mid(1, TriggerSetsValue.Len() - 2);
+					TArray<FString> TriggerSetsArray;
+					TriggerSetsValue.ParseIntoArray(TriggerSetsArray, TEXT(","));
+					for (FString& TriggerSet : TriggerSetsArray)
+					{
+						TriggerSet = TriggerSet.TrimStartAndEnd();
+						if (!TriggerSet.IsEmpty())
+						{
+							CurrentDef.TriggerSets.Add(TriggerSet);
+						}
+					}
+				}
+				else if (!TriggerSetsValue.IsEmpty())
+				{
+					CurrentDef.TriggerSets.Add(TriggerSetsValue);
+				}
 			}
 			// v3.3: Dialogue properties
 			else if (TrimmedLine.StartsWith(TEXT("dialogue:")))

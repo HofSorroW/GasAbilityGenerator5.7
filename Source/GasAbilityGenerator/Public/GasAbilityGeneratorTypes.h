@@ -703,6 +703,7 @@ struct FManifestEventGraphDefinition
 
 /**
  * Gameplay ability definition
+ * v4.8: Added InputTag and bActivateAbilityOnGranted for input binding automation
  */
 struct FManifestGameplayAbilityDefinition
 {
@@ -713,6 +714,10 @@ struct FManifestGameplayAbilityDefinition
 	FString NetExecutionPolicy = TEXT("ServerOnly");
 	FString CooldownGameplayEffectClass;
 	FManifestAbilityTagsDefinition Tags;
+
+	// v4.8: NarrativeGameplayAbility properties
+	FString InputTag;                    // Maps ability to input action (Narrative.Input.*)
+	bool bActivateAbilityOnGranted = false;  // Auto-activate when ability is granted
 
 	// Variables defined on the ability Blueprint
 	TArray<FManifestActorVariableDefinition> Variables;
@@ -725,7 +730,7 @@ struct FManifestGameplayAbilityDefinition
 	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
 	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
 
-	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	/** v4.8: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -735,6 +740,10 @@ struct FManifestGameplayAbilityDefinition
 		Hash ^= GetTypeHash(NetExecutionPolicy) << 12;
 		Hash ^= GetTypeHash(CooldownGameplayEffectClass) << 16;
 		Hash ^= Tags.ComputeHash() << 20;
+
+		// v4.8: Include new NarrativeGameplayAbility properties
+		Hash ^= static_cast<uint64>(GetTypeHash(InputTag)) << 32;
+		Hash ^= (bActivateAbilityOnGranted ? 1ULL : 0ULL) << 40;
 
 		// Variables
 		for (const auto& Var : Variables)
@@ -1832,10 +1841,13 @@ struct FManifestDialogueBlueprintDefinition
 	// v4.0: Player speaker configuration
 	FManifestPlayerSpeakerDefinition PlayerSpeaker;
 
+	// v4.8: Party speaker configurations (for multiplayer dialogues)
+	TArray<FManifestPlayerSpeakerDefinition> PartySpeakerInfo;
+
 	// v3.7: Full dialogue tree
 	FManifestDialogueTreeDefinition DialogueTree;
 
-	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
+	/** v4.8: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1869,6 +1881,12 @@ struct FManifestDialogueBlueprintDefinition
 		}
 		// v4.0: Include player speaker in hash
 		Hash ^= PlayerSpeaker.ComputeHash() << 40;
+		// v4.8: Include party speaker info in hash
+		for (const auto& PartySpeaker : PartySpeakerInfo)
+		{
+			Hash ^= PartySpeaker.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
 		// v3.7: Include dialogue tree in hash
 		Hash ^= DialogueTree.ComputeHash() << 44;
 		return Hash;
@@ -2061,11 +2079,31 @@ struct FManifestWeaponAttachmentSlot
 };
 
 /**
+ * v4.8: Item stat definition for UI display
+ * Maps to FNarrativeItemStat used in item tooltips
+ */
+struct FManifestItemStatDefinition
+{
+	FString StatName;        // Display name (e.g., "Damage", "Fire Rate")
+	float StatValue = 0.0f;  // Stat value
+	FString StatIcon;        // TSoftObjectPtr<UTexture2D> - icon path
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(StatName);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(StatValue * 1000.f)) << 8;
+		Hash ^= GetTypeHash(StatIcon) << 16;
+		return Hash;
+	}
+};
+
+/**
  * Equippable item definition
  * v3.3: Enhanced with full NarrativeItem + EquippableItem property support
  * v3.4: Added WeaponItem and RangedWeaponItem property support
  * v3.9.8: Added ClothingMesh for EquippableItem_Clothing support
  * v3.10: Added WeaponAttachmentSlots TMap support
+ * v4.8: Added Stats array and ActivitiesToGrant for NarrativeItem
  */
 struct FManifestEquippableItemDefinition
 {
@@ -2160,7 +2198,11 @@ struct FManifestEquippableItemDefinition
 	// v4.2: Equipment abilities - granted when item is equipped, removed when unequipped
 	TArray<FString> EquipmentAbilities;  // TArray<TSubclassOf<UNarrativeGameplayAbility>>
 
-	/** v3.9.12: Compute hash for change detection (excludes Folder - presentational only) */
+	// v4.8: NarrativeItem additional properties
+	TArray<FManifestItemStatDefinition> Stats;  // TArray<FNarrativeItemStat> - UI stat display
+	TArray<FString> ActivitiesToGrant;          // TArray<TSubclassOf<UNPCActivity>> - AI activities from item
+
+	/** v4.8: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -2320,6 +2362,18 @@ struct FManifestEquippableItemDefinition
 		for (const FString& Ability : EquipmentAbilities)
 		{
 			Hash ^= GetTypeHash(Ability);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+
+		// v4.8: Hash stats array and activities to grant
+		for (const auto& Stat : Stats)
+		{
+			Hash ^= Stat.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const FString& Activity : ActivitiesToGrant)
+		{
+			Hash ^= GetTypeHash(Activity);
 			Hash = (Hash << 3) | (Hash >> 61);
 		}
 		return Hash;
@@ -2726,6 +2780,7 @@ struct FManifestLootTableRollDefinition
  * NPC definition - maps to UNPCDefinition data asset
  * v3.3: Enhanced with full Narrative Pro property support
  * v3.9.5: Added DefaultItemLoadout and TradingItemLoadout arrays
+ * v4.8: Added UniqueNPCGUID and TriggerSets support
  */
 struct FManifestNPCDefinitionDefinition
 {
@@ -2740,6 +2795,12 @@ struct FManifestNPCDefinitionDefinition
 	int32 MaxLevel = 1;
 	bool bAllowMultipleInstances = true;
 	bool bIsVendor = false;
+
+	// v4.8: Unique NPC GUID for save system (auto-generated if bAllowMultipleInstances=false)
+	FString UniqueNPCGUID;               // FGuid - save system identifier for unique NPCs
+
+	// v4.8: Trigger sets (inherited from CharacterDefinition)
+	TArray<FString> TriggerSets;         // TArray<TSoftObjectPtr<UTriggerSet>>
 
 	// v3.3: Dialogue properties
 	FString Dialogue;                    // TSoftClassPtr<UDialogue> - main NPC dialogue
@@ -2771,7 +2832,7 @@ struct FManifestNPCDefinitionDefinition
 	TArray<FManifestLootTableRollDefinition> DefaultItemLoadout;  // Items granted at spawn (from CharacterDefinition)
 	TArray<FManifestLootTableRollDefinition> TradingItemLoadout;  // Vendor inventory items (NPCDefinition only)
 
-	/** v3.9.5: Compute hash for change detection (excludes Folder - presentational only) */
+	/** v4.8: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -2785,6 +2846,14 @@ struct FManifestNPCDefinitionDefinition
 		Hash ^= static_cast<uint64>(MaxLevel) << 32;
 		Hash ^= (bAllowMultipleInstances ? 1ULL : 0ULL) << 40;
 		Hash ^= (bIsVendor ? 1ULL : 0ULL) << 41;
+
+		// v4.8: Hash UniqueNPCGUID and TriggerSets
+		Hash ^= static_cast<uint64>(GetTypeHash(UniqueNPCGUID)) << 45;
+		for (const FString& TriggerSet : TriggerSets)
+		{
+			Hash ^= GetTypeHash(TriggerSet);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
 
 		// v3.3: Hash new properties (using rotation to avoid overflow)
 		Hash ^= GetTypeHash(Dialogue);
