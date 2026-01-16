@@ -243,7 +243,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.6)
+## GasAbilityGenerator Plugin (v4.6.1)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -273,7 +273,10 @@ Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 | `GasAbilityGeneratorSpecs.h` | Public/ | Spec handling utilities |
 | `SNPCTableEditor` | NPCTableEditor/ | NPC table editor UI |
 | `SQuestEditor` | QuestEditor/ | Quest visual editor UI |
-| `SDialogueTableEditor` | DialogueTableEditor/ | Dialogue table editor UI |
+| `SDialogueTableEditor` | SDialogueTableEditor.cpp/h | Dialogue table editor UI |
+| `FDialogueTableConverter` | DialogueTableConverter.cpp/h | XLSX ↔ DialogueBlueprint conversion |
+| `FDialogueTableValidator` | DialogueTableValidator.cpp/h | Token validation, error detection |
+| XLSX Support | XLSXSupport/ | OpenXLSX integration for Excel files |
 
 **Naming Convention:** All structs use `FManifest*` prefix (e.g., `FManifestData`, `FManifestGameplayAbilityDefinition`).
 
@@ -882,7 +885,14 @@ When looking for classes/enums, the plugin searches:
 
 | File | Purpose |
 |------|---------|
-| `Handoffs/*.md` | All implementation guides and session handoffs |
+| `Handoffs/Table_Editors_Reference.md` | NPC/Dialogue editor patterns, XLSX sync, Validated Tokens |
+| `Handoffs/v4.6_UX_Safety_System_ProcessMap.md` | Auto-save, soft delete, validation gate |
+| `Handoffs/Sync_System_Design_v4.11.md` | 3-way sync architecture |
+| `Handoffs/Architecture_Reference.md` | Plugin architecture overview |
+| `Handoffs/Generator_Implementation_Reference.md` | Generator patterns and techniques |
+| `Handoffs/Gap_Analysis_NarrativePro_v1.md` | Narrative Pro coverage analysis |
+| `Handoffs/Completed_Automation_Reference.md` | Automation status by asset type |
+| `Handoffs/TSoftClassPtr_Investigation.md` | Class pointer resolution research |
 | `manifest.yaml` | Single source of truth for all assets |
 | `Father_Ability_Generator_Plugin_v7_8_2_Specification.md` | Plugin architecture and workflows |
 | `Father_Companion_Technical_Reference_v6_0.md` | GAS patterns, tags, Narrative Pro integration |
