@@ -3186,10 +3186,12 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 				FNPCMergeResult MergeResult = FNPCXLSXSyncEngine::ApplySync(SyncResult);
 
 				// v4.8.4: Invalidate validation on all merged rows
+				// v4.11: Update LastSyncedHash after sync apply
 				// ApplySync copies UE rows via struct copy, preserving stale validation state
 				for (FNPCTableRow& Row : MergeResult.MergedRows)
 				{
 					Row.InvalidateValidation();
+					Row.LastSyncedHash = Row.ComputeSyncHash();
 				}
 
 				// Replace table data with merged rows

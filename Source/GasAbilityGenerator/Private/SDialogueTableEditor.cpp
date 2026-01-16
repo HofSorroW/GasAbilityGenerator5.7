@@ -2671,9 +2671,11 @@ FReply SDialogueTableEditor::OnImportXLSXClicked()
 		FDialogueMergeResult MergeResult = FDialogueXLSXSyncEngine::ApplySync(SyncResult);
 
 		// v4.8.4: Invalidate validation on all merged rows
+		// v4.11: Update LastSyncedHash after sync apply
 		for (FDialogueTableRow& Row : MergeResult.MergedRows)
 		{
 			Row.InvalidateValidation();
+			Row.LastSyncedHash = Row.ComputeSyncHash();
 		}
 
 		// Update TableData
@@ -2781,10 +2783,12 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 		FDialogueMergeResult MergeResult = FDialogueXLSXSyncEngine::ApplySync(SyncResult);
 
 		// v4.8.4: Invalidate validation on all merged rows
+		// v4.11: Update LastSyncedHash after sync apply
 		// ApplySync copies UE rows via struct copy, preserving stale validation state
 		for (FDialogueTableRow& Row : MergeResult.MergedRows)
 		{
 			Row.InvalidateValidation();
+			Row.LastSyncedHash = Row.ComputeSyncHash();
 		}
 
 		// Update TableData
