@@ -1,5 +1,6 @@
 // NPCTableEditorTypes.h
-// NPC Table Editor - Data types (v4.6 - generation tracking, soft delete)
+// NPC Table Editor - Data types (v4.11 - LastSyncedHash for 3-way XLSX sync)
+// v4.6: generation tracking, soft delete
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #pragma once
@@ -171,6 +172,22 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	/** Hash of inputs used for validation (staleness detection) */
 	UPROPERTY(Transient)
 	uint32 ValidationInputHash = 0;
+
+	//=========================================================================
+	// v4.11: XLSX Sync Hash (persisted - for 3-way merge comparison)
+	// Updated ONLY after successful sync/import/export, NOT on row edits
+	//=========================================================================
+
+	/** Hash of row content at last successful sync operation (0 = never synced) */
+	UPROPERTY(EditAnywhere, Category = "Sync")
+	int64 LastSyncedHash = 0;
+
+	/** Compute sync hash for 3-way merge comparison (content hash as int64) */
+	int64 ComputeSyncHash() const
+	{
+		// Use same logic as ComputeEditableFieldsHash but return as int64
+		return static_cast<int64>(ComputeEditableFieldsHash());
+	}
 
 	/** Invalidate cached validation (call on row edit) */
 	void InvalidateValidation()

@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue Table Editor Types
+// v4.11: Added LastSyncedHash for 3-way XLSX sync (per-row sync tracking)
 // v4.7: Added EDialogueTableRowStatus enum, Status field, asset discovery (matches NPC editor)
 // v4.6: Added generation tracking (LastGeneratedHash), soft delete (bDeleted)
 // v4.5: Added EValidationState enum and validation cache fields
@@ -165,6 +166,22 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	/** Hash of inputs used for validation (staleness detection) */
 	UPROPERTY(Transient)
 	uint32 ValidationInputHash = 0;
+
+	//=========================================================================
+	// v4.11: XLSX Sync Hash (persisted - for 3-way merge comparison)
+	// Updated ONLY after successful sync/import/export, NOT on row edits
+	//=========================================================================
+
+	/** Hash of row content at last successful sync operation (0 = never synced) */
+	UPROPERTY(EditAnywhere, Category = "Sync")
+	int64 LastSyncedHash = 0;
+
+	/** Compute sync hash for 3-way merge comparison (content hash as int64) */
+	int64 ComputeSyncHash() const
+	{
+		// Use same logic as ComputeEditableFieldsHash but return as int64
+		return static_cast<int64>(ComputeEditableFieldsHash());
+	}
 
 	/** Check if all tokens are valid (for partial apply logic) */
 	bool AreTokensValid() const { return bEventsValid && bConditionsValid; }
