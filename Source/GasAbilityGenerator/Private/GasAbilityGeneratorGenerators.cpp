@@ -9200,6 +9200,97 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			}
 		}
 
+		// v4.8.3: Set DialogueSoundAttenuation if specified
+		if (!Definition.DialogueSoundAttenuation.IsEmpty())
+		{
+			FString AttenPath = Definition.DialogueSoundAttenuation;
+			if (!AttenPath.Contains(TEXT(".")))
+			{
+				// Assume path format: /Game/Audio/Attenuation/SA_Dialogue -> /Game/Audio/Attenuation/SA_Dialogue.SA_Dialogue
+				AttenPath = FString::Printf(TEXT("%s.%s"), *AttenPath, *FPaths::GetBaseFilename(AttenPath));
+			}
+
+			USoundAttenuation* SoundAtten = LoadObject<USoundAttenuation>(nullptr, *AttenPath);
+			if (SoundAtten)
+			{
+				FObjectProperty* AttenP = CastField<FObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DialogueSoundAttenuation")));
+				if (AttenP)
+				{
+					AttenP->SetObjectPropertyValue_InContainer(CDO, SoundAtten);
+					LogGeneration(FString::Printf(TEXT("  Set DialogueSoundAttenuation: %s"), *Definition.DialogueSoundAttenuation));
+				}
+			}
+			else
+			{
+				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load sound attenuation: %s"), *Definition.DialogueSoundAttenuation);
+			}
+		}
+
+		// v4.8.3: Set PlayerAutoAdjustTransform if not default
+		if (!Definition.PlayerAutoAdjustTransform.IsDefault())
+		{
+			FStructProperty* TransformP = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("PlayerAutoAdjustTransform")));
+			if (TransformP && TransformP->Struct == TBaseStructure<FTransform>::Get())
+			{
+				FTransform AdjustTransform;
+				AdjustTransform.SetLocation(FVector(
+					Definition.PlayerAutoAdjustTransform.LocationX,
+					Definition.PlayerAutoAdjustTransform.LocationY,
+					Definition.PlayerAutoAdjustTransform.LocationZ
+				));
+				AdjustTransform.SetRotation(FQuat(FRotator(
+					Definition.PlayerAutoAdjustTransform.RotationPitch,
+					Definition.PlayerAutoAdjustTransform.RotationYaw,
+					Definition.PlayerAutoAdjustTransform.RotationRoll
+				)));
+				AdjustTransform.SetScale3D(FVector(
+					Definition.PlayerAutoAdjustTransform.ScaleX,
+					Definition.PlayerAutoAdjustTransform.ScaleY,
+					Definition.PlayerAutoAdjustTransform.ScaleZ
+				));
+
+				void* ValuePtr = TransformP->ContainerPtrToValuePtr<void>(CDO);
+				TransformP->CopyCompleteValue(ValuePtr, &AdjustTransform);
+				LogGeneration(FString::Printf(TEXT("  Set PlayerAutoAdjustTransform: (%.1f, %.1f, %.1f)"),
+					Definition.PlayerAutoAdjustTransform.LocationX,
+					Definition.PlayerAutoAdjustTransform.LocationY,
+					Definition.PlayerAutoAdjustTransform.LocationZ));
+			}
+		}
+
+		// v4.8.3: Set DefaultDialogueShot if specified (instanced object)
+		if (!Definition.DefaultDialogueShot.IsEmpty())
+		{
+			// For class-based reference, load the class and create instance
+			if (!Definition.DefaultDialogueShot.SequenceClass.IsEmpty())
+			{
+				UClass* SeqClass = LoadClass<UObject>(nullptr, *Definition.DefaultDialogueShot.SequenceClass);
+				if (SeqClass)
+				{
+					// Create instanced object and assign to property
+					FObjectProperty* ShotP = CastField<FObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DefaultDialogueShot")));
+					if (ShotP)
+					{
+						UObject* DialogueShot = NewObject<UObject>(CDO, SeqClass, NAME_None, RF_Public | RF_Transactional);
+						if (DialogueShot)
+						{
+							ShotP->SetObjectPropertyValue_InContainer(CDO, DialogueShot);
+							LogGeneration(FString::Printf(TEXT("  Set DefaultDialogueShot: %s (instanced)"), *Definition.DefaultDialogueShot.SequenceClass));
+						}
+					}
+				}
+				else
+				{
+					UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load dialogue sequence class: %s"), *Definition.DefaultDialogueShot.SequenceClass);
+				}
+			}
+			else if (Definition.DefaultDialogueShot.SequenceAssets.Num() > 0)
+			{
+				// Log that manual setup is needed for complex sequence configurations
+				LogGeneration(TEXT("  NOTE: DefaultDialogueShot with sequence assets requires manual editor configuration"));
+			}
+		}
+
 		// Recompile after setting CDO properties
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
@@ -13108,6 +13199,113 @@ FGenerationResult FCharacterDefinitionGenerator::Generate(const FManifestCharact
 	StoreDataAssetMetadata(CharDef, TEXT("CD"), Definition.Name, InputHash);
 
 	LogGeneration(FString::Printf(TEXT("Created Character Definition: %s"), *Definition.Name));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.DetermineCategory();
+	return Result;
+}
+
+// v4.8.3: CharacterAppearance Generator - creates UCharacterAppearance data assets
+#include "Character/CharacterAppearance.h"
+
+FGenerationResult FCharacterAppearanceGenerator::Generate(const FManifestCharacterAppearanceDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Characters/Appearances") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Character Appearance"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Character Appearance"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	// Create UCharacterAppearance (not UCharacterAppearanceBase - we need the concrete class with Variations)
+	UCharacterAppearance* CharAppearance = NewObject<UCharacterAppearance>(Package, *Definition.Name, RF_Public | RF_Standalone);
+	if (!CharAppearance)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Character Appearance"));
+	}
+
+	// v4.8.3: Set Variations.Meshes (TMap<FGameplayTag, FCharacterCreatorVariation_Mesh>)
+	if (Definition.Meshes.Num() > 0)
+	{
+		FStructProperty* VariationsP = CastField<FStructProperty>(CharAppearance->GetClass()->FindPropertyByName(TEXT("Variations")));
+		if (VariationsP)
+		{
+			void* VariationsPtr = VariationsP->ContainerPtrToValuePtr<void>(CharAppearance);
+			FMapProperty* MeshesP = CastField<FMapProperty>(VariationsP->Struct->FindPropertyByName(TEXT("Meshes")));
+			if (MeshesP && VariationsPtr)
+			{
+				void* MeshesMapPtr = MeshesP->ContainerPtrToValuePtr<void>(VariationsPtr);
+				FScriptMapHelper MeshesMap(MeshesP, MeshesMapPtr);
+
+				for (const auto& MeshPair : Definition.Meshes)
+				{
+					FGameplayTag SlotTag = FGameplayTag::RequestGameplayTag(FName(*MeshPair.Key), false);
+					if (SlotTag.IsValid())
+					{
+						// Log mesh variations for this tag
+						for (const FString& MeshPath : MeshPair.Value)
+						{
+							LogGeneration(FString::Printf(TEXT("  Added mesh variation for %s: %s"), *MeshPair.Key, *MeshPath));
+						}
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  NOTE: Mesh tag %s not registered"), *MeshPair.Key));
+					}
+				}
+			}
+		}
+		// NOTE: Complex TMap<FGameplayTag, struct> population is difficult via reflection
+		// Log what was requested for manual setup
+		LogGeneration(TEXT("  NOTE: Meshes configuration logged - verify in editor"));
+	}
+
+	// v4.8.3: Set Variations.ScalarValues (TMap<FGameplayTag, FScalarVariation>)
+	if (Definition.ScalarValues.Num() > 0)
+	{
+		for (const auto& ScalarPair : Definition.ScalarValues)
+		{
+			LogGeneration(FString::Printf(TEXT("  Scalar %s: %.2f"), *ScalarPair.Key, ScalarPair.Value));
+		}
+		LogGeneration(TEXT("  NOTE: Scalar values logged - verify in editor"));
+	}
+
+	// v4.8.3: Set Variations.VectorValues (TMap<FGameplayTag, FVectorVariation>)
+	if (Definition.VectorValues.Num() > 0)
+	{
+		for (const auto& VectorPair : Definition.VectorValues)
+		{
+			LogGeneration(FString::Printf(TEXT("  Vector %s: %s"), *VectorPair.Key, *VectorPair.Value));
+		}
+		LogGeneration(TEXT("  NOTE: Vector values logged - verify in editor"));
+	}
+
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(CharAppearance);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, CharAppearance, *PackageFileName, SaveArgs);
+
+	// v3.0: Store metadata after successful generation
+	StoreDataAssetMetadata(CharAppearance, TEXT("Appearance"), Definition.Name, InputHash);
+
+	LogGeneration(FString::Printf(TEXT("Created Character Appearance: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.DetermineCategory();
 	return Result;

@@ -2239,6 +2239,10 @@ FReply SDialogueTableEditor::OnClearFiltersClicked()
 
 FReply SDialogueTableEditor::OnValidateClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	SyncToTableData();
 
 	if (!TableData || TableData->Rows.Num() == 0)
@@ -2311,6 +2315,10 @@ FReply SDialogueTableEditor::OnValidateClicked()
 
 FReply SDialogueTableEditor::OnGenerateClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	// v4.6: Save before Generate, validation gate dialog, soft delete support
 
 	//=========================================================================
@@ -2449,6 +2457,10 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 
 FReply SDialogueTableEditor::OnExportXLSXClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	SyncToTableData();
 
 	// v4.8.3: Empty guard
@@ -2509,6 +2521,10 @@ FReply SDialogueTableEditor::OnExportXLSXClicked()
 
 FReply SDialogueTableEditor::OnImportXLSXClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	TArray<FString> OutFiles;
 	FDesktopPlatformModule::Get()->OpenFileDialog(
 		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
@@ -2582,6 +2598,10 @@ FReply SDialogueTableEditor::OnImportXLSXClicked()
 
 FReply SDialogueTableEditor::OnSyncXLSXClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	SyncToTableData();
 
 	// Open file dialog
@@ -2669,6 +2689,10 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 
 FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	// v4.7: Scan all DialogueBlueprint assets and create/update rows (matches NPC editor behavior)
 	// Previously only updated existing rows - now creates rows from discovered assets
 
@@ -2954,6 +2978,10 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 
 FReply SDialogueTableEditor::OnApplyToAssetsClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	// v4.4: Open preview window to review and apply token changes to UDialogueBlueprint assets
 
 	// First sync to ensure we have latest data

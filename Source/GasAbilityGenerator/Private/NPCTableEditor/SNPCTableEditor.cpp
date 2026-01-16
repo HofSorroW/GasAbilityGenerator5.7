@@ -1214,9 +1214,14 @@ TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 
 void SNPCTableRow::MarkModified()
 {
-	if (RowData.IsValid() && RowData->Status != ENPCTableRowStatus::New)
+	if (RowData.IsValid())
 	{
-		RowData->Status = ENPCTableRowStatus::Modified;
+		if (RowData->Status != ENPCTableRowStatus::New)
+		{
+			RowData->Status = ENPCTableRowStatus::Modified;
+		}
+		// v4.8.4: Clear validation on edit (prevents stale green/red after cell change)
+		RowData->InvalidateValidation();
 	}
 	OnRowModified.ExecuteIfBound();
 }
@@ -2255,6 +2260,10 @@ FReply SNPCTableEditor::OnDuplicateRowClicked()
 
 FReply SNPCTableEditor::OnValidateClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	// v4.8.3: Empty guard
 	if (AllRows.Num() == 0)
 	{
@@ -2370,6 +2379,10 @@ FReply SNPCTableEditor::OnValidateClicked()
 
 FReply SNPCTableEditor::OnGenerateClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	// v4.8.3: Empty guard
 	if (AllRows.Num() == 0)
 	{
@@ -2633,6 +2646,10 @@ FReply SNPCTableEditor::OnGenerateClicked()
 
 FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	if (!TableData)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,
@@ -2985,6 +3002,10 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 
 FReply SNPCTableEditor::OnExportXLSXClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 #if WITH_EDITOR
 	// Build array of FNPCTableRow from shared pointers
 	TArray<FNPCTableRow> RowsToExport;
@@ -3046,6 +3067,10 @@ FReply SNPCTableEditor::OnExportXLSXClicked()
 
 FReply SNPCTableEditor::OnImportXLSXClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 #if WITH_EDITOR
 	if (!TableData)
 	{
@@ -3152,6 +3177,10 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 
 FReply SNPCTableEditor::OnApplyToAssetsClicked()
 {
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
 	// v4.5: Open preview window to review and apply changes to UNPCDefinition assets
 
 	// Step 1: Gather rows to apply

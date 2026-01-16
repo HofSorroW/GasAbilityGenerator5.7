@@ -209,6 +209,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseQuests(Lines, i, OutData);
 		}
+		// v4.8.3: Character Appearances
+		else if (IsSectionHeader(TrimmedLine, TEXT("character_appearances:")))
+		{
+			ParseCharacterAppearances(Lines, i, OutData);
+		}
 		// v3.9.8: Mesh-to-Item Pipeline parsers
 		else if (IsSectionHeader(TrimmedLine, TEXT("pipeline_config:")))
 		{
@@ -3841,6 +3846,10 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestDialogueSpeakerDefinition CurrentSpeaker;  // v3.2: Current speaker being parsed
 
+	// v4.8.3: Player auto-adjust transform and default dialogue shot parsing state
+	bool bInPlayerAutoAdjustTransform = false;
+	bool bInDefaultDialogueShot = false;
+
 	// v3.7: Dialogue tree parsing state
 	bool bInDialogueTree = false;
 	bool bInDialogueNodes = false;
@@ -4013,6 +4022,107 @@ void FGasAbilityGeneratorParser::ParseDialogueBlueprints(const TArray<FString>& 
 			else if (TrimmedLine.StartsWith(TEXT("camera_shake:")))
 			{
 				CurrentDef.CameraShake = GetLineValue(TrimmedLine);
+			}
+			// v4.8.3: Sound attenuation for dialogue audio
+			else if (TrimmedLine.StartsWith(TEXT("dialogue_sound_attenuation:")) || TrimmedLine.StartsWith(TEXT("sound_attenuation:")))
+			{
+				CurrentDef.DialogueSoundAttenuation = GetLineValue(TrimmedLine);
+			}
+			// v4.8.3: Player auto-adjust transform
+			else if (TrimmedLine.Equals(TEXT("player_auto_adjust_transform:")) || TrimmedLine.StartsWith(TEXT("player_auto_adjust_transform:")))
+			{
+				bInPlayerAutoAdjustTransform = true;
+			}
+			else if (bInPlayerAutoAdjustTransform)
+			{
+				if (TrimmedLine.StartsWith(TEXT("location_x:")) || TrimmedLine.StartsWith(TEXT("x:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.LocationX = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("location_y:")) || TrimmedLine.StartsWith(TEXT("y:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.LocationY = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("location_z:")) || TrimmedLine.StartsWith(TEXT("z:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.LocationZ = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("pitch:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.RotationPitch = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("yaw:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.RotationYaw = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("roll:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.RotationRoll = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("scale_x:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.ScaleX = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("scale_y:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.ScaleY = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("scale_z:")))
+				{
+					CurrentDef.PlayerAutoAdjustTransform.ScaleZ = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (!TrimmedLine.StartsWith(TEXT("-")) && !TrimmedLine.IsEmpty() && !TrimmedLine.StartsWith(TEXT("#")))
+				{
+					// End of transform section - let other parser handle this
+					bInPlayerAutoAdjustTransform = false;
+					LineIndex--;  // Re-process this line
+					continue;
+				}
+			}
+			// v4.8.3: Default dialogue shot (instanced sequence)
+			else if (TrimmedLine.Equals(TEXT("default_dialogue_shot:")) || TrimmedLine.StartsWith(TEXT("default_dialogue_shot:")))
+			{
+				FString Value = GetLineValue(TrimmedLine);
+				if (!Value.IsEmpty())
+				{
+					// Inline class reference
+					CurrentDef.DefaultDialogueShot.SequenceClass = Value;
+				}
+				else
+				{
+					bInDefaultDialogueShot = true;
+				}
+			}
+			else if (bInDefaultDialogueShot)
+			{
+				if (TrimmedLine.StartsWith(TEXT("sequence_class:")))
+				{
+					CurrentDef.DefaultDialogueShot.SequenceClass = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("anchor_origin_rule:")))
+				{
+					CurrentDef.DefaultDialogueShot.AnchorOriginRule = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("anchor_rotation_rule:")))
+				{
+					CurrentDef.DefaultDialogueShot.AnchorRotationRule = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("use_180_degree_rule:")))
+				{
+					CurrentDef.DefaultDialogueShot.bUse180DegreeRule = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("- ")) && bInDefaultDialogueShot)
+				{
+					// Sequence asset list item
+					CurrentDef.DefaultDialogueShot.SequenceAssets.Add(GetLineValue(TrimmedLine.Mid(2)));
+				}
+				else if (!TrimmedLine.IsEmpty() && !TrimmedLine.StartsWith(TEXT("#")))
+				{
+					// End of shot section
+					bInDefaultDialogueShot = false;
+					LineIndex--;
+					continue;
+				}
 			}
 			// v3.7: Dialogue tree parsing
 			else if (TrimmedLine.Equals(TEXT("dialogue_tree:")) || TrimmedLine.StartsWith(TEXT("dialogue_tree:")))
@@ -7169,6 +7279,167 @@ void FGasAbilityGeneratorParser::ParseCharacterDefinitions(const TArray<FString>
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.CharacterDefinitions.Add(CurrentDef);
+	}
+}
+
+// v4.8.3: CharacterAppearance parser - creates UCharacterAppearance data assets
+void FGasAbilityGeneratorParser::ParseCharacterAppearances(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestCharacterAppearanceDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInMeshes = false;
+	bool bInMeshList = false;
+	FString CurrentMeshTag;
+	bool bInScalars = false;
+	bool bInVectors = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.CharacterAppearances.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.CharacterAppearances.Add(CurrentDef);
+			}
+			CurrentDef = FManifestCharacterAppearanceDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInMeshes = false;
+			bInMeshList = false;
+			bInScalars = false;
+			bInVectors = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInMeshes = false; bInScalars = false; bInVectors = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("meshes:")) || TrimmedLine.StartsWith(TEXT("meshes:")))
+			{
+				bInMeshes = true;
+				bInMeshList = false;
+				bInScalars = false;
+				bInVectors = false;
+			}
+			else if (bInMeshes)
+			{
+				// Mesh tag with array, e.g., "Narrative.Equipment.Slot.Mesh.Body:"
+				if (TrimmedLine.EndsWith(TEXT(":")))
+				{
+					CurrentMeshTag = TrimmedLine.LeftChop(1).TrimStartAndEnd();
+					bInMeshList = true;
+					if (!CurrentDef.Meshes.Contains(CurrentMeshTag))
+					{
+						CurrentDef.Meshes.Add(CurrentMeshTag, TArray<FString>());
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("- ")) && bInMeshList && !CurrentMeshTag.IsEmpty())
+				{
+					FString MeshPath = GetLineValue(TrimmedLine.Mid(2));
+					if (!MeshPath.IsEmpty())
+					{
+						CurrentDef.Meshes[CurrentMeshTag].Add(MeshPath);
+					}
+				}
+				else if (!TrimmedLine.StartsWith(TEXT("-")) && !TrimmedLine.EndsWith(TEXT(":")))
+				{
+					// End of meshes section
+					bInMeshes = false;
+					bInMeshList = false;
+					LineIndex--;
+					continue;
+				}
+			}
+			else if (TrimmedLine.Equals(TEXT("scalar_values:")) || TrimmedLine.StartsWith(TEXT("scalar_values:")))
+			{
+				bInScalars = true;
+				bInMeshes = false;
+				bInVectors = false;
+			}
+			else if (bInScalars)
+			{
+				// Scalar entry: "Narrative.CharacterCreator.Scalars.Height: 0.5"
+				if (TrimmedLine.Contains(TEXT(":")))
+				{
+					int32 ColonPos;
+					if (TrimmedLine.FindChar(TEXT(':'), ColonPos))
+					{
+						FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+						FString Value = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+						if (!Key.IsEmpty() && !Value.IsEmpty())
+						{
+							CurrentDef.ScalarValues.Add(Key, FCString::Atof(*Value));
+						}
+					}
+				}
+				else if (!TrimmedLine.IsEmpty())
+				{
+					bInScalars = false;
+					LineIndex--;
+					continue;
+				}
+			}
+			else if (TrimmedLine.Equals(TEXT("vector_values:")) || TrimmedLine.StartsWith(TEXT("vector_values:")))
+			{
+				bInVectors = true;
+				bInMeshes = false;
+				bInScalars = false;
+			}
+			else if (bInVectors)
+			{
+				// Vector entry: "Narrative.CharacterCreator.Vectors.SkinColor: #FFC0A0"
+				if (TrimmedLine.Contains(TEXT(":")))
+				{
+					int32 ColonPos;
+					if (TrimmedLine.FindChar(TEXT(':'), ColonPos))
+					{
+						FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+						FString Value = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+						if (!Key.IsEmpty() && !Value.IsEmpty())
+						{
+							CurrentDef.VectorValues.Add(Key, Value);
+						}
+					}
+				}
+				else if (!TrimmedLine.IsEmpty())
+				{
+					bInVectors = false;
+					LineIndex--;
+					continue;
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.CharacterAppearances.Add(CurrentDef);
 	}
 }
 

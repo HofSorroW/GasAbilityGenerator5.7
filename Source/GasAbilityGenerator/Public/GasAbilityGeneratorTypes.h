@@ -1806,6 +1806,81 @@ struct FManifestPlayerSpeakerDefinition
 };
 
 /**
+ * v4.8.3: Transform definition for FTransform properties
+ * Used for PlayerAutoAdjustTransform, SpeakerAvatarTransform, etc.
+ */
+struct FManifestTransformDefinition
+{
+	float LocationX = 0.0f;
+	float LocationY = 0.0f;
+	float LocationZ = 0.0f;
+	float RotationPitch = 0.0f;  // Y axis
+	float RotationYaw = 0.0f;    // Z axis
+	float RotationRoll = 0.0f;   // X axis
+	float ScaleX = 1.0f;
+	float ScaleY = 1.0f;
+	float ScaleZ = 1.0f;
+
+	bool IsDefault() const
+	{
+		return LocationX == 0.0f && LocationY == 0.0f && LocationZ == 0.0f &&
+			   RotationPitch == 0.0f && RotationYaw == 0.0f && RotationRoll == 0.0f &&
+			   ScaleX == 1.0f && ScaleY == 1.0f && ScaleZ == 1.0f;
+	}
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(FMath::RoundToInt(LocationX * 100.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(LocationY * 100.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(LocationZ * 100.f)) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(RotationPitch * 100.f)) << 24;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(RotationYaw * 100.f)) << 32;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(RotationRoll * 100.f)) << 40;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ScaleX * 100.f)) << 48;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ScaleY * 100.f)) << 52;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ScaleZ * 100.f)) << 56;
+		return Hash;
+	}
+};
+
+/**
+ * v4.8.3: Dialogue sequence definition for instanced UNarrativeDialogueSequence
+ * Used for DefaultDialogueShot, DefaultSpeakerShot, SelectingReplyShot
+ */
+struct FManifestDialogueSequenceDefinition
+{
+	FString SequenceClass;           // TSubclassOf<UNarrativeDialogueSequence> for class-based reference
+	TArray<FString> SequenceAssets;  // TArray<ULevelSequence*> for inline instanced creation
+	FString AnchorOriginRule;        // Disabled, ConversationCenter, Speaker, Listener, Custom
+	float AnchorOriginNudgeX = 0.0f;
+	float AnchorOriginNudgeY = 0.0f;
+	float AnchorOriginNudgeZ = 0.0f;
+	FString AnchorRotationRule;      // AnchorActorForwardVector, Conversation
+	bool bUse180DegreeRule = false;
+	float UnitsY180DegreeRule = 0.0f;
+	float DegreesYaw180DegreeRule = 0.0f;
+
+	bool IsEmpty() const { return SequenceClass.IsEmpty() && SequenceAssets.Num() == 0; }
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(SequenceClass);
+		for (const FString& Asset : SequenceAssets)
+		{
+			Hash ^= GetTypeHash(Asset);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		Hash ^= static_cast<uint64>(GetTypeHash(AnchorOriginRule)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AnchorOriginNudgeX * 100.f)) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AnchorOriginNudgeY * 100.f)) << 24;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(AnchorOriginNudgeZ * 100.f)) << 32;
+		Hash ^= static_cast<uint64>(GetTypeHash(AnchorRotationRule)) << 40;
+		Hash ^= (bUse180DegreeRule ? 1ULL : 0ULL) << 48;
+		return Hash;
+	}
+};
+
+/**
  * Dialogue blueprint definition (follows actor blueprint pattern)
  * v3.2: Added configuration properties and speakers array
  */
@@ -1834,6 +1909,15 @@ struct FManifestDialogueBlueprintDefinition
 
 	// v4.1: Camera shake for dialogue
 	FString CameraShake;             // UCameraShakeBase class reference for dialogue camera
+
+	// v4.8.3: Sound attenuation for dialogue audio
+	FString DialogueSoundAttenuation;  // USoundAttenuation* asset path
+
+	// v4.8.3: Player auto-adjust transform (for 1-on-1 dialogues)
+	FManifestTransformDefinition PlayerAutoAdjustTransform;
+
+	// v4.8.3: Default dialogue camera shot (instanced UNarrativeDialogueSequence)
+	FManifestDialogueSequenceDefinition DefaultDialogueShot;
 
 	// v3.2: Speakers configuration
 	TArray<FManifestDialogueSpeakerDefinition> Speakers;
@@ -1874,6 +1958,18 @@ struct FManifestDialogueBlueprintDefinition
 		Hash ^= (bAdjustPlayerTransform ? 1ULL : 0ULL) << 34;
 		// v4.1: Include camera shake in hash
 		Hash ^= static_cast<uint64>(GetTypeHash(CameraShake)) << 36;
+		// v4.8.3: Include new dialogue properties
+		Hash ^= static_cast<uint64>(GetTypeHash(DialogueSoundAttenuation)) << 38;
+		if (!PlayerAutoAdjustTransform.IsDefault())
+		{
+			Hash ^= PlayerAutoAdjustTransform.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		if (!DefaultDialogueShot.IsEmpty())
+		{
+			Hash ^= DefaultDialogueShot.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
 		for (const auto& Speaker : Speakers)
 		{
 			Hash ^= Speaker.ComputeHash();
@@ -3028,6 +3124,54 @@ struct FManifestCharacterDefinitionDefinition
 			Hash = (Hash << 7) | (Hash >> 57);
 		}
 		Hash ^= GetTypeHash(AbilityConfiguration) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v4.8.3: Character appearance definition - maps to UCharacterAppearance data asset
+ * Generates visual customization assets for NPCs and characters
+ */
+struct FManifestCharacterAppearanceDefinition
+{
+	FString Name;
+	FString Folder;
+
+	// Character mesh attributes (Narrative.Equipment.Slot.Mesh.*)
+	TMap<FString, TArray<FString>> Meshes;  // Tag -> array of mesh paths
+
+	// Scalar parameters (Narrative.CharacterCreator.Scalars.*)
+	TMap<FString, float> ScalarValues;      // Tag -> min/max values (simplified: just uses value as both min/max)
+
+	// Vector/color parameters (Narrative.CharacterCreator.Vectors.*)
+	TMap<FString, FString> VectorValues;    // Tag -> hex color or swatch reference
+
+	/** v4.8.3: Compute hash for change detection (excludes Folder - presentational only) */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		for (const auto& MeshPair : Meshes)
+		{
+			Hash ^= GetTypeHash(MeshPair.Key);
+			for (const FString& MeshPath : MeshPair.Value)
+			{
+				Hash ^= GetTypeHash(MeshPath);
+				Hash = (Hash << 3) | (Hash >> 61);
+			}
+		}
+		for (const auto& ScalarPair : ScalarValues)
+		{
+			Hash ^= GetTypeHash(ScalarPair.Key);
+			Hash ^= static_cast<uint64>(FMath::RoundToInt(ScalarPair.Value * 1000.f)) << 8;
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& VectorPair : VectorValues)
+		{
+			Hash ^= GetTypeHash(VectorPair.Key);
+			Hash ^= GetTypeHash(VectorPair.Value) << 16;
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
 		return Hash;
 	}
 };
@@ -4320,6 +4464,9 @@ struct FManifestData
 	TArray<FManifestGoalItemDefinition> GoalItems;
 	TArray<FManifestQuestDefinition> Quests;
 
+	// v4.8.3: Character Appearances
+	TArray<FManifestCharacterAppearanceDefinition> CharacterAppearances;
+
 	// v3.9.8: Mesh-to-Item Pipeline
 	FManifestPipelineConfig PipelineConfig;
 	TArray<FManifestPipelineItemDefinition> PipelineItems;
@@ -4372,6 +4519,7 @@ struct FManifestData
 		for (const auto& Def : ActivitySchedules) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : GoalItems) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : Quests) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : CharacterAppearances) AssetWhitelist.Add(Def.Name);
 
 		bWhitelistBuilt = true;
 	}

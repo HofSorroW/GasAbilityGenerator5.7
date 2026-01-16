@@ -71,6 +71,7 @@ private:
 	static void ParseGameplayCues(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.0
 	static void ParseNPCDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseCharacterDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseCharacterAppearances(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.8.3
 	static void ParseTaggedDialogueSets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseNiagaraSystems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v2.6.5
 

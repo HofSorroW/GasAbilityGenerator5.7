@@ -197,6 +197,9 @@ private:
 
 	/** v4.6: Delegate for notifying owner of dirty state changes */
 	FOnDialogueTableDirtyStateChanged OnDirtyStateChanged;
+
+	/** v4.8.4: Re-entrancy guard - prevents double-clicks on long operations */
+	bool bIsBusy = false;
 };
 
 /**

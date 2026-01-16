@@ -672,6 +672,13 @@ public:
 	static FGenerationResult Generate(const FManifestCharacterDefinitionDefinition& Definition);
 };
 
+// v4.8.3: CharacterAppearance Generator - creates UCharacterAppearance data assets
+class GASABILITYGENERATOR_API FCharacterAppearanceGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestCharacterAppearanceDefinition& Definition);
+};
+
 // v2.5.7: TaggedDialogueSet Generator - creates UTaggedDialogueSet data assets
 class GASABILITYGENERATOR_API FTaggedDialogueSetGenerator : public FGeneratorBase
 {

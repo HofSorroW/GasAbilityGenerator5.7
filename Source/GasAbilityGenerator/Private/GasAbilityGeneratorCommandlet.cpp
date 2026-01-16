@@ -991,6 +991,18 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
+	// v4.8.3: Character Appearances
+	for (const auto& Definition : ManifestData.CharacterAppearances)
+	{
+		FGenerationResult Result = FCharacterAppearanceGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	// v2.6.5: Niagara Systems
 	for (const auto& Definition : ManifestData.NiagaraSystems)
 	{
