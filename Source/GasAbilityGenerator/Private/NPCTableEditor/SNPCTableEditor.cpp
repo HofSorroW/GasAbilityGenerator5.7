@@ -3058,6 +3058,24 @@ FReply SNPCTableEditor::OnExportXLSXClicked()
 				FString ErrorMessage;
 				if (FNPCXLSXWriter::ExportToXLSX(RowsToExport, OutFiles[0], ErrorMessage))
 				{
+					// v4.11: Update LastSyncedHash on all rows after successful export
+					// This enables 3-way merge to detect changes since export
+					for (TSharedPtr<FNPCTableRow>& Row : AllRows)
+					{
+						if (Row.IsValid())
+						{
+							Row->LastSyncedHash = Row->ComputeSyncHash();
+						}
+					}
+					if (TableData)
+					{
+						for (FNPCTableRow& Row : TableData->Rows)
+						{
+							Row.LastSyncedHash = Row.ComputeSyncHash();
+						}
+					}
+					MarkDirty();
+
 					FMessageDialog::Open(EAppMsgType::Ok,
 						FText::Format(LOCTEXT("ExportXLSXSuccess", "Exported {0} NPCs to:\n{1}\n\nYou can now edit in Excel and import back."),
 							FText::AsNumber(RowsToExport.Num()),

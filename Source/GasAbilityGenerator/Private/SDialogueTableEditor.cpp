@@ -2560,6 +2560,14 @@ FReply SDialogueTableEditor::OnExportXLSXClicked()
 		if (TableData)
 		{
 			TableData->SourceFilePath = OutFiles[0];
+
+			// v4.11: Update LastSyncedHash on all rows after successful export
+			// This enables 3-way merge to detect changes since export
+			for (FDialogueTableRow& Row : TableData->Rows)
+			{
+				Row.LastSyncedHash = Row.ComputeSyncHash();
+			}
+			MarkDirty();
 		}
 
 		FMessageDialog::Open(EAppMsgType::Ok,
