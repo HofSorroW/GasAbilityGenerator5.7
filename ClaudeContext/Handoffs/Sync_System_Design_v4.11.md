@@ -1,10 +1,20 @@
 # XLSX Sync System Design - v4.11
 
 **Date:** 2026-01-16
-**Status:** DESIGN (Pending Implementation)
+**Status:** IMPLEMENTED
 **Primary Doc:** Table_Editors_Reference.md (Section: v4.11 Design)
 
 This is a backup/standalone document for the Sync Approval System design.
+
+## Implementation Summary (2026-01-16)
+
+All P0/P1/P2 tasks completed in commits:
+- `24c00c6` - P0: Add LastSyncedHash to row structs
+- `5814de1` - P0: Only Unchanged auto-resolves
+- `f1616a5` - P1: Dialogue Import uses sync comparison
+- `cb2d01c` - P1: Sync dialogs show actual values
+- `4f9d999` - P2: Export updates LastSyncedHash
+- `df9149b` - P2: Sync Apply updates LastSyncedHash
 
 ---
 
