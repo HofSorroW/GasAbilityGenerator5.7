@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-16
-**Status:** v4.9 (includes v4.8.4 safety audit)
+**Status:** v4.9.1 (includes P3 determinism fixes and user notes)
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
@@ -73,6 +73,32 @@ Both editors apply `bIsBusy` guard and button disable to:
 - Sync XLSX (Dialogue only)
 - Sync from Assets
 - Apply to Assets
+
+---
+
+## Important User Notes (v4.9.1)
+
+### ID Rename Behavior
+
+Row identity in both editors is based on `#ROW_GUID`, a hidden immutable GUID column. This means:
+
+| Action | Result |
+|--------|--------|
+| **Rename DIALOGUE_ID** | Row is tracked by GUID → ID change updates existing asset |
+| **Rename NODE_ID** | Row is tracked by GUID → node is renamed, not duplicated |
+| **Rename NPC name** | Row is tracked by GUID → NPCDefinition is updated |
+
+**Why this matters:** Users familiar with CSV workflows may expect "rename = new row." Our GUID-based identity system ensures renaming is a non-destructive update operation, not a create-new operation. You can safely rename IDs without creating duplicate assets.
+
+### Merged Cells Not Supported
+
+Excel merged cells are **not supported** in XLSX import. If you merge cells in Excel:
+
+- Only the top-left cell of a merged range contains the value
+- All other cells in the merge range read as empty
+- This can cause silent data loss (empty Speaker, empty Text, etc.)
+
+**Best practice:** Never merge cells in the data area of your XLSX file. Use merging only in separate header/documentation sheets that aren't imported.
 
 ---
 

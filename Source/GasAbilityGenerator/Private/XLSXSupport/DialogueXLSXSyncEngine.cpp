@@ -308,6 +308,28 @@ FDialogueSyncResult FDialogueXLSXSyncEngine::CompareSources(
 		Result.Entries.Add(MoveTemp(Entry));
 	}
 
+	// v4.9.1: Sort entries by DialogueID + NodeID for consistent display order
+	// (Matches NPC sync engine pattern which sorts by display name)
+	Result.Entries.Sort([](const FDialogueSyncEntry& A, const FDialogueSyncEntry& B)
+	{
+		// Get the best available row for each entry (prefer UE, then Excel, then Base)
+		const FDialogueTableRow* RowA = A.UERow.Get() ? A.UERow.Get() : (A.ExcelRow.Get() ? A.ExcelRow.Get() : A.BaseRow.Get());
+		const FDialogueTableRow* RowB = B.UERow.Get() ? B.UERow.Get() : (B.ExcelRow.Get() ? B.ExcelRow.Get() : B.BaseRow.Get());
+
+		// Fallback to GUID comparison if no row data available
+		if (!RowA || !RowB)
+		{
+			return A.RowId < B.RowId;
+		}
+
+		// Sort by DialogueID first, then by NodeID
+		if (RowA->DialogueID != RowB->DialogueID)
+		{
+			return RowA->DialogueID.LexicalLess(RowB->DialogueID);
+		}
+		return RowA->NodeID.LexicalLess(RowB->NodeID);
+	});
+
 	return Result;
 }
 
