@@ -2404,7 +2404,15 @@ FReply SNPCTableEditor::OnGenerateClicked()
 			SaveArgs.TopLevelFlags = RF_Standalone;
 			FString PackageFileName = FPackageName::LongPackageNameToFilename(
 				Package->GetName(), FPackageName::GetAssetPackageExtension());
-			UPackage::SavePackage(Package, TableData, *PackageFileName, SaveArgs);
+			bool bSaveSuccess = UPackage::SavePackage(Package, TableData, *PackageFileName, SaveArgs);
+
+			// v4.8.4: Abort generation if save fails
+			if (!bSaveSuccess)
+			{
+				FMessageDialog::Open(EAppMsgType::Ok,
+					LOCTEXT("SaveFailedBeforeGenerate", "Failed to save TableData before generation.\n\nGeneration aborted to prevent data loss."));
+				return FReply::Handled();
+			}
 			UE_LOG(LogTemp, Log, TEXT("NPC Table Editor: Auto-saved TableData before generation"));
 		}
 	}
@@ -3105,6 +3113,22 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 					return FReply::Handled();
 				}
 
+				// v4.8.4: Warn if file was created by a newer version of the tool
+				if (!ImportResult.FormatVersion.IsEmpty() && ImportResult.FormatVersion > FNPCXLSXWriter::FORMAT_VERSION)
+				{
+					EAppReturnType::Type UserChoice = FMessageDialog::Open(EAppMsgType::YesNo,
+						FText::Format(LOCTEXT("NewerVersionWarning",
+							"This file was created with a newer version of the table editor (v{0}).\n"
+							"Current version: v{1}\n\n"
+							"Some data may not import correctly. Continue anyway?"),
+							FText::FromString(ImportResult.FormatVersion),
+							FText::FromString(FNPCXLSXWriter::FORMAT_VERSION)));
+					if (UserChoice != EAppReturnType::Yes)
+					{
+						return FReply::Handled();
+					}
+				}
+
 				// Build base rows (from last export, if available - currently empty for fresh import)
 				// TODO: Load base rows from stored snapshot for 3-way merge
 				TArray<FNPCTableRow> BaseRows;  // Empty = first sync, all Excel changes accepted
@@ -3138,6 +3162,13 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 
 				// Apply the sync
 				FNPCMergeResult MergeResult = FNPCXLSXSyncEngine::ApplySync(SyncResult);
+
+				// v4.8.4: Invalidate validation on all merged rows
+				// ApplySync copies UE rows via struct copy, preserving stale validation state
+				for (FNPCTableRow& Row : MergeResult.MergedRows)
+				{
+					Row.InvalidateValidation();
+				}
 
 				// Replace table data with merged rows
 				TableData->Rows.Empty();

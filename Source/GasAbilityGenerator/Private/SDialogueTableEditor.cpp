@@ -2342,7 +2342,15 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 			SaveArgs.TopLevelFlags = RF_Standalone;
 			FString PackageFileName = FPackageName::LongPackageNameToFilename(
 				Package->GetName(), FPackageName::GetAssetPackageExtension());
-			UPackage::SavePackage(Package, TableData, *PackageFileName, SaveArgs);
+			bool bSaveSuccess = UPackage::SavePackage(Package, TableData, *PackageFileName, SaveArgs);
+
+			// v4.8.4: Abort generation if save fails
+			if (!bSaveSuccess)
+			{
+				FMessageDialog::Open(EAppMsgType::Ok,
+					LOCTEXT("SaveFailedBeforeGenerateDialogue", "Failed to save TableData before generation.\n\nGeneration aborted to prevent data loss."));
+				return FReply::Handled();
+			}
 			UE_LOG(LogTemp, Log, TEXT("Dialogue Table Editor: Auto-saved TableData before generation"));
 		}
 	}
@@ -2545,6 +2553,22 @@ FReply SDialogueTableEditor::OnImportXLSXClicked()
 
 	if (Result.bSuccess)
 	{
+		// v4.8.4: Warn if file was created by a newer version of the tool
+		if (!Result.FormatVersion.IsEmpty() && Result.FormatVersion > FDialogueXLSXWriter::FORMAT_VERSION)
+		{
+			EAppReturnType::Type UserChoice = FMessageDialog::Open(EAppMsgType::YesNo,
+				FText::Format(LOCTEXT("NewerVersionWarningDialogueImport",
+					"This file was created with a newer version of the table editor (v{0}).\n"
+					"Current version: v{1}\n\n"
+					"Some data may not import correctly. Continue anyway?"),
+					FText::FromString(Result.FormatVersion),
+					FText::FromString(FDialogueXLSXWriter::FORMAT_VERSION)));
+			if (UserChoice != EAppReturnType::Yes)
+			{
+				return FReply::Handled();
+			}
+		}
+
 		FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
 
 		// Update TableData with imported rows
@@ -2631,6 +2655,22 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 		return FReply::Handled();
 	}
 
+	// v4.8.4: Warn if file was created by a newer version of the tool
+	if (!ImportResult.FormatVersion.IsEmpty() && ImportResult.FormatVersion > FDialogueXLSXWriter::FORMAT_VERSION)
+	{
+		EAppReturnType::Type UserChoice = FMessageDialog::Open(EAppMsgType::YesNo,
+			FText::Format(LOCTEXT("NewerVersionWarningDialogueSync",
+				"This file was created with a newer version of the table editor (v{0}).\n"
+				"Current version: v{1}\n\n"
+				"Some data may not sync correctly. Continue anyway?"),
+				FText::FromString(ImportResult.FormatVersion),
+				FText::FromString(FDialogueXLSXWriter::FORMAT_VERSION)));
+		if (UserChoice != EAppReturnType::Yes)
+		{
+			return FReply::Handled();
+		}
+	}
+
 	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
 
 	// Get current UE rows
@@ -2663,6 +2703,13 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 	{
 		// User clicked Apply - merge changes
 		FDialogueMergeResult MergeResult = FDialogueXLSXSyncEngine::ApplySync(SyncResult);
+
+		// v4.8.4: Invalidate validation on all merged rows
+		// ApplySync copies UE rows via struct copy, preserving stale validation state
+		for (FDialogueTableRow& Row : MergeResult.MergedRows)
+		{
+			Row.InvalidateValidation();
+		}
 
 		// Update TableData
 		if (TableData)

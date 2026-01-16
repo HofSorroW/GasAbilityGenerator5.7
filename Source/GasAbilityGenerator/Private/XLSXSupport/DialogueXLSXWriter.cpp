@@ -59,7 +59,8 @@ bool FDialogueXLSXWriter::ExportToXLSX(const TArray<FDialogueTableRow>& Rows, co
 	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenWrite(*FilePath);
 	if (!FileHandle)
 	{
-		OutError = FString::Printf(TEXT("Failed to create file: %s"), *FilePath);
+		// v4.8.4: Improved error message - file lock is most common cause
+		OutError = FString::Printf(TEXT("Cannot write to file: %s\n\nIf the file is open in Excel, please close it and try again."), *FilePath);
 		return false;
 	}
 
@@ -107,7 +108,8 @@ bool FDialogueXLSXWriter::ExportToXLSX(const TArray<FDialogueTableRow>& Rows, co
 	IFileHandle* FileHandle = FPlatformFileManager::Get().GetPlatformFile().OpenWrite(*FilePath);
 	if (!FileHandle)
 	{
-		OutError = FString::Printf(TEXT("Failed to create file: %s"), *FilePath);
+		// v4.8.4: Improved error message - file lock is most common cause
+		OutError = FString::Printf(TEXT("Cannot write to file: %s\n\nIf the file is open in Excel, please close it and try again."), *FilePath);
 		return false;
 	}
 
