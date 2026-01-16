@@ -2318,6 +2318,13 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 	//=========================================================================
 	SyncToTableData();
 
+	// v4.8.3: Empty guard
+	if (!TableData || TableData->Rows.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoRowsToGenerateDialogue", "No rows to generate."));
+		return FReply::Handled();
+	}
+
 	if (TableData)
 	{
 		UPackage* Package = TableData->GetPackage();
@@ -2443,6 +2450,13 @@ FReply SDialogueTableEditor::OnGenerateClicked()
 FReply SDialogueTableEditor::OnExportXLSXClicked()
 {
 	SyncToTableData();
+
+	// v4.8.3: Empty guard
+	if (!TableData || TableData->Rows.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoRowsToExport", "No rows to export."));
+		return FReply::Handled();
+	}
 
 	TArray<FString> OutFiles;
 	FDesktopPlatformModule::Get()->SaveFileDialog(
@@ -3143,7 +3157,12 @@ UDialogueTableData* SDialogueTableEditorWindow::GetOrCreateTableData()
 		Data = NewObject<UDialogueTableData>(Package, *AssetName, RF_Public | RF_Standalone);
 
 		FAssetRegistryModule::AssetCreated(Data);
-		Data->MarkPackageDirty();
+
+		// v4.8.3: Save immediately so asset exists on disk (prevents perpetual dirty state)
+		FString PackageFileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, Data, *PackageFileName, SaveArgs);
 	}
 
 	return Data;

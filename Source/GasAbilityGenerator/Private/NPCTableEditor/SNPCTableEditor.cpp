@@ -2255,6 +2255,13 @@ FReply SNPCTableEditor::OnDuplicateRowClicked()
 
 FReply SNPCTableEditor::OnValidateClicked()
 {
+	// v4.8.3: Empty guard
+	if (AllRows.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoRowsToValidate", "No rows to validate."));
+		return FReply::Handled();
+	}
+
 	// v4.5: Validate all rows with cache-writing
 	TArray<FNPCTableRow> RowsToValidate;
 	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
@@ -2363,6 +2370,13 @@ FReply SNPCTableEditor::OnValidateClicked()
 
 FReply SNPCTableEditor::OnGenerateClicked()
 {
+	// v4.8.3: Empty guard
+	if (AllRows.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoRowsToGenerate", "No rows to generate."));
+		return FReply::Handled();
+	}
+
 	// v4.6: Save before Generate, validation gate dialog, soft delete support
 
 	//=========================================================================
@@ -2694,6 +2708,7 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 	// Scan world for NPCSpawners and POIActors
 	//=========================================================================
 	TMap<UNPCDefinition*, FString> NPCToPOIMap;
+	TMap<UNPCDefinition*, float> NPCToDistMap;  // Track distances to keep closest POI only
 
 	if (GEditor && GEditor->GetEditorWorldContext().World())
 	{
@@ -2744,9 +2759,15 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 
 					if (!NearestPOI.IsEmpty())
 					{
-						NPCToPOIMap.Add(SpawnComp->NPCToSpawn, NearestPOI);
-						UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Mapped %s -> %s (dist: %.0f)"),
-							*SpawnComp->NPCToSpawn->GetName(), *NearestPOI, FMath::Sqrt(NearestDistSq));
+						// Only update if this is closer than existing mapping (or first mapping)
+						float* ExistingDist = NPCToDistMap.Find(SpawnComp->NPCToSpawn);
+						if (!ExistingDist || NearestDistSq < *ExistingDist)
+						{
+							NPCToPOIMap.Add(SpawnComp->NPCToSpawn, NearestPOI);
+							NPCToDistMap.Add(SpawnComp->NPCToSpawn, NearestDistSq);
+							UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Mapped %s -> %s (dist: %.0f)"),
+								*SpawnComp->NPCToSpawn->GetName(), *NearestPOI, FMath::Sqrt(NearestDistSq));
+						}
 					}
 				}
 			}
