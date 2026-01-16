@@ -1675,6 +1675,17 @@ void SDialogueTableEditor::CalculateSequences()
 			}
 		}
 
+		// v4.12: Sort root nodes by GraphPosX (left-to-right visual ordering)
+		RootNodes.Sort([](const TSharedPtr<FDialogueTableRowEx>& A, const TSharedPtr<FDialogueTableRowEx>& B)
+		{
+			if (!A->Data.IsValid() || !B->Data.IsValid()) return false;
+			// Nodes without graph position go to the end
+			if (!A->Data->bHasGraphPosition && !B->Data->bHasGraphPosition) return false;
+			if (!A->Data->bHasGraphPosition) return false; // A goes after B
+			if (!B->Data->bHasGraphPosition) return true;  // B goes after A
+			return A->Data->GraphPosX < B->Data->GraphPosX;
+		});
+
 		// Depth-first traversal to assign sequence numbers
 		int32 Seq = 1;
 		TSet<FName> TraversalVisited;
@@ -1689,18 +1700,35 @@ void SDialogueTableEditor::CalculateSequences()
 			Node->Sequence = Seq++;
 			Node->SeqDisplay = FString::Printf(TEXT("%d"), Node->Sequence);
 
-			// Traverse children in order of NextNodeIDs
+			// v4.12: Collect and sort children by GraphPosX before traversing
+			TArray<TSharedPtr<FDialogueTableRowEx>> ChildNodes;
 			for (const FName& ChildID : Node->Data->NextNodeIDs)
 			{
 				TSharedPtr<FDialogueTableRowEx>* ChildPtr = LocalNodeMap.Find(ChildID);
 				if (ChildPtr && ChildPtr->IsValid())
 				{
-					TraverseNode(*ChildPtr);
+					ChildNodes.Add(*ChildPtr);
 				}
+			}
+
+			// Sort children by GraphPosX (left-to-right visual ordering)
+			ChildNodes.Sort([](const TSharedPtr<FDialogueTableRowEx>& A, const TSharedPtr<FDialogueTableRowEx>& B)
+			{
+				if (!A->Data.IsValid() || !B->Data.IsValid()) return false;
+				if (!A->Data->bHasGraphPosition && !B->Data->bHasGraphPosition) return false;
+				if (!A->Data->bHasGraphPosition) return false;
+				if (!B->Data->bHasGraphPosition) return true;
+				return A->Data->GraphPosX < B->Data->GraphPosX;
+			});
+
+			// Traverse sorted children
+			for (TSharedPtr<FDialogueTableRowEx>& ChildNode : ChildNodes)
+			{
+				TraverseNode(ChildNode);
 			}
 		};
 
-		// Start traversal from root nodes
+		// Start traversal from sorted root nodes
 		for (TSharedPtr<FDialogueTableRowEx>& RootNode : RootNodes)
 		{
 			TraverseNode(RootNode);
@@ -3310,6 +3338,14 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 					bUpdated = true;
 				}
 
+				// v4.12: Always update graph position (transient - used for ordering)
+				if (NodeData.bHasGraphPosition)
+				{
+					RowData->GraphPosX = NodeData.GraphPosX;
+					RowData->GraphPosY = NodeData.GraphPosY;
+					RowData->bHasGraphPosition = true;
+				}
+
 				// Mark as synced
 				RowData->Status = EDialogueTableRowStatus::Synced;
 				if (bUpdated)
@@ -3357,6 +3393,14 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 						NewRowData->NextNodeIDs.Add(FName(*Trimmed));
 					}
 				}
+			}
+
+			// v4.12: Populate graph position for ordering
+			if (NodeData.bHasGraphPosition)
+			{
+				NewRowData->GraphPosX = NodeData.GraphPosX;
+				NewRowData->GraphPosY = NodeData.GraphPosY;
+				NewRowData->bHasGraphPosition = true;
 			}
 
 			// Create wrapper and add to list

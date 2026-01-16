@@ -51,6 +51,19 @@ struct FDialogueNodeAssetData
 	/** Whether this node was found in the asset */
 	bool bFoundInAsset = false;
 
+	//=========================================================================
+	// v4.12: Graph position for left-to-right ordering
+	//=========================================================================
+
+	/** X position in the visual dialogue graph editor (for left-to-right ordering) */
+	int32 GraphPosX = 0;
+
+	/** Y position in the visual dialogue graph editor */
+	int32 GraphPosY = 0;
+
+	/** Whether graph position was found (node exists in graph) */
+	bool bHasGraphPosition = false;
+
 	FDialogueNodeAssetData() = default;
 };
 

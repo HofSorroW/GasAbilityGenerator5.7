@@ -168,6 +168,23 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	uint32 ValidationInputHash = 0;
 
 	//=========================================================================
+	// v4.12: Graph position for left-to-right ordering (Transient - UI only)
+	// Populated during Sync from Assets, used for sorting siblings
+	//=========================================================================
+
+	/** X position in the visual dialogue graph editor (for left-to-right sibling ordering) */
+	UPROPERTY(Transient)
+	int32 GraphPosX = 0;
+
+	/** Y position in the visual dialogue graph editor */
+	UPROPERTY(Transient)
+	int32 GraphPosY = 0;
+
+	/** Whether graph position was populated from asset */
+	UPROPERTY(Transient)
+	bool bHasGraphPosition = false;
+
+	//=========================================================================
 	// v4.11: XLSX Sync Hash (persisted - for 3-way merge comparison)
 	// Updated ONLY after successful sync/import/export, NOT on row edits
 	//=========================================================================

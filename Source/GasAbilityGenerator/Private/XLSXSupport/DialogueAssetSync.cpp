@@ -18,6 +18,9 @@
 #include "Tales/DialogueSM.h"
 #include "Tales/NarrativeEvent.h"
 #include "Tales/NarrativeCondition.h"
+
+// v4.12: Include EdGraph for NodePosX extraction
+#include "EdGraph/EdGraph.h"
 #endif
 
 FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* DialogueBlueprint)
@@ -41,6 +44,36 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 
 	// Get dialogue ID from asset name
 	FName DialogueID = FName(*DialogueBlueprint->GetName());
+
+	//=========================================================================
+	// v4.12: Build graph position map (UDialogueNode* -> NodePosX)
+	// DialogueGraph contains UDialogueGraphNode instances which have:
+	// - DialogueNode: pointer to the runtime UDialogueNode
+	// - NodePosX/NodePosY: visual position in graph editor (inherited from UEdGraphNode)
+	//=========================================================================
+	TMap<UDialogueNode*, int32> NodeToGraphPosX;
+	TMap<UDialogueNode*, int32> NodeToGraphPosY;
+
+	if (UEdGraph* DialogueGraph = DialogueBlueprint->DialogueGraph)
+	{
+		for (UEdGraphNode* GraphNode : DialogueGraph->Nodes)
+		{
+			if (!GraphNode) continue;
+
+			// Check if this graph node has a DialogueNode property
+			// UDialogueGraphNode has: UPROPERTY() class UDialogueNode* DialogueNode;
+			if (FObjectProperty* DialogueNodeProp = FindFProperty<FObjectProperty>(GraphNode->GetClass(), TEXT("DialogueNode")))
+			{
+				UDialogueNode* RuntimeNode = Cast<UDialogueNode>(DialogueNodeProp->GetObjectPropertyValue_InContainer(GraphNode));
+				if (RuntimeNode)
+				{
+					NodeToGraphPosX.Add(RuntimeNode, GraphNode->NodePosX);
+					NodeToGraphPosY.Add(RuntimeNode, GraphNode->NodePosY);
+				}
+			}
+		}
+		UE_LOG(LogTemp, Log, TEXT("DialogueAssetSync: Built graph position map with %d entries"), NodeToGraphPosX.Num());
+	}
 
 	//=========================================================================
 	// v4.8: Build parent node mapping (child ID -> parent ID)
@@ -114,6 +147,17 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 			NodeData.ParentNodeID = ParentID->ToString();
 		}
 
+		// v4.12: Set graph position from mapping
+		if (int32* PosX = NodeToGraphPosX.Find(NPCNode))
+		{
+			NodeData.GraphPosX = *PosX;
+			NodeData.bHasGraphPosition = true;
+		}
+		if (int32* PosY = NodeToGraphPosY.Find(NPCNode))
+		{
+			NodeData.GraphPosY = *PosY;
+		}
+
 		FString Key = FDialogueAssetSyncResult::MakeKey(DialogueID, NPCNode->GetID());
 		Result.NodeData.Add(Key, NodeData);
 		Result.NodesFound++;
@@ -144,6 +188,17 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 		if (FName* ParentID = ChildToParentMap.Find(PlayerNode->GetID()))
 		{
 			NodeData.ParentNodeID = ParentID->ToString();
+		}
+
+		// v4.12: Set graph position from mapping
+		if (int32* PosX = NodeToGraphPosX.Find(PlayerNode))
+		{
+			NodeData.GraphPosX = *PosX;
+			NodeData.bHasGraphPosition = true;
+		}
+		if (int32* PosY = NodeToGraphPosY.Find(PlayerNode))
+		{
+			NodeData.GraphPosY = *PosY;
 		}
 
 		FString Key = FDialogueAssetSyncResult::MakeKey(DialogueID, PlayerNode->GetID());
