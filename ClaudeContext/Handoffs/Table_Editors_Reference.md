@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-16
-**Status:** v4.11.1 IMPLEMENTED (Full-Screen Sync Approval System)
+**Status:** v4.11.2 IMPLEMENTED (Full-Screen Sync Approval System)
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system, validated token design, and safety audit results.
 
@@ -12,6 +12,7 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **v4.11.2** | 2026-01-16 | **IMPLEMENTED**: Auto-fit window to screen size (80% of work area, min 800×600) |
 | **v4.11.1** | 2026-01-16 | **IMPLEMENTED**: Full-screen approval window (radio selection, row highlighting, Base column) |
 | **v4.11** | 2026-01-16 | **IMPLEMENTED**: Per-row LastSyncedHash, only Unchanged auto-resolves, actual values in dialogs |
 | **v4.10** | 2026-01-16 | P0/P1 Gap Audit: Wire Dialogue generation, fix bSkippable/Events/Conditions converter |

@@ -20,12 +20,17 @@ All P0/P1/P2 tasks and Full-Screen Approval Window completed:
 
 **Phase 2 - Full-Screen Approval Window (v4.11.1):**
 - `08f4c54` - Full-screen approval window UI redesign:
-  - Larger window (1200x800) with "SYNC APPROVAL" title
   - Radio-style selection (○/●) for UE/Excel/REMOVE
   - Row highlighting (Yellow = unresolved, Green = resolved)
   - New columns: Status, ID, Base (Last Export), UE, Excel, Action
   - Status bar: "X changes | Y of X resolved"
   - Legend in footer showing color meanings
+
+**Phase 3 - UX Polish (v4.11.2):**
+- `038c18e` - Auto-fit window to screen size:
+  - Uses 80% of user's work area (excluding taskbar)
+  - Minimum bounds: 800×600
+  - Adapts to different monitor sizes automatically
 
 ---
 
