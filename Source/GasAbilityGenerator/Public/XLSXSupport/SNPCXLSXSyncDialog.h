@@ -1,4 +1,5 @@
 // GasAbilityGenerator - NPC XLSX Sync Dialog
+// v4.11.1: Full-screen approval window with radio selection and row highlighting
 // v4.5: UI for reviewing and resolving NPC sync conflicts
 
 #pragma once
@@ -20,7 +21,10 @@ enum class ENPCSyncDialogResult : uint8
 };
 
 /**
- * Sync dialog for reviewing Excel <-> UE NPC changes and resolving conflicts
+ * v4.11.1: Full-screen sync approval dialog
+ * - Radio-style selection (○/●)
+ * - Row highlighting (Yellow = unresolved, Green = resolved)
+ * - Columns: Status, NPCName, NPCId, Base (Last Export), UE, Excel, Action
  */
 class GASABILITYGENERATOR_API SNPCXLSXSyncDialog : public SCompoundWidget
 {
@@ -52,6 +56,7 @@ private:
 
 	// UI Building
 	TSharedRef<SWidget> BuildHeader();
+	TSharedRef<SWidget> BuildStatusBar();
 	TSharedRef<SWidget> BuildEntryList();
 	TSharedRef<SWidget> BuildFooter();
 
@@ -71,7 +76,7 @@ private:
 };
 
 /**
- * Row widget for NPC sync entry display
+ * v4.11.1: Row widget with radio-style selection and background highlighting
  */
 class SNPCSyncEntryRow : public SMultiColumnTableRow<TSharedPtr<FNPCSyncEntry>>
 {
@@ -88,9 +93,16 @@ private:
 	TSharedPtr<FNPCSyncEntry> Entry;
 	FSimpleDelegate OnResolutionChanged;
 
+	// v4.11.1: New column cells
 	TSharedRef<SWidget> CreateStatusCell();
 	TSharedRef<SWidget> CreateNPCNameCell();
 	TSharedRef<SWidget> CreateNPCIdCell();
+	TSharedRef<SWidget> CreateBaseCell();
+	TSharedRef<SWidget> CreateUECell();
+	TSharedRef<SWidget> CreateExcelCell();
+	TSharedRef<SWidget> CreateActionCell();
+
+	// Legacy cells (kept for compatibility)
 	TSharedRef<SWidget> CreatePreviewCell();
 	TSharedRef<SWidget> CreateResolutionCell();
 };

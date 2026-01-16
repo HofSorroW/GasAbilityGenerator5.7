@@ -1,4 +1,5 @@
 // GasAbilityGenerator - NPC XLSX Sync Dialog Implementation
+// v4.11.1: Full-screen approval window with radio selection and row highlighting
 // v4.11: Show actual values, no pre-selection for non-Unchanged
 // v4.5: UI for reviewing and resolving NPC sync conflicts
 
@@ -7,6 +8,7 @@
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Views/SHeaderRow.h"
@@ -30,10 +32,10 @@ void SNPCXLSXSyncDialog::Construct(const FArguments& InArgs)
 	[
 		SNew(SVerticalBox)
 
-		// Header with summary
+		// Header with title and buttons
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(8.0f)
+		.Padding(16.0f, 12.0f)
 		[
 			BuildHeader()
 		]
@@ -42,12 +44,21 @@ void SNPCXLSXSyncDialog::Construct(const FArguments& InArgs)
 		.AutoHeight()
 		[
 			SNew(SSeparator)
+				.Thickness(2.0f)
+		]
+
+		// Status bar
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(16.0f, 8.0f)
+		[
+			BuildStatusBar()
 		]
 
 		// Entry list
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
-		.Padding(4.0f)
+		.Padding(8.0f, 4.0f)
 		[
 			BuildEntryList()
 		]
@@ -61,7 +72,7 @@ void SNPCXLSXSyncDialog::Construct(const FArguments& InArgs)
 		// Footer with buttons
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(8.0f)
+		.Padding(16.0f, 12.0f)
 		[
 			BuildFooter()
 		]
@@ -70,12 +81,14 @@ void SNPCXLSXSyncDialog::Construct(const FArguments& InArgs)
 
 bool SNPCXLSXSyncDialog::ShowModal(FNPCSyncResult& SyncResult, TSharedPtr<SWindow> ParentWindow)
 {
+	// v4.11.1: Full-screen approval window
 	TSharedRef<SWindow> Window = SNew(SWindow)
-		.Title(LOCTEXT("SyncDialogTitle", "NPC XLSX Sync - Review Changes"))
+		.Title(LOCTEXT("SyncDialogTitle", "SYNC APPROVAL"))
 		.SizingRule(ESizingRule::UserSized)
-		.ClientSize(FVector2D(950, 600))
+		.ClientSize(FVector2D(1200, 800))  // Larger default size
 		.SupportsMinimize(false)
-		.SupportsMaximize(true);
+		.SupportsMaximize(true)
+		.IsInitiallyMaximized(false);
 
 	TSharedRef<SNPCXLSXSyncDialog> Dialog = SNew(SNPCXLSXSyncDialog)
 		.SyncResult(&SyncResult);
@@ -98,78 +111,104 @@ bool SNPCXLSXSyncDialog::ShowModal(FNPCSyncResult& SyncResult, TSharedPtr<SWindo
 
 TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildHeader()
 {
-	return SNew(SVerticalBox)
+	return SNew(SHorizontalBox)
 
 		// Title
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0, 0, 0, 8)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
 		[
 			SNew(STextBlock)
-				.Text(LOCTEXT("SyncHeader", "Review NPC Sync Changes"))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+				.Text(LOCTEXT("SyncHeader", "SYNC APPROVAL"))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
 		]
 
-		// Summary
-		+ SVerticalBox::Slot()
-		.AutoHeight()
+		// Spacer
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			SNullWidget::NullWidget
+		]
+
+		// Filter checkboxes
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(0, 0, 16, 0)
+		[
+			SNew(SCheckBox)
+				.IsChecked(bShowUnchanged ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+				.OnCheckStateChanged(this, &SNPCXLSXSyncDialog::OnShowUnchangedChanged)
+				[
+					SNew(STextBlock)
+						.Text(LOCTEXT("ShowUnchanged", "Show Unchanged"))
+				]
+		]
+
+		// Cancel button
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(4, 0)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Cancel", "Cancel"))
+				.OnClicked(this, &SNPCXLSXSyncDialog::OnCancelClicked)
+		]
+
+		// Apply button
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(4, 0)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Apply", "Apply"))
+				.OnClicked(this, &SNPCXLSXSyncDialog::OnApplyClicked)
+				.IsEnabled_Lambda([this]() { return CanApply(); })
+				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+		];
+}
+
+TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildStatusBar()
+{
+	return SNew(SHorizontalBox)
+
+		// Change count and resolution progress
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
 		[
 			SNew(STextBlock)
 				.Text_Lambda([this]() { return GetSummaryText(); })
-		]
-
-		// Filter options
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0, 8, 0, 0)
-		[
-			SNew(SHorizontalBox)
-
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(0, 0, 16, 0)
-			[
-				SNew(SCheckBox)
-					.IsChecked(bShowUnchanged ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-					.OnCheckStateChanged(this, &SNPCXLSXSyncDialog::OnShowUnchangedChanged)
-					[
-						SNew(STextBlock)
-							.Text(LOCTEXT("ShowUnchanged", "Show Unchanged"))
-					]
-			]
-
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SCheckBox)
-					.IsChecked(bShowConflictsOnly ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-					.OnCheckStateChanged(this, &SNPCXLSXSyncDialog::OnShowConflictsOnlyChanged)
-					[
-						SNew(STextBlock)
-							.Text(LOCTEXT("ShowConflictsOnly", "Show Conflicts Only"))
-					]
-			]
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
 		];
 }
 
 TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildEntryList()
 {
+	// v4.11.1: Columns - Status, NPCName, NPCId, Base, UE, Excel, Action
 	TSharedRef<SHeaderRow> HeaderRow = SNew(SHeaderRow)
 		+ SHeaderRow::Column("Status")
 			.DefaultLabel(LOCTEXT("StatusCol", "Status"))
-			.FillWidth(0.12f)
+			.FillWidth(0.10f)
 		+ SHeaderRow::Column("NPCName")
 			.DefaultLabel(LOCTEXT("NPCNameCol", "NPC Name"))
-			.FillWidth(0.20f)
+			.FillWidth(0.14f)
 		+ SHeaderRow::Column("NPCId")
 			.DefaultLabel(LOCTEXT("NPCIdCol", "NPC ID"))
+			.FillWidth(0.10f)
+		+ SHeaderRow::Column("Base")
+			.DefaultLabel(LOCTEXT("BaseCol", "Last Export"))
 			.FillWidth(0.18f)
-		+ SHeaderRow::Column("Preview")
-			.DefaultLabel(LOCTEXT("PreviewCol", "Change Preview"))
-			.FillWidth(0.30f)
-		+ SHeaderRow::Column("Resolution")
-			.DefaultLabel(LOCTEXT("ResolutionCol", "Resolution"))
-			.FillWidth(0.20f);
+		+ SHeaderRow::Column("UE")
+			.DefaultLabel(LOCTEXT("UECol", "UE"))
+			.FillWidth(0.18f)
+		+ SHeaderRow::Column("Excel")
+			.DefaultLabel(LOCTEXT("ExcelCol", "Excel"))
+			.FillWidth(0.18f)
+		+ SHeaderRow::Column("Action")
+			.DefaultLabel(LOCTEXT("ActionCol", "Action"))
+			.FillWidth(0.12f);
 
 	return SAssignNew(ListView, SListView<TSharedPtr<FNPCSyncEntry>>)
 		.ListItemsSource(&DisplayedEntries)
@@ -182,6 +221,41 @@ TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildFooter()
 {
 	return SNew(SHorizontalBox)
 
+		// Legend
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0, 0, 8, 0)
+			[
+				SNew(SBorder)
+					.BorderBackgroundColor(FLinearColor(0.8f, 0.6f, 0.2f, 0.3f))  // Yellow
+					.Padding(FMargin(8, 2))
+					[
+						SNew(STextBlock)
+							.Text(LOCTEXT("LegendUnresolved", "Unresolved"))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					]
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SBorder)
+					.BorderBackgroundColor(FLinearColor(0.2f, 0.6f, 0.2f, 0.3f))  // Green
+					.Padding(FMargin(8, 2))
+					[
+						SNew(STextBlock)
+							.Text(LOCTEXT("LegendResolved", "Resolved"))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					]
+			]
+		]
+
 		// Spacer
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.0f)
@@ -189,26 +263,25 @@ TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildFooter()
 			SNullWidget::NullWidget
 		]
 
-		// Cancel button
+		// Apply instruction
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(4, 0)
+		.VAlign(VAlign_Center)
 		[
-			SNew(SButton)
-				.Text(LOCTEXT("Cancel", "Cancel"))
-				.OnClicked(this, &SNPCXLSXSyncDialog::OnCancelClicked)
-		]
-
-		// Apply button
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(4, 0)
-		[
-			SNew(SButton)
-				.Text(LOCTEXT("Apply", "Apply Changes"))
-				.OnClicked(this, &SNPCXLSXSyncDialog::OnApplyClicked)
-				.IsEnabled_Lambda([this]() { return CanApply(); })
-				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+			SNew(STextBlock)
+				.Text_Lambda([this]()
+				{
+					if (CanApply())
+					{
+						return LOCTEXT("ReadyToApply", "All changes resolved. Click Apply to confirm.");
+					}
+					return LOCTEXT("ResolveFirst", "Resolve all changes before applying.");
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Italic", 10))
+				.ColorAndOpacity_Lambda([this]()
+				{
+					return CanApply() ? FLinearColor(0.2f, 0.8f, 0.2f) : FLinearColor(0.8f, 0.6f, 0.2f);
+				})
 		];
 }
 
@@ -218,7 +291,7 @@ TSharedRef<ITableRow> SNPCXLSXSyncDialog::OnGenerateRow(TSharedPtr<FNPCSyncEntry
 		.Entry(Item)
 		.OnResolutionChanged_Lambda([this]()
 		{
-			// Force refresh to update Apply button state
+			// Force refresh to update Apply button state and row colors
 			ListView->RequestListRefresh();
 		});
 }
@@ -263,7 +336,7 @@ void SNPCXLSXSyncDialog::RefreshEntryList()
 	{
 		for (FNPCSyncEntry& Entry : SyncResult->Entries)
 		{
-			// Apply filters
+			// Apply filters - by default hide Unchanged
 			if (!bShowUnchanged && Entry.Status == ENPCSyncStatus::Unchanged)
 			{
 				continue;
@@ -290,15 +363,27 @@ FText SNPCXLSXSyncDialog::GetSummaryText() const
 		return FText::GetEmpty();
 	}
 
+	// v4.11.1: Count changes requiring resolution and how many are resolved
+	int32 TotalChanges = 0;
+	int32 ResolvedCount = 0;
+
+	for (const FNPCSyncEntry& Entry : SyncResult->Entries)
+	{
+		if (Entry.RequiresResolution())
+		{
+			TotalChanges++;
+			if (Entry.Resolution != ENPCConflictResolution::Unresolved)
+			{
+				ResolvedCount++;
+			}
+		}
+	}
+
+	// Format: "12 changes | 5 of 12 resolved"
 	return FText::Format(
-		LOCTEXT("SyncSummary", "Total: {0} NPCs | Unchanged: {1} | Modified in UE: {2} | Modified in Excel: {3} | Conflicts: {4} | Added: {5} | Deleted: {6}"),
-		FText::AsNumber(SyncResult->Entries.Num()),
-		FText::AsNumber(SyncResult->UnchangedCount),
-		FText::AsNumber(SyncResult->ModifiedInUECount),
-		FText::AsNumber(SyncResult->ModifiedInExcelCount),
-		FText::AsNumber(SyncResult->ConflictCount),
-		FText::AsNumber(SyncResult->AddedInUECount + SyncResult->AddedInExcelCount),
-		FText::AsNumber(SyncResult->DeletedCount)
+		LOCTEXT("SyncSummaryNew", "{0} changes | {1} of {0} resolved"),
+		FText::AsNumber(TotalChanges),
+		FText::AsNumber(ResolvedCount)
 	);
 }
 
@@ -318,7 +403,8 @@ void SNPCSyncEntryRow::Construct(const FArguments& InArgs, const TSharedRef<STab
 
 	SMultiColumnTableRow<TSharedPtr<FNPCSyncEntry>>::Construct(
 		FSuperRowType::FArguments()
-			.Padding(FMargin(2.0f, 1.0f)),
+			.Padding(FMargin(2.0f, 1.0f))
+			.Style(&FAppStyle::Get().GetWidgetStyle<FTableRowStyle>("TableView.Row")),
 		InOwnerTable
 	);
 }
@@ -330,28 +416,58 @@ TSharedRef<SWidget> SNPCSyncEntryRow::GenerateWidgetForColumn(const FName& Colum
 		return SNullWidget::NullWidget;
 	}
 
+	// v4.11.1: Wrap all cells in colored border for row highlighting
+	TSharedRef<SWidget> CellContent = SNullWidget::NullWidget;
+
 	if (ColumnName == TEXT("Status"))
 	{
-		return CreateStatusCell();
+		CellContent = CreateStatusCell();
 	}
-	if (ColumnName == TEXT("NPCName"))
+	else if (ColumnName == TEXT("NPCName"))
 	{
-		return CreateNPCNameCell();
+		CellContent = CreateNPCNameCell();
 	}
-	if (ColumnName == TEXT("NPCId"))
+	else if (ColumnName == TEXT("NPCId"))
 	{
-		return CreateNPCIdCell();
+		CellContent = CreateNPCIdCell();
 	}
-	if (ColumnName == TEXT("Preview"))
+	else if (ColumnName == TEXT("Base"))
 	{
-		return CreatePreviewCell();
+		CellContent = CreateBaseCell();
 	}
-	if (ColumnName == TEXT("Resolution"))
+	else if (ColumnName == TEXT("UE"))
 	{
-		return CreateResolutionCell();
+		CellContent = CreateUECell();
+	}
+	else if (ColumnName == TEXT("Excel"))
+	{
+		CellContent = CreateExcelCell();
+	}
+	else if (ColumnName == TEXT("Action"))
+	{
+		CellContent = CreateActionCell();
 	}
 
-	return SNullWidget::NullWidget;
+	// Apply row background color
+	FLinearColor BgColor = FLinearColor::Transparent;
+	if (Entry->RequiresResolution())
+	{
+		if (Entry->Resolution == ENPCConflictResolution::Unresolved)
+		{
+			BgColor = FLinearColor(0.8f, 0.6f, 0.2f, 0.15f);  // Yellow
+		}
+		else
+		{
+			BgColor = FLinearColor(0.2f, 0.6f, 0.2f, 0.15f);  // Green
+		}
+	}
+
+	return SNew(SBorder)
+		.BorderBackgroundColor(BgColor)
+		.Padding(0)
+		[
+			CellContent
+		];
 }
 
 TSharedRef<SWidget> SNPCSyncEntryRow::CreateStatusCell()
@@ -417,239 +533,323 @@ TSharedRef<SWidget> SNPCSyncEntryRow::CreateNPCIdCell()
 		];
 }
 
-TSharedRef<SWidget> SNPCSyncEntryRow::CreatePreviewCell()
+TSharedRef<SWidget> SNPCSyncEntryRow::CreateBaseCell()
 {
-	// Build a preview of what changed
-	FString PreviewText;
-
-	if (Entry->Status == ENPCSyncStatus::Conflict || Entry->Status == ENPCSyncStatus::DeleteConflict)
+	// v4.11.1: Show Base (Last Export) value - informational only
+	if (!Entry->BaseRow.IsValid())
 	{
-		// Show both versions for conflicts
-		TArray<FString> Differences;
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("NoBase", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
+	}
 
-		if (Entry->UERow.IsValid() && Entry->ExcelRow.IsValid())
+	// Build preview: NPCName [AbilityConfig]
+	FString Preview = Entry->BaseRow->NPCName;
+	if (!Entry->BaseRow->AbilityConfig.IsNull())
+	{
+		FString ACName = FPaths::GetBaseFilename(Entry->BaseRow->AbilityConfig.GetAssetName());
+		if (!ACName.IsEmpty())
 		{
-			// Compare key fields
-			if (Entry->UERow->DisplayName != Entry->ExcelRow->DisplayName)
-			{
-				Differences.Add(FString::Printf(TEXT("Display: %s vs %s"),
-					*Entry->UERow->DisplayName, *Entry->ExcelRow->DisplayName));
-			}
-			if (Entry->UERow->MinLevel != Entry->ExcelRow->MinLevel ||
-				Entry->UERow->MaxLevel != Entry->ExcelRow->MaxLevel)
-			{
-				Differences.Add(FString::Printf(TEXT("Level: %d-%d vs %d-%d"),
-					Entry->UERow->MinLevel, Entry->UERow->MaxLevel,
-					Entry->ExcelRow->MinLevel, Entry->ExcelRow->MaxLevel));
-			}
-			if (Entry->UERow->bIsVendor != Entry->ExcelRow->bIsVendor)
-			{
-				Differences.Add(TEXT("Vendor status differs"));
-			}
-		}
-		else if (Entry->UERow.IsValid())
-		{
-			PreviewText = TEXT("Excel: (deleted)");
-		}
-		else if (Entry->ExcelRow.IsValid())
-		{
-			PreviewText = TEXT("UE: (deleted)");
-		}
-
-		if (Differences.Num() > 0)
-		{
-			PreviewText = FString::Join(Differences, TEXT(" | "));
-			if (PreviewText.Len() > 50)
-			{
-				PreviewText = PreviewText.Left(47) + TEXT("...");
-			}
+			Preview += TEXT(" [") + ACName + TEXT("]");
 		}
 	}
-	else if (Entry->Status == ENPCSyncStatus::AddedInExcel || Entry->Status == ENPCSyncStatus::AddedInUE)
-	{
-		PreviewText = TEXT("New NPC");
-	}
-	else if (Entry->Status == ENPCSyncStatus::DeletedInExcel || Entry->Status == ENPCSyncStatus::DeletedInUE)
-	{
-		PreviewText = TEXT("Deleted");
-	}
-	else if (Entry->Status == ENPCSyncStatus::ModifiedInExcel || Entry->Status == ENPCSyncStatus::ModifiedInUE)
-	{
-		// Show what changed
-		TArray<FString> Changes;
-		const FNPCTableRow* Source = Entry->Status == ENPCSyncStatus::ModifiedInExcel
-			? (Entry->ExcelRow.IsValid() ? Entry->ExcelRow.Get() : nullptr)
-			: (Entry->UERow.IsValid() ? Entry->UERow.Get() : nullptr);
-		const FNPCTableRow* Base = Entry->BaseRow.IsValid() ? Entry->BaseRow.Get() : nullptr;
+	if (Preview.Len() > 25) Preview = Preview.Left(22) + TEXT("...");
 
-		if (Source && Base)
-		{
-			if (Source->DisplayName != Base->DisplayName) Changes.Add(TEXT("DisplayName"));
-			if (Source->MinLevel != Base->MinLevel || Source->MaxLevel != Base->MaxLevel) Changes.Add(TEXT("Level"));
-			if (Source->bIsVendor != Base->bIsVendor) Changes.Add(TEXT("Vendor"));
-			if (Source->Blueprint != Base->Blueprint) Changes.Add(TEXT("Blueprint"));
-			if (Source->AbilityConfig != Base->AbilityConfig) Changes.Add(TEXT("AbilityConfig"));
-		}
-
-		if (Changes.Num() > 0)
-		{
-			PreviewText = FString::Printf(TEXT("Changed: %s"), *FString::Join(Changes, TEXT(", ")));
-		}
-		else
-		{
-			PreviewText = TEXT("Modified");
-		}
-	}
-	else
-	{
-		PreviewText = TEXT("-");
-	}
+	// For unchanged, show the value without dimming
+	FLinearColor TextColor = Entry->RequiresResolution() ? FLinearColor(0.6f, 0.6f, 0.6f) : FLinearColor::White;
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(STextBlock)
-				.Text(FText::FromString(PreviewText))
+				.Text(FText::FromString(Preview))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.ToolTipText_Lambda([this]()
-				{
-					// Show full details in tooltip
-					FString Details;
-					if (Entry->UERow.IsValid())
-					{
-						Details += FString::Printf(TEXT("UE: %s (%s) L%d-%d"),
-							*Entry->UERow->NPCName, *Entry->UERow->DisplayName,
-							Entry->UERow->MinLevel, Entry->UERow->MaxLevel);
-					}
-					if (Entry->ExcelRow.IsValid())
-					{
-						if (!Details.IsEmpty()) Details += TEXT("\n");
-						Details += FString::Printf(TEXT("Excel: %s (%s) L%d-%d"),
-							*Entry->ExcelRow->NPCName, *Entry->ExcelRow->DisplayName,
-							Entry->ExcelRow->MinLevel, Entry->ExcelRow->MaxLevel);
-					}
-					return FText::FromString(Details);
-				})
+				.ColorAndOpacity(TextColor)
+				.ToolTipText(FText::Format(
+					LOCTEXT("BaseTooltip", "Last Export (Base):\nName: {0}\nDisplay: {1}\nLevel: {2}-{3}"),
+					FText::FromString(Entry->BaseRow->NPCName),
+					FText::FromString(Entry->BaseRow->DisplayName),
+					FText::AsNumber(Entry->BaseRow->MinLevel),
+					FText::AsNumber(Entry->BaseRow->MaxLevel)))
 		];
 }
 
-TSharedRef<SWidget> SNPCSyncEntryRow::CreateResolutionCell()
+TSharedRef<SWidget> SNPCSyncEntryRow::CreateUECell()
 {
-	// v4.11: All entries except Unchanged require explicit user selection
-	// Show actual values in buttons, not generic "UE"/"Excel" labels
-
-	// Helper to get a meaningful preview (NPC Name + AbilityConfig)
-	auto GetNPCPreview = [](const TSharedPtr<FNPCTableRow>& Row, int32 MaxLen) -> FString
+	// v4.11.1: UE value with radio-style selection (○/●)
+	if (!Entry->UERow.IsValid())
 	{
-		if (!Row.IsValid()) return TEXT("(none)");
-		FString Preview = Row->NPCName;
-		// Add ability config suffix if present
-		if (!Row->AbilityConfig.IsNull())
-		{
-			FString ACName = FPaths::GetBaseFilename(Row->AbilityConfig.GetAssetName());
-			if (!ACName.IsEmpty())
-			{
-				Preview += TEXT(" [") + ACName + TEXT("]");
-			}
-		}
-		if (Preview.Len() > MaxLen) return Preview.Left(MaxLen - 3) + TEXT("...");
-		return Preview;
-	};
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("UEDeleted", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
+	}
 
-	// For Unchanged (doesn't require resolution), show auto-resolved
+	// Build preview: NPCName [AbilityConfig]
+	FString Preview = Entry->UERow->NPCName;
+	if (!Entry->UERow->AbilityConfig.IsNull())
+	{
+		FString ACName = FPaths::GetBaseFilename(Entry->UERow->AbilityConfig.GetAssetName());
+		if (!ACName.IsEmpty())
+		{
+			Preview += TEXT(" [") + ACName + TEXT("]");
+		}
+	}
+	if (Preview.Len() > 22) Preview = Preview.Left(19) + TEXT("...");
+
+	// For unchanged rows, just show the value
 	if (!Entry->RequiresResolution())
 	{
 		return SNew(SBox)
 			.Padding(FMargin(4.0f, 2.0f))
 			[
 				SNew(STextBlock)
-					.Text(LOCTEXT("AutoResolved", "Unchanged"))
-					.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
+					.Text(FText::FromString(Preview))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ToolTipText(FText::Format(
+						LOCTEXT("UETooltipSimple", "UE:\nName: {0}\nDisplay: {1}\nLevel: {2}-{3}"),
+						FText::FromString(Entry->UERow->NPCName),
+						FText::FromString(Entry->UERow->DisplayName),
+						FText::AsNumber(Entry->UERow->MinLevel),
+						FText::AsNumber(Entry->UERow->MaxLevel)))
+			];
+	}
+
+	// Radio-style selection
+	bool bSelected = (Entry->Resolution == ENPCConflictResolution::KeepUE);
+	FString RadioIcon = bSelected ? TEXT("●") : TEXT("○");
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(2))
+				.OnClicked_Lambda([this]()
+				{
+					Entry->Resolution = ENPCConflictResolution::KeepUE;
+					OnResolutionChanged.ExecuteIfBound();
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0, 0, 4, 0)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(RadioIcon))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.2f, 0.6f, 1.0f) : FLinearColor(0.5f, 0.5f, 0.5f))
+					]
+
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(Preview))
+							.Font(FCoreStyle::GetDefaultFontStyle(bSelected ? "Bold" : "Regular", 9))
+							.ToolTipText(FText::Format(
+								LOCTEXT("UETooltip", "UE:\nName: {0}\nDisplay: {1}\nLevel: {2}-{3}"),
+								FText::FromString(Entry->UERow->NPCName),
+								FText::FromString(Entry->UERow->DisplayName),
+								FText::AsNumber(Entry->UERow->MinLevel),
+								FText::AsNumber(Entry->UERow->MaxLevel)))
+					]
+				]
+		];
+}
+
+TSharedRef<SWidget> SNPCSyncEntryRow::CreateExcelCell()
+{
+	// v4.11.1: Excel value with radio-style selection (○/●)
+	if (!Entry->ExcelRow.IsValid())
+	{
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("ExcelDeleted", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
 			];
 	}
 
-	// Get actual values for buttons
-	FString UELabel = GetNPCPreview(Entry->UERow, 25);
-	FString ExcelLabel = GetNPCPreview(Entry->ExcelRow, 25);
-
-	// Build tooltips with full details
-	auto BuildTooltip = [](const TSharedPtr<FNPCTableRow>& Row, const FString& Source) -> FString
+	// Build preview: NPCName [AbilityConfig]
+	FString Preview = Entry->ExcelRow->NPCName;
+	if (!Entry->ExcelRow->AbilityConfig.IsNull())
 	{
-		if (!Row.IsValid()) return Source + TEXT(": (deleted)");
-		return FString::Printf(TEXT("%s:\nName: %s\nDisplay: %s\nLevel: %d-%d\nAbilityConfig: %s"),
-			*Source, *Row->NPCName, *Row->DisplayName, Row->MinLevel, Row->MaxLevel,
-			Row->AbilityConfig.IsNull() ? TEXT("(none)") : *Row->AbilityConfig.GetAssetName());
-	};
+		FString ACName = FPaths::GetBaseFilename(Entry->ExcelRow->AbilityConfig.GetAssetName());
+		if (!ACName.IsEmpty())
+		{
+			Preview += TEXT(" [") + ACName + TEXT("]");
+		}
+	}
+	if (Preview.Len() > 22) Preview = Preview.Left(19) + TEXT("...");
 
-	FString UETooltip = BuildTooltip(Entry->UERow, TEXT("UE"));
-	FString ExcelTooltip = BuildTooltip(Entry->ExcelRow, TEXT("Excel"));
+	// For unchanged rows, just show the value
+	if (!Entry->RequiresResolution())
+	{
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(FText::FromString(Preview))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ToolTipText(FText::Format(
+						LOCTEXT("ExcelTooltipSimple", "Excel:\nName: {0}\nDisplay: {1}\nLevel: {2}-{3}"),
+						FText::FromString(Entry->ExcelRow->NPCName),
+						FText::FromString(Entry->ExcelRow->DisplayName),
+						FText::AsNumber(Entry->ExcelRow->MinLevel),
+						FText::AsNumber(Entry->ExcelRow->MaxLevel)))
+			];
+	}
 
-	// Check if this is a delete scenario (one side missing)
-	bool bUEDeleted = !Entry->UERow.IsValid();
-	bool bExcelDeleted = !Entry->ExcelRow.IsValid();
+	// Radio-style selection
+	bool bSelected = (Entry->Resolution == ENPCConflictResolution::KeepExcel);
+	FString RadioIcon = bSelected ? TEXT("●") : TEXT("○");
 
-	// v4.11: Use buttons showing actual values, starts unselected
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SHorizontalBox)
+			SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(2))
+				.OnClicked_Lambda([this]()
+				{
+					Entry->Resolution = ENPCConflictResolution::KeepExcel;
+					OnResolutionChanged.ExecuteIfBound();
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
 
-			// UE value button
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(1.0f, 0.0f)
-			[
-				SNew(SButton)
-					.Text(FText::FromString(bUEDeleted ? TEXT("(deleted)") : UELabel))
-					.ToolTipText(FText::FromString(UETooltip))
-					.OnClicked_Lambda([this]()
-					{
-						Entry->Resolution = ENPCConflictResolution::KeepUE;
-						OnResolutionChanged.ExecuteIfBound();
-						return FReply::Handled();
-					})
-					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == ENPCConflictResolution::KeepUE ? "FlatButton.Primary" : "FlatButton.Default")
-					.IsEnabled(!bUEDeleted)
-			]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0, 0, 4, 0)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(RadioIcon))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.2f, 0.8f, 0.2f) : FLinearColor(0.5f, 0.5f, 0.5f))
+					]
 
-			// Excel value button
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(1.0f, 0.0f)
-			[
-				SNew(SButton)
-					.Text(FText::FromString(bExcelDeleted ? TEXT("(deleted)") : ExcelLabel))
-					.ToolTipText(FText::FromString(ExcelTooltip))
-					.OnClicked_Lambda([this]()
-					{
-						Entry->Resolution = ENPCConflictResolution::KeepExcel;
-						OnResolutionChanged.ExecuteIfBound();
-						return FReply::Handled();
-					})
-					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == ENPCConflictResolution::KeepExcel ? "FlatButton.Success" : "FlatButton.Default")
-					.IsEnabled(!bExcelDeleted)
-			]
-
-			// Remove button (for cases where deletion is an option)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(1.0f, 0.0f)
-			[
-				SNew(SButton)
-					.Text(FText::FromString(TEXT("Remove")))
-					.ToolTipText(LOCTEXT("RemoveTooltip", "Remove this NPC from the table"))
-					.OnClicked_Lambda([this]()
-					{
-						Entry->Resolution = ENPCConflictResolution::Delete;
-						OnResolutionChanged.ExecuteIfBound();
-						return FReply::Handled();
-					})
-					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == ENPCConflictResolution::Delete ? "FlatButton.Danger" : "FlatButton.Default")
-					// v4.11: Show Remove for any case where deletion makes sense
-					.Visibility((bUEDeleted || bExcelDeleted) ? EVisibility::Visible : EVisibility::Collapsed)
-			]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(Preview))
+							.Font(FCoreStyle::GetDefaultFontStyle(bSelected ? "Bold" : "Regular", 9))
+							.ToolTipText(FText::Format(
+								LOCTEXT("ExcelTooltip", "Excel:\nName: {0}\nDisplay: {1}\nLevel: {2}-{3}"),
+								FText::FromString(Entry->ExcelRow->NPCName),
+								FText::FromString(Entry->ExcelRow->DisplayName),
+								FText::AsNumber(Entry->ExcelRow->MinLevel),
+								FText::AsNumber(Entry->ExcelRow->MaxLevel)))
+					]
+				]
 		];
+}
+
+TSharedRef<SWidget> SNPCSyncEntryRow::CreateActionCell()
+{
+	// v4.11.1: Action column - shows REMOVE option only when deletion makes sense
+	bool bUEDeleted = !Entry->UERow.IsValid();
+	bool bExcelDeleted = !Entry->ExcelRow.IsValid();
+
+	// Only show REMOVE for cases where one side is missing (cases 6-14 in design)
+	if (!(bUEDeleted || bExcelDeleted))
+	{
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("NoAction", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
+	}
+
+	// For unchanged, no action needed
+	if (!Entry->RequiresResolution())
+	{
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("NoAction", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
+	}
+
+	// Radio-style REMOVE option
+	bool bSelected = (Entry->Resolution == ENPCConflictResolution::Delete);
+	FString RadioIcon = bSelected ? TEXT("●") : TEXT("○");
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(2))
+				.OnClicked_Lambda([this]()
+				{
+					Entry->Resolution = ENPCConflictResolution::Delete;
+					OnResolutionChanged.ExecuteIfBound();
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0, 0, 4, 0)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(RadioIcon))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.9f, 0.2f, 0.2f) : FLinearColor(0.5f, 0.5f, 0.5f))
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+							.Text(LOCTEXT("Remove", "REMOVE"))
+							.Font(FCoreStyle::GetDefaultFontStyle(bSelected ? "Bold" : "Regular", 9))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.9f, 0.2f, 0.2f) : FLinearColor::White)
+					]
+				]
+		];
+}
+
+TSharedRef<SWidget> SNPCSyncEntryRow::CreatePreviewCell()
+{
+	// Legacy - kept for compatibility but not used in new layout
+	return SNullWidget::NullWidget;
+}
+
+TSharedRef<SWidget> SNPCSyncEntryRow::CreateResolutionCell()
+{
+	// Legacy - kept for compatibility but not used in new layout
+	return SNullWidget::NullWidget;
 }
 
 #undef LOCTEXT_NAMESPACE

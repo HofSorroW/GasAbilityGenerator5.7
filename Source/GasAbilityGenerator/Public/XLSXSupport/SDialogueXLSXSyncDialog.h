@@ -1,4 +1,5 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Dialog
+// v4.11.1: Full-screen approval window with radio selection and row highlighting
 // v4.3: UI for reviewing and resolving sync conflicts
 
 #pragma once
@@ -20,7 +21,10 @@ enum class EDialogueSyncDialogResult : uint8
 };
 
 /**
- * Sync dialog for reviewing Excel ↔ UE changes and resolving conflicts
+ * v4.11.1: Full-screen sync approval dialog
+ * - Radio-style selection (○/●)
+ * - Row highlighting (Yellow = unresolved, Green = resolved)
+ * - Columns: Status, DialogueID, NodeID, Base (Last Export), UE, Excel, Action
  */
 class GASABILITYGENERATOR_API SDialogueXLSXSyncDialog : public SCompoundWidget
 {
@@ -52,6 +56,7 @@ private:
 
 	// UI Building
 	TSharedRef<SWidget> BuildHeader();
+	TSharedRef<SWidget> BuildStatusBar();
 	TSharedRef<SWidget> BuildEntryList();
 	TSharedRef<SWidget> BuildFooter();
 
@@ -72,7 +77,7 @@ private:
 };
 
 /**
- * Row widget for sync entry display
+ * v4.11.1: Row widget with radio-style selection and background highlighting
  */
 class SDialogueSyncEntryRow : public SMultiColumnTableRow<TSharedPtr<FDialogueSyncEntry>>
 {
@@ -89,11 +94,17 @@ private:
 	TSharedPtr<FDialogueSyncEntry> Entry;
 	FSimpleDelegate OnResolutionChanged;
 
+	// v4.11.1: New column cells
 	TSharedRef<SWidget> CreateStatusCell();
-	TSharedRef<SWidget> CreateNodeIDCell();
 	TSharedRef<SWidget> CreateDialogueIDCell();
+	TSharedRef<SWidget> CreateNodeIDCell();
+	TSharedRef<SWidget> CreateBaseCell();
+	TSharedRef<SWidget> CreateUECell();
+	TSharedRef<SWidget> CreateExcelCell();
+	TSharedRef<SWidget> CreateActionCell();
+
+	// Legacy cells (kept for compatibility)
 	TSharedRef<SWidget> CreateTextPreviewCell();
 	TSharedRef<SWidget> CreateResolutionCell();
-
 	void OnResolutionSelected(TSharedPtr<FString> Selection, ESelectInfo::Type SelectInfo);
 };

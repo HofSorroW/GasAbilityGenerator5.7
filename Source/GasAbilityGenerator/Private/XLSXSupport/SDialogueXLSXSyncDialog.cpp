@@ -1,5 +1,6 @@
 // GasAbilityGenerator - Dialogue XLSX Sync Dialog Implementation
-// v4.11: Show actual values, no pre-selection for non-Unchanged, row highlighting
+// v4.11.1: Full-screen approval window with radio selection and row highlighting
+// v4.11: Show actual values, no pre-selection for non-Unchanged
 // v4.3: UI for reviewing and resolving sync conflicts
 
 #include "XLSXSupport/SDialogueXLSXSyncDialog.h"
@@ -8,6 +9,7 @@
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Views/SHeaderRow.h"
@@ -31,10 +33,10 @@ void SDialogueXLSXSyncDialog::Construct(const FArguments& InArgs)
 	[
 		SNew(SVerticalBox)
 
-		// Header with summary
+		// Header with title and buttons
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(8.0f)
+		.Padding(16.0f, 12.0f)
 		[
 			BuildHeader()
 		]
@@ -43,12 +45,21 @@ void SDialogueXLSXSyncDialog::Construct(const FArguments& InArgs)
 		.AutoHeight()
 		[
 			SNew(SSeparator)
+				.Thickness(2.0f)
+		]
+
+		// Status bar
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(16.0f, 8.0f)
+		[
+			BuildStatusBar()
 		]
 
 		// Entry list
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
-		.Padding(4.0f)
+		.Padding(8.0f, 4.0f)
 		[
 			BuildEntryList()
 		]
@@ -62,7 +73,7 @@ void SDialogueXLSXSyncDialog::Construct(const FArguments& InArgs)
 		// Footer with buttons
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(8.0f)
+		.Padding(16.0f, 12.0f)
 		[
 			BuildFooter()
 		]
@@ -71,12 +82,14 @@ void SDialogueXLSXSyncDialog::Construct(const FArguments& InArgs)
 
 bool SDialogueXLSXSyncDialog::ShowModal(FDialogueSyncResult& SyncResult, TSharedPtr<SWindow> ParentWindow)
 {
+	// v4.11.1: Full-screen approval window
 	TSharedRef<SWindow> Window = SNew(SWindow)
-		.Title(LOCTEXT("SyncDialogTitle", "XLSX Sync - Review Changes"))
+		.Title(LOCTEXT("SyncDialogTitle", "SYNC APPROVAL"))
 		.SizingRule(ESizingRule::UserSized)
-		.ClientSize(FVector2D(900, 600))
+		.ClientSize(FVector2D(1200, 800))  // Larger default size
 		.SupportsMinimize(false)
-		.SupportsMaximize(true);
+		.SupportsMaximize(true)
+		.IsInitiallyMaximized(false);
 
 	TSharedRef<SDialogueXLSXSyncDialog> Dialog = SNew(SDialogueXLSXSyncDialog)
 		.SyncResult(&SyncResult);
@@ -99,78 +112,104 @@ bool SDialogueXLSXSyncDialog::ShowModal(FDialogueSyncResult& SyncResult, TShared
 
 TSharedRef<SWidget> SDialogueXLSXSyncDialog::BuildHeader()
 {
-	return SNew(SVerticalBox)
+	return SNew(SHorizontalBox)
 
 		// Title
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0, 0, 0, 8)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
 		[
 			SNew(STextBlock)
-				.Text(LOCTEXT("SyncHeader", "Review Sync Changes"))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+				.Text(LOCTEXT("SyncHeader", "SYNC APPROVAL"))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
 		]
 
-		// Summary
-		+ SVerticalBox::Slot()
-		.AutoHeight()
+		// Spacer
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			SNullWidget::NullWidget
+		]
+
+		// Filter checkboxes
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(0, 0, 16, 0)
+		[
+			SNew(SCheckBox)
+				.IsChecked(bShowUnchanged ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+				.OnCheckStateChanged(this, &SDialogueXLSXSyncDialog::OnShowUnchangedChanged)
+				[
+					SNew(STextBlock)
+						.Text(LOCTEXT("ShowUnchanged", "Show Unchanged"))
+				]
+		]
+
+		// Cancel button
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(4, 0)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Cancel", "Cancel"))
+				.OnClicked(this, &SDialogueXLSXSyncDialog::OnCancelClicked)
+		]
+
+		// Apply button
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(4, 0)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Apply", "Apply"))
+				.OnClicked(this, &SDialogueXLSXSyncDialog::OnApplyClicked)
+				.IsEnabled_Lambda([this]() { return CanApply(); })
+				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+		];
+}
+
+TSharedRef<SWidget> SDialogueXLSXSyncDialog::BuildStatusBar()
+{
+	return SNew(SHorizontalBox)
+
+		// Change count and resolution progress
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
 		[
 			SNew(STextBlock)
 				.Text_Lambda([this]() { return GetSummaryText(); })
-		]
-
-		// Filter options
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0, 8, 0, 0)
-		[
-			SNew(SHorizontalBox)
-
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(0, 0, 16, 0)
-			[
-				SNew(SCheckBox)
-					.IsChecked(bShowUnchanged ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-					.OnCheckStateChanged(this, &SDialogueXLSXSyncDialog::OnShowUnchangedChanged)
-					[
-						SNew(STextBlock)
-							.Text(LOCTEXT("ShowUnchanged", "Show Unchanged"))
-					]
-			]
-
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SCheckBox)
-					.IsChecked(bShowConflictsOnly ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-					.OnCheckStateChanged(this, &SDialogueXLSXSyncDialog::OnShowConflictsOnlyChanged)
-					[
-						SNew(STextBlock)
-							.Text(LOCTEXT("ShowConflictsOnly", "Show Conflicts Only"))
-					]
-			]
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
 		];
 }
 
 TSharedRef<SWidget> SDialogueXLSXSyncDialog::BuildEntryList()
 {
+	// v4.11.1: Columns - Status, DialogueID, NodeID, Base, UE, Excel, Action
 	TSharedRef<SHeaderRow> HeaderRow = SNew(SHeaderRow)
 		+ SHeaderRow::Column("Status")
 			.DefaultLabel(LOCTEXT("StatusCol", "Status"))
-			.FillWidth(0.15f)
+			.FillWidth(0.10f)
 		+ SHeaderRow::Column("DialogueID")
 			.DefaultLabel(LOCTEXT("DialogueIDCol", "Dialogue"))
-			.FillWidth(0.15f)
+			.FillWidth(0.12f)
 		+ SHeaderRow::Column("NodeID")
 			.DefaultLabel(LOCTEXT("NodeIDCol", "Node ID"))
-			.FillWidth(0.15f)
-		+ SHeaderRow::Column("Text")
-			.DefaultLabel(LOCTEXT("TextCol", "Text Preview"))
-			.FillWidth(0.35f)
-		+ SHeaderRow::Column("Resolution")
-			.DefaultLabel(LOCTEXT("ResolutionCol", "Resolution"))
-			.FillWidth(0.20f);
+			.FillWidth(0.10f)
+		+ SHeaderRow::Column("Base")
+			.DefaultLabel(LOCTEXT("BaseCol", "Last Export"))
+			.FillWidth(0.20f)
+		+ SHeaderRow::Column("UE")
+			.DefaultLabel(LOCTEXT("UECol", "UE"))
+			.FillWidth(0.20f)
+		+ SHeaderRow::Column("Excel")
+			.DefaultLabel(LOCTEXT("ExcelCol", "Excel"))
+			.FillWidth(0.20f)
+		+ SHeaderRow::Column("Action")
+			.DefaultLabel(LOCTEXT("ActionCol", "Action"))
+			.FillWidth(0.08f);
 
 	return SAssignNew(ListView, SListView<TSharedPtr<FDialogueSyncEntry>>)
 		.ListItemsSource(&DisplayedEntries)
@@ -183,6 +222,41 @@ TSharedRef<SWidget> SDialogueXLSXSyncDialog::BuildFooter()
 {
 	return SNew(SHorizontalBox)
 
+		// Legend
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0, 0, 8, 0)
+			[
+				SNew(SBorder)
+					.BorderBackgroundColor(FLinearColor(0.8f, 0.6f, 0.2f, 0.3f))  // Yellow
+					.Padding(FMargin(8, 2))
+					[
+						SNew(STextBlock)
+							.Text(LOCTEXT("LegendUnresolved", "Unresolved"))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					]
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SBorder)
+					.BorderBackgroundColor(FLinearColor(0.2f, 0.6f, 0.2f, 0.3f))  // Green
+					.Padding(FMargin(8, 2))
+					[
+						SNew(STextBlock)
+							.Text(LOCTEXT("LegendResolved", "Resolved"))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					]
+			]
+		]
+
 		// Spacer
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.0f)
@@ -190,26 +264,25 @@ TSharedRef<SWidget> SDialogueXLSXSyncDialog::BuildFooter()
 			SNullWidget::NullWidget
 		]
 
-		// Cancel button
+		// Apply instruction
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(4, 0)
+		.VAlign(VAlign_Center)
 		[
-			SNew(SButton)
-				.Text(LOCTEXT("Cancel", "Cancel"))
-				.OnClicked(this, &SDialogueXLSXSyncDialog::OnCancelClicked)
-		]
-
-		// Apply button
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(4, 0)
-		[
-			SNew(SButton)
-				.Text(LOCTEXT("Apply", "Apply Changes"))
-				.OnClicked(this, &SDialogueXLSXSyncDialog::OnApplyClicked)
-				.IsEnabled_Lambda([this]() { return CanApply(); })
-				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+			SNew(STextBlock)
+				.Text_Lambda([this]()
+				{
+					if (CanApply())
+					{
+						return LOCTEXT("ReadyToApply", "All changes resolved. Click Apply to confirm.");
+					}
+					return LOCTEXT("ResolveFirst", "Resolve all changes before applying.");
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Italic", 10))
+				.ColorAndOpacity_Lambda([this]()
+				{
+					return CanApply() ? FLinearColor(0.2f, 0.8f, 0.2f) : FLinearColor(0.8f, 0.6f, 0.2f);
+				})
 		];
 }
 
@@ -219,7 +292,7 @@ TSharedRef<ITableRow> SDialogueXLSXSyncDialog::OnGenerateRow(TSharedPtr<FDialogu
 		.Entry(Item)
 		.OnResolutionChanged_Lambda([this]()
 		{
-			// Force refresh to update Apply button state
+			// Force refresh to update Apply button state and row colors
 			ListView->RequestListRefresh();
 		});
 }
@@ -264,7 +337,7 @@ void SDialogueXLSXSyncDialog::RefreshEntryList()
 	{
 		for (FDialogueSyncEntry& Entry : SyncResult->Entries)
 		{
-			// Apply filters
+			// Apply filters - by default hide Unchanged
 			if (!bShowUnchanged && Entry.Status == EDialogueSyncStatus::Unchanged)
 			{
 				continue;
@@ -291,15 +364,27 @@ FText SDialogueXLSXSyncDialog::GetSummaryText() const
 		return FText::GetEmpty();
 	}
 
+	// v4.11.1: Count changes requiring resolution and how many are resolved
+	int32 TotalChanges = 0;
+	int32 ResolvedCount = 0;
+
+	for (const FDialogueSyncEntry& Entry : SyncResult->Entries)
+	{
+		if (Entry.RequiresResolution())
+		{
+			TotalChanges++;
+			if (Entry.Resolution != EDialogueConflictResolution::Unresolved)
+			{
+				ResolvedCount++;
+			}
+		}
+	}
+
+	// Format: "12 changes | 5 of 12 resolved"
 	return FText::Format(
-		LOCTEXT("SyncSummary", "Total: {0} rows | Unchanged: {1} | Modified in UE: {2} | Modified in Excel: {3} | Conflicts: {4} | Added: {5} | Deleted: {6}"),
-		FText::AsNumber(SyncResult->Entries.Num()),
-		FText::AsNumber(SyncResult->UnchangedCount),
-		FText::AsNumber(SyncResult->ModifiedInUECount),
-		FText::AsNumber(SyncResult->ModifiedInExcelCount),
-		FText::AsNumber(SyncResult->ConflictCount),
-		FText::AsNumber(SyncResult->AddedInUECount + SyncResult->AddedInExcelCount),
-		FText::AsNumber(SyncResult->DeletedCount)
+		LOCTEXT("SyncSummaryNew", "{0} changes | {1} of {0} resolved"),
+		FText::AsNumber(TotalChanges),
+		FText::AsNumber(ResolvedCount)
 	);
 }
 
@@ -317,11 +402,29 @@ void SDialogueSyncEntryRow::Construct(const FArguments& InArgs, const TSharedRef
 	Entry = InArgs._Entry;
 	OnResolutionChanged = InArgs._OnResolutionChanged;
 
+	// v4.11.1: Row background color based on resolution state
+	FLinearColor RowColor = FLinearColor::Transparent;
+	if (Entry.IsValid() && Entry->RequiresResolution())
+	{
+		if (Entry->Resolution == EDialogueConflictResolution::Unresolved)
+		{
+			RowColor = FLinearColor(0.8f, 0.6f, 0.2f, 0.15f);  // Yellow - unresolved
+		}
+		else
+		{
+			RowColor = FLinearColor(0.2f, 0.6f, 0.2f, 0.15f);  // Green - resolved
+		}
+	}
+
 	SMultiColumnTableRow<TSharedPtr<FDialogueSyncEntry>>::Construct(
 		FSuperRowType::FArguments()
-			.Padding(FMargin(2.0f, 1.0f)),
+			.Padding(FMargin(2.0f, 1.0f))
+			.Style(&FAppStyle::Get().GetWidgetStyle<FTableRowStyle>("TableView.Row")),
 		InOwnerTable
 	);
+
+	// Apply row color via SetColorAndOpacity on content
+	SetColorAndOpacity(FLinearColor::White);
 }
 
 TSharedRef<SWidget> SDialogueSyncEntryRow::GenerateWidgetForColumn(const FName& ColumnName)
@@ -331,28 +434,58 @@ TSharedRef<SWidget> SDialogueSyncEntryRow::GenerateWidgetForColumn(const FName& 
 		return SNullWidget::NullWidget;
 	}
 
+	// v4.11.1: Wrap all cells in colored border for row highlighting
+	TSharedRef<SWidget> CellContent = SNullWidget::NullWidget;
+
 	if (ColumnName == TEXT("Status"))
 	{
-		return CreateStatusCell();
+		CellContent = CreateStatusCell();
 	}
-	if (ColumnName == TEXT("DialogueID"))
+	else if (ColumnName == TEXT("DialogueID"))
 	{
-		return CreateDialogueIDCell();
+		CellContent = CreateDialogueIDCell();
 	}
-	if (ColumnName == TEXT("NodeID"))
+	else if (ColumnName == TEXT("NodeID"))
 	{
-		return CreateNodeIDCell();
+		CellContent = CreateNodeIDCell();
 	}
-	if (ColumnName == TEXT("Text"))
+	else if (ColumnName == TEXT("Base"))
 	{
-		return CreateTextPreviewCell();
+		CellContent = CreateBaseCell();
 	}
-	if (ColumnName == TEXT("Resolution"))
+	else if (ColumnName == TEXT("UE"))
 	{
-		return CreateResolutionCell();
+		CellContent = CreateUECell();
+	}
+	else if (ColumnName == TEXT("Excel"))
+	{
+		CellContent = CreateExcelCell();
+	}
+	else if (ColumnName == TEXT("Action"))
+	{
+		CellContent = CreateActionCell();
 	}
 
-	return SNullWidget::NullWidget;
+	// Apply row background color
+	FLinearColor BgColor = FLinearColor::Transparent;
+	if (Entry->RequiresResolution())
+	{
+		if (Entry->Resolution == EDialogueConflictResolution::Unresolved)
+		{
+			BgColor = FLinearColor(0.8f, 0.6f, 0.2f, 0.15f);  // Yellow
+		}
+		else
+		{
+			BgColor = FLinearColor(0.2f, 0.6f, 0.2f, 0.15f);  // Green
+		}
+	}
+
+	return SNew(SBorder)
+		.BorderBackgroundColor(BgColor)
+		.Padding(0)
+		[
+			CellContent
+		];
 }
 
 TSharedRef<SWidget> SDialogueSyncEntryRow::CreateStatusCell()
@@ -418,183 +551,305 @@ TSharedRef<SWidget> SDialogueSyncEntryRow::CreateNodeIDCell()
 		];
 }
 
-TSharedRef<SWidget> SDialogueSyncEntryRow::CreateTextPreviewCell()
+TSharedRef<SWidget> SDialogueSyncEntryRow::CreateBaseCell()
 {
-	// Show both UE and Excel text for comparison if different
-	FString PreviewText;
-
-	if (Entry->Status == EDialogueSyncStatus::Conflict || Entry->Status == EDialogueSyncStatus::DeleteConflict)
+	// v4.11.1: Show Base (Last Export) value with radio selection
+	if (!Entry->BaseRow.IsValid())
 	{
-		FString UEText = Entry->UERow.IsValid() ? Entry->UERow->Text : TEXT("(deleted)");
-		FString ExcelText = Entry->ExcelRow.IsValid() ? Entry->ExcelRow->Text : TEXT("(deleted)");
-
-		// Truncate long text
-		if (UEText.Len() > 30) UEText = UEText.Left(30) + TEXT("...");
-		if (ExcelText.Len() > 30) ExcelText = ExcelText.Left(30) + TEXT("...");
-
-		PreviewText = FString::Printf(TEXT("UE: %s | Excel: %s"), *UEText, *ExcelText);
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("NoBase", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
 	}
-	else
+
+	// For unchanged rows, just show the value (no selection needed)
+	if (!Entry->RequiresResolution())
 	{
-		if (Entry->UERow.IsValid())
-		{
-			PreviewText = Entry->UERow->Text;
-		}
-		else if (Entry->ExcelRow.IsValid())
-		{
-			PreviewText = Entry->ExcelRow->Text;
-		}
+		FString Text = Entry->BaseRow->Text;
+		if (Text.Len() > 30) Text = Text.Left(27) + TEXT("...");
 
-		if (PreviewText.Len() > 60)
-		{
-			PreviewText = PreviewText.Left(60) + TEXT("...");
-		}
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(FText::FromString(Text))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ToolTipText(FText::FromString(Entry->BaseRow->Text))
+			];
 	}
+
+	// For entries requiring resolution, Base is informational only (not selectable)
+	// The design shows Base value for reference during conflict resolution
+	FString Text = Entry->BaseRow->Text;
+	if (Text.Len() > 30) Text = Text.Left(27) + TEXT("...");
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(STextBlock)
-				.Text(FText::FromString(PreviewText))
+				.Text(FText::FromString(Text))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.ToolTipText_Lambda([this]()
-				{
-					if (Entry->UERow.IsValid())
-					{
-						return FText::FromString(Entry->UERow->Text);
-					}
-					return FText::GetEmpty();
-				})
+				.ColorAndOpacity(FLinearColor(0.6f, 0.6f, 0.6f))  // Dimmed since not selectable
+				.ToolTipText(FText::Format(
+					LOCTEXT("BaseTooltip", "Last Export (Base):\n{0}"),
+					FText::FromString(Entry->BaseRow->Text)))
 		];
 }
 
-TSharedRef<SWidget> SDialogueSyncEntryRow::CreateResolutionCell()
+TSharedRef<SWidget> SDialogueSyncEntryRow::CreateUECell()
 {
-	// v4.11: All entries except Unchanged require explicit user selection
-	// Show actual values in buttons, not generic "UE"/"Excel" labels
-
-	// Helper to get truncated text preview
-	auto GetTextPreview = [](const TSharedPtr<FDialogueTableRow>& Row, int32 MaxLen) -> FString
+	// v4.11.1: UE value with radio-style selection (○/●)
+	if (!Entry->UERow.IsValid())
 	{
-		if (!Row.IsValid()) return TEXT("(none)");
-		FString Text = Row->Text;
-		if (Text.IsEmpty()) Text = Row->OptionText;  // Player nodes use OptionText
-		if (Text.IsEmpty()) return TEXT("(empty)");
-		if (Text.Len() > MaxLen) return Text.Left(MaxLen - 3) + TEXT("...");
-		return Text;
-	};
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("UEDeleted", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
+	}
 
-	// For Unchanged (doesn't require resolution), show auto-resolved
+	// For unchanged rows, just show the value
+	if (!Entry->RequiresResolution())
+	{
+		FString Text = Entry->UERow->Text;
+		if (Text.Len() > 30) Text = Text.Left(27) + TEXT("...");
+
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(FText::FromString(Text))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ToolTipText(FText::FromString(Entry->UERow->Text))
+			];
+	}
+
+	// Radio-style selection
+	FString Text = Entry->UERow->Text;
+	if (Text.IsEmpty()) Text = Entry->UERow->OptionText;
+	if (Text.Len() > 25) Text = Text.Left(22) + TEXT("...");
+
+	bool bSelected = (Entry->Resolution == EDialogueConflictResolution::KeepUE);
+	FString RadioIcon = bSelected ? TEXT("●") : TEXT("○");
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(2))
+				.OnClicked_Lambda([this]()
+				{
+					Entry->Resolution = EDialogueConflictResolution::KeepUE;
+					OnResolutionChanged.ExecuteIfBound();
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0, 0, 4, 0)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(RadioIcon))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.2f, 0.6f, 1.0f) : FLinearColor(0.5f, 0.5f, 0.5f))
+					]
+
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(Text))
+							.Font(FCoreStyle::GetDefaultFontStyle(bSelected ? "Bold" : "Regular", 9))
+							.ToolTipText(FText::Format(
+								LOCTEXT("UETooltip", "UE Value:\n{0}"),
+								FText::FromString(Entry->UERow->Text)))
+					]
+				]
+		];
+}
+
+TSharedRef<SWidget> SDialogueSyncEntryRow::CreateExcelCell()
+{
+	// v4.11.1: Excel value with radio-style selection (○/●)
+	if (!Entry->ExcelRow.IsValid())
+	{
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("ExcelDeleted", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
+	}
+
+	// For unchanged rows, just show the value
+	if (!Entry->RequiresResolution())
+	{
+		FString Text = Entry->ExcelRow->Text;
+		if (Text.Len() > 30) Text = Text.Left(27) + TEXT("...");
+
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(FText::FromString(Text))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ToolTipText(FText::FromString(Entry->ExcelRow->Text))
+			];
+	}
+
+	// Radio-style selection
+	FString Text = Entry->ExcelRow->Text;
+	if (Text.IsEmpty()) Text = Entry->ExcelRow->OptionText;
+	if (Text.Len() > 25) Text = Text.Left(22) + TEXT("...");
+
+	bool bSelected = (Entry->Resolution == EDialogueConflictResolution::KeepExcel);
+	FString RadioIcon = bSelected ? TEXT("●") : TEXT("○");
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(2))
+				.OnClicked_Lambda([this]()
+				{
+					Entry->Resolution = EDialogueConflictResolution::KeepExcel;
+					OnResolutionChanged.ExecuteIfBound();
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0, 0, 4, 0)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(RadioIcon))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.2f, 0.8f, 0.2f) : FLinearColor(0.5f, 0.5f, 0.5f))
+					]
+
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(Text))
+							.Font(FCoreStyle::GetDefaultFontStyle(bSelected ? "Bold" : "Regular", 9))
+							.ToolTipText(FText::Format(
+								LOCTEXT("ExcelTooltip", "Excel Value:\n{0}"),
+								FText::FromString(Entry->ExcelRow->Text)))
+					]
+				]
+		];
+}
+
+TSharedRef<SWidget> SDialogueSyncEntryRow::CreateActionCell()
+{
+	// v4.11.1: Action column - shows REMOVE option only when deletion makes sense
+	bool bUEDeleted = !Entry->UERow.IsValid();
+	bool bExcelDeleted = !Entry->ExcelRow.IsValid();
+
+	// Only show REMOVE for cases where one side is missing (cases 6-14 in design)
+	if (!(bUEDeleted || bExcelDeleted))
+	{
+		return SNew(SBox)
+			.Padding(FMargin(4.0f, 2.0f))
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("NoAction", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
+			];
+	}
+
+	// For unchanged, no action needed
 	if (!Entry->RequiresResolution())
 	{
 		return SNew(SBox)
 			.Padding(FMargin(4.0f, 2.0f))
 			[
 				SNew(STextBlock)
-					.Text(LOCTEXT("AutoResolved", "Unchanged"))
-					.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
+					.Text(LOCTEXT("NoAction", "—"))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 					.ColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f))
 			];
 	}
 
-	// Get actual values for buttons
-	FString UELabel = GetTextPreview(Entry->UERow, 20);
-	FString ExcelLabel = GetTextPreview(Entry->ExcelRow, 20);
-	FString UETooltip = Entry->UERow.IsValid() ? Entry->UERow->Text : TEXT("(deleted)");
-	FString ExcelTooltip = Entry->ExcelRow.IsValid() ? Entry->ExcelRow->Text : TEXT("(deleted)");
+	// Radio-style REMOVE option
+	bool bSelected = (Entry->Resolution == EDialogueConflictResolution::Delete);
+	FString RadioIcon = bSelected ? TEXT("●") : TEXT("○");
 
-	// Check if this is a delete scenario (one side missing)
-	bool bUEDeleted = !Entry->UERow.IsValid();
-	bool bExcelDeleted = !Entry->ExcelRow.IsValid();
-
-	// v4.11: Use buttons showing actual values, starts unselected
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SHorizontalBox)
+			SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(2))
+				.OnClicked_Lambda([this]()
+				{
+					Entry->Resolution = EDialogueConflictResolution::Delete;
+					OnResolutionChanged.ExecuteIfBound();
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
 
-			// UE value button (if UE row exists)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(1.0f, 0.0f)
-			[
-				SNew(SButton)
-					.Text(FText::FromString(bUEDeleted ? TEXT("(deleted)") : UELabel))
-					.ToolTipText(FText::FromString(FString::Printf(TEXT("UE: %s"), *UETooltip)))
-					.OnClicked_Lambda([this]()
-					{
-						Entry->Resolution = EDialogueConflictResolution::KeepUE;
-						OnResolutionChanged.ExecuteIfBound();
-						return FReply::Handled();
-					})
-					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == EDialogueConflictResolution::KeepUE ? "FlatButton.Primary" : "FlatButton.Default")
-					.IsEnabled(!bUEDeleted)  // Disabled if UE row doesn't exist
-			]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0, 0, 4, 0)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(RadioIcon))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.9f, 0.2f, 0.2f) : FLinearColor(0.5f, 0.5f, 0.5f))
+					]
 
-			// Excel value button (if Excel row exists)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(1.0f, 0.0f)
-			[
-				SNew(SButton)
-					.Text(FText::FromString(bExcelDeleted ? TEXT("(deleted)") : ExcelLabel))
-					.ToolTipText(FText::FromString(FString::Printf(TEXT("Excel: %s"), *ExcelTooltip)))
-					.OnClicked_Lambda([this]()
-					{
-						Entry->Resolution = EDialogueConflictResolution::KeepExcel;
-						OnResolutionChanged.ExecuteIfBound();
-						return FReply::Handled();
-					})
-					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == EDialogueConflictResolution::KeepExcel ? "FlatButton.Success" : "FlatButton.Default")
-					.IsEnabled(!bExcelDeleted)  // Disabled if Excel row doesn't exist
-			]
-
-			// Delete button (for cases where deletion is an option)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.Padding(1.0f, 0.0f)
-			[
-				SNew(SButton)
-					.Text(FText::FromString(TEXT("Remove")))
-					.ToolTipText(LOCTEXT("RemoveTooltip", "Remove this row from the table"))
-					.OnClicked_Lambda([this]()
-					{
-						Entry->Resolution = EDialogueConflictResolution::Delete;
-						OnResolutionChanged.ExecuteIfBound();
-						return FReply::Handled();
-					})
-					.ButtonStyle(FAppStyle::Get(), Entry->Resolution == EDialogueConflictResolution::Delete ? "FlatButton.Danger" : "FlatButton.Default")
-					// v4.11: Show Remove for any case where deletion makes sense (one side missing)
-					.Visibility((bUEDeleted || bExcelDeleted) ? EVisibility::Visible : EVisibility::Collapsed)
-			]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+							.Text(LOCTEXT("Remove", "REMOVE"))
+							.Font(FCoreStyle::GetDefaultFontStyle(bSelected ? "Bold" : "Regular", 9))
+							.ColorAndOpacity(bSelected ? FLinearColor(0.9f, 0.2f, 0.2f) : FLinearColor::White)
+					]
+				]
 		];
+}
+
+TSharedRef<SWidget> SDialogueSyncEntryRow::CreateTextPreviewCell()
+{
+	// Legacy - kept for compatibility but not used in new layout
+	return SNullWidget::NullWidget;
+}
+
+TSharedRef<SWidget> SDialogueSyncEntryRow::CreateResolutionCell()
+{
+	// Legacy - kept for compatibility but not used in new layout
+	return SNullWidget::NullWidget;
 }
 
 void SDialogueSyncEntryRow::OnResolutionSelected(TSharedPtr<FString> Selection, ESelectInfo::Type SelectInfo)
 {
-	if (!Selection.IsValid() || !Entry.IsValid())
-	{
-		return;
-	}
-
-	if (*Selection == TEXT("Keep UE"))
-	{
-		Entry->Resolution = EDialogueConflictResolution::KeepUE;
-	}
-	else if (*Selection == TEXT("Keep Excel"))
-	{
-		Entry->Resolution = EDialogueConflictResolution::KeepExcel;
-	}
-	else if (*Selection == TEXT("Delete"))
-	{
-		Entry->Resolution = EDialogueConflictResolution::Delete;
-	}
-	else
-	{
-		Entry->Resolution = EDialogueConflictResolution::Unresolved;
-	}
-
-	OnResolutionChanged.ExecuteIfBound();
+	// Legacy - kept for compatibility
 }
 
 #undef LOCTEXT_NAMESPACE
