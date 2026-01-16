@@ -243,7 +243,7 @@ Non-asset entry types that must be nested:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.0)
+## GasAbilityGenerator Plugin (v4.6)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -277,7 +277,7 @@ Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 
 **Naming Convention:** All structs use `FManifest*` prefix (e.g., `FManifestData`, `FManifestGameplayAbilityDefinition`).
 
-### Table Editors (v4.2.14)
+### Table Editors (v4.6)
 
 The plugin includes Excel-like table editors for bulk content authoring:
 - **Dialogue Table Editor** (`SDialogueTableEditor`) - 11 columns, tree structure, CSV/XLSX import/export
@@ -923,6 +923,10 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.6.1 - NPC Table Editor status bar and UX refinements. See `ClaudeContext/Handoffs/v4.6_UX_Safety_System_ProcessMap.md`.
+- v4.6 - UX Safety System: Auto-save before generate, soft delete, validation gate, generation tracking, hash-based staleness detection. See `ClaudeContext/Handoffs/v4.6_UX_Safety_System_ProcessMap.md`.
+- v4.5.x - Validation cache system, XLSX-only format, NPC/Dialogue editor alignment. See `ClaudeContext/Handoffs/Table_Editors_Reference.md`.
+- v4.4.x - Validated Token System with preview window, Apply to Assets, Sync from Assets. See `ClaudeContext/Handoffs/Table_Editors_Reference.md`.
 - v4.3 - Widget Blueprint Layout Automation: FWidgetBlueprintGenerator now supports full widget tree construction from YAML via `widget_tree` manifest section. New structs: FManifestWidgetSlotDefinition (anchors, position, size, alignment, h_align, v_align, size_rule, fill_weight, padding), FManifestWidgetNodeDefinition (id, type, name, is_variable, slot, properties, children, text, image_path, style_class), FManifestWidgetTreeDefinition (root_widget, widgets array). Supports 25+ widget types: CanvasPanel, VerticalBox, HorizontalBox, Overlay, Border, Button, TextBlock, RichTextBlock, Image, ProgressBar, Slider, CheckBox, EditableText, EditableTextBox, ComboBox, Spacer, SizeBox, ScaleBox, ScrollBox, UniformGridPanel, GridPanel, WidgetSwitcher, Throbber, CircularThrobber, NativeWidgetHost. Three-pass construction: create widgets, build hierarchy via panel AddChild, set root. Slot configuration supports Canvas/VBox/HBox/Overlay panels with proper UCanvasPanelSlot/UVerticalBoxSlot/UHorizontalBoxSlot/UOverlaySlot population. Properties set via reflection. Upgrades WBP_ from Medium to High automation level.
 - v4.0 - Quest Pipeline & CSV Dialogue: New `-dialoguecsv="..."` commandlet parameter for batch dialogue generation from Excel/CSV files. FDialogueCSVParser class parses CSV with columns: Dialogue, NodeID, Type, Speaker, Text, OptionText, Replies, Conditions, Events. Supports multiple dialogues per file (grouped by Dialogue column), automatic root node detection, NPC/Player node type resolution, reply connection validation, event/condition parsing (NE_*/NC_* format). CSV dialogues override YAML definitions with same name. Enables production-scale dialogue authoring via spreadsheets. Full v3.0 Regen/Diff Safety integration. Sample data: `ClaudeContext/DialogueData.csv`.
 - v3.9.9 - POI & NPC Spawner Automation: Level actor placement for World Partition worlds. New `-level="/Game/..."` commandlet parameter loads a world for actor placement. FPOIPlacementGenerator places APOIActor instances with POITag, DisplayName, MapIcon, LinkedPOIs (A* navigation). FNPCSpawnerPlacementGenerator places ANPCSpawner actors with UNPCSpawnComponent entries, supporting NearPOI resolution and spawn parameter configuration. New manifest sections: `poi_placements:` (poi_tag, location, rotation, display_name, map_icon, linked_pois) and `npc_spawner_placements:` (name, location/near_poi, npcs array with npc_definition, spawn_params, optional_goal). Idempotency via actor label/POI tag matching. World auto-saved after new placements.

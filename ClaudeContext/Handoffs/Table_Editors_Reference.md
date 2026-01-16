@@ -1,8 +1,8 @@
 # Table Editors Reference
 
 **Consolidated:** 2026-01-15
-**Updated:** 2026-01-15
-**Status:** v4.5.4 CSV Removed, XLSX Only
+**Updated:** 2026-01-16
+**Status:** v4.6.1 UX Safety System
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system and validated token design.
 
