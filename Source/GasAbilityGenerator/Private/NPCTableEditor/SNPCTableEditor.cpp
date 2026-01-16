@@ -2928,12 +2928,13 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 		//=========================================================================
 		// Items & Spawning (2 columns)
 		//=========================================================================
-		// DefaultItems - extract IC_ references from TradingItemLoadout loot table rolls
-		// Note: NPCDefinition has TradingItemLoadout for vendor items
+		// DefaultItems - extract IC_ references from DefaultItemLoadout (base class)
+		// Note: DefaultItemLoadout = items NPC spawns with (on CharacterDefinition)
+		//       TradingItemLoadout = items NPC sells as vendor (different purpose)
 		TArray<FString> ItemCollectionNames;
-		UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] %s: TradingItemLoadout has %d rolls"),
-			*Row.NPCName, NPCDef->TradingItemLoadout.Num());
-		for (const FLootTableRoll& Roll : NPCDef->TradingItemLoadout)
+		UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] %s: DefaultItemLoadout has %d rolls"),
+			*Row.NPCName, NPCDef->DefaultItemLoadout.Num());
+		for (const FLootTableRoll& Roll : NPCDef->DefaultItemLoadout)
 		{
 			UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor]   Roll has %d ItemCollectionsToGrant"),
 				Roll.ItemCollectionsToGrant.Num());

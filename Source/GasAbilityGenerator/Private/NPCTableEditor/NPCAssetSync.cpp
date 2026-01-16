@@ -81,10 +81,12 @@ FNPCAssetData FNPCAssetSync::SyncFromAsset(UNPCDefinition* NPCDef)
 	Data.ShopName = NPCDef->ShopFriendlyName.ToString();
 
 	//=========================================================================
-	// Items - Extract from TradingItemLoadout
+	// Items - Extract from DefaultItemLoadout (base class) not TradingItemLoadout (vendor)
+	// DefaultItemLoadout = items NPC spawns with
+	// TradingItemLoadout = items NPC sells as vendor (different purpose)
 	//=========================================================================
 	TArray<FString> ItemCollectionNames;
-	for (const FLootTableRoll& Roll : NPCDef->TradingItemLoadout)
+	for (const FLootTableRoll& Roll : NPCDef->DefaultItemLoadout)
 	{
 		// Extract item collection names
 		for (const TObjectPtr<UItemCollection>& Collection : Roll.ItemCollectionsToGrant)

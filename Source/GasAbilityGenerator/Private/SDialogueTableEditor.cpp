@@ -551,13 +551,23 @@ TSharedRef<SWidget> SDialogueTableRow::CreateTokenCell(FString& TokenStr, bool& 
 			.FillWidth(1.0f)
 			[
 				SNew(SEditableText)
-					.Text_Lambda([TokenStrPtr]() { return FText::FromString(*TokenStrPtr); })
+					.Text_Lambda([TokenStrPtr]()
+					{
+						// Show "(None)" for empty values for consistency with NPC table
+						return TokenStrPtr->IsEmpty() ? FText::FromString(TEXT("(None)")) : FText::FromString(*TokenStrPtr);
+					})
 					.HintText(Category == ETokenCategory::Event
 						? LOCTEXT("EventsHint", "NE_BeginQuest(...)")
 						: LOCTEXT("ConditionsHint", "NC_QuestState(...)"))
 					.OnTextCommitted_Lambda([this, TokenStrPtr, bValidPtr](const FText& NewText, ETextCommit::Type)
 					{
-						*TokenStrPtr = NewText.ToString();
+						FString Value = NewText.ToString();
+						// Treat "(None)" input as clearing the field
+						if (Value == TEXT("(None)"))
+						{
+							Value = TEXT("");
+						}
+						*TokenStrPtr = Value;
 						// Validate the token
 						FDialogueTokenRegistry& Reg = FDialogueTokenRegistry::Get();
 						FTokenParseResult ParseResult = Reg.ParseTokenString(*TokenStrPtr);
@@ -1602,10 +1612,22 @@ FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, F
 
 	if (ColumnId == TEXT("Skippable")) return Row.bSkippable ? TEXT("Yes") : TEXT("No");
 
-	// Notes - optional, show empty (blank) if not filled
+	// Events - show (None) if empty
+	if (ColumnId == TEXT("Events"))
+	{
+		return Row.EventsTokenStr.IsEmpty() ? TEXT("(None)") : Row.EventsTokenStr;
+	}
+
+	// Conditions - show (None) if empty
+	if (ColumnId == TEXT("Conditions"))
+	{
+		return Row.ConditionsTokenStr.IsEmpty() ? TEXT("(None)") : Row.ConditionsTokenStr;
+	}
+
+	// Notes - optional, show (None) if empty for consistency
 	if (ColumnId == TEXT("Notes"))
 	{
-		return Row.Notes;  // Keep blank for optional notes
+		return Row.Notes.IsEmpty() ? TEXT("(None)") : Row.Notes;
 	}
 
 	return TEXT("(None)");

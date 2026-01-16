@@ -39,7 +39,7 @@ void FDialogueTokenRegistry::RegisterTokenSpec(const FDialogueTokenSpec& Spec)
 void FDialogueTokenRegistry::RegisterBuiltInTokens()
 {
 	// ============================================
-	// EVENTS (4 tokens)
+	// EVENTS (14 tokens)
 	// ============================================
 
 	// NE_BeginQuest(QuestId)
@@ -134,8 +134,180 @@ void FDialogueTokenRegistry::RegisterBuiltInTokens()
 		RegisterTokenSpec(Spec);
 	}
 
+	// NE_RemoveTag(Tag)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_RemoveTag");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("NE_RemoveGameplayTags");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_RemoveGameplayTags.NE_RemoveGameplayTags_C");
+		Spec.DisplayName = TEXT("Remove Gameplay Tag");
+
+		FDialogueTokenParam TagParam;
+		TagParam.ParamName = TEXT("Tag");
+		TagParam.Type = ETokenParamType::String;
+		TagParam.bRequired = true;
+		TagParam.UEPropertyName = TEXT("TagsToRemove");
+		Spec.Params.Add(TagParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_GiveXP(Amount)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_GiveXP");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("NE_GiveXP");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_GiveXP.NE_GiveXP_C");
+		Spec.DisplayName = TEXT("Give XP");
+
+		FDialogueTokenParam AmountParam;
+		AmountParam.ParamName = TEXT("Amount");
+		AmountParam.Type = ETokenParamType::Int;
+		AmountParam.bRequired = true;
+		AmountParam.UEPropertyName = TEXT("XPToGrant");
+		Spec.Params.Add(AmountParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_AddCurrency(Amount)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_AddCurrency");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("BPE_AddCurrency");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C");
+		Spec.DisplayName = TEXT("Add Currency");
+
+		FDialogueTokenParam AmountParam;
+		AmountParam.ParamName = TEXT("Amount");
+		AmountParam.Type = ETokenParamType::Int;
+		AmountParam.bRequired = true;
+		AmountParam.UEPropertyName = TEXT("CurrencyToAdd");
+		Spec.Params.Add(AmountParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_BeginDialogue(DialogueId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_BeginDialogue");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("NE_BeginDialogue");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_BeginDialogue.NE_BeginDialogue_C");
+		Spec.DisplayName = TEXT("Begin Dialogue");
+
+		FDialogueTokenParam DialogueParam;
+		DialogueParam.ParamName = TEXT("DialogueId");
+		DialogueParam.Type = ETokenParamType::IdRef;
+		DialogueParam.bRequired = true;
+		DialogueParam.UEPropertyName = TEXT("Dialogue");
+		Spec.Params.Add(DialogueParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_RestartQuest(QuestId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_RestartQuest");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("NE_RestartQuest");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_RestartQuest.NE_RestartQuest_C");
+		Spec.DisplayName = TEXT("Restart Quest");
+
+		FDialogueTokenParam QuestParam;
+		QuestParam.ParamName = TEXT("QuestId");
+		QuestParam.Type = ETokenParamType::IdRef;
+		QuestParam.bRequired = true;
+		QuestParam.UEPropertyName = TEXT("Quest");
+		Spec.Params.Add(QuestParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_StartTrading()
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_StartTrading");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("BPE_StartTrading");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_StartTrading.BPE_StartTrading_C");
+		Spec.DisplayName = TEXT("Start Trading");
+		// No parameters - trading with dialogue speaker
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_AddSaveCheckpoint()
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_AddSaveCheckpoint");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("NE_AddSaveCheckpoint");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_AddSaveCheckpoint.NE_AddSaveCheckpoint_C");
+		Spec.DisplayName = TEXT("Save Checkpoint");
+		// No parameters
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_ShowNotification(Message)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_ShowNotification");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("NE_ShowNotification");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_ShowNotification.NE_ShowNotification_C");
+		Spec.DisplayName = TEXT("Show Notification");
+
+		FDialogueTokenParam MessageParam;
+		MessageParam.ParamName = TEXT("Message");
+		MessageParam.Type = ETokenParamType::String;
+		MessageParam.bRequired = true;
+		MessageParam.UEPropertyName = TEXT("NotificationText");
+		Spec.Params.Add(MessageParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_PrintString(Message) - for debugging
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_PrintString");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("NE_PrintString");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_PrintString.NE_PrintString_C");
+		Spec.DisplayName = TEXT("Print String");
+
+		FDialogueTokenParam MessageParam;
+		MessageParam.ParamName = TEXT("Message");
+		MessageParam.Type = ETokenParamType::String;
+		MessageParam.bRequired = true;
+		MessageParam.UEPropertyName = TEXT("String");
+		Spec.Params.Add(MessageParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NE_RemoveFollowGoal()
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NE_RemoveFollowGoal");
+		Spec.Category = ETokenCategory::Event;
+		Spec.UEClassName = TEXT("BPE_RemoveFollowGoal");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_RemoveFollowGoal.BPE_RemoveFollowGoal_C");
+		Spec.DisplayName = TEXT("Remove Follow Goal");
+		// No parameters - removes follow goal from dialogue speaker
+
+		RegisterTokenSpec(Spec);
+	}
+
 	// ============================================
-	// CONDITIONS (2 tokens)
+	// CONDITIONS (11 tokens)
 	// ============================================
 
 	// NC_QuestState(QuestId, State)
@@ -187,6 +359,178 @@ void FDialogueTokenRegistry::RegisterBuiltInTokens()
 		CountParam.UEPropertyName = TEXT("Quantity");
 		CountParam.DefaultValue = TEXT("1");
 		Spec.Params.Add(CountParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_IsQuestInProgress(QuestId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_IsQuestInProgress");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("NC_IsQuestInProgress");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/NC_IsQuestInProgress.NC_IsQuestInProgress_C");
+		Spec.DisplayName = TEXT("Quest In Progress");
+
+		FDialogueTokenParam QuestParam;
+		QuestParam.ParamName = TEXT("QuestId");
+		QuestParam.Type = ETokenParamType::IdRef;
+		QuestParam.bRequired = true;
+		QuestParam.UEPropertyName = TEXT("Quest");
+		Spec.Params.Add(QuestParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_IsQuestSucceeded(QuestId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_IsQuestSucceeded");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("NC_IsQuestSucceeded");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/NC_IsQuestSucceeded.NC_IsQuestSucceeded_C");
+		Spec.DisplayName = TEXT("Quest Succeeded");
+
+		FDialogueTokenParam QuestParam;
+		QuestParam.ParamName = TEXT("QuestId");
+		QuestParam.Type = ETokenParamType::IdRef;
+		QuestParam.bRequired = true;
+		QuestParam.UEPropertyName = TEXT("Quest");
+		Spec.Params.Add(QuestParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_IsQuestFailed(QuestId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_IsQuestFailed");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("NC_IsQuestFailed");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/NC_IsQuestFailed.NC_IsQuestFailed_C");
+		Spec.DisplayName = TEXT("Quest Failed");
+
+		FDialogueTokenParam QuestParam;
+		QuestParam.ParamName = TEXT("QuestId");
+		QuestParam.Type = ETokenParamType::IdRef;
+		QuestParam.bRequired = true;
+		QuestParam.UEPropertyName = TEXT("Quest");
+		Spec.Params.Add(QuestParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_IsQuestStartedOrFinished(QuestId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_IsQuestStartedOrFinished");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("NC_IsQuestStartedOrFinished");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/NC_IsQuestStartedOrFinished.NC_IsQuestStartedOrFinished_C");
+		Spec.DisplayName = TEXT("Quest Started Or Finished");
+
+		FDialogueTokenParam QuestParam;
+		QuestParam.ParamName = TEXT("QuestId");
+		QuestParam.Type = ETokenParamType::IdRef;
+		QuestParam.bRequired = true;
+		QuestParam.UEPropertyName = TEXT("Quest");
+		Spec.Params.Add(QuestParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_HasDialogueNodePlayed(DialogueId, NodeId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_HasDialogueNodePlayed");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("NC_HasDialogueNodePlayed");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/NC_HasDialogueNodePlayed.NC_HasDialogueNodePlayed_C");
+		Spec.DisplayName = TEXT("Dialogue Node Played");
+
+		FDialogueTokenParam DialogueParam;
+		DialogueParam.ParamName = TEXT("DialogueId");
+		DialogueParam.Type = ETokenParamType::IdRef;
+		DialogueParam.bRequired = true;
+		DialogueParam.UEPropertyName = TEXT("Dialogue");
+		Spec.Params.Add(DialogueParam);
+
+		FDialogueTokenParam NodeParam;
+		NodeParam.ParamName = TEXT("NodeId");
+		NodeParam.Type = ETokenParamType::String;
+		NodeParam.bRequired = true;
+		NodeParam.UEPropertyName = TEXT("NodeID");
+		Spec.Params.Add(NodeParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_IsDayTime()
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_IsDayTime");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("NC_IsDayTime");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/NC_IsDayTime.NC_IsDayTime_C");
+		Spec.DisplayName = TEXT("Is Day Time");
+		// No parameters
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_LevelCheck(MinLevel)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_LevelCheck");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("BPC_LevelCheck");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/BPC_LevelCheck.BPC_LevelCheck_C");
+		Spec.DisplayName = TEXT("Level Check");
+
+		FDialogueTokenParam LevelParam;
+		LevelParam.ParamName = TEXT("MinLevel");
+		LevelParam.Type = ETokenParamType::Int;
+		LevelParam.bRequired = true;
+		LevelParam.UEPropertyName = TEXT("RequiredLevel");
+		Spec.Params.Add(LevelParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_HasFollowGoalFor(NPCId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_HasFollowGoalFor");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("BPC_HasFollowGoalFor");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/BPC_HasFollowGoalFor.BPC_HasFollowGoalFor_C");
+		Spec.DisplayName = TEXT("Has Follow Goal");
+
+		FDialogueTokenParam NPCParam;
+		NPCParam.ParamName = TEXT("NPCId");
+		NPCParam.Type = ETokenParamType::IdRef;
+		NPCParam.bRequired = true;
+		NPCParam.UEPropertyName = TEXT("NPC");
+		Spec.Params.Add(NPCParam);
+
+		RegisterTokenSpec(Spec);
+	}
+
+	// NC_HasInteractGoalFor(InteractableId)
+	{
+		FDialogueTokenSpec Spec;
+		Spec.TokenName = TEXT("NC_HasInteractGoalFor");
+		Spec.Category = ETokenCategory::Condition;
+		Spec.UEClassName = TEXT("BPC_HasInteractGoalFor");
+		Spec.UEClassPath = TEXT("/NarrativePro/Pro/Core/Tales/Conditions/BPC_HasInteractGoalFor.BPC_HasInteractGoalFor_C");
+		Spec.DisplayName = TEXT("Has Interact Goal");
+
+		FDialogueTokenParam InteractableParam;
+		InteractableParam.ParamName = TEXT("InteractableId");
+		InteractableParam.Type = ETokenParamType::IdRef;
+		InteractableParam.bRequired = true;
+		InteractableParam.UEPropertyName = TEXT("Interactable");
+		Spec.Params.Add(InteractableParam);
 
 		RegisterTokenSpec(Spec);
 	}
