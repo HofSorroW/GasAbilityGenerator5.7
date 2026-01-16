@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-16
-**Status:** v4.10 (Dialogue Generation Complete)
+**Status:** v4.11 Design (Sync Approval System)
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system, validated token design, and safety audit results.
 
@@ -12,6 +12,7 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **v4.11** | 2026-01-16 | **DESIGN**: Sync approval system - per-row LastSyncedHash, full-screen approval UI |
 | **v4.10** | 2026-01-16 | P0/P1 Gap Audit: Wire Dialogue generation, fix bSkippable/Events/Conditions converter |
 | **v4.9.1** | 2026-01-16 | P3 Determinism: Sort Dialogue sync by DialogueID+NodeID, user documentation |
 | **v4.9** | 2026-01-16 | TriggerSet generator, button disable during busy state |
@@ -222,6 +223,168 @@ A comprehensive audit was performed with three AI systems (Claude x2 + GPT) to i
 | **Low** | SpawnerPOI workflow docs | ✅ Complete | v4.10 |
 | **Skip** | Speaker resolution | N/A | Intentional design |
 | **Skip** | Ownership stamping | N/A | No CI/multi-user |
+
+---
+
+## v4.11 Design: Sync Approval System (PENDING IMPLEMENTATION)
+
+### Problem Statement
+
+Deep audit revealed critical gaps in the XLSX sync system:
+
+1. **Dialogue Import bypasses sync** - `OnImportXLSXClicked()` directly replaces `TableData->Rows = Result.Rows` without comparing to UE data
+2. **NPC Import uses sync but with empty BaseRows** - Comparison works but can't distinguish "who changed"
+3. **BaseRows TODO never completed** - Both editors have `TArray<...> BaseRows; // Empty = first sync`
+4. **Auto-resolve hides changes** - Non-conflict statuses auto-resolve without user review
+
+### Why BaseRows Snapshot is Flawed
+
+The original design: "Store BaseRows at export time, compare against it at import."
+
+**Fatal flaw scenario:**
+```
+1. Export XLSX     → Base = {Seth, AC: RunAndGun}
+2. Edit in UE      → UE = {Seth, AC: Stealth}  (NO export, Base unchanged)
+3. Edit in Excel   → Excel = {Seth, AC: Melee}
+4. Import Excel    → Compare against STALE Base
+```
+
+Result: System claims to know "who changed" based on stale data. If UE and Excel changed different fields, user might accept Excel and **silently lose UE changes**.
+
+### Solution: Per-Row LastSyncedHash
+
+Instead of separate BaseRows snapshot, store the sync hash **per row** in TableData:
+
+```cpp
+struct FDialogueTableRow
+{
+    // ... existing fields ...
+
+    // v4.11: Updated ONLY after successful sync/import/export
+    UPROPERTY(Transient)
+    int64 LastSyncedHash = 0;  // 0 = never synced
+};
+```
+
+**Update rules:**
+| Action | LastSyncedHash Updated? |
+|--------|-------------------------|
+| Edit row in table | ❌ No |
+| Save TableData | ❌ No |
+| Export XLSX | ✅ Yes - set to current content hash |
+| Import/Sync (after apply) | ✅ Yes - set to merged content hash |
+
+### Complete Sync Decision Matrix
+
+**Legend:**
+- `H1` = LastSyncedHash (Base - state at last sync)
+- `H2` = Current UE table content
+- `H3` = Imported Excel content
+- `0` = Never synced (no base)
+- `—` = Row doesn't exist
+
+| # | NPC | Base | UE | Excel | Status | Auto? | User Prompt | Option 1 | Option 2 | Option 3 | Action |
+|---|-----|------|-----|-------|--------|-------|-------------|----------|----------|----------|--------|
+| 1 | Seth | RunAndGun | RunAndGun | RunAndGun | Unchanged | ✓ | — | — | — | — | — |
+| 2 | Seth | RunAndGun | RunAndGun | Stealth | ModifiedInExcel | ✗ | "Excel changed AC" | `RunAndGun` | `Stealth` | — | — |
+| 3 | Seth | RunAndGun | Melee | RunAndGun | ModifiedInUE | ✗ | "UE changed AC" | `RunAndGun` | `Melee` | — | — |
+| 4 | Seth | RunAndGun | Stealth | Stealth | Converged | ✗ | "Both changed same way" | `RunAndGun` | `Stealth` | — | — |
+| 5 | Seth | RunAndGun | Melee | Stealth | **Conflict** | ✗ | "All three differ" | `RunAndGun` | `Melee` | `Stealth` | — |
+| 6 | Seth | RunAndGun | RunAndGun | *(deleted)* | DeletedInExcel | ✗ | "Excel deleted row" | `RunAndGun` | — | — | `○ REMOVE` |
+| 7 | Seth | RunAndGun | *(deleted)* | RunAndGun | DeletedInUE | ✗ | "UE deleted row" | `RunAndGun` | — | — | `○ REMOVE` |
+| 8 | Seth | RunAndGun | Melee | *(deleted)* | **DeleteConflict** | ✗ | "UE modified, Excel deleted" | `RunAndGun` | `Melee` | — | `○ REMOVE` |
+| 9 | Seth | RunAndGun | *(deleted)* | Stealth | **DeleteConflict** | ✗ | "UE deleted, Excel modified" | `RunAndGun` | — | `Stealth` | `○ REMOVE` |
+| 10 | Seth | RunAndGun | *(deleted)* | *(deleted)* | BothDeleted | ✗ | "Both deleted row" | `RunAndGun` | — | — | `○ REMOVE` |
+| 11 | Marcus | *(none)* | Melee | *(missing)* | AddedInUE | ✗ | "New row in UE only" | — | `Melee` | — | `○ REMOVE` |
+| 12 | Elena | *(none)* | *(missing)* | Stealth | AddedInExcel | ✗ | "New row in Excel only" | — | — | `Stealth` | `○ REMOVE` |
+| 13 | Marcus | *(none)* | Melee | Melee | NewIdentical | ✗ | "New row, both identical" | — | `Melee` | — | `○ REMOVE` |
+| 14 | Marcus | *(none)* | Melee | Stealth | **Conflict** | ✗ | "New row, content differs" | — | `Melee` | `Stealth` | `○ REMOVE` |
+
+**Key design decisions:**
+- **Only Case 1 (Unchanged) auto-resolves** - all others require explicit user approval
+- **No pre-selection** - user must click to approve each row (prevents accidental acceptance)
+- **Action column conditional** - REMOVE only appears when row can be deleted (cases 6-14)
+- **Shows actual values** - not "Keep UE" but `AC_Melee`, `AC_Stealth`, etc.
+
+### Full-Screen Approval Window
+
+**Flow:**
+1. User imports XLSX
+2. System compares Base/UE/Excel for all rows
+3. Status bar shows: "12 changes detected, 3 conflicts"
+4. User clicks **"Generate"**
+5. **Full-screen approval window opens**
+6. User reviews all, clicks to select preferred value for each row
+7. When all resolved → **"Apply"** button enables
+8. Final confirmation prompt → Changes applied
+
+**Window Layout:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│ SYNC APPROVAL                                                    [Cancel] [Apply]   │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│ 12 changes | 0 of 12 resolved                                                       │
+├──────────┬─────────────────┬──────────────────┬──────────────────┬──────────────────┬────────────┐
+│   NPC    │     Field       │   Last Export    │       UE         │     Excel        │   Action   │
+├──────────┼─────────────────┼──────────────────┼──────────────────┼──────────────────┼────────────┤
+│ Seth     │ AbilityConfig   │  ○ AC_RunAndGun  │  ○ AC_Melee      │  ○ AC_Stealth    │     —      │
+├──────────┼─────────────────┼──────────────────┼──────────────────┼──────────────────┼────────────┤
+│ Seth     │ BehaviorTree    │  ○ BT_Guard      │  ○ BT_Guard      │  ○ BT_Patrol     │     —      │
+├──────────┼─────────────────┼──────────────────┼──────────────────┼──────────────────┼────────────┤
+│ Marcus   │ (NEW ROW)       │       —          │  ○ AC_Melee      │       —          │  ○ REMOVE  │
+├──────────┼─────────────────┼──────────────────┼──────────────────┼──────────────────┼────────────┤
+│ Elena    │ (NEW ROW)       │       —          │       —          │  ○ AC_Stealth    │  ○ REMOVE  │
+├──────────┼─────────────────┼──────────────────┼──────────────────┼──────────────────┼────────────┤
+│ Jake     │ (DELETED)       │  ○ AC_RunAndGun  │       —          │       —          │  ○ REMOVE  │
+└──────────┴─────────────────┴──────────────────┴──────────────────┴──────────────────┴────────────┘
+                                                                   [Apply] (disabled until all resolved)
+```
+
+**Interaction:**
+| Element | Behavior |
+|---------|----------|
+| `○` | Unselected option (clickable) |
+| `●` | Selected option (user clicked) |
+| `—` | Not available (doesn't exist) |
+| Click on cell | Selects that value, deselects others in row |
+| Row highlight | Yellow = unresolved, Green = resolved |
+| **[Apply]** | Enabled only when all rows have a selection |
+
+**Action Column Logic:**
+| Condition | Action Column |
+|-----------|---------------|
+| All three exist (cases 1-5) | `—` (no remove option) |
+| Any side missing (cases 6-14) | `○ REMOVE` (clickable) |
+
+**Mutual exclusion per row:** Either a value cell OR REMOVE is selected, never both.
+
+### Fixes Required
+
+| Component | Current State | Fix Needed |
+|-----------|---------------|------------|
+| `FDialogueTableRow` | No LastSyncedHash | Add `int64 LastSyncedHash` field |
+| `FNPCTableRow` | No LastSyncedHash | Add `int64 LastSyncedHash` field |
+| `OnImportXLSXClicked` (Dialogue) | Direct replace | Use sync comparison like NPC |
+| `AutoResolveNonConflicts` | Auto-resolves 8 statuses | Only auto-resolve Unchanged |
+| `SDialogueXLSXSyncDialog` | Shows "Keep UE" labels | Show actual values |
+| `SNPCXLSXSyncDialog` | Shows "Keep UE" labels | Show actual values |
+| Export functions | Don't update hash | Update LastSyncedHash after export |
+| Sync apply functions | Don't update hash | Update LastSyncedHash after apply |
+
+### Implementation Priority
+
+| Priority | Task |
+|----------|------|
+| P0 | Add LastSyncedHash to row structs |
+| P0 | Update AutoResolveNonConflicts (only Unchanged) |
+| P1 | Fix Dialogue Import to use sync comparison |
+| P1 | Update sync dialogs to show actual values |
+| P1 | Add Action column with conditional REMOVE |
+| P2 | Update Export to set LastSyncedHash |
+| P2 | Update Sync Apply to set LastSyncedHash |
+
+---
 
 ### P0: Dialogue Generation Wiring
 
