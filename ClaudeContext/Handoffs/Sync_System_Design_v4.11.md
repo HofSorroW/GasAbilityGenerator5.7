@@ -8,13 +8,24 @@ This is a backup/standalone document for the Sync Approval System design.
 
 ## Implementation Summary (2026-01-16)
 
-All P0/P1/P2 tasks completed in commits:
+All P0/P1/P2 tasks and Full-Screen Approval Window completed:
+
+**Phase 1 - Core Sync Logic (v4.11):**
 - `24c00c6` - P0: Add LastSyncedHash to row structs
 - `5814de1` - P0: Only Unchanged auto-resolves
 - `f1616a5` - P1: Dialogue Import uses sync comparison
 - `cb2d01c` - P1: Sync dialogs show actual values
 - `4f9d999` - P2: Export updates LastSyncedHash
 - `df9149b` - P2: Sync Apply updates LastSyncedHash
+
+**Phase 2 - Full-Screen Approval Window (v4.11.1):**
+- `08f4c54` - Full-screen approval window UI redesign:
+  - Larger window (1200x800) with "SYNC APPROVAL" title
+  - Radio-style selection (○/●) for UE/Excel/REMOVE
+  - Row highlighting (Yellow = unresolved, Green = resolved)
+  - New columns: Status, ID, Base (Last Export), UE, Excel, Action
+  - Status bar: "X changes | Y of X resolved"
+  - Legend in footer showing color meanings
 
 ---
 

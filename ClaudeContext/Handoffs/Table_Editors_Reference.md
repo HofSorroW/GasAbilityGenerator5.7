@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-16
-**Status:** v4.11 Design (Sync Approval System)
+**Status:** v4.11.1 IMPLEMENTED (Full-Screen Sync Approval System)
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system, validated token design, and safety audit results.
 
@@ -12,7 +12,8 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 
 | Version | Date | Summary |
 |---------|------|---------|
-| **v4.11** | 2026-01-16 | **DESIGN**: Sync approval system - per-row LastSyncedHash, full-screen approval UI |
+| **v4.11.1** | 2026-01-16 | **IMPLEMENTED**: Full-screen approval window (radio selection, row highlighting, Base column) |
+| **v4.11** | 2026-01-16 | **IMPLEMENTED**: Per-row LastSyncedHash, only Unchanged auto-resolves, actual values in dialogs |
 | **v4.10** | 2026-01-16 | P0/P1 Gap Audit: Wire Dialogue generation, fix bSkippable/Events/Conditions converter |
 | **v4.9.1** | 2026-01-16 | P3 Determinism: Sort Dialogue sync by DialogueID+NodeID, user documentation |
 | **v4.9** | 2026-01-16 | TriggerSet generator, button disable during busy state |
@@ -226,7 +227,7 @@ A comprehensive audit was performed with three AI systems (Claude x2 + GPT) to i
 
 ---
 
-## v4.11 Design: Sync Approval System (PENDING IMPLEMENTATION)
+## v4.11 Design: Sync Approval System (IMPLEMENTED v4.11.1)
 
 ### Problem Statement
 
