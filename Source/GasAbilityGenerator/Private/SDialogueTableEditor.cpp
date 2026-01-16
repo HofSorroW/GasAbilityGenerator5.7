@@ -2546,59 +2546,40 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 		return FReply::Handled();
 	}
 
-	// Sync from each dialogue asset
-	FDialogueAssetSyncResult CombinedResult;
-	CombinedResult.bSuccess = true;
+	// =========================================================================
+	// TEST ONLY: Use /Game/TestData/ filter for table editor testing
+	// REVERT THIS AFTER TESTING - Change PathFilter to TEXT("") for production
+	// =========================================================================
+	const FString PathFilter = TEXT("/Game/TestData");
+	// =========================================================================
+	// END TEST ONLY
+	// =========================================================================
+
+	// Sync all dialogue assets using AssetRegistry (filtered by PathFilter)
+	FDialogueAssetSyncResult CombinedResult = FDialogueAssetSync::SyncFromAllAssets(PathFilter);
+
+	// Count how many of the requested dialogues we found
 	int32 AssetsFound = 0;
 	int32 AssetsMissing = 0;
-
 	for (const FName& DialogueID : UniqueDialogueIDs)
 	{
-		// Try common asset paths
-		FString AssetName = DialogueID.ToString();
-		TArray<FString> SearchPaths = {
-			// =========================================================================
-			// TEST ONLY: Added /Game/TestData/ paths for table editor testing
-			// REVERT THIS AFTER TESTING - Remove the TestData paths below
-			// =========================================================================
-			FString::Printf(TEXT("/Game/TestData/Dialogues/%s.%s"), *AssetName, *AssetName),
-			FString::Printf(TEXT("/Game/TestData/Dialogues/Luca/%s.%s"), *AssetName, *AssetName),
-			FString::Printf(TEXT("/Game/TestData/Dialogues/Seth/%s.%s"), *AssetName, *AssetName),
-			FString::Printf(TEXT("/Game/TestData/Dialogues/Nirvana/%s.%s"), *AssetName, *AssetName),
-			FString::Printf(TEXT("/Game/TestData/%s.%s"), *AssetName, *AssetName),
-			// =========================================================================
-			// END TEST ONLY - Original paths below
-			// =========================================================================
-			FString::Printf(TEXT("/Game/Dialogues/%s.%s"), *AssetName, *AssetName),
-			FString::Printf(TEXT("/Game/Dialogues/DBP_%s.DBP_%s"), *AssetName, *AssetName),
-			FString::Printf(TEXT("/Game/%s.%s"), *AssetName, *AssetName),
-			FString::Printf(TEXT("/Game/DBP_%s.DBP_%s"), *AssetName, *AssetName),
-		};
-
 		bool bFound = false;
-		for (const FString& Path : SearchPaths)
+		for (const auto& Pair : CombinedResult.NodeData)
 		{
-			FDialogueAssetSyncResult SingleResult = FDialogueAssetSync::SyncFromAssetPath(Path);
-			if (SingleResult.bSuccess)
+			if (Pair.Key.StartsWith(DialogueID.ToString()))
 			{
-				// Merge into combined result
-				for (const auto& Pair : SingleResult.NodeData)
-				{
-					CombinedResult.NodeData.Add(Pair.Key, Pair.Value);
-				}
-				CombinedResult.NodesFound += SingleResult.NodesFound;
-				CombinedResult.NodesWithEvents += SingleResult.NodesWithEvents;
-				CombinedResult.NodesWithConditions += SingleResult.NodesWithConditions;
-				AssetsFound++;
 				bFound = true;
 				break;
 			}
 		}
-
-		if (!bFound)
+		if (bFound)
+		{
+			AssetsFound++;
+		}
+		else
 		{
 			AssetsMissing++;
-			UE_LOG(LogTemp, Warning, TEXT("SyncFromAssets: Could not find asset for DialogueID '%s'"), *AssetName);
+			UE_LOG(LogTemp, Warning, TEXT("SyncFromAssets: Could not find asset for DialogueID '%s' in %s"), *DialogueID.ToString(), *PathFilter);
 		}
 	}
 

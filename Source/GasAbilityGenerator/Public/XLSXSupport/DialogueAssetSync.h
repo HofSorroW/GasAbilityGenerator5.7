@@ -136,6 +136,14 @@ public:
 	static FDialogueAssetSyncResult SyncFromAssets(const TArray<UDialogueBlueprint*>& DialogueBlueprints);
 
 	/**
+	 * Sync all dialogue blueprints found via AssetRegistry
+	 * Uses path filter to limit scope (e.g., /Game/TestData/)
+	 * @param PathFilter - Optional path prefix filter (empty = all paths)
+	 * @return Combined result with all nodes from all dialogues
+	 */
+	static FDialogueAssetSyncResult SyncFromAllAssets(const FString& PathFilter = TEXT(""));
+
+	/**
 	 * Populate [RO] columns in rows from asset sync data
 	 * @param Rows - Rows to update (modified in place)
 	 * @param SyncResult - Asset sync result containing current UE state

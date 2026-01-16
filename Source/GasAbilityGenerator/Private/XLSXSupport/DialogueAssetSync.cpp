@@ -284,6 +284,75 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAssets(const TArray<UDialog
 	return CombinedResult;
 }
 
+FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAllAssets(const FString& PathFilter)
+{
+	FDialogueAssetSyncResult Result;
+
+#if WITH_EDITOR
+	// Get Asset Registry
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	// Find all UDialogueBlueprint assets
+	TArray<FAssetData> AssetList;
+	AssetRegistry.GetAssetsByClass(UDialogueBlueprint::StaticClass()->GetClassPathName(), AssetList, true);
+
+	// =========================================================================
+	// TEST ONLY: Filter to PathFilter (e.g., /Game/TestData/) for testing
+	// REVERT THIS AFTER TESTING - Remove or make PathFilter empty by default
+	// =========================================================================
+	TArray<FAssetData> FilteredAssetList;
+	for (const FAssetData& Asset : AssetList)
+	{
+		FString PackagePath = Asset.PackagePath.ToString();
+		if (PathFilter.IsEmpty() || PackagePath.StartsWith(PathFilter))
+		{
+			FilteredAssetList.Add(Asset);
+		}
+	}
+
+	if (!PathFilter.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DialogueAssetSync: TEST MODE - Filtered to %d assets in %s"), FilteredAssetList.Num(), *PathFilter);
+	}
+	// =========================================================================
+	// END TEST ONLY
+	// =========================================================================
+
+	Result.bSuccess = true;
+
+	for (const FAssetData& AssetData : FilteredAssetList)
+	{
+		UDialogueBlueprint* DialogueBP = Cast<UDialogueBlueprint>(AssetData.GetAsset());
+		if (!DialogueBP)
+		{
+			continue;
+		}
+
+		FDialogueAssetSyncResult SingleResult = SyncFromAsset(DialogueBP);
+		if (SingleResult.bSuccess)
+		{
+			// Merge node data
+			for (const auto& Pair : SingleResult.NodeData)
+			{
+				Result.NodeData.Add(Pair.Key, Pair.Value);
+			}
+			Result.NodesFound += SingleResult.NodesFound;
+			Result.NodesWithEvents += SingleResult.NodesWithEvents;
+			Result.NodesWithConditions += SingleResult.NodesWithConditions;
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("DialogueAssetSync: Synced %d dialogue assets, %d nodes total"),
+		FilteredAssetList.Num(), Result.NodesFound);
+
+#else
+	Result.ErrorMessage = TEXT("DialogueAssetSync requires WITH_EDITOR");
+#endif
+
+	return Result;
+}
+
 int32 FDialogueAssetSync::PopulateAssetData(TArray<FDialogueTableRow>& Rows, const FDialogueAssetSyncResult& SyncResult)
 {
 	int32 UpdatedCount = 0;
