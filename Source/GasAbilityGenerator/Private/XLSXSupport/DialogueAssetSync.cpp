@@ -562,34 +562,33 @@ void FDialogueAssetSync::ExtractNodeData(UDialogueNode* Node, FDialogueNodeAsset
 		}
 	}
 
-	//=========================================================================
-	// v4.8: Extract full dialogue content
-	// v4.11.4: Check multiple sources for text (Line.Text, AlternativeLines, GetDialogueText)
-	//=========================================================================
-
-	// v4.11.4: Use GetDialogueText() as primary source - it handles Line.Text and alternatives internally
-	OutData.Text = Node->GetDialogueText().ToString();
-
-	// Fallback to Line.Text directly if GetDialogueText() returned empty (shouldn't happen, but safe)
-	if (OutData.Text.IsEmpty())
-	{
-		OutData.Text = Node->Line.Text.ToString();
-	}
-
 	// Skippable flag
 	OutData.bSkippable = Node->bIsSkippable;
 
-	// Extract Speaker for NPC nodes
+	// Extract Speaker and Text for NPC nodes
 	if (UDialogueNode_NPC* NPCNode = Cast<UDialogueNode_NPC>(Node))
 	{
 		OutData.Speaker = NPCNode->GetSpeakerID().ToString();
+		// v4.12: Use GetDialogueText() for NPC nodes - handles Line.Text and alternatives
+		OutData.Text = Node->GetDialogueText().ToString();
+		if (OutData.Text.IsEmpty())
+		{
+			OutData.Text = Node->Line.Text.ToString();
+		}
 	}
 
-	// Extract OptionText for Player nodes
+	// Extract OptionText and Text for Player nodes
 	if (UDialogueNode_Player* PlayerNode = Cast<UDialogueNode_Player>(Node))
 	{
-		// OptionText is protected, use the public getter
-		OutData.OptionText = PlayerNode->GetOptionText(nullptr).ToString();
+		// v4.12: Access OptionText via reflection to avoid GetOptionText() fallback to Line.Text
+		// GetOptionText() falls back to Line.Text when OptionText is empty, causing duplication
+		if (FTextProperty* OptionTextProp = FindFProperty<FTextProperty>(PlayerNode->GetClass(), TEXT("OptionText")))
+		{
+			FText OptionTextValue = OptionTextProp->GetPropertyValue_InContainer(PlayerNode);
+			OutData.OptionText = OptionTextValue.ToString();
+		}
+		// Use GetDialogueText() for Text (handles Line.Text + sound subtitles, no OptionText fallback)
+		OutData.Text = Node->GetDialogueText().ToString();
 	}
 
 	// Extract NextNodeIDs (child nodes)
