@@ -81,11 +81,22 @@ void SNPCXLSXSyncDialog::Construct(const FArguments& InArgs)
 
 bool SNPCXLSXSyncDialog::ShowModal(FNPCSyncResult& SyncResult, TSharedPtr<SWindow> ParentWindow)
 {
-	// v4.11.1: Full-screen approval window
+	// v4.11.2: Auto-fit to screen size (80% of work area, min 800x600)
+	FDisplayMetrics DisplayMetrics;
+	FSlateApplication::Get().GetDisplayMetrics(DisplayMetrics);
+
+	const FPlatformRect& WorkArea = DisplayMetrics.PrimaryDisplayWorkAreaRect;
+	float WorkAreaWidth = WorkArea.Right - WorkArea.Left;
+	float WorkAreaHeight = WorkArea.Bottom - WorkArea.Top;
+
+	// Use 80% of screen, with minimum bounds
+	float WindowWidth = FMath::Max(800.0f, WorkAreaWidth * 0.8f);
+	float WindowHeight = FMath::Max(600.0f, WorkAreaHeight * 0.8f);
+
 	TSharedRef<SWindow> Window = SNew(SWindow)
 		.Title(LOCTEXT("SyncDialogTitle", "SYNC APPROVAL"))
 		.SizingRule(ESizingRule::UserSized)
-		.ClientSize(FVector2D(1200, 800))  // Larger default size
+		.ClientSize(FVector2D(WindowWidth, WindowHeight))
 		.SupportsMinimize(false)
 		.SupportsMaximize(true)
 		.IsInitiallyMaximized(false);
