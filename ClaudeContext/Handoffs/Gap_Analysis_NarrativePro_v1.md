@@ -1,70 +1,58 @@
 # Narrative Pro Gap Analysis - Generator Automation Coverage
 
 **Date:** January 2026
-**Plugin Version:** v4.7.1
+**Plugin Version:** v4.8.2
 **Analysis Scope:** All Narrative Pro headers vs. manifest parsing vs. generator implementation
 
 ---
 
 ## Executive Summary
 
-This document analyzes gaps between Narrative Pro's C++ API and our generator's automation capabilities. The goal is to identify properties and asset types that exist in Narrative Pro but are not yet supported for YAML-based generation.
+This document analyzes gaps between Narrative Pro's C++ API and our generator's automation capabilities.
 
-### Coverage Statistics
+### Coverage Statistics (Updated v4.8.2)
 
 | Asset Type | Header Properties | Manifest Fields | Generator Coverage | Gap % |
 |------------|------------------|-----------------|-------------------|-------|
-| UNarrativeGameplayAbility | 4 | 2 | 50% | **50%** |
-| UNPCDefinition | 18 | 17 | 94% | **6%** |
-| UEquippableItem | 12 | 11 | 92% | **8%** |
-| UWeaponItem | 15 | 14 | 93% | **7%** |
-| URangedWeaponItem | 14 | 13 | 93% | **7%** |
-| UDialogue | 17 | 14 | 82% | **18%** |
-| UNPCActivityConfiguration | 3 | 3 | 100% | **0%** |
-| UNPCGoalItem | 8 | 8 | 100% | **0%** |
-| UNarrativeActivityBase | 4 | 4 | 100% | **0%** |
-| UCharacterDefinition | 7 | 6 | 86% | **14%** |
-| UAbilityConfiguration | 3 | 3 | 100% | **0%** |
-| UNarrativeItem (Base) | 20 | 14 | 70% | **30%** |
+| UNarrativeGameplayAbility | 2 | 2 | 100% | **0%** ✅ |
+| UNPCDefinition | 16 | 16 | 100% | **0%** ✅ |
+| UCharacterDefinition | 8 | 8 | 100% | **0%** ✅ |
+| UEquippableItem | 7 | 7 | 100% | **0%** ✅ |
+| UWeaponItem | 18 | 18 | 100% | **0%** ✅ |
+| URangedWeaponItem | 14 | 14 | 100% | **0%** ✅ |
+| UNarrativeItem (Base) | 20 | 20 | 100% | **0%** ✅ |
+| UDialogue | 17 | 15 | 88% | **12%** |
+| UNPCActivityConfiguration | 3 | 3 | 100% | **0%** ✅ |
+| UNPCGoalItem | 8 | 8 | 100% | **0%** ✅ |
+| UNarrativeActivityBase | 4 | 4 | 100% | **0%** ✅ |
+| UAbilityConfiguration | 3 | 3 | 100% | **0%** ✅ |
+
+**Overall Coverage: ~97%**
 
 ---
 
-## 1. UNarrativeGameplayAbility - GAPS IDENTIFIED
+## 1. UNarrativeGameplayAbility - FULLY COVERED ✅
 
 ### Header Properties (NarrativeGameplayAbility.h)
 ```cpp
-UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "Narrative Ability", meta=(Categories="Narrative.Input"))
-FGameplayTag InputTag = FNarrativeGameplayTags::Get().Narrative_Input_None;
+UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "Narrative Ability")
+FGameplayTag InputTag;                          // ✅ v4.8.1
 
 UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Narrative Ability")
-bool bActivateAbilityOnGranted = false;
+bool bActivateAbilityOnGranted = false;         // ✅ v4.8.1
 ```
 
-### Current Manifest Support
-- ✅ `parent_class` - Supported
-- ✅ `instancing_policy` - Supported
-- ✅ `net_execution_policy` - Supported
-- ✅ `cooldown_gameplay_effect_class` - Supported
-- ✅ `tags` (ability_tags, cancel_with_tag, etc.) - Supported
-- ✅ `variables` - Supported
-- ✅ `event_graph` - Supported
-
-### GAPS (Priority: HIGH)
-| Property | Type | Purpose | Effort |
-|----------|------|---------|--------|
-| **`input_tag`** | FGameplayTag | Maps ability to input action | LOW |
-| **`activate_on_granted`** | bool | Auto-activate when ability is given | LOW |
-
-### Recommendation
-Add to `FManifestGameplayAbilityDefinition`:
-```cpp
-FString InputTag;                    // Narrative.Input.* tag for input binding
-bool bActivateAbilityOnGranted = false;
+### YAML Syntax
+```yaml
+gameplay_abilities:
+  - name: GA_Example
+    input_tag: Narrative.Input.Attack           # v4.8.1
+    activate_on_granted: true                   # v4.8.1
 ```
 
 ---
 
-## 2. UNPCDefinition - GAPS IDENTIFIED
+## 2. UNPCDefinition - FULLY COVERED ✅
 
 ### Header Properties (NPCDefinition.h)
 ```cpp
@@ -72,7 +60,7 @@ FName NPCID;                                    // ✅ Supported
 FText NPCName;                                  // ✅ Supported
 int32 MinLevel, MaxLevel;                       // ✅ Supported
 bool bAllowMultipleInstances;                   // ✅ Supported
-FGuid UniqueNPCGUID;                            // ❌ NOT SUPPORTED
+FGuid UniqueNPCGUID;                            // ✅ v4.8.1 (auto-generated)
 TSoftClassPtr<ANarrativeNPCCharacter> NPCClassPath;  // ✅ Supported
 TSoftClassPtr<UDialogue> Dialogue;              // ✅ Supported
 TSoftObjectPtr<UTaggedDialogueSet> TaggedDialogueSet; // ✅ Supported
@@ -85,11 +73,6 @@ TArray<TSoftObjectPtr<UNPCActivitySchedule>> ActivitySchedules; // ✅ Supported
 TSoftObjectPtr<UNPCActivityConfiguration> ActivityConfiguration; // ✅ Supported
 ```
 
-### GAPS (Priority: LOW)
-| Property | Type | Purpose | Effort |
-|----------|------|---------|--------|
-| **`unique_npc_guid`** | FGuid | Save system GUID for unique NPCs | LOW |
-
 ### From UCharacterDefinition (inherited)
 ```cpp
 TSoftObjectPtr<UCharacterAppearanceBase> DefaultAppearance; // ✅ Supported
@@ -97,25 +80,30 @@ int32 DefaultCurrency;                          // ✅ Supported
 TArray<FLootTableRoll> DefaultItemLoadout;      // ✅ Supported
 FGameplayTagContainer DefaultOwnedTags;         // ✅ Supported
 FGameplayTagContainer DefaultFactions;          // ✅ Supported
-TArray<TSoftObjectPtr<UTriggerSet>> TriggerSets; // ❌ NOT SUPPORTED (partial)
+TArray<TSoftObjectPtr<UTriggerSet>> TriggerSets; // ✅ v4.8.1
 float AttackPriority;                           // ✅ Supported
 UAbilityConfiguration* AbilityConfiguration;    // ✅ Supported
 ```
 
-### GAPS (Priority: MEDIUM)
-| Property | Type | Purpose | Effort |
-|----------|------|---------|--------|
-| **`trigger_sets`** | TArray<TSoftObjectPtr<UTriggerSet>> | Event triggers for NPC | MEDIUM |
+### YAML Syntax
+```yaml
+npc_definitions:
+  - name: NPC_Example
+    unique_npc_guid: "A1B2C3D4-..."             # v4.8.1 (optional, auto-generated if unique)
+    trigger_sets:                               # v4.8.1
+      - TS_MerchantSchedule
+      - TS_CombatTriggers
+```
 
 ---
 
-## 3. UDialogue - GAPS IDENTIFIED
+## 3. UDialogue - MINOR GAPS REMAINING
 
 ### Header Properties (Dialogue.h)
 ```cpp
 TArray<FSpeakerInfo> Speakers;                  // ✅ Supported
-FPlayerSpeakerInfo PlayerSpeakerInfo;           // ✅ Supported (v4.0)
-TArray<FPlayerSpeakerInfo> PartySpeakerInfo;    // ❌ NOT SUPPORTED
+FPlayerSpeakerInfo PlayerSpeakerInfo;           // ✅ Supported
+TArray<FPlayerSpeakerInfo> PartySpeakerInfo;    // ✅ v4.8.1
 float EndDialogueDist;                          // ✅ Supported
 bool bShowCinematicBars;                        // ✅ Supported
 bool bUnskippable;                              // ✅ Supported
@@ -126,28 +114,37 @@ bool bAutoStopMovement;                         // ✅ Supported
 int32 Priority;                                 // ✅ Supported
 FName DefaultHeadBoneName;                      // ✅ Supported
 float DialogueBlendOutTime;                     // ✅ Supported
-FTransform PlayerAutoAdjustTransform;           // ❌ NOT SUPPORTED
+FTransform PlayerAutoAdjustTransform;           // ❌ NOT SUPPORTED (complex, rarely used)
 bool bAdjustPlayerTransform;                    // ✅ Supported
-TSubclassOf<UCameraShakeBase> DialogueCameraShake; // ✅ Supported (v4.1)
-USoundAttenuation* DialogueSoundAttenuation;    // ❌ NOT SUPPORTED
-UNarrativeDialogueSequence* DefaultDialogueShot; // ❌ NOT SUPPORTED
+TSubclassOf<UCameraShakeBase> DialogueCameraShake; // ✅ Supported
+USoundAttenuation* DialogueSoundAttenuation;    // ❌ NOT SUPPORTED (asset reference)
+UNarrativeDialogueSequence* DefaultDialogueShot; // ❌ NOT SUPPORTED (instanced object)
 ```
 
-### GAPS (Priority: MEDIUM)
-| Property | Type | Purpose | Effort |
-|----------|------|---------|--------|
-| **`party_speaker_info`** | TArray<FPlayerSpeakerInfo> | Party member speakers | MEDIUM |
-| **`player_auto_adjust_transform`** | FTransform | Transform for player positioning | LOW |
-| **`dialogue_sound_attenuation`** | USoundAttenuation* | Audio attenuation settings | LOW |
-| **`default_dialogue_shot`** | UNarrativeDialogueSequence* | Default camera sequence | MEDIUM |
+### Remaining Gaps (LOW Priority)
+| Property | Type | Reason Not Supported |
+|----------|------|---------------------|
+| `PlayerAutoAdjustTransform` | FTransform | Complex struct, rarely used |
+| `DialogueSoundAttenuation` | USoundAttenuation* | Asset reference, better in editor |
+| `DefaultDialogueShot` | Instanced UObject* | Requires editor-only instanced creation |
+
+### YAML Syntax
+```yaml
+dialogue_blueprints:
+  - name: DBP_Example
+    party_speaker_info:                         # v4.8.1
+      - speaker_id: "PartyMember1"
+        node_color: "#00FF00"
+      - speaker_id: "PartyMember2"
+        node_color: "#0000FF"
+```
 
 ---
 
-## 4. UNarrativeItem (Base) - GAPS IDENTIFIED
+## 4. UNarrativeItem (Base) - FULLY COVERED ✅
 
 ### Header Properties (NarrativeItem.h)
 ```cpp
-TSoftObjectPtr<UStaticMesh> PickupMesh;         // ❌ DEPRECATED
 TSoftObjectPtr<UTexture2D> Thumbnail;           // ✅ Supported
 USoundBase* UseSound;                           // ✅ Supported
 FText DisplayName;                              // ✅ Supported
@@ -156,7 +153,7 @@ float Weight;                                   // ✅ Supported
 int32 BaseValue;                                // ✅ Supported
 float BaseScore;                                // ✅ Supported
 FGameplayTagContainer ItemTags;                 // ✅ Supported
-TSubclassOf<UNarrativeInventoryItemButton> ItemWidgetOverride; // ❌ NOT SUPPORTED
+TSubclassOf<UNarrativeInventoryItemButton> ItemWidgetOverride; // ✅ v4.8.2
 bool bAddDefaultUseOption;                      // ✅ Supported
 bool bConsumeOnUse;                             // ✅ Supported
 bool bUsedWithOtherItem;                        // ✅ Supported
@@ -166,184 +163,129 @@ bool bCanActivate;                              // ✅ Supported
 bool bToggleActiveOnUse;                        // ✅ Supported
 bool bStackable;                                // ✅ Supported
 int32 MaxStackSize;                             // ✅ Supported
-bool bWantsTickByDefault;                       // ❌ NOT SUPPORTED
-TArray<TSubclassOf<UNPCActivity>> ActivitiesToGrant; // ❌ NOT SUPPORTED
-TArray<FNarrativeItemStat> Stats;               // ❌ NOT SUPPORTED
-FPickupMeshData PickupMeshData;                 // ❌ NOT SUPPORTED
+bool bWantsTickByDefault;                       // ✅ v4.8.2
+TArray<TSubclassOf<UNPCActivity>> ActivitiesToGrant; // ✅ v4.8.1
+TArray<FNarrativeItemStat> Stats;               // ✅ v4.8.1
+FPickupMeshData PickupMeshData;                 // ✅ v4.8.2
 ```
 
-### GAPS (Priority: MEDIUM)
-| Property | Type | Purpose | Effort |
-|----------|------|---------|--------|
-| **`item_widget_override`** | TSubclassOf | Custom inventory UI | LOW |
-| **`wants_tick_by_default`** | bool | Enable item ticking | LOW |
-| **`activities_to_grant`** | TArray | NPC activities from item | MEDIUM |
-| **`stats`** | TArray<FNarrativeItemStat> | UI stat display | MEDIUM |
-| **`pickup_mesh_data`** | FPickupMeshData | Pickup visual config | MEDIUM |
+### YAML Syntax
+```yaml
+equippable_items:
+  - name: EI_Example
+    item_widget_override: /Game/UI/WBP_CustomButton  # v4.8.2
+    wants_tick_by_default: true                      # v4.8.2
+    stats:                                           # v4.8.1
+      - stat_name: "Damage"
+        stat_value: 50
+        stat_icon: "/Game/UI/Icons/T_Damage"
+    activities_to_grant:                             # v4.8.1
+      - BPA_PatrolWithItem
+    pickup_mesh_data:                                # v4.8.2
+      mesh: /Game/Meshes/SM_Sword
+      materials:
+        - /Game/Materials/M_SwordBlade
+```
 
 ---
 
-## 5. UEquippableItem - GAPS IDENTIFIED
+## 5. UEquippableItem - FULLY COVERED ✅
 
-### Header Properties (EquippableItem.h)
-```cpp
-FGameplayTagContainer EquippableSlots;          // ✅ Supported
-TSubclassOf<UGameplayEffect> EquipmentEffect;   // ✅ Supported
-TMap<FGameplayTag, float> EquipmentEffectValues; // ✅ Supported
-float AttackRating;                             // ✅ Supported (deprecated in header)
-float ArmorRating;                              // ✅ Supported (deprecated in header)
-float StealthRating;                            // ✅ Supported (deprecated in header)
-TArray<TSubclassOf<UNarrativeGameplayAbility>> EquipmentAbilities; // ✅ Supported (v4.2)
-```
-
-### Status: **FULLY COVERED** ✅
+All properties supported since v4.2.
 
 ---
 
-## 6. UWeaponItem - GAPS IDENTIFIED
+## 6. UWeaponItem - FULLY COVERED ✅
 
-### Header Properties (WeaponItem.h)
-```cpp
-TSoftClassPtr<AWeaponVisual> WeaponVisualClass; // ✅ Supported
-TMap<FGameplayTag, FWeaponAttachmentConfig> HolsterAttachmentConfigs; // ✅ Supported (v4.0)
-TMap<FGameplayTag, FWeaponAttachmentConfig> WieldAttachmentConfigs;   // ✅ Supported (v4.0)
-TSoftClassPtr<UCrosshairWidget> CrosshairWidget; // ✅ Supported (v3.10)
-EWeaponHandRule WeaponHand;                     // ✅ Supported
-TArray<TSubclassOf<UNarrativeGameplayAbility>> WeaponAbilities;      // ✅ Supported
-TArray<TSubclassOf<UNarrativeGameplayAbility>> MainhandWeaponAbilities; // ✅ Supported
-TArray<TSubclassOf<UNarrativeGameplayAbility>> OffhandWeaponAbilities;  // ✅ Supported
-bool bPawnFollowsControlRotation;               // ✅ Supported
-bool bPawnOrientsRotationToMovement;            // ✅ Supported
-float AttackDamage;                             // ✅ Supported
-```
-
-### Status: **FULLY COVERED** ✅
+All properties supported since v4.0.
 
 ---
 
-## 7. URangedWeaponItem - MINOR GAPS
+## 7. URangedWeaponItem - FULLY COVERED ✅
 
 ### Header Properties (RangedWeaponItem.h)
 ```cpp
 float AimFOVPct;                                // ✅ Supported
-float AimWeaponRenderFOV;                       // ✅ Supported (v3.10)
-float AimWeaponFStop;                           // ✅ Supported (v3.10)
+float AimWeaponRenderFOV;                       // ✅ Supported
+float AimWeaponFStop;                           // ✅ Supported
 float BaseSpreadDegrees;                        // ✅ Supported
-float MoveSpeedAddDegrees;                      // ✅ Supported (v3.10)
-float CrouchSpreadMultiplier;                   // ✅ Supported (v3.10)
-float AimSpreadMultiplier;                      // ✅ Supported (v3.10)
+float MoveSpeedAddDegrees;                      // ✅ Supported
+float CrouchSpreadMultiplier;                   // ✅ Supported
+float AimSpreadMultiplier;                      // ✅ Supported
 float SpreadFireBump;                           // ✅ Supported
 float MaxSpreadDegrees;                         // ✅ Supported
 float SpreadDecreaseSpeed;                      // ✅ Supported
-FVector RecoilImpulseTranslationMin/Max;        // ✅ Supported (v3.10)
-FVector HipRecoilImpulseTranslationMin/Max;     // ✅ Supported (v3.10)
-FCombatTraceData TraceData;                     // ❌ NOT SUPPORTED
+FVector RecoilImpulseTranslationMin/Max;        // ✅ Supported
+FVector HipRecoilImpulseTranslationMin/Max;     // ✅ Supported
+FCombatTraceData TraceData;                     // ✅ v4.8.2
 ```
 
-### GAPS (Priority: LOW)
-| Property | Type | Purpose | Effort |
-|----------|------|---------|--------|
-| **`trace_data`** | FCombatTraceData | Weapon trace configuration | MEDIUM |
-
----
-
-## 8. MISSING ASSET TYPES
-
-### Currently NOT Generated (Potential Additions)
-
-| Asset Type | Narrative Pro Class | Purpose | Priority |
-|------------|---------------------|---------|----------|
-| **Trigger Sets** | UTriggerSet | Event trigger containers | HIGH |
-| **Character Appearance** | UCharacterAppearanceBase | Visual customization | MEDIUM |
-| **Dialogue Sequences** | UNarrativeDialogueSequence | Camera shots | MEDIUM |
-| **Quest Tasks (Custom)** | UNarrativeTask subclasses | Custom quest logic | LOW |
-| **Interaction Config** | Various | Interaction system | LOW |
-
----
-
-## 9. PRIORITY ACTION ITEMS
-
-### HIGH Priority (Quick Wins - LOW Effort, HIGH Impact)
-
-1. **UNarrativeGameplayAbility.InputTag** - 2 lines of code
-   - Add `input_tag` field to manifest
-   - Set via reflection in generator
-
-2. **UNarrativeGameplayAbility.bActivateAbilityOnGranted** - 2 lines of code
-   - Add `activate_on_granted` field to manifest
-   - Set via reflection in generator
-
-3. **UNPCDefinition.UniqueNPCGUID** - Auto-generate
-   - Generate GUID if `bAllowMultipleInstances = false`
-
-### MEDIUM Priority (Moderate Effort)
-
-4. **UDialogue.PartySpeakerInfo** - Party dialogue support
-5. **UNarrativeItem.Stats** - UI stat display array
-6. **UNarrativeItem.ActivitiesToGrant** - NPC activity grants
-7. **UTriggerSet Generator** - New asset type entirely
-
-### LOW Priority (Future Enhancements)
-
-8. **URangedWeaponItem.TraceData** - Complex struct
-9. **UDialogue.DefaultDialogueShot** - Requires sequence assets
-10. **UCharacterAppearance Generator** - New asset type
-
----
-
-## 10. IMPLEMENTATION RECOMMENDATIONS
-
-### Phase 1: Quick Wins (1-2 hours)
+### YAML Syntax
 ```yaml
-# Add to gameplay_abilities manifest section:
-gameplay_abilities:
-  - name: GA_Example
-    input_tag: Narrative.Input.Attack      # NEW
-    activate_on_granted: true              # NEW
-```
-
-### Phase 2: Item System Enhancement (4-6 hours)
-```yaml
-# Add to equippable_items manifest section:
 equippable_items:
-  - name: EI_Example
-    stats:                                  # NEW
-      - stat_name: "Damage"
-        stat_value: 50
-        stat_icon: "/Game/UI/Icons/T_Damage"
-    activities_to_grant:                    # NEW
-      - BPA_PatrolWithItem
-```
-
-### Phase 3: New Asset Type - Trigger Sets (8-12 hours)
-```yaml
-# New manifest section:
-trigger_sets:
-  - name: TS_MerchantSchedule
-    folder: Triggers
-    triggers:
-      - condition: TimeOfDay
-        start_time: 800
-        end_time: 1800
-        events:
-          - NE_OpenShop
+  - name: EI_LaserRifle
+    parent_class: RangedWeaponItem
+    trace_data:                                 # v4.8.2
+      distance: 5000                            # TraceDistance
+      radius: 10                                # TraceRadius (0 = line, >0 = sphere)
+      multi: true                               # bTraceMulti (hit multiple targets)
 ```
 
 ---
 
-## 11. CONCLUSION
+## 8. Remaining Gaps (NOT PLANNED)
 
-**Current Automation Coverage: ~88%**
+### Asset Types Not Generated
 
-The GasAbilityGenerator plugin has excellent coverage of Narrative Pro's core systems. The main gaps are:
+| Asset Type | Reason |
+|------------|--------|
+| UTriggerSet | Complex event system, better authored in editor |
+| UCharacterAppearanceBase | Visual customization, editor-only |
+| UNarrativeDialogueSequence | Camera sequences, requires Sequencer |
 
-1. **NarrativeGameplayAbility** - Missing InputTag and ActivateOnGranted (2 properties)
-2. **NarrativeItem base class** - Missing Stats array and ActivitiesToGrant
-3. **Dialogue system** - Missing party speakers and camera sequences
-4. **New asset types** - TriggerSet and CharacterAppearance not yet supported
+### Properties Not Supported
 
-Implementing Phase 1 (Quick Wins) would bring coverage to ~92% with minimal effort.
+| Property | Class | Reason |
+|----------|-------|--------|
+| PlayerAutoAdjustTransform | UDialogue | FTransform complex, rarely used |
+| DialogueSoundAttenuation | UDialogue | Asset reference, editor setup |
+| DefaultDialogueShot | UDialogue | Instanced object, editor-only |
+
+These remaining gaps represent edge cases that are better handled through the Unreal Editor's visual tools.
 
 ---
 
-*Generated by Gap Analysis Agent - January 2026*
+## 9. Version History
+
+### v4.8.2 (Current)
+- ✅ `ItemWidgetOverride` - Custom inventory UI widget
+- ✅ `bWantsTickByDefault` - Enable item ticking
+- ✅ `PickupMeshData` - Dropped item visual (mesh + materials)
+- ✅ `TraceData` - Ranged weapon hit detection config
+
+### v4.8.1
+- ✅ `InputTag` - GameplayAbility input binding
+- ✅ `bActivateAbilityOnGranted` - Auto-activate on grant
+- ✅ `UniqueNPCGUID` - Save system GUID (auto-generated)
+- ✅ `TriggerSets` - NPC event triggers
+- ✅ `PartySpeakerInfo` - Multiplayer dialogue speakers
+- ✅ `Stats` - Item stat display array
+- ✅ `ActivitiesToGrant` - AI activities from items
+
+---
+
+## 10. CONCLUSION
+
+**Final Automation Coverage: ~97%**
+
+The GasAbilityGenerator plugin now has near-complete coverage of Narrative Pro's core systems. The remaining ~3% consists of:
+
+1. **Instanced UObject properties** - Require editor-only creation (DialogueSequences)
+2. **Complex visual systems** - Better authored in editor (CharacterAppearance, TriggerSets)
+3. **Rarely-used transform properties** - Edge cases (PlayerAutoAdjustTransform)
+
+All gameplay-critical properties are now fully automatable from YAML manifests.
+
+---
+
+*Updated after v4.8.2 implementation - January 2026*
