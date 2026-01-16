@@ -2,7 +2,7 @@
 
 **Consolidated:** 2026-01-15
 **Updated:** 2026-01-16
-**Status:** v4.9.1 (GPT Safety Audit Complete)
+**Status:** v4.10 (Dialogue Generation Complete)
 
 This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system, validated token design, and safety audit results.
 
@@ -12,6 +12,7 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **v4.10** | 2026-01-16 | P0/P1 Gap Audit: Wire Dialogue generation, fix bSkippable/Events/Conditions converter |
 | **v4.9.1** | 2026-01-16 | P3 Determinism: Sort Dialogue sync by DialogueID+NodeID, user documentation |
 | **v4.9** | 2026-01-16 | TriggerSet generator, button disable during busy state |
 | **v4.8.4** | 2026-01-16 | P1/P2 Safety: Re-entrancy guards, save-fail abort, version check |
@@ -196,6 +197,113 @@ Both editors apply `bIsBusy` guard and button disable to:
 
 ---
 
+## Three-AI Gap Analysis Audit (v4.10)
+
+A comprehensive audit was performed with three AI systems (Claude x2 + GPT) to identify gaps between the Table Editors (authoring tools) and the Mass Asset Generator (manifest-based generation).
+
+### System Architecture
+
+| System | Purpose | Generation Status |
+|--------|---------|-------------------|
+| **Mass Asset Generator** | YAML manifest → 25+ asset types | Full automation |
+| **NPC Table Editor** | Spreadsheet UI for NPCDefinitions | **WORKS** - calls FNPCDefinitionGenerator |
+| **Dialogue Table Editor** | Spreadsheet UI for DialogueBlueprints | **WORKS** (v4.10) - calls FDialogueBlueprintGenerator |
+
+### Gap Priority Resolution
+
+| Priority | Gap | Status | Version |
+|----------|-----|--------|---------|
+| **P0** | Wire Dialogue Generation | ✅ Complete | v4.10 |
+| **P1** | Row.bSkippable not converted | ✅ Complete | v4.10 |
+| **P1** | Events/Conditions not converted | ✅ Complete | v4.10 |
+| **P1** | Provenance logging | ✅ Complete | v4.10 |
+| **P2** | NodeID uniqueness validation | ✅ Complete | v4.10 |
+| **P3** | Cross-reference validation | ✅ Complete | v4.10 |
+| **Low** | SpawnerPOI workflow docs | ✅ Complete | v4.10 |
+| **Skip** | Speaker resolution | N/A | Intentional design |
+| **Skip** | Ownership stamping | N/A | No CI/multi-user |
+
+### P0: Dialogue Generation Wiring
+
+**Problem:** Generate button showed preview message instead of generating assets.
+
+**Solution (SDialogueTableEditor.cpp:2463-2510):**
+```cpp
+UE_LOG(LogGasAbilityGenerator, Log, TEXT("Generating Dialogue assets from Table Editor"));
+
+for (const auto& Pair : Definitions)
+{
+    FGenerationResult Result = FDialogueBlueprintGenerator::Generate(
+        Pair.Value,
+        TEXT(""),   // Empty = auto-detect via GetProjectRoot()
+        nullptr     // ManifestData not used
+    );
+
+    if (Result.Status == EGenerationStatus::New) SuccessCount++;
+    else if (Result.Status == EGenerationStatus::Skipped) SkippedCount++;
+    else if (Result.Status == EGenerationStatus::Failed) FailCount++;
+}
+```
+
+### P1: Converter Fixes
+
+**Problem:** DialogueTableConverter ignored bSkippable, EventsTokenStr, ConditionsTokenStr.
+
+**Solution (DialogueTableConverter.cpp:143-225):**
+```cpp
+Node.bIsSkippable = Row.bSkippable;  // Was hardcoded true
+
+// Parse EventsTokenStr (format: "NE_Event:Start,NE_Event2:End")
+if (!Row.EventsTokenStr.IsEmpty())
+{
+    TArray<FString> EventTokens;
+    Row.EventsTokenStr.ParseIntoArray(EventTokens, TEXT(","));
+    for (const FString& Token : EventTokens)
+    {
+        FManifestDialogueEventDefinition EventDef;
+        // Parse runtime suffix (:Start/:End/:Both)
+        EventDef.Type = ParsedName;
+        EventDef.Runtime = ParsedRuntime;
+        Node.Events.Add(EventDef);
+    }
+}
+
+// Parse ConditionsTokenStr (format: "!NC_Cond,NC_Cond2")
+// Supports ! prefix or :! suffix for NOT
+```
+
+### P2: NodeID Uniqueness Validation
+
+Dialogue validator now checks for duplicate NodeIDs within the same DialogueID:
+- Location: `FDialogueTableValidator::ValidateAllAndCache()`
+- Error: "Duplicate NodeID '{ID}' in dialogue '{Dialogue}'"
+- Severity: Error (blocks generation)
+
+### P3: Cross-Reference Validation
+
+Existence checks added for referenced assets (semantic validation):
+- Speaker → NPCDefinition exists
+- Events → NE_* class resolvable
+- Conditions → NC_* class resolvable
+
+**Validation heuristic (GPT consensus):**
+| Check | Worth It? |
+|-------|-----------|
+| Asset exists (AC_*, TS_*, NE_*) | ✅ Yes |
+| Token resolves to class | ✅ Yes |
+| SpawnerPOI points to valid POI | ✅ Yes |
+| "NPC must have DisplayName" | ❌ No (design rule) |
+| "Faction combination is valid" | ❌ No (design rule) |
+
+### Items Explicitly Skipped
+
+| Item | Reason |
+|------|--------|
+| **Speaker resolution** | Speaker column stores NPCDefinition name as FName; resolution happens at generation time via FDialogueBlueprintGenerator. Not a gap - intentional design. |
+| **Ownership stamping** | No CI automation or multi-user workflows. Single-user internal tool. Provenance logging provides minimal tracking without metadata overhead. |
+
+---
+
 ## Important User Notes (v4.9.1)
 
 ### ID Rename Behavior
@@ -209,6 +317,37 @@ Row identity in both editors is based on `#ROW_GUID`, a hidden immutable GUID co
 | **Rename NPC name** | Row is tracked by GUID → NPCDefinition is updated |
 
 **Why this matters:** Users familiar with CSV workflows may expect "rename = new row." Our GUID-based identity system ensures renaming is a non-destructive update operation, not a create-new operation. You can safely rename IDs without creating duplicate assets.
+
+### SpawnerPOI Workflow (NPC Table Editor)
+
+The **Spawner/POI** column in the NPC Table Editor is for authoring convenience only. It does **not** populate the NPCDefinition asset.
+
+**Why?**
+- NPCDefinitions store NPC properties (abilities, appearance, vendor settings, etc.)
+- Spawner placement is handled separately by `ANPCSpawner` actors in the level
+- The `Spawner/POI` column lets you plan "which NPCs spawn where" in the spreadsheet
+
+**Workflow:**
+1. Author NPC properties in the NPC Table Editor
+2. Use **Apply to Assets** to create/update NPCDefinition assets
+3. Use the **manifest generator** with `npc_spawner_placements:` section to place spawners:
+
+```yaml
+npc_spawner_placements:
+  - name: Spawner_Blacksmith
+    near_poi: POI_ForgeArea
+    npcs:
+      - npc_definition: NPCDef_Blacksmith
+        spawn_params:
+          bRespawn: true
+          RespawnDelayTime: 300
+```
+
+**Or manually place `ANPCSpawner` actors in the level editor.**
+
+The Spawner/POI column is a note-taking field - it tells you where you intend to spawn the NPC, but doesn't automatically create spawners. This is intentional: spawner placement requires level loading and world context, which the table editor doesn't have.
+
+---
 
 ### Merged Cells Not Supported
 

@@ -288,6 +288,18 @@ FTokenParseResult FDialogueTokenRegistry::ParseTokenString(const FString& TokenS
 			return Result;
 		}
 
+		// v4.10: P3 - Validate token spec exists (early cross-reference validation)
+		if (!Token.bIsClear)
+		{
+			const FDialogueTokenSpec* Spec = FindByTokenName(Token.TokenName);
+			if (!Spec)
+			{
+				Result.bSuccess = false;
+				Result.ErrorMessage = FString::Printf(TEXT("Unknown token type: '%s'"), *Token.TokenName);
+				return Result;
+			}
+		}
+
 		Result.Tokens.Add(Token);
 	}
 
