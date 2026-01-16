@@ -44,7 +44,7 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	UPROPERTY(VisibleAnywhere, Category = "Identity")
 	ENPCTableRowStatus Status = ENPCTableRowStatus::New;
 
-	/** NPC Name - used for asset naming (NPCDef_{NPCName}) */
+	/** NPC Name - used for asset naming (NPC_{NPCName}) */
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FString NPCName;
 

@@ -5936,7 +5936,7 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 				bInNPCTargets = true;
 				bInCharacterTargets = false;
 				bInPlayerTargets = false;
-				// Check for inline array format: npc_targets: [NPCDef_A, NPCDef_B]
+				// Check for inline array format: npc_targets: [NPC_A, NPC_B]
 				FString Value = GetLineValue(TrimmedLine);
 				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
 				{

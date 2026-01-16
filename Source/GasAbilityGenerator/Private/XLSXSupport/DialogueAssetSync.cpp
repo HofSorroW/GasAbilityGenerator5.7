@@ -293,27 +293,53 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAllAssets(const FString& Pa
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
+	// =========================================================================
+	// v4.7.1: Force Asset Registry rescan before querying
+	// This handles file-copied assets that weren't duplicated via Unreal Editor
+	// =========================================================================
+	if (!PathFilter.IsEmpty())
+	{
+		TArray<FString> PathsToScan = { PathFilter };
+		UE_LOG(LogTemp, Log, TEXT("[DialogueAssetSync] Rescanning Asset Registry for paths: %s"), *PathFilter);
+		AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
+	}
+
 	// Find all UDialogueBlueprint assets
 	TArray<FAssetData> AssetList;
-	AssetRegistry.GetAssetsByClass(UDialogueBlueprint::StaticClass()->GetClassPathName(), AssetList, true);
+	FTopLevelAssetPath ClassPath = UDialogueBlueprint::StaticClass()->GetClassPathName();
+	UE_LOG(LogTemp, Warning, TEXT("[DialogueAssetSync] Searching for class: %s"), *ClassPath.ToString());
+	AssetRegistry.GetAssetsByClass(ClassPath, AssetList, true);
+	UE_LOG(LogTemp, Warning, TEXT("[DialogueAssetSync] Found %d total UDialogueBlueprint assets BEFORE filter"), AssetList.Num());
+
+	// Debug: Log first few assets to see their paths
+	for (int32 i = 0; i < FMath::Min(5, AssetList.Num()); i++)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[DialogueAssetSync] Asset[%d]: PackagePath='%s', AssetName='%s'"),
+			i, *AssetList[i].PackagePath.ToString(), *AssetList[i].AssetName.ToString());
+	}
 
 	// =========================================================================
-	// TEST ONLY: Filter to PathFilter (e.g., /Game/TestData/) for testing
+	// TEST ONLY: Filter to PathFilter (e.g., TestData) for testing
 	// REVERT THIS AFTER TESTING - Remove or make PathFilter empty by default
 	// =========================================================================
 	TArray<FAssetData> FilteredAssetList;
 	for (const FAssetData& Asset : AssetList)
 	{
 		FString PackagePath = Asset.PackagePath.ToString();
-		if (PathFilter.IsEmpty() || PackagePath.StartsWith(PathFilter))
+		// Use Contains to handle /Game/Game/TestData or /Game/TestData
+		if (PathFilter.IsEmpty() || PackagePath.Contains(PathFilter))
 		{
 			FilteredAssetList.Add(Asset);
+			if (!PathFilter.IsEmpty())
+			{
+				UE_LOG(LogTemp, Log, TEXT("[DialogueAssetSync] Matched: %s"), *PackagePath);
+			}
 		}
 	}
 
 	if (!PathFilter.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("DialogueAssetSync: TEST MODE - Filtered to %d assets in %s"), FilteredAssetList.Num(), *PathFilter);
+		UE_LOG(LogTemp, Warning, TEXT("[DialogueAssetSync] TEST MODE - Filtered to %d assets containing '%s'"), FilteredAssetList.Num(), *PathFilter);
 	}
 	// =========================================================================
 	// END TEST ONLY

@@ -638,7 +638,7 @@ FNPCAssetApplySummary FNPCXLSXSyncEngine::ApplyToAssets(
 			AssetRegistry.GetAssets(Filter, AssetDataList);
 
 			// Find matching asset by name pattern
-			FString SearchName = FString::Printf(TEXT("NPCDef_%s"), *Row.NPCName);
+			FString SearchName = FString::Printf(TEXT("NPC_%s"), *Row.NPCName);
 			for (const FAssetData& AssetData : AssetDataList)
 			{
 				if (AssetData.AssetName.ToString() == SearchName ||
@@ -659,10 +659,10 @@ FNPCAssetApplySummary FNPCXLSXSyncEngine::ApplyToAssets(
 		if (!NPCDef)
 		{
 			TArray<FString> SearchPaths = {
-				FString::Printf(TEXT("%sNPCDef_%s.NPCDef_%s"), *NPCAssetPath, *Row.NPCName, *Row.NPCName),
-				FString::Printf(TEXT("%sNPCs/NPCDef_%s.NPCDef_%s"), *NPCAssetPath, *Row.NPCName, *Row.NPCName),
-				FString::Printf(TEXT("/Game/NPCs/NPCDef_%s.NPCDef_%s"), *Row.NPCName, *Row.NPCName),
-				FString::Printf(TEXT("/Game/NPCs/Definitions/NPCDef_%s.NPCDef_%s"), *Row.NPCName, *Row.NPCName)
+				FString::Printf(TEXT("%sNPC_%s.NPC_%s"), *NPCAssetPath, *Row.NPCName, *Row.NPCName),
+				FString::Printf(TEXT("%sNPCs/NPC_%s.NPC_%s"), *NPCAssetPath, *Row.NPCName, *Row.NPCName),
+				FString::Printf(TEXT("/Game/NPCs/NPC_%s.NPC_%s"), *Row.NPCName, *Row.NPCName),
+				FString::Printf(TEXT("/Game/NPCs/Definitions/NPC_%s.NPC_%s"), *Row.NPCName, *Row.NPCName)
 			};
 
 			for (const FString& Path : SearchPaths)

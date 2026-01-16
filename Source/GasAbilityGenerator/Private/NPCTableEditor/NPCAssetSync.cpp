@@ -107,20 +107,38 @@ FNPCAssetSyncResult FNPCAssetSync::SyncFromAllAssets()
 	AssetRegistry.GetAssetsByClass(UNPCDefinition::StaticClass()->GetClassPathName(), AssetList, true);
 
 	// =========================================================================
-	// TEST ONLY: Filter to /Game/TestData/ path for table editor testing
+	// v4.7.1: Force Asset Registry rescan before querying
+	// This handles file-copied assets that weren't duplicated via Unreal Editor
+	// =========================================================================
+	// =========================================================================
+	// TEST ONLY: Scan TestData path for table editor testing
+	// REVERT THIS AFTER TESTING - Change to scan /Game/ for production
+	// =========================================================================
+	TArray<FString> PathsToScan = { TEXT("/Game/Game/TestData") };
+	UE_LOG(LogTemp, Log, TEXT("NPCAssetSync: Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
+	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
+	// Re-query after rescan
+	AssetList.Empty();
+	AssetRegistry.GetAssetsByClass(UNPCDefinition::StaticClass()->GetClassPathName(), AssetList, true);
+	// =========================================================================
+	// END TEST ONLY - Production should use: { TEXT("/Game/") }
+	// =========================================================================
+
+	// =========================================================================
+	// TEST ONLY: Filter to /Game/Game/TestData/ path for table editor testing
 	// REVERT THIS AFTER TESTING - Remove the filter loop below
 	// =========================================================================
 	TArray<FAssetData> FilteredAssetList;
 	for (const FAssetData& Asset : AssetList)
 	{
 		FString PackagePath = Asset.PackagePath.ToString();
-		if (PackagePath.StartsWith(TEXT("/Game/TestData")))
+		if (PackagePath.StartsWith(TEXT("/Game/Game/TestData")))
 		{
 			FilteredAssetList.Add(Asset);
 		}
 	}
 	AssetList = FilteredAssetList;
-	UE_LOG(LogTemp, Warning, TEXT("NPCAssetSync: TEST MODE - Filtered to %d assets in /Game/TestData/"), AssetList.Num());
+	UE_LOG(LogTemp, Warning, TEXT("NPCAssetSync: TEST MODE - Filtered to %d assets in /Game/Game/TestData/"), AssetList.Num());
 	// =========================================================================
 	// END TEST ONLY
 	// =========================================================================

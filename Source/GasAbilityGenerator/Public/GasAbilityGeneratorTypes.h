@@ -84,7 +84,7 @@ struct FGenerationResult
 		else if (AssetName.StartsWith(TEXT("M_"))) Category = TEXT("Materials");
 		else if (AssetName.StartsWith(TEXT("AC_"))) Category = TEXT("Ability Configurations");
 		else if (AssetName.StartsWith(TEXT("ActConfig_"))) Category = TEXT("Activity Configurations");
-		else if (AssetName.StartsWith(TEXT("NPCDef_"))) Category = TEXT("NPC Definitions");
+		else if (AssetName.StartsWith(TEXT("NPC_"))) Category = TEXT("NPC Definitions");
 		else if (AssetName.StartsWith(TEXT("CD_"))) Category = TEXT("Character Definitions");
 		else if (AssetName.StartsWith(TEXT("BPA_"))) Category = TEXT("Activities");
 		else if (AssetName.StartsWith(TEXT("EI_"))) Category = TEXT("Equippable Items");
@@ -1757,7 +1757,7 @@ struct FManifestDialogueTreeDefinition
  */
 struct FManifestDialogueSpeakerDefinition
 {
-	FString NPCDefinition;  // Reference to NPCDef_ asset
+	FString NPCDefinition;  // Reference to NPC_ asset
 	FString SpeakerID;      // v4.0: Optional override for speaker ID
 	FString NodeColor;      // Hex color e.g. "#0066FF"
 	TArray<FString> OwnedTags;  // Tags applied during dialogue
@@ -3861,7 +3861,7 @@ struct FManifestQuestDefinition
 	FManifestDialoguePlayParamsDefinition DialoguePlayParams;
 
 	// v3.9.6: Questgiver and rewards
-	FString Questgiver;                  // NPCDef_ who gives this quest
+	FString Questgiver;                  // NPC_ who gives this quest
 	FManifestQuestRewardDefinition Rewards;  // Rewards on completion
 
 	// v4.3: Quest requirements - dynamic constraints (fail conditions)
@@ -4075,7 +4075,7 @@ struct FManifestNPCSpawnParams
  */
 struct FManifestNPCSpawnEntry
 {
-	FString NPCDefinition;               // NPCDef_* name
+	FString NPCDefinition;               // NPC_* name
 	FVector RelativeLocation = FVector::ZeroVector;  // Offset from spawner
 	FRotator RelativeRotation = FRotator::ZeroRotator;
 	FManifestNPCSpawnParams SpawnParams;

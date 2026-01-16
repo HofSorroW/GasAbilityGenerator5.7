@@ -262,9 +262,9 @@ bool FDialogueCSVParser::ConvertToManifestDefinition(const FParsedDialogueData& 
 		FManifestDialogueSpeakerDefinition Speaker;
 		Speaker.NPCDefinition = SpeakerRef;
 
-		// Extract speaker ID from NPCDef_ name (e.g., "NPCDef_Blacksmith" -> "Blacksmith")
+		// Extract speaker ID from NPC_ name (e.g., "NPC_Blacksmith" -> "Blacksmith")
 		FString SpeakerID = SpeakerRef;
-		if (SpeakerID.StartsWith(TEXT("NPCDef_")))
+		if (SpeakerID.StartsWith(TEXT("NPC_")))
 		{
 			SpeakerID = SpeakerID.RightChop(7);
 		}
@@ -294,9 +294,9 @@ FManifestDialogueNodeDefinition FDialogueCSVParser::ConvertRowToNode(const FDial
 	// Speaker for NPC nodes
 	if (Row.IsNPCNode() && !Row.Speaker.IsEmpty())
 	{
-		// Extract speaker ID from NPCDef_ name
+		// Extract speaker ID from NPC_ name
 		FString SpeakerID = Row.Speaker;
-		if (SpeakerID.StartsWith(TEXT("NPCDef_")))
+		if (SpeakerID.StartsWith(TEXT("NPC_")))
 		{
 			SpeakerID = SpeakerID.RightChop(7);
 		}

@@ -2425,11 +2425,11 @@ FReply SNPCTableEditor::OnGenerateClicked()
 	{
 		FGenerationResult Result = FNPCDefinitionGenerator::Generate(Def);
 
-		// Extract NPCName from definition name (remove "NPCDef_" prefix)
+		// Extract NPCName from definition name (remove "NPC_" prefix)
 		FString NPCNameFromDef = Def.Name;
-		if (NPCNameFromDef.StartsWith(TEXT("NPCDef_")))
+		if (NPCNameFromDef.StartsWith(TEXT("NPC_")))
 		{
-			NPCNameFromDef = NPCNameFromDef.Mid(7);
+			NPCNameFromDef = NPCNameFromDef.Mid(4);
 		}
 
 		if (Result.Status == EGenerationStatus::New)
@@ -2557,25 +2557,52 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
+	// =========================================================================
+	// v4.7.1: Force Asset Registry rescan before querying
+	// This handles file-copied assets that weren't duplicated via Unreal Editor
+	// =========================================================================
+	// =========================================================================
+	// TEST ONLY: Scan TestData path for table editor testing
+	// REVERT THIS AFTER TESTING - Change to scan /Game/ for production
+	// =========================================================================
+	TArray<FString> PathsToScan = { TEXT("/Game/Game/TestData") };
+	// =========================================================================
+	// END TEST ONLY - Production should use: { TEXT("/Game/") }
+	// =========================================================================
+	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
+	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
+
 	// Find all NPCDefinition assets
 	TArray<FAssetData> AssetList;
-	AssetRegistry.GetAssetsByClass(UNPCDefinition::StaticClass()->GetClassPathName(), AssetList, true);
+	FTopLevelAssetPath ClassPath = UNPCDefinition::StaticClass()->GetClassPathName();
+	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] Searching for class: %s"), *ClassPath.ToString());
+	AssetRegistry.GetAssetsByClass(ClassPath, AssetList, true);
+	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] Found %d total UNPCDefinition assets BEFORE filter"), AssetList.Num());
+
+	// Debug: Log first few assets to see their paths
+	for (int32 i = 0; i < FMath::Min(5, AssetList.Num()); i++)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] Asset[%d]: PackagePath='%s', AssetName='%s'"),
+			i, *AssetList[i].PackagePath.ToString(), *AssetList[i].AssetName.ToString());
+	}
 
 	// =========================================================================
-	// TEST ONLY: Filter to /Game/TestData/ path for table editor testing
+	// TEST ONLY: Filter to TestData path for table editor testing
 	// REVERT THIS AFTER TESTING - Remove the filter loop below
 	// =========================================================================
 	TArray<FAssetData> FilteredAssetList;
 	for (const FAssetData& Asset : AssetList)
 	{
 		FString PackagePath = Asset.PackagePath.ToString();
-		if (PackagePath.StartsWith(TEXT("/Game/TestData")))
+		// Use exact path match for test folder
+		if (PackagePath.StartsWith(TEXT("/Game/Game/TestData")))
 		{
 			FilteredAssetList.Add(Asset);
+			UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Matched: %s"), *PackagePath);
 		}
 	}
 	AssetList = FilteredAssetList;
-	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] TEST MODE - Filtered to %d assets in /Game/TestData/"), AssetList.Num());
+	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] TEST MODE - Filtered to %d assets in /Game/Game/TestData"), AssetList.Num());
 	// =========================================================================
 	// END TEST ONLY
 	// =========================================================================
@@ -2583,7 +2610,7 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 	if (AssetList.Num() == 0)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,
-			LOCTEXT("NoNPCsFound", "No NPCDefinition assets found in the project.\n\nCreate NPCDefinition assets (NPCDef_*) first, then sync."));
+			LOCTEXT("NoNPCsFound", "No NPCDefinition assets found in the project.\n\nCreate NPCDefinition assets (NPC_*) first, then sync."));
 		return FReply::Handled();
 	}
 

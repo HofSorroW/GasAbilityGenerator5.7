@@ -33,7 +33,7 @@ FManifestNPCDefinitionDefinition FNPCTableConverter::ConvertRowToDefinition(
 	//=========================================================================
 	// Core Identity
 	//=========================================================================
-	Def.Name = FString::Printf(TEXT("NPCDef_%s"), *Row.NPCName);
+	Def.Name = FString::Printf(TEXT("NPC_%s"), *Row.NPCName);
 	Def.Folder = OutputFolder;
 	Def.NPCID = Row.NPCId;
 	Def.NPCName = Row.DisplayName;  // NPCName in definition is the display name

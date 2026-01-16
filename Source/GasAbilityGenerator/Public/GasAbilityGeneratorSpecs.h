@@ -252,7 +252,7 @@ struct FSpecQuestDefinition
  * 2. Configure in Details panel (dropdowns auto-populate from project assets)
  * 3. Right-click asset -> GasAbilityGenerator -> Generate NPC Assets
  *
- * Generates: NPCDef_, AC_, ActConfig_, Goal_, Schedule_, DBP_, Quest_ assets
+ * Generates: NPC_, AC_, ActConfig_, Goal_, Schedule_, DBP_, Quest_ assets
  *
  * Core Invariant: This spec is canonical. Generated assets are derived.
  */
@@ -282,7 +282,7 @@ public:
 	// Identity
 	//=========================================================================
 
-	/** Base name for generated assets (e.g., "Blacksmith" -> NPCDef_Blacksmith) */
+	/** Base name for generated assets (e.g., "Blacksmith" -> NPC_Blacksmith) */
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	FString BaseName;
 
@@ -453,7 +453,7 @@ public:
 	UNPCPackageSpec* GetMergedSpec() const;
 
 	/** Get generated asset names */
-	FString GetNPCDefName() const { return FString::Printf(TEXT("NPCDef_%s"), *BaseName); }
+	FString GetNPCDefName() const { return FString::Printf(TEXT("NPC_%s"), *BaseName); }
 	FString GetACName() const { return FString::Printf(TEXT("AC_%s"), *BaseName); }
 	FString GetActConfigName() const { return FString::Printf(TEXT("ActConfig_%s"), *BaseName); }
 	FString GetScheduleName() const { return FString::Printf(TEXT("Schedule_%s"), *BaseName); }

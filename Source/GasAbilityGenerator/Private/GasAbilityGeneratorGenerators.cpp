@@ -9220,11 +9220,11 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 				}
 				else if (!SpeakerDef.NPCDefinition.IsEmpty())
 				{
-					// Extract name from NPCDef_ prefix
+					// Extract name from NPC_ prefix
 					FString SpeakerName = SpeakerDef.NPCDefinition;
-					if (SpeakerName.StartsWith(TEXT("NPCDef_")))
+					if (SpeakerName.StartsWith(TEXT("NPC_")))
 					{
-						SpeakerName = SpeakerName.Mid(7);
+						SpeakerName = SpeakerName.Mid(4);
 					}
 					NewSpeaker.SpeakerID = FName(*SpeakerName);
 				}
@@ -12399,9 +12399,9 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	// v4.2.12: Store WITHOUT "_C" suffix - UE resolves Blueprint class internally
 	if (Definition.bAutoCreateDialogue)
 	{
-		// Derive dialogue name from NPC name: NPCDef_Blacksmith -> DBP_BlacksmithDialogue
+		// Derive dialogue name from NPC name: NPC_Blacksmith -> DBP_BlacksmithDialogue
 		FString NPCBaseName = Definition.Name;
-		NPCBaseName.RemoveFromStart(TEXT("NPCDef_"));
+		NPCBaseName.RemoveFromStart(TEXT("NPC_"));
 		FString DialogueName = FString::Printf(TEXT("DBP_%sDialogue"), *NPCBaseName);
 		FString DialoguePath = FString::Printf(TEXT("%s/Dialogues/%s.%s"), *GetProjectRoot(), *DialogueName, *DialogueName);
 
@@ -12413,9 +12413,9 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 	// v3.7: Auto-create tagged dialogue set if requested
 	if (Definition.bAutoCreateTaggedDialogue)
 	{
-		// Derive tagged dialogue name from NPC name: NPCDef_Blacksmith -> Blacksmith_TaggedDialogue
+		// Derive tagged dialogue name from NPC name: NPC_Blacksmith -> Blacksmith_TaggedDialogue
 		FString NPCBaseName = Definition.Name;
-		NPCBaseName.RemoveFromStart(TEXT("NPCDef_"));
+		NPCBaseName.RemoveFromStart(TEXT("NPC_"));
 		FString TDSName = FString::Printf(TEXT("%s_TaggedDialogue"), *NPCBaseName);
 		FString TDSPath = FString::Printf(TEXT("%s/Dialogues/%s"), *GetProjectRoot(), *TDSName);
 

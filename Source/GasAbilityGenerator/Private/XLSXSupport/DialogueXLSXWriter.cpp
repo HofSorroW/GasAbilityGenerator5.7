@@ -643,10 +643,10 @@ void FDialogueXLSXWriter::ScanAssetsForValidIds()
 		for (const FAssetData& Asset : AssetList)
 		{
 			FString AssetName = Asset.AssetName.ToString();
-			// Remove NPCDef_ prefix if present for cleaner IDs
-			if (AssetName.StartsWith(TEXT("NPCDef_")))
+			// Remove NPC_ prefix if present for cleaner IDs
+			if (AssetName.StartsWith(TEXT("NPC_")))
 			{
-				AssetName = AssetName.RightChop(7);
+				AssetName = AssetName.RightChop(4);
 			}
 			NPCIds.Add(AssetName);
 		}

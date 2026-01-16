@@ -4466,7 +4466,7 @@ activity_configurations:
 # NPC DEFINITIONS (1)
 # ============================================================================
 npc_definitions:
-  - name: NPCDef_FatherCompanion
+  - name: NPC_FatherCompanion
     folder: Configs
     display_name: Father
     character_class: BP_FatherCompanion
@@ -4483,7 +4483,7 @@ character_definitions:
   - name: CD_FatherCompanion
     folder: Configs
     display_name: Father Companion
-    npc_definition: NPCDef_FatherCompanion
+    npc_definition: NPC_FatherCompanion
 
 # ============================================================================
 # ITEM COLLECTIONS (1)
@@ -5833,7 +5833,7 @@ tags:  # QUEST PIPELINE
     comment: Applied when player is hostile to guard
 
 npc_definitions:  # QUEST PIPELINE
-  - name: NPCDef_Blacksmith
+  - name: NPC_Blacksmith
     folder: NPCs/Town/Definitions
     npc_id: Blacksmith_01
     npc_name: Garrett the Blacksmith
@@ -5855,7 +5855,7 @@ npc_definitions:  # QUEST PIPELINE
     activity_schedules:
       - Schedule_BlacksmithDay
 
-  - name: NPCDef_Guard
+  - name: NPC_Guard
     folder: NPCs/Town/Definitions
     npc_id: Guard_01
     npc_name: Town Guard
@@ -5869,7 +5869,7 @@ npc_definitions:  # QUEST PIPELINE
       - Narrative.Factions.Town
     auto_create_dialogue: false  # Using CSV instead
 
-  - name: NPCDef_Merchant
+  - name: NPC_Merchant
     folder: NPCs/Town/Definitions
     npc_id: Merchant_01
     npc_name: Traveling Merchant
@@ -5973,7 +5973,7 @@ quests:
     quest_name: "Forge Supplies"
     description: "The blacksmith needs iron ore from the northern mines."
     is_tracked: true
-    questgiver: NPCDef_Blacksmith
+    questgiver: NPC_Blacksmith
     states:
       - id: Start
         type: regular

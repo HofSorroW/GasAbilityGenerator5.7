@@ -2666,13 +2666,23 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 	}
 
 	// =========================================================================
-	// TEST ONLY: Use /Game/TestData/ filter for table editor testing
-	// REVERT THIS AFTER TESTING - Change PathFilter to TEXT("") for production
+	// v4.7.1: Force Asset Registry rescan before querying
+	// This handles file-copied assets that weren't duplicated via Unreal Editor
 	// =========================================================================
-	const FString PathFilter = TEXT("/Game/TestData");
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
 	// =========================================================================
-	// END TEST ONLY
+	// TEST ONLY: Scan TestData path for table editor testing
+	// REVERT THIS AFTER TESTING - Change to scan /Game/ for production
 	// =========================================================================
+	TArray<FString> PathsToScan = { TEXT("/Game/Game/TestData") };
+	const FString PathFilter = TEXT("/Game/Game/TestData");
+	// =========================================================================
+	// END TEST ONLY - Production should use: PathsToScan = { TEXT("/Game/") }, PathFilter = TEXT("")
+	// =========================================================================
+	UE_LOG(LogTemp, Log, TEXT("[DialogueTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
+	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
 
 	// Sync all dialogue assets using AssetRegistry (filtered by PathFilter)
 	FDialogueAssetSyncResult SyncResult = FDialogueAssetSync::SyncFromAllAssets(PathFilter);

@@ -13,7 +13,7 @@ struct FDialogueCSVRow
 	FString Dialogue;      // DBP_* asset name
 	FString NodeID;        // Unique node ID within dialogue
 	FString Type;          // NPC or PLAYER
-	FString Speaker;       // NPCDefinition reference (NPCDef_*)
+	FString Speaker;       // NPCDefinition reference (NPC_*)
 	FString Text;          // Full spoken text
 	FString OptionText;    // Short text for dialogue wheel (player only)
 	FString Replies;       // Semicolon-separated node IDs, or END
@@ -73,7 +73,7 @@ struct FParsedDialogueData
  *
  * CSV Format:
  * Dialogue,NodeID,Type,Speaker,Text,OptionText,Replies,Conditions,Events
- * DBP_Blacksmith,greeting,NPC,NPCDef_Blacksmith,"Welcome!","",ask_work;goodbye,"",""
+ * DBP_Blacksmith,greeting,NPC,NPC_Blacksmith,"Welcome!","",ask_work;goodbye,"",""
  *
  * Features:
  * - Multiple dialogues in single file (grouped by Dialogue column)
