@@ -58,8 +58,9 @@ FLinearColor FDialogueSyncEntry::GetStatusColor() const
 
 bool FDialogueSyncEntry::RequiresResolution() const
 {
-	return Status == EDialogueSyncStatus::Conflict ||
-	       Status == EDialogueSyncStatus::DeleteConflict;
+	// v4.11: All statuses except Unchanged require user resolution
+	// No more auto-accepting ModifiedInUE, ModifiedInExcel, Added*, Deleted*, etc.
+	return Status != EDialogueSyncStatus::Unchanged;
 }
 
 //=============================================================================
@@ -335,44 +336,15 @@ FDialogueSyncResult FDialogueXLSXSyncEngine::CompareSources(
 
 void FDialogueXLSXSyncEngine::AutoResolveNonConflicts(FDialogueSyncResult& SyncResult)
 {
+	// v4.11: Only Unchanged auto-resolves. All other statuses require explicit user approval.
+	// This prevents accidental acceptance of changes the user might want to review.
 	for (FDialogueSyncEntry& Entry : SyncResult.Entries)
 	{
-		switch (Entry.Status)
+		if (Entry.Status == EDialogueSyncStatus::Unchanged)
 		{
-			case EDialogueSyncStatus::Unchanged:
-				Entry.Resolution = EDialogueConflictResolution::KeepUE;  // Either is fine
-				break;
-
-			case EDialogueSyncStatus::ModifiedInUE:
-				Entry.Resolution = EDialogueConflictResolution::KeepUE;
-				break;
-
-			case EDialogueSyncStatus::ModifiedInExcel:
-				Entry.Resolution = EDialogueConflictResolution::KeepExcel;
-				break;
-
-			case EDialogueSyncStatus::AddedInUE:
-				Entry.Resolution = EDialogueConflictResolution::KeepUE;
-				break;
-
-			case EDialogueSyncStatus::AddedInExcel:
-				Entry.Resolution = EDialogueConflictResolution::KeepExcel;
-				break;
-
-			case EDialogueSyncStatus::DeletedInUE:
-				Entry.Resolution = EDialogueConflictResolution::Delete;
-				break;
-
-			case EDialogueSyncStatus::DeletedInExcel:
-				Entry.Resolution = EDialogueConflictResolution::Delete;
-				break;
-
-			// Conflicts require user resolution
-			case EDialogueSyncStatus::Conflict:
-			case EDialogueSyncStatus::DeleteConflict:
-				// Leave as Unresolved
-				break;
+			Entry.Resolution = EDialogueConflictResolution::KeepUE;  // Either is fine, content is identical
 		}
+		// All other statuses remain Unresolved, requiring user selection in approval UI
 	}
 }
 

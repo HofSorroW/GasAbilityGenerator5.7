@@ -63,7 +63,9 @@ FLinearColor FNPCSyncEntry::GetStatusColor() const
 
 bool FNPCSyncEntry::RequiresResolution() const
 {
-	return Status == ENPCSyncStatus::Conflict || Status == ENPCSyncStatus::DeleteConflict;
+	// v4.11: All statuses except Unchanged require user resolution
+	// No more auto-accepting ModifiedInUE, ModifiedInExcel, Added*, Deleted*, etc.
+	return Status != ENPCSyncStatus::Unchanged;
 }
 
 FString FNPCSyncEntry::GetDisplayName() const
@@ -347,36 +349,15 @@ FNPCMergeResult FNPCXLSXSyncEngine::ApplySync(const FNPCSyncResult& SyncResult)
 
 void FNPCXLSXSyncEngine::AutoResolveNonConflicts(FNPCSyncResult& SyncResult)
 {
+	// v4.11: Only Unchanged auto-resolves. All other statuses require explicit user approval.
+	// This prevents accidental acceptance of changes the user might want to review.
 	for (FNPCSyncEntry& Entry : SyncResult.Entries)
 	{
-		// Skip entries that require user resolution
-		if (Entry.RequiresResolution())
+		if (Entry.Status == ENPCSyncStatus::Unchanged)
 		{
-			continue;
+			Entry.Resolution = ENPCConflictResolution::KeepUE;  // Either is fine, content is identical
 		}
-
-		// Auto-set resolution based on status
-		switch (Entry.Status)
-		{
-			case ENPCSyncStatus::Unchanged:
-			case ENPCSyncStatus::ModifiedInUE:
-			case ENPCSyncStatus::AddedInUE:
-				Entry.Resolution = ENPCConflictResolution::KeepUE;
-				break;
-
-			case ENPCSyncStatus::ModifiedInExcel:
-			case ENPCSyncStatus::AddedInExcel:
-				Entry.Resolution = ENPCConflictResolution::KeepExcel;
-				break;
-
-			case ENPCSyncStatus::DeletedInUE:
-			case ENPCSyncStatus::DeletedInExcel:
-				Entry.Resolution = ENPCConflictResolution::Delete;
-				break;
-
-			default:
-				break;
-		}
+		// All other statuses remain Unresolved, requiring user selection in approval UI
 	}
 }
 
