@@ -679,6 +679,17 @@ public:
 	static FGenerationResult Generate(const FManifestCharacterAppearanceDefinition& Definition);
 };
 
+/**
+ * v4.9: TriggerSet Generator - creates UTriggerSet DataAssets with instanced triggers
+ * Supports BPT_TimeOfDayRange, BPT_Always, and other UNarrativeTrigger subclasses
+ * Each trigger can contain instanced UNarrativeEvent objects
+ */
+class GASABILITYGENERATOR_API FTriggerSetGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestTriggerSetDefinition& Definition);
+};
+
 // v2.5.7: TaggedDialogueSet Generator - creates UTaggedDialogueSet data assets
 class GASABILITYGENERATOR_API FTaggedDialogueSetGenerator : public FGeneratorBase
 {

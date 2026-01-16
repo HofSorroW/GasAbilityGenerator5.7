@@ -13311,6 +13311,240 @@ FGenerationResult FCharacterAppearanceGenerator::Generate(const FManifestCharact
 	return Result;
 }
 
+// v4.9: TriggerSet Generator - creates UTriggerSet DataAssets with instanced triggers
+#include "Tales/TriggerSet.h"
+#include "Tales/NarrativeTrigger.h"
+
+FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefinition& Definition)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("NPCs/Triggers") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Trigger Set"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Trigger Set"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UTriggerSet* TriggerSet = NewObject<UTriggerSet>(Package, *Definition.Name, RF_Public | RF_Standalone | RF_Transactional);
+	if (!TriggerSet)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create TriggerSet"));
+	}
+
+	LogGeneration(FString::Printf(TEXT("Creating TriggerSet: %s with %d triggers"), *Definition.Name, Definition.Triggers.Num()));
+
+	// Create instanced triggers
+	for (const FManifestTriggerDefinition& TriggerDef : Definition.Triggers)
+	{
+		// Search for trigger class in Narrative Pro content
+		TArray<FString> TriggerSearchPaths;
+		TriggerSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Triggers/%s.%s_C"), *TriggerDef.TriggerClass, *TriggerDef.TriggerClass));
+		TriggerSearchPaths.Add(FString::Printf(TEXT("/Game/Triggers/%s.%s_C"), *TriggerDef.TriggerClass, *TriggerDef.TriggerClass));
+		TriggerSearchPaths.Add(FString::Printf(TEXT("%s/Triggers/%s.%s_C"), *GetProjectRoot(), *TriggerDef.TriggerClass, *TriggerDef.TriggerClass));
+
+		UClass* TriggerClass = nullptr;
+		for (const FString& Path : TriggerSearchPaths)
+		{
+			TriggerClass = LoadClass<UNarrativeTrigger>(nullptr, *Path);
+			if (TriggerClass)
+			{
+				break;
+			}
+		}
+
+		if (!TriggerClass)
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Trigger class not found: %s (searched NarrativePro and project paths)"), *TriggerDef.TriggerClass));
+			continue;
+		}
+
+		// Create instanced trigger with TriggerSet as outer
+		UNarrativeTrigger* Trigger = NewObject<UNarrativeTrigger>(TriggerSet, TriggerClass, NAME_None, RF_Public | RF_Transactional);
+		if (!Trigger)
+		{
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Failed to create trigger instance: %s"), *TriggerDef.TriggerClass));
+			continue;
+		}
+
+		// Set time-based properties via reflection (for BPT_TimeOfDayRange)
+		if (TriggerDef.TriggerClass.Contains(TEXT("TimeOfDayRange")))
+		{
+			// BPT_TimeOfDayRange uses FTimeOfDayRange struct or TimeStart/TimeEnd floats
+			if (FFloatProperty* StartProp = FindFProperty<FFloatProperty>(TriggerClass, TEXT("TimeStart")))
+			{
+				StartProp->SetPropertyValue_InContainer(Trigger, TriggerDef.StartTime);
+			}
+			if (FFloatProperty* EndProp = FindFProperty<FFloatProperty>(TriggerClass, TEXT("TimeEnd")))
+			{
+				EndProp->SetPropertyValue_InContainer(Trigger, TriggerDef.EndTime);
+			}
+			// Try FTimeOfDayRange struct if individual floats not found
+			if (FStructProperty* RangeProp = CastField<FStructProperty>(TriggerClass->FindPropertyByName(TEXT("TimeRange"))))
+			{
+				void* RangePtr = RangeProp->ContainerPtrToValuePtr<void>(Trigger);
+				// Set TimeMin and TimeMax within the struct
+				if (FFloatProperty* MinProp = CastField<FFloatProperty>(RangeProp->Struct->FindPropertyByName(TEXT("TimeMin"))))
+				{
+					MinProp->SetPropertyValue_InContainer(RangePtr, TriggerDef.StartTime);
+				}
+				if (FFloatProperty* MaxProp = CastField<FFloatProperty>(RangeProp->Struct->FindPropertyByName(TEXT("TimeMax"))))
+				{
+					MaxProp->SetPropertyValue_InContainer(RangePtr, TriggerDef.EndTime);
+				}
+			}
+			LogGeneration(FString::Printf(TEXT("  Created time trigger: %s (%.0f - %.0f)"), *TriggerDef.TriggerClass, TriggerDef.StartTime, TriggerDef.EndTime));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Created trigger: %s"), *TriggerDef.TriggerClass));
+		}
+
+		// Create instanced events for this trigger
+		for (const FManifestTriggerEventDefinition& EventDef : TriggerDef.Events)
+		{
+			// Search for event class
+			TArray<FString> EventSearchPaths;
+			EventSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.EventClass, *EventDef.EventClass));
+			EventSearchPaths.Add(FString::Printf(TEXT("%s/Events/%s.%s_C"), *GetProjectRoot(), *EventDef.EventClass, *EventDef.EventClass));
+			EventSearchPaths.Add(FString::Printf(TEXT("/Game/Events/%s.%s_C"), *EventDef.EventClass, *EventDef.EventClass));
+
+			UClass* EventClass = nullptr;
+			for (const FString& Path : EventSearchPaths)
+			{
+				EventClass = LoadClass<UNarrativeEvent>(nullptr, *Path);
+				if (EventClass)
+				{
+					break;
+				}
+			}
+
+			if (!EventClass)
+			{
+				LogGeneration(FString::Printf(TEXT("    [WARNING] Event class not found: %s"), *EventDef.EventClass));
+				continue;
+			}
+
+			// Create instanced event with Trigger as outer
+			UNarrativeEvent* Event = NewObject<UNarrativeEvent>(Trigger, EventClass, NAME_None, RF_Public | RF_Transactional);
+			if (!Event)
+			{
+				LogGeneration(FString::Printf(TEXT("    [WARNING] Failed to create event instance: %s"), *EventDef.EventClass));
+				continue;
+			}
+
+			// Set event runtime
+			if (FEnumProperty* RuntimeProp = CastField<FEnumProperty>(EventClass->FindPropertyByName(TEXT("EventRuntime"))))
+			{
+				EEventRuntime RuntimeValue = EEventRuntime::Start;
+				if (EventDef.Runtime.Equals(TEXT("End"), ESearchCase::IgnoreCase))
+					RuntimeValue = EEventRuntime::End;
+				else if (EventDef.Runtime.Equals(TEXT("Both"), ESearchCase::IgnoreCase))
+					RuntimeValue = EEventRuntime::Both;
+
+				RuntimeProp->GetUnderlyingProperty()->SetIntPropertyValue(
+					RuntimeProp->ContainerPtrToValuePtr<void>(Event),
+					static_cast<int64>(RuntimeValue));
+			}
+
+			// Set event properties via reflection
+			for (const auto& PropPair : EventDef.Properties)
+			{
+				FProperty* Prop = EventClass->FindPropertyByName(*PropPair.Key);
+				if (!Prop)
+				{
+					LogGeneration(FString::Printf(TEXT("    [WARNING] Event property not found: %s.%s"), *EventDef.EventClass, *PropPair.Key));
+					continue;
+				}
+
+				// Handle different property types
+				if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
+				{
+					StrProp->SetPropertyValue_InContainer(Event, PropPair.Value);
+				}
+				else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Prop))
+				{
+					FloatProp->SetPropertyValue_InContainer(Event, FCString::Atof(*PropPair.Value));
+				}
+				else if (FIntProperty* IntProp = CastField<FIntProperty>(Prop))
+				{
+					IntProp->SetPropertyValue_InContainer(Event, FCString::Atoi(*PropPair.Value));
+				}
+				else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Prop))
+				{
+					BoolProp->SetPropertyValue_InContainer(Event, PropPair.Value.ToBool());
+				}
+				else if (FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+				{
+					// Handle FGameplayTag
+					if (StructProp->Struct == FGameplayTag::StaticStruct())
+					{
+						FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*PropPair.Value), false);
+						if (Tag.IsValid())
+						{
+							void* ValuePtr = StructProp->ContainerPtrToValuePtr<void>(Event);
+							*static_cast<FGameplayTag*>(ValuePtr) = Tag;
+						}
+					}
+				}
+				else if (FClassProperty* ClassProp = CastField<FClassProperty>(Prop))
+				{
+					// Try to load the class reference
+					TArray<FString> ClassSearchPaths;
+					ClassSearchPaths.Add(FString::Printf(TEXT("%s/Goals/%s.%s_C"), *GetProjectRoot(), *PropPair.Value, *PropPair.Value));
+					ClassSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *PropPair.Value, *PropPair.Value));
+
+					UClass* RefClass = nullptr;
+					for (const FString& Path : ClassSearchPaths)
+					{
+						RefClass = LoadClass<UObject>(nullptr, *Path);
+						if (RefClass) break;
+					}
+					if (RefClass)
+					{
+						ClassProp->SetPropertyValue_InContainer(Event, RefClass);
+					}
+				}
+			}
+
+			// Add event to trigger's TriggerEvents array
+			Trigger->TriggerEvents.Add(Event);
+			LogGeneration(FString::Printf(TEXT("    Added event: %s (runtime: %s)"), *EventDef.EventClass, *EventDef.Runtime));
+		}
+
+		// Add trigger to TriggerSet
+		TriggerSet->Triggers.Add(Trigger);
+	}
+
+	// Mark package dirty and save
+	Package->MarkPackageDirty();
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, TriggerSet, *PackageFileName, SaveArgs);
+
+	// Store metadata
+	StoreDataAssetMetadata(TriggerSet, TEXT("TriggerSet"), Definition.Name, InputHash);
+
+	LogGeneration(FString::Printf(TEXT("Created TriggerSet: %s with %d triggers"), *Definition.Name, TriggerSet->Triggers.Num()));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.DetermineCategory();
+	return Result;
+}
+
 // v2.5.7: TaggedDialogueSet Generator - creates UTaggedDialogueSet data assets
 #include "Tales/TaggedDialogueSet.h"
 

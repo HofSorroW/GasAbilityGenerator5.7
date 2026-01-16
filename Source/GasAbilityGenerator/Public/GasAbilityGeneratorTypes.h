@@ -4421,6 +4421,69 @@ struct FManifestNPCSpawnerPlacement
 	}
 };
 
+// v4.9: TriggerSet event definition (instanced UNarrativeEvent inside trigger)
+struct FManifestTriggerEventDefinition
+{
+	FString EventClass;                      // NE_* or BPE_* class name
+	FString Runtime = TEXT("Start");         // Start, End, Both
+	TMap<FString, FString> Properties;       // Property name -> value
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(EventClass);
+		Hash ^= GetTypeHash(Runtime);
+		for (const auto& Pair : Properties)
+		{
+			Hash ^= GetTypeHash(Pair.Key);
+			Hash ^= GetTypeHash(Pair.Value);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+// v4.9: Trigger definition (instanced UNarrativeTrigger inside TriggerSet)
+struct FManifestTriggerDefinition
+{
+	FString TriggerClass;                    // BPT_TimeOfDayRange, BPT_Always, etc.
+	float StartTime = 0.0f;                  // For time-based triggers (0-2400)
+	float EndTime = 2400.0f;                 // For time-based triggers (0-2400)
+	TArray<FManifestTriggerEventDefinition> Events;  // Events to fire when trigger activates
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(TriggerClass);
+		Hash ^= GetTypeHash(FMath::RoundToInt(StartTime * 10));
+		Hash ^= GetTypeHash(FMath::RoundToInt(EndTime * 10));
+		for (const auto& Event : Events)
+		{
+			Hash ^= Event.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+// v4.9: TriggerSet DataAsset definition
+struct FManifestTriggerSetDefinition
+{
+	FString Name;
+	FString Folder;
+	TArray<FManifestTriggerDefinition> Triggers;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Folder);
+		for (const auto& Trigger : Triggers)
+		{
+			Hash ^= Trigger.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		return Hash;
+	}
+};
+
 /**
  * Parsed manifest data
  */
@@ -4466,6 +4529,9 @@ struct FManifestData
 
 	// v4.8.3: Character Appearances
 	TArray<FManifestCharacterAppearanceDefinition> CharacterAppearances;
+
+	// v4.9: TriggerSets (event-driven NPC behaviors)
+	TArray<FManifestTriggerSetDefinition> TriggerSets;
 
 	// v3.9.8: Mesh-to-Item Pipeline
 	FManifestPipelineConfig PipelineConfig;
@@ -4520,6 +4586,7 @@ struct FManifestData
 		for (const auto& Def : GoalItems) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : Quests) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : CharacterAppearances) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : TriggerSets) AssetWhitelist.Add(Def.Name);  // v4.9
 
 		bWhitelistBuilt = true;
 	}
@@ -4597,7 +4664,9 @@ struct FManifestData
 			// v3.9: NPC Pipeline
 			+ ActivitySchedules.Num()
 			+ GoalItems.Num()
-			+ Quests.Num();
+			+ Quests.Num()
+			// v4.9: TriggerSets
+			+ TriggerSets.Num();
 	}
 
 	/**
@@ -4648,6 +4717,8 @@ struct FManifestData
 		for (const auto& Def : ActivitySchedules) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : GoalItems) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : Quests) AddWithDupeCheck(Def.Name);
+		// v4.9: TriggerSets
+		for (const auto& Def : TriggerSets) AddWithDupeCheck(Def.Name);
 		return Names;
 	}
 
@@ -4695,6 +4766,8 @@ struct FManifestData
 		Total += ActivitySchedules.Num();
 		Total += GoalItems.Num();
 		Total += Quests.Num();
+		// v4.9: TriggerSets
+		Total += TriggerSets.Num();
 
 		return Total;
 	}

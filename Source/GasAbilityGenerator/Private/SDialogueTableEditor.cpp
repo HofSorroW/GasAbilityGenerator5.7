@@ -811,6 +811,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 			SNullWidget::NullWidget
 		]
 
+		// v4.8.4: All heavy operation buttons disabled during bIsBusy
 		// Validate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -819,6 +820,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 			SNew(SButton)
 				.Text(LOCTEXT("Validate", "Validate"))
 				.OnClicked(this, &SDialogueTableEditor::OnValidateClicked)
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Generate
@@ -830,6 +832,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.Text(LOCTEXT("Generate", "Generate Dialogues"))
 				.OnClicked(this, &SDialogueTableEditor::OnGenerateClicked)
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Export XLSX
@@ -841,6 +844,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.Text(LOCTEXT("ExportXLSX", "Export XLSX"))
 				.OnClicked(this, &SDialogueTableEditor::OnExportXLSXClicked)
 				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx)"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Import XLSX
@@ -852,6 +856,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.Text(LOCTEXT("ImportXLSX", "Import XLSX"))
 				.OnClicked(this, &SDialogueTableEditor::OnImportXLSXClicked)
 				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx)"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Sync XLSX (3-way merge with conflict resolution)
@@ -864,6 +869,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.OnClicked(this, &SDialogueTableEditor::OnSyncXLSXClicked)
 				.ToolTipText(LOCTEXT("SyncXLSXTooltip", "Merge Excel changes with UE (3-way merge with conflict resolution)"))
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Separator before Asset Sync
@@ -884,6 +890,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.Text(LOCTEXT("SyncFromAssets", "Sync from Assets"))
 				.OnClicked(this, &SDialogueTableEditor::OnSyncFromAssetsClicked)
 				.ToolTipText(LOCTEXT("SyncFromAssetsTooltip", "Pull current events/conditions from UDialogueBlueprint assets into table"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Apply to Assets (v4.4 - write tokens to UDialogueBlueprint)
@@ -896,6 +903,7 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.OnClicked(this, &SDialogueTableEditor::OnApplyToAssetsClicked)
 				.ToolTipText(LOCTEXT("ApplyToAssetsTooltip", "Preview and apply token changes to UDialogueBlueprint assets"))
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		];
 }
 
@@ -2553,20 +2561,17 @@ FReply SDialogueTableEditor::OnImportXLSXClicked()
 
 	if (Result.bSuccess)
 	{
-		// v4.8.4: Warn if file was created by a newer version of the tool
+		// v4.8.4: Hard abort if file was created by a newer version of the tool
 		if (!Result.FormatVersion.IsEmpty() && Result.FormatVersion > FDialogueXLSXWriter::FORMAT_VERSION)
 		{
-			EAppReturnType::Type UserChoice = FMessageDialog::Open(EAppMsgType::YesNo,
-				FText::Format(LOCTEXT("NewerVersionWarningDialogueImport",
-					"This file was created with a newer version of the table editor (v{0}).\n"
-					"Current version: v{1}\n\n"
-					"Some data may not import correctly. Continue anyway?"),
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("NewerVersionAbortDialogueImport",
+					"This file was exported by a newer version of the plugin (v{0}).\n"
+					"Your version supports up to v{1}.\n\n"
+					"Please update the plugin before importing this file."),
 					FText::FromString(Result.FormatVersion),
 					FText::FromString(FDialogueXLSXWriter::FORMAT_VERSION)));
-			if (UserChoice != EAppReturnType::Yes)
-			{
-				return FReply::Handled();
-			}
+			return FReply::Handled();
 		}
 
 		FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
@@ -2655,20 +2660,17 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 		return FReply::Handled();
 	}
 
-	// v4.8.4: Warn if file was created by a newer version of the tool
+	// v4.8.4: Hard abort if file was created by a newer version of the tool
 	if (!ImportResult.FormatVersion.IsEmpty() && ImportResult.FormatVersion > FDialogueXLSXWriter::FORMAT_VERSION)
 	{
-		EAppReturnType::Type UserChoice = FMessageDialog::Open(EAppMsgType::YesNo,
-			FText::Format(LOCTEXT("NewerVersionWarningDialogueSync",
-				"This file was created with a newer version of the table editor (v{0}).\n"
-				"Current version: v{1}\n\n"
-				"Some data may not sync correctly. Continue anyway?"),
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("NewerVersionAbortDialogueSync",
+				"This file was exported by a newer version of the plugin (v{0}).\n"
+				"Your version supports up to v{1}.\n\n"
+				"Please update the plugin before syncing this file."),
 				FText::FromString(ImportResult.FormatVersion),
 				FText::FromString(FDialogueXLSXWriter::FORMAT_VERSION)));
-		if (UserChoice != EAppReturnType::Yes)
-		{
-			return FReply::Handled();
-		}
+		return FReply::Handled();
 	}
 
 	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));

@@ -214,6 +214,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseCharacterAppearances(Lines, i, OutData);
 		}
+		// v4.9: TriggerSets (event-driven NPC behaviors)
+		else if (IsSectionHeader(TrimmedLine, TEXT("trigger_sets:")))
+		{
+			ParseTriggerSets(Lines, i, OutData);
+		}
 		// v3.9.8: Mesh-to-Item Pipeline parsers
 		else if (IsSectionHeader(TrimmedLine, TEXT("pipeline_config:")))
 		{
@@ -7440,6 +7445,214 @@ void FGasAbilityGeneratorParser::ParseCharacterAppearances(const TArray<FString>
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.CharacterAppearances.Add(CurrentDef);
+	}
+}
+
+// v4.9: TriggerSet parser - creates UTriggerSet DataAssets with instanced triggers
+void FGasAbilityGeneratorParser::ParseTriggerSets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestTriggerSetDefinition CurrentSet;
+	FManifestTriggerDefinition CurrentTrigger;
+	FManifestTriggerEventDefinition CurrentEvent;
+	bool bInSet = false;
+	bool bInTriggers = false;
+	bool bInTrigger = false;
+	bool bInEvents = false;
+	bool bInEvent = false;
+	bool bInProperties = false;
+	int32 TriggersIndent = -1;
+	int32 EventsIndent = -1;
+	int32 PropertiesIndent = -1;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			// Save any pending event
+			if (bInEvent && !CurrentEvent.EventClass.IsEmpty())
+			{
+				CurrentTrigger.Events.Add(CurrentEvent);
+			}
+			// Save any pending trigger
+			if (bInTrigger && !CurrentTrigger.TriggerClass.IsEmpty())
+			{
+				CurrentSet.Triggers.Add(CurrentTrigger);
+			}
+			// Save any pending set
+			if (bInSet && !CurrentSet.Name.IsEmpty())
+			{
+				OutData.TriggerSets.Add(CurrentSet);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// New set entry
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save previous event if any
+			if (bInEvent && !CurrentEvent.EventClass.IsEmpty())
+			{
+				CurrentTrigger.Events.Add(CurrentEvent);
+				CurrentEvent = FManifestTriggerEventDefinition();
+				bInEvent = false;
+			}
+			// Save previous trigger if any
+			if (bInTrigger && !CurrentTrigger.TriggerClass.IsEmpty())
+			{
+				CurrentSet.Triggers.Add(CurrentTrigger);
+				CurrentTrigger = FManifestTriggerDefinition();
+				bInTrigger = false;
+			}
+			// Save previous set if any
+			if (bInSet && !CurrentSet.Name.IsEmpty())
+			{
+				OutData.TriggerSets.Add(CurrentSet);
+			}
+
+			CurrentSet = FManifestTriggerSetDefinition();
+			CurrentSet.Name = GetLineValue(TrimmedLine);
+			bInSet = true;
+			bInTriggers = false;
+			bInEvents = false;
+			bInProperties = false;
+		}
+		else if (bInSet)
+		{
+			// Set-level properties
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentSet.Folder = StripYamlComment(GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.Equals(TEXT("triggers:")) || TrimmedLine.StartsWith(TEXT("triggers:")))
+			{
+				bInTriggers = true;
+				bInEvents = false;
+				bInProperties = false;
+				TriggersIndent = CurrentIndent;
+			}
+			// Trigger array item
+			else if (bInTriggers && TrimmedLine.StartsWith(TEXT("- trigger_class:")))
+			{
+				// Save previous event if any
+				if (bInEvent && !CurrentEvent.EventClass.IsEmpty())
+				{
+					CurrentTrigger.Events.Add(CurrentEvent);
+					CurrentEvent = FManifestTriggerEventDefinition();
+					bInEvent = false;
+				}
+				// Save previous trigger if any
+				if (bInTrigger && !CurrentTrigger.TriggerClass.IsEmpty())
+				{
+					CurrentSet.Triggers.Add(CurrentTrigger);
+				}
+
+				CurrentTrigger = FManifestTriggerDefinition();
+				CurrentTrigger.TriggerClass = StripYamlComment(GetLineValue(TrimmedLine));
+				bInTrigger = true;
+				bInEvents = false;
+				bInProperties = false;
+			}
+			else if (bInTrigger && !bInEvents && !bInProperties)
+			{
+				// Trigger-level properties
+				if (TrimmedLine.StartsWith(TEXT("start_time:")))
+				{
+					CurrentTrigger.StartTime = FCString::Atof(*StripYamlComment(GetLineValue(TrimmedLine)));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("end_time:")))
+				{
+					CurrentTrigger.EndTime = FCString::Atof(*StripYamlComment(GetLineValue(TrimmedLine)));
+				}
+				else if (TrimmedLine.Equals(TEXT("events:")) || TrimmedLine.StartsWith(TEXT("events:")))
+				{
+					bInEvents = true;
+					bInProperties = false;
+					EventsIndent = CurrentIndent;
+				}
+			}
+			// Event array item
+			else if (bInEvents && TrimmedLine.StartsWith(TEXT("- event_class:")))
+			{
+				// Save previous event if any
+				if (bInEvent && !CurrentEvent.EventClass.IsEmpty())
+				{
+					CurrentTrigger.Events.Add(CurrentEvent);
+				}
+
+				CurrentEvent = FManifestTriggerEventDefinition();
+				CurrentEvent.EventClass = StripYamlComment(GetLineValue(TrimmedLine));
+				bInEvent = true;
+				bInProperties = false;
+			}
+			else if (bInEvent && !bInProperties)
+			{
+				// Event-level properties
+				if (TrimmedLine.StartsWith(TEXT("runtime:")))
+				{
+					CurrentEvent.Runtime = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+				{
+					bInProperties = true;
+					PropertiesIndent = CurrentIndent;
+				}
+			}
+			else if (bInProperties)
+			{
+				// Check if we should exit properties
+				if (CurrentIndent <= PropertiesIndent && !TrimmedLine.IsEmpty())
+				{
+					bInProperties = false;
+					LineIndex--;
+					LineIndex++;
+					continue;
+				}
+				// Parse property key: value
+				if (TrimmedLine.Contains(TEXT(":")))
+				{
+					int32 ColonPos;
+					if (TrimmedLine.FindChar(TEXT(':'), ColonPos))
+					{
+						FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+						FString Value = StripYamlComment(TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd());
+						if (!Key.IsEmpty() && !Value.IsEmpty())
+						{
+							CurrentEvent.Properties.Add(Key, Value);
+						}
+					}
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save any remaining items
+	if (bInEvent && !CurrentEvent.EventClass.IsEmpty())
+	{
+		CurrentTrigger.Events.Add(CurrentEvent);
+	}
+	if (bInTrigger && !CurrentTrigger.TriggerClass.IsEmpty())
+	{
+		CurrentSet.Triggers.Add(CurrentTrigger);
+	}
+	if (bInSet && !CurrentSet.Name.IsEmpty())
+	{
+		OutData.TriggerSets.Add(CurrentSet);
 	}
 }
 

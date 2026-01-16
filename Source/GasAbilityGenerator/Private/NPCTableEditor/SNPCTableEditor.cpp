@@ -1357,6 +1357,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 
 		// RIGHT SIDE - Generation/IO actions
 		// Validate (v4.5)
+		// v4.8.4: All heavy operation buttons disabled during bIsBusy
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
@@ -1365,6 +1366,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.Text(LOCTEXT("Validate", "Validate"))
 				.OnClicked(this, &SNPCTableEditor::OnValidateClicked)
 				.ToolTipText(LOCTEXT("ValidateTip", "Validate all rows for errors and warnings"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Generate
@@ -1376,6 +1378,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.Text(LOCTEXT("Generate", "Generate Assets"))
 				.OnClicked(this, &SNPCTableEditor::OnGenerateClicked)
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Sync
@@ -1386,6 +1389,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 			SNew(SButton)
 				.Text(LOCTEXT("Sync", "Sync from Assets"))
 				.OnClicked(this, &SNPCTableEditor::OnSyncFromAssetsClicked)
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Export XLSX
@@ -1397,6 +1401,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.Text(LOCTEXT("ExportXLSX", "Export XLSX"))
 				.OnClicked(this, &SNPCTableEditor::OnExportXLSXClicked)
 				.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx)"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Import XLSX
@@ -1408,6 +1413,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.Text(LOCTEXT("ImportXLSX", "Import XLSX"))
 				.OnClicked(this, &SNPCTableEditor::OnImportXLSXClicked)
 				.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx)"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Save Table button
@@ -1431,6 +1437,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.OnClicked(this, &SNPCTableEditor::OnApplyToAssetsClicked)
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
 				.ToolTipText(LOCTEXT("ApplyToAssetsTooltip", "Write changes back to NPCDefinition assets"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		];
 }
 
@@ -3113,20 +3120,17 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 					return FReply::Handled();
 				}
 
-				// v4.8.4: Warn if file was created by a newer version of the tool
+				// v4.8.4: Hard abort if file was created by a newer version of the tool
 				if (!ImportResult.FormatVersion.IsEmpty() && ImportResult.FormatVersion > FNPCXLSXWriter::FORMAT_VERSION)
 				{
-					EAppReturnType::Type UserChoice = FMessageDialog::Open(EAppMsgType::YesNo,
-						FText::Format(LOCTEXT("NewerVersionWarning",
-							"This file was created with a newer version of the table editor (v{0}).\n"
-							"Current version: v{1}\n\n"
-							"Some data may not import correctly. Continue anyway?"),
+					FMessageDialog::Open(EAppMsgType::Ok,
+						FText::Format(LOCTEXT("NewerVersionAbort",
+							"This file was exported by a newer version of the plugin (v{0}).\n"
+							"Your version supports up to v{1}.\n\n"
+							"Please update the plugin before importing this file."),
 							FText::FromString(ImportResult.FormatVersion),
 							FText::FromString(FNPCXLSXWriter::FORMAT_VERSION)));
-					if (UserChoice != EAppReturnType::Yes)
-					{
-						return FReply::Handled();
-					}
+					return FReply::Handled();
 				}
 
 				// Build base rows (from last export, if available - currently empty for fresh import)
