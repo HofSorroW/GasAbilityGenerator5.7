@@ -308,6 +308,22 @@ struct FDialogueTableRow
 - **Action column conditional** - REMOVE only appears when row can be deleted (cases 6-14)
 - **Shows actual values** - not "Keep UE" but `AC_Melee`, `AC_Stealth`, etc.
 
+### Hash Stability Design Decision (v4.8)
+
+`ComputeEditableFieldsHash()` intentionally uses:
+- **Exact float bit hashing** (`GetTypeHash(float)`)
+- **Order-sensitive hashing** for list-like fields (e.g., `Abilities`, `ItemTags`, `Fragments`) as stored
+
+**Rationale:**
+- Order may be semantic in GAS/UE workflows (grant order, UI order, processing order)
+- Float quantization can create false negatives (real edits not detected)
+- No observed drift in our current OpenXLSX import/export workflow
+
+**If sync false-positives are reported** (row marked "Modified" after export→reimport without edits):
+1. Run a round-trip stability test to reproduce
+2. Prefer fixing import/export consistency (source of drift)
+3. Only then consider hash normalization with an explicit migration plan (versioning/baseline refresh)
+
 ### Full-Screen Approval Window
 
 **Flow:**
