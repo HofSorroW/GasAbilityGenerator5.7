@@ -1,6 +1,6 @@
 # Father Companion VFX Guide
 ## Floating Energy Visual System
-## Version 1.0
+## Version 1.1
 
 ---
 
@@ -11,7 +11,7 @@
 | Document Type | VFX Implementation Guide |
 | System | Father Companion Visual Effects |
 | Created | January 2026 |
-| Engine Version | Unreal Engine 5.6 |
+| Engine Version | Unreal Engine 5.7 |
 | Plugin Dependencies | Narrative Pro v2.2 |
 | Integrates With | BP_FatherCompanion (NarrativeNPCCharacter) |
 
@@ -973,18 +973,85 @@
 
 ---
 
-## ASSETS NOT SUPPORTED BY GENERATOR PLUGIN
+## GENERATOR PLUGIN SUPPORT (v4.8+)
 
-The following assets must be created manually as they are not supported by the Blueprint Generator Plugin:
+The GasAbilityGenerator plugin now supports VFX asset generation via YAML manifest definitions.
 
-### Manual Creation Required
+### Automation Coverage
 
-| Asset Type | Assets | Reason |
-|------------|--------|--------|
-| Materials | M_FatherCore, M_FatherShell, M_FatherParticle | Plugin does not support Material generation |
-| Material Functions | MF_EnergyPulse, MF_FresnelGlow, MF_RadialGradient | Plugin does not support Material Function generation |
-| Niagara Emitters | NE_FatherCore, NE_FatherShell, NE_FatherParticles, NE_FatherAura, NE_FatherTrail | Plugin does not support Niagara generation |
-| Niagara System | NS_FatherCompanion | Plugin does not support Niagara generation |
+| Asset Type | Coverage | Method | Notes |
+|------------|----------|--------|-------|
+| Materials (M_) | **85%** | Full YAML generation | Blend modes, shading models, expression graphs |
+| Material Functions (MF_) | **85%** | Full YAML generation | Inputs, outputs, expressions, connections |
+| Niagara Systems (NS_) | **70%** | Template duplication | Requires Uber-Emitter template first |
+| Niagara Emitters (NE_) | **Manual** | Not supported | Must be created manually as Uber-Emitters |
+
+### Recommended Workflow
+
+1. **Manual (One-Time Setup):**
+   - Create Uber-Emitters with `User.*` parameters (see `Niagara_Uber_Emitter_Setup_Guide_v1_0.md`)
+   - Create template system `NS_FatherFXTemplate` containing all emitters
+
+2. **Automated (Per-Effect):**
+   - Define materials in `manifest.yaml` under `materials:` section
+   - Define material functions in `manifest.yaml` under `material_functions:` section
+   - Define niagara systems in `manifest.yaml` under `niagara_systems:` section with `template_system` and `fx_descriptor`
+   - Run generator to create/update assets
+
+### Manifest Example
+
+```yaml
+materials:
+  - name: M_FatherCore
+    folder: VFX/Materials
+    blend_mode: Additive
+    shading_model: Unlit
+    two_sided: true
+    expressions:
+      - id: CoreColor
+        type: VectorParameter
+        default: [1.0, 0.8, 0.4]
+      - id: EmissiveIntensity
+        type: ScalarParameter
+        default: 100.0
+
+material_functions:
+  - name: MF_EnergyPulse
+    folder: VFX/Materials
+    description: "Sine-based energy pulse"
+    expose_to_library: true
+    inputs:
+      - name: Time
+        type: Scalar
+      - name: PulseSpeed
+        type: Scalar
+    outputs:
+      - name: PulseValue
+
+niagara_systems:
+  - name: NS_FatherFormTransition
+    folder: VFX/NiagaraSystems
+    template_system: NS_FatherFXTemplate
+    fx_descriptor:
+      spawn_rate: 150.0
+      lifetime: [0.5, 1.5]
+      color: [1.0, 0.8, 0.4, 1.0]
+      size: [5.0, 15.0]
+      emissive: 50.0
+```
+
+### What Still Requires Manual Creation
+
+| Asset | Reason |
+|-------|--------|
+| Niagara Emitters (NE_*) | Complex node graphs, module configurations, and renderer setups cannot be expressed in YAML. Create as Uber-Emitters with User.* parameters. |
+| Complex Material Graphs | While basic expression graphs are supported, highly complex shader networks may benefit from manual creation. |
+
+### Reference Documentation
+
+- **Uber-Emitter Setup:** `guides/Niagara_Uber_Emitter_Setup_Guide_v1_0.md`
+- **Data-Driven FX Architecture:** `guides/Data_Driven_FX_Architecture_v1_0.md`
+- **Generator Reference:** `ClaudeContext/Handoffs/Architecture_Reference.md`
 
 ---
 
@@ -992,6 +1059,7 @@ The following assets must be created manually as they are not supported by the B
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | January 2026 | Updated generator support section. Materials (85%), Material Functions (85%), and Niagara Systems (70%) are now supported by GasAbilityGenerator v4.8+. Replaced outdated "not supported" section with accurate automation coverage, recommended workflow, and manifest examples. Updated engine version to 5.7. Added cross-references to Uber-Emitter setup guide and architecture docs. |
 | 1.0 | January 2026 | Initial VFX guide created. Extracted and reorganized VFX content from BP_FatherCompanion_Implementation_Guide_v1_0. Changed integration approach from standalone Actor to NiagaraComponent on BP_FatherCompanion (NarrativeNPCCharacter). Removed audio sections. Updated plugin version to v2.2. Added form-based visual state system. Added material function library. Clarified relationship with Father_Companion_System_Setup_Guide. |
 
 ---
