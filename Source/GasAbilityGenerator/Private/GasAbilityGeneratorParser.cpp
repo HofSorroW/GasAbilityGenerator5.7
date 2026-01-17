@@ -8780,6 +8780,14 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 				{
 					FString Value = GetLineValue(TrimmedLine).ToLower();
 					CurrentEmitterOverride.bEnabled = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+					CurrentEmitterOverride.bHasEnabled = true; // v4.11: Mark as explicitly specified
+				}
+				// v4.11: Structural enable - calls SetIsEnabled() on emitter handle (triggers recompile)
+				else if (TrimmedLine.StartsWith(TEXT("structural_enabled:")))
+				{
+					FString Value = GetLineValue(TrimmedLine).ToLower();
+					CurrentEmitterOverride.bStructuralEnabled = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+					CurrentEmitterOverride.bHasStructuralEnabled = true; // v4.11: Mark as explicitly specified
 				}
 				else if (TrimmedLine.StartsWith(TEXT("parameters:")))
 				{

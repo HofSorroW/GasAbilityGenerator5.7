@@ -15324,6 +15324,7 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 				NewSystem->TemplateAssetDescription = FText();
 				NewSystem->Category = FText();
 				LogGeneration(FString::Printf(TEXT("  Created from template: %s"), *TemplatePath));
+				NewSystem->Modify(); // v4.11: Mark for transaction system
 			}
 		}
 		else
@@ -15820,6 +15821,9 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		}
 	}
 
+	// v4.11: Track whether structural changes require recompilation
+	bool bNeedsRecompile = false;
+
 	// v4.9: Apply per-emitter parameter overrides
 	if (Definition.EmitterOverrides.Num() > 0)
 	{
@@ -15828,12 +15832,40 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 
 		for (const FManifestNiagaraEmitterOverride& Override : Definition.EmitterOverrides)
 		{
-			// Set emitter enabled/disabled
-			FName EnabledParamName = *FString::Printf(TEXT("%s.User.Enabled"), *Override.EmitterName);
-			FNiagaraVariable EnabledVar(FNiagaraTypeDefinition::GetBoolDef(), EnabledParamName);
-			EnabledVar.SetValue(Override.bEnabled);
-			UserParams.AddParameter(EnabledVar, true);
-			LogGeneration(FString::Printf(TEXT("  Set %s.User.Enabled = %s"), *Override.EmitterName, Override.bEnabled ? TEXT("true") : TEXT("false")));
+			// v4.11: Soft enable - sets User.Enabled parameter (runtime, no recompile)
+			if (Override.bHasEnabled)
+			{
+				FName EnabledParamName = *FString::Printf(TEXT("%s.User.Enabled"), *Override.EmitterName);
+				FNiagaraVariable EnabledVar(FNiagaraTypeDefinition::GetBoolDef(), EnabledParamName);
+				EnabledVar.SetValue(Override.bEnabled);
+				UserParams.AddParameter(EnabledVar, true);
+				LogGeneration(FString::Printf(TEXT("  Set %s.User.Enabled = %s (soft enable)"), *Override.EmitterName, Override.bEnabled ? TEXT("true") : TEXT("false")));
+			}
+
+			// v4.11: Structural enable - calls SetIsEnabled() on emitter handle (compile-time)
+			if (Override.bHasStructuralEnabled)
+			{
+				TArray<FNiagaraEmitterHandle>& EmitterHandles = NewSystem->GetEmitterHandles();
+				for (FNiagaraEmitterHandle& Handle : EmitterHandles)
+				{
+					if (Handle.GetName().ToString() == Override.EmitterName)
+					{
+						// SetIsEnabled returns true if the state actually changed
+						if (Handle.SetIsEnabled(Override.bStructuralEnabled, *NewSystem, false))
+						{
+							bNeedsRecompile = true;
+							LogGeneration(FString::Printf(TEXT("  Structurally %s emitter '%s' (triggers recompile)"),
+								Override.bStructuralEnabled ? TEXT("enabled") : TEXT("disabled"), *Override.EmitterName));
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  Emitter '%s' already structurally %s (no change)"),
+								*Override.EmitterName, Override.bStructuralEnabled ? TEXT("enabled") : TEXT("disabled")));
+						}
+						break;
+					}
+				}
+			}
 
 			// Apply individual parameter overrides
 			for (const auto& Param : Override.Parameters)
@@ -15919,8 +15951,22 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		}
 	}
 
-	// Request compilation
-	NewSystem->RequestCompile(false);
+	// v4.11: Compile only if structural changes occurred (doctrine: compile only for compile-invalidating operations)
+	if (bNeedsRecompile)
+	{
+		LogGeneration(TEXT("  Requesting compilation due to structural emitter changes..."));
+		NewSystem->RequestCompile(false);
+		NewSystem->WaitForCompilationComplete(false, false);
+		LogGeneration(TEXT("  Compilation complete"));
+	}
+
+	// v4.11: Safety gate - ensure system is ready before saving
+	if (!NewSystem->IsReadyToRun())
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("System not ready after generation (structural_changes=%s)"),
+				bNeedsRecompile ? TEXT("true") : TEXT("false")));
+	}
 
 	// Mark dirty and register
 	Package->MarkPackageDirty();

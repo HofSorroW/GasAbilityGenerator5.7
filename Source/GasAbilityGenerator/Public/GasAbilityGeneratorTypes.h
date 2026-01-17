@@ -3578,18 +3578,30 @@ struct FManifestNiagaraUserParameter
 /**
  * v4.9: Per-emitter parameter overrides for Niagara systems
  * Allows setting specific User.* parameters on individual emitters
+ * v4.11: Added sentinel pattern for soft vs structural enable/disable
  */
 struct FManifestNiagaraEmitterOverride
 {
 	FString EmitterName;    // Name of emitter in system (e.g., "Particles", "Burst")
-	bool bEnabled = true;   // Enable/disable this emitter
+
+	// v4.11: Soft enable - sets {Emitter}.User.Enabled parameter (runtime, no recompile)
+	bool bEnabled = true;           // Soft enable value (only applied if bHasEnabled)
+	bool bHasEnabled = false;       // Sentinel: was 'enabled:' explicitly specified in YAML?
+
+	// v4.11: Structural enable - calls SetIsEnabled() on emitter handle (compile-time)
+	bool bStructuralEnabled = true; // Structural enable value (only applied if bHasStructuralEnabled)
+	bool bHasStructuralEnabled = false; // Sentinel: was 'structural_enabled:' explicitly specified in YAML?
+
 	TMap<FString, FString> Parameters;  // Parameter name -> value (as string)
 
-	/** v4.9: Compute hash for change detection */
+	/** v4.9/v4.11: Compute hash for change detection - includes all enable fields */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(EmitterName);
 		Hash ^= (bEnabled ? 1ULL : 0ULL) << 8;
+		Hash ^= (bHasEnabled ? 1ULL : 0ULL) << 9;
+		Hash ^= (bStructuralEnabled ? 1ULL : 0ULL) << 10;
+		Hash ^= (bHasStructuralEnabled ? 1ULL : 0ULL) << 11;
 		for (const auto& Param : Parameters)
 		{
 			Hash ^= GetTypeHash(Param.Key);
