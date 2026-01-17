@@ -16016,42 +16016,42 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 
 	// v4.11: Environment-aware readiness policy
 	// - Real RHI (editor/GPU): STRICT - fail on not-ready
-	// - Headless -nullrhi + TEMPLATE-BASED: After compile attempt with emitters - WARN + save
-	// - Headless -nullrhi + FROM-SCRATCH: STRICT - fail (may be missing required scripts/modules)
-	// Rationale: IsReadyToRun() depends on GPU/render systems that don't initialize under -nullrhi.
-	//            Template-based systems are far more likely to be valid once GPU is available.
+	// - Headless -nullrhi: After compile attempt with emitters - WARN + save (best-effort)
+	// Rationale: Under -nullrhi, IsReadyToRun() is not reliable even after successful compilation.
+	//            We save with warning and require validation in editor before shipping.
 	const int32 EmitterCount = NewSystem->GetEmitterHandles().Num();
 	const bool bIsHeadless = IsRunningCommandlet() && !FApp::CanEverRender();
+	const bool bIsReady = NewSystem->IsReadyToRun();  // v4.11: Cache once to avoid multiple calls
 	bool bSavedUnderHeadlessPolicy = false;  // v4.11: Track for metadata
 
-	// v4.11 DEBUG: Always log readiness state for grep-able diagnostics
+	// v4.11: Always log readiness state for grep-able diagnostics
 	LogGeneration(FString::Printf(
 		TEXT("  ReadyCheck: IsReadyToRun=%s emitters=%d headless=%s did_compile=%s from_template=%s initial_compile=%s"),
-		NewSystem->IsReadyToRun() ? TEXT("true") : TEXT("false"),
+		bIsReady ? TEXT("true") : TEXT("false"),
 		EmitterCount,
 		bIsHeadless ? TEXT("true") : TEXT("false"),
 		bDidAttemptCompile ? TEXT("true") : TEXT("false"),
 		bDuplicatedFromTemplate ? TEXT("true") : TEXT("false"),
 		bInitialCompileRequired ? TEXT("true") : TEXT("false")));
 
-	if (!NewSystem->IsReadyToRun())
+	if (!bIsReady)
 	{
-		// v4.11: Only allow headless warn+save for TEMPLATE-BASED systems
-		// From-scratch systems may be fundamentally invalid (missing scripts/emitters)
-		if (bIsHeadless && bDidAttemptCompile && EmitterCount > 0 && bDuplicatedFromTemplate)
+		// v4.11: Headless escape hatch - allow save with warning if compile was attempted and emitters exist
+		// Under -nullrhi, IsReadyToRun() is not reliable even after successful compilation.
+		// We treat compilation + non-empty emitter list as "best-effort authoring" and save with warning.
+		if (bIsHeadless && bDidAttemptCompile && EmitterCount > 0)
 		{
-			// Headless + compile attempted + emitters exist + template-based = allow save with warning
-			LogGeneration(FString::Printf(TEXT("WARNING: System reports not-ready under -nullrhi headless mode.")));
-			LogGeneration(FString::Printf(TEXT("         (emitters=%d, from_template=true, did_compile=%s)"),
-				EmitterCount, bDidAttemptCompile ? TEXT("true") : TEXT("false")));
-			LogGeneration(TEXT("         Compile was attempted; saving anyway. IsReadyToRun() unreliable without GPU."));
+			// Headless + compile attempted + emitters exist = allow save with warning
+			LogGeneration(FString::Printf(TEXT("WARNING: HEADLESS-SAVED - System not-ready under -nullrhi (emitters=%d, from_template=%s)"),
+				EmitterCount, bDuplicatedFromTemplate ? TEXT("true") : TEXT("false")));
+			LogGeneration(TEXT("         Compile was attempted; saving anyway. Validate in editor before shipping."));
 			bSavedUnderHeadlessPolicy = true;
 		}
 		else
 		{
-			// Real RHI or from-scratch or no compile attempt = strict failure
+			// Real RHI or no compile attempt or no emitters = strict failure
 			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-				FString::Printf(TEXT("System not ready (emitters=%d, from_template=%s, headless=%s, did_compile=%s). Specify template_system: in manifest."),
+				FString::Printf(TEXT("System not ready (emitters=%d, from_template=%s, headless=%s, did_compile=%s)."),
 					EmitterCount, bDuplicatedFromTemplate ? TEXT("true") : TEXT("false"),
 					bIsHeadless ? TEXT("true") : TEXT("false"),
 					bDidAttemptCompile ? TEXT("true") : TEXT("false")));

@@ -4923,13 +4923,13 @@ niagara_systems:
       - name: ArcIntensity
         type: float
         default: 5.0
-    # v4.9: Per-emitter overrides for electric arcs
-    emitter_overrides:
-      - emitter: ArcEmitter
-        enabled: true
-        parameters:
-          ArcFrequency: "10.0"
-          ArcJitter: "2.0"
+    # NOTE: emitter_overrides require template_system - commented out until custom template exists
+    # emitter_overrides:
+    #   - emitter: ArcEmitter
+    #     enabled: true
+    #     parameters:
+    #       ArcFrequency: "10.0"
+    #       ArcJitter: "2.0"
 
   # Dome shield VFX for GA_ProtectiveDome (spherical particle shield)
   - name: NS_DomeShield

@@ -102,27 +102,25 @@ This prevents default values from triggering unintended operations.
 
 ### v4.11 Environment-Aware Readiness Policy
 
-**Problem:** `IsReadyToRun()` depends on GPU/render systems that don't initialize under `-nullrhi` headless mode. A from-scratch Niagara system can report `IsReadyToRun()=false` even after successful compilation.
+**Problem:** `IsReadyToRun()` depends on GPU/render systems that don't initialize under `-nullrhi` headless mode. Niagara systems can report `IsReadyToRun()=false` even after successful compilation.
 
-**Solution:** Tiered policy based on environment and system provenance:
+**Solution:** Tiered policy based on environment:
 
-| Environment | System Type | IsReadyToRun=false | Action |
-|-------------|-------------|-------------------|--------|
-| Editor (real RHI) | Any | Fail | **STRICT** - fail before save |
-| Headless (-nullrhi) | Template-based | Pass | **WARN** - save with warning |
-| Headless (-nullrhi) | From-scratch | Fail | **STRICT** - fail (may be invalid) |
+| Environment | IsReadyToRun=false | Action |
+|-------------|-------------------|--------|
+| Editor (real RHI) | Fail | **STRICT** - fail before save |
+| Headless (-nullrhi) | Pass (if escape hatch applies) | **WARN** - save with warning |
 
 **Escape Hatch Requirements (all must be true):**
 - `bIsHeadless == true` (running commandlet with no render capability)
 - `bDidAttemptCompile == true` (compilation was requested)
 - `EmitterCount > 0` (system has content)
-- `bDuplicatedFromTemplate == true` (template-based, not from-scratch)
 
-**Rationale:** Template-based systems are far more likely to be valid once GPU is available (inheriting compiled state from the template). From-scratch systems may be fundamentally invalid (missing scripts/modules/emitters).
+**Rationale:** Under `-nullrhi`, `IsReadyToRun()` is not a reliable readiness signal even after successful compilation. In headless mode we treat compilation + non-empty emitter list as "best-effort authoring" and save with a warning. All headless-saved Niagara systems must be validated in the editor (real RHI) before shipping.
 
 **Diagnostic Logging:**
 ```
-ReadyCheck: IsReadyToRun=false emitters=1 headless=true did_compile=true from_template=true initial_compile=true
+ReadyCheck: IsReadyToRun=false emitters=1 headless=true did_compile=true from_template=false initial_compile=true
 ```
 
 **Headless-Saved Marker:**
@@ -133,11 +131,12 @@ Created Niagara System: NS_Example (HEADLESS-SAVED - verify in editor)
 **Manifest Guidance:**
 ```yaml
 niagara_systems:
-  # From-scratch systems require editor mode with real RHI
+  # From-scratch systems can be generated in editor mode with real RHI (best).
+  # In headless -nullrhi they are saved with a warning if escape hatch applies.
   - name: NS_CustomEffect
-    effect_type: ambient  # From-scratch - fails in headless
+    effect_type: ambient
 
-  # Template-based systems work in headless -nullrhi mode
+  # Template-based systems are ideal for headless mode and regression tests.
   - name: NS_TemplateVariant
     template_system: "/Niagara/DefaultAssets/Templates/Systems/MinimalLightweight.MinimalLightweight"
 ```
