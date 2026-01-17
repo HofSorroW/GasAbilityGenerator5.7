@@ -5281,10 +5281,11 @@ static const TSet<FString> KnownExpressionTypes = {
 	TEXT("normalize"), TEXT("dotproduct"), TEXT("crossproduct"), TEXT("distance"), TEXT("length"),
 	TEXT("appendvector"), TEXT("componentmask"), TEXT("breakoutfloat2"), TEXT("breakoutfloat3"), TEXT("breakoutfloat4"),
 	// Texture
-	TEXT("texturesample"), TEXT("texturesampleparameter2d"), TEXT("texturecoordinate"),
+	TEXT("texturesample"), TEXT("texturesampleparameter2d"), TEXT("texturecoordinate"), TEXT("texcoord"), TEXT("uv"),
 	TEXT("panner"), TEXT("rotator"),
-	// Parameters
-	TEXT("scalarparameter"), TEXT("vectorparameter"), TEXT("staticboolparameter"), TEXT("staticbool"),
+	// Parameters (full and short aliases)
+	TEXT("scalarparameter"), TEXT("scalarparam"), TEXT("vectorparameter"), TEXT("vectorparam"),
+	TEXT("staticboolparameter"), TEXT("staticbool"),
 	// Time
 	TEXT("time"), TEXT("deltatime"), TEXT("realtime"),
 	// World/Camera
