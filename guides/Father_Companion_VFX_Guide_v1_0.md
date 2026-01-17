@@ -1,6 +1,6 @@
 # Father Companion VFX Guide
 ## Floating Energy Visual System
-## Version 1.1
+## Version 1.2
 
 ---
 
@@ -973,85 +973,159 @@
 
 ---
 
-## GENERATOR PLUGIN SUPPORT (v4.8+)
+## GENERATOR PLUGIN SUPPORT (v4.11)
 
-The GasAbilityGenerator plugin now supports VFX asset generation via YAML manifest definitions.
+The GasAbilityGenerator plugin supports VFX asset generation via YAML manifest definitions.
 
-### Automation Coverage
+---
 
-| Asset Type | Coverage | Method | Notes |
-|------------|----------|--------|-------|
-| Materials (M_) | **85%** | Full YAML generation | Blend modes, shading models, expression graphs |
-| Material Functions (MF_) | **85%** | Full YAML generation | Inputs, outputs, expressions, connections |
-| Niagara Systems (NS_) | **70%** | Template duplication | Requires Uber-Emitter template first |
-| Niagara Emitters (NE_) | **Manual** | Not supported | Must be created manually as Uber-Emitters |
+### ⚠️ CRITICAL: WHAT YOU MUST DO FIRST
 
-### Recommended Workflow
+**The generator CANNOT create Niagara emitters or complex particle systems from scratch.**
 
-1. **Manual (One-Time Setup):**
-   - Create Uber-Emitters with `User.*` parameters (see `Niagara_Uber_Emitter_Setup_Guide_v1_0.md`)
-   - Create template system `NS_FatherFXTemplate` containing all emitters
+Before the automated pipeline works, you must manually create these assets in Unreal Editor:
 
-2. **Automated (Per-Effect):**
-   - Define materials in `manifest.yaml` under `materials:` section
-   - Define material functions in `manifest.yaml` under `material_functions:` section
-   - Define niagara systems in `manifest.yaml` under `niagara_systems:` section with `template_system` and `fx_descriptor`
-   - Run generator to create/update assets
+#### Step 1: Create Uber-Emitters (One-Time, ~2-3 hours)
 
-### Manifest Example
+Follow `guides/Niagara_Uber_Emitter_Setup_Guide_v1_0.md` to create:
+
+| Emitter | Purpose | Template Source |
+|---------|---------|-----------------|
+| `E_FatherParticle` | Sprite particles | Duplicate from `Engine/.../Fountain` |
+| `E_FatherBurst` | Burst effects | Duplicate from `Engine/.../SimpleSpriteBurst` |
+| `E_FatherBeam` | Laser beams | Duplicate from `Engine/.../DynamicBeam` |
+| `E_FatherRibbon` | Trails/ribbons | Duplicate from `Engine/.../LocationBasedRibbon` |
+| `E_FatherLight` | Light emitters | Create new or duplicate |
+
+**Each emitter must have User.* parameters wired to all modules** (SpawnRate, Color, Size, etc.)
+
+#### Step 2: Create Template System (One-Time, ~30 min)
+
+1. In Unreal Editor, right-click → Niagara System → New from selected emitters
+2. Select all 5 Uber-Emitters
+3. Save as: `/Game/FatherCompanion/VFX/Systems/NS_FatherFXTemplate`
+4. Set all emitters to `User.Enabled = false` by default
+
+#### Step 3: Update Manifest with Template Reference
+
+Once you have the template, update `manifest.yaml`:
 
 ```yaml
-materials:
-  - name: M_FatherCore
-    folder: VFX/Materials
-    blend_mode: Additive
-    shading_model: Unlit
-    two_sided: true
-    expressions:
-      - id: CoreColor
-        type: VectorParameter
-        default: [1.0, 0.8, 0.4]
-      - id: EmissiveIntensity
-        type: ScalarParameter
-        default: 100.0
-
-material_functions:
-  - name: MF_EnergyPulse
-    folder: VFX/Materials
-    description: "Sine-based energy pulse"
-    expose_to_library: true
-    inputs:
-      - name: Time
-        type: Scalar
-      - name: PulseSpeed
-        type: Scalar
-    outputs:
-      - name: PulseValue
-
 niagara_systems:
+  - name: NS_FatherCompanion
+    folder: VFX/NiagaraSystems
+    template_system: "/Game/FatherCompanion/VFX/Systems/NS_FatherFXTemplate"
+    user_parameters:
+      Particles.User.Enabled: true
+      Particles.User.SpawnRate: 15.0
+      Particles.User.Color: "(R=1.0,G=0.8,B=0.4,A=1.0)"
+```
+
+#### Step 4: Run Generator
+
+```bash
+powershell -ExecutionPolicy Bypass -File "Tools/claude_automation.ps1" -Action cycle
+```
+
+---
+
+### Automation Coverage (v4.11)
+
+| Asset Type | Coverage | Method | Status |
+|------------|----------|--------|--------|
+| Materials (M_) | **85%** | Full YAML generation | ✅ Automated |
+| Material Functions (MF_) | **85%** | Full YAML generation | ✅ Automated |
+| Material Instances (MIC_) | **90%** | Parent + parameter overrides | ✅ Automated (v4.9+) |
+| Niagara Systems (NS_) | **70%** | Template duplication | ⚠️ Requires template first |
+| Niagara Emitters (NE_) | **0%** | Not supported | ❌ Manual only |
+
+### v4.11 Niagara Features
+
+| Feature | Description |
+|---------|-------------|
+| **Template Duplication** | Duplicates your template system, applies User.* parameters |
+| **Emitter Overrides** | Enable/disable emitters, set per-emitter parameters |
+| **Soft Enable** | `enabled: true/false` sets `User.Enabled` (runtime toggle) |
+| **Structural Enable** | `structural_enabled: true/false` compiles emitter in/out |
+| **FX Presets** | Reusable parameter configurations with inheritance |
+| **LOD Settings** | Cull distances, scalability modes |
+| **Headless Generation** | Works in `-nullrhi` mode with HEADLESS-SAVED warning |
+
+### Current Manifest Status
+
+Your NS_ entries currently look like this (FROM-SCRATCH mode):
+
+```yaml
+niagara_systems:
+  - name: NS_FatherCompanion
+    effect_type: ambient
+    # NO template_system → creates empty system → NOT FUNCTIONAL
+```
+
+**This is why you see `RESULT_HEADLESS_SAVED: Count=7`** - the generator saves empty shells that need editor verification.
+
+### Target Manifest (AFTER you create templates)
+
+```yaml
+niagara_systems:
+  - name: NS_FatherCompanion
+    folder: VFX/NiagaraSystems
+    template_system: "/Game/FatherCompanion/VFX/Systems/NS_FatherFXTemplate"
+    user_parameters:
+      Core.User.Enabled: true
+      Core.User.Color: "(R=1.0,G=0.8,B=0.4,A=1.0)"
+      Particles.User.Enabled: true
+      Particles.User.SpawnRate: 15.0
+    emitter_overrides:
+      - emitter: Trail
+        enabled: false  # Disable trail for stationary mode
+
   - name: NS_FatherFormTransition
     folder: VFX/NiagaraSystems
-    template_system: NS_FatherFXTemplate
-    fx_descriptor:
-      spawn_rate: 150.0
-      lifetime: [0.5, 1.5]
-      color: [1.0, 0.8, 0.4, 1.0]
-      size: [5.0, 15.0]
-      emissive: 50.0
+    template_system: "/Game/FatherCompanion/VFX/Systems/NS_FatherFXTemplate"
+    user_parameters:
+      Burst.User.Enabled: true
+      Burst.User.SpawnRate: 150.0
+      Burst.User.Color: "(R=1.0,G=0.5,B=0.2,A=1.0)"
+```
+
+### Quick Reference: Template Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ONE-TIME SETUP (Manual)                       │
+├─────────────────────────────────────────────────────────────────┤
+│  1. Create Uber-Emitters (E_*) with User.* parameters           │
+│  2. Assemble into NS_FatherFXTemplate                           │
+│  3. Save template system                                         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 PER-EFFECT (Automated)                           │
+├─────────────────────────────────────────────────────────────────┤
+│  4. Add NS_ entry to manifest.yaml with template_system         │
+│  5. Specify user_parameters and emitter_overrides               │
+│  6. Run generator → duplicates template + applies params        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### What Still Requires Manual Creation
 
-| Asset | Reason |
-|-------|--------|
-| Niagara Emitters (NE_*) | Complex node graphs, module configurations, and renderer setups cannot be expressed in YAML. Create as Uber-Emitters with User.* parameters. |
-| Complex Material Graphs | While basic expression graphs are supported, highly complex shader networks may benefit from manual creation. |
+| Asset | Reason | Guide |
+|-------|--------|-------|
+| Niagara Emitters (NE_*) | Complex graphs, modules, renderers | `Niagara_Uber_Emitter_Setup_Guide_v1_0.md` |
+| Template Systems | Composition of emitters | This guide, Phase 4 |
+| Complex Materials | Highly custom shader networks | Manual in Material Editor |
 
 ### Reference Documentation
 
-- **Uber-Emitter Setup:** `guides/Niagara_Uber_Emitter_Setup_Guide_v1_0.md`
-- **Data-Driven FX Architecture:** `guides/Data_Driven_FX_Architecture_v1_0.md`
-- **Generator Reference:** `ClaudeContext/Handoffs/Architecture_Reference.md`
+| Document | Purpose |
+|----------|---------|
+| `guides/Niagara_Uber_Emitter_Setup_Guide_v1_0.md` | Step-by-step Uber-Emitter creation |
+| `guides/Data_Driven_FX_Architecture_v1_0.md` | Philosophy and architecture |
+| `ClaudeContext/Handoffs/VFX_System_Reference.md` | v4.11 technical reference |
+| `ClaudeContext/Handoffs/Architecture_Reference.md` | Generator architecture |
 
 ---
 
@@ -1059,6 +1133,7 @@ niagara_systems:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | January 2026 | **v4.11 Update:** Comprehensive rewrite of generator support section. Added critical "WHAT YOU MUST DO FIRST" section with clear action items. Updated automation coverage table with v4.11 features (soft enable, structural enable, FX presets, LOD, headless generation). Added workflow diagram showing one-time setup vs per-effect automation. Clarified that NS_ entries without `template_system` create empty shells (HEADLESS-SAVED). Added target manifest examples showing proper template_system usage. Cross-referenced VFX_System_Reference.md for v4.11 technical details. |
 | 1.1 | January 2026 | Updated generator support section. Materials (85%), Material Functions (85%), and Niagara Systems (70%) are now supported by GasAbilityGenerator v4.8+. Replaced outdated "not supported" section with accurate automation coverage, recommended workflow, and manifest examples. Updated engine version to 5.7. Added cross-references to Uber-Emitter setup guide and architecture docs. |
 | 1.0 | January 2026 | Initial VFX guide created. Extracted and reorganized VFX content from BP_FatherCompanion_Implementation_Guide_v1_0. Changed integration approach from standalone Actor to NiagaraComponent on BP_FatherCompanion (NarrativeNPCCharacter). Removed audio sections. Updated plugin version to v2.2. Added form-based visual state system. Added material function library. Clarified relationship with Father_Companion_System_Setup_Guide. |
 
