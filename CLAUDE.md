@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.7) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.8) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -322,7 +322,7 @@ The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.6.1)
+## GasAbilityGenerator Plugin (v4.8)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -351,7 +351,8 @@ Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 | `GasAbilityGeneratorFactories.h` | Public/ | Asset factory classes |
 | `GasAbilityGeneratorSpecs.h` | Public/ | Spec handling utilities |
 | `SNPCTableEditor` | NPCTableEditor/ | NPC table editor UI |
-| `SQuestEditor` | QuestEditor/ | Quest visual editor UI |
+| `SQuestTableEditor` | QuestTableEditor/ | Quest table editor UI (v4.8) |
+| `SItemTableEditor` | ItemTableEditor/ | Item table editor UI (v4.8) |
 | `SDialogueTableEditor` | SDialogueTableEditor.cpp/h | Dialogue table editor UI |
 | `FDialogueTableConverter` | DialogueTableConverter.cpp/h | XLSX ↔ DialogueBlueprint conversion |
 | `FDialogueTableValidator` | DialogueTableValidator.cpp/h | Token validation, error detection |
@@ -359,11 +360,22 @@ Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 
 **Naming Convention:** All structs use `FManifest*` prefix (e.g., `FManifestData`, `FManifestGameplayAbilityDefinition`).
 
-### Table Editors (v4.6)
+### Table Editors (v4.8)
 
 The plugin includes Excel-like table editors for bulk content authoring:
-- **Dialogue Table Editor** (`SDialogueTableEditor`) - 11 columns, tree structure, CSV/XLSX import/export
 - **NPC Table Editor** (`SNPCTableEditor`) - 17 columns, sync from/to NPCDefinition assets
+- **Dialogue Table Editor** (`SDialogueTableEditor`) - 11 columns, tree structure, CSV/XLSX import/export
+- **Quest Table Editor** (`SQuestTableEditor`) - 12 columns, quest grouping, state machine view (v4.8)
+- **Item Table Editor** (`SItemTableEditor`) - 16 columns, dynamic visibility, type-based fields (v4.8)
+
+**Common Systems** (consistent across all 4 table editors):
+- Validation cache with `ValidationInputHash` staleness detection
+- XLSX 3-way sync with `LastSyncedHash`
+- Soft delete (`bDeleted` flag)
+- Generation tracking (`LastGeneratedHash`, `AreAssetsOutOfDate()`)
+- Re-entrancy guard (`bIsBusy`)
+- Status badges with colored indicators
+- Tab dirty state and parent tab integration
 
 **Full documentation:** See `ClaudeContext/Handoffs/Table_Editors_Reference.md` for:
 - Feature comparison and column structure
@@ -981,6 +993,7 @@ When looking for classes/enums, the plugin searches:
 
 | File | Purpose |
 |------|---------|
+| `Handoffs/v4.8_Coverage_Expansion_Handoff.md` | Quest/Item Table Editors implementation guide |
 | `Handoffs/v4.7_Report_System_Reference.md` | Machine-readable report system, JSON export, structured errors |
 | `Handoffs/Table_Editors_Reference.md` | NPC/Dialogue editor patterns, XLSX sync, Validated Tokens |
 | `Handoffs/v4.6_UX_Safety_System_ProcessMap.md` | Auto-save, soft delete, validation gate |
@@ -1030,6 +1043,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.8 - Quest and Item Table Editors: Two new table editors following NPC/Dialogue patterns. Quest Table Editor (SQuestTableEditor) with 12 columns, quest grouping, state machine view, token-based Tasks/Events/Conditions/Rewards columns. Item Table Editor (SItemTableEditor) with 16 columns, dynamic visibility based on ItemType, type-specific fields (AttackRating for weapons, ArmorRating for armor, WeaponConfig for ranged). Both editors include validation cache, XLSX 3-way sync, soft delete, generation tracking, re-entrancy guards. Replaces old SQuestEditor test code. New files: QuestTableEditor/ and ItemTableEditor/ directories with converters, validators, and editor widgets. See `ClaudeContext/Handoffs/v4.8_Coverage_Expansion_Handoff.md`.
 - v4.7 - Machine-Readable Report System: UGenerationReport UDataAsset + JSON mirror for CI/CD and debugging. FGenerationReportItem with assetPath, assetName, generatorId, executedStatus. FGenerationError with errorCode, contextPath, message, suggestedFix. Reports saved to `/Game/Generated/Reports/` and `Saved/GasAbilityGenerator/Reports/`. AssetPath and GeneratorId populated in all 32+ generators. Supports real-run and dry-run reports. See `ClaudeContext/Handoffs/v4.7_Report_System_Reference.md`.
 - v4.6.1 - NPC Table Editor status bar and UX refinements. See `ClaudeContext/Handoffs/v4.6_UX_Safety_System_ProcessMap.md`.
 - v4.6 - UX Safety System: Auto-save before generate, soft delete, validation gate, generation tracking, hash-based staleness detection. See `ClaudeContext/Handoffs/v4.6_UX_Safety_System_ProcessMap.md`.
