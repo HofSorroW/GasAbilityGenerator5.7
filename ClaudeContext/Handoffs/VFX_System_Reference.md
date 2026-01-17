@@ -78,25 +78,37 @@ This prevents default values from triggering unintended operations.
 ### Generation Flow
 
 ```
-1. Duplicate template system (inherits compiled state)
+1. Duplicate template system OR create from scratch
 2. Apply property changes (warmup, bounds, LOD, etc.) - no recompile
 3. Apply User.* parameters - no recompile
 4. For each emitter override:
    a. If bHasEnabled: Set {Emitter}.User.Enabled parameter
    b. If bHasStructuralEnabled: Call SetIsEnabled(), set bNeedsRecompile if changed
-5. If bNeedsRecompile:
-   a. RequestCompile(false)
-   b. WaitForCompilationComplete(false, false)
-6. Safety gate: if (!NewSystem->IsReadyToRun()) return Failed
+5. Compile gating:
+   a. bInitialCompileRequired: Always true for new system identity (both from-scratch and duplicates)
+   b. bNeedsRecompile: True only if structural emitter changes occurred
+   c. If either flag is true: RequestCompile + WaitForCompilationComplete
+6. Environment-aware safety gate (see below)
 7. Save asset
 ```
+
+### Compile Doctrine
+
+**Initial compile is required for new system identity; additional compile only for structural emitter deltas.**
+
+| Trigger | Condition | Flags Set |
+|---------|-----------|-----------|
+| From-scratch creation | Always | `bInitialCompileRequired = true` |
+| Template duplication | Always (new identity) | `bDuplicatedFromTemplate = true`, `bInitialCompileRequired = true` |
+| Structural emitter change | `SetIsEnabled()` changes state | `bNeedsRecompile = true` |
+| User.* parameter change | Never | (no flags) |
 
 ### Safety Mechanisms
 
 | Mechanism | Purpose |
 |-----------|---------|
 | Template IsReadyToRun check | Ensures source is compiled before duplication |
-| Conditional compile | Only triggered by structural changes |
+| Compile gating | Initial compile for new identity + extra compile for structural deltas |
 | Environment-aware readiness policy | Strict in editor, headless-aware in -nullrhi |
 | Diagnostic logging | ReadyCheck with all state flags for debugging |
 
@@ -116,7 +128,16 @@ This prevents default values from triggering unintended operations.
 - `bDidAttemptCompile == true` (compilation was requested)
 - `EmitterCount > 0` (system has content)
 
-**Rationale:** Under `-nullrhi`, `IsReadyToRun()` is not a reliable readiness signal even after successful compilation. In headless mode we treat compilation + non-empty emitter list as "best-effort authoring" and save with a warning. All headless-saved Niagara systems must be validated in the editor (real RHI) before shipping.
+**Explicit Contract:**
+
+| Environment | Guarantee |
+|-------------|-----------|
+| **Editor / Real RHI** | Saved systems pass `IsReadyToRun()` or generation fails. Functional validity guaranteed. |
+| **Headless -nullrhi** | HEADLESS-SAVED systems are **authoring artifacts** that must be validated in editor before shipping. Functional validity NOT guaranteed. |
+
+**Policy B Trade-off:** Policy B trades correctness guarantees for pipeline continuity in headless mode. It does not assert functional validity—a from-scratch system may have emitter handles but be missing required scripts/modules. This is acceptable for testing but requires editor validation before shipping.
+
+**Revert to Policy A:** Once real template systems exist for all NS_ entries OR generation runs under real RHI in CI/editor mode, add `&& bDuplicatedFromTemplate` to the escape hatch condition to restore conservative behavior.
 
 **Diagnostic Logging:**
 ```
