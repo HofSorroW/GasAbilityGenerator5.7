@@ -1,6 +1,6 @@
-# VFX System Reference (v4.10)
+# VFX System Reference (v4.11)
 
-This document covers the VFX automation system introduced in v4.9 and significantly enhanced in v4.10.
+This document covers the VFX automation system introduced in v4.9 and significantly enhanced in v4.10/v4.11.
 
 ## Overview
 
@@ -12,6 +12,148 @@ The VFX system provides comprehensive automation for visual effects assets:
 - **Niagara Emitter Overrides** - Per-emitter parameter customization
 - **FX Preset Library** - Reusable parameter configurations
 - **LOD/Scalability Settings** - Automatic performance optimization
+- **Emitter Enable/Disable Controls** - Soft and structural emitter toggling (v4.11)
+
+---
+
+## v4.11 Emitter Enable/Disable Controls
+
+### Overview
+
+v4.11 introduces a two-tier emitter enable/disable system that distinguishes between runtime-safe operations and compile-required structural changes.
+
+### Doctrine: Compile Only for Structural Changes
+
+| Operation Type | Recompile Required? | Method |
+|----------------|---------------------|--------|
+| User.* parameter changes | No | `UserParams.AddParameter()` |
+| Soft emitter enable/disable | No | `{Emitter}.User.Enabled` parameter |
+| **Structural emitter enable/disable** | **Yes** | `FNiagaraEmitterHandle::SetIsEnabled()` |
+
+### Manifest Schema
+
+```yaml
+niagara_systems:
+  - name: NS_FatherCompanion
+    template: /Game/VFX/NS_BaseGlow
+    emitter_overrides:
+      - emitter: CoreGlow
+        # Soft enable - sets User.Enabled parameter (no recompile)
+        enabled: true
+        parameters:
+          User.Intensity: 2.0
+
+      - emitter: OuterParticles
+        # Structural disable - calls SetIsEnabled() (triggers recompile)
+        structural_enabled: false
+
+      - emitter: SparksEmitter
+        # Both can be specified (structural takes precedence for visibility)
+        enabled: true           # User.Enabled = true (runtime toggle)
+        structural_enabled: true # Emitter is structurally enabled
+        parameters:
+          User.SpawnRate: 50.0
+```
+
+### Field Definitions
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `enabled` | bool | true | Sets `{Emitter}.User.Enabled` parameter (runtime, no recompile) |
+| `structural_enabled` | bool | true | Calls `SetIsEnabled()` on emitter handle (compile-time, triggers recompile) |
+
+### Sentinel Pattern
+
+The generator uses sentinel fields to distinguish "not specified" from "explicitly set to default":
+
+| Sentinel | Controls | Behavior if False |
+|----------|----------|-------------------|
+| `bHasEnabled` | `enabled:` | Skip soft enable logic |
+| `bHasStructuralEnabled` | `structural_enabled:` | Skip structural enable logic |
+
+**YAML not specified → Sentinel stays false → Generator skips that operation**
+
+This prevents default values from triggering unintended operations.
+
+### Generation Flow
+
+```
+1. Duplicate template system (inherits compiled state)
+2. Apply property changes (warmup, bounds, LOD, etc.) - no recompile
+3. Apply User.* parameters - no recompile
+4. For each emitter override:
+   a. If bHasEnabled: Set {Emitter}.User.Enabled parameter
+   b. If bHasStructuralEnabled: Call SetIsEnabled(), set bNeedsRecompile if changed
+5. If bNeedsRecompile:
+   a. RequestCompile(false)
+   b. WaitForCompilationComplete(false, false)
+6. Safety gate: if (!NewSystem->IsReadyToRun()) return Failed
+7. Save asset
+```
+
+### Safety Mechanisms
+
+| Mechanism | Purpose |
+|-----------|---------|
+| Template IsReadyToRun check | Ensures source is compiled before duplication |
+| Conditional compile | Only triggered by structural changes |
+| IsReadyToRun gate before save | Catches compile failures, bad templates, corruption |
+| Diagnostic message | Includes `structural_changes=true/false` for debugging |
+
+### Use Cases
+
+**Soft Enable (Runtime Toggle):**
+```yaml
+emitter_overrides:
+  - emitter: DebugParticles
+    enabled: false  # Can be toggled at runtime via User.Enabled
+```
+- Good for: Debug emitters, optional visual layers, runtime-togglable effects
+- No recompile, fast iteration
+
+**Structural Disable (Permanent Removal):**
+```yaml
+emitter_overrides:
+  - emitter: ExpensiveEmitter
+    structural_enabled: false  # Completely removed from system
+```
+- Good for: LOD variants, platform-specific systems, permanent removal
+- Triggers recompile, reduces runtime overhead
+
+**Combined Pattern:**
+```yaml
+emitter_overrides:
+  - emitter: OptionalEffect
+    enabled: true              # Runtime default
+    structural_enabled: true   # Emitter exists in system
+```
+- Emitter is structurally present but can be toggled at runtime
+
+### API Reference (UE5.7)
+
+```cpp
+// NiagaraEmitterHandle.h:56,65
+NIAGARA_API FName GetName() const;
+NIAGARA_API bool SetIsEnabled(bool bInIsEnabled, UNiagaraSystem& InOwnerSystem, bool bRecompileIfChanged);
+
+// NiagaraSystem.h:309,438,444
+NIAGARA_API TArray<FNiagaraEmitterHandle>& GetEmitterHandles();
+NIAGARA_API bool RequestCompile(bool bForce, FNiagaraSystemUpdateContext* = nullptr, const ITargetPlatform* = nullptr);
+NIAGARA_API void WaitForCompilationComplete(bool bIncludingGPUShaders = false, bool bShowProgress = true);
+NIAGARA_API bool IsReadyToRun() const;
+```
+
+### Hash Updates
+
+`FManifestNiagaraEmitterOverride::ComputeHash()` includes all four fields:
+```cpp
+Hash ^= (bEnabled ? 1ULL : 0ULL) << 8;
+Hash ^= (bHasEnabled ? 1ULL : 0ULL) << 9;
+Hash ^= (bStructuralEnabled ? 1ULL : 0ULL) << 10;
+Hash ^= (bHasStructuralEnabled ? 1ULL : 0ULL) << 11;
+```
+
+This ensures regen/diff system detects changes to enable/disable settings.
 
 ---
 
@@ -719,7 +861,17 @@ niagara_systems:
 
 ---
 
-## Files Modified (v4.10)
+## Files Modified
+
+### v4.11
+
+| File | Changes |
+|------|---------|
+| GasAbilityGeneratorTypes.h | Added `bHasEnabled`, `bStructuralEnabled`, `bHasStructuralEnabled` to `FManifestNiagaraEmitterOverride`, updated `ComputeHash()` |
+| GasAbilityGeneratorParser.cpp | Set `bHasEnabled=true` when parsing `enabled:`, added `structural_enabled:` parsing block |
+| GasAbilityGeneratorGenerators.cpp | Added `Modify()` call, `bNeedsRecompile` flag, conditional soft/structural enable, conditional compile, `IsReadyToRun()` gate before save |
+
+### v4.10
 
 | File | Changes |
 |------|---------|
