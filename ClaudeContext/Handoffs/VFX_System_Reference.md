@@ -358,9 +358,9 @@ private:
    - Implementation: `TypeLower = NormalizeKey(ExprDef.Type)` called once per expression
 
 5. **Field-Specific Normalizers**
-   - `NormalizeKey()` for enum keys (lowercase, trim)
-   - `NormalizeScalar()` for numeric values (parse, validate range)
-   - `NormalizePath()` for asset paths (forward slashes, no trailing)
+   - `NormalizeKey()` for enum keys (lowercase, trim) - used by switch key validation
+   - `NormalizeScalar()` for numeric values (parse, validate range) - available for property validation
+   - `NormalizePath()` for asset paths (forward slashes, no trailing) - used by MaterialFunctionCall
 
 6. **Stable Diagnostic Ordering**
    - Sort errors/warnings before emitting
@@ -379,7 +379,7 @@ private:
 | E_DUPLICATE_EXPRESSION_ID | Error | Duplicate expression ID in material |
 | E_EXPRESSION_REFERENCE_INVALID | Error | Connection references non-existent expression |
 | W_DEPRECATED_SWITCH_KEY | Warning | Deprecated enum value (es2, sm4) |
-| W_FUNCTION_INPUT_MISMATCH | Warning | Function input count doesn't match |
+| W_FUNCTION_INPUT_MISMATCH | Warning | Function input count doesn't match (reserved - requires asset loading) |
 | W_FUNCTION_PATH_NORMALIZED | Warning | Path was auto-corrected |
 | W_EXPRESSION_UNUSED | Warning | Expression defined but never connected |
 
@@ -392,10 +392,18 @@ Pass 1: Validate each expression
 ├── Check for duplicate expression ID → E_DUPLICATE_EXPRESSION_ID
 ├── Normalize type via NormalizeKey()
 ├── Validate type in KnownExpressionTypes → E_UNKNOWN_EXPRESSION_TYPE
-├── For QualitySwitch: validate keys → E_UNKNOWN_SWITCH_KEY
-├── For ShadingPathSwitch: validate keys → E_UNKNOWN_SWITCH_KEY
-├── For FeatureLevelSwitch: validate keys → E_UNKNOWN_SWITCH_KEY or W_DEPRECATED_SWITCH_KEY
-├── For MaterialFunctionCall: validate function path → E_FUNCTION_NOT_FOUND, W_FUNCTION_PATH_NORMALIZED
+├── For QualitySwitch:
+│   ├── Validate keys → E_UNKNOWN_SWITCH_KEY
+│   └── Check 'default' input exists → E_MISSING_REQUIRED_INPUT
+├── For ShadingPathSwitch:
+│   ├── Validate keys → E_UNKNOWN_SWITCH_KEY
+│   └── Check 'default' input exists → E_MISSING_REQUIRED_INPUT
+├── For FeatureLevelSwitch:
+│   ├── Validate keys → E_UNKNOWN_SWITCH_KEY or W_DEPRECATED_SWITCH_KEY
+│   └── Check 'default' input exists → E_MISSING_REQUIRED_INPUT
+├── For MaterialFunctionCall:
+│   ├── Validate function path → E_FUNCTION_NOT_FOUND, W_FUNCTION_PATH_NORMALIZED
+│   └── Check for FunctionInstance in path → E_FUNCTION_INSTANCE_BLOCKED
 └── Track referenced expression IDs for Pass 3
 
 Pass 2: Validate connections
