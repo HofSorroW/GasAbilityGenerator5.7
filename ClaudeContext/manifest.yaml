@@ -4722,6 +4722,104 @@ widget_blueprints:
       - name: IsOpen
         type: Bool
         default: false
+    # v4.10: Widget tree for radial form selection wheel
+    widget_tree:
+      root_widget: RootCanvas
+      widgets:
+        - id: RootCanvas
+          type: CanvasPanel
+          name: RootCanvas
+          children: [WheelContainer]
+        - id: WheelContainer
+          type: Overlay
+          name: WheelContainer
+          is_variable: true
+          slot:
+            anchors: Center
+            alignment: "0.5, 0.5"
+            size: "400, 400"
+          children: [WheelBackground, FormSlotsBox, CenterIcon, SelectionIndicator]
+        - id: WheelBackground
+          type: Image
+          name: WheelBackground
+          slot:
+            h_align: Fill
+            v_align: Fill
+          properties:
+            ColorAndOpacity: "(R=0.05, G=0.05, B=0.1, A=0.9)"
+        - id: FormSlotsBox
+          type: CanvasPanel
+          name: FormSlotsBox
+          is_variable: true
+          slot:
+            h_align: Fill
+            v_align: Fill
+          children: [Slot_Crawler, Slot_Armor, Slot_Exoskeleton, Slot_Symbiote, Slot_Engineer]
+        - id: Slot_Crawler
+          type: Button
+          name: Slot_Crawler
+          is_variable: true
+          slot:
+            anchors: Custom
+            position: "0, -150"
+            alignment: "0.5, 0.5"
+            size: "80, 80"
+        - id: Slot_Armor
+          type: Button
+          name: Slot_Armor
+          is_variable: true
+          slot:
+            anchors: Custom
+            position: "142, -46"
+            alignment: "0.5, 0.5"
+            size: "80, 80"
+        - id: Slot_Exoskeleton
+          type: Button
+          name: Slot_Exoskeleton
+          is_variable: true
+          slot:
+            anchors: Custom
+            position: "88, 121"
+            alignment: "0.5, 0.5"
+            size: "80, 80"
+        - id: Slot_Symbiote
+          type: Button
+          name: Slot_Symbiote
+          is_variable: true
+          slot:
+            anchors: Custom
+            position: "-88, 121"
+            alignment: "0.5, 0.5"
+            size: "80, 80"
+        - id: Slot_Engineer
+          type: Button
+          name: Slot_Engineer
+          is_variable: true
+          slot:
+            anchors: Custom
+            position: "-142, -46"
+            alignment: "0.5, 0.5"
+            size: "80, 80"
+        - id: CenterIcon
+          type: Image
+          name: CenterIcon
+          is_variable: true
+          slot:
+            h_align: Center
+            v_align: Center
+            size: "100, 100"
+          properties:
+            ColorAndOpacity: "(R=1.0, G=0.8, B=0.4, A=1.0)"
+        - id: SelectionIndicator
+          type: Image
+          name: SelectionIndicator
+          is_variable: true
+          slot:
+            h_align: Center
+            v_align: Center
+            size: "90, 90"
+          properties:
+            ColorAndOpacity: "(R=1.0, G=0.6, B=0.0, A=0.8)"
 
 # ============================================================================
 # NIAGARA SYSTEMS (7) - v2.6.11 Enhanced with user parameters
@@ -5277,12 +5375,39 @@ material_functions:
     expressions:
       - id: time
         type: Time
-        pos_x: -200
+        pos_x: -300
+        pos_y: 0
+      - id: speedMul
+        type: Multiply
+        pos_x: -150
         pos_y: 0
       - id: sine
         type: Sine
         pos_x: 0
         pos_y: 0
+      - id: ampMul
+        type: Multiply
+        pos_x: 150
+        pos_y: 0
+    connections:
+      - from: time
+        to: speedMul
+        to_input: A
+      - from: Speed
+        to: speedMul
+        to_input: B
+      - from: speedMul
+        to: sine
+        to_input: Input
+      - from: sine
+        to: ampMul
+        to_input: A
+      - from: Amplitude
+        to: ampMul
+        to_input: B
+      - from: ampMul
+        to: Pulse
+        to_input: A
 
   # Fresnel-based glow effect
   - name: MF_FresnelGlow
@@ -5313,6 +5438,19 @@ material_functions:
         type: Multiply
         pos_x: 100
         pos_y: 0
+    connections:
+      - from: Exponent
+        to: fresnel
+        to_input: ExponentIn
+      - from: fresnel
+        to: mul
+        to_input: A
+      - from: GlowColor
+        to: mul
+        to_input: B
+      - from: mul
+        to: GlowResult
+        to_input: A
 
   # Radial gradient for dome/sphere effects
   - name: MF_RadialGradient
@@ -5335,8 +5473,46 @@ material_functions:
     expressions:
       - id: texcoord
         type: TexCoord
-        pos_x: -200
+        pos_x: -300
         pos_y: 0
+      - id: dist
+        type: Distance
+        pos_x: -100
+        pos_y: 0
+      - id: falloffMul
+        type: Multiply
+        pos_x: 50
+        pos_y: 0
+      - id: invert
+        type: OneMinus
+        pos_x: 200
+        pos_y: 0
+      - id: clampResult
+        type: Clamp
+        pos_x: 350
+        pos_y: 0
+    connections:
+      - from: texcoord
+        to: dist
+        to_input: A
+      - from: Center
+        to: dist
+        to_input: B
+      - from: dist
+        to: falloffMul
+        to_input: A
+      - from: Falloff
+        to: falloffMul
+        to_input: B
+      - from: falloffMul
+        to: invert
+        to_input: Input
+      - from: invert
+        to: clampResult
+        to_input: Input
+      - from: clampResult
+        to: Gradient
+        to_input: A
 
 # ============================================================================
 # MATERIAL INSTANCES (v4.9) - Material Instance Constants for VFX variation
