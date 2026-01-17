@@ -2330,6 +2330,8 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 	bool bInExpression = false;
 	bool bInConnection = false;
 	bool bInProperties = false;
+	bool bInInputs = false;          // v4.10: Parsing switch inputs section
+	bool bInFunctionInputs = false;  // v4.10: Parsing function_inputs section
 
 	while (LineIndex < Lines.Num())
 	{
@@ -2518,6 +2520,8 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 				CurrentExpr.Id = GetLineValue(TrimmedLine.Mid(2));
 				bInExpression = true;
 				bInProperties = false;
+				bInInputs = false;          // v4.10
+				bInFunctionInputs = false;  // v4.10
 			}
 			else if (bInExpression && TrimmedLine.StartsWith(TEXT("type:")))
 			{
@@ -2554,10 +2558,54 @@ void FGasAbilityGeneratorParser::ParseMaterials(const TArray<FString>& Lines, in
 			{
 				CurrentExpr.SamplerType = GetLineValue(TrimmedLine);
 				bInProperties = false;
+				bInInputs = false;
+				bInFunctionInputs = false;
+			}
+			// v4.10: MaterialFunctionCall function path
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("function:")))
+			{
+				CurrentExpr.Function = GetLineValue(TrimmedLine);
+				bInProperties = false;
+				bInInputs = false;
+				bInFunctionInputs = false;
+			}
+			// v4.10: Switch expression inputs section (QualitySwitch, ShadingPathSwitch, FeatureLevelSwitch)
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("inputs:")))
+			{
+				bInInputs = true;
+				bInProperties = false;
+				bInFunctionInputs = false;
+			}
+			// v4.10: MaterialFunctionCall function_inputs section
+			else if (bInExpression && TrimmedLine.StartsWith(TEXT("function_inputs:")))
+			{
+				bInFunctionInputs = true;
+				bInProperties = false;
+				bInInputs = false;
 			}
 			else if (bInExpression && TrimmedLine.StartsWith(TEXT("properties:")))
 			{
 				bInProperties = true;
+				bInInputs = false;
+				bInFunctionInputs = false;
+			}
+			// v4.10: Parse switch inputs (e.g., "default: ExpressionId", "low: LowQualityExpr")
+			else if (bInExpression && bInInputs && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonIdx;
+				TrimmedLine.FindChar(TEXT(':'), ColonIdx);
+				FString Key = TrimmedLine.Left(ColonIdx).TrimStartAndEnd();
+				FString Value = TrimmedLine.Mid(ColonIdx + 1).TrimStartAndEnd();
+				CurrentExpr.Inputs.Add(Key, Value);
+			}
+			// v4.10: Parse function inputs (e.g., "Intensity: IntensityParam")
+			else if (bInExpression && bInFunctionInputs && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonIdx;
+				TrimmedLine.FindChar(TEXT(':'), ColonIdx);
+				FString Key = TrimmedLine.Left(ColonIdx).TrimStartAndEnd();
+				FString Value = TrimmedLine.Mid(ColonIdx + 1).TrimStartAndEnd();
+				CurrentExpr.FunctionInputs.Add(Key, Value);
 			}
 			else if (bInExpression && bInProperties && TrimmedLine.Contains(TEXT(":")))
 			{

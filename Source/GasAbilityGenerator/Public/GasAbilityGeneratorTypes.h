@@ -1307,6 +1307,17 @@ struct FManifestMaterialExpression
 	FString TexturePath;     // Path to texture asset (e.g., "/Game/Textures/T_Fire")
 	FString SamplerType;     // Color, LinearColor, Normal, Masks, Grayscale, Alpha, DistanceFieldFont
 
+	// v4.10: Switch expression inputs (QualitySwitch, ShadingPathSwitch, FeatureLevelSwitch)
+	// Keys: "default", "low", "medium", "high", "epic" (Quality)
+	//       "default", "deferred", "forward", "mobile" (ShadingPath)
+	//       "default", "es3_1", "sm5", "sm6" (FeatureLevel)
+	// Values: Expression ID to connect to that input
+	TMap<FString, FString> Inputs;
+
+	// v4.10: MaterialFunctionCall properties
+	FString Function;        // Function path: /Engine/..., /Game/..., or MF_Name (3-tier resolution)
+	TMap<FString, FString> FunctionInputs;  // Maps function input name to expression ID
+
 	/** v3.0: Compute hash for change detection (excludes PosX, PosY - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -1323,6 +1334,22 @@ struct FManifestMaterialExpression
 		// v4.0: Include texture properties in hash
 		Hash ^= GetTypeHash(TexturePath) << 16;
 		Hash ^= GetTypeHash(SamplerType) << 20;
+		// v4.10: Include switch inputs in hash (use prime multiplication to avoid collisions)
+		uint32 InputsHash = 0;
+		for (const auto& Input : Inputs)
+		{
+			InputsHash = InputsHash * 31 + GetTypeHash(Input.Key);
+			InputsHash = InputsHash * 37 + GetTypeHash(Input.Value);
+		}
+		Hash ^= InputsHash;
+		// v4.10: Include function call properties in hash
+		uint32 FuncHash = GetTypeHash(Function);
+		for (const auto& FuncInput : FunctionInputs)
+		{
+			FuncHash = FuncHash * 41 + GetTypeHash(FuncInput.Key);
+			FuncHash = FuncHash * 43 + GetTypeHash(FuncInput.Value);
+		}
+		Hash ^= FuncHash << 4;  // Slight offset to reduce XOR collisions
 		return Hash;
 	}
 };

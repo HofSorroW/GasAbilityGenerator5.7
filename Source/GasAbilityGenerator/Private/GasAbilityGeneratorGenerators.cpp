@@ -132,6 +132,73 @@
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Engine/SkeletalMesh.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialFunction.h"
+#include "Materials/MaterialFunctionInterface.h"
+#include "Materials/MaterialFunctionInstance.h"
+#include "Materials/MaterialExpressionMaterialFunctionCall.h"
+// v4.10: Switch expression includes
+#include "Materials/MaterialExpressionQualitySwitch.h"
+#include "Materials/MaterialExpressionShadingPathSwitch.h"
+#include "Materials/MaterialExpressionFeatureLevelSwitch.h"
+// v4.10: Static expression includes
+#include "Materials/MaterialExpressionStaticSwitch.h"
+#include "Materials/MaterialExpressionStaticBool.h"
+#include "Materials/MaterialExpressionStaticBoolParameter.h"
+// v4.10: Sobol expression includes
+#include "Materials/MaterialExpressionSobol.h"
+#include "Materials/MaterialExpressionTemporalSobol.h"
+// v4.10: Additional VFX expression includes
+#include "Materials/MaterialExpressionSceneTexture.h"
+#include "Materials/MaterialExpressionMakeMaterialAttributes.h"
+#include "Materials/MaterialExpressionPerInstanceRandom.h"
+#include "Materials/MaterialExpressionPerInstanceFadeAmount.h"
+#include "Materials/MaterialExpressionObjectOrientation.h"
+#include "Materials/MaterialExpressionObjectRadius.h"
+#include "Materials/MaterialExpressionObjectPositionWS.h"
+#include "Materials/MaterialExpressionActorPositionWS.h"
+#include "Materials/MaterialExpressionPreSkinnedPosition.h"
+#include "Materials/MaterialExpressionPreSkinnedNormal.h"
+#include "Materials/MaterialExpressionPreSkinnedLocalBounds.h"
+#include "Materials/MaterialExpressionLightmapUVs.h"
+#include "Materials/MaterialExpressionVertexNormalWS.h"
+#include "Materials/MaterialExpressionPixelNormalWS.h"
+#include "Materials/MaterialExpressionTwoSidedSign.h"
+#include "Materials/MaterialExpressionVertexTangentWS.h"
+#include "Materials/MaterialExpressionLightVector.h"
+#include "Materials/MaterialExpressionCameraVectorWS.h"
+#include "Materials/MaterialExpressionReflectionVectorWS.h"
+#include "Materials/MaterialExpressionParticlePositionWS.h"
+#include "Materials/MaterialExpressionParticleRadius.h"
+#include "Materials/MaterialExpressionParticleRelativeTime.h"
+#include "Materials/MaterialExpressionParticleMotionBlurFade.h"
+#include "Materials/MaterialExpressionParticleRandom.h"
+#include "Materials/MaterialExpressionParticleDirection.h"
+#include "Materials/MaterialExpressionParticleSpeed.h"
+#include "Materials/MaterialExpressionParticleSize.h"
+#include "Materials/MaterialExpressionScreenPosition.h"
+#include "Materials/MaterialExpressionViewSize.h"
+#include "Materials/MaterialExpressionSceneTexelSize.h"
+#include "Materials/MaterialExpressionDeltaTime.h"
+// Note: MaterialExpressionRealTime.h doesn't exist in UE5.7 - use Time expression instead
+#include "Materials/MaterialExpressionEyeAdaptation.h"
+#include "Materials/MaterialExpressionAtmosphericFogColor.h"
+#include "Materials/MaterialExpressionPrecomputedAOMask.h"
+#include "Materials/MaterialExpressionGIReplace.h"
+#include "Materials/MaterialExpressionAppendVector.h"
+#include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionMin.h"
+#include "Materials/MaterialExpressionMax.h"
+#include "Materials/MaterialExpressionCeil.h"
+#include "Materials/MaterialExpressionFmod.h"
+#include "Materials/MaterialExpressionTangent.h"
+#include "Materials/MaterialExpressionRotator.h"
+#include "Materials/MaterialExpressionConstant2Vector.h"
+#include "Materials/MaterialExpressionConstant4Vector.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+// v4.9: Material instance includes
+#include "Materials/MaterialInstanceConstant.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformFilemanager.h"
 #include "WidgetBlueprint.h"
@@ -263,9 +330,37 @@ FString FGeneratorBase::CurrentManifestPath;
 
 // v4.9.1: Static member initialization for generated materials cache (MIC parent lookup)
 TMap<FString, UMaterialInterface*> FMaterialGenerator::GeneratedMaterialsCache;
+// v4.10: Static member initialization for generated material functions cache
+TMap<FString, UMaterialFunctionInterface*> FMaterialGenerator::GeneratedMaterialFunctionsCache;
 
 // v3.0: Generator version constant for metadata tracking
-static const FString GENERATOR_VERSION = TEXT("3.0");
+static const FString GENERATOR_VERSION = TEXT("4.10");
+
+// v4.10: Explicit enum mapping tables for switch expressions (hallucination-proof)
+static const TMap<FString, int32> QualitySwitchKeyMap = {
+	{ TEXT("low"), 0 },
+	{ TEXT("high"), 1 },     // Index 1, NOT 2!
+	{ TEXT("medium"), 2 },   // Index 2, NOT 1!
+	{ TEXT("epic"), 3 }
+};
+
+static const TMap<FString, int32> ShadingPathSwitchKeyMap = {
+	{ TEXT("deferred"), 0 },
+	{ TEXT("forward"), 1 },
+	{ TEXT("mobile"), 2 }
+};
+
+static const TMap<FString, int32> FeatureLevelSwitchKeyMap = {
+	{ TEXT("es3_1"), 1 },
+	{ TEXT("sm5"), 3 },
+	{ TEXT("sm6"), 4 }
+};
+
+// v4.10: Deprecated feature level keys (will log warning)
+static const TSet<FString> DeprecatedFeatureLevelKeys = {
+	TEXT("es2"),   // Index 0 - ES2_REMOVED
+	TEXT("sm4")    // Index 2 - SM4_REMOVED
+};
 
 // v3.0: Helper function to store metadata after successful Blueprint generation
 static void StoreBlueprintMetadata(
@@ -4218,7 +4313,8 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 #include "Factories/MaterialFunctionFactoryNew.h"
 
 // v2.6.12: Helper to create material expression by type
-UMaterialExpression* FMaterialGenerator::CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef)
+// v4.10: Added ExpressionMap parameter for Switch/FunctionCall input connections
+UMaterialExpression* FMaterialGenerator::CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap)
 {
 	UMaterialExpression* Expression = nullptr;
 	FString TypeLower = ExprDef.Type.ToLower();
@@ -4581,6 +4677,180 @@ UMaterialExpression* FMaterialGenerator::CreateExpression(UMaterial* Material, c
 	{
 		Expression = NewObject<UMaterialExpressionSceneDepth>(Material);
 	}
+	// ========================================================================
+	// v4.10: Tier 0 Zero-Property Expressions
+	// ========================================================================
+	// PerInstanceFadeAmount - per-instance fade for LOD
+	else if (TypeLower == TEXT("perinstancefadeamount") || TypeLower == TEXT("per_instance_fade"))
+	{
+		Expression = NewObject<UMaterialExpressionPerInstanceFadeAmount>(Material);
+	}
+	// PerInstanceRandom - unique random value per instance
+	else if (TypeLower == TEXT("perinstancerandom") || TypeLower == TEXT("per_instance_random"))
+	{
+		Expression = NewObject<UMaterialExpressionPerInstanceRandom>(Material);
+	}
+	// ObjectOrientation - object's rotation as quaternion
+	else if (TypeLower == TEXT("objectorientation") || TypeLower == TEXT("object_orientation"))
+	{
+		Expression = NewObject<UMaterialExpressionObjectOrientation>(Material);
+	}
+	// ObjectPositionWS - object's world position
+	else if (TypeLower == TEXT("objectpositionws") || TypeLower == TEXT("object_position_ws") || TypeLower == TEXT("objectposition"))
+	{
+		Expression = NewObject<UMaterialExpressionObjectPositionWS>(Material);
+	}
+	// ActorPositionWS - actor's world position
+	else if (TypeLower == TEXT("actorpositionws") || TypeLower == TEXT("actor_position_ws") || TypeLower == TEXT("actorposition"))
+	{
+		Expression = NewObject<UMaterialExpressionActorPositionWS>(Material);
+	}
+	// ObjectRadius - bounding sphere radius
+	else if (TypeLower == TEXT("objectradius") || TypeLower == TEXT("object_radius"))
+	{
+		Expression = NewObject<UMaterialExpressionObjectRadius>(Material);
+	}
+	// PreSkinnedLocalBounds - pre-skinning bounds
+	else if (TypeLower == TEXT("preskinnedlocalbounds") || TypeLower == TEXT("pre_skinned_bounds"))
+	{
+		Expression = NewObject<UMaterialExpressionPreSkinnedLocalBounds>(Material);
+	}
+	// PrecomputedAOMask - baked AO from lightmass
+	else if (TypeLower == TEXT("precomputedaomask") || TypeLower == TEXT("precomputed_ao"))
+	{
+		Expression = NewObject<UMaterialExpressionPrecomputedAOMask>(Material);
+	}
+	// LightmapUVs - lightmap texture coordinates
+	else if (TypeLower == TEXT("lightmapuvs") || TypeLower == TEXT("lightmap_uvs"))
+	{
+		Expression = NewObject<UMaterialExpressionLightmapUVs>(Material);
+	}
+	// PreSkinnedNormal - pre-skinning normal (accepts both preskinnedlocalnormal and preskinnednormal)
+	else if (TypeLower == TEXT("preskinnedlocalnormal") || TypeLower == TEXT("preskinnednormal") || TypeLower == TEXT("pre_skinned_normal"))
+	{
+		Expression = NewObject<UMaterialExpressionPreSkinnedNormal>(Material);
+	}
+	// VertexTangentWS - vertex tangent in world space
+	else if (TypeLower == TEXT("vertextangentws") || TypeLower == TEXT("vertex_tangent_ws"))
+	{
+		Expression = NewObject<UMaterialExpressionVertexTangentWS>(Material);
+	}
+	// ScreenPosition - screen-space position
+	else if (TypeLower == TEXT("screenposition") || TypeLower == TEXT("screen_position"))
+	{
+		Expression = NewObject<UMaterialExpressionScreenPosition>(Material);
+	}
+	// ViewSize - viewport dimensions
+	else if (TypeLower == TEXT("viewsize") || TypeLower == TEXT("view_size"))
+	{
+		Expression = NewObject<UMaterialExpressionViewSize>(Material);
+	}
+	// SceneTexelSize - 1/viewport dimensions
+	else if (TypeLower == TEXT("scenetexelsize") || TypeLower == TEXT("scene_texel_size"))
+	{
+		Expression = NewObject<UMaterialExpressionSceneTexelSize>(Material);
+	}
+	// TwoSidedSign - +1 for front face, -1 for back face
+	else if (TypeLower == TEXT("twosidedsign") || TypeLower == TEXT("two_sided_sign"))
+	{
+		Expression = NewObject<UMaterialExpressionTwoSidedSign>(Material);
+	}
+	// ========================================================================
+	// v4.10: Switch Expressions
+	// ========================================================================
+	// QualitySwitch - switch based on material quality level (Low=0, High=1, Medium=2, Epic=3)
+	else if (TypeLower == TEXT("qualityswitch") || TypeLower == TEXT("quality_switch"))
+	{
+		UMaterialExpressionQualitySwitch* QualitySwitch = NewObject<UMaterialExpressionQualitySwitch>(Material);
+		Expression = QualitySwitch;
+		// Inputs will be connected in a second pass via ConnectSwitchInputs
+	}
+	// ShadingPathSwitch - switch based on shading path (Deferred=0, Forward=1, Mobile=2)
+	else if (TypeLower == TEXT("shadingpathswitch") || TypeLower == TEXT("shading_path_switch"))
+	{
+		UMaterialExpressionShadingPathSwitch* ShadingSwitch = NewObject<UMaterialExpressionShadingPathSwitch>(Material);
+		Expression = ShadingSwitch;
+		// Inputs will be connected in a second pass via ConnectSwitchInputs
+	}
+	// FeatureLevelSwitch - switch based on feature level (ES3_1=1, SM5=3, SM6=4)
+	else if (TypeLower == TEXT("featurelevelswitch") || TypeLower == TEXT("feature_level_switch"))
+	{
+		UMaterialExpressionFeatureLevelSwitch* FeatureSwitch = NewObject<UMaterialExpressionFeatureLevelSwitch>(Material);
+		Expression = FeatureSwitch;
+		// Inputs will be connected in a second pass via ConnectSwitchInputs
+	}
+	// ========================================================================
+	// v4.10: MaterialFunctionCall - 3-tier resolution
+	// ========================================================================
+	else if (TypeLower == TEXT("materialfunctioncall") || TypeLower == TEXT("function_call") || TypeLower == TEXT("functioncall"))
+	{
+		UMaterialExpressionMaterialFunctionCall* FuncCall = NewObject<UMaterialExpressionMaterialFunctionCall>(Material);
+		if (!ExprDef.Function.IsEmpty())
+		{
+			UMaterialFunctionInterface* ResolvedFunc = ResolveMaterialFunction(ExprDef.Function);
+			if (ResolvedFunc)
+			{
+				FuncCall->SetMaterialFunction(ResolvedFunc);
+				LogGeneration(FString::Printf(TEXT("    MaterialFunctionCall '%s' -> resolved to '%s'"), *ExprDef.Id, *ExprDef.Function));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    [WARNING] MaterialFunctionCall '%s' -> function NOT FOUND: '%s'"), *ExprDef.Id, *ExprDef.Function));
+			}
+		}
+		Expression = FuncCall;
+		// Function inputs will be connected in a second pass via ConnectFunctionInputs
+	}
+	// ========================================================================
+	// v4.10: Static Expressions (compile-time switches)
+	// ========================================================================
+	// StaticSwitch - compile-time switch based on static bool
+	else if (TypeLower == TEXT("staticswitch") || TypeLower == TEXT("static_switch"))
+	{
+		UMaterialExpressionStaticSwitch* StaticSwitch = NewObject<UMaterialExpressionStaticSwitch>(Material);
+		// Default value can be set via properties
+		if (ExprDef.Properties.Contains(TEXT("default_value")))
+		{
+			StaticSwitch->DefaultValue = ExprDef.Properties[TEXT("default_value")].ToBool();
+		}
+		Expression = StaticSwitch;
+	}
+	// StaticBool - compile-time boolean constant
+	else if (TypeLower == TEXT("staticbool") || TypeLower == TEXT("static_bool"))
+	{
+		UMaterialExpressionStaticBool* StaticBool = NewObject<UMaterialExpressionStaticBool>(Material);
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			StaticBool->Value = ExprDef.DefaultValue.ToBool();
+		}
+		Expression = StaticBool;
+	}
+	// StaticBoolParameter - compile-time boolean parameter (editable in instances)
+	else if (TypeLower == TEXT("staticboolparameter") || TypeLower == TEXT("static_bool_param"))
+	{
+		UMaterialExpressionStaticBoolParameter* StaticBoolParam = NewObject<UMaterialExpressionStaticBoolParameter>(Material);
+		StaticBoolParam->ParameterName = *ExprDef.Name;
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			StaticBoolParam->DefaultValue = ExprDef.DefaultValue.ToBool();
+		}
+		Expression = StaticBoolParam;
+	}
+	// ========================================================================
+	// v4.10: Noise/Sampling Expressions
+	// ========================================================================
+	// Sobol - Sobol quasi-random sequence
+	else if (TypeLower == TEXT("sobol"))
+	{
+		UMaterialExpressionSobol* Sobol = NewObject<UMaterialExpressionSobol>(Material);
+		Expression = Sobol;
+	}
+	// TemporalSobol - temporal Sobol quasi-random sequence
+	else if (TypeLower == TEXT("temporalsobol") || TypeLower == TEXT("temporal_sobol"))
+	{
+		UMaterialExpressionTemporalSobol* TemporalSobol = NewObject<UMaterialExpressionTemporalSobol>(Material);
+		Expression = TemporalSobol;
+	}
 
 	if (Expression)
 	{
@@ -4696,6 +4966,190 @@ bool FMaterialGenerator::ConnectExpressions(UMaterial* Material, const TMap<FStr
 }
 
 // ============================================================================
+// v4.10: Connect Switch expression inputs (QualitySwitch, ShadingPathSwitch, FeatureLevelSwitch)
+// ============================================================================
+bool FMaterialGenerator::ConnectSwitchInputs(UMaterialExpression* SwitchExpr, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap)
+{
+	if (!SwitchExpr || ExprDef.Inputs.Num() == 0)
+	{
+		return false;
+	}
+
+	FString TypeLower = ExprDef.Type.ToLower();
+	int32 ConnectionsMade = 0;
+
+	// QualitySwitch - Low=0, High=1, Medium=2, Epic=3
+	if (TypeLower == TEXT("qualityswitch") || TypeLower == TEXT("quality_switch"))
+	{
+		UMaterialExpressionQualitySwitch* QualitySwitch = Cast<UMaterialExpressionQualitySwitch>(SwitchExpr);
+		if (!QualitySwitch) return false;
+
+		for (const auto& InputPair : ExprDef.Inputs)
+		{
+			FString KeyLower = InputPair.Key.ToLower();
+			UMaterialExpression* SourceExpr = ExpressionMap.FindRef(InputPair.Value);
+			if (!SourceExpr)
+			{
+				LogGeneration(FString::Printf(TEXT("      [WARNING] QualitySwitch input '%s' references unknown expression '%s'"), *InputPair.Key, *InputPair.Value));
+				continue;
+			}
+
+			const int32* IndexPtr = QualitySwitchKeyMap.Find(KeyLower);
+			if (IndexPtr)
+			{
+				QualitySwitch->Inputs[*IndexPtr].Connect(0, SourceExpr);
+				ConnectionsMade++;
+				LogGeneration(FString::Printf(TEXT("      Connected QualitySwitch.%s (index %d) <- %s"), *InputPair.Key, *IndexPtr, *InputPair.Value));
+			}
+			else if (KeyLower == TEXT("default"))
+			{
+				QualitySwitch->Default.Connect(0, SourceExpr);
+				ConnectionsMade++;
+				LogGeneration(FString::Printf(TEXT("      Connected QualitySwitch.Default <- %s"), *InputPair.Value));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("      [WARNING] Unknown QualitySwitch input key: '%s'"), *InputPair.Key));
+			}
+		}
+	}
+	// ShadingPathSwitch - Deferred=0, Forward=1, Mobile=2
+	else if (TypeLower == TEXT("shadingpathswitch") || TypeLower == TEXT("shading_path_switch"))
+	{
+		UMaterialExpressionShadingPathSwitch* ShadingSwitch = Cast<UMaterialExpressionShadingPathSwitch>(SwitchExpr);
+		if (!ShadingSwitch) return false;
+
+		for (const auto& InputPair : ExprDef.Inputs)
+		{
+			FString KeyLower = InputPair.Key.ToLower();
+			UMaterialExpression* SourceExpr = ExpressionMap.FindRef(InputPair.Value);
+			if (!SourceExpr)
+			{
+				LogGeneration(FString::Printf(TEXT("      [WARNING] ShadingPathSwitch input '%s' references unknown expression '%s'"), *InputPair.Key, *InputPair.Value));
+				continue;
+			}
+
+			const int32* IndexPtr = ShadingPathSwitchKeyMap.Find(KeyLower);
+			if (IndexPtr)
+			{
+				ShadingSwitch->Inputs[*IndexPtr].Connect(0, SourceExpr);
+				ConnectionsMade++;
+				LogGeneration(FString::Printf(TEXT("      Connected ShadingPathSwitch.%s (index %d) <- %s"), *InputPair.Key, *IndexPtr, *InputPair.Value));
+			}
+			else if (KeyLower == TEXT("default"))
+			{
+				ShadingSwitch->Default.Connect(0, SourceExpr);
+				ConnectionsMade++;
+				LogGeneration(FString::Printf(TEXT("      Connected ShadingPathSwitch.Default <- %s"), *InputPair.Value));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("      [WARNING] Unknown ShadingPathSwitch input key: '%s'"), *InputPair.Key));
+			}
+		}
+	}
+	// FeatureLevelSwitch - ES3_1=1, SM5=3, SM6=4 (note: indices 0,2 are deprecated)
+	else if (TypeLower == TEXT("featurelevelswitch") || TypeLower == TEXT("feature_level_switch"))
+	{
+		UMaterialExpressionFeatureLevelSwitch* FeatureSwitch = Cast<UMaterialExpressionFeatureLevelSwitch>(SwitchExpr);
+		if (!FeatureSwitch) return false;
+
+		for (const auto& InputPair : ExprDef.Inputs)
+		{
+			FString KeyLower = InputPair.Key.ToLower();
+			UMaterialExpression* SourceExpr = ExpressionMap.FindRef(InputPair.Value);
+			if (!SourceExpr)
+			{
+				LogGeneration(FString::Printf(TEXT("      [WARNING] FeatureLevelSwitch input '%s' references unknown expression '%s'"), *InputPair.Key, *InputPair.Value));
+				continue;
+			}
+
+			// Check for deprecated keys
+			if (DeprecatedFeatureLevelKeys.Contains(KeyLower))
+			{
+				LogGeneration(FString::Printf(TEXT("      [WARNING] FeatureLevelSwitch key '%s' is deprecated (ES2/SM4 removed in UE5)"), *InputPair.Key));
+				continue;
+			}
+
+			const int32* IndexPtr = FeatureLevelSwitchKeyMap.Find(KeyLower);
+			if (IndexPtr)
+			{
+				FeatureSwitch->Inputs[*IndexPtr].Connect(0, SourceExpr);
+				ConnectionsMade++;
+				LogGeneration(FString::Printf(TEXT("      Connected FeatureLevelSwitch.%s (index %d) <- %s"), *InputPair.Key, *IndexPtr, *InputPair.Value));
+			}
+			else if (KeyLower == TEXT("default"))
+			{
+				FeatureSwitch->Default.Connect(0, SourceExpr);
+				ConnectionsMade++;
+				LogGeneration(FString::Printf(TEXT("      Connected FeatureLevelSwitch.Default <- %s"), *InputPair.Value));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("      [WARNING] Unknown FeatureLevelSwitch input key: '%s'"), *InputPair.Key));
+			}
+		}
+	}
+
+	return ConnectionsMade > 0;
+}
+
+// ============================================================================
+// v4.10: Connect MaterialFunctionCall inputs
+// ============================================================================
+bool FMaterialGenerator::ConnectFunctionInputs(UMaterialExpressionMaterialFunctionCall* FuncCall, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap)
+{
+	if (!FuncCall || ExprDef.FunctionInputs.Num() == 0)
+	{
+		return false;
+	}
+
+	UMaterialFunctionInterface* Function = FuncCall->MaterialFunction;
+	if (!Function)
+	{
+		LogGeneration(FString::Printf(TEXT("      [WARNING] MaterialFunctionCall '%s' has no resolved function"), *ExprDef.Id));
+		return false;
+	}
+
+	int32 ConnectionsMade = 0;
+
+	// Get the function's input expressions to find input pin names
+	for (const auto& InputPair : ExprDef.FunctionInputs)
+	{
+		FString InputName = InputPair.Key;
+		UMaterialExpression* SourceExpr = ExpressionMap.FindRef(InputPair.Value);
+		if (!SourceExpr)
+		{
+			LogGeneration(FString::Printf(TEXT("      [WARNING] FunctionInput '%s' references unknown expression '%s'"), *InputName, *InputPair.Value));
+			continue;
+		}
+
+		// Find the input index by name in the FunctionCall's FunctionInputs array
+		bool bFound = false;
+		for (int32 i = 0; i < FuncCall->FunctionInputs.Num(); ++i)
+		{
+			const FFunctionExpressionInput& FuncInput = FuncCall->FunctionInputs[i];
+			if (FuncInput.ExpressionInput && FuncInput.ExpressionInput->InputName.ToString().Equals(InputName, ESearchCase::IgnoreCase))
+			{
+				// Connect through the FunctionInput at this index
+				FuncCall->FunctionInputs[i].Input.Connect(0, SourceExpr);
+				ConnectionsMade++;
+				LogGeneration(FString::Printf(TEXT("      Connected FunctionInput[%d] '%s' <- %s"), i, *InputName, *InputPair.Value));
+				bFound = true;
+				break;
+			}
+		}
+
+		if (!bFound)
+		{
+			LogGeneration(FString::Printf(TEXT("      [WARNING] Function '%s' has no input named '%s'"), *Function->GetName(), *InputName));
+		}
+	}
+
+	return ConnectionsMade > 0;
+}
+
+// ============================================================================
 // v4.9.1: Session-level material cache for MIC parent lookup
 // ============================================================================
 UMaterialInterface* FMaterialGenerator::FindGeneratedMaterial(const FString& MaterialName)
@@ -4717,6 +5171,98 @@ void FMaterialGenerator::ClearGeneratedMaterialsCache()
 {
 	GeneratedMaterialsCache.Empty();
 	LogGeneration(TEXT("Cleared generated materials session cache"));
+}
+
+// ============================================================================
+// v4.10: Session-level material function cache for MaterialFunctionCall resolution
+// ============================================================================
+UMaterialFunctionInterface* FMaterialGenerator::FindGeneratedMaterialFunction(const FString& FunctionName)
+{
+	UMaterialFunctionInterface** Found = GeneratedMaterialFunctionsCache.Find(FunctionName);
+	return Found ? *Found : nullptr;
+}
+
+void FMaterialGenerator::RegisterGeneratedMaterialFunction(const FString& FunctionName, UMaterialFunctionInterface* Function)
+{
+	if (Function)
+	{
+		GeneratedMaterialFunctionsCache.Add(FunctionName, Function);
+		LogGeneration(FString::Printf(TEXT("  Registered material function '%s' in session cache"), *FunctionName));
+	}
+}
+
+void FMaterialGenerator::ClearGeneratedMaterialFunctionsCache()
+{
+	GeneratedMaterialFunctionsCache.Empty();
+	LogGeneration(TEXT("Cleared generated material functions session cache"));
+}
+
+// ============================================================================
+// v4.10: 3-Tier Material Function Resolution
+// ============================================================================
+UMaterialFunctionInterface* FMaterialGenerator::ResolveMaterialFunction(const FString& FunctionPath)
+{
+	if (FunctionPath.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	// Tier 1: Engine path - load directly
+	if (FunctionPath.StartsWith(TEXT("/Engine/")))
+	{
+		UMaterialFunctionInterface* Function = LoadObject<UMaterialFunctionInterface>(nullptr, *FunctionPath);
+		if (Function)
+		{
+			LogGeneration(FString::Printf(TEXT("    -> FOUND engine function: %s"), *FunctionPath));
+			return Function;
+		}
+		LogGeneration(FString::Printf(TEXT("    -> NOT FOUND engine function: %s"), *FunctionPath));
+		return nullptr;
+	}
+
+	// Tier 2: Project path - load directly
+	if (FunctionPath.StartsWith(TEXT("/Game/")))
+	{
+		UMaterialFunctionInterface* Function = LoadObject<UMaterialFunctionInterface>(nullptr, *FunctionPath);
+		if (Function)
+		{
+			LogGeneration(FString::Printf(TEXT("    -> FOUND project function: %s"), *FunctionPath));
+			return Function;
+		}
+		LogGeneration(FString::Printf(TEXT("    -> NOT FOUND project function: %s"), *FunctionPath));
+		return nullptr;
+	}
+
+	// Tier 3: Short name (MF_*) - search session cache then project paths
+	FString FunctionName = FunctionPath;
+
+	// Check session cache first
+	UMaterialFunctionInterface* CachedFunction = FindGeneratedMaterialFunction(FunctionName);
+	if (CachedFunction)
+	{
+		LogGeneration(FString::Printf(TEXT("    -> FOUND in session cache: %s"), *FunctionName));
+		return CachedFunction;
+	}
+
+	// Search common project paths
+	TArray<FString> SearchPaths = {
+		FString::Printf(TEXT("%s/Materials/Functions/%s.%s"), *GetProjectRoot(), *FunctionName, *FunctionName),
+		FString::Printf(TEXT("%s/Materials/%s.%s"), *GetProjectRoot(), *FunctionName, *FunctionName),
+		FString::Printf(TEXT("/Game/Materials/Functions/%s.%s"), *FunctionName, *FunctionName),
+	};
+
+	for (const FString& SearchPath : SearchPaths)
+	{
+		UMaterialFunctionInterface* Function = LoadObject<UMaterialFunctionInterface>(nullptr, *SearchPath);
+		if (Function)
+		{
+			LogGeneration(FString::Printf(TEXT("    -> FOUND at: %s"), *SearchPath));
+			return Function;
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("    -> NOT FOUND: %s (searched session cache and %d paths)"), *FunctionName, SearchPaths.Num()));
+	return nullptr;
 }
 
 FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition& Definition)
@@ -4882,11 +5428,12 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 		}
 	}
 
-	// v2.6.12: Create expressions
+	// v2.6.12: Create expressions (PASS 1 - create all expression nodes)
 	TMap<FString, UMaterialExpression*> ExpressionMap;
 	for (const FManifestMaterialExpression& ExprDef : Definition.Expressions)
 	{
-		UMaterialExpression* Expr = CreateExpression(Material, ExprDef);
+		// v4.10: Pass ExpressionMap for switch/function input resolution
+		UMaterialExpression* Expr = CreateExpression(Material, ExprDef, ExpressionMap);
 		if (Expr)
 		{
 			ExpressionMap.Add(ExprDef.Id, Expr);
@@ -4894,7 +5441,35 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 		}
 	}
 
-	// v2.6.12: Create connections
+	// v4.10: PASS 2 - Connect Switch expression inputs and MaterialFunctionCall inputs
+	for (const FManifestMaterialExpression& ExprDef : Definition.Expressions)
+	{
+		FString TypeLower = ExprDef.Type.ToLower();
+		UMaterialExpression* Expr = ExpressionMap.FindRef(ExprDef.Id);
+		if (!Expr) continue;
+
+		// Connect switch expression inputs
+		if (TypeLower == TEXT("qualityswitch") || TypeLower == TEXT("quality_switch") ||
+			TypeLower == TEXT("shadingpathswitch") || TypeLower == TEXT("shading_path_switch") ||
+			TypeLower == TEXT("featurelevelswitch") || TypeLower == TEXT("feature_level_switch"))
+		{
+			if (ConnectSwitchInputs(Expr, ExprDef, ExpressionMap))
+			{
+				LogGeneration(FString::Printf(TEXT("    Connected switch inputs for: %s"), *ExprDef.Id));
+			}
+		}
+		// Connect function call inputs
+		else if (TypeLower == TEXT("materialfunctioncall") || TypeLower == TEXT("function_call") || TypeLower == TEXT("functioncall"))
+		{
+			UMaterialExpressionMaterialFunctionCall* FuncCall = Cast<UMaterialExpressionMaterialFunctionCall>(Expr);
+			if (FuncCall && ConnectFunctionInputs(FuncCall, ExprDef, ExpressionMap))
+			{
+				LogGeneration(FString::Printf(TEXT("    Connected function inputs for: %s"), *ExprDef.Id));
+			}
+		}
+	}
+
+	// v2.6.12: Create connections (PASS 3 - general expression connections)
 	for (const FManifestMaterialConnection& Conn : Definition.Connections)
 	{
 		if (ConnectExpressions(Material, ExpressionMap, Conn))
@@ -4933,9 +5508,10 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 
 // ============================================================================
 // FMaterialFunctionGenerator Implementation (v2.6.12)
+// v4.10: Updated with ExpressionMap parameter for switch/function input connections
 // ============================================================================
 
-UMaterialExpression* FMaterialFunctionGenerator::CreateExpressionInFunction(UMaterialFunction* MaterialFunction, const FManifestMaterialExpression& ExprDef)
+UMaterialExpression* FMaterialFunctionGenerator::CreateExpressionInFunction(UMaterialFunction* MaterialFunction, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap)
 {
 	// Similar to FMaterialGenerator::CreateExpression but creates in MaterialFunction context
 	UMaterialExpression* Expression = nullptr;
@@ -5173,6 +5749,127 @@ UMaterialExpression* FMaterialFunctionGenerator::CreateExpressionInFunction(UMat
 		}
 		Expression = Vec4;
 	}
+	// ========================================================================
+	// v4.10: Tier 0 Zero-Property Expressions
+	// ========================================================================
+	else if (TypeLower == TEXT("perinstancefadeamount") || TypeLower == TEXT("per_instance_fade"))
+	{
+		Expression = NewObject<UMaterialExpressionPerInstanceFadeAmount>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("perinstancerandom") || TypeLower == TEXT("per_instance_random"))
+	{
+		Expression = NewObject<UMaterialExpressionPerInstanceRandom>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("objectorientation") || TypeLower == TEXT("object_orientation"))
+	{
+		Expression = NewObject<UMaterialExpressionObjectOrientation>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("objectpositionws") || TypeLower == TEXT("object_position_ws") || TypeLower == TEXT("objectposition"))
+	{
+		Expression = NewObject<UMaterialExpressionObjectPositionWS>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("actorpositionws") || TypeLower == TEXT("actor_position_ws") || TypeLower == TEXT("actorposition"))
+	{
+		Expression = NewObject<UMaterialExpressionActorPositionWS>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("objectradius") || TypeLower == TEXT("object_radius"))
+	{
+		Expression = NewObject<UMaterialExpressionObjectRadius>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("screenposition") || TypeLower == TEXT("screen_position"))
+	{
+		Expression = NewObject<UMaterialExpressionScreenPosition>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("viewsize") || TypeLower == TEXT("view_size"))
+	{
+		Expression = NewObject<UMaterialExpressionViewSize>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("scenetexelsize") || TypeLower == TEXT("scene_texel_size"))
+	{
+		Expression = NewObject<UMaterialExpressionSceneTexelSize>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("twosidedsign") || TypeLower == TEXT("two_sided_sign"))
+	{
+		Expression = NewObject<UMaterialExpressionTwoSidedSign>(MaterialFunction);
+	}
+	// ========================================================================
+	// v4.10: Switch Expressions
+	// ========================================================================
+	else if (TypeLower == TEXT("qualityswitch") || TypeLower == TEXT("quality_switch"))
+	{
+		Expression = NewObject<UMaterialExpressionQualitySwitch>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("shadingpathswitch") || TypeLower == TEXT("shading_path_switch"))
+	{
+		Expression = NewObject<UMaterialExpressionShadingPathSwitch>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("featurelevelswitch") || TypeLower == TEXT("feature_level_switch"))
+	{
+		Expression = NewObject<UMaterialExpressionFeatureLevelSwitch>(MaterialFunction);
+	}
+	// ========================================================================
+	// v4.10: MaterialFunctionCall
+	// ========================================================================
+	else if (TypeLower == TEXT("materialfunctioncall") || TypeLower == TEXT("function_call") || TypeLower == TEXT("functioncall"))
+	{
+		UMaterialExpressionMaterialFunctionCall* FuncCall = NewObject<UMaterialExpressionMaterialFunctionCall>(MaterialFunction);
+		if (!ExprDef.Function.IsEmpty())
+		{
+			UMaterialFunctionInterface* ResolvedFunc = FMaterialGenerator::ResolveMaterialFunction(ExprDef.Function);
+			if (ResolvedFunc)
+			{
+				FuncCall->SetMaterialFunction(ResolvedFunc);
+				LogGeneration(FString::Printf(TEXT("    MaterialFunctionCall '%s' -> resolved to '%s'"), *ExprDef.Id, *ExprDef.Function));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    [WARNING] MaterialFunctionCall '%s' -> function NOT FOUND: '%s'"), *ExprDef.Id, *ExprDef.Function));
+			}
+		}
+		Expression = FuncCall;
+	}
+	// ========================================================================
+	// v4.10: Static Expressions
+	// ========================================================================
+	else if (TypeLower == TEXT("staticswitch") || TypeLower == TEXT("static_switch"))
+	{
+		UMaterialExpressionStaticSwitch* StaticSwitch = NewObject<UMaterialExpressionStaticSwitch>(MaterialFunction);
+		if (ExprDef.Properties.Contains(TEXT("default_value")))
+		{
+			StaticSwitch->DefaultValue = ExprDef.Properties[TEXT("default_value")].ToBool();
+		}
+		Expression = StaticSwitch;
+	}
+	else if (TypeLower == TEXT("staticbool") || TypeLower == TEXT("static_bool"))
+	{
+		UMaterialExpressionStaticBool* StaticBool = NewObject<UMaterialExpressionStaticBool>(MaterialFunction);
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			StaticBool->Value = ExprDef.DefaultValue.ToBool();
+		}
+		Expression = StaticBool;
+	}
+	else if (TypeLower == TEXT("staticboolparameter") || TypeLower == TEXT("static_bool_param"))
+	{
+		UMaterialExpressionStaticBoolParameter* StaticBoolParam = NewObject<UMaterialExpressionStaticBoolParameter>(MaterialFunction);
+		StaticBoolParam->ParameterName = *ExprDef.Name;
+		if (!ExprDef.DefaultValue.IsEmpty())
+		{
+			StaticBoolParam->DefaultValue = ExprDef.DefaultValue.ToBool();
+		}
+		Expression = StaticBoolParam;
+	}
+	// ========================================================================
+	// v4.10: Noise/Sampling Expressions
+	// ========================================================================
+	else if (TypeLower == TEXT("sobol"))
+	{
+		Expression = NewObject<UMaterialExpressionSobol>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("temporalsobol") || TypeLower == TEXT("temporal_sobol"))
+	{
+		Expression = NewObject<UMaterialExpressionTemporalSobol>(MaterialFunction);
+	}
 
 	if (Expression)
 	{
@@ -5265,10 +5962,11 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 		LogGeneration(FString::Printf(TEXT("  Created output: %s"), *OutputDef.Name));
 	}
 
-	// Create other expressions
+	// Create other expressions (PASS 1 - create all expression nodes)
 	for (const FManifestMaterialExpression& ExprDef : Definition.Expressions)
 	{
-		UMaterialExpression* Expr = CreateExpressionInFunction(MaterialFunction, ExprDef);
+		// v4.10: Pass ExpressionMap for switch/function input resolution
+		UMaterialExpression* Expr = CreateExpressionInFunction(MaterialFunction, ExprDef, ExpressionMap);
 		if (Expr)
 		{
 			ExpressionMap.Add(ExprDef.Id, Expr);
@@ -5276,8 +5974,36 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 		}
 	}
 
+	// v4.10: PASS 2 - Connect Switch expression inputs and MaterialFunctionCall inputs
+	for (const FManifestMaterialExpression& ExprDef : Definition.Expressions)
+	{
+		FString TypeLower = ExprDef.Type.ToLower();
+		UMaterialExpression* Expr = ExpressionMap.FindRef(ExprDef.Id);
+		if (!Expr) continue;
+
+		// Connect switch expression inputs (reuse FMaterialGenerator helpers)
+		if (TypeLower == TEXT("qualityswitch") || TypeLower == TEXT("quality_switch") ||
+			TypeLower == TEXT("shadingpathswitch") || TypeLower == TEXT("shading_path_switch") ||
+			TypeLower == TEXT("featurelevelswitch") || TypeLower == TEXT("feature_level_switch"))
+		{
+			if (FMaterialGenerator::ConnectSwitchInputs(Expr, ExprDef, ExpressionMap))
+			{
+				LogGeneration(FString::Printf(TEXT("    Connected switch inputs for: %s"), *ExprDef.Id));
+			}
+		}
+		// Connect function call inputs
+		else if (TypeLower == TEXT("materialfunctioncall") || TypeLower == TEXT("function_call") || TypeLower == TEXT("functioncall"))
+		{
+			UMaterialExpressionMaterialFunctionCall* FuncCall = Cast<UMaterialExpressionMaterialFunctionCall>(Expr);
+			if (FuncCall && FMaterialGenerator::ConnectFunctionInputs(FuncCall, ExprDef, ExpressionMap))
+			{
+				LogGeneration(FString::Printf(TEXT("    Connected function inputs for: %s"), *ExprDef.Id));
+			}
+		}
+	}
+
 	// ============================================================================
-	// v4.0: MATERIAL FUNCTION CONNECTION WIRING (fixes critical automation gap)
+	// v4.0: MATERIAL FUNCTION CONNECTION WIRING - PASS 3 (fixes critical automation gap)
 	// ============================================================================
 	int32 ConnectionsWired = 0;
 	for (const FManifestMaterialConnection& Conn : Definition.Connections)

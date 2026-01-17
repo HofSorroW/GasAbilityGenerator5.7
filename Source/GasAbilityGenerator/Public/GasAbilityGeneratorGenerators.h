@@ -379,6 +379,7 @@ public:
 /**
  * v2.6.12: Enhanced Material Generator with expression graph support
  * v4.9.1: Added session map for MIC parent material lookup
+ * v4.10: Added material function cache, switch expressions, validation system
  */
 class GASABILITYGENERATOR_API FMaterialGenerator : public FGeneratorBase
 {
@@ -390,18 +391,37 @@ public:
 	static void RegisterGeneratedMaterial(const FString& MaterialName, UMaterialInterface* Material);
 	static void ClearGeneratedMaterialsCache();
 
+	// v4.10: Session-level lookup for generated material functions
+	static class UMaterialFunctionInterface* FindGeneratedMaterialFunction(const FString& FunctionName);
+	static void RegisterGeneratedMaterialFunction(const FString& FunctionName, class UMaterialFunctionInterface* Function);
+	static void ClearGeneratedMaterialFunctionsCache();
+
+	// v4.10: 3-tier material function resolution
+	// 1. /Engine/... - load directly from engine
+	// 2. /Game/... - load directly from project
+	// 3. MF_Name - search session cache then project paths
+	static class UMaterialFunctionInterface* ResolveMaterialFunction(const FString& FunctionPath);
+
+	// v4.10: Helper to connect switch expression inputs (public for FMaterialFunctionGenerator access)
+	static bool ConnectSwitchInputs(UMaterialExpression* SwitchExpr, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap);
+	// v4.10: Helper to connect material function inputs (public for FMaterialFunctionGenerator access)
+	static bool ConnectFunctionInputs(class UMaterialExpressionMaterialFunctionCall* FuncCall, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap);
+
 private:
 	// v2.6.12: Helper to create material expression by type
-	static UMaterialExpression* CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef);
+	static UMaterialExpression* CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap);
 	// v2.6.12: Helper to connect expressions
 	static bool ConnectExpressions(UMaterial* Material, const TMap<FString, UMaterialExpression*>& ExpressionMap, const FManifestMaterialConnection& Connection);
 
 	// v4.9.1: Session map for materials generated in current run
 	static TMap<FString, UMaterialInterface*> GeneratedMaterialsCache;
+	// v4.10: Session map for material functions generated in current run
+	static TMap<FString, class UMaterialFunctionInterface*> GeneratedMaterialFunctionsCache;
 };
 
 /**
  * v2.6.12: Material Function Generator
+ * v4.10: Now registers functions in session cache for MaterialFunctionCall resolution
  */
 class GASABILITYGENERATOR_API FMaterialFunctionGenerator : public FGeneratorBase
 {
@@ -410,7 +430,7 @@ public:
 
 private:
 	// v2.6.12: Helper to create material expression in function
-	static UMaterialExpression* CreateExpressionInFunction(UMaterialFunction* MaterialFunction, const FManifestMaterialExpression& ExprDef);
+	static UMaterialExpression* CreateExpressionInFunction(class UMaterialFunction* MaterialFunction, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap);
 };
 
 /**
