@@ -141,7 +141,11 @@ This prevents default values from triggering unintended operations.
 
 **Revert to Policy A:** Once real template systems exist for all NS_ entries OR generation runs under real RHI in CI/editor mode, add `&& bDuplicatedFromTemplate` to the escape hatch condition to restore conservative behavior.
 
-**Tooling Follow-up:** Commandlet should emit `RESULT: New=<N> Failed=<N> Total=<N>` footer for reliable wrapper parsing.
+**RESULT Footer (Implemented):** Commandlet emits machine-parseable footer for reliable wrapper parsing:
+```
+RESULT: New=<N> Skipped=<N> Failed=<N> Deferred=<N> Total=<N> Headless=<true/false>
+```
+Wrappers should `grep "^RESULT:"` and parse the key=value pairs. This is the single source of truth for generation results.
 
 **Diagnostic Logging:**
 ```
