@@ -5265,6 +5265,315 @@ UMaterialFunctionInterface* FMaterialGenerator::ResolveMaterialFunction(const FS
 	return nullptr;
 }
 
+// ============================================================================
+// v4.10: Material Expression Validation with 6 Guardrails
+// ============================================================================
+
+// Known expression types for validation (exhaustive list)
+static const TSet<FString> KnownExpressionTypes = {
+	// Basic Math
+	TEXT("constant"), TEXT("constant2vector"), TEXT("constant3vector"), TEXT("constant4vector"),
+	TEXT("add"), TEXT("subtract"), TEXT("multiply"), TEXT("divide"), TEXT("power"),
+	TEXT("abs"), TEXT("floor"), TEXT("ceil"), TEXT("frac"), TEXT("fmod"), TEXT("saturate"),
+	TEXT("clamp"), TEXT("oneminus"), TEXT("lerp"), TEXT("min"), TEXT("max"),
+	TEXT("sine"), TEXT("cosine"), TEXT("tangent"), TEXT("arcsine"), TEXT("arccosine"), TEXT("arctangent"),
+	// Vector Operations
+	TEXT("normalize"), TEXT("dotproduct"), TEXT("crossproduct"), TEXT("distance"), TEXT("length"),
+	TEXT("appendvector"), TEXT("componentmask"), TEXT("breakoutfloat2"), TEXT("breakoutfloat3"), TEXT("breakoutfloat4"),
+	// Texture
+	TEXT("texturesample"), TEXT("texturesampleparameter2d"), TEXT("texturecoordinate"),
+	TEXT("panner"), TEXT("rotator"),
+	// Parameters
+	TEXT("scalarparameter"), TEXT("vectorparameter"), TEXT("staticboolparameter"), TEXT("staticbool"),
+	// Time
+	TEXT("time"), TEXT("deltatime"), TEXT("realtime"),
+	// World/Camera
+	TEXT("worldposition"), TEXT("objectposition"), TEXT("actorpositionws"), TEXT("objectpositionws"),
+	TEXT("camerapositionws"), TEXT("cameravector"), TEXT("reflectionvector"), TEXT("lightvector"),
+	TEXT("pixeldepth"), TEXT("scenedepth"), TEXT("screenposition"), TEXT("viewsize"), TEXT("scenetexelsize"),
+	// Particle/VFX (Tier 0 - zero property)
+	TEXT("particlecolor"), TEXT("particlesubuv"), TEXT("dynamicparameter"), TEXT("vertexcolor"),
+	TEXT("depthfade"), TEXT("spheremask"),
+	TEXT("particlepositionws"), TEXT("particleradius"), TEXT("particlerelativetime"), TEXT("particlerandom"),
+	TEXT("particledirection"), TEXT("particlespeed"), TEXT("particlesize"), TEXT("particlemotionblurfade"),
+	TEXT("perinstancefadeamount"), TEXT("perinstancerandom"),
+	TEXT("objectorientation"), TEXT("objectradius"),
+	TEXT("preskinnedposition"), TEXT("preskinnednormal"),
+	TEXT("vertexnormalws"), TEXT("pixelnormalws"), TEXT("vertextangentws"), TEXT("twosidedsign"),
+	TEXT("eyeadaptation"), TEXT("atmosphericfogcolor"), TEXT("precomputedaomask"), TEXT("gireplace"),
+	// Switch expressions (Tier 1)
+	TEXT("qualityswitch"), TEXT("shadingpathswitch"), TEXT("featurelevelswitch"),
+	// Static expressions (Tier 2)
+	TEXT("staticswitch"),
+	// MaterialFunctionCall
+	TEXT("materialfunctioncall"),
+	// Sobol
+	TEXT("sobol"), TEXT("temporalsobol"),
+	// Scene
+	TEXT("scenetexture"),
+	// Complex
+	TEXT("fresnel"), TEXT("noise"), TEXT("makematerialattributes"),
+	TEXT("if"), TEXT("customexpression"),
+};
+
+// Shared validation helper used by both Material and MaterialFunction generators
+FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnections(
+	const FString& AssetName,
+	const TArray<FManifestMaterialExpression>& Expressions,
+	const TArray<FManifestMaterialConnection>& Connections)
+{
+	FMaterialExprValidationResult ValidationResult;
+	ValidationResult.bValidated = true;
+
+	// Build expression ID set for duplicate and reference checking
+	TSet<FString> DefinedExpressionIds;
+	TSet<FString> ReferencedExpressionIds;
+
+	// =========================================================================
+	// Pass 1: Validate each expression
+	// =========================================================================
+	for (const FManifestMaterialExpression& ExprDef : Expressions)
+	{
+		// Guardrail #3: Build context path
+		FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Expressions"), ExprDef.Id);
+
+		// Check for duplicate expression ID
+		if (DefinedExpressionIds.Contains(ExprDef.Id))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_DUPLICATE_EXPRESSION_ID,
+				ContextPath,
+				FString::Printf(TEXT("Duplicate expression ID '%s'"), *ExprDef.Id),
+				true);
+			Diag.SuggestedFix = TEXT("Use a unique ID for each expression");
+			ValidationResult.AddDiagnostic(Diag);
+			continue;
+		}
+		DefinedExpressionIds.Add(ExprDef.Id);
+
+		// Guardrail #5a: Normalize the type for comparison
+		FString TypeLower = FMaterialExprValidationResult::NormalizeKey(ExprDef.Type);
+
+		// Validate expression type is known
+		if (!KnownExpressionTypes.Contains(TypeLower))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_UNKNOWN_EXPRESSION_TYPE,
+				ContextPath,
+				ExprDef.Type,  // Guardrail #2: User's original input for case hint
+				FString::Printf(TEXT("Unknown expression type '%s'"), *ExprDef.Type),
+				true);
+			Diag.SuggestedFix = TEXT("Check spelling and case. See VFX_System_Reference.md for valid types.");
+			ValidationResult.AddDiagnostic(Diag);
+			continue;
+		}
+
+		// =====================================================================
+		// Validate Switch expressions (QualitySwitch, ShadingPathSwitch, FeatureLevelSwitch)
+		// =====================================================================
+		if (TypeLower == TEXT("qualityswitch"))
+		{
+			for (const auto& InputPair : ExprDef.Inputs)
+			{
+				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
+				if (KeyLower != TEXT("default") && !QualitySwitchKeyMap.Contains(KeyLower))
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
+						ContextPath,
+						InputPair.Key,  // Original user input
+						FString::Printf(TEXT("Unknown QualitySwitch key '%s'. Valid: default, low, high, medium, epic"), *InputPair.Key),
+						true);
+					ValidationResult.AddDiagnostic(Diag);
+				}
+				// Track referenced expression
+				ReferencedExpressionIds.Add(InputPair.Value);
+			}
+		}
+		else if (TypeLower == TEXT("shadingpathswitch"))
+		{
+			for (const auto& InputPair : ExprDef.Inputs)
+			{
+				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
+				if (KeyLower != TEXT("default") && !ShadingPathSwitchKeyMap.Contains(KeyLower))
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
+						ContextPath,
+						InputPair.Key,
+						FString::Printf(TEXT("Unknown ShadingPathSwitch key '%s'. Valid: default, deferred, forward, mobile"), *InputPair.Key),
+						true);
+					ValidationResult.AddDiagnostic(Diag);
+				}
+				ReferencedExpressionIds.Add(InputPair.Value);
+			}
+		}
+		else if (TypeLower == TEXT("featurelevelswitch"))
+		{
+			for (const auto& InputPair : ExprDef.Inputs)
+			{
+				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
+				if (KeyLower != TEXT("default") && !FeatureLevelSwitchKeyMap.Contains(KeyLower))
+				{
+					// Check for deprecated keys
+					if (KeyLower == TEXT("es2") || KeyLower == TEXT("sm4"))
+					{
+						FMaterialExprDiagnostic Diag(
+							EMaterialExprValidationCode::W_DEPRECATED_SWITCH_KEY,
+							ContextPath,
+							InputPair.Key,
+							FString::Printf(TEXT("Deprecated FeatureLevelSwitch key '%s' - removed in UE5"), *InputPair.Key),
+							false);  // Warning, not error
+						Diag.SuggestedFix = TEXT("Use es3_1, sm5, or sm6 instead");
+						ValidationResult.AddDiagnostic(Diag);
+					}
+					else
+					{
+						FMaterialExprDiagnostic Diag(
+							EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
+							ContextPath,
+							InputPair.Key,
+							FString::Printf(TEXT("Unknown FeatureLevelSwitch key '%s'. Valid: default, es3_1, sm5, sm6"), *InputPair.Key),
+							true);
+						ValidationResult.AddDiagnostic(Diag);
+					}
+				}
+				ReferencedExpressionIds.Add(InputPair.Value);
+			}
+		}
+
+		// =====================================================================
+		// Validate MaterialFunctionCall
+		// =====================================================================
+		if (TypeLower == TEXT("materialfunctioncall"))
+		{
+			if (ExprDef.Function.IsEmpty())
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_FUNCTION_NOT_FOUND,
+					ContextPath,
+					TEXT("MaterialFunctionCall requires 'function' property"),
+					true);
+				ValidationResult.AddDiagnostic(Diag);
+			}
+			else
+			{
+				// Guardrail #5c: Normalize path
+				FString NormalizedPath = FMaterialExprValidationResult::NormalizePath(ExprDef.Function);
+				if (NormalizedPath != ExprDef.Function)
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::W_FUNCTION_PATH_NORMALIZED,
+						ContextPath,
+						ExprDef.Function,
+						FString::Printf(TEXT("Function path normalized from '%s' to '%s'"), *ExprDef.Function, *NormalizedPath),
+						false);
+					ValidationResult.AddDiagnostic(Diag);
+				}
+			}
+
+			// Track referenced expressions in function inputs
+			for (const auto& FuncInput : ExprDef.FunctionInputs)
+			{
+				ReferencedExpressionIds.Add(FuncInput.Value);
+			}
+		}
+
+		// Track referenced expressions in StaticSwitch
+		if (TypeLower == TEXT("staticswitch"))
+		{
+			if (const FString* AInput = ExprDef.Properties.Find(TEXT("a")))
+			{
+				ReferencedExpressionIds.Add(*AInput);
+			}
+			if (const FString* BInput = ExprDef.Properties.Find(TEXT("b")))
+			{
+				ReferencedExpressionIds.Add(*BInput);
+			}
+			if (const FString* ValueInput = ExprDef.Properties.Find(TEXT("value")))
+			{
+				ReferencedExpressionIds.Add(*ValueInput);
+			}
+		}
+	}
+
+	// =========================================================================
+	// Pass 2: Validate connections
+	// =========================================================================
+	for (const FManifestMaterialConnection& Conn : Connections)
+	{
+		FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Connections"),
+			FString::Printf(TEXT("%s->%s"), *Conn.FromId, *Conn.ToId));
+
+		// Check source expression exists
+		if (Conn.FromId != TEXT("Material") && !DefinedExpressionIds.Contains(Conn.FromId))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_EXPRESSION_REFERENCE_INVALID,
+				ContextPath,
+				FString::Printf(TEXT("Connection source '%s' not defined in expressions"), *Conn.FromId),
+				true);
+			ValidationResult.AddDiagnostic(Diag);
+		}
+
+		// Check target expression exists (unless it's Material output)
+		if (Conn.ToId != TEXT("Material") && !DefinedExpressionIds.Contains(Conn.ToId))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_EXPRESSION_REFERENCE_INVALID,
+				ContextPath,
+				FString::Printf(TEXT("Connection target '%s' not defined in expressions"), *Conn.ToId),
+				true);
+			ValidationResult.AddDiagnostic(Diag);
+		}
+
+		// Track usage
+		ReferencedExpressionIds.Add(Conn.FromId);
+	}
+
+	// =========================================================================
+	// Pass 3: Check for unused expressions (warning only)
+	// =========================================================================
+	for (const FString& DefinedId : DefinedExpressionIds)
+	{
+		if (!ReferencedExpressionIds.Contains(DefinedId))
+		{
+			// Check if this expression connects to Material output
+			bool bConnectsToMaterial = false;
+			for (const FManifestMaterialConnection& Conn : Connections)
+			{
+				if (Conn.FromId == DefinedId && Conn.ToId == TEXT("Material"))
+				{
+					bConnectsToMaterial = true;
+					break;
+				}
+			}
+
+			if (!bConnectsToMaterial)
+			{
+				FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Expressions"), DefinedId);
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::W_EXPRESSION_UNUSED,
+					ContextPath,
+					FString::Printf(TEXT("Expression '%s' defined but never connected"), *DefinedId),
+					false);
+				ValidationResult.AddDiagnostic(Diag);
+			}
+		}
+	}
+
+	// Guardrail #6: Sort diagnostics for stable output
+	ValidationResult.SortDiagnostics();
+
+	return ValidationResult;
+}
+
+// Wrapper for material definition validation
+FMaterialExprValidationResult FMaterialGenerator::ValidateMaterialDefinition(const FManifestMaterialDefinition& Definition)
+{
+	return ValidateExpressionsAndConnections(Definition.Name, Definition.Expressions, Definition.Connections);
+}
+
 FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Materials") : Definition.Folder;
@@ -5281,6 +5590,30 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Material"), Definition.ComputeHash(), Result))
 	{
 		return Result;
+	}
+
+	// v4.10: Pre-generation validation with 6 guardrails
+	FMaterialExprValidationResult ValidationResult = ValidateMaterialDefinition(Definition);
+	if (ValidationResult.HasErrors())
+	{
+		// Log all diagnostics (sorted for stable output - Guardrail #6)
+		LogGeneration(FString::Printf(TEXT("Material %s: Validation failed with %d errors, %d warnings"),
+			*Definition.Name, ValidationResult.ErrorCount, ValidationResult.WarningCount));
+		for (const FMaterialExprDiagnostic& Diag : ValidationResult.Diagnostics)
+		{
+			LogGeneration(FString::Printf(TEXT("  %s"), *Diag.ToString()));
+		}
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Validation failed: %s"), *ValidationResult.GetSummary()));
+	}
+	else if (ValidationResult.HasWarnings())
+	{
+		// Log warnings but continue generation
+		LogGeneration(FString::Printf(TEXT("Material %s: %d validation warnings"), *Definition.Name, ValidationResult.WarningCount));
+		for (const FMaterialExprDiagnostic& Diag : ValidationResult.Diagnostics)
+		{
+			LogGeneration(FString::Printf(TEXT("  %s"), *Diag.ToString()));
+		}
 	}
 
 	// Create package
@@ -5898,6 +6231,29 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Material Function"), Definition.ComputeHash(), Result))
 	{
 		return Result;
+	}
+
+	// v4.10: Pre-generation validation with 6 guardrails (reuse material validation helper)
+	FMaterialExprValidationResult ValidationResult = FMaterialGenerator::ValidateExpressionsAndConnections(
+		Definition.Name, Definition.Expressions, Definition.Connections);
+	if (ValidationResult.HasErrors())
+	{
+		LogGeneration(FString::Printf(TEXT("Material Function %s: Validation failed with %d errors, %d warnings"),
+			*Definition.Name, ValidationResult.ErrorCount, ValidationResult.WarningCount));
+		for (const FMaterialExprDiagnostic& Diag : ValidationResult.Diagnostics)
+		{
+			LogGeneration(FString::Printf(TEXT("  %s"), *Diag.ToString()));
+		}
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Validation failed: %s"), *ValidationResult.GetSummary()));
+	}
+	else if (ValidationResult.HasWarnings())
+	{
+		LogGeneration(FString::Printf(TEXT("Material Function %s: %d validation warnings"), *Definition.Name, ValidationResult.WarningCount));
+		for (const FMaterialExprDiagnostic& Diag : ValidationResult.Diagnostics)
+		{
+			LogGeneration(FString::Printf(TEXT("  %s"), *Diag.ToString()));
+		}
 	}
 
 	// Create package

@@ -407,6 +407,17 @@ public:
 	// v4.10: Helper to connect material function inputs (public for FMaterialFunctionGenerator access)
 	static bool ConnectFunctionInputs(class UMaterialExpressionMaterialFunctionCall* FuncCall, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap);
 
+	// v4.10: Pre-generation validation with 6 guardrails
+	// Validates expression types, switch keys, function references, duplicate IDs, connection validity
+	static FMaterialExprValidationResult ValidateMaterialDefinition(const FManifestMaterialDefinition& Definition);
+
+	// v4.10: Shared helper for validating expressions and connections arrays
+	// Used by both FMaterialGenerator and FMaterialFunctionGenerator
+	static FMaterialExprValidationResult ValidateExpressionsAndConnections(
+		const FString& AssetName,
+		const TArray<FManifestMaterialExpression>& Expressions,
+		const TArray<FManifestMaterialConnection>& Connections);
+
 private:
 	// v2.6.12: Helper to create material expression by type
 	static UMaterialExpression* CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap);

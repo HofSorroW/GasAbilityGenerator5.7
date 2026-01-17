@@ -214,6 +214,188 @@ enum class EValidationCategory : uint8
 };
 
 /**
+ * v4.10: Material Expression validation error codes
+ * Used by the 6-guardrail validation system for hallucination-proof expression generation
+ */
+enum class EMaterialExprValidationCode : uint8
+{
+	// Errors (fatal - block generation)
+	E_UNKNOWN_EXPRESSION_TYPE,      // Unrecognized expression type
+	E_UNKNOWN_SWITCH_KEY,           // Unknown key in switch inputs
+	E_FUNCTION_NOT_FOUND,           // MaterialFunctionCall target not found
+	E_FUNCTION_INSTANCE_BLOCKED,    // UMaterialFunctionInstance not allowed (use UMaterialFunction)
+	E_MISSING_REQUIRED_INPUT,       // Required switch input not connected
+	E_DUPLICATE_EXPRESSION_ID,      // Duplicate expression ID in material
+	E_EXPRESSION_REFERENCE_INVALID, // Expression ID referenced but not defined
+
+	// Warnings (non-fatal)
+	W_DEPRECATED_SWITCH_KEY,        // Deprecated enum value (es2, sm4)
+	W_FUNCTION_INPUT_MISMATCH,      // Function input count doesn't match
+	W_FUNCTION_PATH_NORMALIZED,     // Path was auto-corrected
+	W_EXPRESSION_UNUSED,            // Expression defined but never connected
+};
+
+/**
+ * v4.10: Single diagnostic from material expression validation
+ */
+struct FMaterialExprDiagnostic
+{
+	EMaterialExprValidationCode Code;
+	FString ContextPath;      // Path in manifest (e.g., "/Materials/M_Fire/Expressions/QualityMux")
+	FString UserInput;        // Original user input (for case hints)
+	FString Message;          // Human-readable message
+	FString SuggestedFix;     // Optional fix suggestion
+	bool bFatal = false;
+
+	FMaterialExprDiagnostic() = default;
+
+	FMaterialExprDiagnostic(EMaterialExprValidationCode InCode, const FString& InPath, const FString& InMessage, bool InFatal = true)
+		: Code(InCode), ContextPath(InPath), Message(InMessage), bFatal(InFatal) {}
+
+	// With user input for case hints (Guardrail #2)
+	FMaterialExprDiagnostic(EMaterialExprValidationCode InCode, const FString& InPath, const FString& InUserInput, const FString& InMessage, bool InFatal)
+		: Code(InCode), ContextPath(InPath), UserInput(InUserInput), Message(InMessage), bFatal(InFatal) {}
+
+	// Get error code as string for logging
+	FString GetCodeString() const
+	{
+		switch (Code)
+		{
+		case EMaterialExprValidationCode::E_UNKNOWN_EXPRESSION_TYPE: return TEXT("E_UNKNOWN_EXPRESSION_TYPE");
+		case EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY: return TEXT("E_UNKNOWN_SWITCH_KEY");
+		case EMaterialExprValidationCode::E_FUNCTION_NOT_FOUND: return TEXT("E_FUNCTION_NOT_FOUND");
+		case EMaterialExprValidationCode::E_FUNCTION_INSTANCE_BLOCKED: return TEXT("E_FUNCTION_INSTANCE_BLOCKED");
+		case EMaterialExprValidationCode::E_MISSING_REQUIRED_INPUT: return TEXT("E_MISSING_REQUIRED_INPUT");
+		case EMaterialExprValidationCode::E_DUPLICATE_EXPRESSION_ID: return TEXT("E_DUPLICATE_EXPRESSION_ID");
+		case EMaterialExprValidationCode::E_EXPRESSION_REFERENCE_INVALID: return TEXT("E_EXPRESSION_REFERENCE_INVALID");
+		case EMaterialExprValidationCode::W_DEPRECATED_SWITCH_KEY: return TEXT("W_DEPRECATED_SWITCH_KEY");
+		case EMaterialExprValidationCode::W_FUNCTION_INPUT_MISMATCH: return TEXT("W_FUNCTION_INPUT_MISMATCH");
+		case EMaterialExprValidationCode::W_FUNCTION_PATH_NORMALIZED: return TEXT("W_FUNCTION_PATH_NORMALIZED");
+		case EMaterialExprValidationCode::W_EXPRESSION_UNUSED: return TEXT("W_EXPRESSION_UNUSED");
+		default: return TEXT("UNKNOWN");
+		}
+	}
+
+	// Format for logging with stable ordering (Guardrail #6)
+	FString ToString() const
+	{
+		return FString::Printf(TEXT("[%s] %s: %s%s"),
+			*GetCodeString(),
+			*ContextPath,
+			*Message,
+			SuggestedFix.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (Fix: %s)"), *SuggestedFix));
+	}
+
+	// Compare for stable sorting (Guardrail #6: path, then code, then message)
+	bool operator<(const FMaterialExprDiagnostic& Other) const
+	{
+		if (ContextPath != Other.ContextPath) return ContextPath < Other.ContextPath;
+		if (Code != Other.Code) return Code < Other.Code;
+		return Message < Other.Message;
+	}
+};
+
+/**
+ * v4.10: Aggregated validation result for material expressions
+ * Implements the 6-guardrail validation system
+ */
+struct FMaterialExprValidationResult
+{
+	TArray<FMaterialExprDiagnostic> Diagnostics;
+	bool bValidated = false;
+	int32 ErrorCount = 0;
+	int32 WarningCount = 0;
+
+	void AddDiagnostic(const FMaterialExprDiagnostic& Diag)
+	{
+		Diagnostics.Add(Diag);
+		if (Diag.bFatal) ErrorCount++;
+		else WarningCount++;
+	}
+
+	bool HasErrors() const { return ErrorCount > 0; }
+	bool HasWarnings() const { return WarningCount > 0; }
+	bool IsValid() const { return ErrorCount == 0; }
+
+	// Guardrail #6: Sort diagnostics for stable output before returning
+	void SortDiagnostics()
+	{
+		Diagnostics.Sort();
+	}
+
+	// Get summary string
+	FString GetSummary() const
+	{
+		return FString::Printf(TEXT("Material Expression Validation: %d errors, %d warnings"),
+			ErrorCount, WarningCount);
+	}
+
+	// =========================================================================
+	// Guardrail Helper Functions (6 Guardrails)
+	// =========================================================================
+
+	// Guardrail #1: Quote Strip Before Trim
+	// Remove surrounding quotes before trimming whitespace
+	static FString StripQuotesAndTrim(const FString& Input)
+	{
+		FString Result = Input;
+		// Remove surrounding quotes (single or double)
+		if (Result.Len() >= 2)
+		{
+			if ((Result.StartsWith(TEXT("\"")) && Result.EndsWith(TEXT("\""))) ||
+				(Result.StartsWith(TEXT("'")) && Result.EndsWith(TEXT("'"))))
+			{
+				Result = Result.Mid(1, Result.Len() - 2);
+			}
+		}
+		// Then trim whitespace
+		return Result.TrimStartAndEnd();
+	}
+
+	// Guardrail #3: ContextPath Root Convention
+	// Ensure context path starts with / for consistency
+	static FString MakeContextPath(const FString& MaterialName, const FString& Section, const FString& ExpressionId = TEXT(""))
+	{
+		FString Path = FString::Printf(TEXT("/Materials/%s/%s"), *MaterialName, *Section);
+		if (!ExpressionId.IsEmpty())
+		{
+			Path += FString::Printf(TEXT("/%s"), *ExpressionId);
+		}
+		return Path;
+	}
+
+	// Guardrail #5a: Field-Specific Normalizer - Keys (lowercase, trim)
+	// For enum keys in switch expressions
+	static FString NormalizeKey(const FString& Key)
+	{
+		return StripQuotesAndTrim(Key).ToLower();
+	}
+
+	// Guardrail #5b: Field-Specific Normalizer - Scalars (parse, validate)
+	static bool NormalizeScalar(const FString& Value, float& OutValue, float Min = -FLT_MAX, float Max = FLT_MAX)
+	{
+		FString Cleaned = StripQuotesAndTrim(Value);
+		if (Cleaned.IsEmpty()) return false;
+		OutValue = FCString::Atof(*Cleaned);
+		return OutValue >= Min && OutValue <= Max;
+	}
+
+	// Guardrail #5c: Field-Specific Normalizer - Paths (forward slashes, no trailing)
+	static FString NormalizePath(const FString& Path)
+	{
+		FString Result = StripQuotesAndTrim(Path);
+		// Convert backslashes to forward slashes
+		Result.ReplaceInline(TEXT("\\"), TEXT("/"));
+		// Remove trailing slash
+		while (Result.EndsWith(TEXT("/")))
+		{
+			Result = Result.LeftChop(1);
+		}
+		return Result;
+	}
+};
+
+/**
  * Single validation issue from pre-generation checks
  */
 struct FValidationIssue
