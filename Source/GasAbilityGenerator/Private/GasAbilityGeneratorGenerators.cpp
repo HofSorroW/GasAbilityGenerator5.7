@@ -15867,6 +15867,15 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 				}
 			}
 
+			// v4.11: Log NOTE when both layers are specified (helps users understand two-layer semantics)
+			if (Override.bHasEnabled && Override.bHasStructuralEnabled)
+			{
+				LogGeneration(FString::Printf(TEXT("  NOTE: Emitter '%s' has both soft enable (User.Enabled=%s) and structural enable (%s) - two-layer control active"),
+					*Override.EmitterName,
+					Override.bEnabled ? TEXT("true") : TEXT("false"),
+					Override.bStructuralEnabled ? TEXT("enabled") : TEXT("disabled")));
+			}
+
 			// Apply individual parameter overrides
 			for (const auto& Param : Override.Parameters)
 			{
