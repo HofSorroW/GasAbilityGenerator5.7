@@ -1058,14 +1058,14 @@ All Father-specific state tags use `Father.State.*` format (NOT `State.Father.*`
 - `State.Invulnerable` - Blocks all damage (Narrative Pro)
 - `State.Invisible` - Character invisible (Narrative Pro)
 
-**Other Father tag hierarchies (202 total in manifest):**
+**Other Father tag hierarchies (216 total in manifest):**
 - `Ability.Father.*` (23 tags) - Ability identifiers
 - `Cooldown.Father.*` (9 tags) - Cooldown tracking
 - `Effect.Father.*` (31 tags) - Active effects
-- `Father.State.*` (16 tags) - Father state tracking
-- `Father.Form.*` (7 tags) - Form identifiers
-- `Father.Dome.*` (1 tag) - Dome system states
-- `GameplayCue.Father.*` (13 tags) - VFX/SFX triggers
+- `Father.State.*` (20 tags) - Father state tracking
+- `Father.Form.*` (7 tags) - Form identifiers (5 main + Rifle/Sword weapon forms)
+- `Father.Dome.*` (4 tags) - Dome system states
+- `GameplayCue.Father.*` (14 tags) - VFX/SFX triggers
 - `Data.*` (13 tags) - SetByCaller damage/duration values
 
 ### Replication Patterns (GAS Multiplayer)

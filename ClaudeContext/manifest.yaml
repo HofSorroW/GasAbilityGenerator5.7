@@ -2,7 +2,7 @@
 # Version: 3.0.2
 # Engine: Unreal Engine 5.7
 # Plugin: Narrative Pro v2.2
-# Total Tags: 202
+# Total Tags: 216
 # Total Assets: 166
 # Event Graph Support: ENABLED
 # NPC Systems: Warden Husk, Guard Formation, Possessed Exploder, Support Buffer, Biomechanical Detachment, Gatherer Scout, Stalker Random Aggression
@@ -240,11 +240,13 @@ tags:
   - tag: Event.Combat.Backstab
     comment: Backstab combat event
 
-  # GameplayCue Tags (13)
+  # GameplayCue Tags (14)
   - tag: GameplayCue.Father.Backstab
     comment: Backstab VFX/SFX cue
   - tag: GameplayCue.Father.FormChange
     comment: Form change VFX/SFX cue
+  - tag: GameplayCue.Father.Transition
+    comment: Form transition VFX/SFX cue (5s transformation sequence)
   - tag: GameplayCue.Father.Mark
     comment: Enemy mark VFX/SFX cue
   - tag: GameplayCue.Father.Reactivate
@@ -302,19 +304,27 @@ tags:
   - tag: InputTag.Move
     comment: Generic move input tag
 
-  # State Tags - Father (17)
+  # State Tags - Father (21)
+  - tag: Father.State.Alive
+    comment: Father is alive - required for form activation
   - tag: Father.State.Attached
     comment: Father is attached to player
   - tag: Father.State.Attacking
     comment: Father is attacking
   - tag: Father.State.Dashing
     comment: Father is dashing
+  - tag: Father.State.Deployed
+    comment: Father deployed as turret (INI canonical name)
   - tag: Father.State.Detached
     comment: Father is detached from player
   - tag: Father.State.Dormant
     comment: Father is dormant after sacrifice
+  - tag: Father.State.Following
+    comment: Father is following player
   - tag: Father.State.Marking
     comment: Father is marking enemy
+  - tag: Father.State.Merged
+    comment: Father merged with player (Symbiote form)
   - tag: Father.State.Offline
     comment: Father is offline
   - tag: Father.State.ProximityActive
@@ -334,11 +344,17 @@ tags:
   - tag: Father.State.TurretActive
     comment: Turret mode is active
   - tag: Father.State.TurretDeployed
-    comment: Father deployed as turret
+    comment: Father deployed as turret (manifest alias for Deployed)
 
-  # Dome Tags (1)
+  # Dome Tags (4)
   - tag: Father.Dome.Active
     comment: Protective dome is active
+  - tag: Father.Dome.Charging
+    comment: Dome is charging energy
+  - tag: Father.Dome.FullyCharged
+    comment: Dome at max energy
+  - tag: Father.Dome.OnCooldown
+    comment: Dome burst on cooldown
 
   # State Tags - General (5)
   - tag: State.Invulnerable
@@ -5761,6 +5777,20 @@ tags:  # STALKER
     comment: When attacking player
   - tag: Narrative.TaggedDialogue.Returned.GivingUp
     comment: When timeout expires
+
+  # Father Tagged Dialogue Tags (6)
+  - tag: Narrative.TaggedDialogue.Father.Combat
+    comment: Father combat barks
+  - tag: Narrative.TaggedDialogue.Father.Damaged
+    comment: Father damaged barks
+  - tag: Narrative.TaggedDialogue.Father.FormChange
+    comment: Father form change barks
+  - tag: Narrative.TaggedDialogue.Father.Idle
+    comment: Father idle barks
+  - tag: Narrative.TaggedDialogue.Father.Reactivate
+    comment: Father reactivation barks
+  - tag: Narrative.TaggedDialogue.Father.Sacrifice
+    comment: Father sacrifice barks
 
 actor_blueprints:  # STALKER
   - name: BP_ReturnedStalker
