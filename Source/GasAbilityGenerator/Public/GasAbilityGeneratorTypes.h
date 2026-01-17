@@ -230,7 +230,7 @@ enum class EMaterialExprValidationCode : uint8
 
 	// Warnings (non-fatal)
 	W_DEPRECATED_SWITCH_KEY,        // Deprecated enum value (es2, sm4)
-	W_FUNCTION_INPUT_MISMATCH,      // Function input count doesn't match
+	W_FUNCTION_INPUT_MISMATCH,      // Function input count doesn't match (reserved - requires asset loading)
 	W_FUNCTION_PATH_NORMALIZED,     // Path was auto-corrected
 	W_EXPRESSION_UNUSED,            // Expression defined but never connected
 };

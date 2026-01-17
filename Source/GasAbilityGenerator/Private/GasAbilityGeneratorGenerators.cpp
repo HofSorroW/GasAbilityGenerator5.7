@@ -5373,10 +5373,15 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnecti
 		// =====================================================================
 		if (TypeLower == TEXT("qualityswitch"))
 		{
+			bool bHasDefault = false;
 			for (const auto& InputPair : ExprDef.Inputs)
 			{
 				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
-				if (KeyLower != TEXT("default") && !QualitySwitchKeyMap.Contains(KeyLower))
+				if (KeyLower == TEXT("default"))
+				{
+					bHasDefault = true;
+				}
+				else if (!QualitySwitchKeyMap.Contains(KeyLower))
 				{
 					FMaterialExprDiagnostic Diag(
 						EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
@@ -5389,13 +5394,29 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnecti
 				// Track referenced expression
 				ReferencedExpressionIds.Add(InputPair.Value);
 			}
+			// Check for required default input
+			if (!bHasDefault)
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_MISSING_REQUIRED_INPUT,
+					ContextPath,
+					TEXT("QualitySwitch requires 'default' input"),
+					true);
+				Diag.SuggestedFix = TEXT("Add 'default: <expression_id>' to switch inputs");
+				ValidationResult.AddDiagnostic(Diag);
+			}
 		}
 		else if (TypeLower == TEXT("shadingpathswitch"))
 		{
+			bool bHasDefault = false;
 			for (const auto& InputPair : ExprDef.Inputs)
 			{
 				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
-				if (KeyLower != TEXT("default") && !ShadingPathSwitchKeyMap.Contains(KeyLower))
+				if (KeyLower == TEXT("default"))
+				{
+					bHasDefault = true;
+				}
+				else if (!ShadingPathSwitchKeyMap.Contains(KeyLower))
 				{
 					FMaterialExprDiagnostic Diag(
 						EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
@@ -5407,13 +5428,29 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnecti
 				}
 				ReferencedExpressionIds.Add(InputPair.Value);
 			}
+			// Check for required default input
+			if (!bHasDefault)
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_MISSING_REQUIRED_INPUT,
+					ContextPath,
+					TEXT("ShadingPathSwitch requires 'default' input"),
+					true);
+				Diag.SuggestedFix = TEXT("Add 'default: <expression_id>' to switch inputs");
+				ValidationResult.AddDiagnostic(Diag);
+			}
 		}
 		else if (TypeLower == TEXT("featurelevelswitch"))
 		{
+			bool bHasDefault = false;
 			for (const auto& InputPair : ExprDef.Inputs)
 			{
 				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
-				if (KeyLower != TEXT("default") && !FeatureLevelSwitchKeyMap.Contains(KeyLower))
+				if (KeyLower == TEXT("default"))
+				{
+					bHasDefault = true;
+				}
+				else if (!FeatureLevelSwitchKeyMap.Contains(KeyLower))
 				{
 					// Check for deprecated keys
 					if (KeyLower == TEXT("es2") || KeyLower == TEXT("sm4"))
@@ -5439,6 +5476,17 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnecti
 					}
 				}
 				ReferencedExpressionIds.Add(InputPair.Value);
+			}
+			// Check for required default input
+			if (!bHasDefault)
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_MISSING_REQUIRED_INPUT,
+					ContextPath,
+					TEXT("FeatureLevelSwitch requires 'default' input"),
+					true);
+				Diag.SuggestedFix = TEXT("Add 'default: <expression_id>' to switch inputs");
+				ValidationResult.AddDiagnostic(Diag);
 			}
 		}
 
@@ -5468,6 +5516,19 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnecti
 						ExprDef.Function,
 						FString::Printf(TEXT("Function path normalized from '%s' to '%s'"), *ExprDef.Function, *NormalizedPath),
 						false);
+					ValidationResult.AddDiagnostic(Diag);
+				}
+
+				// Check for UMaterialFunctionInstance (not supported - use UMaterialFunction)
+				if (NormalizedPath.Contains(TEXT("_Inst")) || NormalizedPath.Contains(TEXT("FunctionInstance")))
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::E_FUNCTION_INSTANCE_BLOCKED,
+						ContextPath,
+						ExprDef.Function,
+						TEXT("UMaterialFunctionInstance not supported. Use UMaterialFunction path instead."),
+						true);
+					Diag.SuggestedFix = TEXT("Reference the base MaterialFunction, not a MaterialFunctionInstance");
 					ValidationResult.AddDiagnostic(Diag);
 				}
 			}
