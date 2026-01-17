@@ -460,8 +460,9 @@ The validation system maintains an exhaustive `KnownExpressionTypes` set:
 | Tier 0 | perinstancefadeamount, perinstancerandom, objectorientation, objectradius, preskinnedposition, preskinnednormal, vertexnormalws, pixelnormalws, vertextangentws, twosidedsign, eyeadaptation, atmosphericfogcolor, precomputedaomask, gireplace |
 | Switch | qualityswitch, shadingpathswitch, featurelevelswitch, staticswitch |
 | Functions | materialfunctioncall |
-| Noise | sobol, temporalsobol, noise |
-| Complex | fresnel, makematerialattributes, if, customexpression, scenetexture |
+| Sobol | sobol, temporalsobol |
+| Scene | scenetexture |
+| Complex | fresnel, noise, makematerialattributes, if, customexpression |
 
 ---
 
