@@ -55,6 +55,7 @@ private:
 	static void ParseBehaviorTrees(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseMaterials(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseMaterialFunctions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v2.6.12
+	static void ParseMaterialInstances(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.9
 	static void ParseEventGraphs(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 
 	// v2.3.0: New asset type parsers
@@ -74,6 +75,7 @@ private:
 	static void ParseCharacterAppearances(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.8.3
 	static void ParseTaggedDialogueSets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseNiagaraSystems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v2.6.5
+	static void ParseFXPresets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.9
 
 	// v3.9: NPC Pipeline parsers
 	static void ParseActivitySchedules(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);

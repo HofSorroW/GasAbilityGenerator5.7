@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.8) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.9) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -94,8 +94,8 @@ The metadata system tracks changes to detect what needs regeneration:
 
 **v3.1 Note:** UDataAsset and UBlueprint don't implement IInterface_AssetUserData in UE5.7, so a central registry stores metadata for these asset types.
 
-**Coverage:** All 25 asset generators have full support:
-- 16 DataAsset types: E, IA, IMC, BB, BT, M, MF, FC, AM, AC (Ability+Activity), IC, NPCDef, CD, TaggedDialogue, NS
+**Coverage:** All 26 asset generators have full support:
+- 17 DataAsset types: E, IA, IMC, BB, BT, M, MF, MIC, FC, AM, AC (Ability+Activity), IC, NPCDef, CD, TaggedDialogue, NS
 - 9 Blueprint types: GE, GA, ActorBP, WidgetBP, AnimNotify, DialogueBP, EquippableBP, ActivityBP, NE
 
 ## Automation Workflow
@@ -399,6 +399,7 @@ The plugin includes Excel-like table editors for bulk content authoring:
 | BT_ | Behavior Trees | `behavior_trees` | FBehaviorTreeGenerator |
 | M_ | Materials | `materials` | FMaterialGenerator |
 | MF_ | Material Functions | `material_functions` | FMaterialFunctionGenerator |
+| MIC_ | Material Instances | `material_instances` | FMaterialInstanceGenerator |
 | FC_ | Float Curves | `float_curves` | FFloatCurveGenerator |
 | AM_ | Animation Montages | `animation_montages` | FAnimationMontageGenerator |
 | NAS_ | Animation Notifies | `animation_notifies` | FAnimationNotifyGenerator |
@@ -1044,6 +1045,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.9 - VFX System Enhancements: Comprehensive VFX automation improvements. (1) **Material Instance Constants** (MIC_): New FMaterialInstanceGenerator creates UMaterialInstanceConstant assets from parent materials with scalar, vector, and texture parameter overrides. New manifest section `material_instances:` with `parent_material`, `scalar_params`, `vector_params`, `texture_params` support. (2) **VFX Material Expressions**: Added 20+ VFX-specific expression types to FMaterialGenerator including ParticleColor, ParticleSubUV, DynamicParameter, VertexColor, DepthFade, SphereMask, CameraPositionWS, ObjectBounds, Saturate, Abs, Cosine, Floor, Frac, Normalize, DotProduct, CrossProduct, Distance, WorldPosition, PixelDepth, SceneDepth. (3) **Emitter-Specific Overrides**: Niagara systems now support per-emitter parameter overrides via new `emitter_overrides:` section with `emitter`, `enabled`, and `parameters` map. Allows disabling emitters or setting emitter-specific User.* values without duplicating template systems. (4) **FX Preset Library**: New `fx_presets:` manifest section defines reusable Niagara parameter configurations. Presets can inherit from other presets via `base_preset:` field. Niagara systems reference presets via `preset:` field; preset parameters are merged with user_parameters (manifest user_parameters override preset values). (5) **LOD/Scalability Settings**: Niagara systems now support `cull_distance`, `cull_distance_low/medium/high/epic/cinematic`, `significance_distance`, `max_particle_budget`, `scalability_mode`, `allow_culling_for_local_players` for automatic LOD configuration. New struct FManifestFXPresetDefinition and FManifestNiagaraEmitterOverride with ComputeHash support for regen safety.
 - v4.8 - Quest and Item Table Editors: Two new table editors following NPC/Dialogue patterns. Quest Table Editor (SQuestTableEditor) with 12 columns, quest grouping, state machine view, token-based Tasks/Events/Conditions/Rewards columns. Item Table Editor (SItemTableEditor) with 16 columns, dynamic visibility based on ItemType, type-specific fields (AttackRating for weapons, ArmorRating for armor, WeaponConfig for ranged). Both editors include validation cache, XLSX 3-way sync, soft delete, generation tracking, re-entrancy guards. Replaces old SQuestEditor test code. New files: QuestTableEditor/ and ItemTableEditor/ directories with converters, validators, and editor widgets. See `ClaudeContext/Handoffs/v4.8_Coverage_Expansion_Handoff.md`.
 - v4.7 - Machine-Readable Report System: UGenerationReport UDataAsset + JSON mirror for CI/CD and debugging. FGenerationReportItem with assetPath, assetName, generatorId, executedStatus. FGenerationError with errorCode, contextPath, message, suggestedFix. Reports saved to `/Game/Generated/Reports/` and `Saved/GasAbilityGenerator/Reports/`. AssetPath and GeneratorId populated in all 32+ generators. Supports real-run and dry-run reports. See `ClaudeContext/Handoffs/v4.7_Report_System_Reference.md`.
 - v4.6.1 - NPC Table Editor status bar and UX refinements. See `ClaudeContext/Handoffs/v4.6_UX_Safety_System_ProcessMap.md`.

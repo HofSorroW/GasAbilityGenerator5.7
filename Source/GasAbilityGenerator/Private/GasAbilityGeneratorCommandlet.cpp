@@ -776,6 +776,18 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
+	// v4.9: Material Instances
+	for (const auto& Definition : ManifestData.MaterialInstances)
+	{
+		FGenerationResult Result = FMaterialInstanceGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	// Tagged Dialogue Sets
 	for (const auto& Definition : ManifestData.TaggedDialogueSets)
 	{
@@ -1034,7 +1046,88 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	// v2.6.5: Niagara Systems
 	for (const auto& Definition : ManifestData.NiagaraSystems)
 	{
-		FGenerationResult Result = FNiagaraSystemGenerator::Generate(Definition);
+		// v4.9: Resolve FX Preset parameters before generation
+		FManifestNiagaraSystemDefinition ResolvedDefinition = Definition;
+		if (!Definition.Preset.IsEmpty())
+		{
+			// Build merged parameters from preset (with inheritance support)
+			TMap<FString, FString> MergedParams;
+			TSet<FString> ProcessedPresets;  // Prevent infinite loops
+			FString CurrentPreset = Definition.Preset;
+
+			while (!CurrentPreset.IsEmpty() && !ProcessedPresets.Contains(CurrentPreset))
+			{
+				ProcessedPresets.Add(CurrentPreset);
+				const FManifestFXPresetDefinition* PresetDef = nullptr;
+				for (const auto& Preset : ManifestData.FXPresets)
+				{
+					if (Preset.Name == CurrentPreset)
+					{
+						PresetDef = &Preset;
+						break;
+					}
+				}
+
+				if (PresetDef)
+				{
+					// Apply parameters (child presets override parent)
+					for (const auto& Param : PresetDef->Parameters)
+					{
+						if (!MergedParams.Contains(Param.Key))
+						{
+							MergedParams.Add(Param.Key, Param.Value);
+						}
+					}
+					CurrentPreset = PresetDef->BasePreset;
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("FX Preset '%s' not found for Niagara system '%s'"), *CurrentPreset, *Definition.Name);
+					break;
+				}
+			}
+
+			// Convert merged params to UserParameters (prepend so manifest user_parameters override)
+			TArray<FManifestNiagaraUserParameter> PresetParams;
+			for (const auto& Param : MergedParams)
+			{
+				// Check if this param is already in user_parameters - if so, skip (user overrides preset)
+				bool bAlreadyDefined = false;
+				for (const auto& UserParam : Definition.UserParameters)
+				{
+					if (UserParam.Name == Param.Key)
+					{
+						bAlreadyDefined = true;
+						break;
+					}
+				}
+				if (!bAlreadyDefined)
+				{
+					FManifestNiagaraUserParameter NewParam;
+					NewParam.Name = Param.Key;
+					NewParam.DefaultValue = Param.Value;
+					// Infer type from value
+					if (Param.Value.StartsWith(TEXT("[")) || Param.Value.Contains(TEXT(",")))
+					{
+						NewParam.Type = TEXT("LinearColor");  // Assume color/vector
+					}
+					else if (Param.Value.IsNumeric() || Param.Value.Contains(TEXT(".")))
+					{
+						NewParam.Type = TEXT("Float");
+					}
+					else
+					{
+						NewParam.Type = TEXT("Float");  // Default
+					}
+					PresetParams.Add(NewParam);
+				}
+			}
+			// Prepend preset params to user params
+			PresetParams.Append(ResolvedDefinition.UserParameters);
+			ResolvedDefinition.UserParameters = PresetParams;
+		}
+
+		FGenerationResult Result = FNiagaraSystemGenerator::Generate(ResolvedDefinition);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),

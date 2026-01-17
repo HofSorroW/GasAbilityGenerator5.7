@@ -405,6 +405,15 @@ private:
 };
 
 /**
+ * v4.9: Material Instance Constant Generator - creates parameterized material instances
+ */
+class GASABILITYGENERATOR_API FMaterialInstanceGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestMaterialInstanceDefinition& Definition);
+};
+
+/**
  * Tag Generator - writes tags to DefaultGameplayTags.ini
  */
 class GASABILITYGENERATOR_API FTagGenerator : public FGeneratorBase

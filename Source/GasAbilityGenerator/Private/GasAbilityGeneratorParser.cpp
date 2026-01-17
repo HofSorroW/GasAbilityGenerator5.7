@@ -128,6 +128,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseMaterialFunctions(Lines, i, OutData);
 		}
+		// v4.9: Parse material_instances section
+		else if (IsSectionHeader(TrimmedLine, TEXT("material_instances:")))
+		{
+			ParseMaterialInstances(Lines, i, OutData);
+		}
 		// v2.2.0: Parse event_graphs section
 		else if (IsSectionHeader(TrimmedLine, TEXT("event_graphs:")))
 		{
@@ -195,6 +200,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		else if (IsSectionHeader(TrimmedLine, TEXT("niagara_systems:")))
 		{
 			ParseNiagaraSystems(Lines, i, OutData);
+		}
+		// v4.9: FX Presets (reusable Niagara parameter configurations)
+		else if (IsSectionHeader(TrimmedLine, TEXT("fx_presets:")))
+		{
+			ParseFXPresets(Lines, i, OutData);
 		}
 		// v3.9: NPC Pipeline - Schedules, Goals, Quests
 		else if (IsSectionHeader(TrimmedLine, TEXT("activity_schedules:")))
@@ -2854,6 +2864,196 @@ void FGasAbilityGeneratorParser::ParseMaterialFunctions(const TArray<FString>& L
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("MF_")))
 	{
 		OutData.MaterialFunctions.Add(CurrentDef);
+	}
+}
+
+// v4.9: Parse material_instances section
+void FGasAbilityGeneratorParser::ParseMaterialInstances(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestMaterialInstanceDefinition CurrentDef;
+	FManifestMaterialInstanceScalarParam CurrentScalar;
+	FManifestMaterialInstanceVectorParam CurrentVector;
+	FManifestMaterialInstanceTextureParam CurrentTexture;
+	bool bInItem = false;
+	bool bInScalarParams = false;
+	bool bInVectorParams = false;
+	bool bInTextureParams = false;
+	bool bInScalar = false;
+	bool bInVector = false;
+	bool bInTexture = false;
+	int32 ItemIndent = -1;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			// Save pending items
+			if (bInScalar && !CurrentScalar.Name.IsEmpty()) CurrentDef.ScalarParams.Add(CurrentScalar);
+			if (bInVector && !CurrentVector.Name.IsEmpty()) CurrentDef.VectorParams.Add(CurrentVector);
+			if (bInTexture && !CurrentTexture.Name.IsEmpty()) CurrentDef.TextureParams.Add(CurrentTexture);
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.MaterialInstances.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Detect new item
+		if (TrimmedLine.StartsWith(TEXT("- name:")) && CurrentIndent <= ItemIndent && bInItem)
+		{
+			// Save current item
+			if (bInScalar && !CurrentScalar.Name.IsEmpty()) CurrentDef.ScalarParams.Add(CurrentScalar);
+			if (bInVector && !CurrentVector.Name.IsEmpty()) CurrentDef.VectorParams.Add(CurrentVector);
+			if (bInTexture && !CurrentTexture.Name.IsEmpty()) CurrentDef.TextureParams.Add(CurrentTexture);
+			if (!CurrentDef.Name.IsEmpty())
+			{
+				OutData.MaterialInstances.Add(CurrentDef);
+			}
+			CurrentDef = FManifestMaterialInstanceDefinition();
+			bInScalarParams = false;
+			bInVectorParams = false;
+			bInTextureParams = false;
+			bInScalar = false;
+			bInVector = false;
+			bInTexture = false;
+		}
+
+		// New item start
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(7));
+			bInItem = true;
+			ItemIndent = CurrentIndent;
+		}
+		else if (bInItem)
+		{
+			// Item properties
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine.Mid(7));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("parent_material:")) || TrimmedLine.StartsWith(TEXT("parent:")))
+			{
+				FString Value = TrimmedLine.Contains(TEXT("parent_material:")) ?
+					GetLineValue(TrimmedLine.Mid(16)) : GetLineValue(TrimmedLine.Mid(7));
+				CurrentDef.ParentMaterial = Value;
+			}
+			// Scalar parameters section
+			else if (TrimmedLine.StartsWith(TEXT("scalar_parameters:")) || TrimmedLine.StartsWith(TEXT("scalar_params:")))
+			{
+				if (bInScalar && !CurrentScalar.Name.IsEmpty()) CurrentDef.ScalarParams.Add(CurrentScalar);
+				bInScalarParams = true;
+				bInVectorParams = false;
+				bInTextureParams = false;
+				bInScalar = false;
+				CurrentScalar = FManifestMaterialInstanceScalarParam();
+			}
+			// Vector parameters section
+			else if (TrimmedLine.StartsWith(TEXT("vector_parameters:")) || TrimmedLine.StartsWith(TEXT("vector_params:")))
+			{
+				if (bInScalar && !CurrentScalar.Name.IsEmpty()) CurrentDef.ScalarParams.Add(CurrentScalar);
+				if (bInVector && !CurrentVector.Name.IsEmpty()) CurrentDef.VectorParams.Add(CurrentVector);
+				bInScalarParams = false;
+				bInVectorParams = true;
+				bInTextureParams = false;
+				bInScalar = false;
+				bInVector = false;
+				CurrentVector = FManifestMaterialInstanceVectorParam();
+			}
+			// Texture parameters section
+			else if (TrimmedLine.StartsWith(TEXT("texture_parameters:")) || TrimmedLine.StartsWith(TEXT("texture_params:")))
+			{
+				if (bInScalar && !CurrentScalar.Name.IsEmpty()) CurrentDef.ScalarParams.Add(CurrentScalar);
+				if (bInVector && !CurrentVector.Name.IsEmpty()) CurrentDef.VectorParams.Add(CurrentVector);
+				if (bInTexture && !CurrentTexture.Name.IsEmpty()) CurrentDef.TextureParams.Add(CurrentTexture);
+				bInScalarParams = false;
+				bInVectorParams = false;
+				bInTextureParams = true;
+				bInScalar = false;
+				bInVector = false;
+				bInTexture = false;
+				CurrentTexture = FManifestMaterialInstanceTextureParam();
+			}
+			// Parameter items
+			else if (TrimmedLine.StartsWith(TEXT("- name:")) && (bInScalarParams || bInVectorParams || bInTextureParams))
+			{
+				// Save previous param
+				if (bInScalar && !CurrentScalar.Name.IsEmpty()) CurrentDef.ScalarParams.Add(CurrentScalar);
+				if (bInVector && !CurrentVector.Name.IsEmpty()) CurrentDef.VectorParams.Add(CurrentVector);
+				if (bInTexture && !CurrentTexture.Name.IsEmpty()) CurrentDef.TextureParams.Add(CurrentTexture);
+
+				FString ParamName = GetLineValue(TrimmedLine.Mid(7));
+				if (bInScalarParams)
+				{
+					CurrentScalar = FManifestMaterialInstanceScalarParam();
+					CurrentScalar.Name = ParamName;
+					bInScalar = true;
+				}
+				else if (bInVectorParams)
+				{
+					CurrentVector = FManifestMaterialInstanceVectorParam();
+					CurrentVector.Name = ParamName;
+					bInVector = true;
+				}
+				else if (bInTextureParams)
+				{
+					CurrentTexture = FManifestMaterialInstanceTextureParam();
+					CurrentTexture.Name = ParamName;
+					bInTexture = true;
+				}
+			}
+			else if (TrimmedLine.StartsWith(TEXT("value:")) && bInScalar)
+			{
+				CurrentScalar.Value = FCString::Atof(*GetLineValue(TrimmedLine.Mid(6)));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("value:")) && bInVector)
+			{
+				FString ValueStr = GetLineValue(TrimmedLine.Mid(6));
+				// Remove brackets if present
+				ValueStr.ReplaceInline(TEXT("["), TEXT(""));
+				ValueStr.ReplaceInline(TEXT("]"), TEXT(""));
+				TArray<FString> Parts;
+				ValueStr.ParseIntoArray(Parts, TEXT(","));
+				if (Parts.Num() >= 3)
+				{
+					CurrentVector.Value.R = FCString::Atof(*Parts[0].TrimStartAndEnd());
+					CurrentVector.Value.G = FCString::Atof(*Parts[1].TrimStartAndEnd());
+					CurrentVector.Value.B = FCString::Atof(*Parts[2].TrimStartAndEnd());
+					CurrentVector.Value.A = Parts.Num() >= 4 ? FCString::Atof(*Parts[3].TrimStartAndEnd()) : 1.0f;
+				}
+			}
+			else if ((TrimmedLine.StartsWith(TEXT("texture:")) || TrimmedLine.StartsWith(TEXT("texture_path:"))) && bInTexture)
+			{
+				FString Value = TrimmedLine.Contains(TEXT("texture_path:")) ?
+					GetLineValue(TrimmedLine.Mid(13)) : GetLineValue(TrimmedLine.Mid(8));
+				CurrentTexture.TexturePath = Value;
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save final pending items
+	if (bInScalar && !CurrentScalar.Name.IsEmpty()) CurrentDef.ScalarParams.Add(CurrentScalar);
+	if (bInVector && !CurrentVector.Name.IsEmpty()) CurrentDef.VectorParams.Add(CurrentVector);
+	if (bInTexture && !CurrentTexture.Name.IsEmpty()) CurrentDef.TextureParams.Add(CurrentTexture);
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.MaterialInstances.Add(CurrentDef);
 	}
 }
 
@@ -7977,6 +8177,11 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 	int32 EmittersIndent = -1;
 	int32 UserParamsIndent = -1;
 	int32 FXDescriptorIndent = -1;  // v2.9.0
+	// v4.9: Emitter-specific overrides
+	bool bInEmitterOverrides = false;
+	bool bInEmitterOverrideParams = false;
+	FManifestNiagaraEmitterOverride CurrentEmitterOverride;
+	int32 EmitterOverridesIndent = -1;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -8020,12 +8225,17 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 		}
 
 		// New item entry - v2.6.13: only if not in user_parameters subsection
-		if (!bInUserParameters && TrimmedLine.StartsWith(TEXT("- name:")))
+		if (!bInUserParameters && !bInEmitterOverrides && TrimmedLine.StartsWith(TEXT("- name:")))
 		{
 			// Save any pending user parameter
 			if (bInUserParameters && !CurrentUserParam.Name.IsEmpty())
 			{
 				CurrentDef.UserParameters.Add(CurrentUserParam);
+			}
+			// v4.9: Save any pending emitter override
+			if (bInEmitterOverrides && !CurrentEmitterOverride.EmitterName.IsEmpty())
+			{
+				CurrentDef.EmitterOverrides.Add(CurrentEmitterOverride);
 			}
 			// Save previous system if any
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("NS_")))
@@ -8039,10 +8249,14 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			bInEmitters = false;
 			bInUserParameters = false;
 			bInFXDescriptor = false;  // v2.9.0
+			bInEmitterOverrides = false;  // v4.9
+			bInEmitterOverrideParams = false;  // v4.9
 			CurrentUserParam = FManifestNiagaraUserParameter();
+			CurrentEmitterOverride = FManifestNiagaraEmitterOverride();  // v4.9
 			EmittersIndent = -1;
 			UserParamsIndent = -1;
 			FXDescriptorIndent = -1;  // v2.9.0
+			EmitterOverridesIndent = -1;  // v4.9
 		}
 		else if (bInItem)
 		{
@@ -8055,6 +8269,13 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 			else if (TrimmedLine.StartsWith(TEXT("template_system:")) || TrimmedLine.StartsWith(TEXT("template:")))
 			{
 				CurrentDef.TemplateSystem = GetLineValue(TrimmedLine);
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			// v4.9: FX Preset reference
+			else if (TrimmedLine.StartsWith(TEXT("preset:")))
+			{
+				CurrentDef.Preset = GetLineValue(TrimmedLine);
 				bInEmitters = false;
 				bInUserParameters = false;
 			}
@@ -8190,6 +8411,68 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 				bInEmitters = false;
 				bInUserParameters = false;
 				bInFXDescriptor = false;
+			}
+			// v4.9: LOD/Scalability settings
+			else if (TrimmedLine.StartsWith(TEXT("cull_distance_low:")))
+			{
+				CurrentDef.CullDistanceLow = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cull_distance_medium:")))
+			{
+				CurrentDef.CullDistanceMedium = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cull_distance_high:")))
+			{
+				CurrentDef.CullDistanceHigh = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cull_distance_epic:")))
+			{
+				CurrentDef.CullDistanceEpic = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cull_distance_cinematic:")))
+			{
+				CurrentDef.CullDistanceCinematic = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("cull_distance:")) || TrimmedLine.StartsWith(TEXT("cull_max_distance:")))
+			{
+				CurrentDef.CullMaxDistance = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("significance_distance:")))
+			{
+				CurrentDef.SignificanceDistance = FCString::Atof(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("max_particle_budget:")) || TrimmedLine.StartsWith(TEXT("particle_budget:")))
+			{
+				CurrentDef.MaxParticleBudget = FCString::Atoi(*GetLineValue(TrimmedLine));
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("scalability_mode:")) || TrimmedLine.StartsWith(TEXT("scalability:")))
+			{
+				CurrentDef.ScalabilityMode = GetLineValue(TrimmedLine);
+				bInEmitters = false;
+				bInUserParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("allow_culling_for_local_players:")))
+			{
+				FString Value = GetLineValue(TrimmedLine).ToLower();
+				CurrentDef.bAllowCullingForLocalPlayers = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+				bInEmitters = false;
+				bInUserParameters = false;
 			}
 			// v2.9.0: FX Descriptor section for data-driven Niagara parameter binding
 			else if (TrimmedLine.StartsWith(TEXT("fx_descriptor:")))
@@ -8366,6 +8649,60 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 					CurrentDef.FXDescriptor.LODLevel = FCString::Atoi(*GetLineValue(TrimmedLine));
 				}
 			}
+			// v4.9: Emitter overrides section
+			else if (TrimmedLine.StartsWith(TEXT("emitter_overrides:")))
+			{
+				bInEmitterOverrides = true;
+				bInEmitterOverrideParams = false;
+				bInEmitters = false;
+				bInUserParameters = false;
+				bInFXDescriptor = false;
+				EmitterOverridesIndent = CurrentIndent;
+				CurrentEmitterOverride = FManifestNiagaraEmitterOverride();
+			}
+			else if (bInEmitterOverrides)
+			{
+				// New emitter override entry
+				if (TrimmedLine.StartsWith(TEXT("- emitter:")) || TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					// Save previous emitter override if valid
+					if (!CurrentEmitterOverride.EmitterName.IsEmpty())
+					{
+						CurrentDef.EmitterOverrides.Add(CurrentEmitterOverride);
+					}
+					CurrentEmitterOverride = FManifestNiagaraEmitterOverride();
+					CurrentEmitterOverride.EmitterName = GetLineValue(TrimmedLine.Mid(2));
+					bInEmitterOverrideParams = false;
+				}
+				else if (TrimmedLine.StartsWith(TEXT("enabled:")))
+				{
+					FString Value = GetLineValue(TrimmedLine).ToLower();
+					CurrentEmitterOverride.bEnabled = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("parameters:")))
+				{
+					bInEmitterOverrideParams = true;
+				}
+				else if (bInEmitterOverrideParams && TrimmedLine.Contains(TEXT(":")))
+				{
+					// Parse parameter key: value pairs
+					int32 ColonIdx;
+					if (TrimmedLine.FindChar(TEXT(':'), ColonIdx))
+					{
+						FString ParamName = TrimmedLine.Left(ColonIdx).TrimEnd();
+						FString ParamValue = TrimmedLine.Mid(ColonIdx + 1).TrimStart();
+						// Strip quotes if present
+						if (ParamValue.StartsWith(TEXT("\"")) && ParamValue.EndsWith(TEXT("\"")))
+						{
+							ParamValue = ParamValue.Mid(1, ParamValue.Len() - 2);
+						}
+						if (!ParamName.IsEmpty())
+						{
+							CurrentEmitterOverride.Parameters.Add(ParamName, ParamValue);
+						}
+					}
+				}
+			}
 		}
 
 		LineIndex++;
@@ -8377,10 +8714,112 @@ void FGasAbilityGeneratorParser::ParseNiagaraSystems(const TArray<FString>& Line
 		CurrentDef.UserParameters.Add(CurrentUserParam);
 	}
 
+	// v4.9: Save any pending emitter override
+	if (bInEmitterOverrides && !CurrentEmitterOverride.EmitterName.IsEmpty())
+	{
+		CurrentDef.EmitterOverrides.Add(CurrentEmitterOverride);
+	}
+
 	// Save any remaining entry
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("NS_")))
 	{
 		OutData.NiagaraSystems.Add(CurrentDef);
+	}
+}
+
+// ============================================================================
+// v4.9: FX Preset Parsing
+// ============================================================================
+
+void FGasAbilityGeneratorParser::ParseFXPresets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestFXPresetDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInParameters = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			// Save pending item
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("Preset_")))
+			{
+				OutData.FXPresets.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// New preset item
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save previous preset if valid
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("Preset_")))
+			{
+				OutData.FXPresets.Add(CurrentDef);
+			}
+			CurrentDef = FManifestFXPresetDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInParameters = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("base_preset:")) || TrimmedLine.StartsWith(TEXT("base:")))
+			{
+				CurrentDef.BasePreset = GetLineValue(TrimmedLine);
+				bInParameters = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("parameters:")))
+			{
+				bInParameters = true;
+			}
+			else if (bInParameters && TrimmedLine.Contains(TEXT(":")))
+			{
+				// Parse parameter key: value pairs
+				int32 ColonIdx;
+				if (TrimmedLine.FindChar(TEXT(':'), ColonIdx))
+				{
+					FString ParamName = TrimmedLine.Left(ColonIdx).TrimEnd();
+					FString ParamValue = TrimmedLine.Mid(ColonIdx + 1).TrimStart();
+					// Strip quotes if present
+					if (ParamValue.StartsWith(TEXT("\"")) && ParamValue.EndsWith(TEXT("\"")))
+					{
+						ParamValue = ParamValue.Mid(1, ParamValue.Len() - 2);
+					}
+					if (!ParamName.IsEmpty())
+					{
+						CurrentDef.Parameters.Add(ParamName, ParamValue);
+					}
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save any remaining entry
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("Preset_")))
+	{
+		OutData.FXPresets.Add(CurrentDef);
 	}
 }
 

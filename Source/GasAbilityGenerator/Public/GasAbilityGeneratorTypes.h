@@ -1416,6 +1416,94 @@ struct FManifestMaterialDefinition
 };
 
 /**
+ * v4.9: Material Instance Scalar Parameter Override
+ */
+struct FManifestMaterialInstanceScalarParam
+{
+	FString Name;
+	float Value = 0.0f;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Value * 10000.f)) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v4.9: Material Instance Vector Parameter Override
+ */
+struct FManifestMaterialInstanceVectorParam
+{
+	FString Name;
+	FLinearColor Value = FLinearColor::White;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Value.R * 1000.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Value.G * 1000.f)) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Value.B * 1000.f)) << 24;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Value.A * 1000.f)) << 32;
+		return Hash;
+	}
+};
+
+/**
+ * v4.9: Material Instance Texture Parameter Override
+ */
+struct FManifestMaterialInstanceTextureParam
+{
+	FString Name;
+	FString TexturePath;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(TexturePath) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v4.9: Material Instance Constant (MIC_) definition
+ * Parameterized instances of parent materials
+ */
+struct FManifestMaterialInstanceDefinition
+{
+	FString Name;
+	FString Folder;
+	FString ParentMaterial;                                      // Path to parent material (M_*)
+	TArray<FManifestMaterialInstanceScalarParam> ScalarParams;   // Scalar parameter overrides
+	TArray<FManifestMaterialInstanceVectorParam> VectorParams;   // Vector parameter overrides
+	TArray<FManifestMaterialInstanceTextureParam> TextureParams; // Texture parameter overrides
+
+	/** v4.9: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentMaterial) << 4;
+		for (const auto& Param : ScalarParams)
+		{
+			Hash ^= Param.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Param : VectorParams)
+		{
+			Hash ^= Param.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& Param : TextureParams)
+		{
+			Hash ^= Param.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		return Hash;
+	}
+};
+
+/**
  * v2.6.12: Material Function Input definition
  */
 struct FManifestMaterialFunctionInput
@@ -3279,6 +3367,31 @@ struct FManifestNiagaraUserParameter
 };
 
 /**
+ * v4.9: Per-emitter parameter overrides for Niagara systems
+ * Allows setting specific User.* parameters on individual emitters
+ */
+struct FManifestNiagaraEmitterOverride
+{
+	FString EmitterName;    // Name of emitter in system (e.g., "Particles", "Burst")
+	bool bEnabled = true;   // Enable/disable this emitter
+	TMap<FString, FString> Parameters;  // Parameter name -> value (as string)
+
+	/** v4.9: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(EmitterName);
+		Hash ^= (bEnabled ? 1ULL : 0ULL) << 8;
+		for (const auto& Param : Parameters)
+		{
+			Hash ^= GetTypeHash(Param.Key);
+			Hash ^= GetTypeHash(Param.Value) << 4;
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
  * v2.9.0: FX Descriptor for data-driven Niagara parameter binding
  * Maps directly to User.* parameters in Uber-Emitters
  * See: Data_Driven_FX_Architecture_v1_0.md
@@ -3801,10 +3914,36 @@ struct FDryRunSummary
 };
 
 /**
+ * v4.9: FX Preset definition for reusable Niagara parameter configurations
+ * Defines a named set of parameters that can be applied to multiple Niagara systems
+ */
+struct FManifestFXPresetDefinition
+{
+	FString Name;                              // Preset name (e.g., "Preset_Fire")
+	FString Folder;                            // Optional folder for organization
+	TMap<FString, FString> Parameters;         // Parameter key-value pairs (e.g., "User.Color" -> "[1,0,0,1]")
+	FString BasePreset;                        // Optional: Inherit from another preset
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(BasePreset) << 4;
+		for (const auto& Pair : Parameters)
+		{
+			Hash ^= GetTypeHash(Pair.Key);
+			Hash ^= GetTypeHash(Pair.Value);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		return Hash;
+	}
+};
+
+/**
  * v2.6.10: Niagara System definition - creates UNiagaraSystem assets
  * Enhanced with warmup, bounds, determinism, and effect type settings
  * v2.6.11: Added user parameters support
  * v2.9.0: Added FX descriptor for data-driven parameter binding
+ * v4.9: Added preset support for reusable parameter configurations
  */
 struct FManifestNiagaraSystemDefinition
 {
@@ -3838,6 +3977,24 @@ struct FManifestNiagaraSystemDefinition
 	// v2.9.0: FX Descriptor for data-driven parameter binding
 	FManifestFXDescriptor FXDescriptor;
 
+	// v4.9: FX Preset reference (parameters applied before user_parameters)
+	FString Preset;  // Name of FX preset to use as base (e.g., "Preset_Fire")
+
+	// v4.9: Per-emitter parameter overrides
+	TArray<FManifestNiagaraEmitterOverride> EmitterOverrides;
+
+	// v4.9: LOD/Scalability settings
+	float CullDistanceLow = 0.0f;       // Cull distance for Low quality (0 = no cull)
+	float CullDistanceMedium = 0.0f;    // Cull distance for Medium quality
+	float CullDistanceHigh = 0.0f;      // Cull distance for High quality
+	float CullDistanceEpic = 0.0f;      // Cull distance for Epic quality
+	float CullDistanceCinematic = 0.0f; // Cull distance for Cinematic quality
+	float CullMaxDistance = 0.0f;       // Single cull distance (overrides per-quality if set)
+	float SignificanceDistance = 0.0f;  // Distance for significance calculations
+	int32 MaxParticleBudget = 0;        // Max particle count budget (0 = unlimited)
+	FString ScalabilityMode;            // Low, Medium, High, Epic, Cinematic
+	bool bAllowCullingForLocalPlayers = false;  // Whether to cull for local player's effects
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -3864,10 +4021,20 @@ struct FManifestNiagaraSystemDefinition
 		Hash ^= (bDeterminism ? 1ULL : 0ULL) << 48;
 		Hash ^= static_cast<uint64>(RandomSeed) << 49;
 
+		// v4.9: Emitter overrides
+		for (const auto& Override : EmitterOverrides)
+		{
+			Hash ^= Override.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
 		// Effect type settings
 		Hash ^= GetTypeHash(EffectType);
 		Hash ^= GetTypeHash(PoolingMethod) << 4;
 		Hash ^= static_cast<uint64>(MaxPoolSize) << 56;
+
+		// v4.9: FX Preset
+		Hash ^= GetTypeHash(Preset);
 
 		// User parameters
 		for (const auto& Param : UserParameters)
@@ -3878,6 +4045,17 @@ struct FManifestNiagaraSystemDefinition
 
 		// FX Descriptor
 		Hash ^= FXDescriptor.ComputeHash();
+
+		// v4.9: LOD/Scalability settings
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(CullDistanceLow * 10.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(CullDistanceMedium * 10.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(CullDistanceHigh * 10.f)) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(CullDistanceEpic * 10.f)) << 24;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(CullDistanceCinematic * 10.f)) << 32;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(CullMaxDistance * 10.f)) << 40;
+		Hash ^= static_cast<uint64>(MaxParticleBudget) << 48;
+		Hash ^= GetTypeHash(ScalabilityMode);
+		Hash ^= (bAllowCullingForLocalPlayers ? 1ULL : 0ULL) << 56;
 
 		return Hash;
 	}
@@ -4528,6 +4706,7 @@ struct FManifestData
 	TArray<FManifestBlackboardDefinition> Blackboards;
 	TArray<FManifestBehaviorTreeDefinition> BehaviorTrees;
 	TArray<FManifestMaterialDefinition> Materials;
+	TArray<FManifestMaterialInstanceDefinition> MaterialInstances; // v4.9: Material Instance Constants
 	TArray<FManifestEventGraphDefinition> EventGraphs;
 
 	// New asset types
@@ -4546,6 +4725,7 @@ struct FManifestData
 	TArray<FManifestCharacterDefinitionDefinition> CharacterDefinitions;
 	TArray<FManifestTaggedDialogueSetDefinition> TaggedDialogueSets;
 	TArray<FManifestNiagaraSystemDefinition> NiagaraSystems;  // v2.6.5: Niagara VFX systems
+	TArray<FManifestFXPresetDefinition> FXPresets;  // v4.9: Reusable Niagara parameter presets
 	TArray<FManifestMaterialFunctionDefinition> MaterialFunctions;  // v2.6.12: Material functions
 
 	// v3.9: NPC Pipeline - Schedules, Goals, Quests
@@ -4606,6 +4786,7 @@ struct FManifestData
 		for (const auto& Def : CharacterDefinitions) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TaggedDialogueSets) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : NiagaraSystems) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : FXPresets) AssetWhitelist.Add(Def.Name);  // v4.9
 		for (const auto& Def : MaterialFunctions) AssetWhitelist.Add(Def.Name);  // v2.6.12
 		// v3.9: NPC Pipeline
 		for (const auto& Def : ActivitySchedules) AssetWhitelist.Add(Def.Name);
