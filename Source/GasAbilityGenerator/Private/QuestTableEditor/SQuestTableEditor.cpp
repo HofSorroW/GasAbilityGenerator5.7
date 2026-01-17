@@ -25,6 +25,9 @@
 #include "Misc/MessageDialog.h"
 #include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Tales/Quest.h"
+#include "Tales/QuestSM.h"
+#include "Tales/NarrativeNodeBase.h"
 
 #define LOCTEXT_NAMESPACE "QuestTableEditor"
 
@@ -292,38 +295,23 @@ TSharedRef<SWidget> SQuestTableEditor::BuildToolbar()
 {
 	return SNew(SHorizontalBox)
 
-		// Title
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.VAlign(VAlign_Center)
-		.Padding(5, 0)
-		[
-			SNew(STextBlock)
-			.Text(LOCTEXT("Title", "Quest Table Editor"))
-			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
-		]
-
-		+ SHorizontalBox::Slot()
-		.FillWidth(1.0f)
-		[
-			SNullWidget::NullWidget
-		]
-
+		// LEFT SIDE - Data actions
 		// Add Quest
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("AddQuest", "+ Quest"))
 			.ToolTipText(LOCTEXT("AddQuestTooltip", "Add a new quest with Start state"))
 			.OnClicked(this, &SQuestTableEditor::OnAddQuestClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
 		]
 
 		// Add State
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("AddState", "+ State"))
@@ -331,90 +319,159 @@ TSharedRef<SWidget> SQuestTableEditor::BuildToolbar()
 			.OnClicked(this, &SQuestTableEditor::OnAddRowClicked)
 		]
 
-		// Delete
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(2)
-		[
-			SNew(SButton)
-			.Text(LOCTEXT("Delete", "Delete"))
-			.OnClicked(this, &SQuestTableEditor::OnDeleteRowsClicked)
-		]
-
 		// Duplicate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("Duplicate", "Duplicate"))
 			.OnClicked(this, &SQuestTableEditor::OnDuplicateRowClicked)
 		]
 
+		// Delete
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(10, 0, 2, 0)
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Delete", "Delete"))
+			.OnClicked(this, &SQuestTableEditor::OnDeleteRowsClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+		]
+
+		// Vertical separator
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(4.0f, 0.0f)
 		[
 			SNew(SSeparator)
 			.Orientation(Orient_Vertical)
 		]
 
+		// Clear Filters button
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("ClearFilters", "Clear Filters"))
+			.OnClicked(this, &SQuestTableEditor::OnClearFiltersClicked)
+			.ToolTipText(LOCTEXT("ClearFiltersTip", "Reset all column filters"))
+		]
+
+		// SPACER - pushes right side buttons to the right
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			SNullWidget::NullWidget
+		]
+
+		// RIGHT SIDE - Generation/IO actions
 		// Validate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("Validate", "Validate"))
 			.OnClicked(this, &SQuestTableEditor::OnValidateClicked)
+			.ToolTipText(LOCTEXT("ValidateTip", "Validate all rows for errors and warnings"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Generate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("Generate", "Generate"))
+			.Text(LOCTEXT("Generate", "Generate Quests"))
 			.OnClicked(this, &SQuestTableEditor::OnGenerateClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
+		// Sync from Assets
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(10, 0, 2, 0)
+		.Padding(2.0f)
 		[
-			SNew(SSeparator)
-			.Orientation(Orient_Vertical)
+			SNew(SButton)
+			.Text(LOCTEXT("Sync", "Sync from Assets"))
+			.OnClicked(this, &SQuestTableEditor::OnSyncFromAssetsClicked)
+			.ToolTipText(LOCTEXT("SyncTip", "Populate table from existing Quest assets"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Export XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("ExportXLSX", "Export"))
+			.Text(LOCTEXT("ExportXLSX", "Export XLSX"))
 			.OnClicked(this, &SQuestTableEditor::OnExportXLSXClicked)
+			.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx)"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Import XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("ImportXLSX", "Import"))
+			.Text(LOCTEXT("ImportXLSX", "Import XLSX"))
 			.OnClicked(this, &SQuestTableEditor::OnImportXLSXClicked)
+			.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx)"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
-		// Save
+		// Sync XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("Save", "Save"))
+			.Text(LOCTEXT("SyncXLSX", "Sync XLSX"))
+			.OnClicked(this, &SQuestTableEditor::OnSyncXLSXClicked)
+			.ToolTipText(LOCTEXT("SyncXLSXTooltip", "Merge Excel changes with UE (3-way merge)"))
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
+		]
+
+		// Separator before Asset Actions
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SSeparator)
+			.Orientation(Orient_Vertical)
+		]
+
+		// Save Table
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Save", "Save Table"))
 			.OnClicked(this, &SQuestTableEditor::OnSaveClicked)
+			.ToolTipText(LOCTEXT("SaveTooltip", "Save the table data container"))
+		]
+
+		// Apply to Assets
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("ApplyToAssets", "Apply to Quests"))
+			.OnClicked(this, &SQuestTableEditor::OnApplyToAssetsClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
+			.ToolTipText(LOCTEXT("ApplyToAssetsTooltip", "Write changes back to Quest assets"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		];
 }
 
@@ -972,8 +1029,172 @@ FReply SQuestTableEditor::OnGenerateClicked()
 
 FReply SQuestTableEditor::OnSyncFromAssetsClicked()
 {
-	// TODO: Implement sync from existing Quest assets
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "Sync from Assets not yet implemented."));
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	if (!TableData)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoTableData", "No table data available. Please create or open a table first."));
+		return FReply::Handled();
+	}
+
+	// Get Asset Registry
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	// Force Asset Registry rescan before querying
+	TArray<FString> PathsToScan = { TEXT("/Game/") };
+	UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
+	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
+
+	// Find all Quest blueprint assets (UQuest is the base class)
+	TArray<FAssetData> AssetList;
+	FTopLevelAssetPath ClassPath = UQuest::StaticClass()->GetClassPathName();
+	AssetRegistry.GetAssetsByClass(ClassPath, AssetList, true);
+	UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Found %d UQuest assets"), AssetList.Num());
+
+	if (AssetList.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoQuestsFound", "No Quest assets found in the project.\n\nCreate Quest assets (Quest_*) first, then sync."));
+		return FReply::Handled();
+	}
+
+	// Preserve existing Notes values before clearing rows (user-entered, not stored in Quest asset)
+	TMap<FString, FString> PreservedNotes;  // Key: "QuestName_StateID"
+	for (const FQuestTableRow& ExistingRow : TableData->Rows)
+	{
+		if (!ExistingRow.Notes.IsEmpty())
+		{
+			FString Key = FString::Printf(TEXT("%s_%s"), *ExistingRow.QuestName, *ExistingRow.StateID);
+			PreservedNotes.Add(Key, ExistingRow.Notes);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Preserved %d Notes before sync"), PreservedNotes.Num());
+
+	// Clear existing rows and populate from assets
+	TableData->Rows.Empty();
+	int32 SyncedCount = 0;
+
+	for (const FAssetData& AssetData : AssetList)
+	{
+		UQuest* Quest = Cast<UQuest>(AssetData.GetAsset());
+		if (!Quest)
+		{
+			continue;
+		}
+
+		FString QuestName = AssetData.AssetName.ToString();
+		FString DisplayName = Quest->GetQuestName().ToString();
+		FString Description = Quest->GetQuestDescription().ToString();
+
+		// Get states from the Quest
+		// Quest stores states in the States array
+		TArray<UQuestState*> States;
+
+		// Access States via reflection since it's protected
+		if (FArrayProperty* StatesProperty = CastField<FArrayProperty>(UQuest::StaticClass()->FindPropertyByName(TEXT("States"))))
+		{
+			FScriptArrayHelper ArrayHelper(StatesProperty, StatesProperty->ContainerPtrToValuePtr<void>(Quest));
+			for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+			{
+				UQuestState* State = *reinterpret_cast<UQuestState**>(ArrayHelper.GetRawPtr(i));
+				if (State)
+				{
+					States.Add(State);
+				}
+			}
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Quest %s has %d states"), *QuestName, States.Num());
+
+		// Create a row for each state
+		for (UQuestState* State : States)
+		{
+			FQuestTableRow& Row = TableData->AddRow();
+
+			// Core Identity
+			Row.QuestName = QuestName;
+			Row.DisplayName = DisplayName;
+
+			// State Definition - access ID via reflection since it's protected
+			if (FProperty* IDProp = UNarrativeNodeBase::StaticClass()->FindPropertyByName(TEXT("ID")))
+			{
+				FName* IDPtr = IDProp->ContainerPtrToValuePtr<FName>(State);
+				if (IDPtr)
+				{
+					Row.StateID = IDPtr->ToString();
+				}
+			}
+			Row.Description = State->Description.ToString();
+
+			// State Type
+			switch (State->StateNodeType)
+			{
+				case EStateNodeType::Success:
+					Row.StateType = EQuestStateType::Success;
+					break;
+				case EStateNodeType::Failure:
+					Row.StateType = EQuestStateType::Failure;
+					break;
+				default:
+					Row.StateType = EQuestStateType::Regular;
+					break;
+			}
+
+			// ParentBranch - find which branch leads to this state
+			// Access Branches via reflection
+			if (FArrayProperty* BranchesProperty = CastField<FArrayProperty>(UQuest::StaticClass()->FindPropertyByName(TEXT("Branches"))))
+			{
+				FScriptArrayHelper BranchHelper(BranchesProperty, BranchesProperty->ContainerPtrToValuePtr<void>(Quest));
+				for (int32 b = 0; b < BranchHelper.Num(); ++b)
+				{
+					UQuestBranch* Branch = *reinterpret_cast<UQuestBranch**>(BranchHelper.GetRawPtr(b));
+					if (Branch && Branch->DestinationState == State)
+					{
+						// Access Branch ID via reflection since it's protected
+						if (FProperty* BranchIDProp = UNarrativeNodeBase::StaticClass()->FindPropertyByName(TEXT("ID")))
+						{
+							FName* BranchIDPtr = BranchIDProp->ContainerPtrToValuePtr<FName>(Branch);
+							if (BranchIDPtr)
+							{
+								Row.ParentBranch = BranchIDPtr->ToString();
+							}
+						}
+						break;
+					}
+				}
+			}
+
+			// Tasks, Events, Conditions, Rewards - from branches that START from this state
+			// These would need more complex parsing from the branch tasks
+			// For now, leave empty - they can be filled in manually or via XLSX import
+
+			// Restore preserved Notes
+			FString Key = FString::Printf(TEXT("%s_%s"), *Row.QuestName, *Row.StateID);
+			if (FString* PreservedNote = PreservedNotes.Find(Key))
+			{
+				Row.Notes = *PreservedNote;
+			}
+
+			// Mark as synced
+			Row.Status = EQuestTableRowStatus::Synced;
+			Row.LastSyncedHash = Row.ComputeSyncHash();
+
+			SyncedCount++;
+		}
+	}
+
+	// Update table
+	MarkDirty();
+	SyncFromTableData();
+	RefreshList();
+
+	FString Summary = FString::Printf(TEXT("Synced %d states from %d Quest assets"), SyncedCount, AssetList.Num());
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Summary));
+
 	return FReply::Handled();
 }
 

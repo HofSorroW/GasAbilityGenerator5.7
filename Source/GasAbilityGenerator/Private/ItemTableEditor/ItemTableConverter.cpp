@@ -39,45 +39,38 @@ FManifestEquippableItemDefinition FItemTableConverter::ConvertRowToDefinition(
 	Def.BaseValue = Row.BaseValue;
 	Def.Weight = Row.Weight;
 
-	// Combat stats
+	// Combat stats - use explicit columns
 	if (Row.IsWeapon())
 	{
 		Def.AttackRating = Row.AttackRating;
+		Def.AttackDamage = Row.AttackDamage;
+		Def.HeavyAttackDamageMultiplier = Row.HeavyAttackDamageMultiplier;
+		Def.ClipSize = Row.ClipSize;
+		Def.RequiredAmmo = Row.RequiredAmmo;
+		Def.bAllowManualReload = Row.bAllowManualReload;
+		Def.BotAttackRange = Row.BotAttackRange;
 
-		// Parse weapon config for additional properties
-		TMap<FString, FString> WeaponProps = ParseWeaponConfig(Row.WeaponConfig);
-		if (WeaponProps.Contains(TEXT("Damage")))
+		// Ranged weapon properties
+		if (Row.IsRangedWeapon())
 		{
-			Def.AttackDamage = FCString::Atof(*WeaponProps[TEXT("Damage")]);
-		}
-		if (WeaponProps.Contains(TEXT("ClipSize")))
-		{
-			Def.ClipSize = FCString::Atoi(*WeaponProps[TEXT("ClipSize")]);
-		}
-		if (WeaponProps.Contains(TEXT("AimFOV")))
-		{
-			Def.AimFOVPct = FCString::Atof(*WeaponProps[TEXT("AimFOV")]);
-		}
-		if (WeaponProps.Contains(TEXT("BaseSpread")))
-		{
-			Def.BaseSpreadDegrees = FCString::Atof(*WeaponProps[TEXT("BaseSpread")]);
-		}
-		if (WeaponProps.Contains(TEXT("MaxSpread")))
-		{
-			Def.MaxSpreadDegrees = FCString::Atof(*WeaponProps[TEXT("MaxSpread")]);
-		}
-		if (WeaponProps.Contains(TEXT("HeavyMultiplier")))
-		{
-			Def.HeavyAttackDamageMultiplier = FCString::Atof(*WeaponProps[TEXT("HeavyMultiplier")]);
-		}
-		if (WeaponProps.Contains(TEXT("AmmoItem")))
-		{
-			Def.RequiredAmmo = WeaponProps[TEXT("AmmoItem")];
+			Def.BaseSpreadDegrees = Row.BaseSpreadDegrees;
+			Def.MaxSpreadDegrees = Row.MaxSpreadDegrees;
+			Def.SpreadFireBump = Row.SpreadFireBump;
+			Def.SpreadDecreaseSpeed = Row.SpreadDecreaseSpeed;
+			Def.AimFOVPct = Row.AimFOVPct;
 		}
 	}
 	else if (Row.IsArmor())
 	{
 		Def.ArmorRating = Row.ArmorRating;
+	}
+
+	// Consumable properties
+	if (Row.IsConsumable())
+	{
+		Def.bConsumeOnUse = Row.bConsumeOnUse;
+		Def.UseRechargeDuration = Row.UseRechargeDuration;
+		Def.bCanActivate = Row.bCanActivate;
 	}
 
 	// References
@@ -134,23 +127,33 @@ FItemTableRow FItemTableConverter::ConvertDefinitionToRow(const FManifestEquippa
 	// Build abilities string
 	Row.Abilities = FString::Join(Def.AbilitiesToGrant, TEXT(","));
 
-	// Build weapon config if applicable
+	// Set weapon properties from definition - explicit columns
 	if (Row.IsWeapon())
 	{
-		TMap<FString, FString> WeaponProps;
-		if (Def.AttackDamage > 0)
+		Row.AttackDamage = Def.AttackDamage;
+		Row.HeavyAttackDamageMultiplier = Def.HeavyAttackDamageMultiplier;
+		Row.ClipSize = Def.ClipSize;
+		Row.RequiredAmmo = Def.RequiredAmmo;
+		Row.bAllowManualReload = Def.bAllowManualReload;
+		Row.BotAttackRange = Def.BotAttackRange;
+
+		// Ranged weapon properties
+		if (Row.IsRangedWeapon())
 		{
-			WeaponProps.Add(TEXT("Damage"), FString::SanitizeFloat(Def.AttackDamage));
+			Row.BaseSpreadDegrees = Def.BaseSpreadDegrees;
+			Row.MaxSpreadDegrees = Def.MaxSpreadDegrees;
+			Row.SpreadFireBump = Def.SpreadFireBump;
+			Row.SpreadDecreaseSpeed = Def.SpreadDecreaseSpeed;
+			Row.AimFOVPct = Def.AimFOVPct;
 		}
-		if (Def.ClipSize > 0)
-		{
-			WeaponProps.Add(TEXT("ClipSize"), FString::FromInt(Def.ClipSize));
-		}
-		if (Def.AimFOVPct > 0)
-		{
-			WeaponProps.Add(TEXT("AimFOV"), FString::SanitizeFloat(Def.AimFOVPct));
-		}
-		Row.WeaponConfig = BuildWeaponConfigToken(WeaponProps);
+	}
+
+	// Set consumable properties from definition
+	if (Row.IsConsumable())
+	{
+		Row.bConsumeOnUse = Def.bConsumeOnUse;
+		Row.UseRechargeDuration = Def.UseRechargeDuration;
+		Row.bCanActivate = Def.bCanActivate;
 	}
 
 	// Build tags string
@@ -168,44 +171,15 @@ FString FItemTableConverter::GetParentClassName(EItemType ItemType)
 	{
 		case EItemType::RangedWeapon: return TEXT("RangedWeaponItem");
 		case EItemType::MeleeWeapon: return TEXT("MeleeWeaponItem");
-		case EItemType::Consumable: return TEXT("NarrativeItem");
+		case EItemType::MagicWeapon: return TEXT("MagicWeaponItem");
+		case EItemType::ThrowableWeapon: return TEXT("ThrowableWeaponItem");
+		case EItemType::Ammo: return TEXT("AmmoItem");
+		case EItemType::WeaponAttachment: return TEXT("WeaponAttachmentItem");
+		case EItemType::Clothing: return TEXT("ClothingItem");
+		case EItemType::Consumable: return TEXT("GameplayEffectItem");
 		case EItemType::Equippable:
 		default: return TEXT("EquippableItem");
 	}
-}
-
-TMap<FString, FString> FItemTableConverter::ParseWeaponConfig(const FString& WeaponConfigToken)
-{
-	TMap<FString, FString> Props;
-	if (WeaponConfigToken.IsEmpty()) return Props;
-
-	// Parse: Weapon(Damage=50,ClipSize=30,AimFOV=0.5,...)
-	int32 ParenStart = WeaponConfigToken.Find(TEXT("("));
-	if (ParenStart != INDEX_NONE)
-	{
-		int32 ParenEnd = WeaponConfigToken.Find(TEXT(")"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
-		if (ParenEnd > ParenStart)
-		{
-			FString ParamsStr = WeaponConfigToken.Mid(ParenStart + 1, ParenEnd - ParenStart - 1);
-			Props = ParseTokenParams(ParamsStr);
-		}
-	}
-
-	return Props;
-}
-
-FString FItemTableConverter::BuildWeaponConfigToken(const TMap<FString, FString>& Properties)
-{
-	if (Properties.Num() == 0) return TEXT("");
-
-	FString ParamsStr;
-	for (const auto& Pair : Properties)
-	{
-		if (!ParamsStr.IsEmpty()) ParamsStr += TEXT(",");
-		ParamsStr += FString::Printf(TEXT("%s=%s"), *Pair.Key, *Pair.Value);
-	}
-
-	return FString::Printf(TEXT("Weapon(%s)"), *ParamsStr);
 }
 
 TArray<FString> FItemTableConverter::ParseAbilities(const FString& AbilitiesStr)
@@ -236,32 +210,17 @@ TArray<FString> FItemTableConverter::ParseItemTags(const FString& TagsStr)
 	return Tags;
 }
 
-TMap<FString, FString> FItemTableConverter::ParseTokenParams(const FString& ParamsStr)
-{
-	TMap<FString, FString> Params;
-	if (ParamsStr.IsEmpty()) return Params;
-
-	TArray<FString> ParamPairs;
-	ParamsStr.ParseIntoArray(ParamPairs, TEXT(","), true);
-
-	for (const FString& Pair : ParamPairs)
-	{
-		FString Key, Value;
-		if (Pair.Split(TEXT("="), &Key, &Value))
-		{
-			Params.Add(Key.TrimStartAndEnd(), Value.TrimStartAndEnd());
-		}
-	}
-
-	return Params;
-}
-
 FString FItemTableConverter::GetItemTypeString(EItemType ItemType)
 {
 	switch (ItemType)
 	{
 		case EItemType::RangedWeapon: return TEXT("RangedWeapon");
 		case EItemType::MeleeWeapon: return TEXT("MeleeWeapon");
+		case EItemType::MagicWeapon: return TEXT("MagicWeapon");
+		case EItemType::ThrowableWeapon: return TEXT("ThrowableWeapon");
+		case EItemType::Ammo: return TEXT("Ammo");
+		case EItemType::WeaponAttachment: return TEXT("WeaponAttachment");
+		case EItemType::Clothing: return TEXT("Clothing");
 		case EItemType::Consumable: return TEXT("Consumable");
 		case EItemType::Equippable:
 		default: return TEXT("Equippable");
@@ -272,7 +231,12 @@ EItemType FItemTableConverter::ParseItemType(const FString& TypeStr)
 {
 	if (TypeStr.Contains(TEXT("Ranged"))) return EItemType::RangedWeapon;
 	if (TypeStr.Contains(TEXT("Melee"))) return EItemType::MeleeWeapon;
-	if (TypeStr.Contains(TEXT("Consumable")) || TypeStr.Contains(TEXT("NarrativeItem"))) return EItemType::Consumable;
+	if (TypeStr.Contains(TEXT("Magic"))) return EItemType::MagicWeapon;
+	if (TypeStr.Contains(TEXT("Throwable"))) return EItemType::ThrowableWeapon;
+	if (TypeStr.Contains(TEXT("Ammo"))) return EItemType::Ammo;
+	if (TypeStr.Contains(TEXT("Attachment"))) return EItemType::WeaponAttachment;
+	if (TypeStr.Contains(TEXT("Clothing"))) return EItemType::Clothing;
+	if (TypeStr.Contains(TEXT("Consumable")) || TypeStr.Contains(TEXT("GameplayEffect"))) return EItemType::Consumable;
 	return EItemType::Equippable;
 }
 
@@ -282,6 +246,11 @@ FString FItemTableConverter::GetSubfolderForType(EItemType ItemType)
 	{
 		case EItemType::RangedWeapon: return TEXT("Weapons/Ranged");
 		case EItemType::MeleeWeapon: return TEXT("Weapons/Melee");
+		case EItemType::MagicWeapon: return TEXT("Weapons/Magic");
+		case EItemType::ThrowableWeapon: return TEXT("Weapons/Throwable");
+		case EItemType::Ammo: return TEXT("Ammo");
+		case EItemType::WeaponAttachment: return TEXT("Attachments");
+		case EItemType::Clothing: return TEXT("Clothing");
 		case EItemType::Consumable: return TEXT("Consumables");
 		case EItemType::Equippable:
 		default: return TEXT("Equipment");

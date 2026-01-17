@@ -26,6 +26,16 @@
 #include "Misc/MessageDialog.h"
 #include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Items/NarrativeItem.h"
+#include "Items/EquippableItem.h"
+#include "Items/WeaponItem.h"
+#include "Items/RangedWeaponItem.h"
+#include "Items/MeleeWeaponItem.h"
+#include "Items/MagicWeaponItem.h"
+#include "Items/ThrowableWeaponItem.h"
+#include "Items/AmmoItem.h"
+#include "Items/GameplayEffectItem.h"
+#include "Items/WeaponAttachmentItem.h"
 
 #define LOCTEXT_NAMESPACE "ItemTableEditor"
 
@@ -103,9 +113,27 @@ TSharedRef<SWidget> SItemTableRow::GenerateWidgetForColumn(const FName& ColumnNa
 	{
 		return CreateTextCell(Row.Abilities, TEXT("GA_Ability1,GA_Ability2"));
 	}
-	else if (ColumnName == TEXT("WeaponConfig"))
+	// Weapon columns
+	else if (ColumnName == TEXT("AttackDamage"))
 	{
-		return CreateTokenCell(Row.WeaponConfig, TEXT("Weapon(Damage=50,ClipSize=30)"));
+		return CreateFloatCell(Row.AttackDamage, TEXT("Base damage"));
+	}
+	else if (ColumnName == TEXT("ClipSize"))
+	{
+		return CreateIntCell(Row.ClipSize, TEXT("Clip size"));
+	}
+	else if (ColumnName == TEXT("WeaponHand"))
+	{
+		return CreateTextCell(Row.WeaponHand, TEXT("TwoHanded"));
+	}
+	// Ranged columns
+	else if (ColumnName == TEXT("BaseSpreadDegrees"))
+	{
+		return CreateFloatCell(Row.BaseSpreadDegrees, TEXT("Spread"));
+	}
+	else if (ColumnName == TEXT("AimFOVPct"))
+	{
+		return CreateFloatCell(Row.AimFOVPct, TEXT("FOV %"));
 	}
 	else if (ColumnName == TEXT("ItemTags"))
 	{
@@ -136,15 +164,35 @@ bool SItemTableRow::ShouldShowColumn(FName ColumnId) const
 	// Dynamic visibility based on item type
 	if (ColumnId == TEXT("AttackRating"))
 	{
-		return Row.IsWeapon();
+		return Row.IsEquipment();
 	}
 	if (ColumnId == TEXT("ArmorRating"))
 	{
 		return Row.IsArmor();
 	}
-	if (ColumnId == TEXT("WeaponConfig"))
+	if (ColumnId == TEXT("StealthRating"))
+	{
+		return Row.IsEquipment();
+	}
+	// Weapon columns
+	if (ColumnId == TEXT("AttackDamage") || ColumnId == TEXT("ClipSize") ||
+	    ColumnId == TEXT("WeaponHand") || ColumnId == TEXT("HeavyAttackDamageMultiplier") ||
+	    ColumnId == TEXT("bAllowManualReload") || ColumnId == TEXT("BotAttackRange"))
 	{
 		return Row.IsWeapon();
+	}
+	// Ranged weapon columns
+	if (ColumnId == TEXT("BaseSpreadDegrees") || ColumnId == TEXT("MaxSpreadDegrees") ||
+	    ColumnId == TEXT("SpreadFireBump") || ColumnId == TEXT("SpreadDecreaseSpeed") ||
+	    ColumnId == TEXT("AimFOVPct"))
+	{
+		return Row.IsRangedWeapon();
+	}
+	// Consumable columns
+	if (ColumnId == TEXT("bConsumeOnUse") || ColumnId == TEXT("UseRechargeDuration") ||
+	    ColumnId == TEXT("bCanActivate") || ColumnId == TEXT("GameplayEffectClass"))
+	{
+		return Row.IsConsumable();
 	}
 
 	return true;
@@ -402,117 +450,171 @@ TSharedRef<SWidget> SItemTableEditor::BuildToolbar()
 {
 	return SNew(SHorizontalBox)
 
-		// Title
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.VAlign(VAlign_Center)
-		.Padding(5, 0)
-		[
-			SNew(STextBlock)
-			.Text(LOCTEXT("Title", "Item Table Editor"))
-			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
-		]
-
-		+ SHorizontalBox::Slot()
-		.FillWidth(1.0f)
-		[
-			SNullWidget::NullWidget
-		]
-
+		// LEFT SIDE - Data actions
 		// Add Item
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("AddItem", "+ Item"))
 			.OnClicked(this, &SItemTableEditor::OnAddRowClicked)
-		]
-
-		// Delete
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(2)
-		[
-			SNew(SButton)
-			.Text(LOCTEXT("Delete", "Delete"))
-			.OnClicked(this, &SItemTableEditor::OnDeleteRowsClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
 		]
 
 		// Duplicate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("Duplicate", "Duplicate"))
 			.OnClicked(this, &SItemTableEditor::OnDuplicateRowClicked)
 		]
 
+		// Delete
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(10, 0, 2, 0)
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Delete", "Delete"))
+			.OnClicked(this, &SItemTableEditor::OnDeleteRowsClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+		]
+
+		// Vertical separator
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(4.0f, 0.0f)
 		[
 			SNew(SSeparator)
 			.Orientation(Orient_Vertical)
 		]
 
+		// Clear Filters button
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("ClearFilters", "Clear Filters"))
+			.OnClicked(this, &SItemTableEditor::OnClearFiltersClicked)
+			.ToolTipText(LOCTEXT("ClearFiltersTip", "Reset all column filters"))
+		]
+
+		// SPACER - pushes right side buttons to the right
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			SNullWidget::NullWidget
+		]
+
+		// RIGHT SIDE - Generation/IO actions
 		// Validate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("Validate", "Validate"))
 			.OnClicked(this, &SItemTableEditor::OnValidateClicked)
+			.ToolTipText(LOCTEXT("ValidateTip", "Validate all rows for errors and warnings"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Generate
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("Generate", "Generate"))
+			.Text(LOCTEXT("Generate", "Generate Items"))
 			.OnClicked(this, &SItemTableEditor::OnGenerateClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
+		// Sync from Assets
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(10, 0, 2, 0)
+		.Padding(2.0f)
 		[
-			SNew(SSeparator)
-			.Orientation(Orient_Vertical)
+			SNew(SButton)
+			.Text(LOCTEXT("Sync", "Sync from Assets"))
+			.OnClicked(this, &SItemTableEditor::OnSyncFromAssetsClicked)
+			.ToolTipText(LOCTEXT("SyncTip", "Populate table from existing Item assets"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Export XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("ExportXLSX", "Export"))
+			.Text(LOCTEXT("ExportXLSX", "Export XLSX"))
 			.OnClicked(this, &SItemTableEditor::OnExportXLSXClicked)
+			.ToolTipText(LOCTEXT("ExportXLSXTooltip", "Export to Excel format (.xlsx)"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
 		// Import XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("ImportXLSX", "Import"))
+			.Text(LOCTEXT("ImportXLSX", "Import XLSX"))
 			.OnClicked(this, &SItemTableEditor::OnImportXLSXClicked)
+			.ToolTipText(LOCTEXT("ImportXLSXTooltip", "Import from Excel format (.xlsx)"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
-		// Save
+		// Sync XLSX
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(SButton)
-			.Text(LOCTEXT("Save", "Save"))
+			.Text(LOCTEXT("SyncXLSX", "Sync XLSX"))
+			.OnClicked(this, &SItemTableEditor::OnSyncXLSXClicked)
+			.ToolTipText(LOCTEXT("SyncXLSXTooltip", "Merge Excel changes with UE (3-way merge)"))
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
+		]
+
+		// Separator before Asset Actions
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SSeparator)
+			.Orientation(Orient_Vertical)
+		]
+
+		// Save Table
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Save", "Save Table"))
 			.OnClicked(this, &SItemTableEditor::OnSaveClicked)
+			.ToolTipText(LOCTEXT("SaveTooltip", "Save the table data container"))
+		]
+
+		// Apply to Assets
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("ApplyToAssets", "Apply to Items"))
+			.OnClicked(this, &SItemTableEditor::OnApplyToAssetsClicked)
+			.ButtonStyle(FAppStyle::Get(), "FlatButton.Success")
+			.ToolTipText(LOCTEXT("ApplyToAssetsTooltip", "Write changes back to Item assets"))
+			.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		];
 }
 
@@ -795,7 +897,17 @@ FString SItemTableEditor::GetColumnValue(const TSharedPtr<FItemTableRow>& Row, F
 	if (ColumnId == TEXT("ArmorRating")) return FString::SanitizeFloat(Data.ArmorRating);
 	if (ColumnId == TEXT("ModifierGE")) return Data.ModifierGE.GetAssetName();
 	if (ColumnId == TEXT("Abilities")) return Data.Abilities;
-	if (ColumnId == TEXT("WeaponConfig")) return Data.WeaponConfig;
+	// Weapon properties
+	if (ColumnId == TEXT("AttackDamage")) return FString::SanitizeFloat(Data.AttackDamage);
+	if (ColumnId == TEXT("ClipSize")) return FString::FromInt(Data.ClipSize);
+	if (ColumnId == TEXT("WeaponHand")) return Data.WeaponHand;
+	if (ColumnId == TEXT("HeavyAttackDamageMultiplier")) return FString::SanitizeFloat(Data.HeavyAttackDamageMultiplier);
+	if (ColumnId == TEXT("bAllowManualReload")) return Data.bAllowManualReload ? TEXT("Yes") : TEXT("No");
+	if (ColumnId == TEXT("BotAttackRange")) return FString::SanitizeFloat(Data.BotAttackRange);
+	// Ranged properties
+	if (ColumnId == TEXT("BaseSpreadDegrees")) return FString::SanitizeFloat(Data.BaseSpreadDegrees);
+	if (ColumnId == TEXT("MaxSpreadDegrees")) return FString::SanitizeFloat(Data.MaxSpreadDegrees);
+	if (ColumnId == TEXT("AimFOVPct")) return FString::SanitizeFloat(Data.AimFOVPct);
 	if (ColumnId == TEXT("ItemTags")) return Data.ItemTags;
 	if (ColumnId == TEXT("bStackable")) return Data.bStackable ? TEXT("Yes") : TEXT("No");
 	if (ColumnId == TEXT("MaxStackSize")) return FString::FromInt(Data.MaxStackSize);
@@ -1007,7 +1119,393 @@ FReply SItemTableEditor::OnGenerateClicked()
 
 FReply SItemTableEditor::OnSyncFromAssetsClicked()
 {
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "Sync from Assets not yet implemented."));
+	// v4.8.4: Re-entrancy guard
+	if (bIsBusy) return FReply::Handled();
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	if (!TableData)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoTableData", "No table data available. Please create or open a table first."));
+		return FReply::Handled();
+	}
+
+	// Get Asset Registry
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	// Force Asset Registry rescan before querying
+	TArray<FString> PathsToScan = { TEXT("/Game/") };
+	UE_LOG(LogTemp, Log, TEXT("[ItemTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
+	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
+
+	// Find all EquippableItem assets (this is the base class for all equipment)
+	TArray<FAssetData> AssetList;
+	FTopLevelAssetPath ClassPath = UEquippableItem::StaticClass()->GetClassPathName();
+	AssetRegistry.GetAssetsByClass(ClassPath, AssetList, true);
+	UE_LOG(LogTemp, Log, TEXT("[ItemTableEditor] Found %d UEquippableItem assets"), AssetList.Num());
+
+	if (AssetList.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoItemsFound", "No EquippableItem assets found in the project.\n\nCreate EquippableItem assets (EI_*) first, then sync."));
+		return FReply::Handled();
+	}
+
+	// Preserve existing Notes values before clearing rows (user-entered, not stored in Item asset)
+	TMap<FString, FString> PreservedNotes;
+	for (const FItemTableRow& ExistingRow : TableData->Rows)
+	{
+		if (!ExistingRow.Notes.IsEmpty())
+		{
+			PreservedNotes.Add(ExistingRow.ItemName, ExistingRow.Notes);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[ItemTableEditor] Preserved %d Notes before sync"), PreservedNotes.Num());
+
+	// Clear existing rows and populate from assets
+	TableData->Rows.Empty();
+	int32 SyncedCount = 0;
+
+	for (const FAssetData& AssetData : AssetList)
+	{
+		UEquippableItem* Item = Cast<UEquippableItem>(AssetData.GetAsset());
+		if (!Item)
+		{
+			continue;
+		}
+
+		FItemTableRow& Row = TableData->AddRow();
+
+		// Core Identity
+		Row.ItemName = AssetData.AssetName.ToString();
+
+		// Get DisplayName via reflection (it's a protected FText property)
+		if (FProperty* DisplayNameProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("DisplayName")))
+		{
+			FText* DisplayNamePtr = DisplayNameProp->ContainerPtrToValuePtr<FText>(Item);
+			if (DisplayNamePtr)
+			{
+				Row.DisplayName = DisplayNamePtr->ToString();
+			}
+		}
+
+		// Determine ItemType based on class hierarchy (most specific first)
+		if (Item->IsA(URangedWeaponItem::StaticClass()))
+		{
+			Row.ItemType = EItemType::RangedWeapon;
+		}
+		else if (Item->IsA(UMeleeWeaponItem::StaticClass()))
+		{
+			Row.ItemType = EItemType::MeleeWeapon;
+		}
+		else if (Item->IsA(UMagicWeaponItem::StaticClass()))
+		{
+			Row.ItemType = EItemType::MagicWeapon;
+		}
+		else if (Item->IsA(UThrowableWeaponItem::StaticClass()))
+		{
+			Row.ItemType = EItemType::ThrowableWeapon;
+		}
+		else if (Item->IsA(UEquippableItem_Clothing::StaticClass()))
+		{
+			Row.ItemType = EItemType::Clothing;
+		}
+		else
+		{
+			Row.ItemType = EItemType::Equippable;
+		}
+
+		// Equipment slot - get first slot from EquippableSlots container
+		// Access via reflection since EquippableSlots is protected
+		if (FProperty* SlotsProperty = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("EquippableSlots")))
+		{
+			FGameplayTagContainer* Slots = SlotsProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(Item);
+			if (Slots && Slots->Num() > 0)
+			{
+				TArray<FGameplayTag> TagArray;
+				Slots->GetGameplayTagArray(TagArray);
+				if (TagArray.Num() > 0)
+				{
+					Row.EquipmentSlot = TagArray[0].ToString();
+				}
+			}
+		}
+
+		// Base value and weight from NarrativeItem base class
+		if (FProperty* ValueProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("BaseValue")))
+		{
+			int32* Value = ValueProp->ContainerPtrToValuePtr<int32>(Item);
+			if (Value)
+			{
+				Row.BaseValue = *Value;
+			}
+		}
+
+		if (FProperty* WeightProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("Weight")))
+		{
+			float* Weight = WeightProp->ContainerPtrToValuePtr<float>(Item);
+			if (Weight)
+			{
+				Row.Weight = *Weight;
+			}
+		}
+
+		// Description from NarrativeItem
+		if (FProperty* DescProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("Description")))
+		{
+			FText* DescPtr = DescProp->ContainerPtrToValuePtr<FText>(Item);
+			if (DescPtr)
+			{
+				Row.Description = DescPtr->ToString();
+			}
+		}
+
+		// BaseScore from NarrativeItem
+		if (FProperty* ScoreProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("BaseScore")))
+		{
+			float* Score = ScoreProp->ContainerPtrToValuePtr<float>(Item);
+			if (Score)
+			{
+				Row.BaseScore = *Score;
+			}
+		}
+
+		// Combat stats via reflection (protected properties on UEquippableItem)
+		if (FProperty* AttackProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("AttackRating")))
+		{
+			float* Attack = AttackProp->ContainerPtrToValuePtr<float>(Item);
+			if (Attack)
+			{
+				Row.AttackRating = *Attack;
+			}
+		}
+
+		if (FProperty* ArmorProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("ArmorRating")))
+		{
+			float* Armor = ArmorProp->ContainerPtrToValuePtr<float>(Item);
+			if (Armor)
+			{
+				Row.ArmorRating = *Armor;
+			}
+		}
+
+		if (FProperty* StealthProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("StealthRating")))
+		{
+			float* Stealth = StealthProp->ContainerPtrToValuePtr<float>(Item);
+			if (Stealth)
+			{
+				Row.StealthRating = *Stealth;
+			}
+		}
+
+		// Weapon stats (if this is a weapon)
+		if (Row.IsWeapon())
+		{
+			if (FProperty* DamageProp = UWeaponItem::StaticClass()->FindPropertyByName(TEXT("AttackDamage")))
+			{
+				float* Damage = DamageProp->ContainerPtrToValuePtr<float>(Item);
+				if (Damage)
+				{
+					Row.AttackDamage = *Damage;
+				}
+			}
+
+			if (FProperty* HeavyMultProp = UWeaponItem::StaticClass()->FindPropertyByName(TEXT("HeavyAttackDamageMultiplier")))
+			{
+				float* Mult = HeavyMultProp->ContainerPtrToValuePtr<float>(Item);
+				if (Mult)
+				{
+					Row.HeavyAttackDamageMultiplier = *Mult;
+				}
+			}
+
+			if (FProperty* HandProp = UWeaponItem::StaticClass()->FindPropertyByName(TEXT("WeaponHand")))
+			{
+				uint8* HandValue = HandProp->ContainerPtrToValuePtr<uint8>(Item);
+				if (HandValue)
+				{
+					switch (*HandValue)
+					{
+						case 0: Row.WeaponHand = TEXT("TwoHanded"); break;
+						case 1: Row.WeaponHand = TEXT("MainHand"); break;
+						case 2: Row.WeaponHand = TEXT("OffHand"); break;
+						case 3: Row.WeaponHand = TEXT("DualWieldable"); break;
+						default: Row.WeaponHand = TEXT("TwoHanded"); break;
+					}
+				}
+			}
+
+			if (FProperty* ClipProp = UWeaponItem::StaticClass()->FindPropertyByName(TEXT("ClipSize")))
+			{
+				int32* Clip = ClipProp->ContainerPtrToValuePtr<int32>(Item);
+				if (Clip)
+				{
+					Row.ClipSize = *Clip;
+				}
+			}
+
+			if (FProperty* ReloadProp = UWeaponItem::StaticClass()->FindPropertyByName(TEXT("bAllowManualReload")))
+			{
+				bool* Reload = ReloadProp->ContainerPtrToValuePtr<bool>(Item);
+				if (Reload)
+				{
+					Row.bAllowManualReload = *Reload;
+				}
+			}
+
+			if (FProperty* RangeProp = UWeaponItem::StaticClass()->FindPropertyByName(TEXT("BotAttackRange")))
+			{
+				float* Range = RangeProp->ContainerPtrToValuePtr<float>(Item);
+				if (Range)
+				{
+					Row.BotAttackRange = *Range;
+				}
+			}
+		}
+
+		// Ranged weapon stats
+		if (Row.IsRangedWeapon())
+		{
+			if (FProperty* SpreadProp = URangedWeaponItem::StaticClass()->FindPropertyByName(TEXT("BaseSpreadDegrees")))
+			{
+				float* Spread = SpreadProp->ContainerPtrToValuePtr<float>(Item);
+				if (Spread)
+				{
+					Row.BaseSpreadDegrees = *Spread;
+				}
+			}
+
+			if (FProperty* MaxSpreadProp = URangedWeaponItem::StaticClass()->FindPropertyByName(TEXT("MaxSpreadDegrees")))
+			{
+				float* MaxSpread = MaxSpreadProp->ContainerPtrToValuePtr<float>(Item);
+				if (MaxSpread)
+				{
+					Row.MaxSpreadDegrees = *MaxSpread;
+				}
+			}
+
+			if (FProperty* BumpProp = URangedWeaponItem::StaticClass()->FindPropertyByName(TEXT("SpreadFireBump")))
+			{
+				float* Bump = BumpProp->ContainerPtrToValuePtr<float>(Item);
+				if (Bump)
+				{
+					Row.SpreadFireBump = *Bump;
+				}
+			}
+
+			if (FProperty* DecProp = URangedWeaponItem::StaticClass()->FindPropertyByName(TEXT("SpreadDecreaseSpeed")))
+			{
+				float* Dec = DecProp->ContainerPtrToValuePtr<float>(Item);
+				if (Dec)
+				{
+					Row.SpreadDecreaseSpeed = *Dec;
+				}
+			}
+
+			if (FProperty* FOVProp = URangedWeaponItem::StaticClass()->FindPropertyByName(TEXT("AimFOVPct")))
+			{
+				float* FOV = FOVProp->ContainerPtrToValuePtr<float>(Item);
+				if (FOV)
+				{
+					Row.AimFOVPct = *FOV;
+				}
+			}
+		}
+
+		// Consumable stats from NarrativeItem
+		if (FProperty* ConsumeProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("bConsumeOnUse")))
+		{
+			bool* Consume = ConsumeProp->ContainerPtrToValuePtr<bool>(Item);
+			if (Consume)
+			{
+				Row.bConsumeOnUse = *Consume;
+			}
+		}
+
+		if (FProperty* RechargeProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("UseRechargeDuration")))
+		{
+			float* Recharge = RechargeProp->ContainerPtrToValuePtr<float>(Item);
+			if (Recharge)
+			{
+				Row.UseRechargeDuration = *Recharge;
+			}
+		}
+
+		if (FProperty* ActivateProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("bCanActivate")))
+		{
+			bool* Activate = ActivateProp->ContainerPtrToValuePtr<bool>(Item);
+			if (Activate)
+			{
+				Row.bCanActivate = *Activate;
+			}
+		}
+
+		// Equipment effect (modifier GE)
+		if (FProperty* EffectProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("EquipmentEffect")))
+		{
+			TSubclassOf<UGameplayEffect>* Effect = EffectProp->ContainerPtrToValuePtr<TSubclassOf<UGameplayEffect>>(Item);
+			if (Effect && *Effect)
+			{
+				Row.ModifierGE = FSoftObjectPath((*Effect)->GetPathName());
+			}
+		}
+
+		// Stackable and max stack from NarrativeItem
+		if (FProperty* StackProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("bStackable")))
+		{
+			bool* Stackable = StackProp->ContainerPtrToValuePtr<bool>(Item);
+			if (Stackable)
+			{
+				Row.bStackable = *Stackable;
+			}
+		}
+
+		if (FProperty* MaxStackProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("MaxStackSize")))
+		{
+			int32* MaxStack = MaxStackProp->ContainerPtrToValuePtr<int32>(Item);
+			if (MaxStack)
+			{
+				Row.MaxStackSize = *MaxStack;
+			}
+		}
+
+		// Item tags
+		if (FProperty* TagsProp = UNarrativeItem::StaticClass()->FindPropertyByName(TEXT("ItemTags")))
+		{
+			FGameplayTagContainer* Tags = TagsProp->ContainerPtrToValuePtr<FGameplayTagContainer>(Item);
+			if (Tags && Tags->Num() > 0)
+			{
+				TArray<FString> TagStrings;
+				for (const FGameplayTag& ItemTag : *Tags)
+				{
+					TagStrings.Add(ItemTag.ToString());
+				}
+				Row.ItemTags = FString::Join(TagStrings, TEXT(", "));
+			}
+		}
+
+		// Restore preserved Notes
+		if (FString* PreservedNote = PreservedNotes.Find(Row.ItemName))
+		{
+			Row.Notes = *PreservedNote;
+		}
+
+		// Mark as synced
+		Row.Status = EItemTableRowStatus::Synced;
+		Row.LastSyncedHash = Row.ComputeSyncHash();
+
+		SyncedCount++;
+	}
+
+	// Update table
+	MarkDirty();
+	SyncFromTableData();
+	RefreshList();
+
+	FString Summary = FString::Printf(TEXT("Synced %d items from %d EquippableItem assets"), SyncedCount, AssetList.Num());
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Summary));
+
 	return FReply::Handled();
 }
 

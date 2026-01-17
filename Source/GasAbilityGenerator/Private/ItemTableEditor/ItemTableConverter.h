@@ -51,24 +51,9 @@ public:
 	/**
 	 * Get parent class name based on item type
 	 * @param ItemType Item type enum
-	 * @return Parent class name (EquippableItem, RangedWeaponItem, MeleeWeaponItem, NarrativeItem)
+	 * @return Parent class name (EquippableItem, RangedWeaponItem, MeleeWeaponItem, etc.)
 	 */
 	static FString GetParentClassName(EItemType ItemType);
-
-	/**
-	 * Parse WeaponConfig token string into weapon properties
-	 * Format: Weapon(Damage=50,ClipSize=30,AimFOV=0.5,...)
-	 * @param WeaponConfigToken Weapon config token string
-	 * @return Map of property key-value pairs
-	 */
-	static TMap<FString, FString> ParseWeaponConfig(const FString& WeaponConfigToken);
-
-	/**
-	 * Build WeaponConfig token from properties map
-	 * @param Properties Map of property key-value pairs
-	 * @return Formatted token string
-	 */
-	static FString BuildWeaponConfigToken(const TMap<FString, FString>& Properties);
 
 	/**
 	 * Parse comma-separated abilities string into array
@@ -85,14 +70,6 @@ public:
 	static TArray<FString> ParseItemTags(const FString& TagsStr);
 
 private:
-	/**
-	 * Parse token parameters from string
-	 * Format: Key=Value,Key2=Value2
-	 * @param ParamsStr Parameters string
-	 * @return Map of parameter key-value pairs
-	 */
-	static TMap<FString, FString> ParseTokenParams(const FString& ParamsStr);
-
 	/**
 	 * Get item type string from enum
 	 * @param ItemType Item type enum

@@ -57,7 +57,8 @@ TArray<FItemValidationIssue> FItemTableValidator::ValidateRow(const FItemTableRo
 	// Type-specific validation
 	Issues.Append(ValidateEquipmentSlot(Row));
 	Issues.Append(ValidateCombatStats(Row));
-	Issues.Append(ValidateWeaponConfig(Row));
+	Issues.Append(ValidateWeaponProperties(Row));
+	Issues.Append(ValidateConsumableProperties(Row));
 	Issues.Append(ValidateAssetReferences(Row));
 	Issues.Append(ValidateStackingProperties(Row));
 
@@ -173,58 +174,155 @@ TArray<FItemValidationIssue> FItemTableValidator::ValidateEquipmentSlot(const FI
 	return Issues;
 }
 
-TArray<FItemValidationIssue> FItemTableValidator::ValidateWeaponConfig(const FItemTableRow& Row)
+TArray<FItemValidationIssue> FItemTableValidator::ValidateWeaponProperties(const FItemTableRow& Row)
 {
 	TArray<FItemValidationIssue> Issues;
 
-	// Weapon config only for weapons
-	if (!Row.WeaponConfig.IsEmpty())
+	if (Row.IsWeapon())
 	{
-		if (!Row.IsWeapon())
+		// Weapons should have attack damage
+		if (Row.AttackDamage <= 0)
 		{
 			Issues.Add(FItemValidationIssue(
 				EItemValidationSeverity::Warning,
 				Row.ItemName,
-				TEXT("WeaponConfig"),
-				TEXT("Weapon config specified for non-weapon item")));
+				TEXT("AttackDamage"),
+				TEXT("Weapon has no attack damage set")));
 		}
-		else
+
+		// Ranged weapons should have clip size
+		if (Row.IsRangedWeapon() && Row.ClipSize <= 0)
 		{
-			// Validate format
-			if (!Row.WeaponConfig.StartsWith(TEXT("Weapon(")))
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("ClipSize"),
+				TEXT("Ranged weapon has no clip size set")));
+		}
+
+		// Validate weapon hand
+		if (!Row.WeaponHand.IsEmpty())
+		{
+			if (Row.WeaponHand != TEXT("TwoHanded") &&
+				Row.WeaponHand != TEXT("MainHand") &&
+				Row.WeaponHand != TEXT("OffHand") &&
+				Row.WeaponHand != TEXT("DualWieldable"))
 			{
 				Issues.Add(FItemValidationIssue(
 					EItemValidationSeverity::Warning,
 					Row.ItemName,
-					TEXT("WeaponConfig"),
-					TEXT("Weapon config should use format: Weapon(Damage=X,ClipSize=Y,...)")));
-			}
-
-			// Check parentheses balance
-			int32 OpenCount = 0, CloseCount = 0;
-			for (TCHAR C : Row.WeaponConfig)
-			{
-				if (C == TEXT('(')) OpenCount++;
-				if (C == TEXT(')')) CloseCount++;
-			}
-			if (OpenCount != CloseCount)
-			{
-				Issues.Add(FItemValidationIssue(
-					EItemValidationSeverity::Error,
-					Row.ItemName,
-					TEXT("WeaponConfig"),
-					TEXT("Unbalanced parentheses in weapon config")));
+					TEXT("WeaponHand"),
+					TEXT("Invalid weapon hand - use TwoHanded, MainHand, OffHand, or DualWieldable")));
 			}
 		}
+
+		// Ranged spread validation
+		if (Row.IsRangedWeapon())
+		{
+			if (Row.BaseSpreadDegrees > Row.MaxSpreadDegrees)
+			{
+				Issues.Add(FItemValidationIssue(
+					EItemValidationSeverity::Warning,
+					Row.ItemName,
+					TEXT("BaseSpreadDegrees"),
+					TEXT("Base spread is greater than max spread")));
+			}
+
+			if (Row.AimFOVPct <= 0 || Row.AimFOVPct > 1.0f)
+			{
+				Issues.Add(FItemValidationIssue(
+					EItemValidationSeverity::Warning,
+					Row.ItemName,
+					TEXT("AimFOVPct"),
+					TEXT("Aim FOV percentage should be between 0 and 1")));
+			}
+		}
+
+		// Heavy attack multiplier validation
+		if (Row.HeavyAttackDamageMultiplier < 1.0f)
+		{
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("HeavyAttackDamageMultiplier"),
+				TEXT("Heavy attack multiplier is less than 1.0 - heavy attacks will do less damage")));
+		}
 	}
-	else if (Row.IsWeapon())
+	else
 	{
-		// Weapons should have config
-		Issues.Add(FItemValidationIssue(
-			EItemValidationSeverity::Warning,
-			Row.ItemName,
-			TEXT("WeaponConfig"),
-			TEXT("Weapon has no config - consider adding damage, clip size, etc.")));
+		// Non-weapons shouldn't have weapon-specific properties set
+		if (Row.AttackDamage > 0)
+		{
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("AttackDamage"),
+				TEXT("Attack damage set on non-weapon item")));
+		}
+
+		if (Row.ClipSize > 0)
+		{
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("ClipSize"),
+				TEXT("Clip size set on non-weapon item")));
+		}
+	}
+
+	return Issues;
+}
+
+TArray<FItemValidationIssue> FItemTableValidator::ValidateConsumableProperties(const FItemTableRow& Row)
+{
+	TArray<FItemValidationIssue> Issues;
+
+	if (Row.IsConsumable())
+	{
+		// Consumables should typically consume on use
+		if (!Row.bConsumeOnUse)
+		{
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("bConsumeOnUse"),
+				TEXT("Consumable item doesn't consume on use - is this intentional?")));
+		}
+
+		// If has gameplay effect, validate format
+		if (!Row.GameplayEffectClass.IsEmpty() && !Row.GameplayEffectClass.StartsWith(TEXT("GE_")))
+		{
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("GameplayEffectClass"),
+				TEXT("Gameplay effect should start with GE_ prefix")));
+		}
+	}
+	else
+	{
+		// Non-consumables shouldn't have consumable properties
+		if (Row.bConsumeOnUse)
+		{
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("bConsumeOnUse"),
+				TEXT("Non-consumable item has consume on use enabled")));
+		}
+	}
+
+	// Ammo validation
+	if (Row.IsAmmo())
+	{
+		if (!Row.bStackable)
+		{
+			Issues.Add(FItemValidationIssue(
+				EItemValidationSeverity::Warning,
+				Row.ItemName,
+				TEXT("bStackable"),
+				TEXT("Ammo should typically be stackable")));
+		}
 	}
 
 	return Issues;

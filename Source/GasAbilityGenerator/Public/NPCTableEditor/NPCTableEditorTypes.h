@@ -34,7 +34,7 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	GENERATED_BODY()
 
 	/** Unique row identifier for internal tracking */
-	UPROPERTY()
+	UPROPERTY(meta = (IgnoreForMemberInitializationTest))
 	FGuid RowId;
 
 	//=========================================================================

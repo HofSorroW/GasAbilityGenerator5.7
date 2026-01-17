@@ -46,7 +46,7 @@ struct GASABILITYGENERATOR_API FQuestTableRow
 	GENERATED_BODY()
 
 	/** Unique row identifier for internal tracking */
-	UPROPERTY()
+	UPROPERTY(meta = (IgnoreForMemberInitializationTest))
 	FGuid RowId;
 
 	//=========================================================================

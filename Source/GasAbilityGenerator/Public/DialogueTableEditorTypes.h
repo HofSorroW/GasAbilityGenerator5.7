@@ -59,7 +59,7 @@ struct GASABILITYGENERATOR_API FDialogueTableRow
 	GENERATED_BODY()
 
 	/** Stable row identifier for XLSX sync - survives reorder/filter operations */
-	UPROPERTY()
+	UPROPERTY(meta = (IgnoreForMemberInitializationTest))
 	FGuid RowId;
 
 	/** v4.7: Row status - matches NPC table editor */

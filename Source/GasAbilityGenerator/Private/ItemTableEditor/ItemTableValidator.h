@@ -160,8 +160,11 @@ private:
 	/** Validate equipment slot for item type */
 	static TArray<FItemValidationIssue> ValidateEquipmentSlot(const FItemTableRow& Row);
 
-	/** Validate WeaponConfig token syntax */
-	static TArray<FItemValidationIssue> ValidateWeaponConfig(const FItemTableRow& Row);
+	/** Validate weapon-specific properties (AttackDamage, ClipSize, etc.) */
+	static TArray<FItemValidationIssue> ValidateWeaponProperties(const FItemTableRow& Row);
+
+	/** Validate consumable-specific properties (bConsumeOnUse, GameplayEffectClass, etc.) */
+	static TArray<FItemValidationIssue> ValidateConsumableProperties(const FItemTableRow& Row);
 
 	/** Validate referenced assets exist (ModifierGE, Abilities) */
 	static TArray<FItemValidationIssue> ValidateAssetReferences(const FItemTableRow& Row);
