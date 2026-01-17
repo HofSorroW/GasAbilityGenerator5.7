@@ -86,6 +86,11 @@ private:
 	int32 LastValidationErrorCount = 0;
 	bool bHadParseError = false;
 
+	// v4.7: Report system state
+	FString CachedManifestPath;
+	int64 CachedManifestHash = 0;
+	bool bCachedForceMode = false;
+
 	// v3.9.9: Level actor placement
 	void GenerateLevelActors(const FManifestData& ManifestData, UWorld* TargetWorld);
 	void SaveWorldPackage(UWorld* World);

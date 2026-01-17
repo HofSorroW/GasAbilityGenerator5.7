@@ -7,6 +7,7 @@
 #include "GasAbilityGeneratorGenerators.h"
 #include "GasAbilityGeneratorMetadata.h"  // v3.1: For metadata registry
 #include "GasAbilityGeneratorDialogueCSVParser.h"  // v4.0: CSV dialogue parsing
+#include "GasAbilityGeneratorReport.h"  // v4.7: Generation report system
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformFilemanager.h"
@@ -155,6 +156,14 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		LogError(FString::Printf(TEXT("ERROR: Failed to read manifest file: %s"), *ManifestPath));
 		return 1;
 	}
+
+	// v4.7: Compute manifest hash for report tracking
+	int64 ManifestHash = static_cast<int64>(GetTypeHash(ManifestContent));
+
+	// v4.7: Cache values for report generation in GenerateAssets
+	CachedManifestPath = ManifestPath;
+	CachedManifestHash = ManifestHash;
+	bCachedForceMode = bForce;
 
 	// Parse manifest with exception handling
 	LogMessage(TEXT("Parsing manifest..."));
@@ -382,6 +391,13 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 				LogMessage(FString::Printf(TEXT("... and %d more skipped assets"), Summary.SkipCount - 10));
 			}
 		}
+	}
+
+	// v4.7: Create and save dry-run report
+	if (FGeneratorBase::IsDryRunMode())
+	{
+		const FDryRunSummary& DryRunSummary = FGeneratorBase::GetDryRunSummary();
+		FGenerationReportHelper::CreateAndSaveDryRunReport(CachedManifestPath, CachedManifestHash, DryRunSummary, bCachedForceMode);
 	}
 
 	// v3.0: Cleanup dry run and force modes
@@ -1090,6 +1106,12 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 
 	// v3.1: Save the metadata registry
 	GeneratorMetadataHelpers::SaveRegistryIfNeeded();
+
+	// v4.7: Create and save real-run report (only if not dry-run)
+	if (!FGeneratorBase::IsDryRunMode())
+	{
+		FGenerationReportHelper::CreateAndSaveReport(CachedManifestPath, CachedManifestHash, Summary.Results, bCachedForceMode);
+	}
 }
 
 void UGasAbilityGeneratorCommandlet::LogMessage(const FString& Message)

@@ -1920,6 +1920,8 @@ FGenerationResult FEnumerationGenerator::Generate(const FManifestEnumerationDefi
 	StoreDataAssetMetadata(NewEnum, TEXT("E"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("Enumeration");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -1994,6 +1996,8 @@ FGenerationResult FInputActionGenerator::Generate(const FManifestInputActionDefi
 	StoreDataAssetMetadata(InputAction, TEXT("IA"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("InputAction");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -2053,6 +2057,8 @@ FGenerationResult FInputMappingContextGenerator::Generate(const FManifestInputMa
 	StoreDataAssetMetadata(IMC, TEXT("IMC"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("InputMappingContext");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -2298,6 +2304,8 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 	StoreBlueprintMetadata(Blueprint, TEXT("GameplayEffect"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("GameplayEffect");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -2511,6 +2519,8 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	StoreBlueprintMetadata(Blueprint, TEXT("GameplayAbility"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("GameplayAbility");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -2822,6 +2832,8 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	StoreBlueprintMetadata(Blueprint, TEXT("ActorBlueprint"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("ActorBlueprint");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -3394,6 +3406,8 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 	StoreBlueprintMetadata(WidgetBP, TEXT("WidgetBlueprint"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("WidgetBlueprint");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -3594,6 +3608,8 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 	StoreDataAssetMetadata(Blackboard, TEXT("BB"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("Blackboard");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -4141,6 +4157,8 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 	StoreDataAssetMetadata(BT, TEXT("BT"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("BehaviorTree");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -4719,6 +4737,8 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 	StoreDataAssetMetadata(Material, TEXT("M"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("Material");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -5259,6 +5279,8 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 	StoreDataAssetMetadata(MaterialFunction, TEXT("MF"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("MaterialFunction");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -8237,6 +8259,8 @@ FGenerationResult FFloatCurveGenerator::Generate(const FManifestFloatCurveDefini
 		*Definition.Name, Definition.Keys.Num(),
 		*Definition.ExtrapolationBefore, *Definition.ExtrapolationAfter));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("FloatCurve");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -8370,6 +8394,8 @@ FGenerationResult FAnimationMontageGenerator::Generate(const FManifestAnimationM
 	LogGeneration(FString::Printf(TEXT("Created Animation Montage: %s with %d sections"),
 		*Definition.Name, Definition.Sections.Num()));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("AnimationMontage");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -8551,6 +8577,8 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
 		FString::Printf(TEXT("Created at %s"), *AssetPath));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("AnimationNotify");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -9493,6 +9521,8 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 	StoreBlueprintMetadata(Blueprint, TEXT("DialogueBlueprint"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("DialogueBlueprint");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -11090,6 +11120,8 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 	StoreBlueprintMetadata(Blueprint, TEXT("EquippableItem"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("EquippableItem");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -11326,6 +11358,8 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 	StoreBlueprintMetadata(Blueprint, TEXT("Activity"), Definition.Name, Definition.ComputeHash());
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("Activity");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -11472,6 +11506,8 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 
 	LogGeneration(FString::Printf(TEXT("Created Ability Configuration: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("AbilityConfiguration");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -11594,6 +11630,8 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 
 	LogGeneration(FString::Printf(TEXT("Created Activity Configuration: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("ActivityConfiguration");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -11682,6 +11720,8 @@ FGenerationResult FItemCollectionGenerator::Generate(const FManifestItemCollecti
 
 	LogGeneration(FString::Printf(TEXT("Created Item Collection: %s with %d items"), *Definition.Name, ItemsAdded));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("ItemCollection");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -12088,6 +12128,8 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 
 	LogGeneration(FString::Printf(TEXT("Created Narrative Event: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("NarrativeEvent");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -12354,6 +12396,8 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
 		FString::Printf(TEXT("Created at %s"), *AssetPath));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("GameplayCue");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -13056,6 +13100,8 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 
 	LogGeneration(FString::Printf(TEXT("Created NPC Definition: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("NPCDefinition");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -13200,6 +13246,8 @@ FGenerationResult FCharacterDefinitionGenerator::Generate(const FManifestCharact
 
 	LogGeneration(FString::Printf(TEXT("Created Character Definition: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("CharacterDefinition");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -13307,6 +13355,8 @@ FGenerationResult FCharacterAppearanceGenerator::Generate(const FManifestCharact
 
 	LogGeneration(FString::Printf(TEXT("Created Character Appearance: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("CharacterAppearance");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -13541,6 +13591,8 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 
 	LogGeneration(FString::Printf(TEXT("Created TriggerSet: %s with %d triggers"), *Definition.Name, TriggerSet->Triggers.Num()));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("TriggerSet");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -13649,6 +13701,8 @@ FGenerationResult FTaggedDialogueSetGenerator::Generate(const FManifestTaggedDia
 	LogGeneration(FString::Printf(TEXT("Created Tagged Dialogue Set: %s with %d dialogues"),
 		*Definition.Name, Definition.Dialogues.Num()));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("TaggedDialogueSet");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -14219,6 +14273,8 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 
 	LogGeneration(FString::Printf(TEXT("Created Niagara System: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("NiagaraSystem");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -14711,6 +14767,8 @@ FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivitySc
 
 	LogGeneration(FString::Printf(TEXT("Created Activity Schedule: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("ActivitySchedule");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -14859,6 +14917,8 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 
 	LogGeneration(FString::Printf(TEXT("Created Goal Item: %s (DefaultScore: %.1f)"), *Definition.Name, Definition.DefaultScore));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("GoalItem");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -15489,6 +15549,8 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 	StoreBlueprintMetadata(QuestBP, TEXT("Quest Blueprint"), Definition.Name, InputHash);
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("Quest");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -15627,6 +15689,9 @@ FGenerationResult FPOIPlacementGenerator::Generate(
 		*Definition.POITag, Definition.Location.X, Definition.Location.Y, Definition.Location.Z));
 
 	Result = FGenerationResult(Definition.POITag, EGenerationStatus::New);
+	Result.AssetPath = FString::Printf(TEXT("LevelActor/POI/%s"), *Definition.POITag);
+	Result.GeneratorId = TEXT("POIPlacement");
+	Result.DetermineCategory();
 	return Result;
 }
 
@@ -15763,6 +15828,9 @@ FGenerationResult FNPCSpawnerPlacementGenerator::Generate(
 		*Definition.Name, SpawnLocation.X, SpawnLocation.Y, SpawnLocation.Z, Definition.NPCs.Num()));
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = FString::Printf(TEXT("LevelActor/NPCSpawner/%s"), *Definition.Name);
+	Result.GeneratorId = TEXT("NPCSpawnerPlacement");
+	Result.DetermineCategory();
 	return Result;
 }
 

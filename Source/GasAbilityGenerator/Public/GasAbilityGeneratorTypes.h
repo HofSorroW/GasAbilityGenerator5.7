@@ -42,6 +42,10 @@ struct FGenerationResult
 	FString Message;
 	FString Category;  // For grouping in results dialog
 
+	// v4.7: Report system fields for machine-readable audit trail
+	FString AssetPath;    // Full asset path (e.g., "/Game/FatherCompanion/Abilities/GA_FatherAttack")
+	FString GeneratorId;  // Generator identifier (e.g., "GameplayAbility", "GameplayEffect")
+
 	// v2.6.7: Dependency tracking for retry mechanism
 	FString MissingDependency;      // Name of the missing asset (e.g., "BP_FatherCompanion")
 	FString MissingDependencyType;  // Type of missing asset (e.g., "ActorBlueprint")
