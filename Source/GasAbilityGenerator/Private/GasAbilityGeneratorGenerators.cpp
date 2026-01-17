@@ -15260,6 +15260,10 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 
 	UNiagaraSystem* NewSystem = nullptr;
 
+	// v4.11: Explicit flags for compile gating (separate concerns)
+	bool bDuplicatedFromTemplate = false;   // True if we successfully duplicated from a compiled template
+	bool bInitialCompileRequired = false;   // True if from-scratch system needs first compile
+
 	// Option 1: Copy from template system
 	if (!Definition.TemplateSystem.IsEmpty())
 	{
@@ -15335,6 +15339,7 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 			NewSystem = Cast<UNiagaraSystem>(StaticDuplicateObject(TemplateSystem, Package, *Definition.Name, RF_Public | RF_Standalone));
 			if (NewSystem)
 			{
+				bDuplicatedFromTemplate = true;  // v4.11: Template already compiled, no initial compile needed
 				NewSystem->TemplateAssetDescription = FText();
 				NewSystem->Category = FText();
 				LogGeneration(FString::Printf(TEXT("  Created from template: %s"), *TemplatePath));
@@ -15347,15 +15352,13 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		}
 	}
 
-	// v4.11: Track if created from template (template systems are already compiled, scratch systems need compilation)
-	bool bCreatedFromTemplate = NewSystem != nullptr;
-
-	// Option 2: Create empty system and add emitters
+	// Option 2: Create empty system and add emitters (from-scratch path)
 	if (!NewSystem)
 	{
 		NewSystem = NewObject<UNiagaraSystem>(Package, UNiagaraSystem::StaticClass(), *Definition.Name, RF_Public | RF_Standalone | RF_Transactional);
 		if (NewSystem)
 		{
+			bInitialCompileRequired = true;  // v4.11: From-scratch system needs first compile
 			// Initialize the system with default scripts
 			UNiagaraSystemFactoryNew::InitializeSystem(NewSystem, true);
 
@@ -15977,17 +15980,17 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		}
 	}
 
-	// v4.11: Compile if:
-	// 1. Structural changes occurred (emitter enable/disable)
-	// 2. System was created from scratch (not from template) - scratch systems need initial compilation
-	bool bNeedsCompilation = bNeedsRecompile || !bCreatedFromTemplate;
-	if (bNeedsCompilation)
+	// v4.11: Compile gating with explicit flags (separate concerns)
+	// - Template-based: only compile for structural changes (bNeedsRecompile)
+	// - From-scratch: always do initial compile (bInitialCompileRequired)
+	bool bNeedsCompile = bNeedsRecompile || bInitialCompileRequired;
+	if (bNeedsCompile)
 	{
-		if (!bCreatedFromTemplate)
+		if (bInitialCompileRequired)
 		{
-			LogGeneration(TEXT("  Requesting compilation for newly created system (no template)..."));
+			LogGeneration(TEXT("  Requesting initial compilation for from-scratch system..."));
 		}
-		else
+		else if (bNeedsRecompile)
 		{
 			LogGeneration(TEXT("  Requesting compilation due to structural emitter changes..."));
 		}
@@ -16003,7 +16006,7 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		int32 EmitterCount = NewSystem->GetEmitterHandles().Num();
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 			FString::Printf(TEXT("System not ready (emitters=%d, from_template=%s). Specify template_system: in manifest."),
-				EmitterCount, bCreatedFromTemplate ? TEXT("true") : TEXT("false")));
+				EmitterCount, bDuplicatedFromTemplate ? TEXT("true") : TEXT("false")));
 	}
 
 	// Mark dirty and register
