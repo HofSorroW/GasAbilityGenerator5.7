@@ -1,18 +1,15 @@
-// GasAbilityGenerator v4.1
+// GasAbilityGenerator v4.8
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+//
+// v4.8 Features:
+// - Added Quest Table Editor - Excel-like spreadsheet for managing quests (following NPC/Dialogue patterns)
+// - Added Item Table Editor - Excel-like spreadsheet for managing items (following NPC/Dialogue patterns)
 //
 // v4.1 Features:
 // - Added Dialogue Table Editor - batch dialogue creation from CSV
 //
-// v4.0 Features:
-// - Added Quest Editor - visual editor for quest state machines
-//
 // v3.10.0 Features:
 // - Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
-//
-// v2.5.0 Features:
-// - Renamed to GasAbilityGenerator for generic UE project compatibility
-// - Removed project-specific dependencies
 
 #pragma once
 
@@ -43,8 +40,11 @@ private:
 	/** Open the NPC Table Editor window */
 	void OpenNPCTableEditorWindow();
 
-	/** Open the Quest Editor window */
-	void OpenQuestEditorWindow();
+	/** Open the Quest Table Editor window (v4.8) */
+	void OpenQuestTableEditorWindow();
+
+	/** Open the Item Table Editor window (v4.8) */
+	void OpenItemTableEditorWindow();
 
 	/** Open the Dialogue Table Editor window */
 	void OpenDialogueTableEditorWindow();
@@ -55,8 +55,11 @@ private:
 	/** Spawn the NPC Table Editor tab */
 	TSharedRef<SDockTab> OnSpawnNPCTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);
 
-	/** Spawn the Quest Editor tab */
-	TSharedRef<SDockTab> OnSpawnQuestEditorTab(const FSpawnTabArgs& SpawnTabArgs);
+	/** Spawn the Quest Table Editor tab (v4.8) */
+	TSharedRef<SDockTab> OnSpawnQuestTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);
+
+	/** Spawn the Item Table Editor tab (v4.8) */
+	TSharedRef<SDockTab> OnSpawnItemTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);
 
 	/** Spawn the Dialogue Table Editor tab */
 	TSharedRef<SDockTab> OnSpawnDialogueTableEditorTab(const FSpawnTabArgs& SpawnTabArgs);

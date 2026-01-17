@@ -1,13 +1,14 @@
-// GasAbilityGenerator v4.1
+// GasAbilityGenerator v4.8
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.8: Added Quest Table Editor and Item Table Editor (following NPC/Dialogue patterns)
 // v4.1: Added Dialogue Table Editor - batch dialogue creation from CSV
-// v4.0: Added Quest Editor - visual editor for quest state machines
 // v3.10.0: Added NPC Table Editor - Excel-like spreadsheet for managing NPCs
 
 #include "GasAbilityGeneratorModule.h"
 #include "GasAbilityGeneratorWindow.h"
 #include "NPCTableEditor/SNPCTableEditor.h"
-#include "QuestEditor/SQuestEditor.h"
+#include "QuestTableEditor/SQuestTableEditor.h"
+#include "ItemTableEditor/SItemTableEditor.h"
 #include "SDialogueTableEditor.h"
 #include "Modules/ModuleManager.h"
 #include "ToolMenus.h"
@@ -18,7 +19,8 @@
 
 static const FName GasAbilityGeneratorTabName("GasAbilityGenerator");
 static const FName NPCTableEditorTabName("NPCTableEditor");
-static const FName QuestEditorTabName("QuestEditor");
+static const FName QuestTableEditorTabName("QuestTableEditor");
+static const FName ItemTableEditorTabName("ItemTableEditor");
 static const FName DialogueTableEditorTabName("DialogueTableEditor");
 
 void FGasAbilityGeneratorModule::StartupModule()
@@ -41,11 +43,18 @@ void FGasAbilityGeneratorModule::StartupModule()
 		.SetDisplayName(LOCTEXT("NPCTableEditorTabTitle", "NPC Table Editor"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
-	// Register the tab spawner for Quest Editor
+	// Register the tab spawner for Quest Table Editor (v4.8)
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
-		QuestEditorTabName,
-		FOnSpawnTab::CreateRaw(this, &FGasAbilityGeneratorModule::OnSpawnQuestEditorTab))
-		.SetDisplayName(LOCTEXT("QuestEditorTabTitle", "Quest Editor"))
+		QuestTableEditorTabName,
+		FOnSpawnTab::CreateRaw(this, &FGasAbilityGeneratorModule::OnSpawnQuestTableEditorTab))
+		.SetDisplayName(LOCTEXT("QuestTableEditorTabTitle", "Quest Table Editor"))
+		.SetMenuType(ETabSpawnerMenuType::Hidden);
+
+	// Register the tab spawner for Item Table Editor (v4.8)
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+		ItemTableEditorTabName,
+		FOnSpawnTab::CreateRaw(this, &FGasAbilityGeneratorModule::OnSpawnItemTableEditorTab))
+		.SetDisplayName(LOCTEXT("ItemTableEditorTabTitle", "Item Table Editor"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
 	// Register the tab spawner for Dialogue Table Editor
@@ -55,7 +64,7 @@ void FGasAbilityGeneratorModule::StartupModule()
 		.SetDisplayName(LOCTEXT("DialogueTableEditorTabTitle", "Dialogue Table Editor"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
-	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v4.1 module loaded - Dialogue Table Editor"));
+	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] v4.8 module loaded - Quest/Item Table Editors"));
 }
 
 void FGasAbilityGeneratorModule::ShutdownModule()
@@ -65,7 +74,8 @@ void FGasAbilityGeneratorModule::ShutdownModule()
 
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GasAbilityGeneratorTabName);
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(NPCTableEditorTabName);
-	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(QuestEditorTabName);
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(QuestTableEditorTabName);
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ItemTableEditorTabName);
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(DialogueTableEditorTabName);
 
 	UE_LOG(LogTemp, Log, TEXT("[GasAbilityGenerator] Module shutdown"));
@@ -95,11 +105,18 @@ void FGasAbilityGeneratorModule::RegisterMenus()
 			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenNPCTableEditorWindow))
 		);
 		Section.AddMenuEntry(
-			"QuestEditor",
-			LOCTEXT("QuestEditorMenuLabel", "Quest Editor"),
-			LOCTEXT("QuestEditorMenuTooltip", "Open the Quest Editor - visual editor for quest state machines"),
+			"QuestTableEditor",
+			LOCTEXT("QuestTableEditorMenuLabel", "Quest Table Editor"),
+			LOCTEXT("QuestTableEditorMenuTooltip", "Open the Quest Table Editor - Excel-like spreadsheet for managing quests"),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenQuestEditorWindow))
+			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenQuestTableEditorWindow))
+		);
+		Section.AddMenuEntry(
+			"ItemTableEditor",
+			LOCTEXT("ItemTableEditorMenuLabel", "Item Table Editor"),
+			LOCTEXT("ItemTableEditorMenuTooltip", "Open the Item Table Editor - Excel-like spreadsheet for managing items"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateRaw(this, &FGasAbilityGeneratorModule::OpenItemTableEditorWindow))
 		);
 		Section.AddMenuEntry(
 			"DialogueTableEditor",
@@ -121,9 +138,14 @@ void FGasAbilityGeneratorModule::OpenNPCTableEditorWindow()
 	FGlobalTabmanager::Get()->TryInvokeTab(NPCTableEditorTabName);
 }
 
-void FGasAbilityGeneratorModule::OpenQuestEditorWindow()
+void FGasAbilityGeneratorModule::OpenQuestTableEditorWindow()
 {
-	FGlobalTabmanager::Get()->TryInvokeTab(QuestEditorTabName);
+	FGlobalTabmanager::Get()->TryInvokeTab(QuestTableEditorTabName);
+}
+
+void FGasAbilityGeneratorModule::OpenItemTableEditorWindow()
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(ItemTableEditorTabName);
 }
 
 void FGasAbilityGeneratorModule::OpenDialogueTableEditorWindow()
@@ -159,13 +181,42 @@ TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnNPCTableEditorTab(const 
 	return Tab;
 }
 
-TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnQuestEditorTab(const FSpawnTabArgs& SpawnTabArgs)
+TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnQuestTableEditorTab(const FSpawnTabArgs& SpawnTabArgs)
 {
-	return SNew(SDockTab)
+	TSharedPtr<SQuestTableEditorWindow> EditorWindow;
+
+	TSharedRef<SDockTab> Tab = SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
 		[
-			SNew(SQuestEditorWindow)
+			SAssignNew(EditorWindow, SQuestTableEditorWindow)
 		];
+
+	// v4.8: Pass tab reference for dirty indicator and save-on-close
+	if (EditorWindow.IsValid())
+	{
+		EditorWindow->SetParentTab(Tab);
+	}
+
+	return Tab;
+}
+
+TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnItemTableEditorTab(const FSpawnTabArgs& SpawnTabArgs)
+{
+	TSharedPtr<SItemTableEditorWindow> EditorWindow;
+
+	TSharedRef<SDockTab> Tab = SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		[
+			SAssignNew(EditorWindow, SItemTableEditorWindow)
+		];
+
+	// v4.8: Pass tab reference for dirty indicator and save-on-close
+	if (EditorWindow.IsValid())
+	{
+		EditorWindow->SetParentTab(Tab);
+	}
+
+	return Tab;
 }
 
 TSharedRef<SDockTab> FGasAbilityGeneratorModule::OnSpawnDialogueTableEditorTab(const FSpawnTabArgs& SpawnTabArgs)
