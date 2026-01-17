@@ -234,6 +234,8 @@
 #include "Components/RichTextBlock.h"
 #include "Components/CircularThrobber.h"
 #include "Components/Throbber.h"
+// v4.10: SlateTextureAtlasInterface for FSlateBrush resource validation
+#include "Slate/SlateTextureAtlasInterface.h"
 #include "EdGraphSchema_K2.h"
 // v2.6.0: Reflection for setting protected properties
 #include "UObject/UnrealType.h"
@@ -3305,8 +3307,66 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 			}
 		};
 
-		// Helper: Configure widget properties
-		auto ConfigureWidgetProperties = [](UWidget* Widget, const FManifestWidgetNodeDefinition& NodeDef)
+		// v4.10: Helper to emit formatted warnings to Result.Warnings
+		auto AddFormattedWarning = [&Result](const FString& Code, const FString& ContextPath, const FString& Message, const FString& SuggestedFix = TEXT(""))
+		{
+			// Replace newlines with semicolons for single-line output
+			FString SafeMessage = Message.Replace(TEXT("\r\n"), TEXT("; ")).Replace(TEXT("\n"), TEXT("; "));
+			Result.Warnings.Add(FString::Printf(TEXT("%s | %s | %s | %s"), *Code, *ContextPath, *SafeMessage, *SuggestedFix));
+		};
+
+		// v4.10: Helper to set enum value from string (handles both FEnumProperty and TEnumAsByte)
+		auto SetEnumValueFromString = [&AddFormattedWarning](FProperty* Property, void* ContainerPtr, const FString& EnumValueName, const FString& ContextPath) -> bool
+		{
+			void* ValuePtr = Property->ContainerPtrToValuePtr<void>(ContainerPtr);
+
+			// Try FEnumProperty first (modern enum type)
+			if (FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
+			{
+				UEnum* Enum = EnumProp->GetEnum();
+				if (Enum)
+				{
+					int64 EnumValue = Enum->GetValueByNameString(EnumValueName, EGetByNameFlags::None);
+					if (EnumValue != INDEX_NONE)
+					{
+						FNumericProperty* UnderlyingProp = EnumProp->GetUnderlyingProperty();
+						if (UnderlyingProp)
+						{
+							UnderlyingProp->SetIntPropertyValue(ValuePtr, EnumValue);
+							return true;
+						}
+					}
+					AddFormattedWarning(TEXT("W_ENUM_VALUE_INVALID"), ContextPath,
+						FString::Printf(TEXT("Enum value '%s' not found in %s"), *EnumValueName, *Enum->GetName()),
+						TEXT("Check enum value spelling"));
+				}
+				return false;
+			}
+
+			// Try FByteProperty (TEnumAsByte<>)
+			if (FByteProperty* ByteProp = CastField<FByteProperty>(Property))
+			{
+				UEnum* Enum = ByteProp->GetIntPropertyEnum();
+				if (Enum)
+				{
+					int64 EnumValue = Enum->GetValueByNameString(EnumValueName, EGetByNameFlags::None);
+					if (EnumValue != INDEX_NONE)
+					{
+						ByteProp->SetIntPropertyValue(ValuePtr, EnumValue);
+						return true;
+					}
+					AddFormattedWarning(TEXT("W_ENUM_VALUE_INVALID"), ContextPath,
+						FString::Printf(TEXT("Enum value '%s' not found in %s"), *EnumValueName, *Enum->GetName()),
+						TEXT("Check enum value spelling"));
+				}
+				return false;
+			}
+
+			return false;
+		};
+
+		// v4.10: Helper: Configure widget properties with full type support
+		auto ConfigureWidgetProperties = [&Result, &Definition, &AddFormattedWarning, &SetEnumValueFromString](UWidget* Widget, const FManifestWidgetNodeDefinition& NodeDef, const FString& WidgetContextPath)
 		{
 			// Set text for TextBlock
 			if (UTextBlock* TextBlock = Cast<UTextBlock>(Widget))
@@ -3328,35 +3388,352 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 			// Apply custom properties via reflection
 			for (const auto& Prop : NodeDef.Properties)
 			{
-				FProperty* Property = Widget->GetClass()->FindPropertyByName(FName(*Prop.Key));
+				const FString& FullKey = Prop.Key;
+				const FString& Value = Prop.Value;
+				FString PropContextPath = FString::Printf(TEXT("%s.%s"), *WidgetContextPath, *FullKey);
+
+				// v4.10: Check for 1-level dotted property (e.g., Font.Size, Brush.ResourceObject)
+				int32 DotIndex = INDEX_NONE;
+				if (FullKey.FindChar(TEXT('.'), DotIndex))
+				{
+					FString RootKey = FullKey.Left(DotIndex);
+					FString SubKey = FullKey.Mid(DotIndex + 1);
+
+					// Check for nested dots (not supported)
+					if (SubKey.Contains(TEXT(".")))
+					{
+						AddFormattedWarning(TEXT("W_NESTED_TOO_DEEP"), PropContextPath,
+							FString::Printf(TEXT("Only 1-level dotted properties supported, got '%s'"), *FullKey),
+							TEXT("Use direct property path like Font.Size"));
+						continue;
+					}
+
+					// Find root property
+					FProperty* RootProp = Widget->GetClass()->FindPropertyByName(FName(*RootKey));
+					if (!RootProp)
+					{
+						AddFormattedWarning(TEXT("W_PROPERTY_NOT_FOUND"), PropContextPath,
+							FString::Printf(TEXT("Root property '%s' not found on %s"), *RootKey, *Widget->GetClass()->GetName()),
+							TEXT(""));
+						continue;
+					}
+
+					// Root must be a struct
+					FStructProperty* StructProp = CastField<FStructProperty>(RootProp);
+					if (!StructProp)
+					{
+						AddFormattedWarning(TEXT("W_UNSUPPORTED_TYPE"), PropContextPath,
+							FString::Printf(TEXT("Property '%s' is not a struct, cannot access sub-property"), *RootKey),
+							TEXT(""));
+						continue;
+					}
+
+					void* StructPtr = StructProp->ContainerPtrToValuePtr<void>(Widget);
+
+					// v4.10: Special handling for FSlateBrush (field restrictions)
+					if (StructProp->Struct && StructProp->Struct->GetFName() == FName(TEXT("SlateBrush")))
+					{
+						// Only allow: ResourceObject, ImageSize, TintColor
+						static const TSet<FString> AllowedBrushFields = { TEXT("ResourceObject"), TEXT("ImageSize"), TEXT("TintColor") };
+						if (!AllowedBrushFields.Contains(SubKey))
+						{
+							AddFormattedWarning(TEXT("W_BRUSH_FIELD_BLOCKED"), PropContextPath,
+								FString::Printf(TEXT("FSlateBrush field '%s' not writable via reflection"), *SubKey),
+								TEXT("Only ResourceObject, ImageSize, TintColor supported"));
+							continue;
+						}
+
+						FSlateBrush* Brush = static_cast<FSlateBrush*>(StructPtr);
+
+						if (SubKey == TEXT("ResourceObject"))
+						{
+							// Load texture/resource
+							UObject* Resource = LoadObject<UObject>(nullptr, *Value);
+							if (Resource)
+							{
+								// Block MediaTexture (no MediaAssets dependency)
+								FString ClassName = Resource->GetClass()->GetName();
+								if (ClassName == TEXT("MediaTexture"))
+								{
+									AddFormattedWarning(TEXT("W_TEXTURE_TYPE_BLOCKED"), PropContextPath,
+										TEXT("MediaTexture not supported (no MediaAssets dependency)"),
+										TEXT("Use UTexture2D or SlateTextureAtlas"));
+									continue;
+								}
+
+								// Allow: UTexture, SlateTextureAtlasInterface, SlateBrushAsset
+								bool bValidResource = Resource->IsA<UTexture>() ||
+									Resource->GetClass()->ImplementsInterface(USlateTextureAtlasInterface::StaticClass()) ||
+									Resource->IsA<USlateBrushAsset>();
+
+								if (bValidResource)
+								{
+									Brush->SetResourceObject(Resource);
+								}
+								else
+								{
+									AddFormattedWarning(TEXT("W_TEXTURE_TYPE_BLOCKED"), PropContextPath,
+										FString::Printf(TEXT("Resource type '%s' not valid for FSlateBrush"), *ClassName),
+										TEXT("Use UTexture2D, SlateTextureAtlas, or SlateBrushAsset"));
+								}
+							}
+							continue;
+						}
+						else if (SubKey == TEXT("ImageSize"))
+						{
+							// Parse FVector2D - shim "64, 64" to "X=64 Y=64"
+							FString ParseValue = Value;
+							if (Value.Contains(TEXT(",")) && !Value.Contains(TEXT("=")))
+							{
+								TArray<FString> Parts;
+								Value.ParseIntoArray(Parts, TEXT(","));
+								if (Parts.Num() >= 2)
+								{
+									ParseValue = FString::Printf(TEXT("X=%s Y=%s"),
+										*Parts[0].TrimStartAndEnd(), *Parts[1].TrimStartAndEnd());
+								}
+							}
+							FVector2D Size;
+							if (Size.InitFromString(ParseValue))
+							{
+								Brush->ImageSize = Size;
+							}
+							else
+							{
+								AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+									FString::Printf(TEXT("FVector2D init failed for '%s'"), *Value),
+									TEXT("Use format: 64, 64 or X=64 Y=64"));
+							}
+							continue;
+						}
+						else if (SubKey == TEXT("TintColor"))
+						{
+							// Parse FSlateColor from FLinearColor string
+							FLinearColor Color;
+							if (Color.InitFromString(Value))
+							{
+								Brush->TintColor = FSlateColor(Color);
+							}
+							else
+							{
+								AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+									FString::Printf(TEXT("FLinearColor init failed for '%s'"), *Value),
+									TEXT("Use format: R=1.0 G=0.5 B=0.0 A=1.0 or 1.0, 0.5, 0.0, 1.0"));
+							}
+							continue;
+						}
+					}
+
+					// Find inner property
+					FProperty* InnerProp = StructProp->Struct->FindPropertyByName(FName(*SubKey));
+					if (!InnerProp)
+					{
+						AddFormattedWarning(TEXT("W_PROPERTY_NOT_FOUND"), PropContextPath,
+							FString::Printf(TEXT("Sub-property '%s' not found in struct '%s'"), *SubKey, *StructProp->Struct->GetName()),
+							TEXT(""));
+						continue;
+					}
+
+					void* InnerValuePtr = InnerProp->ContainerPtrToValuePtr<void>(StructPtr);
+
+					// Handle inner property types
+					if (FBoolProperty* BoolProp = CastField<FBoolProperty>(InnerProp))
+					{
+						BoolProp->SetPropertyValue(InnerValuePtr, Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase));
+					}
+					else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(InnerProp))
+					{
+						FloatProp->SetPropertyValue(InnerValuePtr, FCString::Atof(*Value));
+					}
+					else if (FIntProperty* IntProp = CastField<FIntProperty>(InnerProp))
+					{
+						IntProp->SetPropertyValue(InnerValuePtr, FCString::Atoi(*Value));
+					}
+					else if (FStrProperty* StrProp = CastField<FStrProperty>(InnerProp))
+					{
+						StrProp->SetPropertyValue(InnerValuePtr, Value);
+					}
+					else if (FNameProperty* NameProp = CastField<FNameProperty>(InnerProp))
+					{
+						NameProp->SetPropertyValue(InnerValuePtr, FName(*Value));
+					}
+					else if (!SetEnumValueFromString(InnerProp, StructPtr, Value, PropContextPath))
+					{
+						// Check for nested struct types
+						if (FStructProperty* InnerStructProp = CastField<FStructProperty>(InnerProp))
+						{
+							FName StructName = InnerStructProp->Struct->GetFName();
+
+							if (StructName == FName(TEXT("LinearColor")))
+							{
+								FLinearColor* ColorPtr = static_cast<FLinearColor*>(InnerValuePtr);
+								if (!ColorPtr->InitFromString(Value))
+								{
+									AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+										FString::Printf(TEXT("FLinearColor init failed for '%s'"), *Value),
+										TEXT("Use format: R=1.0 G=0.5 B=0.0 A=1.0"));
+								}
+							}
+							else if (StructName == FName(TEXT("Vector2D")))
+							{
+								FString ParseValue = Value;
+								if (Value.Contains(TEXT(",")) && !Value.Contains(TEXT("=")))
+								{
+									TArray<FString> Parts;
+									Value.ParseIntoArray(Parts, TEXT(","));
+									if (Parts.Num() >= 2)
+									{
+										ParseValue = FString::Printf(TEXT("X=%s Y=%s"),
+											*Parts[0].TrimStartAndEnd(), *Parts[1].TrimStartAndEnd());
+									}
+								}
+								FVector2D* VecPtr = static_cast<FVector2D*>(InnerValuePtr);
+								if (!VecPtr->InitFromString(ParseValue))
+								{
+									AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+										FString::Printf(TEXT("FVector2D init failed for '%s'"), *Value),
+										TEXT("Use format: 64, 64 or X=64 Y=64"));
+								}
+							}
+							else if (StructName == FName(TEXT("SlateColor")))
+							{
+								FLinearColor Color;
+								if (Color.InitFromString(Value))
+								{
+									FSlateColor* SlateColorPtr = static_cast<FSlateColor*>(InnerValuePtr);
+									*SlateColorPtr = FSlateColor(Color);
+								}
+								else
+								{
+									AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+										FString::Printf(TEXT("FSlateColor init failed for '%s'"), *Value),
+										TEXT("Use format: R=1.0 G=0.5 B=0.0 A=1.0"));
+								}
+							}
+							else
+							{
+								AddFormattedWarning(TEXT("W_UNSUPPORTED_TYPE"), PropContextPath,
+									FString::Printf(TEXT("Nested struct type '%s' not supported"), *StructName.ToString()),
+									TEXT(""));
+							}
+						}
+						else
+						{
+							AddFormattedWarning(TEXT("W_UNSUPPORTED_TYPE"), PropContextPath,
+								FString::Printf(TEXT("Inner property type not handled for '%s'"), *InnerProp->GetClass()->GetName()),
+								TEXT(""));
+						}
+					}
+					continue;
+				}
+
+				// Non-dotted property (original flat handling)
+				FProperty* Property = Widget->GetClass()->FindPropertyByName(FName(*FullKey));
 				if (!Property)
 				{
 					// Try with common variations
-					Property = Widget->GetClass()->FindPropertyByName(FName(*FString::Printf(TEXT("b%s"), *Prop.Key)));
+					Property = Widget->GetClass()->FindPropertyByName(FName(*FString::Printf(TEXT("b%s"), *FullKey)));
 				}
-				if (!Property) continue;
+				if (!Property)
+				{
+					AddFormattedWarning(TEXT("W_PROPERTY_NOT_FOUND"), PropContextPath,
+						FString::Printf(TEXT("Property '%s' not found on %s"), *FullKey, *Widget->GetClass()->GetName()),
+						TEXT(""));
+					continue;
+				}
 
 				void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Widget);
 
 				if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
 				{
-					BoolProp->SetPropertyValue(ValuePtr, Prop.Value.ToBool() || Prop.Value.Equals(TEXT("true"), ESearchCase::IgnoreCase));
+					BoolProp->SetPropertyValue(ValuePtr, Value.ToBool() || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase));
 				}
 				else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
 				{
-					FloatProp->SetPropertyValue(ValuePtr, FCString::Atof(*Prop.Value));
+					FloatProp->SetPropertyValue(ValuePtr, FCString::Atof(*Value));
 				}
 				else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
 				{
-					IntProp->SetPropertyValue(ValuePtr, FCString::Atoi(*Prop.Value));
+					IntProp->SetPropertyValue(ValuePtr, FCString::Atoi(*Value));
 				}
 				else if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
 				{
-					StrProp->SetPropertyValue(ValuePtr, Prop.Value);
+					StrProp->SetPropertyValue(ValuePtr, Value);
 				}
 				else if (FTextProperty* TextProp = CastField<FTextProperty>(Property))
 				{
-					TextProp->SetPropertyValue(ValuePtr, FText::FromString(Prop.Value));
+					TextProp->SetPropertyValue(ValuePtr, FText::FromString(Value));
+				}
+				else if (FNameProperty* NameProp = CastField<FNameProperty>(Property))
+				{
+					NameProp->SetPropertyValue(ValuePtr, FName(*Value));
+				}
+				else if (!SetEnumValueFromString(Property, Widget, Value, PropContextPath))
+				{
+					// Check for struct property at root level
+					if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+					{
+						FName StructName = StructProp->Struct->GetFName();
+
+						if (StructName == FName(TEXT("LinearColor")))
+						{
+							FLinearColor* ColorPtr = static_cast<FLinearColor*>(ValuePtr);
+							if (!ColorPtr->InitFromString(Value))
+							{
+								AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+									FString::Printf(TEXT("FLinearColor init failed for '%s'"), *Value),
+									TEXT("Use format: R=1.0 G=0.5 B=0.0 A=1.0"));
+							}
+						}
+						else if (StructName == FName(TEXT("Vector2D")))
+						{
+							FString ParseValue = Value;
+							if (Value.Contains(TEXT(",")) && !Value.Contains(TEXT("=")))
+							{
+								TArray<FString> Parts;
+								Value.ParseIntoArray(Parts, TEXT(","));
+								if (Parts.Num() >= 2)
+								{
+									ParseValue = FString::Printf(TEXT("X=%s Y=%s"),
+										*Parts[0].TrimStartAndEnd(), *Parts[1].TrimStartAndEnd());
+								}
+							}
+							FVector2D* VecPtr = static_cast<FVector2D*>(ValuePtr);
+							if (!VecPtr->InitFromString(ParseValue))
+							{
+								AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+									FString::Printf(TEXT("FVector2D init failed for '%s'"), *Value),
+									TEXT("Use format: 64, 64 or X=64 Y=64"));
+							}
+						}
+						else if (StructName == FName(TEXT("SlateColor")))
+						{
+							FLinearColor Color;
+							if (Color.InitFromString(Value))
+							{
+								FSlateColor* SlateColorPtr = static_cast<FSlateColor*>(ValuePtr);
+								*SlateColorPtr = FSlateColor(Color);
+							}
+							else
+							{
+								AddFormattedWarning(TEXT("W_STRUCT_INIT_FAILED"), PropContextPath,
+									FString::Printf(TEXT("FSlateColor init failed for '%s'"), *Value),
+									TEXT("Use format: R=1.0 G=0.5 B=0.0 A=1.0"));
+							}
+						}
+						else
+						{
+							AddFormattedWarning(TEXT("W_UNSUPPORTED_TYPE"), PropContextPath,
+								FString::Printf(TEXT("Struct type '%s' not supported at root level"), *StructName.ToString()),
+								TEXT(""));
+						}
+					}
+					else
+					{
+						AddFormattedWarning(TEXT("W_UNSUPPORTED_TYPE"), PropContextPath,
+							FString::Printf(TEXT("Property type '%s' not handled"), *Property->GetClass()->GetName()),
+							TEXT(""));
+					}
 				}
 			}
 		};
@@ -3373,7 +3750,9 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 				WidgetMap.Add(NodeDef.Id, Widget);
 
 				// Configure properties
-				ConfigureWidgetProperties(Widget, NodeDef);
+				FString WidgetContextPath = FString::Printf(TEXT("widget_blueprints[%s].widget_tree.widgets[%s]"),
+					*Definition.Name, *NodeDef.Id);
+				ConfigureWidgetProperties(Widget, NodeDef, WidgetContextPath);
 
 				// Mark as variable if requested (for BindWidget)
 				if (NodeDef.bIsVariable)

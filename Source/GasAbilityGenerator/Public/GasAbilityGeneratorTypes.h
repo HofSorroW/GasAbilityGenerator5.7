@@ -54,6 +54,9 @@ struct FGenerationResult
 	// v4.11: Headless policy tracking for RESULT_HEADLESS_SAVED footer
 	bool bHeadlessSaved = false;    // True if saved under headless escape hatch (requires editor verification)
 
+	// v4.10: Property warnings/errors emitted during generation (pipe-delimited: CODE | ContextPath | Message | SuggestedFix)
+	TArray<FString> Warnings;
+
 	FGenerationResult() = default;
 
 	FGenerationResult(const FString& InName, EGenerationStatus InStatus, const FString& InMessage = TEXT(""))

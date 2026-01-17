@@ -996,3 +996,144 @@ Processed: 155
 
 VERIFICATION PASSED: All whitelist assets processed, counts match, no duplicates
 ```
+
+---
+
+## v4.10 Widget Property Enhancement
+
+### Overview
+
+v4.10 enhances the Widget Blueprint generator's `ConfigureWidgetProperties` lambda to support:
+- **1-level dotted properties** (e.g., `Font.Size`, `Brush.ResourceObject`)
+- **Struct types** (FSlateColor, FSlateBrush, FLinearColor, FVector2D)
+- **Enum types** (FEnumProperty, TEnumAsByte)
+- **Machine-readable warnings** via pipe-delimited format
+
+### Problem Solved
+
+The original `ConfigureWidgetProperties` lambda only handled flat primitive properties and silently ignored:
+- Dotted property paths (Font.Size, Font.TypefaceFontName)
+- Complex struct types (FSlateColor, FSlateBrush)
+- Enum properties (both FEnumProperty and TEnumAsByte<>)
+
+### Supported Property Types
+
+| Type | Example YAML | Notes |
+|------|--------------|-------|
+| Bool | `bIsEnabled: true` | Also handles "true"/"false" strings |
+| Float | `Percent: 0.75` | |
+| Int | `ZOrder: 5` | |
+| String | `ToolTipText: "Help"` | |
+| Text | `Label: "Press Start"` | Converts to FText |
+| 1-Level Dotted | `Font.Size: 18` | Traverses FStructProperty |
+| FLinearColor | `TintColor: "1.0, 0.5, 0.0, 1.0"` | Via InitFromString |
+| FVector2D | `ImageSize: "64, 64"` | Shim converts comma format to "X=64 Y=64" |
+| FSlateColor | `ColorAndOpacity: "0.8, 0.8, 0.8, 1.0"` | Wraps FLinearColor |
+| Enum (FEnumProperty) | `Justification: Center` | Via GetValueByNameString |
+| Enum (TEnumAsByte) | `BarFillType: LeftToRight` | Via GetIntPropertyEnum() |
+
+### FSlateBrush Field Restrictions
+
+Only these FSlateBrush sub-properties are writable:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ResourceObject` | UObject* | Texture, SlateTextureAtlas, SlateBrushAsset |
+| `ImageSize` | FVector2D | Brush dimensions |
+| `TintColor` | FSlateColor | Color tint |
+
+**Blocked fields:** DrawAs, Tiling, Mirroring, Margin, OutlineSettings (require non-reflection methods).
+
+**Blocked texture types:** MediaTexture (no MediaAssets dependency).
+
+**Allowed interfaces:** ISlateTextureAtlasInterface (via ImplementsInterface check).
+
+### Warning/Error Format
+
+Warnings are emitted to `FGenerationResult.Warnings` as pipe-delimited strings:
+
+```
+CODE | ContextPath | Message | SuggestedFix
+```
+
+**Prefixes:**
+- `E_*` = Error (fatal, blocks generation) - split into `FGenerationReportItem.Errors`
+- `W_*` = Warning (logged but continues) - kept in `FGenerationReportItem.Warnings`
+
+### Warning Codes
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| W_UNSUPPORTED_TYPE | Warning | Property type not handled |
+| W_PROPERTY_NOT_FOUND | Warning | Property name doesn't exist on widget |
+| W_NESTED_TOO_DEEP | Warning | More than 1 level of dot nesting |
+| W_BRUSH_FIELD_BLOCKED | Warning | FSlateBrush field not in allow-list |
+| W_TEXTURE_TYPE_BLOCKED | Warning | MediaTexture not supported |
+| W_STRUCT_INIT_FAILED | Warning | FLinearColor/FVector2D init failed |
+| W_ENUM_VALUE_INVALID | Warning | Enum value name not found |
+
+### FromGenerationResult Splitter
+
+The report system splits warnings by prefix:
+
+```cpp
+// GasAbilityGeneratorReport.cpp
+for (const FString& Line : Result.Warnings)
+{
+    TArray<FString> Parts;
+    Line.ParseIntoArray(Parts, TEXT("|"), /*CullEmpty=*/false);  // CRITICAL: false preserves empty SuggestedFix
+
+    // ... trim and classify by E_/W_ prefix
+}
+```
+
+**CRITICAL:** `CullEmpty=false` is required to preserve empty SuggestedFix fields.
+
+### Manifest Example
+
+```yaml
+widget_blueprints:
+  - name: WBP_HealthBar
+    folder: UI
+    widget_tree:
+      root_widget: RootCanvas
+      widgets:
+        - id: HealthBar
+          type: ProgressBar
+          properties:
+            Percent: 0.75
+            BarFillType: LeftToRight           # Enum
+            FillColorAndOpacity: "0.2, 0.8, 0.2, 1.0"  # FSlateColor
+        - id: HealthLabel
+          type: TextBlock
+          properties:
+            Font.Size: 24                       # Dotted property
+            ColorAndOpacity: "1.0, 1.0, 1.0, 1.0"
+```
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| GasAbilityGeneratorTypes.h | Added `TArray<FString> Warnings` to FGenerationResult |
+| GasAbilityGeneratorReport.cpp | Updated FromGenerationResult() to split E_/W_ warnings |
+| GasAbilityGeneratorGenerators.cpp | Rewrote ConfigureWidgetProperties lambda with full type support |
+
+### API Reference (UE5.7)
+
+```cpp
+// FStructProperty inner property lookup
+FProperty* FStructProperty::FindInnerPropertyInstance(FName InName) const;
+
+// FLinearColor/FVector2D parsing
+bool FLinearColor::InitFromString(const FString& InSourceString);
+bool FVector2D::InitFromString(const FString& InSourceString);  // Expects "X=N Y=N" format
+
+// Enum resolution
+UEnum* FEnumProperty::GetEnum() const;
+int64 UEnum::GetValueByNameString(const FString& SearchString, EGetByNameFlags Flags = EGetByNameFlags::None) const;
+UEnum* FByteProperty::GetIntPropertyEnum() const;  // For TEnumAsByte<>
+
+// Interface check (SlateTextureAtlas)
+bool UClass::ImplementsInterface(const UClass* SomeInterface) const;
+```

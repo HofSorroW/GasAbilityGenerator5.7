@@ -9,7 +9,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/SavePackage.h"
 
-#define GENERATOR_VERSION TEXT("4.7")
+#define GENERATOR_VERSION TEXT("4.10")
 
 // ============================================================================
 // FGenerationReportItem Implementation
@@ -24,6 +24,42 @@ FGenerationReportItem FGenerationReportItem::FromGenerationResult(const FGenerat
 	Item.ExecutedStatus = UGenerationReport::GetStatusString(Result.Status);
 	Item.bHasPlannedStatus = false;
 	Item.Reason = Result.Message;
+
+	// v4.10: Split Result.Warnings into Item.Errors + Item.Warnings by code prefix
+	for (const FString& Line : Result.Warnings)
+	{
+		TArray<FString> Parts;
+		Line.ParseIntoArray(Parts, TEXT("|"), /*CullEmpty=*/false);  // CRITICAL: false preserves empty SuggestedFix
+
+		for (FString& P : Parts) { P = P.TrimStartAndEnd(); }
+
+		const bool bLooksWellFormed = (Parts.Num() >= 4);
+		const FString Code = bLooksWellFormed ? Parts[0] : TEXT("");
+
+		if (bLooksWellFormed && Code.StartsWith(TEXT("E_")))
+		{
+			FGenerationError Err;
+			Err.ErrorCode = Parts[0];
+			Err.ContextPath = Parts[1];
+			Err.Message = Parts[2];
+			Err.SuggestedFix = Parts[3];
+			Item.Errors.Add(MoveTemp(Err));
+		}
+		else
+		{
+			// W_* warnings or malformed lines kept as-is
+			Item.Warnings.Add(Line);
+		}
+	}
+
+	// Sort for stable output
+	Item.Errors.Sort([](const FGenerationError& A, const FGenerationError& B)
+	{
+		if (A.ContextPath != B.ContextPath) return A.ContextPath < B.ContextPath;
+		return A.ErrorCode < B.ErrorCode;
+	});
+	Item.Warnings.Sort();
+
 	return Item;
 }
 
