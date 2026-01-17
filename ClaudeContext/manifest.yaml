@@ -1,9 +1,9 @@
 # Father Companion System - Complete Manifest
-# Version: 3.0.1
-# Engine: Unreal Engine 5.6
+# Version: 3.0.2
+# Engine: Unreal Engine 5.7
 # Plugin: Narrative Pro v2.2
-# Total Tags: 198
-# Total Assets: 143 (142 generated + 1 manual)
+# Total Tags: 202
+# Total Assets: 166
 # Event Graph Support: ENABLED
 # NPC Systems: Warden Husk, Guard Formation, Possessed Exploder, Support Buffer, Biomechanical Detachment, Gatherer Scout, Stalker Random Aggression
 
@@ -11,7 +11,7 @@ project_root: /Game/FatherCompanion
 tags_ini_path: Config/DefaultGameplayTags.ini
 
 # ============================================================================
-# GAMEPLAY TAGS (179 total)
+# GAMEPLAY TAGS (202 total)
 # ============================================================================
 tags:
   # Ability Tags (25)
