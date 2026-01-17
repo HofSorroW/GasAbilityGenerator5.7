@@ -5,20 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Quick Reference
 
 ```bash
-# Build plugin
-powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action build
-
-# Build + headless generation (most common)
+# Most common: Build + headless generation
 powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action cycle
 
-# Check logs after generation
+# Check results
 powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\Tools\claude_automation.ps1" -Action logs
 ```
 
-**Key files:**
-- `ClaudeContext/manifest.yaml` - Single source of truth for all assets
-- `Source/GasAbilityGenerator/Private/GasAbilityGeneratorGenerators.cpp` - 25+ asset generators
-- `Tools/Logs/commandlet_output.log` - Generation results
+**Single source of truth:** `ClaudeContext/manifest.yaml`
 
 ---
 
@@ -26,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.6) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.6.1) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -250,6 +244,20 @@ Non-asset entry types that must be nested:
 - `keys` - Blackboard keys (nested in blackboards)
 - `nodes` - Event graph nodes (nested in event_graphs)
 - `connections` - Node connections (nested in event_graphs)
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| UnauthorizedAccess on PowerShell | Add `-ExecutionPolicy Bypass` before `-File` |
+| Assets not regenerating after code changes | Delete `/Content/FatherCompanion/` folder - Asset Registry caches existing assets |
+| "Class not found" warnings for Narrative Pro classes | Acceptable - generator can't resolve plugin paths but classes work at runtime |
+| Manifest parsing failed | Check YAML indent (2 spaces, no tabs), validate nested structure |
+| CONFLICT status on generation | Asset was manually edited; use `-force` flag or resolve manually |
+| Build succeeds but editor crashes | Check `Tools/Logs/commandlet_output.log` for runtime errors |
+| Event graph nodes not connecting | Verify pin names match exactly (case-sensitive): `Then`, `Exec`, `ReturnValue` |
 
 ---
 
