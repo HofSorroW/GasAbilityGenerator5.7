@@ -4827,18 +4827,21 @@ niagara_systems:
         type: linear_color
         default: 1.0, 0.8, 0.4, 1.0
     # v4.9: Per-emitter parameter overrides
-    emitter_overrides:
-      - emitter: CoreEmitter
-        enabled: true
-        parameters:
-          CoreGlowIntensity: "5.0"
-          CorePulseRate: "1.5"
-      - emitter: ShellEmitter
-        enabled: true
-        parameters:
-          ShellOpacity: "0.3"
-      - emitter: TrailEmitter
-        enabled: false  # Disable trail in base config
+    # NOTE: emitter_overrides requires template_system or emitters: array to provide the emitters
+    # These overrides reference emitters that would exist in a custom template system.
+    # Commented out until a proper template is created with CoreEmitter/ShellEmitter/TrailEmitter.
+    # emitter_overrides:
+    #   - emitter: CoreEmitter
+    #     enabled: true
+    #     parameters:
+    #       CoreGlowIntensity: "5.0"
+    #       CorePulseRate: "1.5"
+    #   - emitter: ShellEmitter
+    #     enabled: true
+    #     parameters:
+    #       ShellOpacity: "0.3"
+    #   - emitter: TrailEmitter
+    #     enabled: false  # Disable trail in base config
 
   # Form transition burst VFX - used during 5s form change animation
   - name: NS_FatherFormTransition

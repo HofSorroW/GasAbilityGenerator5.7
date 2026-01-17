@@ -15238,6 +15238,20 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		return Result;
 	}
 
+	// v4.11 Phase A validation: emitter_overrides require template_system
+	// Overrides target emitters that only exist in templates - without a template, they're meaningless
+	if (Definition.EmitterOverrides.Num() > 0 && Definition.TemplateSystem.IsEmpty())
+	{
+		TArray<FString> OverrideNames;
+		for (const auto& Override : Definition.EmitterOverrides)
+		{
+			OverrideNames.Add(Override.EmitterName);
+		}
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("emitter_overrides specified without template_system. Overrides [%s] target emitters that don't exist. Add template_system: or remove emitter_overrides."),
+				*FString::Join(OverrideNames, TEXT(", "))));
+	}
+
 	UPackage* Package = CreatePackage(*AssetPath);
 	if (!Package)
 	{
@@ -15332,6 +15346,9 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 			LogGeneration(FString::Printf(TEXT("  WARNING: Template system not found: %s"), *Definition.TemplateSystem));
 		}
 	}
+
+	// v4.11: Track if created from template (template systems are already compiled, scratch systems need compilation)
+	bool bCreatedFromTemplate = NewSystem != nullptr;
 
 	// Option 2: Create empty system and add emitters
 	if (!NewSystem)
@@ -15960,21 +15977,33 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 		}
 	}
 
-	// v4.11: Compile only if structural changes occurred (doctrine: compile only for compile-invalidating operations)
-	if (bNeedsRecompile)
+	// v4.11: Compile if:
+	// 1. Structural changes occurred (emitter enable/disable)
+	// 2. System was created from scratch (not from template) - scratch systems need initial compilation
+	bool bNeedsCompilation = bNeedsRecompile || !bCreatedFromTemplate;
+	if (bNeedsCompilation)
 	{
-		LogGeneration(TEXT("  Requesting compilation due to structural emitter changes..."));
+		if (!bCreatedFromTemplate)
+		{
+			LogGeneration(TEXT("  Requesting compilation for newly created system (no template)..."));
+		}
+		else
+		{
+			LogGeneration(TEXT("  Requesting compilation due to structural emitter changes..."));
+		}
 		NewSystem->RequestCompile(false);
 		NewSystem->WaitForCompilationComplete(false, false);
 		LogGeneration(TEXT("  Compilation complete"));
 	}
 
 	// v4.11: Safety gate - ensure system is ready before saving
+	// This gate is STRICT: broken systems are not saved, preventing silent bad content
 	if (!NewSystem->IsReadyToRun())
 	{
+		int32 EmitterCount = NewSystem->GetEmitterHandles().Num();
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			FString::Printf(TEXT("System not ready after generation (structural_changes=%s)"),
-				bNeedsRecompile ? TEXT("true") : TEXT("false")));
+			FString::Printf(TEXT("System not ready (emitters=%d, from_template=%s). Specify template_system: in manifest."),
+				EmitterCount, bCreatedFromTemplate ? TEXT("true") : TEXT("false")));
 	}
 
 	// Mark dirty and register
