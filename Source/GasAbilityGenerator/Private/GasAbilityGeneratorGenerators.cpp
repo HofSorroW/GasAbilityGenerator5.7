@@ -15339,11 +15339,22 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 			NewSystem = Cast<UNiagaraSystem>(StaticDuplicateObject(TemplateSystem, Package, *Definition.Name, RF_Public | RF_Standalone));
 			if (NewSystem)
 			{
-				bDuplicatedFromTemplate = true;  // v4.11: Template already compiled, no initial compile needed
+				bDuplicatedFromTemplate = true;  // v4.11: Track provenance for diagnostics
+				bInitialCompileRequired = true;  // v4.11: Duplicates need compile (new system identity)
 				NewSystem->TemplateAssetDescription = FText();
 				NewSystem->Category = FText();
 				LogGeneration(FString::Printf(TEXT("  Created from template: %s"), *TemplatePath));
 				NewSystem->Modify(); // v4.11: Mark for transaction system
+
+				// v4.11 DEBUG: Dump emitter handle names for test fixture setup
+				const TArray<FNiagaraEmitterHandle>& Handles = NewSystem->GetEmitterHandles();
+				LogGeneration(FString::Printf(TEXT("  Template emitter handles (%d):"), Handles.Num()));
+				for (const FNiagaraEmitterHandle& Handle : Handles)
+				{
+					LogGeneration(FString::Printf(TEXT("    - \"%s\" (enabled=%s)"),
+						*Handle.GetName().ToString(),
+						Handle.GetIsEnabled() ? TEXT("true") : TEXT("false")));
+				}
 			}
 		}
 		else
@@ -15984,6 +15995,7 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	// - Template-based: only compile for structural changes (bNeedsRecompile)
 	// - From-scratch: always do initial compile (bInitialCompileRequired)
 	bool bNeedsCompile = bNeedsRecompile || bInitialCompileRequired;
+	bool bDidAttemptCompile = false;  // v4.11: Track for headless policy
 	if (bNeedsCompile)
 	{
 		// Log both if both apply (from-scratch + structural changes)
@@ -15996,18 +16008,54 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 			LogGeneration(TEXT("  Requesting compilation due to structural emitter changes..."));
 		}
 		NewSystem->RequestCompile(false);
-		NewSystem->WaitForCompilationComplete(false, false);
-		LogGeneration(TEXT("  Compilation complete"));
+		NewSystem->WaitForCompilationComplete(true, false);
+		bDidAttemptCompile = true;
+		LogGeneration(FString::Printf(TEXT("  Compilation complete - IsReadyToRun=%s"),
+			NewSystem->IsReadyToRun() ? TEXT("true") : TEXT("false")));
 	}
 
-	// v4.11: Safety gate - ensure system is ready before saving
-	// This gate is STRICT: broken systems are not saved, preventing silent bad content
+	// v4.11: Environment-aware readiness policy
+	// - Real RHI (editor/GPU): STRICT - fail on not-ready
+	// - Headless -nullrhi + TEMPLATE-BASED: After compile attempt with emitters - WARN + save
+	// - Headless -nullrhi + FROM-SCRATCH: STRICT - fail (may be missing required scripts/modules)
+	// Rationale: IsReadyToRun() depends on GPU/render systems that don't initialize under -nullrhi.
+	//            Template-based systems are far more likely to be valid once GPU is available.
+	const int32 EmitterCount = NewSystem->GetEmitterHandles().Num();
+	const bool bIsHeadless = IsRunningCommandlet() && !FApp::CanEverRender();
+	bool bSavedUnderHeadlessPolicy = false;  // v4.11: Track for metadata
+
+	// v4.11 DEBUG: Always log readiness state for grep-able diagnostics
+	LogGeneration(FString::Printf(
+		TEXT("  ReadyCheck: IsReadyToRun=%s emitters=%d headless=%s did_compile=%s from_template=%s initial_compile=%s"),
+		NewSystem->IsReadyToRun() ? TEXT("true") : TEXT("false"),
+		EmitterCount,
+		bIsHeadless ? TEXT("true") : TEXT("false"),
+		bDidAttemptCompile ? TEXT("true") : TEXT("false"),
+		bDuplicatedFromTemplate ? TEXT("true") : TEXT("false"),
+		bInitialCompileRequired ? TEXT("true") : TEXT("false")));
+
 	if (!NewSystem->IsReadyToRun())
 	{
-		int32 EmitterCount = NewSystem->GetEmitterHandles().Num();
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			FString::Printf(TEXT("System not ready (emitters=%d, from_template=%s). Specify template_system: in manifest."),
-				EmitterCount, bDuplicatedFromTemplate ? TEXT("true") : TEXT("false")));
+		// v4.11: Only allow headless warn+save for TEMPLATE-BASED systems
+		// From-scratch systems may be fundamentally invalid (missing scripts/emitters)
+		if (bIsHeadless && bDidAttemptCompile && EmitterCount > 0 && bDuplicatedFromTemplate)
+		{
+			// Headless + compile attempted + emitters exist + template-based = allow save with warning
+			LogGeneration(FString::Printf(TEXT("WARNING: System reports not-ready under -nullrhi headless mode.")));
+			LogGeneration(FString::Printf(TEXT("         (emitters=%d, from_template=true, did_compile=%s)"),
+				EmitterCount, bDidAttemptCompile ? TEXT("true") : TEXT("false")));
+			LogGeneration(TEXT("         Compile was attempted; saving anyway. IsReadyToRun() unreliable without GPU."));
+			bSavedUnderHeadlessPolicy = true;
+		}
+		else
+		{
+			// Real RHI or from-scratch or no compile attempt = strict failure
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("System not ready (emitters=%d, from_template=%s, headless=%s, did_compile=%s). Specify template_system: in manifest."),
+					EmitterCount, bDuplicatedFromTemplate ? TEXT("true") : TEXT("false"),
+					bIsHeadless ? TEXT("true") : TEXT("false"),
+					bDidAttemptCompile ? TEXT("true") : TEXT("false")));
+		}
 	}
 
 	// Mark dirty and register
@@ -16026,7 +16074,14 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	// v3.0: Store standard asset metadata for regen/diff system
 	StoreDataAssetMetadata(NewSystem, TEXT("NS"), Definition.Name, InputHash);
 
-	LogGeneration(FString::Printf(TEXT("Created Niagara System: %s"), *Definition.Name));
+	if (bSavedUnderHeadlessPolicy)
+	{
+		LogGeneration(FString::Printf(TEXT("Created Niagara System: %s (HEADLESS-SAVED - verify in editor)"), *Definition.Name));
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("Created Niagara System: %s"), *Definition.Name));
+	}
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("NiagaraSystem");

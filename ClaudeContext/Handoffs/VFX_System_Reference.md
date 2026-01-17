@@ -97,8 +97,50 @@ This prevents default values from triggering unintended operations.
 |-----------|---------|
 | Template IsReadyToRun check | Ensures source is compiled before duplication |
 | Conditional compile | Only triggered by structural changes |
-| IsReadyToRun gate before save | Catches compile failures, bad templates, corruption |
-| Diagnostic message | Includes `structural_changes=true/false` for debugging |
+| Environment-aware readiness policy | Strict in editor, headless-aware in -nullrhi |
+| Diagnostic logging | ReadyCheck with all state flags for debugging |
+
+### v4.11 Environment-Aware Readiness Policy
+
+**Problem:** `IsReadyToRun()` depends on GPU/render systems that don't initialize under `-nullrhi` headless mode. A from-scratch Niagara system can report `IsReadyToRun()=false` even after successful compilation.
+
+**Solution:** Tiered policy based on environment and system provenance:
+
+| Environment | System Type | IsReadyToRun=false | Action |
+|-------------|-------------|-------------------|--------|
+| Editor (real RHI) | Any | Fail | **STRICT** - fail before save |
+| Headless (-nullrhi) | Template-based | Pass | **WARN** - save with warning |
+| Headless (-nullrhi) | From-scratch | Fail | **STRICT** - fail (may be invalid) |
+
+**Escape Hatch Requirements (all must be true):**
+- `bIsHeadless == true` (running commandlet with no render capability)
+- `bDidAttemptCompile == true` (compilation was requested)
+- `EmitterCount > 0` (system has content)
+- `bDuplicatedFromTemplate == true` (template-based, not from-scratch)
+
+**Rationale:** Template-based systems are far more likely to be valid once GPU is available (inheriting compiled state from the template). From-scratch systems may be fundamentally invalid (missing scripts/modules/emitters).
+
+**Diagnostic Logging:**
+```
+ReadyCheck: IsReadyToRun=false emitters=1 headless=true did_compile=true from_template=true initial_compile=true
+```
+
+**Headless-Saved Marker:**
+```
+Created Niagara System: NS_Example (HEADLESS-SAVED - verify in editor)
+```
+
+**Manifest Guidance:**
+```yaml
+niagara_systems:
+  # From-scratch systems require editor mode with real RHI
+  - name: NS_CustomEffect
+    effect_type: ambient  # From-scratch - fails in headless
+
+  # Template-based systems work in headless -nullrhi mode
+  - name: NS_TemplateVariant
+    template_system: "/Niagara/DefaultAssets/Templates/Systems/MinimalLightweight.MinimalLightweight"
+```
 
 ### Use Cases
 

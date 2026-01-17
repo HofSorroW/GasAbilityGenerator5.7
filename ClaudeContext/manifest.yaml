@@ -4787,6 +4787,11 @@ fx_presets:
       SparkIntensity: "5.0"
 
 niagara_systems:
+  # v4.11 NOTE: From-scratch Niagara systems (no template_system) require editor mode with
+  # real RHI to generate. Headless -nullrhi mode only supports template-based systems.
+  # To test template-based generation, use:
+  #   template_system: "/Niagara/DefaultAssets/Templates/Systems/MinimalLightweight.MinimalLightweight"
+
   # Main Father companion floating energy orb VFX
   # Composed of: NE_FatherCore, NE_FatherShell, NE_FatherParticles, NE_FatherAura, NE_FatherTrail
   - name: NS_FatherCompanion
