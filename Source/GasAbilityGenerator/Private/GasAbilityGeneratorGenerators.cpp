@@ -15986,11 +15986,12 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	bool bNeedsCompile = bNeedsRecompile || bInitialCompileRequired;
 	if (bNeedsCompile)
 	{
+		// Log both if both apply (from-scratch + structural changes)
 		if (bInitialCompileRequired)
 		{
 			LogGeneration(TEXT("  Requesting initial compilation for from-scratch system..."));
 		}
-		else if (bNeedsRecompile)
+		if (bNeedsRecompile)
 		{
 			LogGeneration(TEXT("  Requesting compilation due to structural emitter changes..."));
 		}
