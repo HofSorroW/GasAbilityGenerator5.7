@@ -125,10 +125,10 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 		return CreateAssetDropdownCell(RowData->AbilityConfig, UAbilityConfiguration::StaticClass(), TEXT("AC_"));
 	}
 
-	// 7. ActivityConfig - asset dropdown (ActConfig_*)
+	// 7. ActivityConfig - asset dropdown (AC_* - same prefix as AbilityConfig, differentiated by UClass)
 	if (ColumnName == TEXT("ActivityConfig"))
 	{
-		return CreateAssetDropdownCell(RowData->ActivityConfig, UNPCActivityConfiguration::StaticClass(), TEXT("ActConfig_"));
+		return CreateAssetDropdownCell(RowData->ActivityConfig, UNPCActivityConfiguration::StaticClass(), TEXT("AC_"));
 	}
 
 	// 8. Schedule - asset dropdown (TriggerSets - TS_* or Schedule_*)

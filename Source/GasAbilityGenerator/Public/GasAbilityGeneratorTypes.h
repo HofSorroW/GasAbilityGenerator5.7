@@ -72,9 +72,32 @@ struct FGenerationResult
 	// v2.6.7: Check if this result can be retried
 	bool CanRetry() const { return Status == EGenerationStatus::Deferred && !MissingDependency.IsEmpty(); }
 
-	// Helper to determine category from asset name prefix
+	// Helper to determine category from GeneratorId or asset name prefix
+	// v4.8.2: Prefer GeneratorId over prefix for accurate categorization (AC_ used for both Ability and Activity configs)
 	void DetermineCategory()
 	{
+		// First check GeneratorId for accurate categorization
+		if (!GeneratorId.IsEmpty())
+		{
+			if (GeneratorId == TEXT("AbilityConfiguration")) { Category = TEXT("Ability Configurations"); return; }
+			if (GeneratorId == TEXT("ActivityConfiguration")) { Category = TEXT("Activity Configurations"); return; }
+			if (GeneratorId == TEXT("GameplayAbility")) { Category = TEXT("Gameplay Abilities"); return; }
+			if (GeneratorId == TEXT("GameplayEffect")) { Category = TEXT("Gameplay Effects"); return; }
+			if (GeneratorId == TEXT("ActorBlueprint")) { Category = TEXT("Actor Blueprints"); return; }
+			if (GeneratorId == TEXT("WidgetBlueprint")) { Category = TEXT("Widget Blueprints"); return; }
+			if (GeneratorId == TEXT("DialogueBlueprint")) { Category = TEXT("Dialogue Blueprints"); return; }
+			if (GeneratorId == TEXT("NPCDefinition")) { Category = TEXT("NPC Definitions"); return; }
+			if (GeneratorId == TEXT("CharacterDefinition")) { Category = TEXT("Character Definitions"); return; }
+			if (GeneratorId == TEXT("NarrativeEvent")) { Category = TEXT("Narrative Events"); return; }
+			if (GeneratorId == TEXT("EquippableItem")) { Category = TEXT("Equippable Items"); return; }
+			if (GeneratorId == TEXT("Activity")) { Category = TEXT("Activities"); return; }
+			if (GeneratorId == TEXT("Blackboard")) { Category = TEXT("Blackboards"); return; }
+			if (GeneratorId == TEXT("BehaviorTree")) { Category = TEXT("Behavior Trees"); return; }
+			if (GeneratorId == TEXT("NiagaraSystem")) { Category = TEXT("Niagara Systems"); return; }
+			// GeneratorId exists but not mapped - fall through to prefix detection
+		}
+
+		// Fallback to prefix detection for backwards compatibility
 		if (AssetName.StartsWith(TEXT("IA_"))) Category = TEXT("Input Actions");
 		else if (AssetName.StartsWith(TEXT("IMC_"))) Category = TEXT("Input Mapping Contexts");
 		else if (AssetName.StartsWith(TEXT("GE_"))) Category = TEXT("Gameplay Effects");
@@ -86,8 +109,7 @@ struct FGenerationResult
 		else if (AssetName.StartsWith(TEXT("BT_"))) Category = TEXT("Behavior Trees");
 		else if (AssetName.StartsWith(TEXT("MF_"))) Category = TEXT("Material Functions");  // v2.6.12: Must check before M_
 		else if (AssetName.StartsWith(TEXT("M_"))) Category = TEXT("Materials");
-		else if (AssetName.StartsWith(TEXT("AC_"))) Category = TEXT("Ability Configurations");
-		else if (AssetName.StartsWith(TEXT("ActConfig_"))) Category = TEXT("Activity Configurations");
+		else if (AssetName.StartsWith(TEXT("AC_"))) Category = TEXT("Configurations");  // v4.8.2: Generic - use GeneratorId for specificity
 		else if (AssetName.StartsWith(TEXT("NPC_"))) Category = TEXT("NPC Definitions");
 		else if (AssetName.StartsWith(TEXT("CD_"))) Category = TEXT("Character Definitions");
 		else if (AssetName.StartsWith(TEXT("BPA_"))) Category = TEXT("Activities");

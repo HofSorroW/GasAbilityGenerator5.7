@@ -95,7 +95,7 @@ The metadata system tracks changes to detect what needs regeneration:
 **v3.1 Note:** UDataAsset and UBlueprint don't implement IInterface_AssetUserData in UE5.7, so a central registry stores metadata for these asset types.
 
 **Coverage:** All 25 asset generators have full support:
-- 16 DataAsset types: E, IA, IMC, BB, BT, M, MF, FC, AM, AC, ActConfig, IC, NPCDef, CD, TaggedDialogue, NS
+- 16 DataAsset types: E, IA, IMC, BB, BT, M, MF, FC, AM, AC (Ability+Activity), IC, NPCDef, CD, TaggedDialogue, NS
 - 9 Blueprint types: GE, GA, ActorBP, WidgetBP, AnimNotify, DialogueBP, EquippableBP, ActivityBP, NE
 
 ## Automation Workflow
@@ -405,7 +405,7 @@ The plugin includes Excel-like table editors for bulk content authoring:
 | EI_ | Equippable Items | `equippable_items` | FEquippableItemGenerator |
 | BPA_ | Activities | `activities` | FActivityGenerator |
 | AC_ | Ability Configurations | `ability_configurations` | FAbilityConfigurationGenerator |
-| ActConfig_ | Activity Configurations | `activity_configurations` | FActivityConfigurationGenerator |
+| AC_ | Activity Configurations | `activity_configurations` | FActivityConfigurationGenerator |
 | IC_ | Item Collections | `item_collections` | FItemCollectionGenerator |
 | NE_ | Narrative Events | `narrative_events` | FNarrativeEventGenerator |
 | NPC_ | NPC Definitions | `npc_definitions` | FNPCDefinitionGenerator |
@@ -515,8 +515,9 @@ ability_configurations:
     default_attributes: GE_FatherAttributes       # Attribute initialization
 
 # v3.1: ActivityConfiguration with goal generators
+# v4.8.2: Uses AC_ prefix (same as AbilityConfiguration, differentiated by UClass)
 activity_configurations:
-  - name: ActConfig_Father
+  - name: AC_FatherBehavior
     folder: ActivityConfigs
     activities: [BPA_FatherFollow, BPA_FormationFollow]
     goal_generators: [GoalGenerator_Attack]       # Goal generation classes
@@ -640,7 +641,7 @@ npc_definitions:
     npc_name: Garrett the Blacksmith
     npc_blueprint: BP_Blacksmith                  # TSoftClassPtr<ANarrativeNPCCharacter>
     ability_configuration: AC_Blacksmith
-    activity_configuration: ActConfig_Blacksmith
+    activity_configuration: AC_BlacksmithBehavior
     min_level: 1
     max_level: 10
     allow_multiple_instances: false
