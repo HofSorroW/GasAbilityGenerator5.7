@@ -87,7 +87,7 @@ This prevents default values from triggering unintended operations.
 5. Compile gating:
    a. bInitialCompileRequired: Always true for new system identity (both from-scratch and duplicates)
    b. bNeedsRecompile: True only if structural emitter changes occurred
-   c. If either flag is true: RequestCompile + WaitForCompilationComplete
+   c. If either flag is true: RequestCompile(false) + WaitForCompilationComplete(true, false)
 6. Environment-aware safety gate (see below)
 7. Save asset
 ```
@@ -103,11 +103,13 @@ This prevents default values from triggering unintended operations.
 | Structural emitter change | `SetIsEnabled()` changes state | `bNeedsRecompile = true` |
 | User.* parameter change | Never | (no flags) |
 
+**Call Signature:** `WaitForCompilationComplete(true, false)` includes GPU shaders but no progress dialog. Do not change without retesting headless behavior.
+
 ### Safety Mechanisms
 
 | Mechanism | Purpose |
 |-----------|---------|
-| Template IsReadyToRun check | Ensures source is compiled before duplication |
+| Template readiness pre-check | If template isn't ready, request compile + wait (best-effort) before duplication |
 | Compile gating | Initial compile for new identity + extra compile for structural deltas |
 | Environment-aware readiness policy | Strict in editor, headless-aware in -nullrhi |
 | Diagnostic logging | ReadyCheck with all state flags for debugging |
@@ -126,18 +128,20 @@ This prevents default values from triggering unintended operations.
 **Escape Hatch Requirements (all must be true):**
 - `bIsHeadless == true` (running commandlet with no render capability)
 - `bDidAttemptCompile == true` (compilation was requested)
-- `EmitterCount > 0` (system has content)
+- `EmitterCount > 0` (minimal sanity check - not proof of validity, especially for from-scratch systems)
 
 **Explicit Contract:**
 
 | Environment | Guarantee |
 |-------------|-----------|
-| **Editor / Real RHI** | Saved systems pass `IsReadyToRun()` or generation fails. Functional validity guaranteed. |
-| **Headless -nullrhi** | HEADLESS-SAVED systems are **authoring artifacts** that must be validated in editor before shipping. Functional validity NOT guaranteed. |
+| **Editor / Real RHI** | Saved systems pass `IsReadyToRun()` or generation fails. **Readiness guaranteed.** |
+| **Headless -nullrhi** | HEADLESS-SAVED systems are **authoring artifacts** that must be validated in editor before shipping. **Readiness NOT guaranteed.** |
 
 **Policy B Trade-off:** Policy B trades correctness guarantees for pipeline continuity in headless mode. It does not assert functional validity—a from-scratch system may have emitter handles but be missing required scripts/modules. This is acceptable for testing but requires editor validation before shipping.
 
 **Revert to Policy A:** Once real template systems exist for all NS_ entries OR generation runs under real RHI in CI/editor mode, add `&& bDuplicatedFromTemplate` to the escape hatch condition to restore conservative behavior.
+
+**Tooling Follow-up:** Commandlet should emit `RESULT: New=<N> Failed=<N> Total=<N>` footer for reliable wrapper parsing.
 
 **Diagnostic Logging:**
 ```
