@@ -9,7 +9,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/SavePackage.h"
 
-#define GENERATOR_VERSION TEXT("4.7.0")
+#define GENERATOR_VERSION TEXT("4.7")
 
 // ============================================================================
 // FGenerationReportItem Implementation
