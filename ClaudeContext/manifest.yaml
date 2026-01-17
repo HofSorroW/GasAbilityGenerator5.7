@@ -286,22 +286,22 @@ tags:
   - tag: Father.Form.Symbiote
     comment: Father is in symbiote form (merged)
 
-  # Input Tags (8)
-  - tag: InputTag.Father.DomeBurst
+  # Input Tags - Father (8) - follows Narrative.Input.* convention
+  - tag: Narrative.Input.Father.DomeBurst
     comment: Input for dome burst ability
-  - tag: InputTag.Father.ElectricTrap
+  - tag: Narrative.Input.Father.ElectricTrap
     comment: Input for electric trap ability
-  - tag: InputTag.Father.FormWheel
+  - tag: Narrative.Input.Father.FormWheel
     comment: Input for form selection wheel
-  - tag: InputTag.Father.ProximityStrike
+  - tag: Narrative.Input.Father.ProximityStrike
     comment: Input for proximity strike ability
-  - tag: InputTag.Father.Sprint
+  - tag: Narrative.Input.Father.Sprint
     comment: Input for exoskeleton sprint
-  - tag: InputTag.Father.Stealth
+  - tag: Narrative.Input.Father.Stealth
     comment: Input for stealth field ability
-  - tag: InputTag.Father.TurretShoot
+  - tag: Narrative.Input.Father.TurretShoot
     comment: Input for turret shoot ability
-  - tag: InputTag.Move
+  - tag: Narrative.Input.Move
     comment: Generic move input tag
 
   # State Tags - Father (21)
