@@ -3187,14 +3187,11 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
 	// =========================================================================
-	// TEST ONLY: Scan TestData path for table editor testing
-	// REVERT THIS AFTER TESTING - Change to scan /Game/ for production
+	// v4.7.1: Force Asset Registry rescan before querying
+	// This handles file-copied assets that weren't duplicated via Unreal Editor
 	// =========================================================================
-	TArray<FString> PathsToScan = { TEXT("/Game/Game/TestData") };
-	const FString PathFilter = TEXT("/Game/Game/TestData");
-	// =========================================================================
-	// END TEST ONLY - Production should use: PathsToScan = { TEXT("/Game/") }, PathFilter = TEXT("")
-	// =========================================================================
+	TArray<FString> PathsToScan = { TEXT("/Game/") };
+	const FString PathFilter = TEXT("");  // Empty = no filtering, scan all /Game/ assets
 	UE_LOG(LogTemp, Log, TEXT("[DialogueTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
 	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
 

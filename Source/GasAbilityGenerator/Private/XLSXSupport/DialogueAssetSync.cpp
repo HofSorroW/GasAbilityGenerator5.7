@@ -444,14 +444,12 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAllAssets(const FString& Pa
 	}
 
 	// =========================================================================
-	// TEST ONLY: Filter to PathFilter (e.g., TestData) for testing
-	// REVERT THIS AFTER TESTING - Remove or make PathFilter empty by default
+	// v4.7.1: Filter to PathFilter if provided (empty = scan all /Game/ assets)
 	// =========================================================================
 	TArray<FAssetData> FilteredAssetList;
 	for (const FAssetData& Asset : AssetList)
 	{
 		FString PackagePath = Asset.PackagePath.ToString();
-		// Use Contains to handle /Game/Game/TestData or /Game/TestData
 		if (PathFilter.IsEmpty() || PackagePath.Contains(PathFilter))
 		{
 			FilteredAssetList.Add(Asset);
@@ -464,11 +462,8 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAllAssets(const FString& Pa
 
 	if (!PathFilter.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[DialogueAssetSync] TEST MODE - Filtered to %d assets containing '%s'"), FilteredAssetList.Num(), *PathFilter);
+		UE_LOG(LogTemp, Log, TEXT("[DialogueAssetSync] Filtered to %d assets containing '%s'"), FilteredAssetList.Num(), *PathFilter);
 	}
-	// =========================================================================
-	// END TEST ONLY
-	// =========================================================================
 
 	Result.bSuccess = true;
 

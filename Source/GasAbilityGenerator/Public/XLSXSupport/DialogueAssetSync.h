@@ -173,7 +173,7 @@ public:
 
 	/**
 	 * Sync all dialogue blueprints found via AssetRegistry
-	 * Uses path filter to limit scope (e.g., /Game/TestData/)
+	 * Uses path filter to limit scope (empty = scan all /Game/ assets)
 	 * @param PathFilter - Optional path prefix filter (empty = all paths)
 	 * @return Combined result with all nodes from all dialogues
 	 */

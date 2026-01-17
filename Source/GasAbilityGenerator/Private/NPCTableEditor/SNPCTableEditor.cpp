@@ -2680,51 +2680,15 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 	// v4.7.1: Force Asset Registry rescan before querying
 	// This handles file-copied assets that weren't duplicated via Unreal Editor
 	// =========================================================================
-	// =========================================================================
-	// TEST ONLY: Scan TestData path for table editor testing
-	// REVERT THIS AFTER TESTING - Change to scan /Game/ for production
-	// =========================================================================
-	TArray<FString> PathsToScan = { TEXT("/Game/Game/TestData") };
-	// =========================================================================
-	// END TEST ONLY - Production should use: { TEXT("/Game/") }
-	// =========================================================================
+	TArray<FString> PathsToScan = { TEXT("/Game/") };
 	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
 	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
 
 	// Find all NPCDefinition assets
 	TArray<FAssetData> AssetList;
 	FTopLevelAssetPath ClassPath = UNPCDefinition::StaticClass()->GetClassPathName();
-	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] Searching for class: %s"), *ClassPath.ToString());
 	AssetRegistry.GetAssetsByClass(ClassPath, AssetList, true);
-	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] Found %d total UNPCDefinition assets BEFORE filter"), AssetList.Num());
-
-	// Debug: Log first few assets to see their paths
-	for (int32 i = 0; i < FMath::Min(5, AssetList.Num()); i++)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] Asset[%d]: PackagePath='%s', AssetName='%s'"),
-			i, *AssetList[i].PackagePath.ToString(), *AssetList[i].AssetName.ToString());
-	}
-
-	// =========================================================================
-	// TEST ONLY: Filter to TestData path for table editor testing
-	// REVERT THIS AFTER TESTING - Remove the filter loop below
-	// =========================================================================
-	TArray<FAssetData> FilteredAssetList;
-	for (const FAssetData& Asset : AssetList)
-	{
-		FString PackagePath = Asset.PackagePath.ToString();
-		// Use exact path match for test folder
-		if (PackagePath.StartsWith(TEXT("/Game/Game/TestData")))
-		{
-			FilteredAssetList.Add(Asset);
-			UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Matched: %s"), *PackagePath);
-		}
-	}
-	AssetList = FilteredAssetList;
-	UE_LOG(LogTemp, Warning, TEXT("[NPCTableEditor] TEST MODE - Filtered to %d assets in /Game/Game/TestData"), AssetList.Num());
-	// =========================================================================
-	// END TEST ONLY
-	// =========================================================================
+	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Found %d UNPCDefinition assets"), AssetList.Num());
 
 	if (AssetList.Num() == 0)
 	{
