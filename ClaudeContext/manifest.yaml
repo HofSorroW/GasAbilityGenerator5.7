@@ -4468,12 +4468,12 @@ activity_configurations:
 npc_definitions:
   - name: NPC_FatherCompanion
     folder: Configs
-    display_name: Father
-    character_class: BP_FatherCompanion
+    npc_name: Father
+    npc_blueprint: BP_FatherCompanion
     ability_configuration: AC_FatherCompanion
     activity_configuration: ActConfig_FatherCompanion
-    faction: Narrative.Factions.FatherCompanion
-    friendly_factions:
+    default_factions:
+      - Narrative.Factions.FatherCompanion
       - Narrative.Factions.Player
 
 # ============================================================================

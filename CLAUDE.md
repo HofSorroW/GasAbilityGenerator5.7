@@ -887,6 +887,18 @@ actor_blueprints:
 | GetArrayItem | - | Access array element by index |
 | Self | - | Reference to blueprint self |
 
+### Parser Field Aliases
+
+The YAML parser accepts multiple field names for the same property:
+
+| Canonical Name | Alias | Used In |
+|----------------|-------|---------|
+| `npc_name:` | `display_name:` | npc_definitions |
+| `npc_class_path:` | `npc_blueprint:` | npc_definitions |
+| `dialogue_sound_attenuation:` | `sound_attenuation:` | dialogue_blueprints |
+
+**Prefer canonical names** in new manifests. Aliases exist for backward compatibility.
+
 ### Search Paths
 
 When looking for classes/enums, the plugin searches:
