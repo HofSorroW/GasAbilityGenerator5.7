@@ -1,5 +1,8 @@
-// GasAbilityGenerator v4.0
+// GasAbilityGenerator v4.10
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.10: Widget Property Enhancement - ConfigureWidgetProperties lambda with dotted properties,
+//        struct types (FSlateColor, FSlateBrush, FLinearColor, FVector2D), enum types (FEnumProperty, TEnumAsByte),
+//        machine-readable warnings via FGenerationResult.Warnings, FSlateBrush field restrictions
 // v4.0: Weapon Attachment TMap Automation - Fully automated HolsterAttachmentConfigs/WieldAttachmentConfigs
 //       population via FScriptMapHelper for TMap<FGameplayTag, FWeaponAttachmentConfig>
 // v3.9: NPC Pipeline - ActivitySchedule, GoalItem, Quest generators

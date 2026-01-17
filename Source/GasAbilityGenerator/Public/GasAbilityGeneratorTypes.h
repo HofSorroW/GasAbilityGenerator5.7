@@ -1,20 +1,14 @@
-// GasAbilityGenerator v3.0
+// GasAbilityGenerator v4.10
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.10: Widget Property Enhancement - dotted properties, struct types, enums, machine-readable warnings
+//        FGenerationResult.Warnings field with pipe-delimited format (CODE | ContextPath | Message | SuggestedFix)
+// v4.7: Machine-readable report system - UGenerationReport, FGenerationReportItem, FGenerationError
+// v4.3: Widget Blueprint Layout Automation - widget_tree manifest section, 23 widget types
 // v3.0: Regen/Diff Safety System - FGeneratorMetadata, EDryRunStatus, FDryRunResult, FDryRunSummary
 //       Universal ComputeHash() on all FManifest*Definition structs for change detection
-// v2.9.1: FX Validation System - FFXValidationError, FFXExpectedParam, FFXGeneratorMetadata
-//         Template integrity validation, descriptor hashing for regeneration safety
-// v2.9.0: Data-driven FX architecture - FManifestFXDescriptor for Niagara User param binding
-// v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 // v2.6.7: Deferred asset retry mechanism for dependency resolution
-// v2.6.6: GE assets created as Blueprints for CooldownGameplayEffectClass compatibility
-// v2.6.5: Added Niagara System generator
 // v2.5.0: Renamed to GasAbilityGenerator for generic UE project compatibility
-// v2.4.0: Added inline event graph and variables support for gameplay abilities
-// v2.3.0: Added 12 new asset type definitions with dependency-based generation order
 // v2.2.0: Added event graph generation - create Blueprint nodes and connections from YAML
-// v2.1.9: Added manifest validation - IsAssetInManifest() and BuildAssetWhitelist()
-// v2.1.8: Added enumeration generation support
 
 #pragma once
 

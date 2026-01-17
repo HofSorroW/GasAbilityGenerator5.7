@@ -1,5 +1,6 @@
 // GasAbilityGeneratorReport.cpp
-// v4.7: Machine-readable generation report implementation
+// v4.10: Machine-readable generation report implementation
+// v4.10: FromGenerationResult() splits E_*/W_* warnings into Errors/Warnings arrays (CullEmpty=false critical)
 
 #include "GasAbilityGeneratorReport.h"
 #include "JsonObjectConverter.h"
