@@ -418,6 +418,14 @@ public:
 		const TArray<FManifestMaterialExpression>& Expressions,
 		const TArray<FManifestMaterialConnection>& Connections);
 
+	// v4.10.1: Overload for material functions that includes inputs/outputs as valid connection endpoints
+	static FMaterialExprValidationResult ValidateExpressionsAndConnections(
+		const FString& AssetName,
+		const TArray<FManifestMaterialExpression>& Expressions,
+		const TArray<FManifestMaterialConnection>& Connections,
+		const TArray<FManifestMaterialFunctionInput>& Inputs,
+		const TArray<FManifestMaterialFunctionOutput>& Outputs);
+
 private:
 	// v2.6.12: Helper to create material expression by type
 	static UMaterialExpression* CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef, const TMap<FString, UMaterialExpression*>& ExpressionMap);

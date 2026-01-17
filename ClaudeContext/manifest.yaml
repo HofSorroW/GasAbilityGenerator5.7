@@ -4723,91 +4723,80 @@ widget_blueprints:
         type: Bool
         default: false
     # v4.10: Widget tree for radial form selection wheel
+    # Layout per System Design Document Section 5.2:
+    # Armor (top), Symbiote (left), Engineer (right), Exoskeleton (bottom-left), Crawler (bottom-right)
     widget_tree:
       root_widget: RootCanvas
       widgets:
         - id: RootCanvas
           type: CanvasPanel
           name: RootCanvas
-          children: [WheelContainer]
-        - id: WheelContainer
-          type: Overlay
-          name: WheelContainer
+          children: [WheelBackground, Slot_Armor, Slot_Symbiote, Slot_Engineer, Slot_Exoskeleton, Slot_Crawler, CenterIcon, SelectionIndicator]
+        - id: WheelBackground
+          type: Image
+          name: WheelBackground
           is_variable: true
           slot:
             anchors: Center
             alignment: "0.5, 0.5"
+            position: "0, 0"
             size: "400, 400"
-          children: [WheelBackground, FormSlotsBox, CenterIcon, SelectionIndicator]
-        - id: WheelBackground
-          type: Image
-          name: WheelBackground
-          slot:
-            h_align: Fill
-            v_align: Fill
           properties:
-            ColorAndOpacity: "(R=0.05, G=0.05, B=0.1, A=0.9)"
-        - id: FormSlotsBox
-          type: CanvasPanel
-          name: FormSlotsBox
-          is_variable: true
-          slot:
-            h_align: Fill
-            v_align: Fill
-          children: [Slot_Crawler, Slot_Armor, Slot_Exoskeleton, Slot_Symbiote, Slot_Engineer]
-        - id: Slot_Crawler
-          type: Button
-          name: Slot_Crawler
-          is_variable: true
-          slot:
-            anchors: Custom
-            position: "0, -150"
-            alignment: "0.5, 0.5"
-            size: "80, 80"
+            ColorAndOpacity: "(R=0.02, G=0.02, B=0.05, A=0.85)"
         - id: Slot_Armor
           type: Button
           name: Slot_Armor
           is_variable: true
           slot:
-            anchors: Custom
-            position: "142, -46"
+            anchors: Center
             alignment: "0.5, 0.5"
-            size: "80, 80"
-        - id: Slot_Exoskeleton
-          type: Button
-          name: Slot_Exoskeleton
-          is_variable: true
-          slot:
-            anchors: Custom
-            position: "88, 121"
-            alignment: "0.5, 0.5"
-            size: "80, 80"
+            position: "0, -120"
+            size: "70, 70"
         - id: Slot_Symbiote
           type: Button
           name: Slot_Symbiote
           is_variable: true
           slot:
-            anchors: Custom
-            position: "-88, 121"
+            anchors: Center
             alignment: "0.5, 0.5"
-            size: "80, 80"
+            position: "-120, 0"
+            size: "70, 70"
         - id: Slot_Engineer
           type: Button
           name: Slot_Engineer
           is_variable: true
           slot:
-            anchors: Custom
-            position: "-142, -46"
+            anchors: Center
             alignment: "0.5, 0.5"
-            size: "80, 80"
+            position: "120, 0"
+            size: "70, 70"
+        - id: Slot_Exoskeleton
+          type: Button
+          name: Slot_Exoskeleton
+          is_variable: true
+          slot:
+            anchors: Center
+            alignment: "0.5, 0.5"
+            position: "-74, 97"
+            size: "70, 70"
+        - id: Slot_Crawler
+          type: Button
+          name: Slot_Crawler
+          is_variable: true
+          slot:
+            anchors: Center
+            alignment: "0.5, 0.5"
+            position: "74, 97"
+            size: "70, 70"
         - id: CenterIcon
           type: Image
           name: CenterIcon
           is_variable: true
           slot:
-            h_align: Center
-            v_align: Center
-            size: "100, 100"
+            anchors: Center
+            alignment: "0.5, 0.5"
+            position: "0, 0"
+            size: "80, 80"
           properties:
             ColorAndOpacity: "(R=1.0, G=0.8, B=0.4, A=1.0)"
         - id: SelectionIndicator
@@ -4815,11 +4804,12 @@ widget_blueprints:
           name: SelectionIndicator
           is_variable: true
           slot:
-            h_align: Center
-            v_align: Center
-            size: "90, 90"
+            anchors: Center
+            alignment: "0.5, 0.5"
+            position: "0, 0"
+            size: "70, 70"
           properties:
-            ColorAndOpacity: "(R=1.0, G=0.6, B=0.0, A=0.8)"
+            ColorAndOpacity: "(R=1.0, G=0.6, B=0.0, A=0.0)"
 
 # ============================================================================
 # NIAGARA SYSTEMS (7) - v2.6.11 Enhanced with user parameters

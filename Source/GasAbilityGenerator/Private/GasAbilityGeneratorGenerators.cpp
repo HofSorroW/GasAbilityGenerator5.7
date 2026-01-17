@@ -6019,6 +6019,100 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateMaterialDefinition(con
 	return ValidateExpressionsAndConnections(Definition.Name, Definition.Expressions, Definition.Connections);
 }
 
+// v4.10.1: Overload for material functions - includes inputs/outputs as valid connection endpoints
+FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnections(
+	const FString& AssetName,
+	const TArray<FManifestMaterialExpression>& Expressions,
+	const TArray<FManifestMaterialConnection>& Connections,
+	const TArray<FManifestMaterialFunctionInput>& Inputs,
+	const TArray<FManifestMaterialFunctionOutput>& Outputs)
+{
+	FMaterialExprValidationResult ValidationResult;
+	ValidationResult.bValidated = true;
+
+	// Build expression ID set including inputs and outputs
+	TSet<FString> DefinedExpressionIds;
+	TSet<FString> ReferencedExpressionIds;
+
+	// Add inputs as valid connection endpoints
+	for (const FManifestMaterialFunctionInput& Input : Inputs)
+	{
+		DefinedExpressionIds.Add(Input.Name);
+	}
+
+	// Add outputs as valid connection endpoints
+	for (const FManifestMaterialFunctionOutput& Output : Outputs)
+	{
+		DefinedExpressionIds.Add(Output.Name);
+	}
+
+	// Validate expressions (same as base function)
+	for (const FManifestMaterialExpression& ExprDef : Expressions)
+	{
+		FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Expressions"), ExprDef.Id);
+
+		if (DefinedExpressionIds.Contains(ExprDef.Id))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_DUPLICATE_EXPRESSION_ID,
+				ContextPath,
+				FString::Printf(TEXT("Duplicate expression ID '%s'"), *ExprDef.Id),
+				true);
+			Diag.SuggestedFix = TEXT("Use a unique ID for each expression");
+			ValidationResult.AddDiagnostic(Diag);
+			continue;
+		}
+		DefinedExpressionIds.Add(ExprDef.Id);
+
+		// Validate expression type
+		FString TypeLower = FMaterialExprValidationResult::NormalizeKey(ExprDef.Type);
+		if (!KnownExpressionTypes.Contains(TypeLower))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_UNKNOWN_EXPRESSION_TYPE,
+				ContextPath,
+				ExprDef.Type,
+				FString::Printf(TEXT("Unknown expression type '%s'"), *ExprDef.Type),
+				true);
+			Diag.SuggestedFix = TEXT("Check spelling and case. See VFX_System_Reference.md for valid types.");
+			ValidationResult.AddDiagnostic(Diag);
+		}
+	}
+
+	// Validate connections
+	for (const FManifestMaterialConnection& Conn : Connections)
+	{
+		FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Connections"), Conn.FromId + TEXT("->") + Conn.ToId);
+
+		// Check source exists (skip "Material" which is a special case for regular materials)
+		if (Conn.FromId != TEXT("Material") && !DefinedExpressionIds.Contains(Conn.FromId))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_EXPRESSION_REFERENCE_INVALID,
+				ContextPath,
+				FString::Printf(TEXT("Connection source '%s' not defined in expressions or inputs"), *Conn.FromId),
+				true);
+			ValidationResult.AddDiagnostic(Diag);
+		}
+
+		// Check target exists
+		if (Conn.ToId != TEXT("Material") && !DefinedExpressionIds.Contains(Conn.ToId))
+		{
+			FMaterialExprDiagnostic Diag(
+				EMaterialExprValidationCode::E_EXPRESSION_REFERENCE_INVALID,
+				ContextPath,
+				FString::Printf(TEXT("Connection target '%s' not defined in expressions or outputs"), *Conn.ToId),
+				true);
+			ValidationResult.AddDiagnostic(Diag);
+		}
+
+		ReferencedExpressionIds.Add(Conn.FromId);
+	}
+
+	ValidationResult.SortDiagnostics();
+	return ValidationResult;
+}
+
 FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Materials") : Definition.Folder;
@@ -6678,9 +6772,9 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 		return Result;
 	}
 
-	// v4.10: Pre-generation validation with 6 guardrails (reuse material validation helper)
+	// v4.10.1: Pre-generation validation with inputs/outputs as valid connection endpoints
 	FMaterialExprValidationResult ValidationResult = FMaterialGenerator::ValidateExpressionsAndConnections(
-		Definition.Name, Definition.Expressions, Definition.Connections);
+		Definition.Name, Definition.Expressions, Definition.Connections, Definition.Inputs, Definition.Outputs);
 	if (ValidationResult.HasErrors())
 	{
 		LogGeneration(FString::Printf(TEXT("Material Function %s: Validation failed with %d errors, %d warnings"),
