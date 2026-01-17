@@ -279,6 +279,33 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 **Reference:** `ClaudeContext/Handoffs/Generator_Pure_Node_Bypass_Analysis_v2_0.md`
 
+### Regen Safety Contract (v3.0+)
+
+The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
+
+| Mechanism | Purpose |
+|-----------|---------|
+| **InputHash** | Detects manifest definition changes |
+| **OutputHash** | Detects manual asset edits |
+| **Dry-run** | Preview mode (`-dryrun` flag) |
+| **Conflict gating** | CONFLICT status requires `--force` |
+
+**Generation Status Matrix:**
+
+| Condition | Status | Action |
+|-----------|--------|--------|
+| No asset exists | CREATE | Generate new |
+| Manifest changed, asset unchanged | MODIFY | Safe to regenerate |
+| No changes | SKIP | Do nothing |
+| Both manifest AND asset changed | CONFLICT | Requires `--force` |
+
+**Important:** Undo is not the recovery mechanism. If generation produces unwanted results:
+1. Fix the manifest definition
+2. Use `--force` to regenerate from corrected manifest
+3. Or restore from version control
+
+**Reference:** `Source/GasAbilityGenerator/Public/GasAbilityGeneratorMetadata.h`
+
 ---
 
 ## Troubleshooting
