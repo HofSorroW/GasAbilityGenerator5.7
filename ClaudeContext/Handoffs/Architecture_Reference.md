@@ -1,28 +1,562 @@
 # Architecture Reference
 
-**Consolidated:** 2026-01-15
-**Status:** Design documents for future enhancements
+**Consolidated:** 2026-01-17
+**Plugin Version:** v4.8
+**Status:** Complete reference for plugin architecture, generators, and automation coverage
 
-This document consolidates the Design Compiler and Spec DataAsset architecture handoffs.
-
----
-
-## Overview
-
-Two complementary approaches for improved authoring workflow:
-1. **Design Compiler** - Pre-processing stage for high-level game design specs
-2. **Spec DataAssets** - Native UE workflow with Content Browser integration
-
-Both are deferred for future implementation after core generators are complete.
+This document consolidates architecture documentation, generator implementation patterns, coverage analysis, and the report system.
 
 ---
 
-## 1. Design Compiler Architecture
+## Table of Contents
 
-### Purpose
-Transform high-level, human-friendly game design specs into the flat manifest.yaml consumed by GasAbilityGenerator.
+1. [Generation Report System (v4.7)](#1-generation-report-system-v47)
+2. [Generator Implementation Reference](#2-generator-implementation-reference)
+3. [Automation Coverage Analysis](#3-automation-coverage-analysis)
+4. [Historical Automation Status](#4-historical-automation-status)
+5. [Future: Design Compiler & Spec DataAssets](#5-future-design-compiler--spec-dataassets)
 
-### Pipeline
+---
+
+## 1. Generation Report System (v4.7)
+
+Machine-readable generation reports for CI/CD integration and debugging. Reports are saved as both UDataAsset (for in-editor inspection) and JSON (for external tooling).
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `GasAbilityGeneratorReport.h` | Report structs and helper class |
+| `GasAbilityGeneratorReport.cpp` | Report implementation |
+| `GasAbilityGeneratorCommandlet.cpp` | Report creation hooks |
+| `GasAbilityGeneratorTypes.h` | FGenerationResult with AssetPath/GeneratorId |
+
+### Report Structure
+
+**FGenerationReportItem** - Each generated asset produces one report item:
+
+```cpp
+struct FGenerationReportItem
+{
+    FString AssetPath;          // "/Game/FatherCompanion/Abilities/GA_FatherAttack"
+    FString AssetName;          // "GA_FatherAttack"
+    FString GeneratorId;        // "GameplayAbility"
+    FString ExecutedStatus;     // "New", "Skipped", "Failed", "Deferred"
+    FString PlannedStatus;      // Dry-run: "WillCreate", "WillModify", "WillSkip", "Conflicted"
+    bool bHasPlannedStatus;     // True for dry-run reports
+    bool bAssetExistedBeforeRun;
+    FString Reason;             // Success/failure message
+    TArray<FGenerationError> Errors;
+    TArray<FString> Warnings;
+};
+```
+
+**FGenerationError** - Structured error for programmatic handling:
+
+```cpp
+struct FGenerationError
+{
+    FString ErrorCode;      // "E_PARENT_CLASS_NOT_FOUND"
+    FString ContextPath;    // "Abilities/GA_FatherAttack/parent_class"
+    FString Message;        // Human-readable description
+    FString SuggestedFix;   // Actionable fix suggestion
+};
+```
+
+**UGenerationReport** - Full report as UDataAsset:
+
+```cpp
+class UGenerationReport : public UDataAsset
+{
+    FGuid RunId;
+    FDateTime Timestamp;
+    FString GeneratorVersion;  // "4.8.0"
+    FString ManifestFilePath;
+    int64 ManifestHash;
+    bool bIsDryRun;
+    bool bIsForceRun;
+    TArray<FGenerationReportItem> Items;
+
+    // Summary counts
+    int32 CountNew, CountSkipped, CountFailed, CountDeferred;
+    int32 CountWillCreate, CountWillModify, CountWillSkip, CountConflicted;
+};
+```
+
+### Output Locations
+
+| Type | Path |
+|------|------|
+| UDataAsset | `/Game/Generated/Reports/GR_YYYYMMDD_HHMMSS_GUID8` |
+| JSON | `Saved/GasAbilityGenerator/Reports/GR_YYYYMMDD_HHMMSS_GUID8.json` |
+| Dry-run | Prefix: `GR_DryRun_...` |
+
+### Generator IDs
+
+| GeneratorId | Asset Type |
+|-------------|------------|
+| Enumeration | E_ enumerations |
+| InputAction | IA_ input actions |
+| InputMappingContext | IMC_ input mappings |
+| GameplayEffect | GE_ gameplay effects |
+| GameplayAbility | GA_ gameplay abilities |
+| ActorBlueprint | BP_ actor blueprints |
+| WidgetBlueprint | WBP_ widget blueprints |
+| Blackboard | BB_ blackboards |
+| BehaviorTree | BT_ behavior trees |
+| Material | M_ materials |
+| MaterialFunction | MF_ material functions |
+| FloatCurve | FC_ float curves |
+| AnimationMontage | AM_ animation montages |
+| AnimationNotify | NAS_ animation notifies |
+| DialogueBlueprint | DBP_ dialogue blueprints |
+| EquippableItem | EI_ equippable items |
+| Activity | BPA_ activities |
+| AbilityConfiguration | AC_ ability configs |
+| ActivityConfiguration | AC_ activity configs |
+| ItemCollection | IC_ item collections |
+| NarrativeEvent | NE_ narrative events |
+| GameplayCue | GC_ gameplay cues |
+| NPCDefinition | NPC_ NPC definitions |
+| CharacterDefinition | CD_ character definitions |
+| CharacterAppearance | Appearance_ appearances |
+| TriggerSet | TS_ trigger sets |
+| TaggedDialogueSet | TDS_ tagged dialogue |
+| NiagaraSystem | NS_ niagara systems |
+| ActivitySchedule | Schedule_ schedules |
+| GoalItem | Goal_ goals |
+| Quest | Quest_ quests |
+| POIPlacement | Level actor POI |
+| NPCSpawnerPlacement | Level actor spawner |
+
+### JSON Report Example
+
+```json
+{
+    "runId": "6069154F4974CAF380CA139A5941F34D",
+    "timestamp": "2026-01-17T14:03:32.615Z",
+    "generatorVersion": "4.8.0",
+    "manifestFilePath": "C:/Unreal Projects/NP22B57/.../manifest.yaml",
+    "manifestHash": 2971715670,
+    "isDryRun": false,
+    "isForceRun": false,
+    "countNew": 155,
+    "countSkipped": 0,
+    "countFailed": 0,
+    "countDeferred": 0,
+    "items": [
+        {
+            "assetPath": "/Game/FatherCompanion/Enums/E_FatherForm",
+            "assetName": "E_FatherForm",
+            "generatorId": "Enumeration",
+            "executedStatus": "New",
+            "reason": "Created successfully",
+            "errors": [],
+            "warnings": []
+        }
+    ]
+}
+```
+
+### Implementation Pattern
+
+Each generator populates AssetPath and GeneratorId before returning:
+
+```cpp
+FGenerationResult Result;
+// ... generation logic ...
+
+Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+Result.AssetPath = AssetPath;  // Full content browser path
+Result.GeneratorId = TEXT("GameplayAbility");
+Result.DetermineCategory();
+return Result;
+```
+
+For level actors (no content browser path):
+
+```cpp
+Result.AssetPath = FString::Printf(TEXT("LevelActor/POI/%s"), *Definition.POITag);
+Result.GeneratorId = TEXT("POIPlacement");
+```
+
+### CI/CD Integration
+
+Parse the JSON report to:
+1. Verify expected assets were generated (`countNew`)
+2. Detect failures (`countFailed`, `items[].errors`)
+3. Identify conflicts requiring manual resolution (`countConflicted`)
+4. Track manifest changes via `manifestHash`
+5. Correlate runs via `runId`
+
+---
+
+## 2. Generator Implementation Reference
+
+All generators are IMPLEMENTED and operational in GasAbilityGenerator v4.8.
+
+### Automation Coverage Summary
+
+| Asset Type | Level | Key Features |
+|------------|-------|--------------|
+| Quest_ | 95% | State machine, tasks, branches, rewards |
+| DBP_ | 98% | Full dialogue tree, events, conditions |
+| Goal_ | 95% | Blueprint creation, tags, lifecycle |
+| Schedule_ | 95% | Time-based behaviors with goals |
+| NPCDef_ | 98% | Full package with auto-create |
+| EI_ | 98% | Weapons, armor, all properties |
+| WBP_ | 95% | Widget tree, panels, slots (v4.3) |
+| POI/Spawner | 90% | Level actor placement |
+
+### 2.1 Quest System
+
+**Generator:** `FQuestGenerator` in GasAbilityGeneratorGenerators.cpp
+
+**Manifest Structure:**
+```yaml
+quests:
+  - name: Quest_ForgeSupplies
+    quest_name: "Forge Supplies"
+    questgiver: NPCDef_Blacksmith
+    states:
+      - id: Start
+        type: regular
+      - id: Complete
+        type: success
+    branches:
+      - id: AcceptQuest
+        from_state: Start
+        to_state: Gathering
+        tasks:
+          - task_class: BPT_FinishDialogue
+            properties:
+              dialogue: DBP_BlacksmithQuest
+    rewards:
+      currency: 100
+      xp: 50
+      items: [EI_IronSword]
+```
+
+**Key Classes:**
+- `UQuestBlueprint` - Quest asset type
+- `UQuestState` - State nodes (Regular, Success, Failure)
+- `UQuestBranch` - Transitions between states
+- `UNarrativeTask` (BPT_*) - Task instances
+
+**Supported Tasks:** BPT_FindItem, BPT_FinishDialogue, BPT_Move, BPT_KillEnemy, BPT_InteractWithObject, BPT_WaitGameplayEvent
+
+### 2.2 Dialogue System
+
+**Generator:** `FDialogueBlueprintGenerator` in GasAbilityGeneratorGenerators.cpp
+
+**Manifest Structure:**
+```yaml
+dialogue_blueprints:
+  - name: DBP_Blacksmith
+    dialogue_tree:
+      root: greeting
+      nodes:
+        - id: greeting
+          type: npc
+          speaker: NPCDef_Blacksmith
+          text: "Welcome!"
+          player_replies: [ask_work, leave]
+        - id: ask_work
+          type: player
+          text: "Do you have work?"
+          option_text: "Ask about work"
+          start_quest: Quest_ForgeSupplies
+          npc_replies: [work_response]
+```
+
+**Key Features:**
+- Two-pass node creation and wiring
+- NPC/Player node types with full properties
+- Events (NE_*) and Conditions (NC_*)
+- Quest shortcuts: start_quest, complete_quest_branch, fail_quest
+- 12+ CDO properties (FreeMovement, Priority, etc.)
+
+**CSV Pipeline (v4.0):** `FDialogueCSVParser` supports batch dialogue creation from spreadsheets. Columns: Dialogue, NodeID, Type, Speaker, Text, OptionText, Replies, Conditions, Events
+
+### 2.3 Goal & Schedule System
+
+**Goal Generator:** `FGoalItemGenerator` creates Goal_ Blueprint assets (UNPCGoalItem)
+
+```yaml
+goal_items:
+  - name: Goal_DefendForge
+    default_score: 75.0
+    goal_lifetime: -1.0
+    owned_tags: [State.Defending]
+    block_tags: [State.Fleeing]
+```
+
+**Schedule Generator:** `FActivityScheduleGenerator` creates Schedule_ DataAssets (UNPCActivitySchedule)
+
+```yaml
+activity_schedules:
+  - name: Schedule_BlacksmithDay
+    behaviors:
+      - start_time: 600      # 6:00 AM
+        end_time: 1800       # 6:00 PM
+        goal_class: Goal_Work
+        location: Forge
+```
+
+**Time Format:** 0-2400 where 100 = 1 hour (e.g., 600 = 6:00 AM, 1800 = 6:00 PM)
+
+**Helper Class:** `UScheduledBehavior_AddNPCGoalByClass` - Concrete helper for goal-based scheduling
+
+### 2.4 NPC Package System
+
+**Generator:** `FNPCDefinitionGenerator` with auto-create support
+
+**Manifest Structure:**
+```yaml
+npc_definitions:
+  - name: NPCDef_Blacksmith
+    npc_id: Blacksmith_01
+    npc_name: Garrett the Blacksmith
+    auto_create_dialogue: true
+    auto_create_tagged_dialogue: true
+    auto_create_item_loadout: true
+    default_item_loadout:
+      - items:
+          - item: EI_Hammer
+            quantity: 1
+        item_collections: [IC_BlacksmithTools]
+    trading_item_loadout:
+      - item_collections: [IC_WeaponsForSale]
+```
+
+**Auto-Create Features:**
+- `auto_create_dialogue` → DBP_{NPCName}Dialogue
+- `auto_create_tagged_dialogue` → {NPCName}_TaggedDialogue
+- `auto_create_item_loadout` → Populates DefaultItemLoadout
+
+**Loot Table Roll Support:** Full `TArray<FLootTableRoll>` population with items, quantities, collections, chance, num_rolls.
+
+### 2.5 Item Pipeline
+
+**Generator:** `FEquippableItemGenerator` with weapon property chains
+
+**Pipeline:** `FPipelineProcessor` converts mesh files to EI_ assets:
+1. Scan mesh folder for SM_/SK_ assets
+2. Create EI_ DataAsset per mesh
+3. Populate collections (IC_)
+4. Link to NPC loadouts
+
+**Weapon Support:**
+- MeleeWeaponItem properties
+- RangedWeaponItem properties (spread, recoil, etc.)
+- Weapon attachments (holster_attachments, wield_attachments)
+
+### 2.6 POI & Spawner Placement
+
+**Generators:**
+- `FPOIPlacementGenerator` - Places APOIActor in levels
+- `FNPCSpawnerPlacementGenerator` - Places ANPCSpawner actors
+
+**Manifest Structure:**
+```yaml
+poi_placements:
+  - poi_tag: POI.Town.Forge
+    location: "100, 200, 0"
+    display_name: "Blacksmith Forge"
+    linked_pois: [POI.Town.Square]
+
+npc_spawner_placements:
+  - name: Spawner_Blacksmith
+    near_poi: POI.Town.Forge
+    npcs:
+      - npc_definition: NPCDef_Blacksmith
+```
+
+**Commandlet Flag:** `-level="/Game/Maps/MainWorld"` loads world for actor placement
+
+### 2.7 Widget Blueprint (v4.3)
+
+**Generator:** `FWidgetBlueprintGenerator` with widget tree construction
+
+**Manifest Structure:**
+```yaml
+widget_blueprints:
+  - name: WBP_UltimatePanel
+    widget_tree:
+      root_widget: RootCanvas
+      widgets:
+        - id: RootCanvas
+          type: CanvasPanel
+          children: [ContentBox]
+        - id: ContentBox
+          type: VerticalBox
+          is_variable: true
+          slot:
+            anchors: BottomCenter
+            position: "0, -50"
+          children: [Label, Bar]
+        - id: Label
+          type: TextBlock
+          text: "ULTIMATE"
+          slot:
+            h_align: Center
+        - id: Bar
+          type: ProgressBar
+          is_variable: true
+          slot:
+            size_rule: Fill
+            padding: "10, 5, 10, 5"
+```
+
+**Supported Widget Types (25+):** CanvasPanel, VerticalBox, HorizontalBox, Overlay, Border, Button, TextBlock, RichTextBlock, Image, ProgressBar, Slider, CheckBox, EditableText, EditableTextBox, ComboBox, Spacer, SizeBox, ScaleBox, ScrollBox, UniformGridPanel, GridPanel, WidgetSwitcher, Throbber, CircularThrobber, NativeWidgetHost
+
+**Slot Properties:**
+- Canvas: anchors, position, size, alignment, auto_size
+- Box: h_align, v_align, size_rule, fill_weight, padding
+
+### 2.8 Faction System
+
+**Status:** No generator needed - Factions use FGameplayTag with runtime relationships.
+
+**Storage:**
+- Tags defined in DefaultGameplayTags.ini
+- Relationships in `ANarrativeGameState::FactionAllianceMap`
+- Assigned via NPCDefinition.DefaultFactions
+
+**Existing Support:**
+- Tag generator handles Narrative.Factions.* tags
+- NPC generator populates DefaultFactions array
+
+---
+
+## 3. Automation Coverage Analysis
+
+### Coverage Statistics (v4.8)
+
+| Asset Type | Header Properties | Manifest Fields | Generator Coverage | Gap % |
+|------------|------------------|-----------------|-------------------|-------|
+| UNarrativeGameplayAbility | 2 | 2 | 100% | **0%** |
+| UNPCDefinition | 16 | 16 | 100% | **0%** |
+| UCharacterDefinition | 8 | 8 | 100% | **0%** |
+| UCharacterAppearance | 3 | 3 | 100% | **0%** |
+| UEquippableItem | 7 | 7 | 100% | **0%** |
+| UWeaponItem | 18 | 18 | 100% | **0%** |
+| URangedWeaponItem | 14 | 14 | 100% | **0%** |
+| UNarrativeItem (Base) | 20 | 20 | 100% | **0%** |
+| UDialogue | 17 | 17 | 100% | **0%** |
+| UNPCActivityConfiguration | 3 | 3 | 100% | **0%** |
+| UNPCGoalItem | 8 | 8 | 100% | **0%** |
+| UNarrativeActivityBase | 4 | 4 | 100% | **0%** |
+| UAbilityConfiguration | 3 | 3 | 100% | **0%** |
+
+**Overall Coverage: ~99%**
+
+### Remaining Gaps (MINIMAL)
+
+**Asset Types Not Generated:**
+
+| Asset Type | Reason |
+|------------|--------|
+| UTriggerSet | Complex event system with editor-only visual scripting |
+
+**Properties with Partial Support:**
+
+| Property | Class | Status |
+|----------|-------|--------|
+| Meshes (FMeshAppearanceData) | UCharacterAppearance | Basic mesh path supported; complex struct properties (materials, morphs, transforms) logged for editor |
+
+These remaining gaps represent edge cases requiring editor visual tools.
+
+---
+
+## 4. Historical Automation Status
+
+All features IMPLEMENTED in GasAbilityGenerator v4.8.
+
+### v3.10 - RangedWeaponItem Enhancements
+
+| Feature | Status |
+|---------|--------|
+| RangedWeaponItem spread properties | COMPLETE |
+| Crosshair widget | COMPLETE |
+| Aim render properties | COMPLETE |
+| Recoil vectors | COMPLETE |
+| Weapon attachments | COMPLETE |
+| Clothing mesh materials | COMPLETE |
+
+### v4.0 - Generator Enhancements
+
+| Feature | Status |
+|---------|--------|
+| Gameplay Cue Generator (GC_) | COMPLETE |
+| Narrative Event NPC Targets | COMPLETE |
+| Dialogue Speaker Automation | COMPLETE |
+| Float Curve Enhancement | COMPLETE |
+| Material Function Wiring | COMPLETE |
+| Blackboard Key Types | COMPLETE |
+
+### v4.0 - Automation Gaps Closed
+
+| Feature | Status |
+|---------|--------|
+| Quest Rewards & Questgiver | COMPLETE |
+| NPC TradingItemLoadout | COMPLETE |
+| Dialogue Quest Shortcuts | COMPLETE |
+| Item Usage Properties | COMPLETE |
+| Weapon Attachments | COMPLETE |
+
+### Automation Coverage by Asset Type
+
+| Asset Type | Automation Level | Key Properties |
+|------------|------------------|----------------|
+| Tags | 100% | Full generation to INI |
+| Input Actions/Mappings | 100% | Full with value type |
+| Enumerations | 100% | Full with display names |
+| Gameplay Effects | 100% | Full Blueprint with modifiers |
+| Gameplay Abilities | 98% | Full with event graphs, tags, policies |
+| Gameplay Cues | 75% | Burst/BurstLatent/Actor types |
+| Actor Blueprints | 95% | Event graphs, function overrides |
+| Widget Blueprints | 95% | Widget tree layout, variables |
+| Dialogue Blueprints | 98% | Full tree, events, conditions |
+| Quest Blueprints | 95% | State machine, tasks, rewards |
+| Behavior Trees | 95% | Nodes, decorators, services |
+| Blackboards | 100% | All key types |
+| Materials | 85% | Expressions, parameters |
+| Material Functions | 85% | Expressions, connections |
+| Float Curves | 100% | Keys, interpolation |
+| Animation Montages | 90% | Sections, notifies |
+| Equippable Items | 98% | Full weapon support |
+| Activities | 95% | Tags, goal types |
+| Activity Schedules | 95% | Time-based behaviors |
+| Goals | 95% | Score, tags, lifecycle |
+| NPC Definitions | 98% | Full with auto-create |
+| Character Definitions | 95% | Full property support |
+| Narrative Events | 90% | Runtime, filter, targets |
+| Niagara Systems | 70% | Template duplication |
+| Item Collections | 100% | Items with quantities |
+| Tagged Dialogue Sets | 85% | Dialogue arrays |
+| POI Placements | 90% | Level actor placement |
+| NPC Spawner Placements | 90% | Level actor placement |
+
+### Key Technical Implementations
+
+- **TSubclassOf Resolution:** AbilityConfiguration, ActivityConfiguration now properly resolve class references via LoadClass<>
+- **Loot Table Roll Population:** Full FLootTableRoll struct support for NPCDefinition item loadouts via reflection
+- **Quest State Machine:** Complete UQuestState, UQuestBranch, UNarrativeTask creation without graph nodes
+- **Dialogue Tree Generation:** Full node graph with NPC/Player nodes, events, conditions, quest shortcuts
+- **Widget Tree Construction:** Three-pass system: create widgets, build hierarchy, configure slots/properties
+
+---
+
+## 5. Future: Design Compiler & Spec DataAssets
+
+Two complementary approaches for improved authoring workflow (deferred for future implementation):
+
+### 5.1 Design Compiler Architecture
+
+**Purpose:** Transform high-level, human-friendly game design specs into the flat manifest.yaml consumed by GasAbilityGenerator.
+
+**Pipeline:**
 ```
 DesignSpec/                    ┌─────────────────┐
 ├── globals/                   │    Compiler     │
@@ -32,40 +566,38 @@ DesignSpec/                    ┌───────────────�
 └── quests/
 ```
 
-### Features
+**Features:**
 - **Include System** - Split manifest across multiple files
 - **Templates & Inheritance** - Base templates with override support
 - **Variables & Constants** - $CONSTANT substitution
 - **Conditional Blocks** - Build variants (demo vs full)
 - **Pre-Generation Validation** - Reference checking, localization completeness
 
-### Implementation Options
+**Implementation Options:**
 1. Python Compiler (~500-800 lines) - Recommended
 2. C++ Compiler (in plugin) - More complex
 3. Lightweight Include Only (~50 lines) - Good intermediate step
 
----
+### 5.2 Spec DataAsset Workflow
 
-## 2. Spec DataAsset Workflow
+**Purpose:** Replace YAML-centric workflow with native UE DataAssets + Content Browser right-click generation.
 
-### Purpose
-Replace YAML-centric workflow with native UE DataAssets + Content Browser right-click generation.
-
-### Benefits
+**Benefits:**
 - Zero UI development (uses Details panel)
 - Free dropdowns (TSubclassOf asset pickers)
 - Free validation (UPROPERTY meta tags)
 - Free undo/redo (FScopedTransaction)
 - Batch support via commandlet
 
-### Spec Types
+**Spec Types:**
+
 | Spec | Generates |
 |------|-----------|
 | UNPCPackageSpec | NPCDef_, AC_, ActConfig_, Goal_, Schedule_, DBP_, Quest_ |
 | UQuestSpec | Quest_ |
 | UItemSpec | EI_ |
 
-### Template Inheritance
+**Template Inheritance:**
 ```
 Specs/Templates/
 └── NPC_Template_Merchant.uasset    ← Base template
@@ -78,14 +610,12 @@ Specs/NPCs/
     BaseName = "Blacksmith"          ← Override
 ```
 
-### Context Menu Actions
+**Context Menu Actions:**
 - **Generate NPC Assets** - Creates all defined assets
 - **Validate Spec** - Check for errors without generating
 - **Preview Generation Plan** - Show what would be created
 
----
-
-## Implementation Status
+### Implementation Status
 
 | Feature | Status | Priority |
 |---------|--------|----------|
@@ -102,5 +632,9 @@ Specs/NPCs/
 
 ## Original Documents (Consolidated)
 
-- Design_Compiler_Architecture_Handoff.md (deleted)
-- Spec_DataAsset_UX_Handoff.md (deleted)
+- v4.7_Report_System_Reference.md (merged)
+- Generator_Implementation_Reference.md (merged)
+- Gap_Analysis_NarrativePro_v1.md (merged)
+- Completed_Automation_Reference.md (merged)
+- Design_Compiler_Architecture_Handoff.md (merged)
+- Spec_DataAsset_UX_Handoff.md (merged)

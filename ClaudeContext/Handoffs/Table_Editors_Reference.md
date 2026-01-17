@@ -1,10 +1,10 @@
 # Table Editors Reference
 
-**Consolidated:** 2026-01-15
-**Updated:** 2026-01-16
-**Status:** v4.11.2 IMPLEMENTED (Full-Screen Sync Approval System)
+**Consolidated:** 2026-01-17
+**Plugin Version:** v4.8
+**Status:** Complete reference for all 4 table editors (NPC, Dialogue, Quest, Item)
 
-This document consolidates the Dialogue Table Editor and NPC Table Editor handoffs, including the XLSX sync system, validated token design, and safety audit results.
+This document consolidates all table editor documentation: NPC, Dialogue, Quest (v4.8), and Item (v4.8) Table Editors, including XLSX sync, validated tokens, UX safety decisions, and safeguards.
 
 ---
 
@@ -33,6 +33,8 @@ This document consolidates the Dialogue Table Editor and NPC Table Editor handof
 ---
 
 ## Feature Comparison
+
+**Note:** Quest Table Editor (v4.8) and Item Table Editor (v4.8) follow the same patterns as NPC Table Editor with all safety features. See dedicated sections below for Quest/Item-specific details.
 
 | Feature | Dialogue Table Editor | NPC Table Editor |
 |---------|----------------------|------------------|
@@ -197,6 +199,139 @@ Both editors apply `bIsBusy` guard and button disable to:
 | **P3.3: ID change reporting in Generate** | Sync preview already shows all changes before apply; adding post-generate reporting would duplicate information |
 | **_Lists sheet sorting** | Dropdown order has no semantic meaning; sorting adds code for zero user benefit |
 | **Merged cell detection** | Documentation warning is sufficient; detection code is non-trivial for a problem that rarely occurs in data tables |
+
+---
+
+## UX Design Decisions (LOCKED v4.6)
+
+These design decisions are finalized and should not be changed without careful consideration of backwards compatibility.
+
+### Hash Policy (LOCKED)
+
+| Outcome | Updates LastGeneratedHash? | Rationale |
+|---------|---------------------------|-----------|
+| Zero failures | YES | Assets match table state |
+| Any failures (1+) | NO | Hash stays stale, "Out of date" persists |
+| Warnings only | YES | Warnings don't block functionality |
+| Skipped (unchanged) | YES | No action needed = up to date |
+
+**Why this matters:** Prevents false "Up to date" status when generation partially failed.
+
+### Validation States (LOCKED)
+
+| State | Color | Meaning | When Set |
+|-------|-------|---------|----------|
+| Unknown | Yellow | Needs validation | After edit, after restart, new row |
+| Valid | Green | Passed validation | After successful validation |
+| Invalid | Red | Has errors | After validation found issues |
+
+**Status Bar Precedence (highest to lowest):**
+1. **Errors (Red)** - `{N} errors` - validation errors exist
+2. **Not validated (Yellow)** - `Not validated ({N})` - rows need validation
+3. **Out of date (Amber)** - `Out of date` - validated but hash mismatch
+4. **Up to date (Green)** - `Up to date` - all validated and generated
+
+### Soft Delete Strategy (LOCKED)
+
+**Chosen: bDeleted flag**
+
+| What Happens | Behavior |
+|--------------|----------|
+| Row marked bDeleted=true | Row stays in table, grayed out |
+| During generation | Row is SKIPPED |
+| Existing asset | UNTOUCHED (no delete, no modify) |
+| Status bar | Shows `Deleted: {N}` count |
+| XLSX export | Includes deleted rows (preserves data) |
+
+**Why NOT other options:**
+- Option A (move to _Trash folder): UE redirectors cause issues
+- Option B (hard delete): Data loss, no undo
+
+### Window Title vs Status Bar (LOCKED)
+
+| Location | Shows | Format |
+|----------|-------|--------|
+| **Window Title** | Save state (dirty/clean) | `NPC Table Editor` or `*NPC Table Editor` |
+| **Status Bar** | Generation state | `Total: N │ Showing: N │ Selected: N │ [validation indicator]` |
+
+### Save-before-Generate (LOCKED)
+
+| Step | Action | Rationale |
+|------|--------|-----------|
+| 1 | User clicks "Generate" | Intent to create assets |
+| 2 | **Silent auto-save of TableData** | Ensures generation uses persisted data |
+| 3 | Validation runs | Gate check |
+| 4 | Generation proceeds | Assets created |
+
+**Why silent:** User intent is "generate", save is a side effect.
+
+### Validation Gate (LOCKED)
+
+| Condition | Dialog | Options |
+|-----------|--------|---------|
+| Errors = 0 | None | Proceed automatically |
+| Errors > 0 | Blocking dialog | "Yes" = override and generate, "No" = cancel |
+
+### Hash Stability Design Decision (v4.8)
+
+`ComputeEditableFieldsHash()` intentionally uses:
+- **Exact float bit hashing** (`GetTypeHash(float)`)
+- **Order-sensitive hashing** for list-like fields (e.g., `Abilities`, `ItemTags`) as stored
+
+**Rationale:**
+- Order may be semantic in GAS/UE workflows (grant order, UI order, processing order)
+- Float quantization can create false negatives (real edits not detected)
+- No observed drift in our current OpenXLSX import/export workflow
+
+**If sync false-positives are reported** (row marked "Modified" after export→reimport without edits):
+1. Run a round-trip stability test to reproduce
+2. Prefer fixing import/export consistency (source of drift)
+3. Only then consider hash normalization with an explicit migration plan
+
+---
+
+## Safeguards Matrix
+
+### Data Loss Prevention
+
+| Risk | Safeguard | Implementation |
+|------|-----------|----------------|
+| User forgets to save before Generate | **Auto-save before Generate** | `OnGenerateClicked()` Step 0 |
+| User closes with unsaved changes | **Save-on-close prompt** | `CanCloseTab()` |
+| User doesn't know file is dirty | **Dirty indicator (*)** | `UpdateTabLabel()` |
+| Accidental row deletion | **Soft delete (bDeleted)** | Row stays, just skipped |
+| Excel edits lose row identity | **RowId GUID tracking** | Survives reorder/filter |
+
+### Generation Safety
+
+| Risk | Safeguard | Implementation |
+|------|-----------|----------------|
+| Generate with validation errors | **Validation gate dialog** | Blocking dialog, requires explicit override |
+| Generate incomplete data | **Pre-generation validation** | Full validation before any asset creation |
+| Partial failure looks like success | **Failure count tracking** | `LastGenerateFailureCount` persisted |
+| Can't tell if assets match table | **Hash comparison** | `AreAssetsOutOfDate()` |
+| Deleted rows generate orphan assets | **Soft delete skip** | `bDeleted` rows never sent to generator |
+| Existing assets accidentally overwritten | **Soft delete preservation** | Existing assets untouched |
+
+### Visibility & Awareness
+
+| Risk | Safeguard | Implementation |
+|------|-----------|----------------|
+| Don't know validation state | **Color-coded status bar** | Red/Yellow/Amber/Green |
+| Don't know which rows have issues | **Per-row validation cache** | ValidationState per row |
+| Don't know if regeneration needed | **"Out of date" indicator** | Amber status when hash mismatch |
+| Status bar shows stale info | **Direct SetText() updates** | Bypasses Slate caching |
+| Don't know deleted row count | **Deleted count in status** | Shown in result dialogs |
+
+### Conflict Prevention
+
+| Risk | Safeguard | Implementation |
+|------|-----------|----------------|
+| Edit row during generation | **UI remains responsive** | Generation is synchronous but fast |
+| Multiple editors on same data | **Package dirty tracking** | Standard UE package system |
+| Excel import overwrites local changes | **RowId-based merge** | Existing rows updated, not replaced |
+| Validation cache out of sync | **InvalidateValidation()** | Called on every edit |
+| Asset list changes invalidate validation | **ListsVersionGuid** | Bump invalidates all caches |
 
 ---
 
@@ -641,6 +776,198 @@ Both editors share common UI patterns and integrate with the generation pipeline
 - `NPCTableEditorTypes.h` - FNPCTableRow, UNPCTableData
 - `SNPCTableEditor.h` - Widget declarations
 - `SNPCTableEditor.cpp` - Full implementation (~2600 lines)
+
+---
+
+## Quest Table Editor (v4.8)
+
+### Features
+- 12 columns covering quest identity, states, branches, tasks, events, conditions, rewards
+- Quest grouping view (all states for a quest shown together)
+- State machine visualization (states and branches)
+- Token-based Tasks/Events/Conditions/Rewards columns
+- Validation cache with staleness detection
+- XLSX 3-way sync support
+- Soft delete with bDeleted flag
+- Generation tracking (LastGeneratedHash)
+
+### Column Structure (12 columns)
+
+| Column | Type | Width | Property |
+|--------|------|-------|----------|
+| Status | Badge | 0.04 | Row validation state |
+| Quest Name | Text | 0.08 | Asset name |
+| Display Name | Text | 0.10 | In-game title |
+| State ID | Text | 0.06 | State identifier |
+| State Type | Dropdown | 0.05 | Regular/Success/Failure |
+| Description | Text | 0.15 | State description |
+| Parent Branch | Text | 0.06 | Branch leading to state |
+| Tasks | Token | 0.12 | BPT_* task tokens |
+| Events | Token | 0.10 | NE_* event tokens |
+| Conditions | Token | 0.10 | NC_* condition tokens |
+| Rewards | Token | 0.08 | Currency/XP/Items |
+| Notes | Text | 0.06 | Designer notes |
+
+### Task Token Specs
+
+```
+BPT_FindItem(Item=EI_IronOre,Count=10)
+BPT_FinishDialogue(Dialogue=DBP_Blacksmith)
+BPT_Move(Location=POI_Forge,Radius=100)
+BPT_KillEnemies(Tag=Enemy.Goblin,Count=5)
+BPT_Wait(Duration=5.0)
+```
+
+### Reward Token Specs
+
+```
+Reward(Currency=100,XP=50)
+Reward(Items=EI_Sword:1,EI_Potion:5)
+Reward(Currency=500,XP=100,Items=EI_RareArmor:1)
+```
+
+### Row Structure
+
+```cpp
+USTRUCT()
+struct FQuestTableRow
+{
+    GENERATED_BODY()
+
+    // Identity
+    FString QuestName;
+    FString DisplayName;
+
+    // State info
+    FString StateID;
+    EQuestStateType StateType = EQuestStateType::Regular;
+    FString Description;
+    FString ParentBranch;
+
+    // Tokens
+    FString Tasks;      // "BPT_FindItem(...);BPT_Move(...)"
+    FString Events;     // "NE_GiveXP(...);NE_AddItem(...)"
+    FString Conditions; // "NC_HasTag(...);NC_QuestState(...)"
+    FString Rewards;    // "Reward(Currency=100,XP=50)"
+
+    // Meta
+    FString Notes;
+    bool bDeleted = false;
+
+    // Sync/Validation tracking
+    uint32 LastSyncedHash = 0;
+    EValidationState ValidationState = EValidationState::Unknown;
+};
+```
+
+### Files
+- `QuestTableEditor/QuestTableEditorTypes.h` - FQuestTableRow, UQuestTableData
+- `QuestTableEditor/SQuestTableEditor.h` - Widget declarations
+- `QuestTableEditor/SQuestTableEditor.cpp` - Full implementation
+- `QuestTableEditor/QuestTableConverter.h/cpp` - Row ↔ Definition conversion
+- `QuestTableEditor/QuestTableValidator.h/cpp` - Token validation
+
+---
+
+## Item Table Editor (v4.8)
+
+### Features
+- 16 columns with dynamic visibility based on Item Type
+- Type-specific fields (AttackRating for weapons, ArmorRating for armor)
+- Weapon Config token for ranged/melee specifics
+- Multi-select for Abilities and ItemTags
+- Validation cache with staleness detection
+- XLSX 3-way sync support
+- Soft delete with bDeleted flag
+- Generation tracking (LastGeneratedHash)
+
+### Column Structure (16 columns)
+
+| Column | Type | Width | Property | Visibility |
+|--------|------|-------|----------|------------|
+| Status | Badge | 0.03 | Row state | Always |
+| Item Name | Text | 0.08 | Asset name | Always |
+| Display Name | Text | 0.08 | In-game name | Always |
+| Item Type | Dropdown | 0.06 | Equippable/Ranged/Melee | Always |
+| Slot | Dropdown | 0.06 | Equipment slot tag | Always |
+| Base Value | Int | 0.04 | Gold worth | Always |
+| Weight | Float | 0.04 | Inventory weight | Always |
+| Attack Rating | Float | 0.04 | Weapon damage | Weapons only |
+| Armor Rating | Float | 0.04 | Damage reduction | Armor only |
+| Modifier GE | Asset | 0.08 | GE_* reference | Always |
+| Abilities | Multi | 0.10 | GA_* grants | Always |
+| Weapon Config | Token | 0.10 | Weapon-specific | Weapons only |
+| Item Tags | Multi | 0.06 | Gameplay tags | Always |
+| Stackable | Check | 0.02 | Boolean | Always |
+| Stack Limit | Int | 0.03 | Max stack | Always |
+| Notes | Text | 0.07 | Notes | Always |
+
+### Dynamic Column Visibility
+
+Columns show/hide based on Item Type selection:
+- **Equippable**: Basic columns only
+- **Ranged Weapon**: +AttackRating, +WeaponConfig (ranged params)
+- **Melee Weapon**: +AttackRating, +WeaponConfig (melee params)
+- **Armor**: +ArmorRating
+
+### Weapon Config Token Specs
+
+```
+# Ranged weapons
+Weapon(Damage=50,ClipSize=30,ReloadTime=2.5,Range=2000,Spread=1.0)
+
+# Melee weapons
+Weapon(Damage=75,Range=200,ComboCount=3,StaggerChance=0.3)
+```
+
+### Row Structure
+
+```cpp
+USTRUCT()
+struct FItemTableRow
+{
+    GENERATED_BODY()
+
+    // Identity
+    FString ItemName;
+    FString DisplayName;
+    EItemType ItemType = EItemType::Equippable;
+
+    // Core stats
+    FString EquipmentSlot;  // Tag string
+    int32 BaseValue = 0;
+    float Weight = 1.0f;
+    float AttackRating = 0.0f;
+    float ArmorRating = 0.0f;
+
+    // References
+    FString ModifierGE;         // GE_* asset name
+    TArray<FString> Abilities;  // GA_* asset names
+    TArray<FString> ItemTags;   // Gameplay tags
+
+    // Weapon config (token)
+    FString WeaponConfig;
+
+    // Stack
+    bool bStackable = false;
+    int32 MaxStackSize = 1;
+
+    // Meta
+    FString Notes;
+    bool bDeleted = false;
+
+    // Sync/Validation tracking
+    uint32 LastSyncedHash = 0;
+    EValidationState ValidationState = EValidationState::Unknown;
+};
+```
+
+### Files
+- `ItemTableEditor/ItemTableEditorTypes.h` - FItemTableRow, UItemTableData, EItemType
+- `ItemTableEditor/SItemTableEditor.h` - Widget declarations
+- `ItemTableEditor/SItemTableEditor.cpp` - Full implementation
+- `ItemTableEditor/ItemTableConverter.h/cpp` - Row ↔ Definition conversion
+- `ItemTableEditor/ItemTableValidator.h/cpp` - Token validation
 
 ---
 
@@ -2048,5 +2375,8 @@ Files modified during the v4.8.4/v4.9/v4.9.1 safety audit:
 
 ## Original Documents (Consolidated)
 
-- v4.1_DialogueTableEditor_Handoff.md (deleted)
-- v4.1_NPCTableEditor_Handoff.md (deleted)
+- v4.1_DialogueTableEditor_Handoff.md (merged)
+- v4.1_NPCTableEditor_Handoff.md (merged)
+- Sync_System_Design_v4.11.md (merged)
+- v4.6_UX_Safety_System_ProcessMap.md (merged)
+- v4.8_Coverage_Expansion_Handoff.md (merged - Quest/Item Table Editors)
