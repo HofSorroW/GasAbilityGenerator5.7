@@ -1196,6 +1196,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	LogMessage(FString::Printf(TEXT("Total: %d"), ActualCount + Summary.DeferredCount));
 
 	// v4.11: Machine-parseable RESULT footer for wrapper reliability
+	// Schema v1: Keys in fixed order, all always present. Deferred = skipped due to missing prerequisite.
 	// Format: RESULT: New=<N> Skipped=<N> Failed=<N> Deferred=<N> Total=<N> Headless=<true/false>
 	const bool bIsHeadless = IsRunningCommandlet() && !FApp::CanEverRender();
 	LogMessage(FString::Printf(TEXT("RESULT: New=%d Skipped=%d Failed=%d Deferred=%d Total=%d Headless=%s"),
@@ -1205,6 +1206,13 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		Summary.DeferredCount,
 		ActualCount + Summary.DeferredCount,
 		bIsHeadless ? TEXT("true") : TEXT("false")));
+
+	// v4.11: RESULT_HEADLESS_SAVED footer for CI dashboards
+	// Count of assets saved under headless escape hatch (subset of New, require editor verification)
+	if (Summary.HeadlessSavedCount > 0)
+	{
+		LogMessage(FString::Printf(TEXT("RESULT_HEADLESS_SAVED: Count=%d"), Summary.HeadlessSavedCount));
+	}
 
 	// v2.8.4: Verification - compare actual vs expected using whitelist from start
 	VerifyGenerationComplete(ExpectedAssets, ExpectedCount, ActualCount);

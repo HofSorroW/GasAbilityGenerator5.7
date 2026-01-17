@@ -51,6 +51,9 @@ struct FGenerationResult
 	FString MissingDependencyType;  // Type of missing asset (e.g., "ActorBlueprint")
 	int32 RetryCount = 0;           // Number of retry attempts
 
+	// v4.11: Headless policy tracking for RESULT_HEADLESS_SAVED footer
+	bool bHeadlessSaved = false;    // True if saved under headless escape hatch (requires editor verification)
+
 	FGenerationResult() = default;
 
 	FGenerationResult(const FString& InName, EGenerationStatus InStatus, const FString& InMessage = TEXT(""))
@@ -135,6 +138,7 @@ struct FGenerationSummary
 	int32 SkippedCount = 0;
 	int32 FailedCount = 0;
 	int32 DeferredCount = 0;  // v2.6.7: Track deferred assets
+	int32 HeadlessSavedCount = 0;  // v4.11: Track assets saved under headless escape hatch
 
 	void AddResult(const FGenerationResult& Result)
 	{
@@ -154,6 +158,12 @@ struct FGenerationSummary
 		case EGenerationStatus::Deferred:
 			DeferredCount++;
 			break;
+		}
+
+		// v4.11: Count headless saves (subset of New that require editor verification)
+		if (Result.bHeadlessSaved)
+		{
+			HeadlessSavedCount++;
 		}
 	}
 

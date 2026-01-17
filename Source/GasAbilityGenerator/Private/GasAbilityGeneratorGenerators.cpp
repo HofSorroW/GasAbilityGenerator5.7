@@ -16085,6 +16085,7 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("NiagaraSystem");
+	Result.bHeadlessSaved = bSavedUnderHeadlessPolicy;  // v4.11: Flag for RESULT_HEADLESS_SAVED footer
 	Result.DetermineCategory();
 	return Result;
 }

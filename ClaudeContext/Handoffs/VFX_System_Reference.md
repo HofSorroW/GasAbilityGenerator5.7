@@ -103,6 +103,12 @@ This prevents default values from triggering unintended operations.
 | Structural emitter change | `SetIsEnabled()` changes state | `bNeedsRecompile = true` |
 | User.* parameter change | Never | (no flags) |
 
+**Compile Gating Logic:**
+```cpp
+bool bNeedsCompile = bNeedsRecompile || bInitialCompileRequired;
+if (bNeedsCompile) { RequestCompile(false); WaitForCompilationComplete(true, false); }
+```
+
 **Call Signature:** `WaitForCompilationComplete(true, false)` includes GPU shaders but no progress dialog. Do not change without retesting headless behavior.
 
 ### Safety Mechanisms
@@ -141,11 +147,36 @@ This prevents default values from triggering unintended operations.
 
 **Revert to Policy A:** Once real template systems exist for all NS_ entries OR generation runs under real RHI in CI/editor mode, add `&& bDuplicatedFromTemplate` to the escape hatch condition to restore conservative behavior.
 
-**RESULT Footer (Implemented):** Commandlet emits machine-parseable footer for reliable wrapper parsing:
+### RESULT Footer Schema (v1)
+
+Commandlet emits machine-parseable footers for reliable wrapper parsing:
+
 ```
 RESULT: New=<N> Skipped=<N> Failed=<N> Deferred=<N> Total=<N> Headless=<true/false>
+RESULT_HEADLESS_SAVED: Count=<N>  # Only present if Count > 0
 ```
-Wrappers should `grep "^RESULT:"` and parse the key=value pairs. This is the single source of truth for generation results.
+
+**Schema Contract:**
+- **Order**: Keys always appear in the order shown above. Never reorder.
+- **Presence**: All keys in RESULT always present, even if 0.
+- **Versioning**: If adding new keys (e.g., `Updated=`), do so as a schema bump. Old keys remain.
+
+**Field Definitions:**
+
+| Field | Meaning |
+|-------|---------|
+| `New` | Assets created successfully in this run |
+| `Skipped` | Assets already exist (unchanged, not regenerated) |
+| `Failed` | Generation errors (asset not created/saved) |
+| `Deferred` | Skipped due to missing prerequisite; will be retried. **Does NOT count as success.** |
+| `Total` | New + Skipped + Failed + Deferred |
+| `Headless` | `true` if running under `-nullrhi` (no GPU/render) |
+| `Count` (RESULT_HEADLESS_SAVED) | Subset of `New` that were saved under headless escape hatch. **Require editor verification before shipping.** |
+
+**Wrapper Guidance:**
+- Parse `grep "^RESULT:"` for primary results
+- Parse `grep "^RESULT_HEADLESS_SAVED:"` for CI dashboard warnings
+- Ignore other log lines for result determination
 
 **Diagnostic Logging:**
 ```
