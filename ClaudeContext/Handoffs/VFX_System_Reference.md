@@ -371,7 +371,7 @@ private:
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| E_UNKNOWN_EXPRESSION_TYPE | Error | Unrecognized expression type (60+ known types) |
+| E_UNKNOWN_EXPRESSION_TYPE | Error | Unrecognized expression type (97 known types) |
 | E_UNKNOWN_SWITCH_KEY | Error | Unknown key in switch inputs |
 | E_FUNCTION_NOT_FOUND | Error | MaterialFunctionCall target not found |
 | E_FUNCTION_INSTANCE_BLOCKED | Error | UMaterialFunctionInstance not allowed |
@@ -444,7 +444,7 @@ if (KeyLower != TEXT("default") && !QualitySwitchKeyMap.Contains(KeyLower))
 }
 ```
 
-### Known Expression Types (60+)
+### Known Expression Types (97)
 
 The validation system maintains an exhaustive `KnownExpressionTypes` set:
 
