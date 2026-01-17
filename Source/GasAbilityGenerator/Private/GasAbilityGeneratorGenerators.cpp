@@ -234,8 +234,9 @@
 #include "Components/RichTextBlock.h"
 #include "Components/CircularThrobber.h"
 #include "Components/Throbber.h"
-// v4.10: SlateTextureAtlasInterface for FSlateBrush resource validation
+// v4.10: SlateTextureAtlasInterface and SlateBrushAsset for FSlateBrush resource validation
 #include "Slate/SlateTextureAtlasInterface.h"
+#include "Slate/SlateBrushAsset.h"
 #include "EdGraphSchema_K2.h"
 // v2.6.0: Reflection for setting protected properties
 #include "UObject/UnrealType.h"
