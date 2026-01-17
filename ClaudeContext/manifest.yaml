@@ -866,10 +866,8 @@ gameplay_abilities:
             target_self: true
           position: [2700, 200]
       connections:
-        # Exec flow
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -1115,10 +1113,8 @@ gameplay_abilities:
           position: [1100, 500]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet/IsValid nodes)
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -1399,10 +1395,8 @@ gameplay_abilities:
             target_class: CharacterMovementComponent
           position: [1200, 400]
       connections:
-        # Exec flow (skip pure nodes)
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -1627,10 +1621,8 @@ gameplay_abilities:
             target_self: true
           position: [1200, 400]
       connections:
-        # Exec flow (skip pure nodes)
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -1803,10 +1795,8 @@ gameplay_abilities:
           position: [900, 500]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -1937,12 +1927,11 @@ gameplay_abilities:
             target_self: true
           position: [1800, 0]
       connections:
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [GetAvatarActor, Exec]
-          to: [CastToFather, Exec]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
@@ -2063,12 +2052,11 @@ gameplay_abilities:
             target_self: true
           position: [2400, 0]
       connections:
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [GetAvatarActor, Exec]
-          to: [CastToFather, Exec]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
@@ -2206,12 +2194,11 @@ gameplay_abilities:
             target_self: true
           position: [2400, 0]
       connections:
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [GetAvatarActor, Exec]
-          to: [CastToFather, Exec]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
@@ -2332,12 +2319,11 @@ gameplay_abilities:
             target_self: true
           position: [2100, 0]
       connections:
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
+          to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [GetAvatarActor, Exec]
-          to: [CastToFather, Exec]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
@@ -3685,10 +3671,8 @@ gameplay_abilities:
           position: [300, 500]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -3890,9 +3874,8 @@ gameplay_abilities:
           position: [1500, 650]
       connections:
         # === ACTIVATION FLOW ===
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -4146,9 +4129,8 @@ gameplay_abilities:
           position: [1500, 650]
       connections:
         # === ACTIVATION FLOW ===
+        # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetAvatarActor, Exec]
-        - from: [GetAvatarActor, Exec]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]

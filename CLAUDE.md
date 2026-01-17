@@ -245,6 +245,40 @@ Non-asset entry types that must be nested:
 - `nodes` - Event graph nodes (nested in event_graphs)
 - `connections` - Node connections (nested in event_graphs)
 
+### Pure Function Bypass (v2.5.2+)
+
+The generator automatically handles exec connections to pure functions (like `GetAvatarActorFromActorInfo`). Pure functions have **no execution pins** in Blueprint, so exec-to-pure connections in the manifest are non-semantic.
+
+**How it works:**
+1. Generator pre-pass identifies pure nodes in event graphs
+2. Exec connections targeting pure nodes are skipped (logged as handled)
+3. Rerouted connections bypass pure nodes, connecting directly to the next impure node
+4. Data connections to pure nodes work normally
+
+**Manifest pattern (accepted but non-semantic):**
+```yaml
+connections:
+  - from: [Event_Activate, Then]
+    to: [GetAvatarActor, Exec]      # Skipped - GetAvatarActor is pure
+  - from: [GetAvatarActor, Exec]
+    to: [CastToFather, Exec]        # Rerouted to Event_Activate -> CastToFather
+  - from: [GetAvatarActor, ReturnValue]
+    to: [CastToFather, Object]      # Works normally (data flow)
+```
+
+**Clean pattern (preferred):**
+```yaml
+connections:
+  - from: [Event_Activate, Then]
+    to: [CastToFather, Exec]        # Direct exec connection
+  - from: [GetAvatarActor, ReturnValue]
+    to: [CastToFather, Object]      # Data flow only
+```
+
+Both patterns produce identical Blueprints. The bypass ensures backwards compatibility with existing manifests.
+
+**Reference:** `ClaudeContext/Handoffs/Generator_Pure_Node_Bypass_Analysis_v2_0.md`
+
 ---
 
 ## Troubleshooting

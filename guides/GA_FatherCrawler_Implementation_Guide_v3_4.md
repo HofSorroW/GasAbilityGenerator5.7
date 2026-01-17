@@ -1,6 +1,6 @@
 # Father Companion - GA_FatherCrawler Implementation Guide
 
-## VERSION 3.3 - Tag Format and Reference Updates
+## VERSION 3.4 - Pure Function Connection Fix
 
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
@@ -15,7 +15,7 @@
 | **Parent Class** | NarrativeGameplayAbility |
 | **Form** | Crawler (Default form) |
 | **Input** | T (Form Wheel) or bActivateAbilityOnGranted |
-| **Version** | 3.2 |
+| **Version** | 3.4 |
 | **Last Updated** | January 2026 |
 | **Engine** | Unreal Engine 5.6 |
 | **Plugin** | Narrative Pro v2.2 |
@@ -378,7 +378,9 @@ Form state tags are managed by Activation Owned Tags with ReplicateActivationOwn
    - 3.3.1) Drag from **Get Avatar Actor** -> **Return Value** pin
    - 3.3.2) Search: `Cast to BP_FatherCompanion`
    - 3.3.3) Select cast node
-   - 3.3.4) Connect execution: **Get Avatar Actor** exec -> **Cast** exec in
+   - 3.3.4) Connect execution: **Event ActivateAbility (Then)** -> **Cast To BP_FatherCompanion (Exec)**
+
+> **Note:** Get Avatar Actor From Actor Info is a **pure function** with no execution pins. Execution flows directly from Event to Cast. The data connection (Return Value -> Object) is created automatically when dragging from the Return Value pin.
 
 ### **4) Set Father Form to Crawler**
 
