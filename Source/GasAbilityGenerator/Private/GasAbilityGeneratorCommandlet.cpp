@@ -10,6 +10,7 @@
 #include "GasAbilityGeneratorReport.h"  // v4.7: Generation report system
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Misc/App.h"  // v4.11: For FApp::CanEverRender() in headless detection
 #include "HAL/PlatformFilemanager.h"
 #include <exception>  // v3.1: For std::exception in try/catch
 
@@ -1193,6 +1194,17 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	LogMessage(FString::Printf(TEXT("Failed: %d"), Summary.FailedCount));
 	LogMessage(FString::Printf(TEXT("Deferred: %d"), Summary.DeferredCount));
 	LogMessage(FString::Printf(TEXT("Total: %d"), ActualCount + Summary.DeferredCount));
+
+	// v4.11: Machine-parseable RESULT footer for wrapper reliability
+	// Format: RESULT: New=<N> Skipped=<N> Failed=<N> Deferred=<N> Total=<N> Headless=<true/false>
+	const bool bIsHeadless = IsRunningCommandlet() && !FApp::CanEverRender();
+	LogMessage(FString::Printf(TEXT("RESULT: New=%d Skipped=%d Failed=%d Deferred=%d Total=%d Headless=%s"),
+		Summary.NewCount,
+		Summary.SkippedCount,
+		Summary.FailedCount,
+		Summary.DeferredCount,
+		ActualCount + Summary.DeferredCount,
+		bIsHeadless ? TEXT("true") : TEXT("false")));
 
 	// v2.8.4: Verification - compare actual vs expected using whitelist from start
 	VerifyGenerationComplete(ExpectedAssets, ExpectedCount, ActualCount);
