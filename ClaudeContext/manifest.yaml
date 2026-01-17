@@ -4824,7 +4824,7 @@ niagara_systems:
         default: 1.0
       - name: ParticleSpawnRate
         type: float
-        default: 10.0
+        default: 15.0
       - name: AlertLevel
         type: float
         default: 0.0
@@ -5062,8 +5062,8 @@ materials:
         pos_y: 0
       - id: intensity
         type: ScalarParam
-        name: Intensity
-        default: 5.0
+        name: EmissiveIntensity
+        default: 100.0
         pos_x: -400
         pos_y: 100
       - id: fresnel
@@ -5106,33 +5106,75 @@ materials:
   - name: M_FatherShell
     folder: Materials/VFX
     blend_mode: Translucent
-    shading_model: DefaultLit
+    shading_model: Unlit
     two_sided: true
     expressions:
-      - id: shell_color
+      - id: edge_color
         type: VectorParam
-        name: ShellColor
-        default: 0.5, 0.8, 1.0, 0.3
-        pos_x: -300
+        name: EdgeColor
+        default: 0.4, 0.6, 1.0, 1.0
+        pos_x: -400
         pos_y: 0
-      - id: opacity
+      - id: shell_intensity
         type: ScalarParam
-        name: ShellOpacity
-        default: 0.3
-        pos_x: -300
+        name: ShellIntensity
+        default: 20.0
+        pos_x: -400
         pos_y: 100
+      - id: fresnel_power
+        type: ScalarParam
+        name: FresnelPower
+        default: 3.0
+        pos_x: -400
+        pos_y: 200
+      - id: base_opacity
+        type: ScalarParam
+        name: BaseOpacity
+        default: 0.3
+        pos_x: -400
+        pos_y: 300
       - id: fresnel
         type: Fresnel
-        pos_x: -150
+        pos_x: -200
         pos_y: 200
-        properties:
-          exponent: 2.0
+      - id: mul_color_intensity
+        type: Multiply
+        pos_x: -100
+        pos_y: 50
+      - id: mul_fresnel_color
+        type: Multiply
+        pos_x: 100
+        pos_y: 100
     connections:
-      - from: shell_color
+      # FresnelPower controls fresnel exponent (connected internally)
+      - from: fresnel_power
+        from_output: Result
+        to: fresnel
+        to_input: ExponentIn
+      # EdgeColor * ShellIntensity = base emissive
+      - from: edge_color
         from_output: RGB
-        to: Material
-        to_input: BaseColor
+        to: mul_color_intensity
+        to_input: A
+      - from: shell_intensity
+        from_output: Result
+        to: mul_color_intensity
+        to_input: B
+      # Fresnel * color_intensity = final emissive with edge glow
       - from: fresnel
+        from_output: Result
+        to: mul_fresnel_color
+        to_input: A
+      - from: mul_color_intensity
+        from_output: Result
+        to: mul_fresnel_color
+        to_input: B
+      - from: mul_fresnel_color
+        from_output: Result
+        to: Material
+        to_input: EmissiveColor
+      # BaseOpacity controls overall transparency
+      - from: base_opacity
         from_output: Result
         to: Material
         to_input: Opacity
@@ -5305,7 +5347,7 @@ material_instances:
     folder: Materials/VFX/Instances
     parent_material: M_FatherCore
     scalar_parameters:
-      Intensity: 10.0
+      EmissiveIntensity: 150.0
     vector_parameters:
       CoreColor: "(1.0, 0.4, 0.1, 1.0)"
 
@@ -5314,7 +5356,7 @@ material_instances:
     folder: Materials/VFX/Instances
     parent_material: M_FatherCore
     scalar_parameters:
-      Intensity: 3.0
+      EmissiveIntensity: 50.0
     vector_parameters:
       CoreColor: "(0.4, 0.6, 1.0, 1.0)"
 
@@ -5323,7 +5365,7 @@ material_instances:
     folder: Materials/VFX/Instances
     parent_material: M_FatherCore
     scalar_parameters:
-      Intensity: 6.0
+      EmissiveIntensity: 80.0
     vector_parameters:
       CoreColor: "(0.3, 1.0, 0.5, 1.0)"
 
@@ -5332,9 +5374,10 @@ material_instances:
     folder: Materials/VFX/Instances
     parent_material: M_FatherShell
     scalar_parameters:
-      ShellOpacity: 0.6
+      BaseOpacity: 0.6
+      ShellIntensity: 30.0
     vector_parameters:
-      ShellColor: "(1.0, 0.3, 0.3, 0.6)"
+      EdgeColor: "(1.0, 0.3, 0.3, 1.0)"
 
   # Laser glow variant - red for damage beam
   - name: MIC_LaserGlow_Red
