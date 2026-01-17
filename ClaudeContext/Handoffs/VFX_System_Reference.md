@@ -340,18 +340,22 @@ private:
 1. **Quote Strip Before Trim**
    - Remove surrounding quotes before trimming whitespace
    - Handles YAML quoted strings correctly
+   - Implementation: `FMaterialExprValidationResult::StripQuotesAndTrim()`
 
 2. **Case Hint on User Path**
    - Log case-sensitivity warnings on the user's original input
    - Don't show resolved/normalized paths in case warnings
+   - Implementation: `FMaterialExprDiagnostic::UserInput` field stores original input
 
 3. **ContextPath Root Convention**
    - All context paths start with `/` for consistency
-   - e.g., `/Materials/M_FatherCore/Expressions/QualityMux`
+   - Format: `/Materials/{AssetName}/{Section}/{ExpressionId}`
+   - Implementation: `FMaterialExprValidationResult::MakeContextPath()`
 
 4. **Normalize Once, Reuse Everywhere**
    - Single normalization pass, store result
    - No re-normalization in validation vs. generation
+   - Implementation: `TypeLower = NormalizeKey(ExprDef.Type)` called once per expression
 
 5. **Field-Specific Normalizers**
    - `NormalizeKey()` for enum keys (lowercase, trim)
@@ -361,43 +365,95 @@ private:
 6. **Stable Diagnostic Ordering**
    - Sort errors/warnings before emitting
    - Deterministic output for diff-friendly CI
+   - Implementation: `FMaterialExprDiagnostic::operator<` sorts by path, then code, then message
 
 ### Validation Error Codes
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| E_UNKNOWN_EXPRESSION_TYPE | Error | Unrecognized expression type |
+| E_UNKNOWN_EXPRESSION_TYPE | Error | Unrecognized expression type (60+ known types) |
 | E_UNKNOWN_SWITCH_KEY | Error | Unknown key in switch inputs |
-| E_DEPRECATED_SWITCH_KEY | Warning | Deprecated enum value (es2, sm4) |
 | E_FUNCTION_NOT_FOUND | Error | MaterialFunctionCall target not found |
 | E_FUNCTION_INSTANCE_BLOCKED | Error | UMaterialFunctionInstance not allowed |
-| E_FUNCTION_INPUT_MISMATCH | Warning | Function input count doesn't match |
 | E_MISSING_REQUIRED_INPUT | Error | Required switch input not connected |
 | E_DUPLICATE_EXPRESSION_ID | Error | Duplicate expression ID in material |
+| E_EXPRESSION_REFERENCE_INVALID | Error | Connection references non-existent expression |
+| W_DEPRECATED_SWITCH_KEY | Warning | Deprecated enum value (es2, sm4) |
+| W_FUNCTION_INPUT_MISMATCH | Warning | Function input count doesn't match |
 | W_FUNCTION_PATH_NORMALIZED | Warning | Path was auto-corrected |
+| W_EXPRESSION_UNUSED | Warning | Expression defined but never connected |
+
+**Naming Convention:** `E_` prefix = Error (fatal, blocks generation), `W_` prefix = Warning (logged but continues)
+
+### 3-Pass Validation Algorithm
+
+```
+Pass 1: Validate each expression
+├── Check for duplicate expression ID → E_DUPLICATE_EXPRESSION_ID
+├── Normalize type via NormalizeKey()
+├── Validate type in KnownExpressionTypes → E_UNKNOWN_EXPRESSION_TYPE
+├── For QualitySwitch: validate keys → E_UNKNOWN_SWITCH_KEY
+├── For ShadingPathSwitch: validate keys → E_UNKNOWN_SWITCH_KEY
+├── For FeatureLevelSwitch: validate keys → E_UNKNOWN_SWITCH_KEY or W_DEPRECATED_SWITCH_KEY
+├── For MaterialFunctionCall: validate function path → E_FUNCTION_NOT_FOUND, W_FUNCTION_PATH_NORMALIZED
+└── Track referenced expression IDs for Pass 3
+
+Pass 2: Validate connections
+├── Check source expression exists → E_EXPRESSION_REFERENCE_INVALID
+├── Check target expression exists (unless "Material") → E_EXPRESSION_REFERENCE_INVALID
+└── Track connected expression IDs for Pass 3
+
+Pass 3: Check for unused expressions
+└── Warn if expression defined but never referenced → W_EXPRESSION_UNUSED
+
+Final: Sort diagnostics (Guardrail #6)
+```
 
 ### Hallucination-Proof Pattern
 
 All enum mappings use explicit tables with hard errors for unknown keys:
 
 ```cpp
-// QualitySwitch key mapping
+// QualitySwitch key mapping (GasAbilityGeneratorGenerators.cpp:340-345)
 static const TMap<FString, int32> QualitySwitchKeyMap = {
     { TEXT("low"), 0 },
-    { TEXT("high"), 1 },     // Index 1, not 2!
-    { TEXT("medium"), 2 },   // Index 2, not 1!
+    { TEXT("high"), 1 },     // Index 1, NOT 2!
+    { TEXT("medium"), 2 },   // Index 2, NOT 1!
     { TEXT("epic"), 3 }
 };
 
-// Validate key
-FString NormalizedKey = Key.ToLower().TrimStartAndEnd();
-if (!QualitySwitchKeyMap.Contains(NormalizedKey))
+// Validate key (GasAbilityGeneratorGenerators.cpp:5378-5387)
+FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
+if (KeyLower != TEXT("default") && !QualitySwitchKeyMap.Contains(KeyLower))
 {
-    EmitError(E_UNKNOWN_SWITCH_KEY, ContextPath,
-        FString::Printf(TEXT("Unknown quality level '%s'. Valid: low, high, medium, epic"), *Key));
-    return false;
+    FMaterialExprDiagnostic Diag(
+        EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
+        ContextPath,
+        InputPair.Key,  // Guardrail #2: User's original input
+        FString::Printf(TEXT("Unknown QualitySwitch key '%s'. Valid: default, low, high, medium, epic"), *InputPair.Key),
+        true);  // fatal = true
+    ValidationResult.AddDiagnostic(Diag);
 }
 ```
+
+### Known Expression Types (60+)
+
+The validation system maintains an exhaustive `KnownExpressionTypes` set:
+
+| Category | Types |
+|----------|-------|
+| Basic Math | constant, constant2vector, constant3vector, constant4vector, add, subtract, multiply, divide, power, abs, floor, ceil, frac, fmod, saturate, clamp, oneminus, lerp, min, max, sine, cosine, tangent, arcsine, arccosine, arctangent |
+| Vector Ops | normalize, dotproduct, crossproduct, distance, length, appendvector, componentmask, breakoutfloat2, breakoutfloat3, breakoutfloat4 |
+| Texture | texturesample, texturesampleparameter2d, texturecoordinate, panner, rotator |
+| Parameters | scalarparameter, vectorparameter, staticboolparameter, staticbool |
+| Time | time, deltatime, realtime |
+| World/Camera | worldposition, objectposition, actorpositionws, objectpositionws, camerapositionws, cameravector, reflectionvector, lightvector, pixeldepth, scenedepth, screenposition, viewsize, scenetexelsize |
+| Particle/VFX | particlecolor, particlesubuv, dynamicparameter, vertexcolor, depthfade, spheremask, particlepositionws, particleradius, particlerelativetime, particlerandom, particledirection, particlespeed, particlesize, particlemotionblurfade |
+| Tier 0 | perinstancefadeamount, perinstancerandom, objectorientation, objectradius, preskinnedposition, preskinnednormal, vertexnormalws, pixelnormalws, vertextangentws, twosidedsign, eyeadaptation, atmosphericfogcolor, precomputedaomask, gireplace |
+| Switch | qualityswitch, shadingpathswitch, featurelevelswitch, staticswitch |
+| Functions | materialfunctioncall |
+| Noise | sobol, temporalsobol, noise |
+| Complex | fresnel, makematerialattributes, if, customexpression, scenetexture |
 
 ---
 
