@@ -4734,18 +4734,82 @@ widget_blueprints:
 # For fx_descriptor mode, artist must first create NS_FatherFXTemplate with Uber-Emitters
 # See: guides/Niagara_Uber_Emitter_Setup_Guide_v1_0.md
 # ============================================================================
+
+# ============================================================================
+# FX PRESETS (v4.9) - Reusable VFX parameter configurations with inheritance
+# ============================================================================
+fx_presets:
+  # Base preset for all Father VFX - common parameters
+  - name: FX_FatherBase
+    folder: VFX/Presets
+    parameters:
+      SpawnRate: "50.0"
+      ParticleLifetime: "2.0"
+      BaseColor: "(0.8, 0.6, 0.2, 1.0)"
+      EmissiveIntensity: "3.0"
+
+  # Energy burst preset - inherits from base, overrides for burst effects
+  - name: FX_EnergyBurst
+    folder: VFX/Presets
+    base_preset: FX_FatherBase
+    parameters:
+      SpawnRate: "200.0"
+      ParticleLifetime: "0.5"
+      EmissiveIntensity: "8.0"
+
+  # Ambient glow preset - inherits from base, lower intensity for ambient
+  - name: FX_AmbientGlow
+    folder: VFX/Presets
+    base_preset: FX_FatherBase
+    parameters:
+      SpawnRate: "25.0"
+      ParticleLifetime: "4.0"
+      EmissiveIntensity: "2.0"
+
+  # Laser/beam preset - high intensity, short lifetime
+  - name: FX_LaserBeam
+    folder: VFX/Presets
+    parameters:
+      SpawnRate: "100.0"
+      ParticleLifetime: "0.2"
+      BaseColor: "(1.0, 0.3, 0.1, 1.0)"
+      EmissiveIntensity: "15.0"
+      BeamWidth: "5.0"
+
+  # Electric/trap preset - blue-white sparks
+  - name: FX_Electric
+    folder: VFX/Presets
+    parameters:
+      SpawnRate: "150.0"
+      ParticleLifetime: "0.3"
+      BaseColor: "(0.4, 0.7, 1.0, 1.0)"
+      EmissiveIntensity: "10.0"
+      SparkIntensity: "5.0"
+
 niagara_systems:
   # Main Father companion floating energy orb VFX
   # Composed of: NE_FatherCore, NE_FatherShell, NE_FatherParticles, NE_FatherAura, NE_FatherTrail
   - name: NS_FatherCompanion
     folder: VFX
     effect_type: ambient
+    preset: FX_AmbientGlow  # v4.9: FX Preset reference
     fixed_bounds: true
     bounds_min: -100, -100, -100
     bounds_max: 100, 100, 100
     warmup_time: 0.0
     pooling: AutoRelease
     max_pool_size: 5
+    # v4.9: LOD/Scalability settings
+    cull_distance_low: 500
+    cull_distance_medium: 1000
+    cull_distance_high: 2000
+    cull_distance_epic: 5000
+    cull_distance_cinematic: 0
+    cull_max_distance: 10000
+    significance_distance: 1500
+    max_particle_budget: 500
+    scalability_mode: Self
+    allow_culling_for_local_players: false
     user_parameters:
       - name: CoreScale
         type: float
@@ -4762,14 +4826,33 @@ niagara_systems:
       - name: EmotionColor
         type: linear_color
         default: 1.0, 0.8, 0.4, 1.0
+    # v4.9: Per-emitter parameter overrides
+    emitter_overrides:
+      - emitter: CoreEmitter
+        enabled: true
+        parameters:
+          CoreGlowIntensity: "5.0"
+          CorePulseRate: "1.5"
+      - emitter: ShellEmitter
+        enabled: true
+        parameters:
+          ShellOpacity: "0.3"
+      - emitter: TrailEmitter
+        enabled: false  # Disable trail in base config
 
   # Form transition burst VFX - used during 5s form change animation
   - name: NS_FatherFormTransition
     folder: VFX
     effect_type: burst
+    preset: FX_EnergyBurst  # v4.9: FX Preset reference
     warmup_time: 0.0
     pooling: AutoRelease
     max_pool_size: 3
+    # v4.9: LOD settings for burst effects
+    cull_distance_low: 1000
+    cull_distance_medium: 2000
+    cull_distance_high: 4000
+    max_particle_budget: 1000
     user_parameters:
       - name: TransitionIntensity
         type: float
@@ -4782,11 +4865,16 @@ niagara_systems:
   - name: NS_LaserBeam
     folder: VFX
     effect_type: beam
+    preset: FX_LaserBeam  # v4.9: FX Preset reference
     determinism: true
     random_seed: 42
     fixed_bounds: true
     bounds_min: -500, -50, -50
     bounds_max: 500, 50, 50
+    # v4.9: LOD for beam effects
+    cull_distance_low: 2000
+    cull_distance_high: 5000
+    max_particle_budget: 200
     user_parameters:
       - name: BeamWidth
         type: float
@@ -4805,10 +4893,15 @@ niagara_systems:
   - name: NS_ElectricTrap
     folder: VFX
     effect_type: ambient
+    preset: FX_Electric  # v4.9: FX Preset reference
     fixed_bounds: true
     bounds_min: -200, -200, -50
     bounds_max: 200, 200, 50
     warmup_time: 0.5
+    # v4.9: LOD for trap effects
+    cull_distance_low: 1500
+    cull_distance_high: 4000
+    max_particle_budget: 300
     user_parameters:
       - name: TrapRadius
         type: float
@@ -4822,6 +4915,13 @@ niagara_systems:
       - name: ArcIntensity
         type: float
         default: 5.0
+    # v4.9: Per-emitter overrides for electric arcs
+    emitter_overrides:
+      - emitter: ArcEmitter
+        enabled: true
+        parameters:
+          ArcFrequency: "10.0"
+          ArcJitter: "2.0"
 
   # Dome shield VFX for GA_ProtectiveDome (spherical particle shield)
   - name: NS_DomeShield
@@ -5187,6 +5287,64 @@ material_functions:
         type: TexCoord
         pos_x: -200
         pos_y: 0
+
+# ============================================================================
+# MATERIAL INSTANCES (v4.9) - Material Instance Constants for VFX variation
+# ============================================================================
+material_instances:
+  # Core glow variant - high intensity orange for alert state
+  - name: MIC_FatherCore_Alert
+    folder: Materials/VFX/Instances
+    parent_material: M_FatherCore
+    scalar_parameters:
+      Intensity: 10.0
+    vector_parameters:
+      CoreColor: "(1.0, 0.4, 0.1, 1.0)"
+
+  # Core glow variant - calm blue for idle state
+  - name: MIC_FatherCore_Calm
+    folder: Materials/VFX/Instances
+    parent_material: M_FatherCore
+    scalar_parameters:
+      Intensity: 3.0
+    vector_parameters:
+      CoreColor: "(0.4, 0.6, 1.0, 1.0)"
+
+  # Core glow variant - green for healing/support state
+  - name: MIC_FatherCore_Support
+    folder: Materials/VFX/Instances
+    parent_material: M_FatherCore
+    scalar_parameters:
+      Intensity: 6.0
+    vector_parameters:
+      CoreColor: "(0.3, 1.0, 0.5, 1.0)"
+
+  # Shell variant - high opacity for combat
+  - name: MIC_FatherShell_Combat
+    folder: Materials/VFX/Instances
+    parent_material: M_FatherShell
+    scalar_parameters:
+      ShellOpacity: 0.6
+    vector_parameters:
+      ShellColor: "(1.0, 0.3, 0.3, 0.6)"
+
+  # Laser glow variant - red for damage beam
+  - name: MIC_LaserGlow_Red
+    folder: Materials/VFX/Instances
+    parent_material: M_LaserGlow
+    scalar_parameters:
+      GlowIntensity: 15.0
+    vector_parameters:
+      GlowColor: "(1.0, 0.2, 0.1, 1.0)"
+
+  # Laser glow variant - blue for utility beam
+  - name: MIC_LaserGlow_Blue
+    folder: Materials/VFX/Instances
+    parent_material: M_LaserGlow
+    scalar_parameters:
+      GlowIntensity: 12.0
+    vector_parameters:
+      GlowColor: "(0.2, 0.5, 1.0, 1.0)"
 
 # ============================================================================
 # DIALOGUE BLUEPRINTS (1)

@@ -378,17 +378,26 @@ public:
 
 /**
  * v2.6.12: Enhanced Material Generator with expression graph support
+ * v4.9.1: Added session map for MIC parent material lookup
  */
 class GASABILITYGENERATOR_API FMaterialGenerator : public FGeneratorBase
 {
 public:
 	static FGenerationResult Generate(const FManifestMaterialDefinition& Definition);
 
+	// v4.9.1: Session-level lookup for generated materials (accessible by MIC generator)
+	static UMaterialInterface* FindGeneratedMaterial(const FString& MaterialName);
+	static void RegisterGeneratedMaterial(const FString& MaterialName, UMaterialInterface* Material);
+	static void ClearGeneratedMaterialsCache();
+
 private:
 	// v2.6.12: Helper to create material expression by type
 	static UMaterialExpression* CreateExpression(UMaterial* Material, const FManifestMaterialExpression& ExprDef);
 	// v2.6.12: Helper to connect expressions
 	static bool ConnectExpressions(UMaterial* Material, const TMap<FString, UMaterialExpression*>& ExpressionMap, const FManifestMaterialConnection& Connection);
+
+	// v4.9.1: Session map for materials generated in current run
+	static TMap<FString, UMaterialInterface*> GeneratedMaterialsCache;
 };
 
 /**

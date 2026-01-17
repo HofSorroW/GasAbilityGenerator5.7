@@ -192,12 +192,13 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		return 1;
 	}
 
-	LogMessage(FString::Printf(TEXT("Parsed manifest with %d tags, %d enumerations, %d abilities, %d effects, %d blueprints"),
+	LogMessage(FString::Printf(TEXT("Parsed manifest with %d tags, %d enumerations, %d abilities, %d effects, %d blueprints, %d MICs"),
 		ManifestData.Tags.Num(),
 		ManifestData.Enumerations.Num(),
 		ManifestData.GameplayAbilities.Num(),
 		ManifestData.GameplayEffects.Num(),
-		ManifestData.ActorBlueprints.Num()));
+		ManifestData.ActorBlueprints.Num(),
+		ManifestData.MaterialInstances.Num()));
 
 	// v4.0: Parse dialogue CSV if provided
 	FString DialogueCSVPath;
@@ -516,6 +517,8 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	// v2.8.4: Clear processed assets and duplicates for verification
 	ProcessedAssets.Empty();
 	GenerationDuplicates.Empty();
+	// v4.9.1: Clear session cache for MIC parent material lookup
+	FMaterialGenerator::ClearGeneratedMaterialsCache();
 
 	// v2.8.4: Helper lambda to track processed assets with duplicate detection
 	auto TrackProcessedAsset = [this](const FString& AssetName) {

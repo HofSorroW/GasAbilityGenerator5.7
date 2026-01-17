@@ -654,6 +654,9 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 	AppendLog(FString::Printf(TEXT("Manifest validation enabled: %d assets whitelisted"),
 		ManifestData.GetAssetWhitelist().Num()));
 
+	// v4.9.1: Clear session cache for MIC parent material lookup
+	FMaterialGenerator::ClearGeneratedMaterialsCache();
+
 	FGenerationSummary Summary;
 
 	// PHASE 1: No Dependencies

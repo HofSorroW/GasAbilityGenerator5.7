@@ -2988,7 +2988,7 @@ void FGasAbilityGeneratorParser::ParseMaterialInstances(const TArray<FString>& L
 				bInTexture = false;
 				CurrentTexture = FManifestMaterialInstanceTextureParam();
 			}
-			// Parameter items
+			// Parameter items - list format (- name: / value:)
 			else if (TrimmedLine.StartsWith(TEXT("- name:")) && (bInScalarParams || bInVectorParams || bInTextureParams))
 			{
 				// Save previous param
@@ -3014,6 +3014,60 @@ void FGasAbilityGeneratorParser::ParseMaterialInstances(const TArray<FString>& L
 					CurrentTexture = FManifestMaterialInstanceTextureParam();
 					CurrentTexture.Name = ParamName;
 					bInTexture = true;
+				}
+			}
+			// v4.9: Simple key:value format (e.g., "Intensity: 10.0")
+			else if (bInScalarParams && !TrimmedLine.StartsWith(TEXT("-")) && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonPos;
+				if (TrimmedLine.FindChar(TEXT(':'), ColonPos))
+				{
+					FString ParamName = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+					FString ParamValue = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+					FManifestMaterialInstanceScalarParam Param;
+					Param.Name = ParamName;
+					Param.Value = FCString::Atof(*ParamValue);
+					CurrentDef.ScalarParams.Add(Param);
+				}
+			}
+			else if (bInVectorParams && !TrimmedLine.StartsWith(TEXT("-")) && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonPos;
+				if (TrimmedLine.FindChar(TEXT(':'), ColonPos))
+				{
+					FString ParamName = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+					FString ValueStr = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+					// Remove brackets/parens if present
+					ValueStr.ReplaceInline(TEXT("("), TEXT(""));
+					ValueStr.ReplaceInline(TEXT(")"), TEXT(""));
+					ValueStr.ReplaceInline(TEXT("["), TEXT(""));
+					ValueStr.ReplaceInline(TEXT("]"), TEXT(""));
+					ValueStr.ReplaceInline(TEXT("\""), TEXT(""));
+					TArray<FString> Parts;
+					ValueStr.ParseIntoArray(Parts, TEXT(","));
+					if (Parts.Num() >= 3)
+					{
+						FManifestMaterialInstanceVectorParam Param;
+						Param.Name = ParamName;
+						Param.Value.R = FCString::Atof(*Parts[0].TrimStartAndEnd());
+						Param.Value.G = FCString::Atof(*Parts[1].TrimStartAndEnd());
+						Param.Value.B = FCString::Atof(*Parts[2].TrimStartAndEnd());
+						Param.Value.A = Parts.Num() >= 4 ? FCString::Atof(*Parts[3].TrimStartAndEnd()) : 1.0f;
+						CurrentDef.VectorParams.Add(Param);
+					}
+				}
+			}
+			else if (bInTextureParams && !TrimmedLine.StartsWith(TEXT("-")) && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonPos;
+				if (TrimmedLine.FindChar(TEXT(':'), ColonPos))
+				{
+					FString ParamName = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+					FString ParamValue = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+					FManifestMaterialInstanceTextureParam Param;
+					Param.Name = ParamName;
+					Param.TexturePath = ParamValue;
+					CurrentDef.TextureParams.Add(Param);
 				}
 			}
 			else if (TrimmedLine.StartsWith(TEXT("value:")) && bInScalar)
@@ -8748,8 +8802,8 @@ void FGasAbilityGeneratorParser::ParseFXPresets(const TArray<FString>& Lines, in
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
-			// Save pending item
-			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("Preset_")))
+			// Save pending item - accept FX_ or Preset_ prefix, or any name
+			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.FXPresets.Add(CurrentDef);
 			}
@@ -8767,12 +8821,12 @@ void FGasAbilityGeneratorParser::ParseFXPresets(const TArray<FString>& Lines, in
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
 			// Save previous preset if valid
-			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("Preset_")))
+			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.FXPresets.Add(CurrentDef);
 			}
 			CurrentDef = FManifestFXPresetDefinition();
-			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(7));
 			bInItem = true;
 			bInParameters = false;
 		}
@@ -8817,7 +8871,7 @@ void FGasAbilityGeneratorParser::ParseFXPresets(const TArray<FString>& Lines, in
 	}
 
 	// Save any remaining entry
-	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("Preset_")))
+	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.FXPresets.Add(CurrentDef);
 	}

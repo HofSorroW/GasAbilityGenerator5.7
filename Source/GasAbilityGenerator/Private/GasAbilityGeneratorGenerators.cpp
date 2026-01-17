@@ -261,6 +261,9 @@ bool FGeneratorBase::bForceMode = false;
 FDryRunSummary FGeneratorBase::DryRunSummary;
 FString FGeneratorBase::CurrentManifestPath;
 
+// v4.9.1: Static member initialization for generated materials cache (MIC parent lookup)
+TMap<FString, UMaterialInterface*> FMaterialGenerator::GeneratedMaterialsCache;
+
 // v3.0: Generator version constant for metadata tracking
 static const FString GENERATOR_VERSION = TEXT("3.0");
 
@@ -4692,6 +4695,30 @@ bool FMaterialGenerator::ConnectExpressions(UMaterial* Material, const TMap<FStr
 	return false;
 }
 
+// ============================================================================
+// v4.9.1: Session-level material cache for MIC parent lookup
+// ============================================================================
+UMaterialInterface* FMaterialGenerator::FindGeneratedMaterial(const FString& MaterialName)
+{
+	UMaterialInterface** Found = GeneratedMaterialsCache.Find(MaterialName);
+	return Found ? *Found : nullptr;
+}
+
+void FMaterialGenerator::RegisterGeneratedMaterial(const FString& MaterialName, UMaterialInterface* Material)
+{
+	if (Material)
+	{
+		GeneratedMaterialsCache.Add(MaterialName, Material);
+		LogGeneration(FString::Printf(TEXT("  Registered material '%s' in session cache"), *MaterialName));
+	}
+}
+
+void FMaterialGenerator::ClearGeneratedMaterialsCache()
+{
+	GeneratedMaterialsCache.Empty();
+	LogGeneration(TEXT("Cleared generated materials session cache"));
+}
+
 FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition& Definition)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Materials") : Definition.Folder;
@@ -4893,6 +4920,9 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 
 	// v3.0: Store metadata for regeneration tracking
 	StoreDataAssetMetadata(Material, TEXT("M"), Definition.Name, Definition.ComputeHash());
+
+	// v4.9.1: Register in session cache for MIC parent lookup
+	RegisterGeneratedMaterial(Definition.Name, Material);
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.AssetPath = AssetPath;
@@ -5469,30 +5499,79 @@ FGenerationResult FMaterialInstanceGenerator::Generate(const FManifestMaterialIn
 
 	// Load parent material
 	FString BaseFolder = GetProjectRoot();
-	FString ParentPath = Definition.ParentMaterial;
-	if (!ParentPath.StartsWith(TEXT("/")))
-	{
-		// Try to find it in project
-		ParentPath = BaseFolder / TEXT("VFX/Materials") / Definition.ParentMaterial;
-	}
+	FString ParentMatName = Definition.ParentMaterial;
+	UMaterialInterface* ParentMaterial = nullptr;
 
-	UMaterialInterface* ParentMaterial = LoadObject<UMaterialInterface>(nullptr, *ParentPath);
-	if (!ParentMaterial)
+	LogGeneration(FString::Printf(TEXT("  MIC: Looking for parent material '%s' in base folder '%s'"), *ParentMatName, *BaseFolder));
+
+	// v4.9.1: Check session cache first (for materials generated in same run)
+	ParentMaterial = FMaterialGenerator::FindGeneratedMaterial(ParentMatName);
+	if (ParentMaterial)
 	{
-		// Try with M_ prefix
-		ParentPath = BaseFolder / TEXT("VFX/Materials") / FString::Printf(TEXT("M_%s"), *Definition.ParentMaterial);
-		ParentMaterial = LoadObject<UMaterialInterface>(nullptr, *ParentPath);
+		LogGeneration(FString::Printf(TEXT("    -> FOUND '%s' in session cache"), *ParentMatName));
 	}
+	else
+	{
+		// Common material folder locations
+		TArray<FString> BasePaths = {
+			BaseFolder / TEXT("Materials/VFX") / ParentMatName,
+			BaseFolder / TEXT("Materials") / ParentMatName,
+			BaseFolder / TEXT("VFX/Materials") / ParentMatName,
+			BaseFolder / ParentMatName,
+		};
+
+		// If already a full path, use it directly
+		if (ParentMatName.StartsWith(TEXT("/")))
+		{
+			BasePaths.Insert(ParentMatName, 0);
+		}
+
+		for (const FString& BasePath : BasePaths)
+		{
+			// First try FindObject (for materials already loaded in this session)
+			FString ObjectPath = FString::Printf(TEXT("%s.%s"), *BasePath, *FPaths::GetBaseFilename(BasePath));
+			LogGeneration(FString::Printf(TEXT("    Trying FindObject: %s"), *ObjectPath));
+			ParentMaterial = FindObject<UMaterialInterface>(nullptr, *ObjectPath);
+			if (ParentMaterial)
+			{
+				LogGeneration(TEXT("      -> FOUND via FindObject"));
+				break;
+			}
+
+			// Try FindPackage + GetObject (for recently created packages)
+			UPackage* ExistingPackage = FindPackage(nullptr, *BasePath);
+			if (ExistingPackage)
+			{
+				LogGeneration(FString::Printf(TEXT("    Found package: %s"), *BasePath));
+				ParentMaterial = FindObject<UMaterialInterface>(ExistingPackage, *FPaths::GetBaseFilename(BasePath));
+				if (ParentMaterial)
+				{
+					LogGeneration(TEXT("      -> FOUND via FindPackage"));
+					break;
+				}
+			}
+
+			// Try LoadObject as fallback (for assets on disk)
+			ParentMaterial = LoadObject<UMaterialInterface>(nullptr, *BasePath);
+			if (ParentMaterial)
+			{
+				LogGeneration(FString::Printf(TEXT("      -> FOUND via LoadObject: %s"), *BasePath));
+				break;
+			}
+			ParentMaterial = LoadObject<UMaterialInterface>(nullptr, *ObjectPath);
+			if (ParentMaterial)
+			{
+				LogGeneration(FString::Printf(TEXT("      -> FOUND via LoadObject: %s"), *ObjectPath));
+				break;
+			}
+		}  // end for BasePaths
+	}  // end else (not found in session cache)
+
 	if (!ParentMaterial)
 	{
-		// Try root folder
-		ParentPath = BaseFolder / Definition.ParentMaterial;
-		ParentMaterial = LoadObject<UMaterialInterface>(nullptr, *ParentPath);
-	}
-	if (!ParentMaterial)
-	{
+		LogGeneration(FString::Printf(TEXT("  MIC: FAILED to find parent material '%s'"), *ParentMatName));
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			FString::Printf(TEXT("Parent material not found: %s"), *Definition.ParentMaterial));
+			FString::Printf(TEXT("Parent material not found: %s (searched in %s)"), *ParentMatName, *BaseFolder));
 	}
 
 	// Create package

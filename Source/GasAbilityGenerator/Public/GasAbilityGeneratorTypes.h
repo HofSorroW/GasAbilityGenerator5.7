@@ -4786,7 +4786,8 @@ struct FManifestData
 		for (const auto& Def : CharacterDefinitions) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TaggedDialogueSets) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : NiagaraSystems) AssetWhitelist.Add(Def.Name);
-		for (const auto& Def : FXPresets) AssetWhitelist.Add(Def.Name);  // v4.9
+		// FXPresets excluded from whitelist - config data referenced by NiagaraSystems, not standalone assets
+		for (const auto& Def : MaterialInstances) AssetWhitelist.Add(Def.Name);  // v4.9
 		for (const auto& Def : MaterialFunctions) AssetWhitelist.Add(Def.Name);  // v2.6.12
 		// v3.9: NPC Pipeline
 		for (const auto& Def : ActivitySchedules) AssetWhitelist.Add(Def.Name);
@@ -4863,15 +4864,19 @@ struct FManifestData
 			+ ActivityConfigurations.Num()
 			+ ItemCollections.Num()
 			+ NarrativeEvents.Num()
+			+ GameplayCues.Num()  // v4.0
 			+ NPCDefinitions.Num()
 			+ CharacterDefinitions.Num()
 			+ TaggedDialogueSets.Num()
 			+ NiagaraSystems.Num()
 			+ MaterialFunctions.Num()
+			// v4.9: VFX system - FXPresets excluded (config data, not standalone assets)
+			+ MaterialInstances.Num()
 			// v3.9: NPC Pipeline
 			+ ActivitySchedules.Num()
 			+ GoalItems.Num()
 			+ Quests.Num()
+			+ CharacterAppearances.Num()
 			// v4.9: TriggerSets
 			+ TriggerSets.Num();
 	}
@@ -4915,15 +4920,19 @@ struct FManifestData
 		for (const auto& Def : ActivityConfigurations) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : ItemCollections) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : NarrativeEvents) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : GameplayCues) AddWithDupeCheck(Def.Name);  // v4.0
 		for (const auto& Def : NPCDefinitions) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : CharacterDefinitions) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : TaggedDialogueSets) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : NiagaraSystems) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : MaterialFunctions) AddWithDupeCheck(Def.Name);
+		// v4.9: VFX system - FXPresets excluded (config data, not standalone assets)
+		for (const auto& Def : MaterialInstances) AddWithDupeCheck(Def.Name);
 		// v3.9: NPC Pipeline
 		for (const auto& Def : ActivitySchedules) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : GoalItems) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : Quests) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : CharacterAppearances) AddWithDupeCheck(Def.Name);
 		// v4.9: TriggerSets
 		for (const auto& Def : TriggerSets) AddWithDupeCheck(Def.Name);
 		return Names;
@@ -4964,15 +4973,19 @@ struct FManifestData
 		Total += ActivityConfigurations.Num();
 		Total += ItemCollections.Num();
 		Total += NarrativeEvents.Num();
+		Total += GameplayCues.Num();  // v4.0
 		Total += NPCDefinitions.Num();
 		Total += CharacterDefinitions.Num();
 		Total += TaggedDialogueSets.Num();
 		Total += NiagaraSystems.Num();
 		Total += MaterialFunctions.Num();  // v2.6.12
+		// v4.9: VFX system - FXPresets excluded (config data, not standalone assets)
+		Total += MaterialInstances.Num();
 		// v3.9: NPC Pipeline
 		Total += ActivitySchedules.Num();
 		Total += GoalItems.Num();
 		Total += Quests.Num();
+		Total += CharacterAppearances.Num();
 		// v4.9: TriggerSets
 		Total += TriggerSets.Num();
 
