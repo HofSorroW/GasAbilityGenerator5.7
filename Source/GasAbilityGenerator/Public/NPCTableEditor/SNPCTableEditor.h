@@ -90,7 +90,7 @@ inline TArray<FNPCTableColumn> GetNPCTableColumns()
 	// 6. AbilityConfig - asset dropdown (AC_* DataAssets)
 	Columns.Add(FNPCTableColumn(TEXT("AbilityConfig"), NSLOCTEXT("NPCTableEditor", "ColAbilityConfig", "Ability Cfg"), 0.06f));
 
-	// 7. ActivityConfig - asset dropdown (ActConfig_* DataAssets)
+	// 7. ActivityConfig - asset dropdown (AC_*Behavior, UNPCActivityConfiguration)
 	Columns.Add(FNPCTableColumn(TEXT("ActivityConfig"), NSLOCTEXT("NPCTableEditor", "ColActivityConfig", "Activity Cfg"), 0.06f));
 
 	// 8. Schedule - asset dropdown (Schedule_* DataAssets)

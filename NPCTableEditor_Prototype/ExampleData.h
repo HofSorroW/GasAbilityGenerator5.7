@@ -30,7 +30,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Garrett the Blacksmith");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_Blacksmith.BP_Blacksmith"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Craftsman.AC_Craftsman"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_Worker.ActConfig_Worker"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Worker.AC_Worker"));
 		Row.Schedule = FSoftObjectPath(TEXT("/Game/NPCs/Schedules/Schedule_DayWorker.Schedule_DayWorker"));
 		Row.Dialogue = FSoftObjectPath(TEXT("/Game/NPCs/Dialogues/DBP_Blacksmith.DBP_Blacksmith"));
 		Row.SpawnerPOI = TEXT("POI_Town_Forge");
@@ -55,7 +55,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Helena the Trader");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_Merchant.BP_Merchant"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Civilian.AC_Civilian"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_Vendor.ActConfig_Vendor"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Vendor.AC_Vendor"));
 		Row.Schedule = FSoftObjectPath(TEXT("/Game/NPCs/Schedules/Schedule_DayWorker.Schedule_DayWorker"));
 		Row.Dialogue = FSoftObjectPath(TEXT("/Game/NPCs/Dialogues/DBP_Merchant.DBP_Merchant"));
 		Row.SpawnerPOI = TEXT("POI_Town_Market");
@@ -80,7 +80,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Marcus the Innkeeper");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_Innkeeper.BP_Innkeeper"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Civilian.AC_Civilian"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_Innkeeper.ActConfig_Innkeeper"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Innkeeper.AC_Innkeeper"));
 		Row.Schedule = FSoftObjectPath(TEXT("/Game/NPCs/Schedules/Schedule_Innkeeper.Schedule_Innkeeper"));
 		Row.Dialogue = FSoftObjectPath(TEXT("/Game/NPCs/Dialogues/DBP_Innkeeper.DBP_Innkeeper"));
 		Row.SpawnerPOI = TEXT("POI_Town_Inn");
@@ -109,7 +109,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Town Guard");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_TownGuard.BP_TownGuard"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Guard.AC_Guard"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_GuardStationary.ActConfig_GuardStationary"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_GuardStationary.AC_GuardStationary"));
 		Row.Schedule = FSoftObjectPath(TEXT("/Game/NPCs/Schedules/Schedule_Guard_Day.Schedule_Guard_Day"));
 		Row.Dialogue = FSoftObjectPath(TEXT("/Game/NPCs/Dialogues/DBP_Guard_Generic.DBP_Guard_Generic"));
 		Row.SpawnerPOI = TEXT("POI_Town_Gate");
@@ -132,7 +132,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Town Guard");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_TownGuard.BP_TownGuard"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Guard.AC_Guard"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_GuardPatrol.ActConfig_GuardPatrol"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_GuardPatrol.AC_GuardPatrol"));
 		Row.Schedule = FSoftObjectPath(TEXT("/Game/NPCs/Schedules/Schedule_Guard_Night.Schedule_Guard_Night"));
 		Row.Dialogue = FSoftObjectPath(TEXT("/Game/NPCs/Dialogues/DBP_Guard_Generic.DBP_Guard_Generic"));
 		Row.SpawnerPOI = TEXT("POI_Town_Square");
@@ -159,7 +159,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Elder Thomas");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_OldMan.BP_OldMan"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Civilian.AC_Civilian"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_Idle.ActConfig_Idle"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Idle.AC_Idle"));
 		Row.Schedule = FSoftObjectPath(TEXT("/Game/NPCs/Schedules/Schedule_Elder.Schedule_Elder"));
 		Row.Dialogue = FSoftObjectPath(TEXT("/Game/NPCs/Dialogues/DBP_ElderThomas.DBP_ElderThomas"));
 		Row.SpawnerPOI = TEXT("POI_Town_Church");
@@ -186,7 +186,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Bandit");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_Bandit.BP_Bandit"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_BanditMelee.AC_BanditMelee"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_Aggressive.ActConfig_Aggressive"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Aggressive.AC_Aggressive"));
 		Row.SpawnerPOI = TEXT("POI_Wilderness_Camp");
 		Row.LevelName = TEXT("Wilderness_01");
 		Row.bIsVendor = false;
@@ -207,7 +207,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Bandit Archer");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_BanditArcher.BP_BanditArcher"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_BanditRanged.AC_BanditRanged"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_Ranged.ActConfig_Ranged"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Ranged.AC_Ranged"));
 		Row.SpawnerPOI = TEXT("POI_Wilderness_Camp");
 		Row.LevelName = TEXT("Wilderness_01");
 		Row.bIsVendor = false;
@@ -228,7 +228,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Bandit Chief");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/NPCs/Blueprints/BP_BanditLeader.BP_BanditLeader"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_BanditElite.AC_BanditElite"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/ActConfig_Boss.ActConfig_Boss"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/NPCs/Configs/AC_Boss.AC_Boss"));
 		Row.Dialogue = FSoftObjectPath(TEXT("/Game/NPCs/Dialogues/DBP_BanditLeader.DBP_BanditLeader"));
 		Row.SpawnerPOI = TEXT("POI_Wilderness_Camp_Boss");
 		Row.LevelName = TEXT("Wilderness_01");
@@ -253,7 +253,7 @@ inline void PopulateExampleData(UNPCTableData* TableData)
 		Row.DisplayName = TEXT("Father");
 		Row.NPCBlueprint = FSoftObjectPath(TEXT("/Game/FatherCompanion/Blueprints/BP_FatherCompanion.BP_FatherCompanion"));
 		Row.AbilityConfig = FSoftObjectPath(TEXT("/Game/FatherCompanion/Configs/AC_FatherCrawler.AC_FatherCrawler"));
-		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/FatherCompanion/Configs/ActConfig_Father.ActConfig_Father"));
+		Row.ActivityConfig = FSoftObjectPath(TEXT("/Game/FatherCompanion/AI/Configurations/AC_FatherBehavior.AC_FatherBehavior"));
 		Row.SpawnerPOI = TEXT("Player_Companion");
 		Row.LevelName = TEXT("*");
 		Row.bIsVendor = false;

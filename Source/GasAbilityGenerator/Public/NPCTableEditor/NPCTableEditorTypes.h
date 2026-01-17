@@ -69,7 +69,7 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	UPROPERTY(EditAnywhere, Category = "AI")
 	FSoftObjectPath AbilityConfig;
 
-	/** Activity Configuration - ActConfig_* DataAsset */
+	/** Activity Configuration - AC_*Behavior DataAsset (UNPCActivityConfiguration) */
 	UPROPERTY(EditAnywhere, Category = "AI")
 	FSoftObjectPath ActivityConfig;
 

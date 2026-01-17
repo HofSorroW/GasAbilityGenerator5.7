@@ -3669,8 +3669,9 @@ ability_configurations:
 # ACTIVITY CONFIGURATIONS (1)
 # ============================================================================
 activity_configurations:
-  - name: ActConfig_FatherCompanion
-    folder: Configs
+  # Per Tech Doc Section 57.8: AC_FatherBehavior pattern (matches AC_RunAndGun)
+  - name: AC_FatherBehavior
+    folder: AI/Configurations
     default_activity: BPA_FatherFollow
     request_interval: 0.5
 
@@ -3683,7 +3684,7 @@ npc_definitions:
     display_name: Father
     character_class: BP_FatherCompanion
     ability_configuration: AC_FatherCompanion
-    activity_configuration: ActConfig_FatherCompanion
+    activity_configuration: AC_FatherBehavior
     faction: Narrative.Factions.FatherCompanion
     friendly_factions:
       - Narrative.Factions.Player

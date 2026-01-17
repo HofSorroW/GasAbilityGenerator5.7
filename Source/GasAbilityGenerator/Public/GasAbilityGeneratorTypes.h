@@ -4363,7 +4363,7 @@ struct FManifestNPCSpawnParams
 	bool bOverrideFactions = false;
 	TArray<FString> DefaultFactions;
 	bool bOverrideActivityConfiguration = false;
-	FString ActivityConfiguration;       // ActConfig_* name
+	FString ActivityConfiguration;       // AC_*Behavior name (UNPCActivityConfiguration)
 	bool bOverrideAppearance = false;
 	FString DefaultAppearance;           // Appearance asset path
 
