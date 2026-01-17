@@ -6020,6 +6020,7 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateMaterialDefinition(con
 }
 
 // v4.10.1: Overload for material functions - includes inputs/outputs as valid connection endpoints
+// Maintains ALL 6 guardrails from the original function
 FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnections(
 	const FString& AssetName,
 	const TArray<FManifestMaterialExpression>& Expressions,
@@ -6030,27 +6031,31 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnecti
 	FMaterialExprValidationResult ValidationResult;
 	ValidationResult.bValidated = true;
 
-	// Build expression ID set including inputs and outputs
+	// Build expression ID set for duplicate and reference checking
 	TSet<FString> DefinedExpressionIds;
 	TSet<FString> ReferencedExpressionIds;
 
-	// Add inputs as valid connection endpoints
+	// v4.10.1: Pre-populate with function inputs as valid connection endpoints
 	for (const FManifestMaterialFunctionInput& Input : Inputs)
 	{
 		DefinedExpressionIds.Add(Input.Name);
 	}
 
-	// Add outputs as valid connection endpoints
+	// v4.10.1: Pre-populate with function outputs as valid connection endpoints
 	for (const FManifestMaterialFunctionOutput& Output : Outputs)
 	{
 		DefinedExpressionIds.Add(Output.Name);
 	}
 
-	// Validate expressions (same as base function)
+	// =========================================================================
+	// Pass 1: Validate each expression (ALL guardrails from original)
+	// =========================================================================
 	for (const FManifestMaterialExpression& ExprDef : Expressions)
 	{
+		// Guardrail #3: Build context path
 		FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Expressions"), ExprDef.Id);
 
+		// Check for duplicate expression ID
 		if (DefinedExpressionIds.Contains(ExprDef.Id))
 		{
 			FMaterialExprDiagnostic Diag(
@@ -6064,52 +6069,289 @@ FMaterialExprValidationResult FMaterialGenerator::ValidateExpressionsAndConnecti
 		}
 		DefinedExpressionIds.Add(ExprDef.Id);
 
-		// Validate expression type
+		// Guardrail #5a: Normalize the type for comparison
 		FString TypeLower = FMaterialExprValidationResult::NormalizeKey(ExprDef.Type);
+
+		// Validate expression type is known
 		if (!KnownExpressionTypes.Contains(TypeLower))
 		{
 			FMaterialExprDiagnostic Diag(
 				EMaterialExprValidationCode::E_UNKNOWN_EXPRESSION_TYPE,
 				ContextPath,
-				ExprDef.Type,
+				ExprDef.Type,  // Guardrail #2: User's original input for case hint
 				FString::Printf(TEXT("Unknown expression type '%s'"), *ExprDef.Type),
 				true);
 			Diag.SuggestedFix = TEXT("Check spelling and case. See VFX_System_Reference.md for valid types.");
 			ValidationResult.AddDiagnostic(Diag);
+			continue;
+		}
+
+		// =====================================================================
+		// Validate Switch expressions (QualitySwitch, ShadingPathSwitch, FeatureLevelSwitch)
+		// =====================================================================
+		if (TypeLower == TEXT("qualityswitch"))
+		{
+			bool bHasDefault = false;
+			for (const auto& InputPair : ExprDef.Inputs)
+			{
+				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
+				if (KeyLower == TEXT("default"))
+				{
+					bHasDefault = true;
+				}
+				else if (!QualitySwitchKeyMap.Contains(KeyLower))
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
+						ContextPath,
+						InputPair.Key,  // Original user input
+						FString::Printf(TEXT("Unknown QualitySwitch key '%s'. Valid: default, low, high, medium, epic"), *InputPair.Key),
+						true);
+					ValidationResult.AddDiagnostic(Diag);
+				}
+				// Track referenced expression
+				ReferencedExpressionIds.Add(InputPair.Value);
+			}
+			// Check for required default input
+			if (!bHasDefault)
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_MISSING_REQUIRED_INPUT,
+					ContextPath,
+					TEXT("QualitySwitch requires 'default' input"),
+					true);
+				Diag.SuggestedFix = TEXT("Add 'default: <expression_id>' to switch inputs");
+				ValidationResult.AddDiagnostic(Diag);
+			}
+		}
+		else if (TypeLower == TEXT("shadingpathswitch"))
+		{
+			bool bHasDefault = false;
+			for (const auto& InputPair : ExprDef.Inputs)
+			{
+				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
+				if (KeyLower == TEXT("default"))
+				{
+					bHasDefault = true;
+				}
+				else if (!ShadingPathSwitchKeyMap.Contains(KeyLower))
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
+						ContextPath,
+						InputPair.Key,
+						FString::Printf(TEXT("Unknown ShadingPathSwitch key '%s'. Valid: default, deferred, forward, mobile"), *InputPair.Key),
+						true);
+					ValidationResult.AddDiagnostic(Diag);
+				}
+				ReferencedExpressionIds.Add(InputPair.Value);
+			}
+			// Check for required default input
+			if (!bHasDefault)
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_MISSING_REQUIRED_INPUT,
+					ContextPath,
+					TEXT("ShadingPathSwitch requires 'default' input"),
+					true);
+				Diag.SuggestedFix = TEXT("Add 'default: <expression_id>' to switch inputs");
+				ValidationResult.AddDiagnostic(Diag);
+			}
+		}
+		else if (TypeLower == TEXT("featurelevelswitch"))
+		{
+			bool bHasDefault = false;
+			for (const auto& InputPair : ExprDef.Inputs)
+			{
+				FString KeyLower = FMaterialExprValidationResult::NormalizeKey(InputPair.Key);
+				if (KeyLower == TEXT("default"))
+				{
+					bHasDefault = true;
+				}
+				else if (!FeatureLevelSwitchKeyMap.Contains(KeyLower))
+				{
+					// Check for deprecated keys
+					if (KeyLower == TEXT("es2") || KeyLower == TEXT("sm4"))
+					{
+						FMaterialExprDiagnostic Diag(
+							EMaterialExprValidationCode::W_DEPRECATED_SWITCH_KEY,
+							ContextPath,
+							InputPair.Key,
+							FString::Printf(TEXT("Deprecated FeatureLevelSwitch key '%s' - removed in UE5"), *InputPair.Key),
+							false);  // Warning, not error
+						Diag.SuggestedFix = TEXT("Use es3_1, sm5, or sm6 instead");
+						ValidationResult.AddDiagnostic(Diag);
+					}
+					else
+					{
+						FMaterialExprDiagnostic Diag(
+							EMaterialExprValidationCode::E_UNKNOWN_SWITCH_KEY,
+							ContextPath,
+							InputPair.Key,
+							FString::Printf(TEXT("Unknown FeatureLevelSwitch key '%s'. Valid: default, es3_1, sm5, sm6"), *InputPair.Key),
+							true);
+						ValidationResult.AddDiagnostic(Diag);
+					}
+				}
+				ReferencedExpressionIds.Add(InputPair.Value);
+			}
+			// Check for required default input
+			if (!bHasDefault)
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_MISSING_REQUIRED_INPUT,
+					ContextPath,
+					TEXT("FeatureLevelSwitch requires 'default' input"),
+					true);
+				Diag.SuggestedFix = TEXT("Add 'default: <expression_id>' to switch inputs");
+				ValidationResult.AddDiagnostic(Diag);
+			}
+		}
+
+		// =====================================================================
+		// Validate MaterialFunctionCall
+		// =====================================================================
+		if (TypeLower == TEXT("materialfunctioncall"))
+		{
+			if (ExprDef.Function.IsEmpty())
+			{
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::E_FUNCTION_NOT_FOUND,
+					ContextPath,
+					TEXT("MaterialFunctionCall requires 'function' property"),
+					true);
+				ValidationResult.AddDiagnostic(Diag);
+			}
+			else
+			{
+				// Guardrail #5c: Normalize path
+				FString NormalizedPath = FMaterialExprValidationResult::NormalizePath(ExprDef.Function);
+				if (NormalizedPath != ExprDef.Function)
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::W_FUNCTION_PATH_NORMALIZED,
+						ContextPath,
+						ExprDef.Function,
+						FString::Printf(TEXT("Function path normalized from '%s' to '%s'"), *ExprDef.Function, *NormalizedPath),
+						false);
+					ValidationResult.AddDiagnostic(Diag);
+				}
+
+				// Check for UMaterialFunctionInstance (not supported - use UMaterialFunction)
+				if (NormalizedPath.Contains(TEXT("_Inst")) || NormalizedPath.Contains(TEXT("FunctionInstance")))
+				{
+					FMaterialExprDiagnostic Diag(
+						EMaterialExprValidationCode::E_FUNCTION_INSTANCE_BLOCKED,
+						ContextPath,
+						ExprDef.Function,
+						TEXT("UMaterialFunctionInstance not supported. Use UMaterialFunction path instead."),
+						true);
+					Diag.SuggestedFix = TEXT("Reference the base MaterialFunction, not a MaterialFunctionInstance");
+					ValidationResult.AddDiagnostic(Diag);
+				}
+			}
+
+			// Track referenced expressions in function inputs
+			for (const auto& FuncInput : ExprDef.FunctionInputs)
+			{
+				ReferencedExpressionIds.Add(FuncInput.Value);
+			}
+		}
+
+		// Track referenced expressions in StaticSwitch
+		if (TypeLower == TEXT("staticswitch"))
+		{
+			if (const FString* AInput = ExprDef.Properties.Find(TEXT("a")))
+			{
+				ReferencedExpressionIds.Add(*AInput);
+			}
+			if (const FString* BInput = ExprDef.Properties.Find(TEXT("b")))
+			{
+				ReferencedExpressionIds.Add(*BInput);
+			}
+			if (const FString* ValueInput = ExprDef.Properties.Find(TEXT("value")))
+			{
+				ReferencedExpressionIds.Add(*ValueInput);
+			}
 		}
 	}
 
-	// Validate connections
+	// =========================================================================
+	// Pass 2: Validate connections
+	// =========================================================================
 	for (const FManifestMaterialConnection& Conn : Connections)
 	{
-		FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Connections"), Conn.FromId + TEXT("->") + Conn.ToId);
+		FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Connections"),
+			FString::Printf(TEXT("%s->%s"), *Conn.FromId, *Conn.ToId));
 
-		// Check source exists (skip "Material" which is a special case for regular materials)
+		// Check source expression exists (includes inputs for material functions)
 		if (Conn.FromId != TEXT("Material") && !DefinedExpressionIds.Contains(Conn.FromId))
 		{
 			FMaterialExprDiagnostic Diag(
 				EMaterialExprValidationCode::E_EXPRESSION_REFERENCE_INVALID,
 				ContextPath,
-				FString::Printf(TEXT("Connection source '%s' not defined in expressions or inputs"), *Conn.FromId),
+				FString::Printf(TEXT("Connection source '%s' not defined in expressions"), *Conn.FromId),
 				true);
 			ValidationResult.AddDiagnostic(Diag);
 		}
 
-		// Check target exists
+		// Check target expression exists (includes outputs for material functions)
 		if (Conn.ToId != TEXT("Material") && !DefinedExpressionIds.Contains(Conn.ToId))
 		{
 			FMaterialExprDiagnostic Diag(
 				EMaterialExprValidationCode::E_EXPRESSION_REFERENCE_INVALID,
 				ContextPath,
-				FString::Printf(TEXT("Connection target '%s' not defined in expressions or outputs"), *Conn.ToId),
+				FString::Printf(TEXT("Connection target '%s' not defined in expressions"), *Conn.ToId),
 				true);
 			ValidationResult.AddDiagnostic(Diag);
 		}
 
+		// Track usage
 		ReferencedExpressionIds.Add(Conn.FromId);
 	}
 
+	// =========================================================================
+	// Pass 3: Check for unused expressions (warning only)
+	// Skip inputs/outputs as they are endpoints, not intermediate expressions
+	// =========================================================================
+	TSet<FString> InputOutputNames;
+	for (const FManifestMaterialFunctionInput& Input : Inputs) InputOutputNames.Add(Input.Name);
+	for (const FManifestMaterialFunctionOutput& Output : Outputs) InputOutputNames.Add(Output.Name);
+
+	for (const FString& DefinedId : DefinedExpressionIds)
+	{
+		// Skip inputs/outputs - they are endpoints
+		if (InputOutputNames.Contains(DefinedId)) continue;
+
+		if (!ReferencedExpressionIds.Contains(DefinedId))
+		{
+			// Check if this expression connects to an output
+			bool bConnectsToOutput = false;
+			for (const FManifestMaterialConnection& Conn : Connections)
+			{
+				if (Conn.FromId == DefinedId && (Conn.ToId == TEXT("Material") || InputOutputNames.Contains(Conn.ToId)))
+				{
+					bConnectsToOutput = true;
+					break;
+				}
+			}
+
+			if (!bConnectsToOutput)
+			{
+				FString ContextPath = FMaterialExprValidationResult::MakeContextPath(AssetName, TEXT("Expressions"), DefinedId);
+				FMaterialExprDiagnostic Diag(
+					EMaterialExprValidationCode::W_EXPRESSION_UNUSED,
+					ContextPath,
+					FString::Printf(TEXT("Expression '%s' defined but never connected"), *DefinedId),
+					false);
+				ValidationResult.AddDiagnostic(Diag);
+			}
+		}
+	}
+
+	// Guardrail #6: Sort diagnostics for stable output
 	ValidationResult.SortDiagnostics();
+
 	return ValidationResult;
 }
 
