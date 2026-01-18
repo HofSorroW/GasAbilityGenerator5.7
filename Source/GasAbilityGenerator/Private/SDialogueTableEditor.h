@@ -21,36 +21,37 @@ class SSearchBox;
 
 /**
  * Column definition for the dialogue table
+ * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 struct FDialogueTableColumn
 {
 	FName ColumnId;
 	FText DisplayName;
-	float DefaultWidth;
+	float ManualWidth;  // Fixed pixel width
 
 	FDialogueTableColumn(FName InId, const FText& InName, float InWidth)
-		: ColumnId(InId), DisplayName(InName), DefaultWidth(InWidth) {}
+		: ColumnId(InId), DisplayName(InName), ManualWidth(InWidth) {}
 };
 
-/** Get default column definitions for dialogue table (15 columns) - v4.11.4: Split Conditions, renamed DialogueID to Speaker */
+/** Get default column definitions for dialogue table (15 columns) - v4.12.5: ManualWidth in pixels */
 inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 {
 	return {
-		{ TEXT("Seq"),          FText::FromString(TEXT("Seq")),            0.03f },
-		{ TEXT("Status"),       FText::FromString(TEXT("Status")),         0.04f },  // v4.7: Row status (matches NPC)
-		{ TEXT("DialogueID"),   FText::FromString(TEXT("Speaker")),        0.08f },  // v4.11.4: Renamed from "Dialogue ID" to "Speaker"
-		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        0.08f },
-		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           0.04f },
-		{ TEXT("Speaker"),      FText::FromString(TEXT("NPC")),            0.06f },  // v4.11.4: Renamed from "Speaker" to "NPC" to avoid confusion
-		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           0.16f },
-		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    0.08f },
-		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         0.10f },  // v4.4: Token column
-		{ TEXT("Condition"),    FText::FromString(TEXT("Condition")),      0.08f },  // v4.11.4: Split from Conditions - shows condition type
-		{ TEXT("Options"),      FText::FromString(TEXT("Options")),        0.06f },  // v4.11.4: Split from Conditions - shows parameters
-		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         0.06f },
-		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     0.07f },
-		{ TEXT("Skippable"),    FText::FromString(TEXT("Skip")),           0.03f },
-		{ TEXT("Notes"),        FText::FromString(TEXT("Notes")),          0.07f },
+		{ TEXT("Seq"),          FText::FromString(TEXT("Seq")),            45.0f },
+		{ TEXT("Status"),       FText::FromString(TEXT("Status")),         55.0f },
+		{ TEXT("DialogueID"),   FText::FromString(TEXT("Dialogue File")),  120.0f },
+		{ TEXT("NodeID"),       FText::FromString(TEXT("Node ID")),        100.0f },
+		{ TEXT("NodeType"),     FText::FromString(TEXT("Type")),           60.0f },
+		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        90.0f },
+		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           220.0f },
+		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    120.0f },
+		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         140.0f },
+		{ TEXT("Condition"),    FText::FromString(TEXT("Conditions")),     120.0f },
+		{ TEXT("Options"),      FText::FromString(TEXT("Options")),        90.0f },
+		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         80.0f },
+		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     100.0f },
+		{ TEXT("Skippable"),    FText::FromString(TEXT("Skip")),           45.0f },
+		{ TEXT("Notes"),        FText::FromString(TEXT("Notes")),          150.0f },
 	};
 }
 

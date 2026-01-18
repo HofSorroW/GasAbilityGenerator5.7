@@ -59,6 +59,41 @@
 #define LOCTEXT_NAMESPACE "NPCTableEditor"
 
 //=============================================================================
+// v4.12.5: Prefix Trimming Helper
+// Strips common asset prefixes for cleaner display
+//=============================================================================
+
+static FString TrimAssetPrefix_NPC(const FString& AssetName)
+{
+	// List of common prefixes to strip (order matters - longer prefixes first)
+	static const TArray<FString> Prefixes = {
+		TEXT("Appearance_"),  // Character appearances
+		TEXT("Schedule_"),    // Activity schedules
+		TEXT("AC_"),          // AbilityConfiguration, ActivityConfiguration
+		TEXT("NPC_"),         // NPCDefinition
+		TEXT("IC_"),          // ItemCollection
+		TEXT("BP_"),          // Blueprint
+		TEXT("GE_"),          // GameplayEffect
+		TEXT("GA_"),          // GameplayAbility
+		TEXT("EI_"),          // EquippableItem
+		TEXT("DBP_"),         // DialogueBlueprint
+		TEXT("QBP_"),         // QuestBlueprint
+		TEXT("BT_"),          // BehaviorTree
+		TEXT("BB_"),          // Blackboard
+		TEXT("TS_"),          // TriggerSet
+	};
+
+	for (const FString& Prefix : Prefixes)
+	{
+		if (AssetName.StartsWith(Prefix))
+		{
+			return AssetName.Mid(Prefix.Len());
+		}
+	}
+	return AssetName;
+}
+
+//=============================================================================
 // SNPCTableRow - Individual Row Widget
 //=============================================================================
 
@@ -91,10 +126,10 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 		return CreateStatusCell();
 	}
 
-	// 2. NPCName - text input (required)
+	// 2. NPCName - text input with NPC_ prefix trimming (required)
 	if (ColumnName == TEXT("NPCName"))
 	{
-		return CreateTextCell(RowData->NPCName, TEXT("NPC_Name"));
+		return CreateNPCNameCell();
 	}
 
 	// 3. NPCId - text input (required)
@@ -220,20 +255,26 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 			})
 			[
 				SNew(SEditableTextBox)
-					.Text_Lambda([ValuePtr]() { return FText::FromString(*ValuePtr); })
+					// v4.12.5: Show "(None)" for empty values instead of blank
+					.Text_Lambda([ValuePtr]() { return FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr); })
 					.HintText(LOCTEXT("NotesHint", "Notes..."))
 					.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
 					{
 						if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
 						{
 							FString NewValue = NewText.ToString();
+							// v4.12.5: Treat "(None)" input as clearing the field
+							if (NewValue == TEXT("(None)"))
+							{
+								NewValue = TEXT("");
+							}
 							if (NewValue != *ValuePtr)
 							{
 								// Confirmation prompt
 								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
 									FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmNotes", "Change Notes from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
-										FText::FromString(ValuePtr->IsEmpty() ? TEXT("(Empty)") : *ValuePtr),
-										FText::FromString(NewValue.IsEmpty() ? TEXT("(Empty)") : NewValue)));
+										FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr),
+										FText::FromString(NewValue.IsEmpty() ? TEXT("(None)") : NewValue)));
 
 								if (Result == EAppReturnType::Yes)
 								{
@@ -325,6 +366,68 @@ TSharedRef<SWidget> SNPCTableRow::CreateTextCell(FString& Value, const FString& 
 							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
 								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmTextChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the NPC as modified."),
 									FText::FromString(Hint),
+									FText::FromString(DisplayOld),
+									FText::FromString(DisplayNew)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+		];
+}
+
+TSharedRef<SWidget> SNPCTableRow::CreateNPCNameCell()
+{
+	// v4.12.5: NPCName cell with NPC_ prefix trimming for display
+	FString* ValuePtr = &RowData->NPCName;
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SEditableTextBox)
+				.Text_Lambda([ValuePtr]()
+				{
+					if (ValuePtr->IsEmpty())
+					{
+						return FText::FromString(TEXT("(None)"));
+					}
+					// Trim NPC_ prefix for cleaner display
+					if (ValuePtr->StartsWith(TEXT("NPC_")))
+					{
+						return FText::FromString(ValuePtr->RightChop(4));
+					}
+					return FText::FromString(*ValuePtr);
+				})
+				.HintText(LOCTEXT("NPCNameHint", "NPC_Name"))
+				.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						if (NewValue == TEXT("(None)"))
+						{
+							NewValue = TEXT("");
+						}
+						// Preserve NPC_ prefix if user edited trimmed name
+						if (!NewValue.IsEmpty() && !NewValue.StartsWith(TEXT("NPC_")))
+						{
+							if (ValuePtr->StartsWith(TEXT("NPC_")))
+							{
+								NewValue = TEXT("NPC_") + NewValue;
+							}
+						}
+						if (NewValue != *ValuePtr)
+						{
+							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmNPCNameChange", "Change 'NPCName' from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
 									FText::FromString(DisplayOld),
 									FText::FromString(DisplayNew)));
 
@@ -852,7 +955,7 @@ TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 								})
 								[
 									SNew(STextBlock)
-										.Text(FText::FromString(AssetName))
+										.Text(FText::FromString(TrimAssetPrefix_NPC(AssetName)))
 										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
 								]
 						];
@@ -877,8 +980,15 @@ TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 							{
 								return NSLOCTEXT("NPCTableEditor", "NoItems", "(None)");
 							}
-							// Show all item names comma-separated
-							return FText::FromString(RowData->DefaultItems);
+							// v4.12.5: Trim IC_ prefix from displayed items
+							TArray<FString> Items;
+							RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
+							TArray<FString> TrimmedItems;
+							for (const FString& Item : Items)
+							{
+								TrimmedItems.Add(TrimAssetPrefix_NPC(Item.TrimStartAndEnd()));
+							}
+							return FText::FromString(FString::Join(TrimmedItems, TEXT(", ")));
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				]
@@ -1101,7 +1211,8 @@ TSharedRef<SWidget> SNPCTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value
 							{
 								AssetName = AssetName.Left(DotIndex);
 							}
-							return FText::FromString(AssetName);
+							// v4.12.5: Trim common prefixes for cleaner display
+							return FText::FromString(TrimAssetPrefix_NPC(AssetName));
 						})
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				]
@@ -1416,7 +1527,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
-		// Sync XLSX (3-way merge)
+		// Sync XLSX (3-way merge) - v4.12.5: Blue button style like Dialogue Table
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.Padding(2.0f)
@@ -1425,6 +1536,7 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.Text(LOCTEXT("SyncXLSX", "Sync XLSX"))
 				.OnClicked(this, &SNPCTableEditor::OnSyncXLSXClicked)
 				.ToolTipText(LOCTEXT("SyncXLSXTooltip", "3-way merge: compare and sync changes with Excel file"))
+				.ButtonStyle(FAppStyle::Get(), "FlatButton.Primary")
 				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
@@ -1464,7 +1576,7 @@ TSharedRef<SHeaderRow> SNPCTableEditor::BuildHeaderRow()
 		Header->AddColumn(
 			SHeaderRow::Column(Col.ColumnId)
 				.DefaultLabel(Col.DisplayName)
-				.FillWidth(Col.DefaultWidth)  // Proportional fill width
+				.ManualWidth(Col.ManualWidth)  // v4.12.5: Fixed pixel width
 				.SortMode(this, &SNPCTableEditor::GetColumnSortMode, Col.ColumnId)
 				.OnSort(this, &SNPCTableEditor::OnColumnSortModeChanged)
 				.HeaderContent()

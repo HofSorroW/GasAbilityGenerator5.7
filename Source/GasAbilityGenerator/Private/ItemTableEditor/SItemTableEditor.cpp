@@ -44,8 +44,44 @@
 #include "Items/AmmoItem.h"
 #include "Items/GameplayEffectItem.h"
 #include "Items/WeaponAttachmentItem.h"
+#include "Engine/BlueprintCore.h"  // v4.12.5: FBlueprintTags for parent class filtering
 
 #define LOCTEXT_NAMESPACE "ItemTableEditor"
+
+//=============================================================================
+// v4.12.5: Prefix Trimming Helper
+// Strips common asset prefixes for cleaner display
+//=============================================================================
+
+static FString TrimAssetPrefix_Item(const FString& AssetName)
+{
+	// List of common prefixes to strip (order matters - longer prefixes first)
+	static const TArray<FString> Prefixes = {
+		TEXT("Appearance_"),  // Character appearances
+		TEXT("Schedule_"),    // Activity schedules
+		TEXT("AC_"),          // AbilityConfiguration, ActivityConfiguration
+		TEXT("NPC_"),         // NPCDefinition
+		TEXT("IC_"),          // ItemCollection
+		TEXT("BP_"),          // Blueprint
+		TEXT("GE_"),          // GameplayEffect
+		TEXT("GA_"),          // GameplayAbility
+		TEXT("EI_"),          // EquippableItem
+		TEXT("DBP_"),         // DialogueBlueprint
+		TEXT("QBP_"),         // QuestBlueprint
+		TEXT("BT_"),          // BehaviorTree
+		TEXT("BB_"),          // Blackboard
+		TEXT("TS_"),          // TriggerSet
+	};
+
+	for (const FString& Prefix : Prefixes)
+	{
+		if (AssetName.StartsWith(Prefix))
+		{
+			return AssetName.Mid(Prefix.Len());
+		}
+	}
+	return AssetName;
+}
 
 //=============================================================================
 // SItemTableRow
@@ -115,11 +151,11 @@ TSharedRef<SWidget> SItemTableRow::GenerateWidgetForColumn(const FName& ColumnNa
 	}
 	else if (ColumnName == TEXT("ModifierGE"))
 	{
-		return CreateAssetDropdownCell(Row.ModifierGE, nullptr, TEXT("GE_"));
+		return CreateModifierGECell();
 	}
 	else if (ColumnName == TEXT("Abilities"))
 	{
-		return CreateTextCell(Row.Abilities, TEXT("GA_Ability1,GA_Ability2"));
+		return CreateAbilitiesCell();
 	}
 	// Weapon columns
 	else if (ColumnName == TEXT("AttackDamage"))
@@ -208,181 +244,846 @@ bool SItemTableRow::ShouldShowColumn(FName ColumnId) const
 
 TSharedRef<SWidget> SItemTableRow::CreateStatusCell()
 {
-	FItemTableRow& Row = *RowData;
-
-	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+	// v4.12.5: Match NPC Table cell styling with validation stripe + status badge
+	// Layout: [4px validation stripe] [status badge]
+	return SNew(SHorizontalBox)
+		// Validation stripe (4px colored bar on left - matches NPC pattern)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SBox)
+				.WidthOverride(4.0f)
+				[
+					SNew(SBorder)
+						.BorderBackgroundColor_Lambda([this]()
+						{
+							if (RowData.IsValid())
+							{
+								return FSlateColor(RowData->GetValidationColor());
+							}
+							return FSlateColor(FLinearColor::White);
+						})
+				]
+		]
+		// Status badge
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		.Padding(FMargin(4.0f, 2.0f))
 		.HAlign(HAlign_Center)
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(Row.GetStatusColor())
-			.Padding(FMargin(4, 1))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.GetStatusString()))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
-				.ColorAndOpacity(FLinearColor::White)
-			]
+				.BorderBackgroundColor_Lambda([this]()
+				{
+					return RowData.IsValid() ? FSlateColor(RowData->GetStatusColor()) : FSlateColor(FLinearColor::White);
+				})
+				.Padding(FMargin(6.0f, 2.0f))
+				[
+					SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							return RowData.IsValid() ? FText::FromString(RowData->GetStatusString()) : FText::GetEmpty();
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
+						.ColorAndOpacity(FSlateColor(FLinearColor::White))
+				]
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateTextCell(FString& Value, const FString& Hint)
 {
+	// v4.12.5: Match NPC Table cell styling with confirmation dialog
+	FString* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableTextBox)
-			.Text(FText::FromString(Value))
-			.HintText(FText::FromString(Hint))
-			.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type) {
-				Value = NewText.ToString();
-				MarkModified();
-			})
+				.Text_Lambda([ValuePtr]()
+				{
+					return FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr);
+				})
+				.HintText(FText::FromString(Hint))
+				.OnTextCommitted_Lambda([this, ValuePtr, Hint](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						// Treat "(None)" input as clearing the field
+						if (NewValue == TEXT("(None)"))
+						{
+							NewValue = TEXT("");
+						}
+
+						// Only prompt if value actually changed
+						if (*ValuePtr != NewValue)
+						{
+							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmTextChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the Item as modified."),
+									FText::FromString(Hint),
+									FText::FromString(DisplayOld),
+									FText::FromString(DisplayNew)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateFloatCell(float& Value, const FString& Hint)
 {
+	// v4.12.5: Use text input with confirmation dialog (matching NPC table pattern)
+	float* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SSpinBox<float>)
-			.Value(Value)
-			.MinValue(0.0f)
-			.MaxValue(10000.0f)
-			.MinSliderValue(0.0f)
-			.MaxSliderValue(100.0f)
-			.OnValueCommitted_Lambda([this, &Value](float NewValue, ETextCommit::Type) {
-				Value = NewValue;
-				MarkModified();
-			})
+			SNew(SEditableTextBox)
+				.Text_Lambda([ValuePtr]() {
+					return FText::FromString(FString::SanitizeFloat(*ValuePtr));
+				})
+				.HintText(FText::FromString(Hint))
+				.OnTextCommitted_Lambda([this, ValuePtr, Hint](const FText& NewText, ETextCommit::Type CommitType) {
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						float NewValue = FCString::Atof(*NewText.ToString());
+						if (!FMath::IsNearlyEqual(*ValuePtr, NewValue))
+						{
+							// Confirmation prompt
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmFloatChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the Item as modified."),
+									FText::FromString(Hint),
+									FText::FromString(FString::SanitizeFloat(*ValuePtr)),
+									FText::FromString(FString::SanitizeFloat(NewValue))));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateIntCell(int32& Value, const FString& Hint)
 {
+	// v4.12.5: Use text input with confirmation dialog (matching NPC table pattern)
+	int32* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SSpinBox<int32>)
-			.Value(Value)
-			.MinValue(0)
-			.MaxValue(100000)
-			.OnValueCommitted_Lambda([this, &Value](int32 NewValue, ETextCommit::Type) {
-				Value = NewValue;
-				MarkModified();
-			})
+			SNew(SEditableTextBox)
+				.Text_Lambda([ValuePtr]() {
+					return FText::FromString(FString::FromInt(*ValuePtr));
+				})
+				.HintText(FText::FromString(Hint))
+				.OnTextCommitted_Lambda([this, ValuePtr, Hint](const FText& NewText, ETextCommit::Type CommitType) {
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						int32 NewValue = FCString::Atoi(*NewText.ToString());
+						if (*ValuePtr != NewValue)
+						{
+							// Confirmation prompt
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmIntChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the Item as modified."),
+									FText::FromString(Hint),
+									FText::FromString(FString::FromInt(*ValuePtr)),
+									FText::FromString(FString::FromInt(NewValue))));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateCheckboxCell(bool& Value)
 {
+	// v4.12.5: Match NPC Table cell styling
+	bool* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		.HAlign(HAlign_Center)
 		[
 			SNew(SCheckBox)
-			.IsChecked(Value ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-			.OnCheckStateChanged_Lambda([this, &Value](ECheckBoxState NewState) {
-				Value = (NewState == ECheckBoxState::Checked);
-				MarkModified();
-			})
+				.IsChecked_Lambda([ValuePtr]() { return *ValuePtr ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+				.OnCheckStateChanged_Lambda([this, ValuePtr](ECheckBoxState NewState) {
+					*ValuePtr = (NewState == ECheckBoxState::Checked);
+					MarkModified();
+				})
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateItemTypeCell()
 {
-	FItemTableRow& Row = *RowData;
-
+	// v4.12.5: Editable dropdown with EItemType enum values (matching NPC table pattern)
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(Row.GetItemTypeColor())
-			.Padding(FMargin(4, 1))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.GetItemTypeString()))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-			]
+			SNew(SComboButton)
+				.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+				{
+					FMenuBuilder MenuBuilder(true, nullptr);
+
+					// All EItemType values
+					struct FItemTypeOption { EItemType Type; FString Name; };
+					static const TArray<FItemTypeOption> Options = {
+						{ EItemType::Consumable, TEXT("Consumable") },
+						{ EItemType::Ammo, TEXT("Ammo") },
+						{ EItemType::WeaponAttachment, TEXT("Weapon Attachment") },
+						{ EItemType::Equippable, TEXT("Equippable") },
+						{ EItemType::Clothing, TEXT("Clothing") },
+						{ EItemType::ThrowableWeapon, TEXT("Throwable Weapon") },
+						{ EItemType::MeleeWeapon, TEXT("Melee Weapon") },
+						{ EItemType::RangedWeapon, TEXT("Ranged Weapon") },
+						{ EItemType::MagicWeapon, TEXT("Magic Weapon") }
+					};
+
+					for (const FItemTypeOption& Option : Options)
+					{
+						MenuBuilder.AddMenuEntry(
+							FText::FromString(Option.Name),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, Option]()
+							{
+								if (!RowData.IsValid()) return;
+
+								if (RowData->ItemType != Option.Type)
+								{
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmItemTypeChange", "Change Item Type from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+											FText::FromString(RowData->GetItemTypeString()),
+											FText::FromString(Option.Name)));
+
+									if (Result == EAppReturnType::Yes)
+									{
+										RowData->ItemType = Option.Type;
+										MarkModified();
+									}
+								}
+							}))
+						);
+					}
+
+					return MenuBuilder.MakeWidget();
+				})
+				.ButtonContent()
+				[
+					SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							return RowData.IsValid() ? FText::FromString(RowData->GetItemTypeString()) : FText::GetEmpty();
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				]
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateEquipmentSlotCell()
 {
-	FItemTableRow& Row = *RowData;
+	// v4.12.5: Editable dropdown with equipment slot tag options (matching NPC table pattern)
+	FString* ValuePtr = &RowData->EquipmentSlot;
 
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SEditableTextBox)
-			.Text(FText::FromString(Row.EquipmentSlot))
-			.HintText(LOCTEXT("SlotHint", "Narrative.Equipment.Slot.X"))
-			.OnTextCommitted_Lambda([this, &Row](const FText& NewText, ETextCommit::Type) {
-				Row.EquipmentSlot = NewText.ToString();
-				MarkModified();
-			})
+			SNew(SComboButton)
+				.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
+				{
+					FMenuBuilder MenuBuilder(true, nullptr);
+
+					// None option
+					MenuBuilder.AddMenuEntry(
+						NSLOCTEXT("ItemTableEditor", "SlotNone", "(None)"),
+						FText::GetEmpty(),
+						FSlateIcon(),
+						FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+						{
+							if (!ValuePtr->IsEmpty())
+							{
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearSlot", "Clear Equipment Slot '{0}'?\n\nThis will mark the Item as modified."),
+										FText::FromString(*ValuePtr)));
+								if (Result == EAppReturnType::Yes)
+								{
+									ValuePtr->Empty();
+									MarkModified();
+								}
+							}
+						}))
+					);
+
+					MenuBuilder.AddSeparator();
+
+					// Common equipment slot tags
+					static const TArray<FString> SlotOptions = {
+						TEXT("Narrative.Equipment.Slot.Head"),
+						TEXT("Narrative.Equipment.Slot.Chest"),
+						TEXT("Narrative.Equipment.Slot.Hands"),
+						TEXT("Narrative.Equipment.Slot.Legs"),
+						TEXT("Narrative.Equipment.Slot.Feet"),
+						TEXT("Narrative.Equipment.Slot.Back"),
+						TEXT("Narrative.Equipment.Slot.Weapon"),
+						TEXT("Narrative.Equipment.Slot.WeaponMainhand"),
+						TEXT("Narrative.Equipment.Slot.WeaponOffhand"),
+						TEXT("Narrative.Equipment.Slot.Accessory"),
+						TEXT("Narrative.Equipment.Slot.Ring"),
+						TEXT("Narrative.Equipment.Slot.Necklace")
+					};
+
+					for (const FString& SlotTag : SlotOptions)
+					{
+						// Extract short name for display (last part after last dot)
+						FString ShortName = SlotTag;
+						int32 LastDot;
+						if (SlotTag.FindLastChar(TEXT('.'), LastDot))
+						{
+							ShortName = SlotTag.RightChop(LastDot + 1);
+						}
+
+						MenuBuilder.AddMenuEntry(
+							FText::FromString(ShortName),
+							FText::FromString(SlotTag),  // Full tag as tooltip
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, SlotTag, ShortName]()
+							{
+								if (*ValuePtr != SlotTag)
+								{
+									FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmSlotChange", "Change Equipment Slot from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+											FText::FromString(DisplayOld),
+											FText::FromString(ShortName)));
+
+									if (Result == EAppReturnType::Yes)
+									{
+										*ValuePtr = SlotTag;
+										MarkModified();
+									}
+								}
+							}))
+						);
+					}
+
+					return MenuBuilder.MakeWidget();
+				})
+				.ButtonContent()
+				[
+					SNew(STextBlock)
+						.Text_Lambda([ValuePtr]()
+						{
+							if (ValuePtr->IsEmpty())
+							{
+								return FText::FromString(TEXT("(None)"));
+							}
+							// Extract short name for display
+							FString ShortName = *ValuePtr;
+							int32 LastDot;
+							if (ValuePtr->FindLastChar(TEXT('.'), LastDot))
+							{
+								ShortName = ValuePtr->RightChop(LastDot + 1);
+							}
+							return FText::FromString(ShortName);
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				]
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value, UClass* AssetClass, const FString& AssetPrefix)
 {
-	// Simplified text input for asset paths
+	// v4.12.5: Match NPC Table - use SComboButton with asset dropdown menu
+	FSoftObjectPath* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SEditableTextBox)
-			.Text(FText::FromString(Value.GetAssetName()))
-			.HintText(FText::FromString(AssetPrefix + TEXT("...")))
-			.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type) {
-				// Simple path construction
-				FString AssetName = NewText.ToString();
-				if (!AssetName.IsEmpty())
+			SNew(SComboButton)
+				.OnGetMenuContent_Lambda([this, ValuePtr, AssetClass, AssetPrefix]() -> TSharedRef<SWidget>
 				{
-					Value = FSoftObjectPath(FString::Printf(TEXT("/Game/Effects/%s.%s"), *AssetName, *AssetName));
-				}
-				else
+					FMenuBuilder MenuBuilder(true, nullptr);
+
+					// None option
+					MenuBuilder.AddMenuEntry(
+						NSLOCTEXT("ItemTableEditor", "None", "(None)"),
+						FText::GetEmpty(),
+						FSlateIcon(),
+						FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+						{
+							FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClear", "Clear '{0}' and set to (None)?\n\nThis will mark the Item as modified."),
+									FText::FromString(CurrentValue)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								ValuePtr->Reset();
+								MarkModified();
+							}
+						}))
+					);
+
+					MenuBuilder.AddSeparator();
+
+					// Get available assets - scan by prefix if no class specified
+					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+					TArray<FAssetData> Assets;
+
+					if (AssetClass)
+					{
+						Registry.Get().GetAssetsByClass(AssetClass->GetClassPathName(), Assets, true);
+					}
+					else if (!AssetPrefix.IsEmpty())
+					{
+						// Scan all blueprints and filter by prefix
+						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+					}
+
+					for (const FAssetData& Asset : Assets)
+					{
+						FString AssetName = Asset.AssetName.ToString();
+
+						// Filter by prefix if specified
+						if (!AssetPrefix.IsEmpty() && !AssetName.StartsWith(AssetPrefix))
+						{
+							continue;
+						}
+
+						FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+						MenuBuilder.AddMenuEntry(
+							FText::FromString(TrimAssetPrefix_Item(AssetName)),
+							FText::FromString(Asset.GetObjectPathString()),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+							{
+								if (*ValuePtr != AssetPath)
+								{
+									FString OldValue = ValuePtr->IsNull() ? TEXT("(None)") : TrimAssetPrefix_Item(ValuePtr->GetAssetName());
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmAssetChange", "Change from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+											FText::FromString(OldValue),
+											FText::FromString(TrimAssetPrefix_Item(AssetName))));
+
+									if (Result == EAppReturnType::Yes)
+									{
+										*ValuePtr = AssetPath;
+										MarkModified();
+									}
+								}
+							}))
+						);
+					}
+
+					return MenuBuilder.MakeWidget();
+				})
+				.ButtonContent()
+				[
+					SNew(STextBlock)
+						.Text_Lambda([ValuePtr]()
+						{
+							if (ValuePtr->IsNull())
+							{
+								return FText::FromString(TEXT("(None)"));
+							}
+							return FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				]
+		];
+}
+
+TSharedRef<SWidget> SItemTableRow::CreateModifierGECell()
+{
+	// v4.12.5: Dropdown filtered to only show equipment modifier GEs (GE_EquipmentModifier and children)
+	FSoftObjectPath* ValuePtr = &RowData->ModifierGE;
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SComboButton)
+				.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
 				{
-					Value.Reset();
-				}
-				MarkModified();
-			})
+					FMenuBuilder MenuBuilder(true, nullptr);
+
+					// None option
+					MenuBuilder.AddMenuEntry(
+						NSLOCTEXT("ItemTableEditor", "ModifierNone", "(None)"),
+						FText::GetEmpty(),
+						FSlateIcon(),
+						FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+						{
+							if (!ValuePtr->IsNull())
+							{
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearModifier", "Clear Modifier GE '{0}'?\n\nThis will mark the Item as modified."),
+										FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()))));
+								if (Result == EAppReturnType::Yes)
+								{
+									ValuePtr->Reset();
+									MarkModified();
+								}
+							}
+						}))
+					);
+
+					MenuBuilder.AddSeparator();
+
+					// Get GameplayEffect blueprints and filter for equipment modifiers
+					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+					TArray<FAssetData> Assets;
+					Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+					for (const FAssetData& Asset : Assets)
+					{
+						FString AssetName = Asset.AssetName.ToString();
+
+						// Must have GE_ prefix
+						if (!AssetName.StartsWith(TEXT("GE_")))
+						{
+							continue;
+						}
+
+						// Filter for equipment modifiers:
+						// 1. Asset path contains "Equipment" folder
+						// 2. OR asset name contains "EquipmentModifier"
+						// 3. OR asset is in a GameplayEffects/Equipment path
+						FString AssetPathStr = Asset.GetObjectPathString();
+						bool bIsEquipmentModifier =
+							AssetPathStr.Contains(TEXT("/Equipment/")) ||
+							AssetName.Contains(TEXT("EquipmentModifier")) ||
+							AssetName.Contains(TEXT("Equipment"));
+
+						if (!bIsEquipmentModifier)
+						{
+							continue;
+						}
+
+						FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+						MenuBuilder.AddMenuEntry(
+							FText::FromString(TrimAssetPrefix_Item(AssetName)),
+							FText::FromString(AssetPathStr),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+							{
+								if (*ValuePtr != AssetPath)
+								{
+									FString OldValue = ValuePtr->IsNull() ? TEXT("(None)") : TrimAssetPrefix_Item(ValuePtr->GetAssetName());
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmModifierChange", "Change Modifier GE from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+											FText::FromString(OldValue),
+											FText::FromString(TrimAssetPrefix_Item(AssetName))));
+
+									if (Result == EAppReturnType::Yes)
+									{
+										*ValuePtr = AssetPath;
+										MarkModified();
+									}
+								}
+							}))
+						);
+					}
+
+					return MenuBuilder.MakeWidget();
+				})
+				.ButtonContent()
+				[
+					SNew(STextBlock)
+						.Text_Lambda([ValuePtr]()
+						{
+							if (ValuePtr->IsNull())
+							{
+								return FText::FromString(TEXT("(None)"));
+							}
+							return FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				]
+		];
+}
+
+TSharedRef<SWidget> SItemTableRow::CreateAbilitiesCell()
+{
+	// v4.12.5: Multi-select dropdown for GA_* abilities (matching NPC table CreateItemsCell pattern)
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SComboButton)
+				.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+				{
+					TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+					// Clear All button
+					MenuContent->AddSlot()
+					.AutoHeight()
+					.Padding(4.0f, 2.0f)
+					[
+						SNew(SButton)
+							.Text(NSLOCTEXT("ItemTableEditor", "ClearAllAbilities", "(Clear All)"))
+							.OnClicked_Lambda([this]()
+							{
+								if (!RowData->Abilities.IsEmpty())
+								{
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearAbilities", "Clear all abilities?\n\nCurrent: {0}"),
+											FText::FromString(RowData->Abilities)));
+									if (Result == EAppReturnType::Yes)
+									{
+										RowData->Abilities.Empty();
+										MarkModified();
+									}
+								}
+								return FReply::Handled();
+							})
+					];
+
+					MenuContent->AddSlot()
+					.AutoHeight()
+					.Padding(4.0f, 0.0f)
+					[
+						SNew(SSeparator)
+					];
+
+					// Get GameplayAbility blueprints (GA_*)
+					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+					TArray<FAssetData> Assets;
+					Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+					for (const FAssetData& Asset : Assets)
+					{
+						FString AssetName = Asset.AssetName.ToString();
+
+						// Must have GA_ prefix (GameplayAbility)
+						if (!AssetName.StartsWith(TEXT("GA_")))
+						{
+							continue;
+						}
+
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(4.0f, 1.0f)
+						[
+							SNew(SCheckBox)
+								.IsChecked_Lambda([this, AssetName]()
+								{
+									TArray<FString> CurrentAbilities;
+									RowData->Abilities.ParseIntoArray(CurrentAbilities, TEXT(","));
+									for (FString& Ability : CurrentAbilities) { Ability = Ability.TrimStartAndEnd(); }
+									return CurrentAbilities.Contains(AssetName) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+								})
+								.OnCheckStateChanged_Lambda([this, AssetName](ECheckBoxState NewState)
+								{
+									TArray<FString> Abilities;
+									RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
+									for (FString& Ability : Abilities) { Ability = Ability.TrimStartAndEnd(); }
+
+									// Check if already exists
+									bool bAlreadyExists = false;
+									int32 ExistingIndex = INDEX_NONE;
+									for (int32 i = 0; i < Abilities.Num(); i++)
+									{
+										if (Abilities[i].Equals(AssetName, ESearchCase::IgnoreCase))
+										{
+											bAlreadyExists = true;
+											ExistingIndex = i;
+											break;
+										}
+									}
+
+									if (NewState == ECheckBoxState::Checked)
+									{
+										if (!bAlreadyExists)
+										{
+											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+												FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmAddAbility", "Add ability '{0}' to this item?\n\nThis will mark the Item as modified."),
+													FText::FromString(TrimAssetPrefix_Item(AssetName))));
+											if (Result == EAppReturnType::Yes)
+											{
+												Abilities.Add(AssetName);
+												RowData->Abilities = FString::Join(Abilities, TEXT(", "));
+												MarkModified();
+											}
+										}
+									}
+									else
+									{
+										if (bAlreadyExists)
+										{
+											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+												FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmRemoveAbility", "Remove ability '{0}' from this item?\n\nThis will mark the Item as modified."),
+													FText::FromString(TrimAssetPrefix_Item(AssetName))));
+											if (Result == EAppReturnType::Yes)
+											{
+												Abilities.RemoveAt(ExistingIndex);
+												RowData->Abilities = FString::Join(Abilities, TEXT(", "));
+												MarkModified();
+											}
+										}
+									}
+								})
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(TrimAssetPrefix_Item(AssetName)))
+										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+								]
+						];
+					}
+
+					return SNew(SBox)
+						.MaxDesiredHeight(400.0f)
+						[
+							SNew(SScrollBox)
+							+ SScrollBox::Slot()
+							[
+								MenuContent
+							]
+						];
+				})
+				.ButtonContent()
+				[
+					SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							if (RowData->Abilities.IsEmpty())
+							{
+								return NSLOCTEXT("ItemTableEditor", "NoAbilities", "(None)");
+							}
+							// Trim GA_ prefix from displayed abilities
+							TArray<FString> Abilities;
+							RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
+							TArray<FString> TrimmedAbilities;
+							for (const FString& Ability : Abilities)
+							{
+								TrimmedAbilities.Add(TrimAssetPrefix_Item(Ability.TrimStartAndEnd()));
+							}
+							return FText::FromString(FString::Join(TrimmedAbilities, TEXT(", ")));
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				]
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateTokenCell(FString& Value, const FString& Hint)
 {
+	// v4.12.5: Match NPC Table cell styling with confirmation dialog
+	FString* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableTextBox)
-			.Text(FText::FromString(Value))
-			.HintText(FText::FromString(Hint))
-			.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
-			.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type) {
-				Value = NewText.ToString();
-				MarkModified();
-			})
+				.Text_Lambda([ValuePtr]()
+				{
+					return FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr);
+				})
+				.HintText(FText::FromString(Hint))
+				.OnTextCommitted_Lambda([this, ValuePtr, Hint](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						if (NewValue == TEXT("(None)"))
+						{
+							NewValue = TEXT("");
+						}
+
+						if (*ValuePtr != NewValue)
+						{
+							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmTokenChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the Item as modified."),
+									FText::FromString(Hint),
+									FText::FromString(DisplayOld),
+									FText::FromString(DisplayNew)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateNotesCell()
 {
-	FItemTableRow& Row = *RowData;
+	// v4.12.5: Match NPC Table cell styling with confirmation dialog
+	FString* ValuePtr = &RowData->Notes;
 
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
+		.ToolTipText_Lambda([ValuePtr]() -> FText
+		{
+			// Show full text as tooltip when hovering (useful for long notes)
+			if (ValuePtr->Len() > 30)
+			{
+				return FText::FromString(*ValuePtr);
+			}
+			return FText::GetEmpty();
+		})
 		[
 			SNew(SEditableTextBox)
-			.Text(FText::FromString(Row.Notes))
-			.HintText(LOCTEXT("NotesHint", "Designer notes"))
-			.ToolTipText(FText::FromString(Row.Notes))
-			.OnTextCommitted_Lambda([this, &Row](const FText& NewText, ETextCommit::Type) {
-				Row.Notes = NewText.ToString();
-				MarkModified();
-			})
+				.Text_Lambda([ValuePtr]()
+				{
+					return FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr);
+				})
+				.HintText(LOCTEXT("NotesHint", "Designer notes"))
+				.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						if (NewValue == TEXT("(None)"))
+						{
+							NewValue = TEXT("");
+						}
+
+						if (*ValuePtr != NewValue)
+						{
+							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmNotesChange", "Change Notes from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+									FText::FromString(DisplayOld),
+									FText::FromString(DisplayNew)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
 }
 
@@ -636,7 +1337,7 @@ TSharedRef<SHeaderRow> SItemTableEditor::BuildHeaderRow()
 		Header->AddColumn(
 			SHeaderRow::Column(Col.ColumnId)
 			.DefaultLabel(Col.DisplayName)
-			.FillWidth(Col.DefaultWidth)
+			.ManualWidth(Col.ManualWidth)  // v4.12.5: Fixed pixel width
 			.SortMode(this, &SItemTableEditor::GetColumnSortMode, Col.ColumnId)
 			.OnSort(this, &SItemTableEditor::OnColumnSortModeChanged)
 			.HeaderContent()
@@ -652,24 +1353,172 @@ TSharedRef<SHeaderRow> SItemTableEditor::BuildHeaderRow()
 
 TSharedRef<SWidget> SItemTableEditor::BuildColumnHeaderContent(const FItemTableColumn& Col)
 {
+	FItemColumnFilterState& FilterState = ColumnFilters.FindOrAdd(Col.ColumnId);
+
 	return SNew(SVerticalBox)
+
+		// 1. Column name
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(STextBlock)
 			.Text(Col.DisplayName)
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 		]
+
+		// 2. Text filter (live filtering - OnTextChanged)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(2)
+		.Padding(2.0f, 1.0f)
 		[
-			SNew(SSearchBox)
+			SNew(SEditableText)
 			.HintText(LOCTEXT("FilterHint", "Filter..."))
-			.OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText) {
+			.OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText)
+			{
 				OnColumnTextFilterChanged(ColumnId, NewText);
 			})
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+		]
+
+		// 3. Multi-select dropdown (SComboButton with checkbox menu)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(2.0f, 1.0f)
+		[
+			SNew(SComboButton)
+			.OnGetMenuContent_Lambda([this, ColumnId = Col.ColumnId]() -> TSharedRef<SWidget>
+			{
+				FItemColumnFilterState* State = ColumnFilters.Find(ColumnId);
+				if (!State)
+				{
+					return SNullWidget::NullWidget;
+				}
+
+				TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+				// Header with All/None buttons
+				MenuContent->AddSlot()
+				.AutoHeight()
+				.Padding(4.0f, 2.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("SelectAll", "All"))
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.OnClicked_Lambda([this, ColumnId]()
+						{
+							FItemColumnFilterState* S = ColumnFilters.Find(ColumnId);
+							if (S) S->SelectedValues.Empty();
+							ApplyFilters();
+							return FReply::Handled();
+						})
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(4.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("ClearSel", "None"))
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.OnClicked_Lambda([this, ColumnId]()
+						{
+							FItemColumnFilterState* S = ColumnFilters.Find(ColumnId);
+							if (S)
+							{
+								// Mark all as deselected by putting empty string marker
+								S->SelectedValues.Empty();
+								S->SelectedValues.Add(TEXT("__NONE_SELECTED__"));
+							}
+							ApplyFilters();
+							return FReply::Handled();
+						})
+					]
+				];
+
+				// Separator
+				MenuContent->AddSlot()
+				.AutoHeight()
+				[
+					SNew(SSeparator)
+				];
+
+				// Get unique values for this column
+				TArray<FString> UniqueValues = GetUniqueColumnValues(ColumnId);
+
+				// Checkboxes for each unique value in the column
+				for (const FString& OptionValue : UniqueValues)
+				{
+					FString DisplayText = OptionValue;
+
+					MenuContent->AddSlot()
+					.AutoHeight()
+					.Padding(4.0f, 1.0f)
+					[
+						SNew(SCheckBox)
+						.IsChecked_Lambda([this, ColumnId, OptionValue]()
+						{
+							FItemColumnFilterState* S = ColumnFilters.Find(ColumnId);
+							if (!S || S->SelectedValues.Num() == 0)
+							{
+								return ECheckBoxState::Checked;  // Empty = all selected
+							}
+							if (S->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+							{
+								return ECheckBoxState::Unchecked;  // None selected marker
+							}
+							return S->SelectedValues.Contains(OptionValue)
+								? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+						})
+						.OnCheckStateChanged_Lambda([this, ColumnId, OptionValue](ECheckBoxState NewState)
+						{
+							OnColumnDropdownFilterChanged(ColumnId, OptionValue, NewState == ECheckBoxState::Checked);
+						})
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(DisplayText))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+						]
+					];
+				}
+
+				return SNew(SBox)
+					.MaxDesiredHeight(300.0f)
+					[
+						SNew(SScrollBox)
+						+ SScrollBox::Slot()
+						[
+							MenuContent
+						]
+					];
+			})
+			.ButtonContent()
+			[
+				SNew(STextBlock)
+				.Text_Lambda([this, ColumnId = Col.ColumnId]()
+				{
+					FItemColumnFilterState* State = ColumnFilters.Find(ColumnId);
+					if (!State || State->SelectedValues.Num() == 0)
+					{
+						return LOCTEXT("AllFilter", "(All)");
+					}
+					if (State->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+					{
+						return LOCTEXT("NoneFilter", "(None)");
+					}
+					if (State->SelectedValues.Num() == 1)
+					{
+						FString Val = *State->SelectedValues.CreateConstIterator();
+						return FText::FromString(Val.IsEmpty() ? TEXT("(Empty)") : Val);
+					}
+					return FText::Format(LOCTEXT("MultiSelect", "({0} selected)"),
+						FText::AsNumber(State->SelectedValues.Num()));
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+			]
 		];
 }
 
@@ -1227,16 +2076,43 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 	UE_LOG(LogTemp, Log, TEXT("[ItemTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
 	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
 
-	// Find all EquippableItem assets (this is the base class for all equipment)
+	// v4.12.5: Search for Blueprint assets whose parent class is UNarrativeItem or subclass
+	// NarrativeItem is a UObject, not UDataAsset, so items are stored as Blueprint assets
+	TArray<FAssetData> AllBlueprints;
+	AssetRegistry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AllBlueprints, true);
+
+	// Filter blueprints by parent class - look for Item class hierarchy
 	TArray<FAssetData> AssetList;
-	FTopLevelAssetPath ClassPath = UEquippableItem::StaticClass()->GetClassPathName();
-	AssetRegistry.GetAssetsByClass(ClassPath, AssetList, true);
-	UE_LOG(LogTemp, Log, TEXT("[ItemTableEditor] Found %d UEquippableItem assets"), AssetList.Num());
+	for (const FAssetData& Asset : AllBlueprints)
+	{
+		FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+		if (ParentClassTag.IsSet())
+		{
+			FString ParentClassPath = ParentClassTag.GetValue();
+
+			// Check if parent class is in the item class hierarchy
+			if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
+				ParentClassPath.Contains(TEXT("EquippableItem")) ||
+				ParentClassPath.Contains(TEXT("WeaponItem")) ||
+				ParentClassPath.Contains(TEXT("RangedWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("MeleeWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("MagicWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("ThrowableWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("AmmoItem")) ||
+				ParentClassPath.Contains(TEXT("GameplayEffectItem")) ||
+				ParentClassPath.Contains(TEXT("WeaponAttachmentItem")))
+			{
+				AssetList.Add(Asset);
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ItemTableEditor] Found %d Item Blueprint assets (from %d total blueprints)"), AssetList.Num(), AllBlueprints.Num());
 
 	if (AssetList.Num() == 0)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,
-			LOCTEXT("NoItemsFound", "No EquippableItem assets found in the project.\n\nCreate EquippableItem assets (EI_*) first, then sync."));
+			LOCTEXT("NoItemsFound", "No Item Blueprint assets found in the project.\n\nCreate Item assets first, then sync."));
 		return FReply::Handled();
 	}
 
@@ -1257,7 +2133,14 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 
 	for (const FAssetData& AssetData : AssetList)
 	{
-		UEquippableItem* Item = Cast<UEquippableItem>(AssetData.GetAsset());
+		// v4.12.5: Load Blueprint and get CDO (Class Default Object) to read properties
+		UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset());
+		if (!Blueprint || !Blueprint->GeneratedClass)
+		{
+			continue;
+		}
+
+		UNarrativeItem* Item = Cast<UNarrativeItem>(Blueprint->GeneratedClass->GetDefaultObject());
 		if (!Item)
 		{
 			continue;
@@ -1279,6 +2162,7 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 		}
 
 		// Determine ItemType based on class hierarchy (most specific first)
+		// v4.12.5: Added checks for non-EquippableItem types (Ammo, Consumable, etc.)
 		if (Item->IsA(URangedWeaponItem::StaticClass()))
 		{
 			Row.ItemType = EItemType::RangedWeapon;
@@ -1299,23 +2183,44 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 		{
 			Row.ItemType = EItemType::Clothing;
 		}
-		else
+		else if (Item->IsA(UAmmoItem::StaticClass()))
+		{
+			Row.ItemType = EItemType::Ammo;
+		}
+		else if (Item->IsA(UGameplayEffectItem::StaticClass()))
+		{
+			Row.ItemType = EItemType::Consumable;
+		}
+		else if (Item->IsA(UWeaponAttachmentItem::StaticClass()))
+		{
+			Row.ItemType = EItemType::WeaponAttachment;
+		}
+		else if (Item->IsA(UEquippableItem::StaticClass()))
 		{
 			Row.ItemType = EItemType::Equippable;
 		}
+		else
+		{
+			// Generic NarrativeItem that doesn't fit any specific category
+			Row.ItemType = EItemType::Consumable;  // Default for non-equippable items
+		}
 
 		// Equipment slot - get first slot from EquippableSlots container
-		// Access via reflection since EquippableSlots is protected
-		if (FProperty* SlotsProperty = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("EquippableSlots")))
+		// v4.12.5: Only access EquippableItem properties if item actually inherits from it
+		// (AmmoItem, GameplayEffectItem inherit directly from NarrativeItem, not EquippableItem)
+		if (Item->IsA(UEquippableItem::StaticClass()))
 		{
-			FGameplayTagContainer* Slots = SlotsProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(Item);
-			if (Slots && Slots->Num() > 0)
+			if (FProperty* SlotsProperty = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("EquippableSlots")))
 			{
-				TArray<FGameplayTag> TagArray;
-				Slots->GetGameplayTagArray(TagArray);
-				if (TagArray.Num() > 0)
+				FGameplayTagContainer* Slots = SlotsProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(Item);
+				if (Slots && Slots->Num() > 0)
 				{
-					Row.EquipmentSlot = TagArray[0].ToString();
+					TArray<FGameplayTag> TagArray;
+					Slots->GetGameplayTagArray(TagArray);
+					if (TagArray.Num() > 0)
+					{
+						Row.EquipmentSlot = TagArray[0].ToString();
+					}
 				}
 			}
 		}
@@ -1360,35 +2265,40 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 		}
 
 		// Combat stats via reflection (protected properties on UEquippableItem)
-		if (FProperty* AttackProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("AttackRating")))
+		// v4.12.5: Only access if item inherits from EquippableItem
+		if (Item->IsA(UEquippableItem::StaticClass()))
 		{
-			float* Attack = AttackProp->ContainerPtrToValuePtr<float>(Item);
-			if (Attack)
+			if (FProperty* AttackProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("AttackRating")))
 			{
-				Row.AttackRating = *Attack;
+				float* Attack = AttackProp->ContainerPtrToValuePtr<float>(Item);
+				if (Attack)
+				{
+					Row.AttackRating = *Attack;
+				}
 			}
-		}
 
-		if (FProperty* ArmorProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("ArmorRating")))
-		{
-			float* Armor = ArmorProp->ContainerPtrToValuePtr<float>(Item);
-			if (Armor)
+			if (FProperty* ArmorProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("ArmorRating")))
 			{
-				Row.ArmorRating = *Armor;
+				float* Armor = ArmorProp->ContainerPtrToValuePtr<float>(Item);
+				if (Armor)
+				{
+					Row.ArmorRating = *Armor;
+				}
 			}
-		}
 
-		if (FProperty* StealthProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("StealthRating")))
-		{
-			float* Stealth = StealthProp->ContainerPtrToValuePtr<float>(Item);
-			if (Stealth)
+			if (FProperty* StealthProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("StealthRating")))
 			{
-				Row.StealthRating = *Stealth;
+				float* Stealth = StealthProp->ContainerPtrToValuePtr<float>(Item);
+				if (Stealth)
+				{
+					Row.StealthRating = *Stealth;
+				}
 			}
 		}
 
 		// Weapon stats (if this is a weapon)
-		if (Row.IsWeapon())
+		// v4.12.5: Use Item->IsA() for safe property access
+		if (Item->IsA(UWeaponItem::StaticClass()))
 		{
 			if (FProperty* DamageProp = UWeaponItem::StaticClass()->FindPropertyByName(TEXT("AttackDamage")))
 			{
@@ -1453,7 +2363,8 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 		}
 
 		// Ranged weapon stats
-		if (Row.IsRangedWeapon())
+		// v4.12.5: Use Item->IsA() for safe property access
+		if (Item->IsA(URangedWeaponItem::StaticClass()))
 		{
 			if (FProperty* SpreadProp = URangedWeaponItem::StaticClass()->FindPropertyByName(TEXT("BaseSpreadDegrees")))
 			{
@@ -1530,12 +2441,16 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 		}
 
 		// Equipment effect (modifier GE)
-		if (FProperty* EffectProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("EquipmentEffect")))
+		// v4.12.5: Only access if item inherits from EquippableItem
+		if (Item->IsA(UEquippableItem::StaticClass()))
 		{
-			TSubclassOf<UGameplayEffect>* Effect = EffectProp->ContainerPtrToValuePtr<TSubclassOf<UGameplayEffect>>(Item);
-			if (Effect && *Effect)
+			if (FProperty* EffectProp = UEquippableItem::StaticClass()->FindPropertyByName(TEXT("EquipmentEffect")))
 			{
-				Row.ModifierGE = FSoftObjectPath((*Effect)->GetPathName());
+				TSubclassOf<UGameplayEffect>* Effect = EffectProp->ContainerPtrToValuePtr<TSubclassOf<UGameplayEffect>>(Item);
+				if (Effect && *Effect)
+				{
+					Row.ModifierGE = FSoftObjectPath((*Effect)->GetPathName());
+				}
 			}
 		}
 
@@ -1591,7 +2506,7 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 	SyncFromTableData();
 	RefreshList();
 
-	FString Summary = FString::Printf(TEXT("Synced %d items from %d EquippableItem assets"), SyncedCount, AssetList.Num());
+	FString Summary = FString::Printf(TEXT("Synced %d items from all item types"), SyncedCount);
 	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Summary));
 
 	return FReply::Handled();

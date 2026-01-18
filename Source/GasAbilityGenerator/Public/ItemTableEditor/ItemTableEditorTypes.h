@@ -92,6 +92,10 @@ struct GASABILITYGENERATOR_API FItemTableRow
 	UPROPERTY(EditAnywhere, Category = "Identity")
 	EItemType ItemType = EItemType::Equippable;
 
+	/** Actual parent class from asset (e.g., "Clothing", "RangedWeaponItem") - read-only from sync */
+	UPROPERTY(VisibleAnywhere, Category = "Identity")
+	FString ParentClass;
+
 	//=========================================================================
 	// Equipment (3 columns)
 	//=========================================================================

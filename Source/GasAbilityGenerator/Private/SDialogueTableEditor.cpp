@@ -40,6 +40,41 @@ DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);  // v4.10: Provena
 #define LOCTEXT_NAMESPACE "DialogueTableEditor"
 
 //=============================================================================
+// v4.12.5: Prefix Trimming Helper
+// Strips common asset prefixes for cleaner display
+//=============================================================================
+
+static FString TrimAssetPrefix_Dialogue(const FString& AssetName)
+{
+	// List of common prefixes to strip (order matters - longer prefixes first)
+	static const TArray<FString> Prefixes = {
+		TEXT("Appearance_"),  // Character appearances
+		TEXT("Schedule_"),    // Activity schedules
+		TEXT("AC_"),          // AbilityConfiguration, ActivityConfiguration
+		TEXT("NPC_"),         // NPCDefinition
+		TEXT("IC_"),          // ItemCollection
+		TEXT("BP_"),          // Blueprint
+		TEXT("GE_"),          // GameplayEffect
+		TEXT("GA_"),          // GameplayAbility
+		TEXT("EI_"),          // EquippableItem
+		TEXT("DBP_"),         // DialogueBlueprint
+		TEXT("QBP_"),         // QuestBlueprint
+		TEXT("BT_"),          // BehaviorTree
+		TEXT("BB_"),          // Blackboard
+		TEXT("TS_"),          // TriggerSet
+	};
+
+	for (const FString& Prefix : Prefixes)
+	{
+		if (AssetName.StartsWith(Prefix))
+		{
+			return AssetName.Mid(Prefix.Len());
+		}
+	}
+	return AssetName;
+}
+
+//=============================================================================
 // SDialogueTableRow - Individual Row Widget
 //=============================================================================
 
@@ -440,7 +475,8 @@ TSharedRef<SWidget> SDialogueTableRow::CreateSpeakerCell()
 							return FText::FromString(TEXT("(None)"));
 						}
 					}
-					return FText::FromName(RowData->Speaker);
+					// v4.12.5: Trim common prefixes for cleaner display
+					return FText::FromString(TrimAssetPrefix_Dialogue(RowData->Speaker.ToString()));
 				})
 				.HintText(FText::FromString(TEXT("Speaker Name")))
 				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
@@ -1392,7 +1428,7 @@ TSharedRef<SHeaderRow> SDialogueTableEditor::BuildHeaderRow()
 		Header->AddColumn(
 			SHeaderRow::Column(Col.ColumnId)
 				.DefaultLabel(Col.DisplayName)
-				.FillWidth(Col.DefaultWidth)
+				.ManualWidth(Col.ManualWidth)  // v4.12.5: Fixed pixel width
 				.SortMode(this, &SDialogueTableEditor::GetColumnSortMode, Col.ColumnId)
 				.OnSort(this, &SDialogueTableEditor::OnColumnSortModeChanged)
 				.HeaderContent()

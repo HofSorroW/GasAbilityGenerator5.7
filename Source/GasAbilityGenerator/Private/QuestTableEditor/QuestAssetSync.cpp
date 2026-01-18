@@ -185,7 +185,38 @@ FQuestAssetData FQuestAssetSync::SyncFromAsset(UQuestBlueprint* QuestBlueprint)
 		Data.QuestName = Data.QuestName.RightChop(6);
 	}
 
-	Data.DisplayName = QuestTemplate->GetQuestName().ToString();
+	// v4.12.5: Get DisplayName with fallback to derived name from asset
+	FString QuestDisplayName = QuestTemplate->GetQuestName().ToString();
+
+	// If QuestName is empty or default "My New Quest", derive from asset name
+	if (QuestDisplayName.IsEmpty() || QuestDisplayName == TEXT("My New Quest"))
+	{
+		// Convert "ForgeSupplies" or "Forge_Supplies" to "Forge Supplies"
+		FString DerivedName = Data.QuestName;
+
+		// Replace underscores with spaces
+		DerivedName.ReplaceInline(TEXT("_"), TEXT(" "));
+
+		// Insert spaces before capital letters (PascalCase to readable)
+		FString Readable;
+		for (int32 i = 0; i < DerivedName.Len(); ++i)
+		{
+			TCHAR C = DerivedName[i];
+			// Insert space before uppercase if not first char and prev char isn't space
+			if (i > 0 && FChar::IsUpper(C) && !FChar::IsWhitespace(DerivedName[i - 1]))
+			{
+				Readable.AppendChar(TEXT(' '));
+			}
+			Readable.AppendChar(C);
+		}
+
+		Data.DisplayName = Readable.TrimStartAndEnd();
+	}
+	else
+	{
+		Data.DisplayName = QuestDisplayName;
+	}
+
 	Data.bIsTracked = QuestTemplate->IsTracked();
 
 	// Get States array via GetStates() (public accessor)

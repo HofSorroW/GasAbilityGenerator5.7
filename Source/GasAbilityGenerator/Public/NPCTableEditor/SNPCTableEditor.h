@@ -17,18 +17,18 @@ class SSearchBox;
 
 /**
  * Column definition for the NPC table
- * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
+ * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 struct FNPCTableColumn
 {
 	FName ColumnId;
 	FText DisplayName;
-	float DefaultWidth;  // Proportional FillWidth (0.0-1.0)
+	float ManualWidth;  // Fixed pixel width
 
-	FNPCTableColumn(FName InId, const FText& InName, float InWidth = 0.05f)
+	FNPCTableColumn(FName InId, const FText& InName, float InWidth = 80.0f)
 		: ColumnId(InId)
 		, DisplayName(InName)
-		, DefaultWidth(InWidth)
+		, ManualWidth(InWidth)
 	{}
 };
 
@@ -57,87 +57,87 @@ enum class ENPCColumnInputType : uint8
 };
 
 /**
- * Get default column definitions for NPC table (v4.1 - 18 columns)
- * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
+ * Get default column definitions for NPC table (v4.1 - 17 columns)
+ * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 inline TArray<FNPCTableColumn> GetNPCTableColumns()
 {
 	TArray<FNPCTableColumn> Columns;
 
 	//=========================================================================
-	// Core Identity (5 columns) - 0.30 total
+	// Core Identity (5 columns)
 	//=========================================================================
 
 	// 1. Status - read-only badge (auto-calculated)
-	Columns.Add(FNPCTableColumn(TEXT("Status"), NSLOCTEXT("NPCTableEditor", "ColStatus", "Status"), 0.03f));
+	Columns.Add(FNPCTableColumn(TEXT("Status"), NSLOCTEXT("NPCTableEditor", "ColStatus", "Status"), 55.0f));
 
 	// 2. NPCName - text input (required, no spaces)
-	Columns.Add(FNPCTableColumn(TEXT("NPCName"), NSLOCTEXT("NPCTableEditor", "ColNPCName", "NPC Name"), 0.07f));
+	Columns.Add(FNPCTableColumn(TEXT("NPCName"), NSLOCTEXT("NPCTableEditor", "ColNPCName", "NPC Name"), 120.0f));
 
 	// 3. NPCId - text input (required, unique)
-	Columns.Add(FNPCTableColumn(TEXT("NPCId"), NSLOCTEXT("NPCTableEditor", "ColNPCId", "NPC ID"), 0.06f));
+	Columns.Add(FNPCTableColumn(TEXT("NPCId"), NSLOCTEXT("NPCTableEditor", "ColNPCId", "NPC ID"), 100.0f));
 
 	// 4. DisplayName - text input
-	Columns.Add(FNPCTableColumn(TEXT("DisplayName"), NSLOCTEXT("NPCTableEditor", "ColDisplayName", "Display Name"), 0.07f));
+	Columns.Add(FNPCTableColumn(TEXT("DisplayName"), NSLOCTEXT("NPCTableEditor", "ColDisplayName", "Display Name"), 120.0f));
 
 	// 5. Blueprint - asset dropdown (ANarrativeNPCCharacter classes)
-	Columns.Add(FNPCTableColumn(TEXT("Blueprint"), NSLOCTEXT("NPCTableEditor", "ColBlueprint", "Blueprint"), 0.07f));
+	Columns.Add(FNPCTableColumn(TEXT("Blueprint"), NSLOCTEXT("NPCTableEditor", "ColBlueprint", "Blueprint"), 120.0f));
 
 	//=========================================================================
-	// AI & Behavior (4 columns) - 0.21 total
+	// AI & Behavior (3 columns)
 	//=========================================================================
 
 	// 6. AbilityConfig - asset dropdown (AC_* DataAssets)
-	Columns.Add(FNPCTableColumn(TEXT("AbilityConfig"), NSLOCTEXT("NPCTableEditor", "ColAbilityConfig", "Ability Cfg"), 0.06f));
+	Columns.Add(FNPCTableColumn(TEXT("AbilityConfig"), NSLOCTEXT("NPCTableEditor", "ColAbilityConfig", "Ability Cfg"), 100.0f));
 
 	// 7. ActivityConfig - asset dropdown (AC_*Behavior, UNPCActivityConfiguration)
-	Columns.Add(FNPCTableColumn(TEXT("ActivityConfig"), NSLOCTEXT("NPCTableEditor", "ColActivityConfig", "Activity Cfg"), 0.06f));
+	Columns.Add(FNPCTableColumn(TEXT("ActivityConfig"), NSLOCTEXT("NPCTableEditor", "ColActivityConfig", "Activity Cfg"), 100.0f));
 
 	// 8. Schedule - asset dropdown (Schedule_* DataAssets)
-	Columns.Add(FNPCTableColumn(TEXT("Schedule"), NSLOCTEXT("NPCTableEditor", "ColSchedule", "Schedule"), 0.05f));
+	Columns.Add(FNPCTableColumn(TEXT("Schedule"), NSLOCTEXT("NPCTableEditor", "ColSchedule", "Schedule"), 90.0f));
 
 	//=========================================================================
-	// Combat (3 columns) - 0.13 total
+	// Combat (3 columns)
 	//=========================================================================
 
 	// 9. LevelRange - dual spinbox "1-10"
-	Columns.Add(FNPCTableColumn(TEXT("LevelRange"), NSLOCTEXT("NPCTableEditor", "ColLevelRange", "Level"), 0.04f));
+	Columns.Add(FNPCTableColumn(TEXT("LevelRange"), NSLOCTEXT("NPCTableEditor", "ColLevelRange", "Level"), 65.0f));
 
-	// 11. Factions - multi-select dropdown (gameplay tags)
-	Columns.Add(FNPCTableColumn(TEXT("Factions"), NSLOCTEXT("NPCTableEditor", "ColFactions", "Factions"), 0.06f));
+	// 10. Factions - multi-select dropdown (gameplay tags)
+	Columns.Add(FNPCTableColumn(TEXT("Factions"), NSLOCTEXT("NPCTableEditor", "ColFactions", "Factions"), 100.0f));
 
-	// 12. AttackPriority - slider 0.0-1.0
-	Columns.Add(FNPCTableColumn(TEXT("AttackPriority"), NSLOCTEXT("NPCTableEditor", "ColAttackPriority", "Prio"), 0.03f));
-
-	//=========================================================================
-	// Vendor (2 columns) - 0.08 total
-	//=========================================================================
-
-	// 13. bIsVendor - checkbox
-	Columns.Add(FNPCTableColumn(TEXT("bIsVendor"), NSLOCTEXT("NPCTableEditor", "ColIsVendor", "V"), 0.02f));
-
-	// 14. ShopName - text input
-	Columns.Add(FNPCTableColumn(TEXT("ShopName"), NSLOCTEXT("NPCTableEditor", "ColShopName", "Shop Name"), 0.06f));
+	// 11. AttackPriority - slider 0.0-1.0
+	Columns.Add(FNPCTableColumn(TEXT("AttackPriority"), NSLOCTEXT("NPCTableEditor", "ColAttackPriority", "Prio"), 50.0f));
 
 	//=========================================================================
-	// Items & Spawning (2 columns) - 0.12 total
+	// Vendor (2 columns)
 	//=========================================================================
 
-	// 15. DefaultItems - multi-select dropdown (IC_* collections)
-	Columns.Add(FNPCTableColumn(TEXT("DefaultItems"), NSLOCTEXT("NPCTableEditor", "ColDefaultItems", "Items"), 0.06f));
+	// 12. bIsVendor - checkbox
+	Columns.Add(FNPCTableColumn(TEXT("bIsVendor"), NSLOCTEXT("NPCTableEditor", "ColIsVendor", "V"), 35.0f));
 
-	// 16. SpawnerPOI - asset dropdown (POI tags from level)
-	Columns.Add(FNPCTableColumn(TEXT("SpawnerPOI"), NSLOCTEXT("NPCTableEditor", "ColSpawnerPOI", "POI"), 0.06f));
+	// 13. ShopName - text input
+	Columns.Add(FNPCTableColumn(TEXT("ShopName"), NSLOCTEXT("NPCTableEditor", "ColShopName", "Shop Name"), 100.0f));
 
 	//=========================================================================
-	// Meta (2 columns) - 0.16 total
+	// Items & Spawning (2 columns)
 	//=========================================================================
 
-	// 17. Appearance - asset dropdown (Appearance_* assets)
-	Columns.Add(FNPCTableColumn(TEXT("Appearance"), NSLOCTEXT("NPCTableEditor", "ColAppearance", "Appearance"), 0.06f));
+	// 14. DefaultItems - multi-select dropdown (IC_* collections)
+	Columns.Add(FNPCTableColumn(TEXT("DefaultItems"), NSLOCTEXT("NPCTableEditor", "ColDefaultItems", "Items"), 100.0f));
 
-	// 18. Notes - text input (free text, with tooltip)
-	Columns.Add(FNPCTableColumn(TEXT("Notes"), NSLOCTEXT("NPCTableEditor", "ColNotes", "Notes"), 0.10f));
+	// 15. SpawnerPOI - asset dropdown (POI tags from level)
+	Columns.Add(FNPCTableColumn(TEXT("SpawnerPOI"), NSLOCTEXT("NPCTableEditor", "ColSpawnerPOI", "POI"), 100.0f));
+
+	//=========================================================================
+	// Meta (2 columns)
+	//=========================================================================
+
+	// 16. Appearance - asset dropdown (Appearance_* assets)
+	Columns.Add(FNPCTableColumn(TEXT("Appearance"), NSLOCTEXT("NPCTableEditor", "ColAppearance", "Appearance"), 100.0f));
+
+	// 17. Notes - text input (free text, with tooltip)
+	Columns.Add(FNPCTableColumn(TEXT("Notes"), NSLOCTEXT("NPCTableEditor", "ColNotes", "Notes"), 150.0f));
 
 	return Columns;
 }
@@ -172,6 +172,9 @@ private:
 
 	/** Create text cell (editable) */
 	TSharedRef<SWidget> CreateTextCell(FString& Value, const FString& Hint = TEXT(""));
+
+	/** Create NPC name cell with NPC_ prefix trimming */
+	TSharedRef<SWidget> CreateNPCNameCell();
 
 	/** Create checkbox cell */
 	TSharedRef<SWidget> CreateCheckboxCell(bool& Value);

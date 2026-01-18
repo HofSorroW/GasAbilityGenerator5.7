@@ -17,18 +17,18 @@ class SSearchBox;
 
 /**
  * Column definition for the Quest table
- * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
+ * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 struct FQuestTableColumn
 {
 	FName ColumnId;
 	FText DisplayName;
-	float DefaultWidth;
+	float ManualWidth;  // Fixed pixel width
 
-	FQuestTableColumn(FName InId, const FText& InName, float InWidth = 0.05f)
+	FQuestTableColumn(FName InId, const FText& InName, float InWidth = 80.0f)
 		: ColumnId(InId)
 		, DisplayName(InName)
-		, DefaultWidth(InWidth)
+		, ManualWidth(InWidth)
 	{}
 };
 
@@ -44,63 +44,63 @@ struct FQuestColumnFilterState
 
 /**
  * Get default column definitions for Quest table (12 columns)
- * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
+ * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 inline TArray<FQuestTableColumn> GetQuestTableColumns()
 {
 	TArray<FQuestTableColumn> Columns;
 
 	//=========================================================================
-	// Core Identity (3 columns) - 0.18 total
+	// Core Identity (3 columns)
 	//=========================================================================
 
 	// 1. Status - read-only badge (auto-calculated)
-	Columns.Add(FQuestTableColumn(TEXT("Status"), NSLOCTEXT("QuestTableEditor", "ColStatus", "Status"), 0.03f));
+	Columns.Add(FQuestTableColumn(TEXT("Status"), NSLOCTEXT("QuestTableEditor", "ColStatus", "Status"), 55.0f));
 
 	// 2. QuestName - groups rows into same quest
-	Columns.Add(FQuestTableColumn(TEXT("QuestName"), NSLOCTEXT("QuestTableEditor", "ColQuestName", "Quest"), 0.08f));
+	Columns.Add(FQuestTableColumn(TEXT("QuestName"), NSLOCTEXT("QuestTableEditor", "ColQuestName", "Quest"), 130.0f));
 
 	// 3. DisplayName - shown in quest log
-	Columns.Add(FQuestTableColumn(TEXT("DisplayName"), NSLOCTEXT("QuestTableEditor", "ColDisplayName", "Display Name"), 0.07f));
+	Columns.Add(FQuestTableColumn(TEXT("DisplayName"), NSLOCTEXT("QuestTableEditor", "ColDisplayName", "Display Name"), 130.0f));
 
 	//=========================================================================
-	// State Definition (4 columns) - 0.24 total
+	// State Definition (4 columns)
 	//=========================================================================
 
 	// 4. StateID - unique within quest
-	Columns.Add(FQuestTableColumn(TEXT("StateID"), NSLOCTEXT("QuestTableEditor", "ColStateID", "State ID"), 0.06f));
+	Columns.Add(FQuestTableColumn(TEXT("StateID"), NSLOCTEXT("QuestTableEditor", "ColStateID", "State ID"), 100.0f));
 
 	// 5. StateType - Regular/Success/Failure
-	Columns.Add(FQuestTableColumn(TEXT("StateType"), NSLOCTEXT("QuestTableEditor", "ColStateType", "Type"), 0.04f));
+	Columns.Add(FQuestTableColumn(TEXT("StateType"), NSLOCTEXT("QuestTableEditor", "ColStateType", "Type"), 70.0f));
 
 	// 6. Description - shown in quest tracker
-	Columns.Add(FQuestTableColumn(TEXT("Description"), NSLOCTEXT("QuestTableEditor", "ColDescription", "Description"), 0.10f));
+	Columns.Add(FQuestTableColumn(TEXT("Description"), NSLOCTEXT("QuestTableEditor", "ColDescription", "Description"), 180.0f));
 
 	// 7. ParentBranch - branch leading TO this state
-	Columns.Add(FQuestTableColumn(TEXT("ParentBranch"), NSLOCTEXT("QuestTableEditor", "ColParentBranch", "Parent"), 0.04f));
+	Columns.Add(FQuestTableColumn(TEXT("ParentBranch"), NSLOCTEXT("QuestTableEditor", "ColParentBranch", "Parent"), 80.0f));
 
 	//=========================================================================
-	// Logic (3 columns) - 0.30 total - Token-based
+	// Logic (3 columns) - Token-based
 	//=========================================================================
 
 	// 8. Tasks - token string: BPT_FindItem(Item=EI_Ore,Count=10)
-	Columns.Add(FQuestTableColumn(TEXT("Tasks"), NSLOCTEXT("QuestTableEditor", "ColTasks", "Tasks"), 0.10f));
+	Columns.Add(FQuestTableColumn(TEXT("Tasks"), NSLOCTEXT("QuestTableEditor", "ColTasks", "Tasks"), 160.0f));
 
 	// 9. Events - token string: NE_GiveXP(Amount=50)
-	Columns.Add(FQuestTableColumn(TEXT("Events"), NSLOCTEXT("QuestTableEditor", "ColEvents", "Events"), 0.10f));
+	Columns.Add(FQuestTableColumn(TEXT("Events"), NSLOCTEXT("QuestTableEditor", "ColEvents", "Events"), 160.0f));
 
 	// 10. Conditions - token string: NC_HasItem(Item=EI_Key)
-	Columns.Add(FQuestTableColumn(TEXT("Conditions"), NSLOCTEXT("QuestTableEditor", "ColConditions", "Conditions"), 0.10f));
+	Columns.Add(FQuestTableColumn(TEXT("Conditions"), NSLOCTEXT("QuestTableEditor", "ColConditions", "Conditions"), 160.0f));
 
 	//=========================================================================
-	// Rewards & Meta (2 columns) - 0.18 total
+	// Rewards & Meta (2 columns)
 	//=========================================================================
 
 	// 11. Rewards - token string: Reward(Currency=100,XP=50)
-	Columns.Add(FQuestTableColumn(TEXT("Rewards"), NSLOCTEXT("QuestTableEditor", "ColRewards", "Rewards"), 0.10f));
+	Columns.Add(FQuestTableColumn(TEXT("Rewards"), NSLOCTEXT("QuestTableEditor", "ColRewards", "Rewards"), 160.0f));
 
 	// 12. Notes - designer notes
-	Columns.Add(FQuestTableColumn(TEXT("Notes"), NSLOCTEXT("QuestTableEditor", "ColNotes", "Notes"), 0.08f));
+	Columns.Add(FQuestTableColumn(TEXT("Notes"), NSLOCTEXT("QuestTableEditor", "ColNotes", "Notes"), 150.0f));
 
 	return Columns;
 }

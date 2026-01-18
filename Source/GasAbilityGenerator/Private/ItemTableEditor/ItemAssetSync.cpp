@@ -17,6 +17,7 @@
 #include "Items/WeaponItem.h"
 #include "Items/RangedWeaponItem.h"
 #include "Items/MeleeWeaponItem.h"
+#include "Engine/BlueprintCore.h"  // v4.12.5: FBlueprintTags for parent class filtering
 #endif
 
 FItemAssetData FItemAssetSync::SyncFromAsset(UNarrativeItem* ItemAsset)
@@ -132,13 +133,47 @@ FItemAssetSyncResult FItemAssetSync::SyncFromAllAssets()
 	TArray<FString> PathsToScan = { TEXT("/Game/") };
 	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
 
-	// Find all NarrativeItem assets (includes all derivatives)
+	// v4.12.5: Search for Blueprint assets whose parent class is UNarrativeItem or subclass
+	// NarrativeItem is a UObject, not UDataAsset, so items are stored as Blueprint assets
+	TArray<FAssetData> AllBlueprints;
+	AssetRegistry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AllBlueprints, true);
+
+	// Filter blueprints by parent class - look for Item class hierarchy
 	TArray<FAssetData> AssetList;
-	AssetRegistry.GetAssetsByClass(UNarrativeItem::StaticClass()->GetClassPathName(), AssetList, true);
+	for (const FAssetData& Asset : AllBlueprints)
+	{
+		FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+		if (ParentClassTag.IsSet())
+		{
+			FString ParentClassPath = ParentClassTag.GetValue();
+
+			// Check if parent class is in the item class hierarchy
+			if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
+				ParentClassPath.Contains(TEXT("EquippableItem")) ||
+				ParentClassPath.Contains(TEXT("WeaponItem")) ||
+				ParentClassPath.Contains(TEXT("RangedWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("MeleeWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("MagicWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("ThrowableWeaponItem")) ||
+				ParentClassPath.Contains(TEXT("AmmoItem")) ||
+				ParentClassPath.Contains(TEXT("GameplayEffectItem")) ||
+				ParentClassPath.Contains(TEXT("WeaponAttachmentItem")))
+			{
+				AssetList.Add(Asset);
+			}
+		}
+	}
 
 	for (const FAssetData& AssetData : AssetList)
 	{
-		UNarrativeItem* ItemAsset = Cast<UNarrativeItem>(AssetData.GetAsset());
+		// v4.12.5: Load Blueprint and get CDO to read properties
+		UBlueprint* Blueprint = Cast<UBlueprint>(AssetData.GetAsset());
+		if (!Blueprint || !Blueprint->GeneratedClass)
+		{
+			continue;
+		}
+
+		UNarrativeItem* ItemAsset = Cast<UNarrativeItem>(Blueprint->GeneratedClass->GetDefaultObject());
 		if (!ItemAsset)
 		{
 			continue;
@@ -146,6 +181,19 @@ FItemAssetSyncResult FItemAssetSync::SyncFromAllAssets()
 
 		FString ItemAssetName = AssetData.AssetName.ToString();
 		FItemAssetData ItemData = SyncFromAsset(ItemAsset);
+
+		// v4.12.5: Extract parent class name from Blueprint tag
+		FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = AssetData.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+		if (ParentClassTag.IsSet())
+		{
+			FString ParentClassPath = ParentClassTag.GetValue();
+			// Extract class name from path like "/Script/NarrativeArsenal.EquippableItem_Clothing"
+			int32 DotIndex;
+			if (ParentClassPath.FindLastChar(TEXT('.'), DotIndex))
+			{
+				ItemData.ParentClass = ParentClassPath.RightChop(DotIndex + 1);
+			}
+		}
 
 		Result.ItemData.Add(ItemAssetName, ItemData);
 		Result.ItemsFound++;
@@ -245,6 +293,11 @@ int32 FItemAssetSync::PopulateRowsFromAssets(
 			if (Row.Abilities.IsEmpty() && !Data.Abilities.IsEmpty())
 			{
 				Row.Abilities = Data.Abilities;
+			}
+			// v4.12.5: Populate ParentClass from Blueprint parent class tag
+			if (!Data.ParentClass.IsEmpty())
+			{
+				Row.ParentClass = Data.ParentClass;
 			}
 
 			Row.Status = EItemTableRowStatus::Synced;

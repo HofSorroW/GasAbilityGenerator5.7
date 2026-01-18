@@ -18,19 +18,19 @@ class SSearchBox;
 
 /**
  * Column definition for the Item table
- * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
+ * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 struct FItemTableColumn
 {
 	FName ColumnId;
 	FText DisplayName;
-	float DefaultWidth;
+	float ManualWidth;  // Fixed pixel width
 	bool bDynamicVisibility;  // True if visibility depends on ItemType
 
-	FItemTableColumn(FName InId, const FText& InName, float InWidth = 0.05f, bool bInDynamic = false)
+	FItemTableColumn(FName InId, const FText& InName, float InWidth = 80.0f, bool bInDynamic = false)
 		: ColumnId(InId)
 		, DisplayName(InName)
-		, DefaultWidth(InWidth)
+		, ManualWidth(InWidth)
 		, bDynamicVisibility(bInDynamic)
 	{}
 };
@@ -46,88 +46,88 @@ struct FItemColumnFilterState
 };
 
 /**
- * Get default column definitions for Item table (15 columns)
- * Width values are proportional FillWidth (0.0-1.0, total ~1.0)
+ * Get default column definitions for Item table (16 columns)
+ * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 inline TArray<FItemTableColumn> GetItemTableColumns()
 {
 	TArray<FItemTableColumn> Columns;
 
 	//=========================================================================
-	// Core Identity (4 columns) - 0.23 total
+	// Core Identity (4 columns)
 	//=========================================================================
 
 	// 1. Status - read-only badge (auto-calculated)
-	Columns.Add(FItemTableColumn(TEXT("Status"), NSLOCTEXT("ItemTableEditor", "ColStatus", "Status"), 0.03f));
+	Columns.Add(FItemTableColumn(TEXT("Status"), NSLOCTEXT("ItemTableEditor", "ColStatus", "Status"), 55.0f));
 
 	// 2. ItemName - EI_{ItemName}
-	Columns.Add(FItemTableColumn(TEXT("ItemName"), NSLOCTEXT("ItemTableEditor", "ColItemName", "Item Name"), 0.08f));
+	Columns.Add(FItemTableColumn(TEXT("ItemName"), NSLOCTEXT("ItemTableEditor", "ColItemName", "Item Name"), 130.0f));
 
 	// 3. DisplayName - shown in-game
-	Columns.Add(FItemTableColumn(TEXT("DisplayName"), NSLOCTEXT("ItemTableEditor", "ColDisplayName", "Display Name"), 0.08f));
+	Columns.Add(FItemTableColumn(TEXT("DisplayName"), NSLOCTEXT("ItemTableEditor", "ColDisplayName", "Display Name"), 130.0f));
 
-	// 4. ItemType - determines visible columns
-	Columns.Add(FItemTableColumn(TEXT("ItemType"), NSLOCTEXT("ItemTableEditor", "ColItemType", "Type"), 0.04f));
+	// 4. ItemType - determines parent class and visible columns (editable dropdown)
+	Columns.Add(FItemTableColumn(TEXT("ItemType"), NSLOCTEXT("ItemTableEditor", "ColItemType", "Item Type"), 100.0f));
 
 	//=========================================================================
-	// Equipment (3 columns) - 0.14 total
+	// Equipment (3 columns)
 	//=========================================================================
 
 	// 5. EquipmentSlot - gameplay tag
-	Columns.Add(FItemTableColumn(TEXT("EquipmentSlot"), NSLOCTEXT("ItemTableEditor", "ColSlot", "Slot"), 0.06f));
+	Columns.Add(FItemTableColumn(TEXT("EquipmentSlot"), NSLOCTEXT("ItemTableEditor", "ColSlot", "Slot"), 100.0f));
 
 	// 6. BaseValue - gold
-	Columns.Add(FItemTableColumn(TEXT("BaseValue"), NSLOCTEXT("ItemTableEditor", "ColValue", "Value"), 0.04f));
+	Columns.Add(FItemTableColumn(TEXT("BaseValue"), NSLOCTEXT("ItemTableEditor", "ColValue", "Value"), 65.0f));
 
 	// 7. Weight - kg
-	Columns.Add(FItemTableColumn(TEXT("Weight"), NSLOCTEXT("ItemTableEditor", "ColWeight", "Weight"), 0.04f));
+	Columns.Add(FItemTableColumn(TEXT("Weight"), NSLOCTEXT("ItemTableEditor", "ColWeight", "Weight"), 65.0f));
 
 	//=========================================================================
-	// Combat Stats (2 columns) - Dynamic visibility - 0.08 total
+	// Combat Stats (2 columns) - Dynamic visibility
 	//=========================================================================
 
 	// 8. AttackRating - weapons only
-	Columns.Add(FItemTableColumn(TEXT("AttackRating"), NSLOCTEXT("ItemTableEditor", "ColAttack", "Attack"), 0.04f, true));
+	Columns.Add(FItemTableColumn(TEXT("AttackRating"), NSLOCTEXT("ItemTableEditor", "ColAttack", "Attack"), 65.0f, true));
 
 	// 9. ArmorRating - armor only
-	Columns.Add(FItemTableColumn(TEXT("ArmorRating"), NSLOCTEXT("ItemTableEditor", "ColArmor", "Armor"), 0.04f, true));
+	Columns.Add(FItemTableColumn(TEXT("ArmorRating"), NSLOCTEXT("ItemTableEditor", "ColArmor", "Armor"), 65.0f, true));
 
 	//=========================================================================
-	// References (2 columns) - 0.14 total
+	// References (2 columns)
 	//=========================================================================
 
 	// 10. ModifierGE - GE_*
-	Columns.Add(FItemTableColumn(TEXT("ModifierGE"), NSLOCTEXT("ItemTableEditor", "ColModifier", "Modifier GE"), 0.07f));
+	Columns.Add(FItemTableColumn(TEXT("ModifierGE"), NSLOCTEXT("ItemTableEditor", "ColModifier", "Modifier GE"), 110.0f));
 
 	// 11. Abilities - comma-separated GA_*
-	Columns.Add(FItemTableColumn(TEXT("Abilities"), NSLOCTEXT("ItemTableEditor", "ColAbilities", "Abilities"), 0.07f));
+	Columns.Add(FItemTableColumn(TEXT("Abilities"), NSLOCTEXT("ItemTableEditor", "ColAbilities", "Abilities"), 120.0f));
 
 	//=========================================================================
-	// Weapon Config (1 column) - Dynamic visibility - 0.10 total
+	// Weapon Config (1 column) - Dynamic visibility
 	//=========================================================================
 
 	// 12. WeaponConfig - token: Weapon(Damage=50,ClipSize=30,...)
-	Columns.Add(FItemTableColumn(TEXT("WeaponConfig"), NSLOCTEXT("ItemTableEditor", "ColWeaponConfig", "Weapon Config"), 0.10f, true));
+	Columns.Add(FItemTableColumn(TEXT("WeaponConfig"), NSLOCTEXT("ItemTableEditor", "ColWeaponConfig", "Weapon Config"), 160.0f, true));
 
 	//=========================================================================
-	// Tags & Stacking (3 columns) - 0.13 total
+	// Tags & Stacking (3 columns)
 	//=========================================================================
 
 	// 13. ItemTags - gameplay tags
-	Columns.Add(FItemTableColumn(TEXT("ItemTags"), NSLOCTEXT("ItemTableEditor", "ColTags", "Tags"), 0.07f));
+	Columns.Add(FItemTableColumn(TEXT("ItemTags"), NSLOCTEXT("ItemTableEditor", "ColTags", "Tags"), 120.0f));
 
 	// 14. bStackable - checkbox
-	Columns.Add(FItemTableColumn(TEXT("bStackable"), NSLOCTEXT("ItemTableEditor", "ColStackable", "Stack"), 0.03f));
+	Columns.Add(FItemTableColumn(TEXT("bStackable"), NSLOCTEXT("ItemTableEditor", "ColStackable", "Stack"), 50.0f));
 
 	// 15. MaxStackSize
-	Columns.Add(FItemTableColumn(TEXT("MaxStackSize"), NSLOCTEXT("ItemTableEditor", "ColMaxStack", "Max"), 0.03f));
+	Columns.Add(FItemTableColumn(TEXT("MaxStackSize"), NSLOCTEXT("ItemTableEditor", "ColMaxStack", "Max"), 50.0f));
 
 	//=========================================================================
-	// Meta (1 column) - 0.08 total
+	// Meta (1 column)
 	//=========================================================================
 
 	// 16. Notes - designer notes
-	Columns.Add(FItemTableColumn(TEXT("Notes"), NSLOCTEXT("ItemTableEditor", "ColNotes", "Notes"), 0.08f));
+	Columns.Add(FItemTableColumn(TEXT("Notes"), NSLOCTEXT("ItemTableEditor", "ColNotes", "Notes"), 150.0f));
 
 	return Columns;
 }
@@ -180,6 +180,12 @@ private:
 
 	/** Create asset dropdown cell - filtered by class/prefix */
 	TSharedRef<SWidget> CreateAssetDropdownCell(FSoftObjectPath& Value, UClass* AssetClass, const FString& AssetPrefix);
+
+	/** Create modifier GE dropdown - filtered for equipment modifiers only */
+	TSharedRef<SWidget> CreateModifierGECell();
+
+	/** Create abilities multi-select dropdown - GA_* assets with checkboxes */
+	TSharedRef<SWidget> CreateAbilitiesCell();
 
 	/** Create token cell (WeaponConfig, ItemTags) with validation */
 	TSharedRef<SWidget> CreateTokenCell(FString& Value, const FString& Hint);

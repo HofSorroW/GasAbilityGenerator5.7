@@ -41,6 +41,7 @@ struct FItemAssetData
 	float AttackDamage = 0.0f;
 	FString EquipmentSlot;
 	FString ItemClassName;  // To determine item type
+	FString ParentClass;    // Parent class name (e.g., "Clothing", "RangedWeaponItem")
 	FString Abilities;      // Comma-separated GA_* ability class names (from EquipmentAbilities)
 };
 

@@ -36,8 +36,27 @@
 #include "Tales/Quest.h"
 #include "Tales/QuestSM.h"
 #include "Tales/NarrativeNodeBase.h"
+#include "QuestBlueprint.h"  // v4.12.5: For UQuestBlueprint sync
 
 #define LOCTEXT_NAMESPACE "QuestTableEditor"
+
+//=============================================================================
+// Helper Functions
+//=============================================================================
+
+static FString TrimQuestPrefix(const FString& QuestName)
+{
+	// Strip Q_ or QBP_ prefix for cleaner display (case-insensitive)
+	if (QuestName.StartsWith(TEXT("QBP_"), ESearchCase::IgnoreCase))
+	{
+		return QuestName.RightChop(4);
+	}
+	if (QuestName.StartsWith(TEXT("Q_"), ESearchCase::IgnoreCase))
+	{
+		return QuestName.RightChop(2);
+	}
+	return QuestName;
+}
 
 //=============================================================================
 // SQuestTableRow
@@ -48,8 +67,10 @@ void SQuestTableRow::Construct(const FArguments& InArgs, const TSharedRef<STable
 	RowDataEx = InArgs._RowData;
 	OnRowModified = InArgs._OnRowModified;
 
+	// v4.12.5: Match NPC Table row padding
 	SMultiColumnTableRow<TSharedPtr<FQuestTableRowEx>>::Construct(
-		FSuperRowType::FArguments(),
+		FSuperRowType::FArguments()
+			.Padding(FMargin(2.0f, 1.0f)),
 		InOwnerTable
 	);
 }
@@ -117,117 +138,296 @@ TSharedRef<SWidget> SQuestTableRow::GenerateWidgetForColumn(const FName& ColumnN
 
 TSharedRef<SWidget> SQuestTableRow::CreateStatusCell()
 {
-	FQuestTableRow& Row = *RowDataEx->Data;
-
-	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+	// v4.12.5: Match NPC Table cell styling with validation stripe + status badge
+	// Layout: [4px validation stripe] [status badge]
+	return SNew(SHorizontalBox)
+		// Validation stripe (4px colored bar on left - matches NPC/Dialogue pattern)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			SNew(SBox)
+				.WidthOverride(4.0f)
+				[
+					SNew(SBorder)
+						.BorderBackgroundColor_Lambda([this]()
+						{
+							if (RowDataEx.IsValid() && RowDataEx->Data.IsValid())
+							{
+								return FSlateColor(RowDataEx->Data->GetValidationColor());
+							}
+							return FSlateColor(FLinearColor::White);
+						})
+				]
+		]
+		// Status badge
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		.Padding(FMargin(4.0f, 2.0f))
 		.HAlign(HAlign_Center)
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(Row.GetStatusColor())
-			.Padding(FMargin(4, 1))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.GetStatusString()))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
-				.ColorAndOpacity(FLinearColor::White)
-			]
+				.BorderBackgroundColor_Lambda([this]()
+				{
+					return RowDataEx.IsValid() && RowDataEx->Data.IsValid() ?
+						FSlateColor(RowDataEx->Data->GetStatusColor()) : FSlateColor(FLinearColor::White);
+				})
+				.Padding(FMargin(6.0f, 2.0f))
+				[
+					SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							return RowDataEx.IsValid() && RowDataEx->Data.IsValid() ?
+								FText::FromString(RowDataEx->Data->GetStatusString()) : FText::GetEmpty();
+						})
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
+						.ColorAndOpacity(FSlateColor(FLinearColor::White))
+				]
 		];
 }
 
 TSharedRef<SWidget> SQuestTableRow::CreateTextCell(FString& Value, const FString& Hint)
 {
+	// v4.12.5: Match NPC Table cell styling with confirmation dialog
+	FString* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableTextBox)
-			.Text(FText::FromString(Value))
-			.HintText(FText::FromString(Hint))
-			.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type) {
-				Value = NewText.ToString();
-				MarkModified();
-			})
+				.Text_Lambda([ValuePtr]()
+				{
+					return FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr);
+				})
+				.HintText(FText::FromString(Hint))
+				.OnTextCommitted_Lambda([this, ValuePtr, Hint](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						// Treat "(None)" input as clearing the field
+						if (NewValue == TEXT("(None)"))
+						{
+							NewValue = TEXT("");
+						}
+
+						// Only prompt if value actually changed
+						if (*ValuePtr != NewValue)
+						{
+							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("QuestTableEditor", "ConfirmTextChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the Quest as modified."),
+									FText::FromString(Hint),
+									FText::FromString(DisplayOld),
+									FText::FromString(DisplayNew)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
 }
 
 TSharedRef<SWidget> SQuestTableRow::CreateStateTypeCell()
 {
-	FQuestTableRow& Row = *RowDataEx->Data;
-
+	// v4.12.5: Plain text cell matching other tables (no colored background)
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(Row.GetStateTypeColor())
-			.Padding(FMargin(4, 1))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.GetStateTypeString()))
+			SNew(STextBlock)
+				.Text_Lambda([this]()
+				{
+					return RowDataEx.IsValid() && RowDataEx->Data.IsValid() ?
+						FText::FromString(RowDataEx->Data->GetStateTypeString()) : FText::GetEmpty();
+				})
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-			]
 		];
 }
 
 TSharedRef<SWidget> SQuestTableRow::CreateTokenCell(FString& Value, const FString& Hint)
 {
+	// v4.12.5: Match NPC Table cell styling with confirmation dialog
+	FString* ValuePtr = &Value;
+
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SEditableTextBox)
-			.Text(FText::FromString(Value))
-			.HintText(FText::FromString(Hint))
-			.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
-			.OnTextCommitted_Lambda([this, &Value](const FText& NewText, ETextCommit::Type) {
-				Value = NewText.ToString();
-				MarkModified();
-			})
+				.Text_Lambda([ValuePtr]()
+				{
+					return FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr);
+				})
+				.HintText(FText::FromString(Hint))
+				.OnTextCommitted_Lambda([this, ValuePtr, Hint](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						if (NewValue == TEXT("(None)"))
+						{
+							NewValue = TEXT("");
+						}
+
+						if (*ValuePtr != NewValue)
+						{
+							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("QuestTableEditor", "ConfirmTokenChange", "Change '{0}' from '{1}' to '{2}'?\n\nThis will mark the Quest as modified."),
+									FText::FromString(Hint),
+									FText::FromString(DisplayOld),
+									FText::FromString(DisplayNew)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
 		];
 }
 
 TSharedRef<SWidget> SQuestTableRow::CreateQuestNameCell()
 {
-	FQuestTableRow& Row = *RowDataEx->Data;
-
-	// Show quest name with visual grouping indicator
-	FLinearColor BgColor = RowDataEx->bIsFirstInQuest ?
-		FLinearColor(0.15f, 0.15f, 0.2f) : FLinearColor(0.1f, 0.1f, 0.1f);
+	// v4.12.5: Match NPC Table cell styling with prefix trimming and confirmation dialog
+	FString* ValuePtr = &RowDataEx->Data->QuestName;
 
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SBorder)
-			.BorderBackgroundColor(BgColor)
-			.Padding(FMargin(4, 2))
-			[
-				SNew(SEditableTextBox)
-				.Text(FText::FromString(Row.QuestName))
-				.HintText(LOCTEXT("QuestNameHint", "Quest name"))
-				.Font(FCoreStyle::GetDefaultFontStyle(RowDataEx->bIsFirstInQuest ? "Bold" : "Regular", 9))
-				.OnTextCommitted_Lambda([this, &Row](const FText& NewText, ETextCommit::Type) {
-					Row.QuestName = NewText.ToString();
-					MarkModified();
+				.BorderBackgroundColor_Lambda([this]()
+				{
+					// Visual grouping indicator for first row in quest
+					return RowDataEx.IsValid() && RowDataEx->bIsFirstInQuest ?
+						FLinearColor(0.15f, 0.15f, 0.2f) : FLinearColor(0.1f, 0.1f, 0.1f);
 				})
-			]
+				.Padding(FMargin(4.0f, 2.0f))
+				[
+					SNew(SEditableTextBox)
+						.Text_Lambda([ValuePtr]()
+						{
+							if (ValuePtr->IsEmpty())
+							{
+								return FText::FromString(TEXT("(None)"));
+							}
+							// v4.12.5: Trim Q_ or QBP_ prefix for cleaner display
+							return FText::FromString(TrimQuestPrefix(*ValuePtr));
+						})
+						.HintText(LOCTEXT("QuestNameHint", "Quest name"))
+						.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
+						{
+							if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+							{
+								FString NewValue = NewText.ToString();
+								if (NewValue == TEXT("(None)"))
+								{
+									NewValue = TEXT("");
+								}
+								// v4.12.5: Preserve prefix if user edited trimmed name
+								if (!NewValue.IsEmpty() && !NewValue.StartsWith(TEXT("Q_")) && !NewValue.StartsWith(TEXT("QBP_")))
+								{
+									// Check if old value had a prefix and preserve it
+									if (ValuePtr->StartsWith(TEXT("QBP_")))
+									{
+										NewValue = TEXT("QBP_") + NewValue;
+									}
+									else if (ValuePtr->StartsWith(TEXT("Q_")))
+									{
+										NewValue = TEXT("Q_") + NewValue;
+									}
+								}
+
+								if (*ValuePtr != NewValue)
+								{
+									FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : TrimQuestPrefix(*ValuePtr);
+									FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : TrimQuestPrefix(NewValue);
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("QuestTableEditor", "ConfirmQuestNameChange", "Change Quest Name from '{0}' to '{1}'?\n\nThis will mark the Quest as modified."),
+											FText::FromString(DisplayOld),
+											FText::FromString(DisplayNew)));
+
+									if (Result == EAppReturnType::Yes)
+									{
+										*ValuePtr = NewValue;
+										MarkModified();
+									}
+								}
+							}
+						})
+						.SelectAllTextWhenFocused(true)
+						.Font_Lambda([this]()
+						{
+							return RowDataEx.IsValid() && RowDataEx->bIsFirstInQuest ?
+								FCoreStyle::GetDefaultFontStyle("Bold", 9) :
+								FCoreStyle::GetDefaultFontStyle("Regular", 9);
+						})
+				]
 		];
 }
 
 TSharedRef<SWidget> SQuestTableRow::CreateNotesCell()
 {
-	FQuestTableRow& Row = *RowDataEx->Data;
+	// v4.12.5: Match NPC Table cell styling with confirmation dialog
+	FString* ValuePtr = &RowDataEx->Data->Notes;
 
 	return SNew(SBox)
-		.Padding(FMargin(4, 2))
+		.Padding(FMargin(4.0f, 2.0f))
+		.ToolTipText_Lambda([ValuePtr]() -> FText
+		{
+			// Show full text as tooltip when hovering (useful for long notes)
+			if (ValuePtr->Len() > 30)
+			{
+				return FText::FromString(*ValuePtr);
+			}
+			return FText::GetEmpty();
+		})
 		[
 			SNew(SEditableTextBox)
-			.Text(FText::FromString(Row.Notes))
-			.HintText(LOCTEXT("NotesHint", "Designer notes"))
-			.ToolTipText(FText::FromString(Row.Notes))
-			.OnTextCommitted_Lambda([this, &Row](const FText& NewText, ETextCommit::Type) {
-				Row.Notes = NewText.ToString();
-				MarkModified();
-			})
+				.Text_Lambda([ValuePtr]()
+				{
+					return FText::FromString(ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr);
+				})
+				.HintText(LOCTEXT("NotesHint", "Designer notes"))
+				.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
+					{
+						FString NewValue = NewText.ToString();
+						if (NewValue == TEXT("(None)"))
+						{
+							NewValue = TEXT("");
+						}
+
+						if (*ValuePtr != NewValue)
+						{
+							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
+							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
+							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+								FText::Format(NSLOCTEXT("QuestTableEditor", "ConfirmNotesChange", "Change Notes from '{0}' to '{1}'?\n\nThis will mark the Quest as modified."),
+									FText::FromString(DisplayOld),
+									FText::FromString(DisplayNew)));
+
+							if (Result == EAppReturnType::Yes)
+							{
+								*ValuePtr = NewValue;
+								MarkModified();
+							}
+						}
+					}
+				})
+				.SelectAllTextWhenFocused(true)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		];
 }
 
@@ -493,7 +693,7 @@ TSharedRef<SHeaderRow> SQuestTableEditor::BuildHeaderRow()
 		Header->AddColumn(
 			SHeaderRow::Column(Col.ColumnId)
 			.DefaultLabel(Col.DisplayName)
-			.FillWidth(Col.DefaultWidth)
+			.ManualWidth(Col.ManualWidth)  // v4.12.5: Fixed pixel width
 			.SortMode(this, &SQuestTableEditor::GetColumnSortMode, Col.ColumnId)
 			.OnSort(this, &SQuestTableEditor::OnColumnSortModeChanged)
 			.HeaderContent()
@@ -509,24 +709,172 @@ TSharedRef<SHeaderRow> SQuestTableEditor::BuildHeaderRow()
 
 TSharedRef<SWidget> SQuestTableEditor::BuildColumnHeaderContent(const FQuestTableColumn& Col)
 {
+	FQuestColumnFilterState& FilterState = ColumnFilters.FindOrAdd(Col.ColumnId);
+
 	return SNew(SVerticalBox)
+
+		// 1. Column name
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(2)
+		.Padding(2.0f)
 		[
 			SNew(STextBlock)
 			.Text(Col.DisplayName)
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 		]
+
+		// 2. Text filter (live filtering - OnTextChanged)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.Padding(2)
+		.Padding(2.0f, 1.0f)
 		[
-			SNew(SSearchBox)
+			SNew(SEditableText)
 			.HintText(LOCTEXT("FilterHint", "Filter..."))
-			.OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText) {
+			.OnTextChanged_Lambda([this, ColumnId = Col.ColumnId](const FText& NewText)
+			{
 				OnColumnTextFilterChanged(ColumnId, NewText);
 			})
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+		]
+
+		// 3. Multi-select dropdown (SComboButton with checkbox menu)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(2.0f, 1.0f)
+		[
+			SNew(SComboButton)
+			.OnGetMenuContent_Lambda([this, ColumnId = Col.ColumnId]() -> TSharedRef<SWidget>
+			{
+				FQuestColumnFilterState* State = ColumnFilters.Find(ColumnId);
+				if (!State)
+				{
+					return SNullWidget::NullWidget;
+				}
+
+				TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+				// Header with All/None buttons
+				MenuContent->AddSlot()
+				.AutoHeight()
+				.Padding(4.0f, 2.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("SelectAll", "All"))
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.OnClicked_Lambda([this, ColumnId]()
+						{
+							FQuestColumnFilterState* S = ColumnFilters.Find(ColumnId);
+							if (S) S->SelectedValues.Empty();
+							ApplyFilters();
+							return FReply::Handled();
+						})
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(4.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("ClearSel", "None"))
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.OnClicked_Lambda([this, ColumnId]()
+						{
+							FQuestColumnFilterState* S = ColumnFilters.Find(ColumnId);
+							if (S)
+							{
+								// Mark all as deselected by putting empty string marker
+								S->SelectedValues.Empty();
+								S->SelectedValues.Add(TEXT("__NONE_SELECTED__"));
+							}
+							ApplyFilters();
+							return FReply::Handled();
+						})
+					]
+				];
+
+				// Separator
+				MenuContent->AddSlot()
+				.AutoHeight()
+				[
+					SNew(SSeparator)
+				];
+
+				// Get unique values for this column
+				TArray<FString> UniqueValues = GetUniqueColumnValues(ColumnId);
+
+				// Checkboxes for each unique value in the column
+				for (const FString& OptionValue : UniqueValues)
+				{
+					FString DisplayText = OptionValue;
+
+					MenuContent->AddSlot()
+					.AutoHeight()
+					.Padding(4.0f, 1.0f)
+					[
+						SNew(SCheckBox)
+						.IsChecked_Lambda([this, ColumnId, OptionValue]()
+						{
+							FQuestColumnFilterState* S = ColumnFilters.Find(ColumnId);
+							if (!S || S->SelectedValues.Num() == 0)
+							{
+								return ECheckBoxState::Checked;  // Empty = all selected
+							}
+							if (S->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+							{
+								return ECheckBoxState::Unchecked;  // None selected marker
+							}
+							return S->SelectedValues.Contains(OptionValue)
+								? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+						})
+						.OnCheckStateChanged_Lambda([this, ColumnId, OptionValue](ECheckBoxState NewState)
+						{
+							OnColumnDropdownFilterChanged(ColumnId, OptionValue, NewState == ECheckBoxState::Checked);
+						})
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(DisplayText))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+						]
+					];
+				}
+
+				return SNew(SBox)
+					.MaxDesiredHeight(300.0f)
+					[
+						SNew(SScrollBox)
+						+ SScrollBox::Slot()
+						[
+							MenuContent
+						]
+					];
+			})
+			.ButtonContent()
+			[
+				SNew(STextBlock)
+				.Text_Lambda([this, ColumnId = Col.ColumnId]()
+				{
+					FQuestColumnFilterState* State = ColumnFilters.Find(ColumnId);
+					if (!State || State->SelectedValues.Num() == 0)
+					{
+						return LOCTEXT("AllFilter", "(All)");
+					}
+					if (State->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+					{
+						return LOCTEXT("NoneFilter", "(None)");
+					}
+					if (State->SelectedValues.Num() == 1)
+					{
+						FString Val = *State->SelectedValues.CreateConstIterator();
+						return FText::FromString(Val.IsEmpty() ? TEXT("(Empty)") : Val);
+					}
+					return FText::Format(LOCTEXT("MultiSelect", "({0} selected)"),
+						FText::AsNumber(State->SelectedValues.Num()));
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+			]
 		];
 }
 
@@ -1136,16 +1484,16 @@ FReply SQuestTableEditor::OnSyncFromAssetsClicked()
 	UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Rescanning Asset Registry for paths: %s"), *FString::Join(PathsToScan, TEXT(", ")));
 	AssetRegistry.ScanPathsSynchronous(PathsToScan, true /* bForceRescan */);
 
-	// Find all Quest blueprint assets (UQuest is the base class)
+	// Find all QuestBlueprint assets (QBP_* in Narrative Pro)
 	TArray<FAssetData> AssetList;
-	FTopLevelAssetPath ClassPath = UQuest::StaticClass()->GetClassPathName();
+	FTopLevelAssetPath ClassPath = UQuestBlueprint::StaticClass()->GetClassPathName();
 	AssetRegistry.GetAssetsByClass(ClassPath, AssetList, true);
-	UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Found %d UQuest assets"), AssetList.Num());
+	UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Found %d UQuestBlueprint assets"), AssetList.Num());
 
 	if (AssetList.Num() == 0)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok,
-			LOCTEXT("NoQuestsFound", "No Quest assets found in the project.\n\nCreate Quest assets (Quest_*) first, then sync."));
+			LOCTEXT("NoQuestsFound", "No Quest assets found in the project.\n\nCreate Quest assets (QBP_*) first, then sync."));
 		return FReply::Handled();
 	}
 
@@ -1167,9 +1515,17 @@ FReply SQuestTableEditor::OnSyncFromAssetsClicked()
 
 	for (const FAssetData& AssetData : AssetList)
 	{
-		UQuest* Quest = Cast<UQuest>(AssetData.GetAsset());
+		// v4.12.5: Use UQuestBlueprint and access QuestTemplate
+		UQuestBlueprint* QuestBlueprint = Cast<UQuestBlueprint>(AssetData.GetAsset());
+		if (!QuestBlueprint)
+		{
+			continue;
+		}
+
+		UQuest* Quest = QuestBlueprint->QuestTemplate;
 		if (!Quest)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("[QuestTableEditor] QuestBlueprint %s has no QuestTemplate"), *AssetData.AssetName.ToString());
 			continue;
 		}
 
@@ -1177,23 +1533,8 @@ FReply SQuestTableEditor::OnSyncFromAssetsClicked()
 		FString DisplayName = Quest->GetQuestName().ToString();
 		FString Description = Quest->GetQuestDescription().ToString();
 
-		// Get states from the Quest
-		// Quest stores states in the States array
-		TArray<UQuestState*> States;
-
-		// Access States via reflection since it's protected
-		if (FArrayProperty* StatesProperty = CastField<FArrayProperty>(UQuest::StaticClass()->FindPropertyByName(TEXT("States"))))
-		{
-			FScriptArrayHelper ArrayHelper(StatesProperty, StatesProperty->ContainerPtrToValuePtr<void>(Quest));
-			for (int32 i = 0; i < ArrayHelper.Num(); ++i)
-			{
-				UQuestState* State = *reinterpret_cast<UQuestState**>(ArrayHelper.GetRawPtr(i));
-				if (State)
-				{
-					States.Add(State);
-				}
-			}
-		}
+		// Get states from the Quest via public accessor
+		TArray<UQuestState*> States = Quest->GetStates();
 
 		UE_LOG(LogTemp, Log, TEXT("[QuestTableEditor] Quest %s has %d states"), *QuestName, States.Num());
 
