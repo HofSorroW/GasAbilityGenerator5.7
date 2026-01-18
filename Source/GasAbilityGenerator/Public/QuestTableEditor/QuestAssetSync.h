@@ -37,6 +37,11 @@ struct FQuestAssetData
 	TArray<FString> StateIDs;
 	TArray<EQuestStateType> StateTypes;
 	TArray<FString> StateDescriptions;
+
+	// v4.12.4: Per-state task/event data (StateID -> token string)
+	TMap<FString, FString> StateTasks;       // StateID -> "BPT_FindItem(Item=X,Count=Y);..."
+	TMap<FString, FString> StateRewards;     // StateID -> "Reward(Currency=100,XP=50)"
+	TMap<FString, FString> StateParentBranch; // StateID -> parent state ID (from branch destination)
 };
 
 /**

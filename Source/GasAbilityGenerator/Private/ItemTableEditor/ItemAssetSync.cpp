@@ -44,9 +44,75 @@ FItemAssetData FItemAssetSync::SyncFromAsset(UNarrativeItem* ItemAsset)
 	Data.Weight = ItemAsset->Weight;
 	Data.ItemClassName = ItemAsset->GetClass()->GetName();
 
-	// v4.12: EquipmentSlot and combat ratings are on UEquippableItem (protected)
-	// Use reflection to read them if needed, or skip for now
-	// The generation flow handles these via FManifestEquippableItemDefinition
+	// v4.12.4: Extract EquipmentAbilities from UEquippableItem via reflection
+	// EquipmentAbilities is TArray<TSubclassOf<UNarrativeGameplayAbility>>
+	if (UEquippableItem* EquipItem = Cast<UEquippableItem>(ItemAsset))
+	{
+		FArrayProperty* AbilitiesArrayProp = CastField<FArrayProperty>(
+			EquipItem->GetClass()->FindPropertyByName(TEXT("EquipmentAbilities")));
+
+		if (AbilitiesArrayProp)
+		{
+			FScriptArrayHelper ArrayHelper(AbilitiesArrayProp,
+				AbilitiesArrayProp->ContainerPtrToValuePtr<void>(EquipItem));
+
+			TArray<FString> AbilityNames;
+			for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+			{
+				// TSubclassOf<> is stored as UClass*
+				void* ElementPtr = ArrayHelper.GetRawPtr(i);
+				UClass* AbilityClass = *(UClass**)ElementPtr;
+				if (AbilityClass)
+				{
+					AbilityNames.Add(AbilityClass->GetName());
+				}
+			}
+
+			if (AbilityNames.Num() > 0)
+			{
+				Data.Abilities = FString::Join(AbilityNames, TEXT(", "));
+			}
+		}
+
+		// v4.12.4: Also extract AttackRating, ArmorRating via reflection (protected properties)
+		if (FFloatProperty* AttackProp = CastField<FFloatProperty>(
+			EquipItem->GetClass()->FindPropertyByName(TEXT("AttackRating"))))
+		{
+			Data.AttackRating = AttackProp->GetPropertyValue_InContainer(EquipItem);
+		}
+		if (FFloatProperty* ArmorProp = CastField<FFloatProperty>(
+			EquipItem->GetClass()->FindPropertyByName(TEXT("ArmorRating"))))
+		{
+			Data.ArmorRating = ArmorProp->GetPropertyValue_InContainer(EquipItem);
+		}
+
+		// Extract EquippableSlots (FGameplayTagContainer) for EquipmentSlot
+		if (FStructProperty* SlotsProp = CastField<FStructProperty>(
+			EquipItem->GetClass()->FindPropertyByName(TEXT("EquippableSlots"))))
+		{
+			const FGameplayTagContainer* SlotsContainer = SlotsProp->ContainerPtrToValuePtr<FGameplayTagContainer>(EquipItem);
+			if (SlotsContainer && SlotsContainer->Num() > 0)
+			{
+				// Use the first slot tag as the equipment slot
+				TArray<FGameplayTag> Tags;
+				SlotsContainer->GetGameplayTagArray(Tags);
+				if (Tags.Num() > 0)
+				{
+					Data.EquipmentSlot = Tags[0].ToString();
+				}
+			}
+		}
+	}
+
+	// v4.12.4: Extract AttackDamage from UWeaponItem (if applicable)
+	if (UWeaponItem* WeaponItem = Cast<UWeaponItem>(ItemAsset))
+	{
+		if (FFloatProperty* DamageProp = CastField<FFloatProperty>(
+			WeaponItem->GetClass()->FindPropertyByName(TEXT("AttackDamage"))))
+		{
+			Data.AttackDamage = DamageProp->GetPropertyValue_InContainer(WeaponItem);
+		}
+	}
 
 #endif
 
@@ -174,6 +240,11 @@ int32 FItemAssetSync::PopulateRowsFromAssets(
 			if (FMath::IsNearlyZero(Row.AttackDamage))
 			{
 				Row.AttackDamage = Data.AttackDamage;
+			}
+			// v4.12.4: Populate Abilities from EquipmentAbilities
+			if (Row.Abilities.IsEmpty() && !Data.Abilities.IsEmpty())
+			{
+				Row.Abilities = Data.Abilities;
 			}
 
 			Row.Status = EItemTableRowStatus::Synced;
