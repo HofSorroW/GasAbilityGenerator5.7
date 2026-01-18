@@ -32,6 +32,7 @@
 #include "UObject/SavePackage.h"  // v3.10: Required for FSavePackageArgs
 #include "Kismet2/KismetEditorUtilities.h"  // v3.7: For NPC Creation blueprint generation
 #include "UObject/SavePackage.h"             // v4.0: For FSavePackageArgs
+#include "HAL/FileManager.h"                 // v4.12.4: For file system existence check
 
 #define LOCTEXT_NAMESPACE "GasAbilityGenerator"
 
@@ -72,8 +73,22 @@ static ENPCAssetStatus CheckNPCAssetStatus(
 	uint64 InputHash,
 	FString& OutStatusReason)
 {
-	// Check if asset exists
-	if (!FPackageName::DoesPackageExist(PackagePath))
+	// v4.12.4: Check actual file system instead of Asset Registry cache
+	// FPackageName::DoesPackageExist() relies on cached data that doesn't update
+	// when files are deleted externally
+	FString FilePath;
+	bool bExistsOnDisk = false;
+	if (FPackageName::TryConvertLongPackageNameToFilename(PackagePath, FilePath, FPackageName::GetAssetPackageExtension()))
+	{
+		bExistsOnDisk = IFileManager::Get().FileExists(*FilePath);
+	}
+	else
+	{
+		// Fallback to package check if conversion fails
+		bExistsOnDisk = FPackageName::DoesPackageExist(PackagePath);
+	}
+
+	if (!bExistsOnDisk)
 	{
 		OutStatusReason = TEXT("New asset");
 		return ENPCAssetStatus::Create;
