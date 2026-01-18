@@ -17,6 +17,8 @@ This document consolidates architecture documentation, generator implementation 
 5. [Historical Automation Status](#5-historical-automation-status)
 6. [Known TODOs & Placeholders](#6-known-todos--placeholders)
 7. [Future: Design Compiler & Spec DataAssets](#7-future-design-compiler--spec-dataassets)
+8. [Narrative Pro Integration Strategy](#8-narrative-pro-integration-strategy)
+9. [Development Pipeline](#9-development-pipeline)
 
 ---
 
@@ -879,6 +881,103 @@ Specs/NPCs/
 
 ---
 
+## 8. Narrative Pro Integration Strategy
+
+### Philosophy: Work WITH Narrative Pro
+
+Instead of generating everything from scratch:
+1. **Catalog** what Narrative Pro already provides as ready-made assets
+2. **Reference** NP assets directly when they fit our needs
+3. **Generate** only project-specific assets that fill gaps
+
+### Narrative Pro Built-in Assets (REFERENCE, don't generate)
+
+| Type | Count | Examples | Usage |
+|------|-------|----------|-------|
+| **GA_** | 46+ | `GA_Melee_Unarmed`, `GA_Attack_Magic_Proj`, `GA_Sprint` | **Subclass** for Father abilities |
+| **GE_** | 41+ | `GE_Damage_SetByCaller`, `GE_EquipmentModifier` | **Reference** or copy patterns |
+| **BT_** | 15 | `BT_FollowCharacter`, `BT_Attack_Melee`, `BT_Patrol` | **Reference** for Father AI |
+| **BB_** | 11 | `BB_FollowCharacter`, `BB_Attack`, `BB_Idle` | **Reference** directly |
+| **BPA_** | 17 | `BPA_FollowCharacter`, `BPA_Attack_Melee`, `BPA_Flee` | **Subclass** for Father activities |
+| **AC_** | 15 | `AC_NPC_Default`, `AC_Melee`, `AC_Marksman` | **Reference** or customize |
+| **Goal_** | 8 | `Goal_Attack`, `Goal_FollowCharacter`, `Goal_Idle` | **Reference** directly |
+| **GoalGenerator_** | 4 | `GoalGenerator_Attack`, `GoalGenerator_Flee` | **Reference** directly |
+| **IA_** | 28+ | `IA_Attack`, `IA_Move`, `IA_Ability1` | **Use directly** |
+| **BTS_** | 16 | `BTS_SetAIFocus`, `BTS_Attack` | **Reference** directly |
+| **WBP_** | 50+ | Base widgets, HUD elements, inventory UI | **Subclass** for custom UI |
+
+**NP Asset Locations:**
+- Abilities: `/NarrativePro22B57/Content/Pro/Core/Abilities/`
+- AI System: `/NarrativePro22B57/Content/Pro/Core/AI/`
+- Input: `/NarrativePro22B57/Content/Pro/Core/Data/Input/`
+- UI: `/NarrativePro22B57/Content/Pro/Core/UI/`
+
+### Gaps Our Generator Fills (GENERATE these)
+
+| Type | What to Generate | Why |
+|------|------------------|-----|
+| **NPCDef_** | `NPCDef_Father`, enemy definitions | NP has none - project specific |
+| **CD_** | Character definitions | Project-specific characters |
+| **ActConfig_** | `ActConfig_Father` | NP has none - project specific |
+| **Custom GA_** | `GA_FatherAttack`, `GA_FatherLaserShot` | Father-specific (subclass NP's GA_) |
+| **Custom GE_** | `GE_FatherFormStats`, form effects | Father-specific configurations |
+| **Custom BPA_** | `BPA_FatherFollow` | Father-specific (subclass NP's BPA_) |
+| **EI_** | `EI_FatherCrawlerForm`, form items | Father form equipment |
+| **NE_** | `NE_FatherAwakens` | Story events |
+| **DBP_** | `DBP_FatherDialogue` | Father conversations |
+| **Tags** | `Father.*`, `Ability.Father.*` | Project gameplay tags |
+| **E_** | `E_FatherForm` | Project enumerations |
+
+### Hybrid Approach Example
+
+```yaml
+# Reference NP's existing BT directly (no generation needed)
+# Don't add BT_FollowCharacter - use NP's directly
+
+# Generate Father-specific ability that EXTENDS NP's base
+gameplay_abilities:
+  - name: GA_FatherAttack
+    parent_class: GA_Melee_Unarmed    # Inherits NP's motion warping!
+    folder: Abilities/Father
+    # ... Father-specific configuration
+```
+
+---
+
+## 9. Development Pipeline
+
+### Claude-Assisted Workflow
+
+| Step | Action | Owner |
+|------|--------|-------|
+| 1 | Feed Narrative Pro update data | User |
+| 2 | Analyze changes, update Technical Reference | Claude |
+| 3 | Create/update implementation guides together | User + Claude |
+| 4 | Debug and revise guides | User + Claude |
+| 5 | Update manifest.yaml with new assets/tags | Claude |
+| 6 | Run generator (commandlet or editor) | User |
+| 7 | Debug assets, rinse and repeat | User + Claude |
+
+### Manifest as Single Source of Truth
+
+| Question | Answer |
+|----------|--------|
+| Where are tags defined? | manifest.yaml |
+| Where are assets defined? | manifest.yaml |
+| What generates assets? | GasAbilityGenerator commandlet or editor UI |
+| What validates changes? | Regen/Diff system with metadata hashes |
+
+### Key Design Decisions
+
+| Item | Decision |
+|------|----------|
+| Overwrite behavior | Skip existing, use metadata to detect changes |
+| Conflict handling | CONFLICT status requires `--force` flag |
+| State persistence | Metadata stored on assets + registry |
+| Folder path | Remembered via editor config |
+
+---
+
 ## Original Documents (Consolidated)
 
 - v4.7_Report_System_Reference.md (merged)
@@ -887,3 +986,5 @@ Specs/NPCs/
 - Completed_Automation_Reference.md (merged)
 - Design_Compiler_Architecture_Handoff.md (merged)
 - Spec_DataAsset_UX_Handoff.md (merged)
+- NarrativePro_Asset_Strategy_Log.md (merged v4.12.5)
+- Father_Ability_Generator_Plugin_v7_8_2_Specification.md (relevant content merged v4.12.5)
