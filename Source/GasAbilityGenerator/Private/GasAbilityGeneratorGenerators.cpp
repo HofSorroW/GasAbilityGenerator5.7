@@ -508,7 +508,17 @@ bool FGeneratorBase::DoesAssetExistOnDisk(const FString& AssetPath)
 	{
 		PackageName = TEXT("/") + PackageName;
 	}
-	
+
+	// v4.12.4: Check actual file system instead of Asset Registry cache
+	// FPackageName::DoesPackageExist() relies on cached Asset Registry data which
+	// doesn't update when files are deleted externally (e.g., user deletes Content folder)
+	FString FilePath;
+	if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, FilePath, FPackageName::GetAssetPackageExtension()))
+	{
+		return IFileManager::Get().FileExists(*FilePath);
+	}
+
+	// Fallback to package check if conversion fails
 	return FPackageName::DoesPackageExist(PackageName);
 }
 
