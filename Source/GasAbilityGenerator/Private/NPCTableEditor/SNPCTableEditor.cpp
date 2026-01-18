@@ -2712,11 +2712,12 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Found %d NPCDefinition assets"), AssetList.Num());
 
 	//=========================================================================
-	// Build POI mapping: NPCDefinition -> nearest POI tag
+	// Build POI mapping: NPCDefinition asset name -> nearest POI tag
 	// Scan world for NPCSpawners and POIActors
+	// v4.12.3: Use FString key (asset name) to avoid pointer mismatch issues
 	//=========================================================================
-	TMap<UNPCDefinition*, FString> NPCToPOIMap;
-	TMap<UNPCDefinition*, float> NPCToDistMap;  // Track distances to keep closest POI only
+	TMap<FString, FString> NPCToPOIMap;    // AssetName -> POI tag
+	TMap<FString, float> NPCToDistMap;     // Track distances to keep closest POI only
 
 	if (GEditor && GEditor->GetEditorWorldContext().World())
 	{
@@ -2751,6 +2752,9 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 			{
 				if (SpawnComp && SpawnComp->NPCToSpawn)
 				{
+					// v4.12.3: Use asset name as key to avoid pointer mismatch
+					FString NPCAssetName = SpawnComp->NPCToSpawn->GetName();
+
 					// Find nearest POI to this spawner
 					float NearestDistSq = FLT_MAX;
 					FString NearestPOI;
@@ -2768,13 +2772,13 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 					if (!NearestPOI.IsEmpty())
 					{
 						// Only update if this is closer than existing mapping (or first mapping)
-						float* ExistingDist = NPCToDistMap.Find(SpawnComp->NPCToSpawn);
+						float* ExistingDist = NPCToDistMap.Find(NPCAssetName);
 						if (!ExistingDist || NearestDistSq < *ExistingDist)
 						{
-							NPCToPOIMap.Add(SpawnComp->NPCToSpawn, NearestPOI);
-							NPCToDistMap.Add(SpawnComp->NPCToSpawn, NearestDistSq);
+							NPCToPOIMap.Add(NPCAssetName, NearestPOI);
+							NPCToDistMap.Add(NPCAssetName, NearestDistSq);
 							UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Mapped %s -> %s (dist: %.0f)"),
-								*SpawnComp->NPCToSpawn->GetName(), *NearestPOI, FMath::Sqrt(NearestDistSq));
+								*NPCAssetName, *NearestPOI, FMath::Sqrt(NearestDistSq));
 						}
 					}
 				}
@@ -2930,7 +2934,8 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 		}
 		// SpawnerPOI - from NPCSpawner -> nearest POI mapping (level-specific)
 		// Priority: 1) From current level's NPCSpawner actors, 2) Preserved from previous sync
-		if (FString* POITag = NPCToPOIMap.Find(NPCDef))
+		// v4.12.3: Use asset name for lookup (matches key used when building map)
+		if (FString* POITag = NPCToPOIMap.Find(Row.NPCName))
 		{
 			Row.SpawnerPOI = *POITag;
 		}
