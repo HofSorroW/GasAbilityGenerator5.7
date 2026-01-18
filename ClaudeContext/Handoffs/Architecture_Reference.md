@@ -527,6 +527,61 @@ The plugin uses a 3-tier architecture for code governance:
 
 **Rationale:** Separates "must never break" invariants from "can evolve" implementations. Prevents accidental regression of safety-critical code paths during UI or capability changes.
 
+#### Implementation Status (v4.12.5)
+
+**Original Plan:**
+- Create three tier folders: `Locked/`, `Evolvable/`, `Cosmetic/`
+- Move ALL files to appropriate tiers
+- Phase A: Move files + update includes
+- Phase B: Include hygiene cleanup
+
+**Actual Implementation (Minimal Approach):**
+- Only created `Locked/` folder
+- Only moved 3 core files: `GasAbilityGeneratorMetadata.h/cpp`, `GasAbilityGeneratorTypes.h`
+- Phase A completed, Phase B deferred
+
+**Deviation Rationale:**
+- `GasAbilityGeneratorGenerators.h/cpp` has 9+ dependents - moving causes excessive include churn
+- `XLSXSupport/` already correctly grouped as a unit
+- UI files have mixed concerns (locked sync logic + evolvable display)
+- Minimal approach provides enforcement with less risk
+
+**Files NOT Moved (kept in place):**
+
+| File | Reason |
+|------|--------|
+| `GasAbilityGeneratorGenerators.h/cpp` | Mixed content (locked invariants + evolvable generators), many dependents |
+| `XLSXSupport/*` | Already grouped, sync engines are locked within folder |
+| `GasAbilityGeneratorCommandlet.h/cpp` | Mixed (locked contracts + evolvable CLI features) |
+| `*TableEditor*`, `*Window*` | Mixed UI + logic, low benefit to move |
+
+#### Future Considerations
+
+**Phase B: Include Hygiene (Deferred)**
+- Normalize include paths for consistency
+- Remove transitive includes (headers already pulled in by other headers)
+- Update `Build.cs` with `PublicIncludePaths` if needed
+- Only necessary if compile times degrade or include errors appear
+
+**Full Restructure (Optional Future Work)**
+1. Create `Evolvable/` folder - move parsers, validators, converters
+2. Create `Cosmetic/` folder - move window, table editor UI components
+3. Split `GasAbilityGeneratorGenerators.cpp` monolith:
+   - Extract locked core (IsForceMode, IsDryRunMode, DoesAssetExistOnDisk) to `Locked/GeneratorCore.cpp`
+   - Keep individual generators in `Evolvable/Generators/`
+4. Update all include paths
+5. Complete Phase B hygiene
+
+**Triggers for Full Restructure:**
+- Generator count exceeds 40+ (monolith becomes unwieldy)
+- Multiple developers working simultaneously on different tiers
+- Need to enforce stricter code review boundaries
+
+**Enforcement Limitations:**
+- Current git hook is client-side only (honor system)
+- Stronger enforcement options: CODEOWNERS, branch protection, server-side hooks, CI hash gate
+- Current approach provides audit trail and psychological friction, not technical prevention
+
 ---
 
 ## 3. Table Editor 3-Way Sync System (v4.12)
