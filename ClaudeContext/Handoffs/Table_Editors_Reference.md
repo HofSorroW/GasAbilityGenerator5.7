@@ -1,7 +1,7 @@
 # Table Editors Reference
 
-**Consolidated:** 2026-01-17
-**Plugin Version:** v4.8
+**Consolidated:** 2026-01-18
+**Plugin Version:** v4.12.2
 **Status:** Complete reference for all 4 table editors (NPC, Dialogue, Quest, Item)
 
 This document consolidates all table editor documentation: NPC, Dialogue, Quest (v4.8), and Item (v4.8) Table Editors, including XLSX sync, validated tokens, UX safety decisions, and safeguards.
@@ -12,6 +12,8 @@ This document consolidates all table editor documentation: NPC, Dialogue, Quest 
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **v4.12.2** | 2026-01-18 | **FIX**: Wire validation into sync engines - CompareSources() now calls validators and populates ValidationStatus/ValidationMessages on sync entries |
+| **v4.12.1** | 2026-01-17 | Quest/Item table editor full implementation |
 | **v4.11.2** | 2026-01-16 | **IMPLEMENTED**: Auto-fit window to screen size (80% of work area, min 800×600) |
 | **v4.11.1** | 2026-01-16 | **IMPLEMENTED**: Full-screen approval window (radio selection, row highlighting, Base column) |
 | **v4.11** | 2026-01-16 | **IMPLEMENTED**: Per-row LastSyncedHash, only Unchanged auto-resolves, actual values in dialogs |
