@@ -501,27 +501,26 @@ bool FGeneratorBase::ValidateAgainstManifest(
 }
 
 // v4.12.4: DISK-TRUTH CHECK - Do NOT replace with AssetRegistry or DoesPackageExist!
-// This is the canonical helper for create/skip decisions. Registry-based checks
-// return stale data when files are deleted externally.
+// Canonical helper for create/skip decisions. Requires valid long package name (not object path).
+// Contract: Caller must pass package path like "/Game/Folder/AssetName", not "/Game/Folder/AssetName.AssetName"
 bool FGeneratorBase::DoesAssetExistOnDisk(const FString& AssetPath)
 {
-	// Normalize to package path with leading slash
+	// Normalize: ensure leading slash
 	FString PackageName = AssetPath;
 	if (!PackageName.StartsWith(TEXT("/")))
 	{
 		PackageName = TEXT("/") + PackageName;
 	}
 
-	// Check actual file system - IFileManager is the only reliable source
-	// when files may have been deleted externally while editor is open
+	// Convert to filesystem path and check actual file existence
 	FString FilePath;
 	if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, FilePath, FPackageName::GetAssetPackageExtension()))
 	{
 		return IFileManager::Get().FileExists(*FilePath);
 	}
 
-	// Fallback only if path conversion fails (rare edge case)
-	return FPackageName::DoesPackageExist(PackageName);
+	// Conversion failed = malformed package path = cannot exist on disk
+	return false;
 }
 
 bool FGeneratorBase::IsAssetInMemory(const FString& AssetPath)
