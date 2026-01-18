@@ -1201,6 +1201,18 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
+		// Save Table (v4.12.3 - aligned with NPC/Quest/Item editors)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("SaveTable", "Save Table"))
+				.OnClicked(this, &SDialogueTableEditor::OnSaveClicked)
+				.ToolTipText(LOCTEXT("SaveTableTooltip", "Save the table data container"))
+				.IsEnabled_Lambda([this]() { return TableData != nullptr; })
+		]
+
 		// Apply to Assets (v4.4 - write tokens to UDialogueBlueprint)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -2988,16 +3000,22 @@ FReply SDialogueTableEditor::OnImportXLSXClicked()
 
 	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
 
-	// Get current UE rows
+	// Build base rows and UE rows from current editor state
+	// Rows with non-zero LastSyncedHash existed at last export (base for 3-way merge)
+	TArray<FDialogueTableRow> BaseRows;
 	TArray<FDialogueTableRow> UERows;
 	if (TableData)
 	{
-		UERows = TableData->Rows;
+		for (const FDialogueTableRow& Row : TableData->Rows)
+		{
+			UERows.Add(Row);
+			// Rows with LastSyncedHash were present at last export
+			if (Row.LastSyncedHash != 0)
+			{
+				BaseRows.Add(Row);
+			}
+		}
 	}
-
-	// For now, use empty base (first sync). In future, base would come from LastSyncedHash comparison.
-	// TODO v4.11: Use per-row LastSyncedHash for true 3-way merge
-	TArray<FDialogueTableRow> BaseRows;
 
 	// Perform 3-way comparison
 	FDialogueSyncResult SyncResult = FDialogueXLSXSyncEngine::CompareSources(BaseRows, UERows, ImportResult.Rows);
@@ -3100,16 +3118,22 @@ FReply SDialogueTableEditor::OnSyncXLSXClicked()
 
 	FEditorDirectories::Get().SetLastDirectory(ELastDirectory::GENERIC_IMPORT, FPaths::GetPath(OutFiles[0]));
 
-	// Get current UE rows
+	// Build base rows and UE rows from current editor state
+	// Rows with non-zero LastSyncedHash existed at last export (base for 3-way merge)
+	TArray<FDialogueTableRow> BaseRows;
 	TArray<FDialogueTableRow> UERows;
 	if (TableData)
 	{
-		UERows = TableData->Rows;
+		for (const FDialogueTableRow& Row : TableData->Rows)
+		{
+			UERows.Add(Row);
+			// Rows with LastSyncedHash were present at last export
+			if (Row.LastSyncedHash != 0)
+			{
+				BaseRows.Add(Row);
+			}
+		}
 	}
-
-	// For now, use empty base (first sync). In future, base would come from stored export snapshot.
-	// TODO: Store base rows in TableData after export for true 3-way merge
-	TArray<FDialogueTableRow> BaseRows;
 
 	// Perform 3-way comparison
 	FDialogueSyncResult SyncResult = FDialogueXLSXSyncEngine::CompareSources(BaseRows, UERows, ImportResult.Rows);
@@ -3478,6 +3502,57 @@ FReply SDialogueTableEditor::OnSyncFromAssetsClicked()
 			FText::AsNumber(RowsUpdated),
 			FText::AsNumber(SyncResult.NodesWithEvents),
 			FText::AsNumber(SyncResult.NodesWithConditions)));
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnSaveClicked()
+{
+	// v4.12.3: Save table data (aligned with NPC/Quest/Item editors)
+	if (!TableData)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoTableDataToSave", "No table data to save."));
+		return FReply::Handled();
+	}
+
+	// Sync UI changes to TableData before saving
+	SyncToTableData();
+
+	// Save the package
+	UPackage* Package = TableData->GetOutermost();
+	if (Package && Package->IsDirty())
+	{
+		FString PackageFilename;
+		if (FPackageName::TryConvertLongPackageNameToFilename(Package->GetName(), PackageFilename, FPackageName::GetAssetPackageExtension()))
+		{
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Standalone;
+			if (UPackage::SavePackage(Package, TableData, *PackageFilename, SaveArgs))
+			{
+				// Notify parent window of dirty state change (package is now clean after save)
+				if (OnDirtyStateChanged.IsBound())
+				{
+					OnDirtyStateChanged.Execute();
+				}
+
+				FMessageDialog::Open(EAppMsgType::Ok,
+					FText::Format(LOCTEXT("SaveSuccessDialogue", "Saved {0} rows to {1}"),
+						FText::AsNumber(TableData->Rows.Num()),
+						FText::FromString(FPaths::GetCleanFilename(PackageFilename))));
+			}
+			else
+			{
+				FMessageDialog::Open(EAppMsgType::Ok,
+					LOCTEXT("SaveFailedDialogue", "Failed to save table data."));
+			}
+		}
+	}
+	else
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NothingToSaveDialogue", "No changes to save."));
+	}
 
 	return FReply::Handled();
 }

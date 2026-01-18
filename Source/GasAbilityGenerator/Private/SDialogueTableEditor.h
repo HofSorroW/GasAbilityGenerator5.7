@@ -177,6 +177,7 @@ private:
 	FReply OnApplyToAssetsClicked();  // v4.4: Apply tokens to UDialogueBlueprint
 	FReply OnValidateClicked();
 	FReply OnResetOrderClicked();
+	FReply OnSaveClicked();  // v4.12.3: Save table data
 
 	// Filtering & Sorting
 	void ApplyFilters();

@@ -362,6 +362,9 @@ private:
 	/** Import from Excel (.xlsx) */
 	FReply OnImportXLSXClicked();
 
+	/** Sync with Excel file (3-way merge) */
+	FReply OnSyncXLSXClicked();
+
 	/** Save the table data */
 	FReply OnSaveClicked();
 

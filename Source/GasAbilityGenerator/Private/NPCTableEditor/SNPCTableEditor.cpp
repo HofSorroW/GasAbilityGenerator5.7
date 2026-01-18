@@ -1416,6 +1416,18 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.IsEnabled_Lambda([this]() { return !bIsBusy; })
 		]
 
+		// Sync XLSX (3-way merge)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("SyncXLSX", "Sync XLSX"))
+				.OnClicked(this, &SNPCTableEditor::OnSyncXLSXClicked)
+				.ToolTipText(LOCTEXT("SyncXLSXTooltip", "3-way merge: compare and sync changes with Excel file"))
+				.IsEnabled_Lambda([this]() { return !bIsBusy; })
+		]
+
 		// Save Table button
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -3116,17 +3128,20 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 					return FReply::Handled();
 				}
 
-				// Build base rows (from last export, if available - currently empty for fresh import)
-				// TODO: Load base rows from stored snapshot for 3-way merge
-				TArray<FNPCTableRow> BaseRows;  // Empty = first sync, all Excel changes accepted
-
-				// Build current UE rows
+				// Build base rows and UE rows from current editor state
+				// Rows with non-zero LastSyncedHash existed at last export (base for 3-way merge)
+				TArray<FNPCTableRow> BaseRows;
 				TArray<FNPCTableRow> UERows;
 				for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
 				{
 					if (Row.IsValid())
 					{
 						UERows.Add(*Row);
+						// Rows with LastSyncedHash were present at last export
+						if (Row->LastSyncedHash != 0)
+						{
+							BaseRows.Add(*Row);
+						}
 					}
 				}
 
@@ -3190,6 +3205,147 @@ FReply SNPCTableEditor::OnImportXLSXClicked()
 #else
 	FMessageDialog::Open(EAppMsgType::Ok,
 		LOCTEXT("ImportXLSXEditorOnly", "XLSX import requires Editor builds."));
+#endif
+
+	return FReply::Handled();
+}
+
+FReply SNPCTableEditor::OnSyncXLSXClicked()
+{
+#if WITH_EDITOR
+	// v4.12.3: Sync XLSX - 3-way merge with Excel file
+	if (!TableData || bIsBusy) return FReply::Handled();
+
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Show open dialog to select XLSX file
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform) return FReply::Handled();
+
+	TArray<FString> OutFilenames;
+	const bool bOpened = DesktopPlatform->OpenFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(AsShared()),
+		TEXT("Select NPC XLSX for Sync"),
+		FPaths::ProjectDir(),
+		TEXT(""),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		EFileDialogFlags::None,
+		OutFilenames
+	);
+
+	if (!bOpened || OutFilenames.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	// Sync UI changes back to TableData before import
+	// (AllRows are updated directly via cell editors, so sync back to TableData)
+	for (const TSharedPtr<FNPCTableRow>& RowPtr : AllRows)
+	{
+		if (RowPtr.IsValid())
+		{
+			int32 Idx = TableData->Rows.IndexOfByPredicate([&](const FNPCTableRow& R) {
+				return R.RowId == RowPtr->RowId;
+			});
+			if (Idx != INDEX_NONE)
+			{
+				TableData->Rows[Idx] = *RowPtr;
+			}
+		}
+	}
+
+	// Import rows from Excel
+	FNPCXLSXImportResult ImportResult = FNPCXLSXReader::ImportFromXLSX(OutFilenames[0]);
+	if (!ImportResult.bSuccess)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+			LOCTEXT("SyncImportFailed", "Failed to read Excel file:\n{0}"),
+			FText::FromString(ImportResult.ErrorMessage)));
+		return FReply::Handled();
+	}
+
+	// Build base rows and UE rows from current editor state
+	// Rows with non-zero LastSyncedHash existed at last export (base for 3-way merge)
+	TArray<FNPCTableRow> BaseRows;
+	TArray<FNPCTableRow> UERows;
+	for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
+	{
+		if (Row.IsValid())
+		{
+			UERows.Add(*Row);
+			// Rows with LastSyncedHash were present at last export
+			if (Row->LastSyncedHash != 0)
+			{
+				BaseRows.Add(*Row);
+			}
+		}
+	}
+
+	// Perform 3-way comparison
+	FNPCSyncResult SyncResult = FNPCXLSXSyncEngine::CompareSources(BaseRows, UERows, ImportResult.Rows);
+
+	if (!SyncResult.bSuccess)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+			LOCTEXT("SyncCompareFailed", "Sync comparison failed:\n{0}"),
+			FText::FromString(SyncResult.ErrorMessage)));
+		return FReply::Handled();
+	}
+
+	// Auto-resolve unchanged entries (v4.11: only Unchanged auto-resolves)
+	FNPCXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
+
+	// Check if there are any changes
+	if (!SyncResult.HasChanges())
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("SyncNoChanges", "No changes detected. Excel file matches current UE data."));
+		return FReply::Handled();
+	}
+
+	// Show sync dialog for user approval
+	if (SNPCXLSXSyncDialog::ShowModal(SyncResult))
+	{
+		// User clicked Apply - merge changes
+		FNPCMergeResult MergeResult = FNPCXLSXSyncEngine::ApplySync(SyncResult);
+
+		// Update LastSyncedHash and invalidate validation on all merged rows
+		for (FNPCTableRow& Row : MergeResult.MergedRows)
+		{
+			Row.InvalidateValidation();
+			Row.LastSyncedHash = Row.ComputeSyncHash();
+		}
+
+		// Replace table data with merged rows
+		TableData->Rows.Empty();
+		for (const FNPCTableRow& Row : MergeResult.MergedRows)
+		{
+			TableData->Rows.Add(Row);
+		}
+
+		// Refresh UI
+		SyncFromTableData();
+		MarkDirty();
+
+		// Show summary
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(LOCTEXT("SyncXLSXSuccess",
+				"Sync complete:\n"
+				"  - {0} rows from Excel\n"
+				"  - {1} rows kept from UE\n"
+				"  - {2} rows deleted\n"
+				"  - {3} rows unchanged\n\n"
+				"Total: {4} rows"),
+				FText::AsNumber(MergeResult.AppliedFromExcel),
+				FText::AsNumber(MergeResult.AppliedFromUE),
+				FText::AsNumber(MergeResult.Deleted),
+				FText::AsNumber(MergeResult.Unchanged),
+				FText::AsNumber(MergeResult.MergedRows.Num())));
+	}
+
+#else
+	FMessageDialog::Open(EAppMsgType::Ok,
+		LOCTEXT("SyncXLSXEditorOnly", "XLSX sync requires Editor builds."));
 #endif
 
 	return FReply::Handled();
