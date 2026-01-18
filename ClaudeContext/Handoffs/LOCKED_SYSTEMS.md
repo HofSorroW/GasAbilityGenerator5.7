@@ -11,12 +11,12 @@ Use this for traceability during refactors - code can move, but contracts must r
 
 | Component | File | Function/Class |
 |-----------|------|----------------|
-| TryGetMetadata | `GasAbilityGeneratorMetadata.h:244-253` | `GeneratorMetadataHelpers::TryGetMetadata()` |
-| GetMetadataEx | `GasAbilityGeneratorMetadata.cpp:301-330` | `GeneratorMetadataHelpers::GetMetadataEx()` |
-| HasMetadataEx | `GasAbilityGeneratorMetadata.cpp:426-429` | `GeneratorMetadataHelpers::HasMetadataEx()` |
-| SetMetadata | `GasAbilityGeneratorMetadata.cpp:353-393` | `GeneratorMetadataHelpers::SetMetadata()` |
-| Registry class | `GasAbilityGeneratorMetadata.h:138-176` | `UGeneratorMetadataRegistry` |
-| AssetUserData class | `GasAbilityGeneratorMetadata.h:34-84` | `UGeneratorAssetMetadata` |
+| TryGetMetadata | `Locked/GasAbilityGeneratorMetadata.h:244-253` | `GeneratorMetadataHelpers::TryGetMetadata()` |
+| GetMetadataEx | `Locked/GasAbilityGeneratorMetadata.cpp:301-330` | `GeneratorMetadataHelpers::GetMetadataEx()` |
+| HasMetadataEx | `Locked/GasAbilityGeneratorMetadata.cpp:426-429` | `GeneratorMetadataHelpers::HasMetadataEx()` |
+| SetMetadata | `Locked/GasAbilityGeneratorMetadata.cpp:353-393` | `GeneratorMetadataHelpers::SetMetadata()` |
+| Registry class | `Locked/GasAbilityGeneratorMetadata.h:138-176` | `UGeneratorMetadataRegistry` |
+| AssetUserData class | `Locked/GasAbilityGeneratorMetadata.h:34-84` | `UGeneratorAssetMetadata` |
 
 **Decision Path Implementations (must use registry-aware API):**
 - `GasAbilityGeneratorGenerators.cpp:1177-1193` - `CheckExistsWithMetadata()`
@@ -28,11 +28,11 @@ Use this for traceability during refactors - code can move, but contracts must r
 
 | Component | File | Function/Class |
 |-----------|------|----------------|
-| InputHash meaning | `GasAbilityGeneratorTypes.h:3894` | `FGeneratorMetadata::InputHash` |
-| OutputHash meaning | `GasAbilityGeneratorTypes.h:3897` | `FGeneratorMetadata::OutputHash` |
-| HasInputChanged | `GasAbilityGeneratorTypes.h:3906-3909` | `FGeneratorMetadata::HasInputChanged()` |
-| HasOutputChanged | `GasAbilityGeneratorTypes.h:3912-3915` | `FGeneratorMetadata::HasOutputChanged()` |
-| ComputeHash (definitions) | Throughout `GasAbilityGeneratorTypes.h` | `FManifest*Definition::ComputeHash()` |
+| InputHash meaning | `Locked/GasAbilityGeneratorTypes.h:3894` | `FGeneratorMetadata::InputHash` |
+| OutputHash meaning | `Locked/GasAbilityGeneratorTypes.h:3897` | `FGeneratorMetadata::OutputHash` |
+| HasInputChanged | `Locked/GasAbilityGeneratorTypes.h:3906-3909` | `FGeneratorMetadata::HasInputChanged()` |
+| HasOutputChanged | `Locked/GasAbilityGeneratorTypes.h:3912-3915` | `FGeneratorMetadata::HasOutputChanged()` |
+| ComputeHash (definitions) | Throughout `Locked/GasAbilityGeneratorTypes.h` | `FManifest*Definition::ComputeHash()` |
 | ComputeBlueprintOutputHash | `GasAbilityGeneratorGenerators.cpp` | `FGeneratorBase::ComputeBlueprintOutputHash()` |
 | ComputeDataAssetOutputHash | `GasAbilityGeneratorGenerators.cpp` | `FGeneratorBase::ComputeDataAssetOutputHash()` |
 
@@ -42,12 +42,12 @@ Use this for traceability during refactors - code can move, but contracts must r
 
 | Component | File | Function/Class |
 |-----------|------|----------------|
-| EDryRunStatus enum | `GasAbilityGeneratorTypes.h:3985-3992` | `EDryRunStatus::Conflicted` |
+| EDryRunStatus enum | `Locked/GasAbilityGeneratorTypes.h:3985-3992` | `EDryRunStatus::Conflicted` |
 | Conflict determination | `GasAbilityGeneratorGenerators.cpp:1227-1231` | In `CheckExistsWithMetadata()` |
 | Force flag check | `GasAbilityGeneratorCommandlet.cpp` | `bForceRegeneration` flag |
 | IsForceMode (definition) | `GasAbilityGeneratorGenerators.cpp:1089` | `FGeneratorBase::IsForceMode()` |
 | IsForceMode (call sites) | `GasAbilityGeneratorGenerators.cpp:555,587,1281` | Force-bypass decision points |
-| ComputeDryRunStatus | `GasAbilityGeneratorMetadata.cpp:432-479` | `GeneratorMetadataHelpers::ComputeDryRunStatus()` |
+| ComputeDryRunStatus | `Locked/GasAbilityGeneratorMetadata.cpp:432-479` | `GeneratorMetadataHelpers::ComputeDryRunStatus()` |
 
 ---
 
@@ -141,3 +141,4 @@ When moving/renaming files:
 |---------|------|---------|
 | v4.12.5 | 2026-01-18 | Initial creation mapping contracts to implementations |
 | v4.12.5 | 2026-01-18 | Added IsForceMode() anchors to Contract 3 |
+| v4.12.5 | 2026-01-18 | Updated paths after Locked/ folder restructure |

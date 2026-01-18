@@ -520,8 +520,8 @@ The plugin uses a 3-tier architecture for code governance:
 
 **Locked Files (v4.12.5):**
 - Contract docs: `ClaudeContext/Handoffs/LOCKED_*.md`
-- Metadata: `GasAbilityGeneratorMetadata.h/cpp`
-- Types: `GasAbilityGeneratorTypes.h`
+- Metadata: `Locked/GasAbilityGeneratorMetadata.h/cpp`
+- Types: `Locked/GasAbilityGeneratorTypes.h`
 - Generators (temporary): `GasAbilityGeneratorGenerators.cpp/h`
 - Sync engines: `XLSXSupport/*`
 

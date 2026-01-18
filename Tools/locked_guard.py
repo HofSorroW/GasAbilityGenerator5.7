@@ -25,12 +25,12 @@ LOCKED_GLOBS = [
     "ClaudeContext/Handoffs/LOCKED_CONTRACTS.md",
     "ClaudeContext/Handoffs/LOCKED_SYSTEMS.md",
 
-    # Contract 1: Metadata system
-    "Source/GasAbilityGenerator/Public/GasAbilityGeneratorMetadata.h",
-    "Source/GasAbilityGenerator/Private/GasAbilityGeneratorMetadata.cpp",
+    # Contract 1: Metadata system (in Locked/ folder)
+    "Source/GasAbilityGenerator/Public/Locked/GasAbilityGeneratorMetadata.h",
+    "Source/GasAbilityGenerator/Private/Locked/GasAbilityGeneratorMetadata.cpp",
 
-    # Contract 2: Regen/Diff types
-    "Source/GasAbilityGenerator/Public/GasAbilityGeneratorTypes.h",
+    # Contract 2: Regen/Diff types (in Locked/ folder)
+    "Source/GasAbilityGenerator/Public/Locked/GasAbilityGeneratorTypes.h",
 
     # Contracts 3-5: Generator core (temporary - until monolith split)
     "Source/GasAbilityGenerator/Private/GasAbilityGeneratorGenerators.cpp",
