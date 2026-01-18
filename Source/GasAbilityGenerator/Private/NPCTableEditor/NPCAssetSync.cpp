@@ -260,8 +260,49 @@ FNPCAssetApplyResult FNPCAssetSync::ApplyToAssets(
 		{
 			if (bCreateMissing)
 			{
-				// TODO: Create new asset via FNPCDefinitionGenerator
-				Result.NPCsCreated++;
+				// Create new NPCDefinition asset
+				FString AssetName = FString::Printf(TEXT("NPC_%s"), *Row.NPCName.Replace(TEXT(" "), TEXT("_")));
+				FString PackagePath = OutputFolder.IsEmpty() ? TEXT("/Game/NPCs") : OutputFolder;
+				FString FullPath = FString::Printf(TEXT("%s/%s"), *PackagePath, *AssetName);
+
+				UPackage* Package = CreatePackage(*FullPath);
+				if (!Package)
+				{
+					Result.FailedNPCs.Add(Row.NPCName);
+					continue;
+				}
+
+				UNPCDefinition* NewNPCDef = NewObject<UNPCDefinition>(Package, UNPCDefinition::StaticClass(), *AssetName, RF_Public | RF_Standalone);
+				if (!NewNPCDef)
+				{
+					Result.FailedNPCs.Add(Row.NPCName);
+					continue;
+				}
+
+				// Apply row data to new asset
+				if (ApplyRowToAsset(Row, NewNPCDef))
+				{
+					// Save the new asset
+					Package->MarkPackageDirty();
+					FString PackageFilename = FPackageName::LongPackageNameToFilename(FullPath, FPackageName::GetAssetPackageExtension());
+					FSavePackageArgs SaveArgs;
+					SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+
+					if (UPackage::SavePackage(Package, NewNPCDef, *PackageFilename, SaveArgs))
+					{
+						Row.GeneratedNPCDef = FSoftObjectPath(NewNPCDef);
+						Row.Status = ENPCTableRowStatus::Synced;
+						Result.NPCsCreated++;
+					}
+					else
+					{
+						Result.FailedNPCs.Add(Row.NPCName);
+					}
+				}
+				else
+				{
+					Result.FailedNPCs.Add(Row.NPCName);
+				}
 			}
 			else
 			{

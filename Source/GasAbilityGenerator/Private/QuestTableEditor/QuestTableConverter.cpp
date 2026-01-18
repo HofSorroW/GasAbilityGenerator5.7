@@ -354,6 +354,19 @@ TArray<FQuestTableRow> FQuestTableConverter::ConvertDefinitionToRows(const FMani
 		QuestName = QuestName.Mid(6);
 	}
 
+	// Build a map of DestinationState -> (SourceStateId, Branch) for finding incoming branches
+	TMap<FString, TPair<FString, const FManifestQuestBranchDefinition*>> IncomingBranches;
+	for (const FManifestQuestStateDefinition& State : Def.States)
+	{
+		for (const FManifestQuestBranchDefinition& Branch : State.Branches)
+		{
+			if (!Branch.DestinationState.IsEmpty())
+			{
+				IncomingBranches.Add(Branch.DestinationState, TPair<FString, const FManifestQuestBranchDefinition*>(State.Id, &Branch));
+			}
+		}
+	}
+
 	for (const FManifestQuestStateDefinition& State : Def.States)
 	{
 		FQuestTableRow Row;
@@ -363,8 +376,102 @@ TArray<FQuestTableRow> FQuestTableConverter::ConvertDefinitionToRows(const FMani
 		Row.Description = State.Description;
 		Row.StateType = FQuestTableRow::ParseStateType(State.Type);
 
-		// TODO: Build token strings from parsed data
-		// For now, just create empty rows
+		// Find the incoming branch (the branch that leads TO this state)
+		if (const TPair<FString, const FManifestQuestBranchDefinition*>* IncomingPair = IncomingBranches.Find(State.Id))
+		{
+			Row.ParentBranch = IncomingPair->Key;  // Source state ID
+			const FManifestQuestBranchDefinition* IncomingBranch = IncomingPair->Value;
+
+			// Build Tasks token string from incoming branch
+			TArray<FString> TaskTokens;
+			for (const FManifestQuestTaskDefinition& Task : IncomingBranch->Tasks)
+			{
+				FString Token = Task.TaskClass;
+				TArray<FString> Params;
+				if (!Task.Argument.IsEmpty())
+				{
+					Params.Add(FString::Printf(TEXT("Arg=%s"), *Task.Argument));
+				}
+				if (Task.Quantity > 1)
+				{
+					Params.Add(FString::Printf(TEXT("Count=%d"), Task.Quantity));
+				}
+				if (Task.bOptional)
+				{
+					Params.Add(TEXT("Optional=true"));
+				}
+				if (Params.Num() > 0)
+				{
+					Token += TEXT("(") + FString::Join(Params, TEXT(",")) + TEXT(")");
+				}
+				TaskTokens.Add(Token);
+			}
+			Row.Tasks = FString::Join(TaskTokens, TEXT(";"));
+
+			// Build Events token string from incoming branch events
+			TArray<FString> EventTokens;
+			for (const FManifestDialogueEventDefinition& Event : IncomingBranch->Events)
+			{
+				FString Token = Event.Type;
+				if (Event.Properties.Num() > 0)
+				{
+					TArray<FString> PropStrings;
+					for (const auto& Prop : Event.Properties)
+					{
+						PropStrings.Add(FString::Printf(TEXT("%s=%s"), *Prop.Key, *Prop.Value));
+					}
+					Token += TEXT("(") + FString::Join(PropStrings, TEXT(",")) + TEXT(")");
+				}
+				EventTokens.Add(Token);
+			}
+			Row.Events = FString::Join(EventTokens, TEXT(";"));
+		}
+
+		// Add state-level events (on state entry)
+		if (State.Events.Num() > 0)
+		{
+			TArray<FString> StateEventTokens;
+			for (const FManifestDialogueEventDefinition& Event : State.Events)
+			{
+				FString Token = Event.Type;
+				if (Event.Properties.Num() > 0)
+				{
+					TArray<FString> PropStrings;
+					for (const auto& Prop : Event.Properties)
+					{
+						PropStrings.Add(FString::Printf(TEXT("%s=%s"), *Prop.Key, *Prop.Value));
+					}
+					Token += TEXT("(") + FString::Join(PropStrings, TEXT(",")) + TEXT(")");
+				}
+				StateEventTokens.Add(Token);
+			}
+			// Append to existing events if any
+			if (!Row.Events.IsEmpty())
+			{
+				Row.Events += TEXT(";");
+			}
+			Row.Events += FString::Join(StateEventTokens, TEXT(";"));
+		}
+
+		// Build Rewards token string for success states
+		if (State.Type.Equals(TEXT("success"), ESearchCase::IgnoreCase) &&
+			(Def.Rewards.Currency > 0 || Def.Rewards.XP > 0 || Def.Rewards.Items.Num() > 0))
+		{
+			TArray<FString> RewardParams;
+			if (Def.Rewards.Currency > 0)
+			{
+				RewardParams.Add(FString::Printf(TEXT("Currency=%d"), Def.Rewards.Currency));
+			}
+			if (Def.Rewards.XP > 0)
+			{
+				RewardParams.Add(FString::Printf(TEXT("XP=%d"), Def.Rewards.XP));
+			}
+			if (Def.Rewards.Items.Num() > 0)
+			{
+				RewardParams.Add(FString::Printf(TEXT("Items=%s"), *FString::Join(Def.Rewards.Items, TEXT("|"))));
+			}
+			Row.Rewards = TEXT("Reward(") + FString::Join(RewardParams, TEXT(",")) + TEXT(")");
+		}
 
 		Rows.Add(Row);
 	}

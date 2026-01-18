@@ -722,9 +722,55 @@ FNPCAssetApplySummary FNPCXLSXSyncEngine::ApplyToAssets(
 		{
 			if (bCreateMissing)
 			{
-				// TODO: Create new asset via FNPCDefinitionGenerator
-				Summary.AssetsCreated++;
-				Summary.AssetResults.Add(Row.NPCName, TEXT("Created: New asset"));
+				// Create new NPCDefinition asset
+				FString SanitizedName = Row.NPCName.Replace(TEXT(" "), TEXT("_"));
+				FString AssetName = FString::Printf(TEXT("NPC_%s"), *SanitizedName);
+				FString PackagePath = NPCAssetPath.IsEmpty() ? TEXT("/Game/NPCs") : NPCAssetPath;
+				FString FullPath = FString::Printf(TEXT("%s/%s"), *PackagePath, *AssetName);
+
+				UPackage* NewPackage = CreatePackage(*FullPath);
+				if (!NewPackage)
+				{
+					Summary.FailedNPCs.Add(Row.NPCName);
+					Summary.AssetResults.Add(Row.NPCName, TEXT("Failed: Could not create package"));
+					continue;
+				}
+
+				UNPCDefinition* NewNPCDef = NewObject<UNPCDefinition>(NewPackage, UNPCDefinition::StaticClass(), *AssetName, RF_Public | RF_Standalone);
+				if (!NewNPCDef)
+				{
+					Summary.FailedNPCs.Add(Row.NPCName);
+					Summary.AssetResults.Add(Row.NPCName, TEXT("Failed: Could not create asset"));
+					continue;
+				}
+
+				// Apply row data to new asset
+				if (FNPCAssetSync::ApplyRowToAsset(Row, NewNPCDef))
+				{
+					// Save the new asset
+					NewPackage->MarkPackageDirty();
+					FString PackageFileName = FPackageName::LongPackageNameToFilename(FullPath, FPackageName::GetAssetPackageExtension());
+					FSavePackageArgs SaveArgs;
+					SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+
+					if (UPackage::SavePackage(NewPackage, NewNPCDef, *PackageFileName, SaveArgs))
+					{
+						Row.GeneratedNPCDef = FSoftObjectPath(NewNPCDef);
+						Row.Status = ENPCTableRowStatus::Synced;
+						Summary.AssetsCreated++;
+						Summary.AssetResults.Add(Row.NPCName, TEXT("Created: New asset"));
+					}
+					else
+					{
+						Summary.FailedNPCs.Add(Row.NPCName);
+						Summary.AssetResults.Add(Row.NPCName, TEXT("Failed: Could not save asset"));
+					}
+				}
+				else
+				{
+					Summary.FailedNPCs.Add(Row.NPCName);
+					Summary.AssetResults.Add(Row.NPCName, TEXT("Failed: Could not apply row data"));
+				}
 				continue;
 			}
 			else

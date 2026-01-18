@@ -16081,16 +16081,6 @@ FGenerationResult FNiagaraSystemGenerator::Generate(const FManifestNiagaraSystem
 				NewSystem->Category = FText();
 				LogGeneration(FString::Printf(TEXT("  Created from template: %s"), *TemplatePath));
 				NewSystem->Modify(); // v4.11: Mark for transaction system
-
-				// v4.11 DEBUG: Dump emitter handle names for test fixture setup
-				const TArray<FNiagaraEmitterHandle>& Handles = NewSystem->GetEmitterHandles();
-				LogGeneration(FString::Printf(TEXT("  Template emitter handles (%d):"), Handles.Num()));
-				for (const FNiagaraEmitterHandle& Handle : Handles)
-				{
-					LogGeneration(FString::Printf(TEXT("    - \"%s\" (enabled=%s)"),
-						*Handle.GetName().ToString(),
-						Handle.GetIsEnabled() ? TEXT("true") : TEXT("false")));
-				}
 			}
 		}
 		else

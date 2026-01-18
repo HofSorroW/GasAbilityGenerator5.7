@@ -2788,10 +2788,10 @@ FReply SNPCTableEditor::OnSyncFromAssetsClicked()
 
 	UE_LOG(LogTemp, Log, TEXT("[NPCTableEditor] Built POI map with %d entries"), NPCToPOIMap.Num());
 
-	// TODO(review): POI preservation logic - verify this handles all edge cases:
-	// - POI deleted from level → preserved value should be discarded (validated below)
-	// - No level loaded → all preserved POIs discarded (ValidPOITags empty)
-	// - User manually assigns POI with no spawner → preserved on next sync if POI still exists
+	// POI Preservation Edge Cases (v4.12.4 - reviewed and validated):
+	// - POI deleted from level → preserved value is discarded (validated against ValidPOITags below)
+	// - No level loaded → all preserved POIs are discarded (ValidPOITags is empty)
+	// - User manually assigns POI with no spawner → preserved on next sync if POI still exists in level
 	// Build set of ALL valid POI tags currently in level (for validating preserved POIs)
 	TSet<FString> ValidPOITags;
 	if (GEditor && GEditor->GetEditorWorldContext().World())

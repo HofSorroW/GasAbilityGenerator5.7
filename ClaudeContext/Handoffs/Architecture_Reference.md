@@ -636,45 +636,14 @@ All features IMPLEMENTED in GasAbilityGenerator v4.8.
 
 ## 6. Known TODOs & Placeholders
 
-Remaining TODOs and placeholder implementations identified in the codebase (as of v4.12):
+**See:** [`TODO_Tracking.md`](TODO_Tracking.md) for the consolidated TODO list.
 
-### Critical: Not Yet Implemented
+All TODOs from this section have been moved to the consolidated tracking file as of v4.12.4.
 
-*All critical TODOs completed as of v4.12.1*
-
-### Recently Completed (v4.12.1)
-
-| Feature | File | Implementation |
-|---------|------|----------------|
-| Apply to Assets (Quest) | `SQuestTableEditor.cpp` | `FQuestAssetSync::ApplyToAssets()` with validation gate, status tracking |
-| Apply to Assets (Item) | `SItemTableEditor.cpp` | `FItemAssetSync::ApplyToAssets()` with generation tracking |
-| Dropdown Filters (Quest) | `SQuestTableEditor.cpp` | `OnColumnDropdownFilterChanged()`, `GetUniqueColumnValues()` |
-| Dropdown Filters (Item) | `SItemTableEditor.cpp` | `OnColumnDropdownFilterChanged()`, `GetUniqueColumnValues()` |
-| Open Table Dialog (Quest) | `SQuestTableEditor.cpp` | `OnOpenTable()` via `FContentBrowserModule::CreateModalOpenAssetDialog` |
-| Save Table As Dialog (Quest) | `SQuestTableEditor.cpp` | `OnSaveTableAs()` via `FSaveAssetDialogConfig::CreateModalSaveAssetDialog` |
-| Open Table Dialog (Item) | `SItemTableEditor.cpp` | `OnOpenTable()` via `FContentBrowserModule::CreateModalOpenAssetDialog` |
-| Save Table As Dialog (Item) | `SItemTableEditor.cpp` | `OnSaveTableAs()` via `FSaveAssetDialogConfig::CreateModalSaveAssetDialog` |
-| Dynamic Column Visibility (Item) | `SItemTableEditor.cpp` | `UpdateDynamicColumnVisibility()` based on ItemType filter |
-
-### TODOs for Future Enhancement
-
-| File | Location | Description |
-|------|----------|-------------|
-| `SDialogueTableEditor.cpp` | Line 2999 | True 3-way merge using per-row LastSyncedHash |
-| `SDialogueTableEditor.cpp` | Line 3111 | Store base rows in TableData after export |
-| `QuestTableConverter.cpp` | Line 366 | Build token strings from parsed data |
-| `NPCAssetSync.cpp` | Line 263 | Create new asset via FNPCDefinitionGenerator |
-| `SNPCTableEditor.cpp` | Line 2775 | POI preservation logic edge cases |
-| `SNPCTableEditor.cpp` | Line 3120 | Load base rows from stored snapshot for 3-way merge |
-| `NPCXLSXSyncEngine.cpp` | Line 665 | Create new asset via FNPCDefinitionGenerator |
-
-### Acceptable Placeholders (By Design)
-
-| File | Description | Reason |
-|------|-------------|--------|
-| `GasAbilityGeneratorWindow.cpp:1630` | Sound Wave placeholder | Audio assets require manual import |
-| `GasAbilityGeneratorWindow.cpp:1633` | Level Sequence placeholder | Requires Sequencer editor |
-| `SDialogueTableEditor.cpp:3415-3429` | Placeholder rows for empty dialogues | By design for editor UX |
+### Summary (v4.12.4)
+- **Completed:** 8 HIGH/MEDIUM priority tasks (NPC asset creation, DEBUG code removal, token string building, etc.)
+- **Pending:** 4 MEDIUM priority refactoring tasks
+- **Low Priority:** Performance testing and test framework implementation
 
 ---
 
