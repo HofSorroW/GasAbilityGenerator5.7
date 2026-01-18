@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.12.3) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.12.4) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -1048,6 +1048,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.12.4 - Full Sync-from-Assets Implementation: Item Table now extracts EquipmentAbilities from UEquippableItem assets via reflection (TArray<TSubclassOf<UNarrativeGameplayAbility>> → comma-separated ability names). Quest Table now extracts per-state tasks, rewards, and parent branch relationships from UQuest assets. New FQuestAssetData fields: StateTasks, StateRewards, StateParentBranch TMap collections. Sync helpers ConvertStateNodeType() and SerializeTasks() use UE5 reflection to extract task class names and properties. Both ItemAssetSync and QuestAssetSync PopulateRowsFromAssets() now fully populate table rows from asset data. Also fixed AutoBuildAndTest.ps1 paths (NP22Beta → NP22B57, UE_5.6 → UE_5.7) and aligned version across .uplugin, module header, and CLAUDE.md.
 - v4.12.3 - Table Editor Button Parity & Base Row Reconstruction: All 4 table editors (NPC, Dialogue, Quest, Item) now have consistent button sets: Save Table, Sync XLSX with 3-way merge. **NPC Table:** Added missing `OnSyncXLSXClicked()` for 3-way merge support. **Dialogue Table:** Added missing `OnSaveClicked()` with proper UPackage handling. **Base Row Fix:** Both NPC and Dialogue tables now properly reconstruct base rows using `LastSyncedHash != 0` filter (matching Quest/Item pattern). This ensures accurate 3-way merge delta detection.
 - v4.12.2 - Validation-in-Sync-Dialog Fix: All 4 sync engines (NPC, Quest, Item, Dialogue) now call validators in `CompareSources()` and populate `ValidationStatus`/`ValidationMessages` on sync entries. Completes the validation-in-sync-dialog feature - users see actual validation errors/warnings before making approval decisions. UI components (CreateValidationCell, Apply button gating, row highlighting) were added in v4.12.1 but validation data was not being populated.
 - v4.12.1 - Table Editor UI for Validation-in-Sync: Added validation column, error legend, summary counts, and Apply button gating to all 4 sync dialogs. Added CreateValidationCell() implementations.

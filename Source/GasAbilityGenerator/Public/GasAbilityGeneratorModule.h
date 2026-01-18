@@ -1,5 +1,9 @@
-// GasAbilityGenerator v4.8
+// GasAbilityGenerator v4.12.4
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+//
+// v4.12.4 Features:
+// - Full sync-from-assets for Item abilities (EquipmentAbilities extraction)
+// - Full sync-from-assets for Quest tasks/events/rewards
 //
 // v4.8 Features:
 // - Added Quest Table Editor - Excel-like spreadsheet for managing quests (following NPC/Dialogue patterns)

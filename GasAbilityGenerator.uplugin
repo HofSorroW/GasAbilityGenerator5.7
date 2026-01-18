@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 267,
-	"VersionName": "2.6.7",
+	"Version": 4124,
+	"VersionName": "4.12.4",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v2.6.7: Deferred asset retry for dependency resolution.",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.12.4: Full sync-from-assets for Item abilities and Quest tasks/events.",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",

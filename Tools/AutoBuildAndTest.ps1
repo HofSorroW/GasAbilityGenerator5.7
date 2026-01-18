@@ -10,11 +10,11 @@ param(
 )
 
 # Configuration
-$ProjectRoot = "C:\Unreal Projects\NP22Beta"
-$ProjectFile = "$ProjectRoot\NP22Beta.uproject"
-$SolutionFile = "$ProjectRoot\NP22Beta.sln"
+$ProjectRoot = "C:\Unreal Projects\NP22B57"
+$ProjectFile = "$ProjectRoot\NP22B57.uproject"
+$SolutionFile = "$ProjectRoot\NP22B57.sln"
 $PluginRoot = "$ProjectRoot\Plugins\GasAbilityGenerator"
-$UEPath = "C:\Program Files\Epic Games\UE_5.6"
+$UEPath = "C:\Program Files\Epic Games\UE_5.7"
 $UBTPath = "$UEPath\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe"
 $UEEditorPath = "$UEPath\Engine\Binaries\Win64\UnrealEditor.exe"
 $LogDir = "$PluginRoot\Tools\Logs"
@@ -44,7 +44,7 @@ function Write-Log {
 function Build-Plugin {
     Write-Log "Starting UBT build..." "INFO"
 
-    $BuildOutput = & "$UBTPath" NP22BetaEditor Win64 Development "-Project=$ProjectFile" 2>&1
+    $BuildOutput = & "$UBTPath" NP22B57Editor Win64 Development "-Project=$ProjectFile" 2>&1
     $BuildExitCode = $LASTEXITCODE
 
     # Save build output
@@ -132,7 +132,7 @@ function Get-UELogErrors {
 
     if (-not (Test-Path $LogPath)) {
         # Try to find the latest UE log
-        $LogPath = "$env:LOCALAPPDATA\UnrealEngine\5.6\Saved\Logs\NP22Beta.log"
+        $LogPath = "$env:LOCALAPPDATA\UnrealEngine\5.7\Saved\Logs\NP22B57.log"
     }
 
     if (Test-Path $LogPath) {
