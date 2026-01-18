@@ -25,8 +25,9 @@ if (-not (Test-Path $hooksDir)) {
     exit 1
 }
 
-# Path to our guard script (relative to repo root for portability)
-$scriptRelPath = "Plugins/GasAbilityGenerator/Tools/locked_guard.py"
+# Path to our guard script (relative to repo root)
+# Note: Git repo root is at the plugin folder level, not project level
+$scriptRelPath = "Tools/locked_guard.py"
 $scriptFullPath = Join-Path $repoRoot $scriptRelPath
 
 if (-not (Test-Path $scriptFullPath)) {
@@ -45,7 +46,7 @@ $hookContent = @'
 # See: ClaudeContext/Handoffs/LOCKED_CONTRACTS.md
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
-SCRIPT="$REPO_ROOT/Plugins/GasAbilityGenerator/Tools/locked_guard.py"
+SCRIPT="$REPO_ROOT/Tools/locked_guard.py"
 
 # Try py launcher first (Windows), then python3, then python
 if command -v py >/dev/null 2>&1; then
