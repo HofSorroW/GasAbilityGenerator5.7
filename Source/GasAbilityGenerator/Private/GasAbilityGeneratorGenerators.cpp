@@ -500,25 +500,27 @@ bool FGeneratorBase::ValidateAgainstManifest(
 	return false; // Validation passed - asset can be created
 }
 
+// v4.12.4: DISK-TRUTH CHECK - Do NOT replace with AssetRegistry or DoesPackageExist!
+// This is the canonical helper for create/skip decisions. Registry-based checks
+// return stale data when files are deleted externally.
 bool FGeneratorBase::DoesAssetExistOnDisk(const FString& AssetPath)
 {
-	// Convert content path to package name
+	// Normalize to package path with leading slash
 	FString PackageName = AssetPath;
 	if (!PackageName.StartsWith(TEXT("/")))
 	{
 		PackageName = TEXT("/") + PackageName;
 	}
 
-	// v4.12.4: Check actual file system instead of Asset Registry cache
-	// FPackageName::DoesPackageExist() relies on cached Asset Registry data which
-	// doesn't update when files are deleted externally (e.g., user deletes Content folder)
+	// Check actual file system - IFileManager is the only reliable source
+	// when files may have been deleted externally while editor is open
 	FString FilePath;
 	if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, FilePath, FPackageName::GetAssetPackageExtension()))
 	{
 		return IFileManager::Get().FileExists(*FilePath);
 	}
 
-	// Fallback to package check if conversion fails
+	// Fallback only if path conversion fails (rare edge case)
 	return FPackageName::DoesPackageExist(PackageName);
 }
 
