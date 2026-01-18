@@ -5,7 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "NPCTableEditor/NPCTableEditorTypes.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 
 /**
  * Converts NPC table rows to manifest definitions for generation

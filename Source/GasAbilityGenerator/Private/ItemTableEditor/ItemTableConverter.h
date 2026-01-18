@@ -6,7 +6,7 @@
 
 #include "CoreMinimal.h"
 #include "ItemTableEditor/ItemTableEditorTypes.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 
 /**
  * Converts Item table rows to manifest definitions for generation

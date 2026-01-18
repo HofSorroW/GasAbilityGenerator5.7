@@ -6,7 +6,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 #include "GasAbilityGeneratorReport.generated.h"
 
 /**

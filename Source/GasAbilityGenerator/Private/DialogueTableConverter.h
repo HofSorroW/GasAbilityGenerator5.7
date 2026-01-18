@@ -5,7 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "DialogueTableEditorTypes.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 
 /**
  * Converts dialogue table rows to manifest definitions for generation

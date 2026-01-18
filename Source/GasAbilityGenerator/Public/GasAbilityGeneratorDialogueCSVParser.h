@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 
 /**
  * CSV row representation for dialogue data

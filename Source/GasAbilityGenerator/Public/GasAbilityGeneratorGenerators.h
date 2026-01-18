@@ -19,8 +19,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GasAbilityGeneratorTypes.h"
-#include "GasAbilityGeneratorMetadata.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorMetadata.h"
 
 // Forward declarations
 class UBlueprint;

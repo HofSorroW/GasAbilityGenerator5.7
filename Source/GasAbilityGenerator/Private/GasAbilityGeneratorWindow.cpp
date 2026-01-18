@@ -8,7 +8,7 @@
 
 #include "GasAbilityGeneratorWindow.h"
 #include "GasAbilityGeneratorGenerators.h"
-#include "GasAbilityGeneratorMetadata.h"  // v4.12.5: Explicit include for TryGetMetadata (compile-time guard rail)
+#include "Locked/GasAbilityGeneratorMetadata.h"  // v4.12.5: Explicit include for TryGetMetadata (compile-time guard rail)
 #include "GasAbilityGeneratorParser.h"
 #include "GasAbilityGeneratorPipeline.h"  // v4.12: Mesh-to-Item Pipeline
 #include "GasAbilityGeneratorReport.h"    // v4.12: Window report hooks

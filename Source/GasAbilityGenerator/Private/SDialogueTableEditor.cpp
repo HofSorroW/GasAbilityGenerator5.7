@@ -20,7 +20,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);  // v4.10: Provena
 #include "XLSXSupport/SDialogueXLSXSyncDialog.h"
 #include "XLSXSupport/SDialogueTokenApplyPreview.h"
 #include "XLSXSupport/DialogueAssetSync.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 #include "Widgets/Input/SEditableText.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Input/SComboBox.h"

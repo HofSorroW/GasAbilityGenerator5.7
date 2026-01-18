@@ -6,7 +6,7 @@
 
 #include "CoreMinimal.h"
 #include "QuestTableEditor/QuestTableEditorTypes.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 
 /**
  * Converts Quest table rows to manifest definitions for generation

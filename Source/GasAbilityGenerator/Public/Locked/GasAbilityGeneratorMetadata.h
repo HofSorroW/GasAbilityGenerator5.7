@@ -8,7 +8,7 @@
 #include "CoreMinimal.h"
 #include "Engine/AssetUserData.h"
 #include "Engine/DataAsset.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 #include "GasAbilityGeneratorMetadata.generated.h"
 
 /**

@@ -2,7 +2,7 @@
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 // v3.1: Added UGeneratorMetadataRegistry for assets that don't support AssetUserData
 
-#include "GasAbilityGeneratorMetadata.h"
+#include "Locked/GasAbilityGeneratorMetadata.h"
 #include "Engine/Blueprint.h"
 #include "Engine/DataAsset.h"
 #include "AssetRegistry/AssetRegistryModule.h"

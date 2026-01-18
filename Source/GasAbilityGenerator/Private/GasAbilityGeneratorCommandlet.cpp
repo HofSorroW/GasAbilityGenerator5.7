@@ -5,7 +5,7 @@
 #include "GasAbilityGeneratorCommandlet.h"
 #include "GasAbilityGeneratorParser.h"
 #include "GasAbilityGeneratorGenerators.h"
-#include "GasAbilityGeneratorMetadata.h"  // v3.1: For metadata registry
+#include "Locked/GasAbilityGeneratorMetadata.h"  // v3.1: For metadata registry
 #include "GasAbilityGeneratorDialogueCSVParser.h"  // v4.0: CSV dialogue parsing
 #include "GasAbilityGeneratorReport.h"  // v4.7: Generation report system
 #include "GasAbilityGeneratorPipeline.h"  // v4.12: Mesh-to-Item Pipeline

@@ -3,7 +3,7 @@
 
 #include "ItemTableEditor/ItemAssetSync.h"
 #include "ItemTableEditor/ItemTableValidator.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 #include "GasAbilityGeneratorGenerators.h"
 
 #if WITH_EDITOR

@@ -3,7 +3,7 @@
 
 #include "QuestTableEditor/QuestAssetSync.h"
 #include "QuestTableEditor/QuestTableValidator.h"
-#include "GasAbilityGeneratorTypes.h"
+#include "Locked/GasAbilityGeneratorTypes.h"
 #include "GasAbilityGeneratorGenerators.h"
 
 #if WITH_EDITOR
