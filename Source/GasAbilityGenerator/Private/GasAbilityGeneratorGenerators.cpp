@@ -7082,6 +7082,22 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 		else if (InputType == TEXT("float4") || InputType == TEXT("vector4"))
 			Input->InputType = FunctionInput_Vector4;
 
+		// v4.10.1: Set preview/default value if specified
+		if (!InputDef.DefaultValue.IsEmpty())
+		{
+			TArray<FString> Components;
+			InputDef.DefaultValue.ParseIntoArray(Components, TEXT(","));
+
+			FVector4f PreviewVal(0, 0, 0, 0);
+			if (Components.Num() >= 1) PreviewVal.X = FCString::Atof(*Components[0]);
+			if (Components.Num() >= 2) PreviewVal.Y = FCString::Atof(*Components[1]);
+			if (Components.Num() >= 3) PreviewVal.Z = FCString::Atof(*Components[2]);
+			if (Components.Num() >= 4) PreviewVal.W = FCString::Atof(*Components[3]);
+
+			Input->PreviewValue = PreviewVal;
+			Input->bUsePreviewValueAsDefault = true;
+		}
+
 		MaterialFunction->GetExpressionCollection().AddExpression(Input);
 		ExpressionMap.Add(InputDef.Name, Input);
 		LogGeneration(FString::Printf(TEXT("  Created input: %s (%s)"), *InputDef.Name, *InputDef.Type));
@@ -7265,7 +7281,8 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 				if (UMaterialExpressionPanner* Panner = Cast<UMaterialExpressionPanner>(ToExpr))
 					TargetInput = &Panner->Time;
 			}
-			else if (Conn.ToInput.Equals(TEXT("Exponent"), ESearchCase::IgnoreCase))
+			else if (Conn.ToInput.Equals(TEXT("Exponent"), ESearchCase::IgnoreCase) ||
+			         Conn.ToInput.Equals(TEXT("ExponentIn"), ESearchCase::IgnoreCase))
 			{
 				if (UMaterialExpressionFresnel* Fresnel = Cast<UMaterialExpressionFresnel>(ToExpr))
 					TargetInput = &Fresnel->ExponentIn;
