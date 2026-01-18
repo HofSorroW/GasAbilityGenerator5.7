@@ -45,6 +45,8 @@ Use this for traceability during refactors - code can move, but contracts must r
 | EDryRunStatus enum | `GasAbilityGeneratorTypes.h:3985-3992` | `EDryRunStatus::Conflicted` |
 | Conflict determination | `GasAbilityGeneratorGenerators.cpp:1227-1231` | In `CheckExistsWithMetadata()` |
 | Force flag check | `GasAbilityGeneratorCommandlet.cpp` | `bForceRegeneration` flag |
+| IsForceMode (definition) | `GasAbilityGeneratorGenerators.cpp:1089` | `FGeneratorBase::IsForceMode()` |
+| IsForceMode (call sites) | `GasAbilityGeneratorGenerators.cpp:555,587,1281` | Force-bypass decision points |
 | ComputeDryRunStatus | `GasAbilityGeneratorMetadata.cpp:432-479` | `GeneratorMetadataHelpers::ComputeDryRunStatus()` |
 
 ---
@@ -138,3 +140,4 @@ When moving/renaming files:
 | Version | Date | Changes |
 |---------|------|---------|
 | v4.12.5 | 2026-01-18 | Initial creation mapping contracts to implementations |
+| v4.12.5 | 2026-01-18 | Added IsForceMode() anchors to Contract 3 |

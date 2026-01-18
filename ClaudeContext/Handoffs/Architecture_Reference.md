@@ -499,6 +499,34 @@ bool FGeneratorBase::DoesAssetExistOnDisk(const FString& AssetPath)
 
 **See:** `v4.12.5_Registry_Aware_Metadata_Fix.md` for full implementation details.
 
+### 2.11 LOCKED Tier Architecture (v4.12.5)
+
+The plugin uses a 3-tier architecture for code governance:
+
+| Tier | Purpose | Enforcement |
+|------|---------|-------------|
+| **LOCKED** | Data-safety and CI-safety invariants | Git hook guard, explicit approval required |
+| **EVOLVABLE** | Generators, parsers, validators | Normal development flow |
+| **COSMETIC** | UI, display logic | Minimal constraints |
+
+**Key Documents:**
+- `LOCKED_CONTRACTS.md` - 9 invariants that must remain true through any refactor
+- `LOCKED_SYSTEMS.md` - Maps each contract to implementation files/functions
+
+**Enforcement Mechanism:**
+- Git hook guard (`Tools/locked_guard.py`) blocks commits touching locked files
+- Bypass requires explicit `[LOCKED-CHANGE-APPROVED]` token in commit message
+- Run `Tools/install_git_hooks.ps1` once after cloning to enable
+
+**Locked Files (v4.12.5):**
+- Contract docs: `ClaudeContext/Handoffs/LOCKED_*.md`
+- Metadata: `GasAbilityGeneratorMetadata.h/cpp`
+- Types: `GasAbilityGeneratorTypes.h`
+- Generators (temporary): `GasAbilityGeneratorGenerators.cpp/h`
+- Sync engines: `XLSXSupport/*`
+
+**Rationale:** Separates "must never break" invariants from "can evolve" implementations. Prevents accidental regression of safety-critical code paths during UI or capability changes.
+
 ---
 
 ## 3. Table Editor 3-Way Sync System (v4.12)
