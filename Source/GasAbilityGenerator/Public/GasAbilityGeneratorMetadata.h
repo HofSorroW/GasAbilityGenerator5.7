@@ -231,4 +231,24 @@ namespace GeneratorMetadataHelpers
 	 * Call this at the end of asset generation to persist registry changes
 	 */
 	void SaveRegistryIfNeeded();
+
+	/**
+	 * v4.12.5: Safe metadata retrieval with explicit success/failure
+	 * Single lookup - checks both AssetUserData and registry
+	 * Returns false if neither source has metadata for this asset
+	 *
+	 * Usage:
+	 *   FGeneratorMetadata Meta;
+	 *   if (!TryGetMetadata(Asset, Meta)) { // treat as manual }
+	 */
+	inline bool TryGetMetadata(UObject* Asset, FGeneratorMetadata& OutMetadata)
+	{
+		if (!Asset)
+		{
+			OutMetadata = FGeneratorMetadata();
+			return false;
+		}
+		OutMetadata = GetMetadataEx(Asset);
+		return OutMetadata.bIsGenerated;
+	}
 }

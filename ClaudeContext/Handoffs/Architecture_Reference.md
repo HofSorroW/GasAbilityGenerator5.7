@@ -1,7 +1,7 @@
 # Architecture Reference
 
 **Consolidated:** 2026-01-18
-**Plugin Version:** v4.12.1
+**Plugin Version:** v4.12.5
 **Status:** Complete reference for plugin architecture, generators, and automation coverage
 
 This document consolidates architecture documentation, generator implementation patterns, coverage analysis, and the report system.
@@ -431,6 +431,73 @@ widget_blueprints:
 **Existing Support:**
 - Tag generator handles Narrative.Factions.* tags
 - NPC generator populates DefaultFactions array
+
+### 2.9 Asset Existence Checking Patterns (v4.12.4)
+
+**Problem:** `FPackageName::DoesPackageExist()` and Asset Registry queries rely on cached data that doesn't update when files are deleted externally (e.g., via file explorer or `rm -rf`). This caused generators to incorrectly skip creation of assets that didn't exist on disk.
+
+**Two-Tier Approach:**
+
+| Use Case | Method | When |
+|----------|--------|------|
+| **Listing/Discovery** | Asset Registry + forced rescan | Finding existing assets, populating dropdowns, sync operations |
+| **Create/Skip Decisions** | Disk-truth via IFileManager | Determining whether to generate an asset |
+
+**Canonical Helper:**
+
+```cpp
+// v4.12.4: DISK-TRUTH CHECK - Do NOT replace with AssetRegistry or DoesPackageExist!
+// Canonical helper for create/skip decisions. Requires valid long package name (not object path).
+// Contract: Caller must pass package path like "/Game/Folder/AssetName", not "/Game/Folder/AssetName.AssetName"
+bool FGeneratorBase::DoesAssetExistOnDisk(const FString& AssetPath)
+{
+    // Normalize: ensure leading slash
+    FString PackageName = AssetPath;
+    if (!PackageName.StartsWith(TEXT("/")))
+    {
+        PackageName = TEXT("/") + PackageName;
+    }
+
+    // Convert to filesystem path and check actual file existence
+    FString FilePath;
+    if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, FilePath,
+        FPackageName::GetAssetPackageExtension()))
+    {
+        return IFileManager::Get().FileExists(*FilePath);
+    }
+
+    // Conversion failed = malformed package path = cannot exist on disk
+    return false;
+}
+```
+
+**Key Rules:**
+
+1. **Create/Skip must use disk-truth:** All generators call `DoesAssetExistOnDisk()` before deciding to skip
+2. **Listing uses registry with rescan:** Sync operations call `ScanPathsSynchronous(paths, true /*bForceRescan*/)` before `GetAssetsByClass()`
+3. **Fail-fast for malformed paths:** If path conversion fails, return false immediately (don't attempt registry fallback)
+4. **Package path format:** `/Game/Folder/AssetName` (not object path `/Game/Folder/AssetName.AssetName`)
+
+**Fixed Locations:**
+- `GasAbilityGeneratorGenerators.cpp:DoesAssetExistOnDisk()` - Core helper
+- `GasAbilityGeneratorWindow.cpp:CheckNPCAssetStatus()` - NPC status display
+
+### 2.10 Decision Path Golden Rule (v4.12.5)
+
+**LOCKED:** Decision paths (create/skip/conflict determination) must use registry-aware APIs:
+- `GetMetadataEx()` - returns `FGeneratorMetadata` struct
+- `HasMetadataEx()` - returns bool
+- `TryGetMetadata()` - single lookup with explicit success/failure (v4.12.5)
+
+**NEVER** use `GetMetadata()` or `GetAssetMetadata()` directly in decision paths. These only check `UAssetUserData` and miss registry-stored metadata for `UDataAsset`/`UBlueprint`/`UNiagaraSystem` assets.
+
+**Rationale:** `UDataAsset` and `UBlueprint` don't implement `IInterface_AssetUserData` in UE5.7, so metadata for these asset types is stored in a central registry (`UGeneratorMetadataRegistry`). Decision paths must check both sources to avoid incorrectly classifying generated assets as "manual."
+
+**Fixed Locations (v4.12.5):**
+- `GasAbilityGeneratorGenerators.cpp:CheckExistsWithMetadata()` - Main decision path
+- `GasAbilityGeneratorWindow.cpp:CheckNPCAssetStatus()` - UI status display
+
+**See:** `v4.12.5_Registry_Aware_Metadata_Fix.md` for full implementation details.
 
 ---
 

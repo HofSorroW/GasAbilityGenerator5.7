@@ -8,6 +8,7 @@
 
 #include "GasAbilityGeneratorWindow.h"
 #include "GasAbilityGeneratorGenerators.h"
+#include "GasAbilityGeneratorMetadata.h"  // v4.12.5: Explicit include for TryGetMetadata (compile-time guard rail)
 #include "GasAbilityGeneratorParser.h"
 #include "GasAbilityGeneratorPipeline.h"  // v4.12: Mesh-to-Item Pipeline
 #include "GasAbilityGeneratorReport.h"    // v4.12: Window report hooks
@@ -104,22 +105,22 @@ static ENPCAssetStatus CheckNPCAssetStatus(
 		return ENPCAssetStatus::Skip;
 	}
 
-	// Check for generator metadata
-	UGeneratorAssetMetadata* Metadata = FGeneratorBase::GetAssetMetadata(ExistingAsset);
-
-	if (!Metadata)
+	// Check for generator metadata (v4.12.5: registry-aware via struct API)
+	// Uses TryGetMetadata to check both AssetUserData AND registry fallback
+	FGeneratorMetadata Metadata;
+	if (!GeneratorMetadataHelpers::TryGetMetadata(ExistingAsset, Metadata))
 	{
-		// No metadata - likely manual asset, skip to avoid overwriting
+		// No metadata in either source - likely manual asset, skip to avoid overwriting
 		OutStatusReason = TEXT("No generator metadata (likely manual)");
 		return ENPCAssetStatus::Skip;
 	}
 
-	// Has metadata - compare hashes
-	bool bInputChanged = Metadata->HasInputChanged(InputHash);
+	// Has metadata - compare hashes using struct helpers (behavior-identical to UObject version)
+	bool bInputChanged = Metadata.HasInputChanged(InputHash);
 
 	// Compute current output hash
 	uint64 CurrentOutputHash = FGeneratorBase::ComputeDataAssetOutputHash(ExistingAsset);
-	bool bOutputChanged = Metadata->HasOutputChanged(CurrentOutputHash);
+	bool bOutputChanged = Metadata.HasOutputChanged(CurrentOutputHash);
 
 	if (!bInputChanged && !bOutputChanged)
 	{
