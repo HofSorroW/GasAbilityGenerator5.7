@@ -40,6 +40,9 @@ int32 FQuestAssetSync::PopulateRowsFromAssets(
 	int32 UpdatedCount = 0;
 
 	// Build a map of QuestName -> Asset data for quick lookup
+	// SAFETY: These pointers are valid because SyncResult is passed by const& and
+	// remains alive for the entire function. Do NOT store this map as a class member
+	// or return it - pointers would become dangling when SyncResult is destroyed.
 	TMap<FString, const FQuestAssetData*> QuestNameToData;
 	for (const auto& Pair : SyncResult.QuestData)
 	{

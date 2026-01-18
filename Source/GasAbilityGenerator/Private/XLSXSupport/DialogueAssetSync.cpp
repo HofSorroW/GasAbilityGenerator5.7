@@ -50,6 +50,9 @@ FDialogueAssetSyncResult FDialogueAssetSync::SyncFromAsset(UDialogueBlueprint* D
 	// DialogueGraph contains UDialogueGraphNode instances which have:
 	// - DialogueNode: pointer to the runtime UDialogueNode
 	// - NodePosX/NodePosY: visual position in graph editor (inherited from UEdGraphNode)
+	// SAFETY: Uses UDialogueNode* as keys - this is safe because both map storage
+	// and lookup happen within this single function using the same loaded graph.
+	// Do NOT refactor to store these maps as class members.
 	//=========================================================================
 	TMap<UDialogueNode*, int32> NodeToGraphPosX;
 	TMap<UDialogueNode*, int32> NodeToGraphPosY;

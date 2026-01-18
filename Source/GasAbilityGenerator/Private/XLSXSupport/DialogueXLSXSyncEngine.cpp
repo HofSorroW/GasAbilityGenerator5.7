@@ -139,6 +139,9 @@ int64 FDialogueXLSXSyncEngine::ComputeRowHash(const FDialogueTableRow& Row)
 	return static_cast<int64>(Hash);
 }
 
+// SAFETY: Returns map with pointers into the source Rows array. Caller MUST ensure
+// the Rows array remains valid and unmodified while using the returned map.
+// Used for O(1) lookup during 3-way merge comparison within CompareSources().
 TMap<FGuid, const FDialogueTableRow*> FDialogueXLSXSyncEngine::BuildRowMap(const TArray<FDialogueTableRow>& Rows)
 {
 	TMap<FGuid, const FDialogueTableRow*> Map;

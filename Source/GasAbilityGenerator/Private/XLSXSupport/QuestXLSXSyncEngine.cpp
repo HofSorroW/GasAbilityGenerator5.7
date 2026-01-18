@@ -474,6 +474,9 @@ int64 FQuestXLSXSyncEngine::ComputeRowHash(const FQuestTableRow& Row)
 	return Hash;
 }
 
+// SAFETY: Returns map with pointers into the source Rows array. Caller MUST ensure
+// the Rows array remains valid and unmodified while using the returned map.
+// Used for O(1) lookup during 3-way merge comparison within CompareSources().
 TMap<FGuid, const FQuestTableRow*> FQuestXLSXSyncEngine::BuildRowMap(const TArray<FQuestTableRow>& Rows)
 {
 	TMap<FGuid, const FQuestTableRow*> Map;

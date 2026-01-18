@@ -114,6 +114,9 @@ int32 FItemAssetSync::PopulateRowsFromAssets(
 	int32 UpdatedCount = 0;
 
 	// Build a map of ItemName -> Asset data for quick lookup
+	// SAFETY: These pointers are valid because SyncResult is passed by const& and
+	// remains alive for the entire function. Do NOT store this map as a class member
+	// or return it - pointers would become dangling when SyncResult is destroyed.
 	TMap<FString, const FItemAssetData*> ItemNameToData;
 	for (const auto& Pair : SyncResult.ItemData)
 	{

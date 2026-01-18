@@ -469,6 +469,9 @@ int64 FNPCXLSXSyncEngine::ComputeRowHash(const FNPCTableRow& Row)
 	return Hash;
 }
 
+// SAFETY: Returns map with pointers into the source Rows array. Caller MUST ensure
+// the Rows array remains valid and unmodified while using the returned map.
+// Used for O(1) lookup during 3-way merge comparison within CompareSources().
 TMap<FGuid, const FNPCTableRow*> FNPCXLSXSyncEngine::BuildRowMap(const TArray<FNPCTableRow>& Rows)
 {
 	TMap<FGuid, const FNPCTableRow*> Map;
