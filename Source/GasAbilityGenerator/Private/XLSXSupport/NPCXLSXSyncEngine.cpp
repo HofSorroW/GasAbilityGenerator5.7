@@ -194,6 +194,63 @@ FNPCSyncResult FNPCXLSXSyncEngine::CompareSources(
 		Result.Entries.Add(Entry);
 	}
 
+	//-------------------------------------------------------------------------
+	// v4.12.2: Validate Excel rows and populate validation status
+	//-------------------------------------------------------------------------
+
+	// Validate all Excel rows
+	FNPCValidationResult ValidationResult = FNPCTableValidator::ValidateAll(ExcelRows);
+
+	// Build map of NPCName -> validation issues for quick lookup
+	TMap<FString, TArray<FNPCValidationIssue>> IssuesByNPCName;
+	for (const FNPCValidationIssue& Issue : ValidationResult.Issues)
+	{
+		IssuesByNPCName.FindOrAdd(Issue.NPCName).Add(Issue);
+	}
+
+	// Apply validation results to sync entries
+	for (FNPCSyncEntry& Entry : Result.Entries)
+	{
+		// Only validate entries that have Excel data (the source being imported)
+		if (!Entry.ExcelRow.IsValid())
+		{
+			continue;
+		}
+
+		const FString& NPCName = Entry.ExcelRow->NPCName;
+		if (TArray<FNPCValidationIssue>* Issues = IssuesByNPCName.Find(NPCName))
+		{
+			bool bHasError = false;
+			bool bHasWarning = false;
+
+			for (const FNPCValidationIssue& Issue : *Issues)
+			{
+				Entry.ValidationMessages.Add(Issue.ToString());
+
+				if (Issue.Severity == ENPCValidationSeverity::Error)
+				{
+					bHasError = true;
+					Result.ValidationErrorCount++;
+				}
+				else if (Issue.Severity == ENPCValidationSeverity::Warning)
+				{
+					bHasWarning = true;
+					Result.ValidationWarningCount++;
+				}
+			}
+
+			// Set status based on worst severity
+			if (bHasError)
+			{
+				Entry.ValidationStatus = ENPCSyncValidationStatus::Error;
+			}
+			else if (bHasWarning)
+			{
+				Entry.ValidationStatus = ENPCSyncValidationStatus::Warning;
+			}
+		}
+	}
+
 	// Sort entries by NPC name for consistent display
 	Result.Entries.Sort([](const FNPCSyncEntry& A, const FNPCSyncEntry& B)
 	{

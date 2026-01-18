@@ -12,6 +12,7 @@
 
 #include "XLSXSupport/DialogueXLSXSyncEngine.h"
 #include "XLSXSupport/DialogueAssetSync.h"
+#include "DialogueTableValidator.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 
 #if WITH_EDITOR
@@ -307,6 +308,65 @@ FDialogueSyncResult FDialogueXLSXSyncEngine::CompareSources(
 		}
 
 		Result.Entries.Add(MoveTemp(Entry));
+	}
+
+	//-------------------------------------------------------------------------
+	// v4.12.2: Validate Excel rows and populate validation status
+	//-------------------------------------------------------------------------
+
+	// Validate all Excel rows
+	FDialogueValidationResult ValidationResult = FDialogueTableValidator::ValidateAll(ExcelRows);
+
+	// Build map of DialogueID/NodeID -> validation issues for quick lookup
+	// Key format: "DialogueID|NodeID"
+	TMap<FString, TArray<FDialogueValidationIssue>> IssuesByKey;
+	for (const FDialogueValidationIssue& Issue : ValidationResult.Issues)
+	{
+		FString Key = FString::Printf(TEXT("%s|%s"), *Issue.DialogueID.ToString(), *Issue.NodeID.ToString());
+		IssuesByKey.FindOrAdd(Key).Add(Issue);
+	}
+
+	// Apply validation results to sync entries
+	for (FDialogueSyncEntry& Entry : Result.Entries)
+	{
+		// Only validate entries that have Excel data (the source being imported)
+		if (!Entry.ExcelRow.IsValid())
+		{
+			continue;
+		}
+
+		FString Key = FString::Printf(TEXT("%s|%s"), *Entry.ExcelRow->DialogueID.ToString(), *Entry.ExcelRow->NodeID.ToString());
+		if (TArray<FDialogueValidationIssue>* Issues = IssuesByKey.Find(Key))
+		{
+			bool bHasError = false;
+			bool bHasWarning = false;
+
+			for (const FDialogueValidationIssue& Issue : *Issues)
+			{
+				Entry.ValidationMessages.Add(Issue.ToString());
+
+				if (Issue.Severity == EDialogueValidationSeverity::Error)
+				{
+					bHasError = true;
+					Result.ValidationErrorCount++;
+				}
+				else if (Issue.Severity == EDialogueValidationSeverity::Warning)
+				{
+					bHasWarning = true;
+					Result.ValidationWarningCount++;
+				}
+			}
+
+			// Set status based on worst severity
+			if (bHasError)
+			{
+				Entry.ValidationStatus = EDialogueSyncValidationStatus::Error;
+			}
+			else if (bHasWarning)
+			{
+				Entry.ValidationStatus = EDialogueSyncValidationStatus::Warning;
+			}
+		}
 	}
 
 	// v4.9.1: Sort entries by DialogueID + NodeID for consistent display order

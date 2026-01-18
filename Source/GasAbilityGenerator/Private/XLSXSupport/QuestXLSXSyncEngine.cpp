@@ -14,6 +14,7 @@
 // - All three differ: Conflict (user must resolve)
 
 #include "XLSXSupport/QuestXLSXSyncEngine.h"
+#include "QuestTableEditor/QuestTableValidator.h"
 
 //=============================================================================
 // FQuestSyncEntry Implementation
@@ -202,6 +203,65 @@ FQuestSyncResult FQuestXLSXSyncEngine::CompareSources(
 		}
 
 		Result.Entries.Add(Entry);
+	}
+
+	//-------------------------------------------------------------------------
+	// v4.12.2: Validate Excel rows and populate validation status
+	//-------------------------------------------------------------------------
+
+	// Validate all Excel rows
+	FQuestValidationResult ValidationResult = FQuestTableValidator::ValidateAll(ExcelRows);
+
+	// Build map of QuestName/StateID -> validation issues for quick lookup
+	// Key format: "QuestName|StateID"
+	TMap<FString, TArray<FQuestValidationIssue>> IssuesByKey;
+	for (const FQuestValidationIssue& Issue : ValidationResult.Issues)
+	{
+		FString Key = FString::Printf(TEXT("%s|%s"), *Issue.QuestName, *Issue.StateID);
+		IssuesByKey.FindOrAdd(Key).Add(Issue);
+	}
+
+	// Apply validation results to sync entries
+	for (FQuestSyncEntry& Entry : Result.Entries)
+	{
+		// Only validate entries that have Excel data (the source being imported)
+		if (!Entry.ExcelRow.IsValid())
+		{
+			continue;
+		}
+
+		FString Key = FString::Printf(TEXT("%s|%s"), *Entry.ExcelRow->QuestName, *Entry.ExcelRow->StateID);
+		if (TArray<FQuestValidationIssue>* Issues = IssuesByKey.Find(Key))
+		{
+			bool bHasError = false;
+			bool bHasWarning = false;
+
+			for (const FQuestValidationIssue& Issue : *Issues)
+			{
+				Entry.ValidationMessages.Add(Issue.ToString());
+
+				if (Issue.Severity == EQuestValidationSeverity::Error)
+				{
+					bHasError = true;
+					Result.ValidationErrorCount++;
+				}
+				else if (Issue.Severity == EQuestValidationSeverity::Warning)
+				{
+					bHasWarning = true;
+					Result.ValidationWarningCount++;
+				}
+			}
+
+			// Set status based on worst severity
+			if (bHasError)
+			{
+				Entry.ValidationStatus = EQuestSyncValidationStatus::Error;
+			}
+			else if (bHasWarning)
+			{
+				Entry.ValidationStatus = EQuestSyncValidationStatus::Warning;
+			}
+		}
 	}
 
 	// Sort entries by QuestName + StateID for consistent display

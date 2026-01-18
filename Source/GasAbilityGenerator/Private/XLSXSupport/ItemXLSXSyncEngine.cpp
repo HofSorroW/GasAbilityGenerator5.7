@@ -14,6 +14,7 @@
 // - All three differ: Conflict (user must resolve)
 
 #include "XLSXSupport/ItemXLSXSyncEngine.h"
+#include "ItemTableEditor/ItemTableValidator.h"
 
 //=============================================================================
 // FItemSyncEntry Implementation
@@ -184,6 +185,63 @@ FItemSyncResult FItemXLSXSyncEngine::CompareSources(
 		}
 
 		Result.Entries.Add(Entry);
+	}
+
+	//-------------------------------------------------------------------------
+	// v4.12.2: Validate Excel rows and populate validation status
+	//-------------------------------------------------------------------------
+
+	// Validate all Excel rows
+	FItemValidationResult ValidationResult = FItemTableValidator::ValidateAll(ExcelRows);
+
+	// Build map of ItemName -> validation issues for quick lookup
+	TMap<FString, TArray<FItemValidationIssue>> IssuesByItemName;
+	for (const FItemValidationIssue& Issue : ValidationResult.Issues)
+	{
+		IssuesByItemName.FindOrAdd(Issue.ItemName).Add(Issue);
+	}
+
+	// Apply validation results to sync entries
+	for (FItemSyncEntry& Entry : Result.Entries)
+	{
+		// Only validate entries that have Excel data (the source being imported)
+		if (!Entry.ExcelRow.IsValid())
+		{
+			continue;
+		}
+
+		const FString& ItemName = Entry.ExcelRow->ItemName;
+		if (TArray<FItemValidationIssue>* Issues = IssuesByItemName.Find(ItemName))
+		{
+			bool bHasError = false;
+			bool bHasWarning = false;
+
+			for (const FItemValidationIssue& Issue : *Issues)
+			{
+				Entry.ValidationMessages.Add(Issue.ToString());
+
+				if (Issue.Severity == EItemValidationSeverity::Error)
+				{
+					bHasError = true;
+					Result.ValidationErrorCount++;
+				}
+				else if (Issue.Severity == EItemValidationSeverity::Warning)
+				{
+					bHasWarning = true;
+					Result.ValidationWarningCount++;
+				}
+			}
+
+			// Set status based on worst severity
+			if (bHasError)
+			{
+				Entry.ValidationStatus = EItemSyncValidationStatus::Error;
+			}
+			else if (bHasWarning)
+			{
+				Entry.ValidationStatus = EItemSyncValidationStatus::Warning;
+			}
+		}
 	}
 
 	// Sort entries by Item name for consistent display
