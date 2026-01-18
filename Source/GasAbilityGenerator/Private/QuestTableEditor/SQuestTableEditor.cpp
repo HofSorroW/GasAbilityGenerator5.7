@@ -6,7 +6,13 @@
 #include "QuestTableEditor/SQuestTableEditor.h"
 #include "QuestTableConverter.h"
 #include "QuestTableValidator.h"
+#include "QuestTableEditor/QuestXLSXWriter.h"  // v4.12: XLSX export
+#include "QuestTableEditor/QuestXLSXReader.h"  // v4.12: XLSX import
+#include "XLSXSupport/QuestXLSXSyncEngine.h"   // v4.12: 3-way sync engine
+#include "XLSXSupport/SQuestXLSXSyncDialog.h"  // v4.12: Sync dialog
+#include "QuestTableEditor/QuestAssetSync.h"   // v4.12: Asset sync
 #include "GasAbilityGeneratorGenerators.h"
+#include "DesktopPlatformModule.h"  // v4.12: File dialogs
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -25,6 +31,8 @@
 #include "Misc/MessageDialog.h"
 #include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "ContentBrowserModule.h"
+#include "IContentBrowserSingleton.h"
 #include "Tales/Quest.h"
 #include "Tales/QuestSM.h"
 #include "Tales/NarrativeNodeBase.h"
@@ -737,8 +745,73 @@ void SQuestTableEditor::OnColumnTextFilterChanged(FName ColumnId, const FText& N
 
 void SQuestTableEditor::OnColumnDropdownFilterChanged(FName ColumnId, const FString& Value, bool bIsSelected)
 {
-	// TODO: Implement dropdown filter support
+	FQuestColumnFilterState* State = ColumnFilters.Find(ColumnId);
+	if (!State) return;
+
+	// Handle special case: if currently showing all, initialize with all values then toggle
+	if (State->SelectedValues.Num() == 0 || State->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+	{
+		State->SelectedValues.Empty();
+		if (bIsSelected)
+		{
+			// Just add this single value
+			State->SelectedValues.Add(Value);
+		}
+		else
+		{
+			// Initialize with all values except this one
+			TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
+			for (const FString& V : AllValues)
+			{
+				if (V != Value)
+				{
+					State->SelectedValues.Add(V);
+				}
+			}
+		}
+	}
+	else
+	{
+		// Toggle the specific value
+		if (bIsSelected)
+		{
+			State->SelectedValues.Add(Value);
+		}
+		else
+		{
+			State->SelectedValues.Remove(Value);
+		}
+	}
+
+	// If all values are selected, clear the filter (show all)
+	TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
+	if (State->SelectedValues.Num() == AllValues.Num())
+	{
+		State->SelectedValues.Empty();
+	}
+
 	ApplyFilters();
+}
+
+TArray<FString> SQuestTableEditor::GetUniqueColumnValues(FName ColumnId) const
+{
+	// Filter dropdowns show values from the current table data (AllRows)
+	TSet<FString> UniqueSet;
+
+	for (const TSharedPtr<FQuestTableRowEx>& Row : AllRows)
+	{
+		FString Value = GetColumnValue(Row, ColumnId);
+		// Empty cells become "(None)" for display consistency
+		if (Value.IsEmpty())
+		{
+			Value = TEXT("(None)");
+		}
+		UniqueSet.Add(Value);
+	}
+
+	TArray<FString> Result = UniqueSet.Array();
+	Result.Sort();
+	return Result;
 }
 
 FReply SQuestTableEditor::OnClearFiltersClicked()
@@ -785,10 +858,24 @@ void SQuestTableEditor::ApplyFilters()
 		for (const auto& Pair : ColumnFilters)
 		{
 			const FQuestColumnFilterState& State = Pair.Value;
+			FString Value = GetColumnValue(Row, Pair.Key);
+
+			// Check text filter
 			if (!State.TextFilter.IsEmpty())
 			{
-				FString Value = GetColumnValue(Row, Pair.Key);
 				if (!Value.Contains(State.TextFilter))
+				{
+					bPassesFilter = false;
+					break;
+				}
+			}
+
+			// Check dropdown filter (SelectedValues)
+			if (State.SelectedValues.Num() > 0 && !State.SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+			{
+				// Normalize empty values to "(None)" for consistency with GetUniqueColumnValues
+				FString NormalizedValue = Value.IsEmpty() ? TEXT("(None)") : Value;
+				if (!State.SelectedValues.Contains(NormalizedValue))
 				{
 					bPassesFilter = false;
 					break;
@@ -1200,22 +1287,295 @@ FReply SQuestTableEditor::OnSyncFromAssetsClicked()
 
 FReply SQuestTableEditor::OnExportXLSXClicked()
 {
-	// TODO: Implement XLSX export
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "XLSX Export not yet implemented."));
+	if (!TableData) return FReply::Handled();
+
+	// Show save dialog
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform) return FReply::Handled();
+
+	TArray<FString> OutFilenames;
+	const bool bOpened = DesktopPlatform->SaveFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(AsShared()),
+		TEXT("Export Quests to XLSX"),
+		FPaths::ProjectDir(),
+		TEXT("Quests.xlsx"),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		EFileDialogFlags::None,
+		OutFilenames
+	);
+
+	if (bOpened && OutFilenames.Num() > 0)
+	{
+		// Sync table data before export
+		for (const TSharedPtr<FQuestTableRowEx>& RowEx : AllRows)
+		{
+			if (RowEx.IsValid() && RowEx->Data.IsValid())
+			{
+				int32 Index = TableData->FindRowIndexByGuid(RowEx->Data->RowId);
+				if (Index != INDEX_NONE)
+				{
+					TableData->Rows[Index] = *RowEx->Data;
+				}
+			}
+		}
+
+		FString Error;
+		if (FQuestXLSXWriter::ExportToXLSX(TableData->Rows, OutFilenames[0], Error))
+		{
+			// Update sync hashes after successful export
+			for (FQuestTableRow& Row : TableData->Rows)
+			{
+				Row.LastSyncedHash = Row.ComputeSyncHash();
+			}
+			TableData->MarkPackageDirty();
+
+			FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+				LOCTEXT("ExportSuccess", "Exported {0} quest states to:\n{1}"),
+				FText::AsNumber(TableData->Rows.Num()),
+				FText::FromString(OutFilenames[0])
+			));
+		}
+		else
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+				LOCTEXT("ExportFailed", "Export failed:\n{0}"),
+				FText::FromString(Error)
+			));
+		}
+	}
+
 	return FReply::Handled();
 }
 
 FReply SQuestTableEditor::OnImportXLSXClicked()
 {
-	// TODO: Implement XLSX import
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "XLSX Import not yet implemented."));
+	if (!TableData) return FReply::Handled();
+
+	// Show open dialog
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform) return FReply::Handled();
+
+	TArray<FString> OutFilenames;
+	const bool bOpened = DesktopPlatform->OpenFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(AsShared()),
+		TEXT("Import Quests from XLSX"),
+		FPaths::ProjectDir(),
+		TEXT(""),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		EFileDialogFlags::None,
+		OutFilenames
+	);
+
+	if (bOpened && OutFilenames.Num() > 0)
+	{
+		// Validate the file
+		if (!FQuestXLSXReader::IsValidQuestXLSX(OutFilenames[0]))
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("InvalidFile", "The selected file is not a valid Quest XLSX file.\nMake sure it was exported from the Quest Table Editor."));
+			return FReply::Handled();
+		}
+
+		TArray<FQuestTableRow> ImportedRows;
+		FString Error;
+		if (FQuestXLSXReader::ImportFromXLSX(OutFilenames[0], ImportedRows, Error))
+		{
+			// Replace all rows with imported data
+			TableData->Rows = ImportedRows;
+
+			// Rebuild UI
+			AllRows.Empty();
+			for (FQuestTableRow& Row : TableData->Rows)
+			{
+				TSharedPtr<FQuestTableRowEx> RowEx = MakeShared<FQuestTableRowEx>();
+				RowEx->Data = MakeShared<FQuestTableRow>(Row);
+				AllRows.Add(RowEx);
+			}
+			DisplayedRows = AllRows;
+
+			if (ListView.IsValid())
+			{
+				ListView->RequestListRefresh();
+			}
+
+			// Invalidate validation
+			for (TSharedPtr<FQuestTableRowEx>& RowEx : AllRows)
+			{
+				if (RowEx.IsValid() && RowEx->Data.IsValid())
+				{
+					RowEx->Data->InvalidateValidation();
+				}
+			}
+
+			TableData->MarkPackageDirty();
+			UpdateStatusBar();
+			OnDirtyStateChanged.ExecuteIfBound();
+
+			FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+				LOCTEXT("ImportSuccess", "Imported {0} quest states from:\n{1}"),
+				FText::AsNumber(ImportedRows.Num()),
+				FText::FromString(OutFilenames[0])
+			));
+		}
+		else
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+				LOCTEXT("ImportFailed", "Import failed:\n{0}"),
+				FText::FromString(Error)
+			));
+		}
+	}
+
 	return FReply::Handled();
 }
 
 FReply SQuestTableEditor::OnSyncXLSXClicked()
 {
-	// TODO: Implement XLSX 3-way sync
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "XLSX Sync not yet implemented."));
+	if (!TableData || bIsBusy) return FReply::Handled();
+
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Show open dialog to select XLSX file
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform) return FReply::Handled();
+
+	TArray<FString> OutFilenames;
+	const bool bOpened = DesktopPlatform->OpenFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(AsShared()),
+		TEXT("Select Quest XLSX for Sync"),
+		FPaths::ProjectDir(),
+		TEXT(""),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		EFileDialogFlags::None,
+		OutFilenames
+	);
+
+	if (!bOpened || OutFilenames.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	// Validate the file format
+	if (!FQuestXLSXReader::IsValidQuestXLSX(OutFilenames[0]))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("InvalidSyncFile",
+			"The selected file is not a valid Quest XLSX file.\n"
+			"Make sure it was exported from the Quest Table Editor."));
+		return FReply::Handled();
+	}
+
+	// Sync UI changes back to TableData first
+	for (const TSharedPtr<FQuestTableRowEx>& RowEx : AllRows)
+	{
+		if (RowEx.IsValid() && RowEx->Data.IsValid())
+		{
+			int32 Index = TableData->FindRowIndexByGuid(RowEx->Data->RowId);
+			if (Index != INDEX_NONE)
+			{
+				TableData->Rows[Index] = *RowEx->Data;
+			}
+		}
+	}
+
+	// Import rows from Excel
+	TArray<FQuestTableRow> ExcelRows;
+	FString ImportError;
+	if (!FQuestXLSXReader::ImportFromXLSX(OutFilenames[0], ExcelRows, ImportError))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+			LOCTEXT("SyncImportFailed", "Failed to read Excel file:\n{0}"),
+			FText::FromString(ImportError)));
+		return FReply::Handled();
+	}
+
+	// Build base rows (reconstruct from LastSyncedHash - rows as they were at last export)
+	// In a full implementation, we'd store base snapshots; here we use current rows with LastSyncedHash
+	// as the "base" reference point
+	TArray<FQuestTableRow> BaseRows;
+	TArray<FQuestTableRow> UERows;
+
+	for (const FQuestTableRow& Row : TableData->Rows)
+	{
+		if (!Row.bDeleted)
+		{
+			UERows.Add(Row);
+			// Base is conceptually the row at the time of last export
+			// We reconstruct it by checking if the hash has changed
+			if (Row.LastSyncedHash != 0)
+			{
+				BaseRows.Add(Row);  // Row existed at last export
+			}
+		}
+	}
+
+	// Perform 3-way comparison
+	FQuestSyncResult SyncResult = FQuestXLSXSyncEngine::CompareSources(BaseRows, UERows, ExcelRows);
+
+	if (!SyncResult.bSuccess)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+			LOCTEXT("SyncCompareFailed", "Sync comparison failed:\n{0}"),
+			FText::FromString(SyncResult.ErrorMessage)));
+		return FReply::Handled();
+	}
+
+	// Auto-resolve unchanged entries (v4.11: only Unchanged auto-resolves)
+	FQuestXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
+
+	// Check if there are any changes
+	if (!SyncResult.HasChanges())
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoSyncChanges",
+			"No changes detected between UE and Excel.\n"
+			"Both sources are in sync."));
+		return FReply::Handled();
+	}
+
+	// Show approval dialog
+	if (!SQuestXLSXSyncDialog::ShowModal(SyncResult))
+	{
+		// User cancelled
+		return FReply::Handled();
+	}
+
+	// Check all entries are resolved
+	if (!FQuestXLSXSyncEngine::AllConflictsResolved(SyncResult))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("UnresolvedConflicts",
+			"Some entries have not been resolved.\n"
+			"Please resolve all conflicts before applying."));
+		return FReply::Handled();
+	}
+
+	// Apply sync result
+	FQuestMergeResult MergeResult = FQuestXLSXSyncEngine::ApplySync(SyncResult);
+
+	// Replace TableData rows with merged result
+	TableData->Rows.Empty();
+	for (const FQuestTableRow& MergedRow : MergeResult.MergedRows)
+	{
+		FQuestTableRow& NewRow = TableData->Rows.Add_GetRef(MergedRow);
+		NewRow.LastSyncedHash = NewRow.ComputeSyncHash();
+		NewRow.Status = EQuestTableRowStatus::Synced;
+	}
+
+	MarkDirty();
+	SyncFromTableData();
+	RefreshList();
+
+	// Show summary
+	FString Summary = FString::Printf(
+		TEXT("Sync complete!\n\n"
+			"Applied from UE: %d\n"
+			"Applied from Excel: %d\n"
+			"Deleted: %d\n"
+			"Unchanged: %d"),
+		MergeResult.AppliedFromUE,
+		MergeResult.AppliedFromExcel,
+		MergeResult.Deleted,
+		MergeResult.Unchanged);
+
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Summary));
+
 	return FReply::Handled();
 }
 
@@ -1254,8 +1614,98 @@ FReply SQuestTableEditor::OnSaveClicked()
 
 FReply SQuestTableEditor::OnApplyToAssetsClicked()
 {
-	// TODO: Implement apply to existing assets
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "Apply to Assets not yet implemented."));
+	if (!TableData || bIsBusy) return FReply::Handled();
+
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Step 1: Sync UI changes back to TableData
+	for (const TSharedPtr<FQuestTableRowEx>& RowEx : AllRows)
+	{
+		if (RowEx.IsValid() && RowEx->Data.IsValid())
+		{
+			int32 Index = TableData->FindRowIndexByGuid(RowEx->Data->RowId);
+			if (Index != INDEX_NONE)
+			{
+				TableData->Rows[Index] = *RowEx->Data;
+			}
+		}
+	}
+
+	// Step 2: Gather rows to apply (non-deleted rows only)
+	TArray<FQuestTableRow> RowsToApply;
+	for (const FQuestTableRow& Row : TableData->Rows)
+	{
+		if (!Row.bDeleted)
+		{
+			RowsToApply.Add(Row);
+		}
+	}
+
+	if (RowsToApply.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoRowsToApply", "No quest rows to apply. Add quests first."));
+		return FReply::Handled();
+	}
+
+	// Step 3: Confirm with user
+	FText ConfirmMessage = FText::Format(
+		LOCTEXT("ApplyConfirm", "This will regenerate Quest assets for {0} quest state(s).\n\n"
+			"Modified rows will update existing assets.\n"
+			"New rows will create new assets.\n\n"
+			"Continue?"),
+		FText::AsNumber(RowsToApply.Num()));
+
+	EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, ConfirmMessage);
+	if (Result != EAppReturnType::Yes)
+	{
+		return FReply::Handled();
+	}
+
+	// Step 4: Apply to assets
+	FString OutputFolder = TableData ? TableData->OutputFolder : TEXT("/Game/Quests");
+
+	FQuestAssetApplySummary Summary = FQuestAssetSync::ApplyToAssets(
+		RowsToApply,
+		OutputFolder,
+		true);  // bCreateMissing = true
+
+	// Step 5: Update row statuses
+	for (FQuestTableRow& AppliedRow : RowsToApply)
+	{
+		for (TSharedPtr<FQuestTableRowEx>& RowEx : AllRows)
+		{
+			if (RowEx.IsValid() && RowEx->Data.IsValid() && RowEx->Data->RowId == AppliedRow.RowId)
+			{
+				RowEx->Data->Status = AppliedRow.Status;
+				RowEx->Data->GeneratedQuest = AppliedRow.GeneratedQuest;
+				break;
+			}
+		}
+	}
+
+	RefreshList();
+	UpdateStatusBar();
+
+	// Step 6: Show result summary
+	FMessageDialog::Open(EAppMsgType::Ok,
+		FText::Format(LOCTEXT("ApplyComplete",
+			"Apply complete!\n\n"
+			"Quests processed: {0}\n"
+			"Assets created: {1}\n"
+			"Assets modified: {2}\n"
+			"Skipped (unchanged): {3}\n"
+			"Skipped (validation): {4}\n"
+			"Skipped (no asset): {5}\n"
+			"Failed: {6}"),
+			FText::AsNumber(Summary.AssetsProcessed),
+			FText::AsNumber(Summary.AssetsCreated),
+			FText::AsNumber(Summary.AssetsModified),
+			FText::AsNumber(Summary.AssetsSkippedNotModified),
+			FText::AsNumber(Summary.AssetsSkippedValidation),
+			FText::AsNumber(Summary.AssetsSkippedNoAsset),
+			FText::AsNumber(Summary.FailedQuests.Num())));
+
 	return FReply::Handled();
 }
 
@@ -1354,7 +1804,28 @@ void SQuestTableEditorWindow::OnNewTable()
 
 void SQuestTableEditorWindow::OnOpenTable()
 {
-	// TODO: Implement open file dialog
+	// Use content browser asset picker
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+
+	FOpenAssetDialogConfig Config;
+	Config.DialogTitleOverride = LOCTEXT("OpenQuestTableTitle", "Open Quest Table Data");
+	Config.bAllowMultipleSelection = false;
+	Config.AssetClassNames.Add(UQuestTableData::StaticClass()->GetClassPathName());
+
+	TArray<FAssetData> SelectedAssets = ContentBrowserModule.Get().CreateModalOpenAssetDialog(Config);
+	if (SelectedAssets.Num() > 0)
+	{
+		UQuestTableData* LoadedTable = Cast<UQuestTableData>(SelectedAssets[0].GetAsset());
+		if (LoadedTable)
+		{
+			CurrentTableData = LoadedTable;
+			if (TableEditor.IsValid())
+			{
+				TableEditor->SetTableData(LoadedTable);
+			}
+			UpdateTabLabel();
+		}
+	}
 }
 
 void SQuestTableEditorWindow::OnSaveTable()
@@ -1379,7 +1850,52 @@ void SQuestTableEditorWindow::OnSaveTable()
 
 void SQuestTableEditorWindow::OnSaveTableAs()
 {
-	// TODO: Implement save as
+	// Use content browser save asset dialog
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+
+	FSaveAssetDialogConfig Config;
+	Config.DialogTitleOverride = LOCTEXT("SaveQuestTableAsTitle", "Save Quest Table As");
+	Config.DefaultPath = TEXT("/Game/Tables");
+	Config.DefaultAssetName = TEXT("QuestTableData");
+	Config.ExistingAssetPolicy = ESaveAssetDialogExistingAssetPolicy::AllowButWarn;
+
+	FString SelectedPath = ContentBrowserModule.Get().CreateModalSaveAssetDialog(Config);
+	if (!SelectedPath.IsEmpty())
+	{
+		// Create new package
+		FString PackagePath = FPackageName::ObjectPathToPackageName(SelectedPath);
+		FString AssetName = FPackageName::GetLongPackageAssetName(SelectedPath);
+
+		UPackage* NewPackage = CreatePackage(*PackagePath);
+		if (NewPackage)
+		{
+			// Create a new UQuestTableData object in the new package
+			UQuestTableData* NewTableData = NewObject<UQuestTableData>(NewPackage, *AssetName, RF_Public | RF_Standalone);
+
+			// Copy data from current table
+			if (CurrentTableData.IsValid())
+			{
+				NewTableData->Rows = CurrentTableData->Rows;
+			}
+
+			// Register with asset registry
+			FAssetRegistryModule::AssetCreated(NewTableData);
+
+			// Save the package
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Standalone;
+			FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
+			UPackage::SavePackage(NewPackage, NewTableData, *PackageFileName, SaveArgs);
+
+			// Switch to the new table
+			CurrentTableData = NewTableData;
+			if (TableEditor.IsValid())
+			{
+				TableEditor->SetTableData(NewTableData);
+			}
+			UpdateTabLabel();
+		}
+	}
 }
 
 UQuestTableData* SQuestTableEditorWindow::GetOrCreateTableData()

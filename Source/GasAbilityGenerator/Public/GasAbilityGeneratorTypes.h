@@ -5023,6 +5023,12 @@ struct FManifestData
 		for (const auto& Def : Quests) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : CharacterAppearances) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TriggerSets) AssetWhitelist.Add(Def.Name);  // v4.9
+		// v4.12: Pipeline items
+		for (const auto& Def : PipelineItems)
+		{
+			FString ItemName = Def.Name.IsEmpty() ? FString::Printf(TEXT("EI_%s"), *FPaths::GetBaseFilename(Def.Mesh)) : Def.Name;
+			AssetWhitelist.Add(ItemName);
+		}
 
 		bWhitelistBuilt = true;
 	}
@@ -5106,7 +5112,9 @@ struct FManifestData
 			+ Quests.Num()
 			+ CharacterAppearances.Num()
 			// v4.9: TriggerSets
-			+ TriggerSets.Num();
+			+ TriggerSets.Num()
+			// v4.12: Pipeline items
+			+ PipelineItems.Num();
 	}
 
 	/**
@@ -5163,6 +5171,12 @@ struct FManifestData
 		for (const auto& Def : CharacterAppearances) AddWithDupeCheck(Def.Name);
 		// v4.9: TriggerSets
 		for (const auto& Def : TriggerSets) AddWithDupeCheck(Def.Name);
+		// v4.12: Pipeline items
+		for (const auto& Def : PipelineItems)
+		{
+			FString ItemName = Def.Name.IsEmpty() ? FString::Printf(TEXT("EI_%s"), *FPaths::GetBaseFilename(Def.Mesh)) : Def.Name;
+			AddWithDupeCheck(ItemName);
+		}
 		return Names;
 	}
 

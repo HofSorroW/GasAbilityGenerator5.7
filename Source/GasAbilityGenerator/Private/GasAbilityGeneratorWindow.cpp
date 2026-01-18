@@ -9,6 +9,8 @@
 #include "GasAbilityGeneratorWindow.h"
 #include "GasAbilityGeneratorGenerators.h"
 #include "GasAbilityGeneratorParser.h"
+#include "GasAbilityGeneratorPipeline.h"  // v4.12: Mesh-to-Item Pipeline
+#include "GasAbilityGeneratorReport.h"    // v4.12: Window report hooks
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
@@ -912,16 +914,111 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 			*Result.AssetName));
 	}
 
+	// v4.12: Mesh-to-Item Pipeline
+	if (ManifestData.PipelineItems.Num() > 0)
+	{
+		AppendLog(TEXT(""));
+		AppendLog(TEXT("--- Processing Pipeline Items ---"));
+
+		FPipelineProcessor Pipeline;
+		Pipeline.SetProjectRoot(ManifestData.ProjectRoot);
+
+		for (const auto& ItemDef : ManifestData.PipelineItems)
+		{
+			UpdateStatus(FString::Printf(TEXT("Pipeline: %s"), *ItemDef.Mesh));
+
+			// Convert manifest definition to pipeline input
+			FPipelineMeshInput Input;
+			Input.MeshPath = ItemDef.Mesh;
+			Input.DisplayName = ItemDef.DisplayName;
+			Input.EquipmentSlot = ItemDef.Slot;
+			Input.TargetCollection = ItemDef.TargetCollection;
+
+			// Convert type string to enum
+			if (ItemDef.Type.Equals(TEXT("Weapon_Melee"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Weapon_Melee;
+			}
+			else if (ItemDef.Type.Equals(TEXT("Weapon_Ranged"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Weapon_Ranged;
+			}
+			else if (ItemDef.Type.Equals(TEXT("Consumable"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Consumable;
+			}
+			else if (ItemDef.Type.Equals(TEXT("Generic"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Generic;
+			}
+			else
+			{
+				Input.ItemType = EPipelineItemType::Clothing;  // Default
+			}
+
+			FPipelineProcessResult PipeResult = Pipeline.ProcessMesh(Input);
+
+			// Create generation result from pipeline result
+			FString ItemName = ItemDef.Name.IsEmpty() ? FPipelineMeshAnalyzer::GenerateItemAssetName(FPaths::GetBaseFilename(ItemDef.Mesh)) : ItemDef.Name;
+			FGenerationResult Result(
+				ItemName,
+				PipeResult.bSuccess ? EGenerationStatus::New : EGenerationStatus::Failed,
+				PipeResult.bSuccess ? TEXT("Pipeline item generated") : (PipeResult.Errors.Num() > 0 ? PipeResult.Errors[0] : TEXT("Pipeline failed"))
+			);
+			Result.GeneratorId = TEXT("Pipeline");
+			Result.AssetPath = PipeResult.GeneratedItemPath;
+			Result.DetermineCategory();
+
+			Summary.AddResult(Result);
+
+			AppendLog(FString::Printf(TEXT("[%s] Pipeline: %s"),
+				PipeResult.bSuccess ? TEXT("NEW") : TEXT("FAIL"),
+				*ItemName));
+		}
+
+		AppendLog(FString::Printf(TEXT("Pipeline items processed: %d"), ManifestData.PipelineItems.Num()));
+	}
+
 	FGeneratorBase::ClearActiveManifest();
 
-	// v3.0: Show appropriate results dialog based on mode
+	// v4.12: Generate report for both real-run and dry-run modes
+	// This provides machine-readable output for CI/CD and debugging
+	FString ManifestContent;
+	FFileHelper::LoadFileToString(ManifestContent, *ManifestPath);
+	int64 ManifestHash = GetTypeHash(ManifestContent);
+
 	if (bDryRun)
 	{
+		// Create dry-run report
+		FDryRunSummary DryRunSummary = FGeneratorBase::GetDryRunSummary();
+		UGenerationReport* Report = FGenerationReportHelper::CreateAndSaveDryRunReport(
+			ManifestPath,
+			ManifestHash,
+			DryRunSummary,
+			bForce);
+
+		if (Report)
+		{
+			AppendLog(FString::Printf(TEXT("Report saved: %s"), *FGenerationReportHelper::GetReportAssetPath()));
+		}
+
 		UpdateStatus(TEXT("Dry run complete. No changes made."));
-		ShowDryRunResultsDialog(FGeneratorBase::GetDryRunSummary());
+		ShowDryRunResultsDialog(DryRunSummary);
 	}
 	else
 	{
+		// Create real-run report
+		UGenerationReport* Report = FGenerationReportHelper::CreateAndSaveReport(
+			ManifestPath,
+			ManifestHash,
+			Summary.Results,
+			bForce);
+
+		if (Report)
+		{
+			AppendLog(FString::Printf(TEXT("Report saved: %s"), *FGenerationReportHelper::GetReportAssetPath()));
+		}
+
 		UpdateStatus(TEXT("Generation complete. Refresh Content Browser."));
 		ShowResultsDialog(Summary);
 	}

@@ -4,9 +4,15 @@
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #include "ItemTableEditor/SItemTableEditor.h"
+#include "ItemTableEditor/ItemXLSXWriter.h"
+#include "ItemTableEditor/ItemXLSXReader.h"
+#include "XLSXSupport/ItemXLSXSyncEngine.h"   // v4.12: 3-way sync engine
+#include "XLSXSupport/SItemXLSXSyncDialog.h"  // v4.12: Sync dialog
+#include "ItemTableEditor/ItemAssetSync.h"    // v4.12: Asset sync
 #include "ItemTableConverter.h"
 #include "ItemTableValidator.h"
 #include "GasAbilityGeneratorGenerators.h"
+#include "DesktopPlatformModule.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -26,6 +32,8 @@
 #include "Misc/MessageDialog.h"
 #include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "ContentBrowserModule.h"
+#include "IContentBrowserSingleton.h"
 #include "Items/NarrativeItem.h"
 #include "Items/EquippableItem.h"
 #include "Items/WeaponItem.h"
@@ -866,7 +874,73 @@ void SItemTableEditor::OnColumnTextFilterChanged(FName ColumnId, const FText& Ne
 
 void SItemTableEditor::OnColumnDropdownFilterChanged(FName ColumnId, const FString& Value, bool bIsSelected)
 {
+	FItemColumnFilterState* State = ColumnFilters.Find(ColumnId);
+	if (!State) return;
+
+	// Handle special case: if currently showing all, initialize with all values then toggle
+	if (State->SelectedValues.Num() == 0 || State->SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+	{
+		State->SelectedValues.Empty();
+		if (bIsSelected)
+		{
+			// Just add this single value
+			State->SelectedValues.Add(Value);
+		}
+		else
+		{
+			// Initialize with all values except this one
+			TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
+			for (const FString& V : AllValues)
+			{
+				if (V != Value)
+				{
+					State->SelectedValues.Add(V);
+				}
+			}
+		}
+	}
+	else
+	{
+		// Toggle the specific value
+		if (bIsSelected)
+		{
+			State->SelectedValues.Add(Value);
+		}
+		else
+		{
+			State->SelectedValues.Remove(Value);
+		}
+	}
+
+	// If all values are selected, clear the filter (show all)
+	TArray<FString> AllValues = GetUniqueColumnValues(ColumnId);
+	if (State->SelectedValues.Num() == AllValues.Num())
+	{
+		State->SelectedValues.Empty();
+	}
+
 	ApplyFilters();
+}
+
+TArray<FString> SItemTableEditor::GetUniqueColumnValues(FName ColumnId) const
+{
+	// Filter dropdowns show values from the current table data (AllRows)
+	TSet<FString> UniqueSet;
+
+	for (const TSharedPtr<FItemTableRow>& Row : AllRows)
+	{
+		FString Value = GetColumnValue(Row, ColumnId);
+		// Empty cells become "(None)" for display consistency
+		if (Value.IsEmpty())
+		{
+			Value = TEXT("(None)");
+		}
+		UniqueSet.Add(Value);
+	}
+
+	TArray<FString> Result = UniqueSet.Array();
+	Result.Sort();
+	return Result;
 }
 
 FReply SItemTableEditor::OnClearFiltersClicked()
@@ -927,10 +1001,24 @@ void SItemTableEditor::ApplyFilters()
 		for (const auto& Pair : ColumnFilters)
 		{
 			const FItemColumnFilterState& State = Pair.Value;
+			FString Value = GetColumnValue(Row, Pair.Key);
+
+			// Check text filter
 			if (!State.TextFilter.IsEmpty())
 			{
-				FString Value = GetColumnValue(Row, Pair.Key);
 				if (!Value.Contains(State.TextFilter))
+				{
+					bPassesFilter = false;
+					break;
+				}
+			}
+
+			// Check dropdown filter (SelectedValues)
+			if (State.SelectedValues.Num() > 0 && !State.SelectedValues.Contains(TEXT("__NONE_SELECTED__")))
+			{
+				// Normalize empty values to "(None)" for consistency with GetUniqueColumnValues
+				FString NormalizedValue = Value.IsEmpty() ? TEXT("(None)") : Value;
+				if (!State.SelectedValues.Contains(NormalizedValue))
 				{
 					bPassesFilter = false;
 					break;
@@ -1511,19 +1599,293 @@ FReply SItemTableEditor::OnSyncFromAssetsClicked()
 
 FReply SItemTableEditor::OnExportXLSXClicked()
 {
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "XLSX Export not yet implemented."));
+	if (!TableData || bIsBusy) return FReply::Handled();
+
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Sync UI changes back to TableData
+	for (const TSharedPtr<FItemTableRow>& Row : AllRows)
+	{
+		if (Row.IsValid())
+		{
+			int32 Index = TableData->FindRowIndexByGuid(Row->RowId);
+			if (Index != INDEX_NONE)
+			{
+				TableData->Rows[Index] = *Row;
+			}
+		}
+	}
+
+	// Show save dialog
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform)
+	{
+		return FReply::Handled();
+	}
+
+	TArray<FString> OutFiles;
+	FString DefaultPath = FPaths::ProjectSavedDir() / TEXT("Exports");
+	FString DefaultFile = TEXT("ItemTable.xlsx");
+
+	bool bOpened = DesktopPlatform->SaveFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
+		TEXT("Export Item Table"),
+		DefaultPath,
+		DefaultFile,
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		0,
+		OutFiles
+	);
+
+	if (bOpened && OutFiles.Num() > 0)
+	{
+		FString Error;
+		if (FItemXLSXWriter::ExportToXLSX(TableData->Rows, OutFiles[0], Error))
+		{
+			// Update sync hashes after successful export
+			for (FItemTableRow& Row : TableData->Rows)
+			{
+				Row.LastSyncedHash = Row.ComputeSyncHash();
+				Row.Status = EItemTableRowStatus::Synced;
+			}
+
+			MarkDirty();
+			RefreshList();
+
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("ExportSuccess", "Exported {0} items to:\n{1}"),
+					FText::AsNumber(TableData->Rows.Num()),
+					FText::FromString(OutFiles[0])));
+		}
+		else
+		{
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("ExportFailed", "Export failed: {0}"),
+					FText::FromString(Error)));
+		}
+	}
+
 	return FReply::Handled();
 }
 
 FReply SItemTableEditor::OnImportXLSXClicked()
 {
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "XLSX Import not yet implemented."));
+	if (!TableData || bIsBusy) return FReply::Handled();
+
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Show open dialog
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform)
+	{
+		return FReply::Handled();
+	}
+
+	TArray<FString> OutFiles;
+	FString DefaultPath = FPaths::ProjectSavedDir() / TEXT("Exports");
+
+	bool bOpened = DesktopPlatform->OpenFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
+		TEXT("Import Item Table"),
+		DefaultPath,
+		TEXT(""),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		0,
+		OutFiles
+	);
+
+	if (bOpened && OutFiles.Num() > 0)
+	{
+		// Validate file format
+		if (!FItemXLSXReader::IsValidItemXLSX(OutFiles[0]))
+		{
+			FMessageDialog::Open(EAppMsgType::Ok,
+				LOCTEXT("InvalidFormat", "Invalid file format. Please select an Item Table XLSX file exported from this editor."));
+			return FReply::Handled();
+		}
+
+		TArray<FItemTableRow> ImportedRows;
+		FString Error;
+
+		if (FItemXLSXReader::ImportFromXLSX(OutFiles[0], ImportedRows, Error))
+		{
+			// Replace table data with imported rows
+			TableData->Rows = ImportedRows;
+
+			// Invalidate validation for all rows
+			for (FItemTableRow& Row : TableData->Rows)
+			{
+				Row.InvalidateValidation();
+			}
+
+			MarkDirty();
+			SyncFromTableData();
+			RefreshList();
+
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("ImportSuccess", "Imported {0} items from:\n{1}"),
+					FText::AsNumber(ImportedRows.Num()),
+					FText::FromString(OutFiles[0])));
+		}
+		else
+		{
+			FMessageDialog::Open(EAppMsgType::Ok,
+				FText::Format(LOCTEXT("ImportFailed", "Import failed: {0}"),
+					FText::FromString(Error)));
+		}
+	}
+
 	return FReply::Handled();
 }
 
 FReply SItemTableEditor::OnSyncXLSXClicked()
 {
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "XLSX Sync not yet implemented."));
+	if (!TableData || bIsBusy) return FReply::Handled();
+
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Show open dialog to select XLSX file
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform) return FReply::Handled();
+
+	TArray<FString> OutFiles;
+	FString DefaultPath = FPaths::ProjectSavedDir() / TEXT("Exports");
+
+	bool bOpened = DesktopPlatform->OpenFileDialog(
+		FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr),
+		TEXT("Select Item XLSX for Sync"),
+		DefaultPath,
+		TEXT(""),
+		TEXT("Excel Files (*.xlsx)|*.xlsx"),
+		0,
+		OutFiles
+	);
+
+	if (!bOpened || OutFiles.Num() == 0)
+	{
+		return FReply::Handled();
+	}
+
+	// Validate the file format
+	if (!FItemXLSXReader::IsValidItemXLSX(OutFiles[0]))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("InvalidSyncFile",
+			"The selected file is not a valid Item XLSX file.\n"
+			"Make sure it was exported from the Item Table Editor."));
+		return FReply::Handled();
+	}
+
+	// Sync UI changes back to TableData first
+	for (const TSharedPtr<FItemTableRow>& Row : AllRows)
+	{
+		if (Row.IsValid())
+		{
+			int32 Index = TableData->FindRowIndexByGuid(Row->RowId);
+			if (Index != INDEX_NONE)
+			{
+				TableData->Rows[Index] = *Row;
+			}
+		}
+	}
+
+	// Import rows from Excel
+	TArray<FItemTableRow> ExcelRows;
+	FString ImportError;
+	if (!FItemXLSXReader::ImportFromXLSX(OutFiles[0], ExcelRows, ImportError))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+			LOCTEXT("SyncImportFailed", "Failed to read Excel file:\n{0}"),
+			FText::FromString(ImportError)));
+		return FReply::Handled();
+	}
+
+	// Build base rows and UE rows
+	TArray<FItemTableRow> BaseRows;
+	TArray<FItemTableRow> UERows;
+
+	for (const FItemTableRow& Row : TableData->Rows)
+	{
+		if (!Row.bDeleted)
+		{
+			UERows.Add(Row);
+			// Base is conceptually the row at the time of last export
+			// Rows with non-zero LastSyncedHash existed at last export
+			if (Row.LastSyncedHash != 0)
+			{
+				BaseRows.Add(Row);
+			}
+		}
+	}
+
+	// Perform 3-way comparison
+	FItemSyncResult SyncResult = FItemXLSXSyncEngine::CompareSources(BaseRows, UERows, ExcelRows);
+
+	if (!SyncResult.bSuccess)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::Format(
+			LOCTEXT("SyncCompareFailed", "Sync comparison failed:\n{0}"),
+			FText::FromString(SyncResult.ErrorMessage)));
+		return FReply::Handled();
+	}
+
+	// Auto-resolve unchanged entries (v4.11: only Unchanged auto-resolves)
+	FItemXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
+
+	// Check if there are any changes
+	if (!SyncResult.HasChanges())
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoSyncChanges",
+			"No changes detected between UE and Excel.\n"
+			"Both sources are in sync."));
+		return FReply::Handled();
+	}
+
+	// Show approval dialog
+	if (!SItemXLSXSyncDialog::ShowModal(SyncResult))
+	{
+		// User cancelled
+		return FReply::Handled();
+	}
+
+	// Check all entries are resolved
+	if (!FItemXLSXSyncEngine::AllConflictsResolved(SyncResult))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("UnresolvedConflicts",
+			"Some entries have not been resolved.\n"
+			"Please resolve all conflicts before applying."));
+		return FReply::Handled();
+	}
+
+	// Apply sync result
+	FItemMergeResult MergeResult = FItemXLSXSyncEngine::ApplySync(SyncResult);
+
+	// Replace TableData rows with merged result
+	TableData->Rows.Empty();
+	for (const FItemTableRow& MergedRow : MergeResult.MergedRows)
+	{
+		FItemTableRow& NewRow = TableData->Rows.Add_GetRef(MergedRow);
+		NewRow.LastSyncedHash = NewRow.ComputeSyncHash();
+		NewRow.Status = EItemTableRowStatus::Synced;
+	}
+
+	MarkDirty();
+	SyncFromTableData();
+	RefreshList();
+
+	// Show summary
+	FString Summary = FString::Printf(
+		TEXT("Sync complete!\n\n"
+			"Applied from UE: %d\n"
+			"Applied from Excel: %d\n"
+			"Deleted: %d\n"
+			"Unchanged: %d"),
+		MergeResult.AppliedFromUE,
+		MergeResult.AppliedFromExcel,
+		MergeResult.Deleted,
+		MergeResult.Unchanged);
+
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Summary));
+
 	return FReply::Handled();
 }
 
@@ -1562,7 +1924,98 @@ FReply SItemTableEditor::OnSaveClicked()
 
 FReply SItemTableEditor::OnApplyToAssetsClicked()
 {
-	FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NotImplemented", "Apply to Assets not yet implemented."));
+	if (!TableData || bIsBusy) return FReply::Handled();
+
+	TGuardValue<bool> BusyGuard(bIsBusy, true);
+
+	// Step 1: Sync UI changes back to TableData
+	for (const TSharedPtr<FItemTableRow>& Row : AllRows)
+	{
+		if (Row.IsValid())
+		{
+			int32 Index = TableData->FindRowIndexByGuid(Row->RowId);
+			if (Index != INDEX_NONE)
+			{
+				TableData->Rows[Index] = *Row;
+			}
+		}
+	}
+
+	// Step 2: Gather rows to apply (non-deleted rows only)
+	TArray<FItemTableRow> RowsToApply;
+	for (const FItemTableRow& Row : TableData->Rows)
+	{
+		if (!Row.bDeleted)
+		{
+			RowsToApply.Add(Row);
+		}
+	}
+
+	if (RowsToApply.Num() == 0)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok,
+			LOCTEXT("NoRowsToApply", "No item rows to apply. Add items first."));
+		return FReply::Handled();
+	}
+
+	// Step 3: Confirm with user
+	FText ConfirmMessage = FText::Format(
+		LOCTEXT("ApplyConfirm", "This will regenerate Item assets for {0} item(s).\n\n"
+			"Modified rows will update existing assets.\n"
+			"New rows will create new assets.\n\n"
+			"Continue?"),
+		FText::AsNumber(RowsToApply.Num()));
+
+	EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, ConfirmMessage);
+	if (Result != EAppReturnType::Yes)
+	{
+		return FReply::Handled();
+	}
+
+	// Step 4: Apply to assets
+	FString OutputFolder = TableData ? TableData->OutputFolder : TEXT("/Game/Items");
+
+	FItemAssetApplySummary Summary = FItemAssetSync::ApplyToAssets(
+		RowsToApply,
+		OutputFolder,
+		true);  // bCreateMissing = true
+
+	// Step 5: Update row statuses
+	for (FItemTableRow& AppliedRow : RowsToApply)
+	{
+		for (TSharedPtr<FItemTableRow>& Row : AllRows)
+		{
+			if (Row.IsValid() && Row->RowId == AppliedRow.RowId)
+			{
+				Row->Status = AppliedRow.Status;
+				Row->GeneratedItem = AppliedRow.GeneratedItem;
+				break;
+			}
+		}
+	}
+
+	RefreshList();
+	UpdateStatusBar();
+
+	// Step 6: Show result summary
+	FMessageDialog::Open(EAppMsgType::Ok,
+		FText::Format(LOCTEXT("ApplyComplete",
+			"Apply complete!\n\n"
+			"Items processed: {0}\n"
+			"Assets created: {1}\n"
+			"Assets modified: {2}\n"
+			"Skipped (unchanged): {3}\n"
+			"Skipped (validation): {4}\n"
+			"Skipped (no asset): {5}\n"
+			"Failed: {6}"),
+			FText::AsNumber(Summary.AssetsProcessed),
+			FText::AsNumber(Summary.AssetsCreated),
+			FText::AsNumber(Summary.AssetsModified),
+			FText::AsNumber(Summary.AssetsSkippedNotModified),
+			FText::AsNumber(Summary.AssetsSkippedValidation),
+			FText::AsNumber(Summary.AssetsSkippedNoAsset),
+			FText::AsNumber(Summary.FailedItems.Num())));
+
 	return FReply::Handled();
 }
 
@@ -1583,7 +2036,41 @@ void SItemTableEditor::OnRowModified()
 
 void SItemTableEditor::UpdateDynamicColumnVisibility()
 {
-	// TODO: Update header column visibility based on item type filter
+	// Determine which item types are visible in the filtered data
+	bool bHasWeapons = false;
+	bool bHasRanged = false;
+	bool bHasEquippables = false;
+
+	for (const TSharedPtr<FItemTableRow>& Row : DisplayedRows)
+	{
+		if (!Row.IsValid()) continue;
+
+		switch (Row->ItemType)
+		{
+			case EItemType::RangedWeapon:
+				bHasRanged = true;
+				bHasWeapons = true;
+				break;
+			case EItemType::MeleeWeapon:
+			case EItemType::MagicWeapon:
+			case EItemType::ThrowableWeapon:
+				bHasWeapons = true;
+				break;
+			case EItemType::Equippable:
+			case EItemType::Clothing:
+				bHasEquippables = true;
+				break;
+			default:
+				break;
+		}
+	}
+
+	// v4.12: Column visibility state (could be used by header row widget)
+	// For now, just refresh the list which will use ShouldShowColumn in each row
+	if (ListView.IsValid())
+	{
+		ListView->RequestListRefresh();
+	}
 }
 
 //=============================================================================
@@ -1666,7 +2153,28 @@ void SItemTableEditorWindow::OnNewTable()
 
 void SItemTableEditorWindow::OnOpenTable()
 {
-	// TODO: Implement open file dialog
+	// Use content browser asset picker
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+
+	FOpenAssetDialogConfig Config;
+	Config.DialogTitleOverride = LOCTEXT("OpenItemTableTitle", "Open Item Table Data");
+	Config.bAllowMultipleSelection = false;
+	Config.AssetClassNames.Add(UItemTableData::StaticClass()->GetClassPathName());
+
+	TArray<FAssetData> SelectedAssets = ContentBrowserModule.Get().CreateModalOpenAssetDialog(Config);
+	if (SelectedAssets.Num() > 0)
+	{
+		UItemTableData* LoadedTable = Cast<UItemTableData>(SelectedAssets[0].GetAsset());
+		if (LoadedTable)
+		{
+			CurrentTableData = LoadedTable;
+			if (TableEditor.IsValid())
+			{
+				TableEditor->SetTableData(LoadedTable);
+			}
+			UpdateTabLabel();
+		}
+	}
 }
 
 void SItemTableEditorWindow::OnSaveTable()
@@ -1691,7 +2199,52 @@ void SItemTableEditorWindow::OnSaveTable()
 
 void SItemTableEditorWindow::OnSaveTableAs()
 {
-	// TODO: Implement save as
+	// Use content browser save asset dialog
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+
+	FSaveAssetDialogConfig Config;
+	Config.DialogTitleOverride = LOCTEXT("SaveItemTableAsTitle", "Save Item Table As");
+	Config.DefaultPath = TEXT("/Game/Tables");
+	Config.DefaultAssetName = TEXT("ItemTableData");
+	Config.ExistingAssetPolicy = ESaveAssetDialogExistingAssetPolicy::AllowButWarn;
+
+	FString SelectedPath = ContentBrowserModule.Get().CreateModalSaveAssetDialog(Config);
+	if (!SelectedPath.IsEmpty())
+	{
+		// Create new package
+		FString PackagePath = FPackageName::ObjectPathToPackageName(SelectedPath);
+		FString AssetName = FPackageName::GetLongPackageAssetName(SelectedPath);
+
+		UPackage* NewPackage = CreatePackage(*PackagePath);
+		if (NewPackage)
+		{
+			// Create a new UItemTableData object in the new package
+			UItemTableData* NewTableData = NewObject<UItemTableData>(NewPackage, *AssetName, RF_Public | RF_Standalone);
+
+			// Copy data from current table
+			if (CurrentTableData.IsValid())
+			{
+				NewTableData->Rows = CurrentTableData->Rows;
+			}
+
+			// Register with asset registry
+			FAssetRegistryModule::AssetCreated(NewTableData);
+
+			// Save the package
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Standalone;
+			FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
+			UPackage::SavePackage(NewPackage, NewTableData, *PackageFileName, SaveArgs);
+
+			// Switch to the new table
+			CurrentTableData = NewTableData;
+			if (TableEditor.IsValid())
+			{
+				TableEditor->SetTableData(NewTableData);
+			}
+			UpdateTabLabel();
+		}
+	}
 }
 
 UItemTableData* SItemTableEditorWindow::GetOrCreateTableData()

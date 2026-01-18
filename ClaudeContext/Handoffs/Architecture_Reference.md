@@ -1,7 +1,7 @@
 # Architecture Reference
 
-**Consolidated:** 2026-01-17
-**Plugin Version:** v4.8
+**Consolidated:** 2026-01-18
+**Plugin Version:** v4.12.1
 **Status:** Complete reference for plugin architecture, generators, and automation coverage
 
 This document consolidates architecture documentation, generator implementation patterns, coverage analysis, and the report system.
@@ -12,9 +12,11 @@ This document consolidates architecture documentation, generator implementation 
 
 1. [Generation Report System (v4.7)](#1-generation-report-system-v47)
 2. [Generator Implementation Reference](#2-generator-implementation-reference)
-3. [Automation Coverage Analysis](#3-automation-coverage-analysis)
-4. [Historical Automation Status](#4-historical-automation-status)
-5. [Future: Design Compiler & Spec DataAssets](#5-future-design-compiler--spec-dataassets)
+3. [Table Editor 3-Way Sync System (v4.12)](#3-table-editor-3-way-sync-system-v412)
+4. [Automation Coverage Analysis](#4-automation-coverage-analysis)
+5. [Historical Automation Status](#5-historical-automation-status)
+6. [Known TODOs & Placeholders](#6-known-todos--placeholders)
+7. [Future: Design Compiler & Spec DataAssets](#7-future-design-compiler--spec-dataassets)
 
 ---
 
@@ -28,7 +30,8 @@ Machine-readable generation reports for CI/CD integration and debugging. Reports
 |------|---------|
 | `GasAbilityGeneratorReport.h` | Report structs and helper class |
 | `GasAbilityGeneratorReport.cpp` | Report implementation |
-| `GasAbilityGeneratorCommandlet.cpp` | Report creation hooks |
+| `GasAbilityGeneratorCommandlet.cpp` | Report creation hooks (commandlet) |
+| `GasAbilityGeneratorWindow.cpp` | Report creation hooks (editor UI v4.12) |
 | `GasAbilityGeneratorTypes.h` | FGenerationResult with AssetPath/GeneratorId |
 
 ### Report Structure
@@ -106,6 +109,7 @@ class UGenerationReport : public UDataAsset
 | BehaviorTree | BT_ behavior trees |
 | Material | M_ materials |
 | MaterialFunction | MF_ material functions |
+| MaterialInstance | MIC_ material instances (v4.9) |
 | FloatCurve | FC_ float curves |
 | AnimationMontage | AM_ animation montages |
 | AnimationNotify | NAS_ animation notifies |
@@ -128,6 +132,7 @@ class UGenerationReport : public UDataAsset
 | Quest | Quest_ quests |
 | POIPlacement | Level actor POI |
 | NPCSpawnerPlacement | Level actor spawner |
+| Pipeline | Mesh-to-Item pipeline (v4.12) |
 
 ### JSON Report Example
 
@@ -429,7 +434,88 @@ widget_blueprints:
 
 ---
 
-## 3. Automation Coverage Analysis
+## 3. Table Editor 3-Way Sync System (v4.12)
+
+All four table editors (NPC, Dialogue, Quest, Item) implement a 3-way merge system for Excel ↔ UE synchronization.
+
+### Architecture
+
+```
+Export creates base snapshot with per-row hashes
+     ↓
+User edits in Excel (may add/delete/modify rows)
+     ↓
+Sync compares: Base (from export) vs UE (current) vs Excel (imported)
+     ↓
+Detects conflicts, presents resolution UI
+     ↓
+Applies merged changes
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `XLSXSupport/NPCXLSXSyncEngine.h/cpp` | NPC 3-way sync engine |
+| `XLSXSupport/DialogueXLSXSyncEngine.h/cpp` | Dialogue 3-way sync engine |
+| `XLSXSupport/QuestXLSXSyncEngine.h/cpp` | Quest 3-way sync engine (v4.12) |
+| `XLSXSupport/ItemXLSXSyncEngine.h/cpp` | Item 3-way sync engine (v4.12) |
+| `XLSXSupport/SNPCXLSXSyncDialog.h/cpp` | NPC sync approval dialog |
+| `XLSXSupport/SDialogueXLSXSyncDialog.h/cpp` | Dialogue sync approval dialog |
+| `XLSXSupport/SQuestXLSXSyncDialog.h/cpp` | Quest sync approval dialog (v4.12) |
+| `XLSXSupport/SItemXLSXSyncDialog.h/cpp` | Item sync approval dialog (v4.12) |
+
+### v4.11 Rule: Only Unchanged Auto-Resolves
+
+Per Table_Editors_Reference.md v4.11:
+- **Case 1 (Unchanged)**: Base == UE == Excel → Auto-resolves to KeepUE
+- **All 13 other cases**: Require explicit user approval in full-screen window
+
+### Sync Status Enum
+
+```cpp
+enum class E*SyncStatus : uint8
+{
+    Unchanged,          // Base == UE == Excel (no action needed)
+    ModifiedInUE,       // Base != UE, Base == Excel (keep UE changes)
+    ModifiedInExcel,    // Base == UE, Base != Excel (apply Excel changes)
+    Conflict,           // Base != UE && Base != Excel (user must resolve)
+    AddedInUE,          // Not in Base, exists in UE only
+    AddedInExcel,       // Not in Base, exists in Excel only
+    DeletedInUE,        // In Base & Excel, missing in UE
+    DeletedInExcel,     // In Base & UE, explicitly deleted in Excel
+    DeleteConflict      // Deleted in one source, modified in other
+};
+```
+
+### Approval Dialog UI Features
+
+- **Window Size**: 80% of screen work area (minimum 800×600)
+- **Radio Selection**: ○/● for value selection
+- **Row Highlighting**: Yellow = unresolved, Green = resolved
+- **Action Column**: REMOVE option only for cases 6-14 (where deletion possible)
+- **Apply Button**: Only enabled when all entries resolved
+
+### Usage Pattern
+
+```cpp
+// In OnSyncXLSXClicked:
+FQuestSyncResult SyncResult = FQuestXLSXSyncEngine::CompareSources(BaseRows, UERows, ExcelRows);
+FQuestXLSXSyncEngine::AutoResolveNonConflicts(SyncResult);
+
+if (SyncResult.HasChanges())
+{
+    if (SQuestXLSXSyncDialog::ShowModal(SyncResult))
+    {
+        FQuestMergeResult Merged = FQuestXLSXSyncEngine::ApplySync(SyncResult);
+        // Apply Merged.MergedRows to TableData
+    }
+}
+```
+
+---
+
+## 4. Automation Coverage Analysis
 
 ### Coverage Statistics (v4.8)
 
@@ -469,7 +555,7 @@ These remaining gaps represent edge cases requiring editor visual tools.
 
 ---
 
-## 4. Historical Automation Status
+## 5. Historical Automation Status
 
 All features IMPLEMENTED in GasAbilityGenerator v4.8.
 
@@ -548,11 +634,55 @@ All features IMPLEMENTED in GasAbilityGenerator v4.8.
 
 ---
 
-## 5. Future: Design Compiler & Spec DataAssets
+## 6. Known TODOs & Placeholders
+
+Remaining TODOs and placeholder implementations identified in the codebase (as of v4.12):
+
+### Critical: Not Yet Implemented
+
+*All critical TODOs completed as of v4.12.1*
+
+### Recently Completed (v4.12.1)
+
+| Feature | File | Implementation |
+|---------|------|----------------|
+| Apply to Assets (Quest) | `SQuestTableEditor.cpp` | `FQuestAssetSync::ApplyToAssets()` with validation gate, status tracking |
+| Apply to Assets (Item) | `SItemTableEditor.cpp` | `FItemAssetSync::ApplyToAssets()` with generation tracking |
+| Dropdown Filters (Quest) | `SQuestTableEditor.cpp` | `OnColumnDropdownFilterChanged()`, `GetUniqueColumnValues()` |
+| Dropdown Filters (Item) | `SItemTableEditor.cpp` | `OnColumnDropdownFilterChanged()`, `GetUniqueColumnValues()` |
+| Open Table Dialog (Quest) | `SQuestTableEditor.cpp` | `OnOpenTable()` via `FContentBrowserModule::CreateModalOpenAssetDialog` |
+| Save Table As Dialog (Quest) | `SQuestTableEditor.cpp` | `OnSaveTableAs()` via `FSaveAssetDialogConfig::CreateModalSaveAssetDialog` |
+| Open Table Dialog (Item) | `SItemTableEditor.cpp` | `OnOpenTable()` via `FContentBrowserModule::CreateModalOpenAssetDialog` |
+| Save Table As Dialog (Item) | `SItemTableEditor.cpp` | `OnSaveTableAs()` via `FSaveAssetDialogConfig::CreateModalSaveAssetDialog` |
+| Dynamic Column Visibility (Item) | `SItemTableEditor.cpp` | `UpdateDynamicColumnVisibility()` based on ItemType filter |
+
+### TODOs for Future Enhancement
+
+| File | Location | Description |
+|------|----------|-------------|
+| `SDialogueTableEditor.cpp` | Line 2999 | True 3-way merge using per-row LastSyncedHash |
+| `SDialogueTableEditor.cpp` | Line 3111 | Store base rows in TableData after export |
+| `QuestTableConverter.cpp` | Line 366 | Build token strings from parsed data |
+| `NPCAssetSync.cpp` | Line 263 | Create new asset via FNPCDefinitionGenerator |
+| `SNPCTableEditor.cpp` | Line 2775 | POI preservation logic edge cases |
+| `SNPCTableEditor.cpp` | Line 3120 | Load base rows from stored snapshot for 3-way merge |
+| `NPCXLSXSyncEngine.cpp` | Line 665 | Create new asset via FNPCDefinitionGenerator |
+
+### Acceptable Placeholders (By Design)
+
+| File | Description | Reason |
+|------|-------------|--------|
+| `GasAbilityGeneratorWindow.cpp:1630` | Sound Wave placeholder | Audio assets require manual import |
+| `GasAbilityGeneratorWindow.cpp:1633` | Level Sequence placeholder | Requires Sequencer editor |
+| `SDialogueTableEditor.cpp:3415-3429` | Placeholder rows for empty dialogues | By design for editor UX |
+
+---
+
+## 7. Future: Design Compiler & Spec DataAssets
 
 Two complementary approaches for improved authoring workflow (deferred for future implementation):
 
-### 5.1 Design Compiler Architecture
+### 7.1 Design Compiler Architecture
 
 **Purpose:** Transform high-level, human-friendly game design specs into the flat manifest.yaml consumed by GasAbilityGenerator.
 
@@ -578,7 +708,7 @@ DesignSpec/                    ┌───────────────�
 2. C++ Compiler (in plugin) - More complex
 3. Lightweight Include Only (~50 lines) - Good intermediate step
 
-### 5.2 Spec DataAsset Workflow
+### 7.2 Spec DataAsset Workflow
 
 **Purpose:** Replace YAML-centric workflow with native UE DataAssets + Content Browser right-click generation.
 

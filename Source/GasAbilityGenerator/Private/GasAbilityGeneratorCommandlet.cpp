@@ -8,6 +8,7 @@
 #include "GasAbilityGeneratorMetadata.h"  // v3.1: For metadata registry
 #include "GasAbilityGeneratorDialogueCSVParser.h"  // v4.0: CSV dialogue parsing
 #include "GasAbilityGeneratorReport.h"  // v4.7: Generation report system
+#include "GasAbilityGeneratorPipeline.h"  // v4.12: Mesh-to-Item Pipeline
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/App.h"  // v4.11: For FApp::CanEverRender() in headless detection
@@ -1174,6 +1175,79 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
 			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
 			*Result.AssetName));
+	}
+
+	// v4.12: Mesh-to-Item Pipeline
+	if (ManifestData.PipelineItems.Num() > 0)
+	{
+		LogMessage(TEXT(""));
+		LogMessage(TEXT("--- Processing Pipeline Items ---"));
+
+		FPipelineProcessor Pipeline;
+		Pipeline.SetProjectRoot(ManifestData.ProjectRoot);
+
+		for (const auto& ItemDef : ManifestData.PipelineItems)
+		{
+			// Convert manifest definition to pipeline input
+			FPipelineMeshInput Input;
+			Input.MeshPath = ItemDef.Mesh;
+			Input.DisplayName = ItemDef.DisplayName;
+			Input.EquipmentSlot = ItemDef.Slot;
+			Input.TargetCollection = ItemDef.TargetCollection;
+
+			// Convert type string to enum
+			if (ItemDef.Type.Equals(TEXT("Weapon_Melee"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Weapon_Melee;
+			}
+			else if (ItemDef.Type.Equals(TEXT("Weapon_Ranged"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Weapon_Ranged;
+			}
+			else if (ItemDef.Type.Equals(TEXT("Consumable"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Consumable;
+			}
+			else if (ItemDef.Type.Equals(TEXT("Generic"), ESearchCase::IgnoreCase))
+			{
+				Input.ItemType = EPipelineItemType::Generic;
+			}
+			else
+			{
+				Input.ItemType = EPipelineItemType::Clothing;  // Default
+			}
+
+			FPipelineProcessResult PipeResult = Pipeline.ProcessMesh(Input);
+
+			// Create generation result from pipeline result
+			FString ItemName = ItemDef.Name.IsEmpty() ? FPipelineMeshAnalyzer::GenerateItemAssetName(FPaths::GetBaseFilename(ItemDef.Mesh)) : ItemDef.Name;
+			FGenerationResult Result(
+				ItemName,
+				PipeResult.bSuccess ? EGenerationStatus::New : EGenerationStatus::Failed,
+				PipeResult.bSuccess ? TEXT("Pipeline item generated") : (PipeResult.Errors.Num() > 0 ? PipeResult.Errors[0] : TEXT("Pipeline failed"))
+			);
+			Result.GeneratorId = TEXT("Pipeline");
+			Result.AssetPath = PipeResult.GeneratedItemPath;
+			Result.DetermineCategory();
+
+			Summary.AddResult(Result);
+			if (!ItemName.IsEmpty())
+			{
+				TrackProcessedAsset(ItemName);
+			}
+
+			LogMessage(FString::Printf(TEXT("[%s] Pipeline: %s"),
+				PipeResult.bSuccess ? TEXT("NEW") : TEXT("FAIL"),
+				*ItemName));
+
+			// Log warnings
+			for (const FString& Warning : PipeResult.Warnings)
+			{
+				LogMessage(FString::Printf(TEXT("  [WARN] %s"), *Warning));
+			}
+		}
+
+		LogMessage(FString::Printf(TEXT("Pipeline items processed: %d"), ManifestData.PipelineItems.Num()));
 	}
 
 	// v2.6.7: Process deferred assets (retry mechanism)
