@@ -43,6 +43,16 @@ enum class EDialogueConflictResolution : uint8
 };
 
 /**
+ * v4.12.2: Validation status for sync entries
+ */
+enum class EDialogueSyncValidationStatus : uint8
+{
+	Valid,          // No validation issues
+	Warning,        // Has warnings but can proceed
+	Error           // Has errors, cannot generate
+};
+
+/**
  * Single row sync entry with comparison data
  */
 struct FDialogueSyncEntry
@@ -60,6 +70,10 @@ struct FDialogueSyncEntry
 	int64 BaseHash = 0;
 	int64 UEHash = 0;
 	int64 ExcelHash = 0;
+
+	// v4.12.2: Validation status for the Excel row (source being imported)
+	EDialogueSyncValidationStatus ValidationStatus = EDialogueSyncValidationStatus::Valid;
+	TArray<FString> ValidationMessages;       // Human-readable validation messages
 
 	// For display
 	FString GetStatusText() const;
@@ -86,7 +100,14 @@ struct FDialogueSyncResult
 	int32 AddedInExcelCount = 0;
 	int32 DeletedCount = 0;
 
+	// v4.12.2: Validation statistics
+	int32 ValidationErrorCount = 0;
+	int32 ValidationWarningCount = 0;
+
 	bool HasConflicts() const { return ConflictCount > 0; }
+
+	/** v4.12.2: Check if there are validation errors */
+	bool HasValidationErrors() const { return ValidationErrorCount > 0; }
 	bool HasChanges() const;
 	int32 GetTotalChanges() const;
 

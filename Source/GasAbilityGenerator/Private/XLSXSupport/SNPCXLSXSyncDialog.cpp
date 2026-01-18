@@ -197,29 +197,32 @@ TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildStatusBar()
 
 TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildEntryList()
 {
-	// v4.11.1: Columns - Status, NPCName, NPCId, Base, UE, Excel, Action
+	// v4.12.2: Columns - Status, Validation, NPCName, NPCId, Base, UE, Excel, Action
 	TSharedRef<SHeaderRow> HeaderRow = SNew(SHeaderRow)
 		+ SHeaderRow::Column("Status")
 			.DefaultLabel(LOCTEXT("StatusCol", "Status"))
-			.FillWidth(0.10f)
+			.FillWidth(0.08f)
+		+ SHeaderRow::Column("Validation")
+			.DefaultLabel(LOCTEXT("ValidationCol", "Valid"))
+			.FillWidth(0.06f)
 		+ SHeaderRow::Column("NPCName")
 			.DefaultLabel(LOCTEXT("NPCNameCol", "NPC Name"))
-			.FillWidth(0.14f)
+			.FillWidth(0.12f)
 		+ SHeaderRow::Column("NPCId")
 			.DefaultLabel(LOCTEXT("NPCIdCol", "NPC ID"))
 			.FillWidth(0.10f)
 		+ SHeaderRow::Column("Base")
 			.DefaultLabel(LOCTEXT("BaseCol", "Last Export"))
-			.FillWidth(0.18f)
+			.FillWidth(0.16f)
 		+ SHeaderRow::Column("UE")
 			.DefaultLabel(LOCTEXT("UECol", "UE"))
-			.FillWidth(0.18f)
+			.FillWidth(0.16f)
 		+ SHeaderRow::Column("Excel")
 			.DefaultLabel(LOCTEXT("ExcelCol", "Excel"))
-			.FillWidth(0.18f)
+			.FillWidth(0.16f)
 		+ SHeaderRow::Column("Action")
 			.DefaultLabel(LOCTEXT("ActionCol", "Action"))
-			.FillWidth(0.12f);
+			.FillWidth(0.10f);
 
 	return SAssignNew(ListView, SListView<TSharedPtr<FNPCSyncEntry>>)
 		.ListItemsSource(&DisplayedEntries)
@@ -238,6 +241,21 @@ TSharedRef<SWidget> SNPCXLSXSyncDialog::BuildFooter()
 		.VAlign(VAlign_Center)
 		[
 			SNew(SHorizontalBox)
+
+			// v4.12.2: Error legend (red)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0, 0, 8, 0)
+			[
+				SNew(SBorder)
+					.BorderBackgroundColor(FLinearColor(0.8f, 0.2f, 0.2f, 0.3f))  // Red
+					.Padding(FMargin(8, 2))
+					[
+						SNew(STextBlock)
+							.Text(LOCTEXT("LegendError", "Error"))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					]
+			]
 
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -390,17 +408,25 @@ FText SNPCXLSXSyncDialog::GetSummaryText() const
 		}
 	}
 
-	// Format: "12 changes | 5 of 12 resolved"
-	return FText::Format(
-		LOCTEXT("SyncSummaryNew", "{0} changes | {1} of {0} resolved"),
-		FText::AsNumber(TotalChanges),
-		FText::AsNumber(ResolvedCount)
-	);
+	// v4.12.2: Include validation counts if there are errors/warnings
+	FString SummaryStr = FString::Printf(TEXT("%d changes | %d of %d resolved"), TotalChanges, ResolvedCount, TotalChanges);
+
+	if (SyncResult->ValidationErrorCount > 0)
+	{
+		SummaryStr += FString::Printf(TEXT(" | %d errors"), SyncResult->ValidationErrorCount);
+	}
+	if (SyncResult->ValidationWarningCount > 0)
+	{
+		SummaryStr += FString::Printf(TEXT(" | %d warnings"), SyncResult->ValidationWarningCount);
+	}
+
+	return FText::FromString(SummaryStr);
 }
 
 bool SNPCXLSXSyncDialog::CanApply() const
 {
-	return SyncResult && FNPCXLSXSyncEngine::AllConflictsResolved(*SyncResult);
+	// v4.12.2: Also check for validation errors
+	return SyncResult && FNPCXLSXSyncEngine::AllConflictsResolved(*SyncResult) && !SyncResult->HasValidationErrors();
 }
 
 //=============================================================================
@@ -434,6 +460,10 @@ TSharedRef<SWidget> SNPCSyncEntryRow::GenerateWidgetForColumn(const FName& Colum
 	{
 		CellContent = CreateStatusCell();
 	}
+	else if (ColumnName == TEXT("Validation"))
+	{
+		CellContent = CreateValidationCell();
+	}
 	else if (ColumnName == TEXT("NPCName"))
 	{
 		CellContent = CreateNPCNameCell();
@@ -459,9 +489,13 @@ TSharedRef<SWidget> SNPCSyncEntryRow::GenerateWidgetForColumn(const FName& Colum
 		CellContent = CreateActionCell();
 	}
 
-	// Apply row background color
+	// v4.12.2: Apply row background color - red for errors, yellow for unresolved, green for resolved
 	FLinearColor BgColor = FLinearColor::Transparent;
-	if (Entry->RequiresResolution())
+	if (Entry->ValidationStatus == ENPCSyncValidationStatus::Error)
+	{
+		BgColor = FLinearColor(0.8f, 0.2f, 0.2f, 0.2f);  // Red for errors
+	}
+	else if (Entry->RequiresResolution())
 	{
 		if (Entry->Resolution == ENPCConflictResolution::Unresolved)
 		{
@@ -848,6 +882,45 @@ TSharedRef<SWidget> SNPCSyncEntryRow::CreateActionCell()
 							.ColorAndOpacity(bSelected ? FLinearColor(0.9f, 0.2f, 0.2f) : FLinearColor::White)
 					]
 				]
+		];
+}
+
+TSharedRef<SWidget> SNPCSyncEntryRow::CreateValidationCell()
+{
+	// v4.12.2: Show validation status with icon and tooltip
+	FString Icon;
+	FLinearColor IconColor;
+	FText Tooltip;
+
+	switch (Entry->ValidationStatus)
+	{
+	case ENPCSyncValidationStatus::Error:
+		Icon = TEXT("✗");
+		IconColor = FLinearColor(0.9f, 0.2f, 0.2f);
+		Tooltip = FText::FromString(FString::Join(Entry->ValidationMessages, TEXT("\n")));
+		break;
+	case ENPCSyncValidationStatus::Warning:
+		Icon = TEXT("⚠");
+		IconColor = FLinearColor(0.9f, 0.7f, 0.2f);
+		Tooltip = FText::FromString(FString::Join(Entry->ValidationMessages, TEXT("\n")));
+		break;
+	case ENPCSyncValidationStatus::Valid:
+	default:
+		Icon = TEXT("✓");
+		IconColor = FLinearColor(0.2f, 0.8f, 0.2f);
+		Tooltip = LOCTEXT("ValidationValid", "No validation issues");
+		break;
+	}
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		.HAlign(HAlign_Center)
+		[
+			SNew(STextBlock)
+				.Text(FText::FromString(Icon))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+				.ColorAndOpacity(IconColor)
+				.ToolTipText(Tooltip)
 		];
 }
 

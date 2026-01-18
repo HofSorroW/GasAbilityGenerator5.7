@@ -78,6 +78,7 @@ private:
 
 /**
  * v4.11.1: Row widget with radio-style selection and background highlighting
+ * v4.12.2: Added validation column
  */
 class SDialogueSyncEntryRow : public SMultiColumnTableRow<TSharedPtr<FDialogueSyncEntry>>
 {
@@ -102,6 +103,9 @@ private:
 	TSharedRef<SWidget> CreateUECell();
 	TSharedRef<SWidget> CreateExcelCell();
 	TSharedRef<SWidget> CreateActionCell();
+
+	// v4.12.2: Validation column
+	TSharedRef<SWidget> CreateValidationCell();
 
 	// Legacy cells (kept for compatibility)
 	TSharedRef<SWidget> CreateTextPreviewCell();

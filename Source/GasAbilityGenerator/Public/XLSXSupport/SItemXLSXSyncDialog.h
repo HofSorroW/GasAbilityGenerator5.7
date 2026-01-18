@@ -80,6 +80,7 @@ private:
 
 /**
  * v4.12: Row widget with radio-style selection and background highlighting
+ * v4.12.2: Added validation column
  */
 class SItemSyncEntryRow : public SMultiColumnTableRow<TSharedPtr<FItemSyncEntry>>
 {
@@ -104,4 +105,7 @@ private:
 	TSharedRef<SWidget> CreateUECell();
 	TSharedRef<SWidget> CreateExcelCell();
 	TSharedRef<SWidget> CreateActionCell();
+
+	// v4.12.2: Validation column
+	TSharedRef<SWidget> CreateValidationCell();
 };
