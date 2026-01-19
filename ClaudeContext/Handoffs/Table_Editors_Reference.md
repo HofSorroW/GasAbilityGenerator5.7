@@ -1,7 +1,7 @@
 # Table Editors Reference
 
-**Consolidated:** 2026-01-18
-**Plugin Version:** v4.12.2
+**Consolidated:** 2026-01-19
+**Plugin Version:** v4.12.7
 **Status:** Complete reference for all 4 table editors (NPC, Dialogue, Quest, Item)
 
 This document consolidates all table editor documentation: NPC, Dialogue, Quest (v4.8), and Item (v4.8) Table Editors, including XLSX sync, validated tokens, UX safety decisions, and safeguards.
@@ -12,6 +12,7 @@ This document consolidates all table editor documentation: NPC, Dialogue, Quest 
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **v4.12.7** | 2026-01-19 | **Dialogue**: Split Events into Events (type) + EventOptions (params) + Quests (clickable refs). **NPC**: Crash fix, column renames (NPC File, NPC Name, AP, Vendor, IC), new Dialogues/Items/Tags columns. **All**: Multi-select deselect fix (__NONE_SELECTED__), alphabetical dropdown sort |
 | **v4.12.2** | 2026-01-18 | **FIX**: Wire validation into sync engines - CompareSources() now calls validators and populates ValidationStatus/ValidationMessages on sync entries |
 | **v4.12.1** | 2026-01-17 | Quest/Item table editor full implementation |
 | **v4.11.2** | 2026-01-16 | **IMPLEMENTED**: Auto-fit window to screen size (80% of work area, min 800×600) |
@@ -40,7 +41,7 @@ This document consolidates all table editor documentation: NPC, Dialogue, Quest 
 
 | Feature | Dialogue Table Editor | NPC Table Editor |
 |---------|----------------------|------------------|
-| **Columns** | 14 (v4.7 added Status) | 17 |
+| **Columns** | 17 (v4.12.7: Events split into Events+EventOptions+Quests) | 18 (v4.12.7: +Dialogues, Items, Tags) |
 | **Primary Data** | Dialogue nodes | NPC definitions |
 | **Tree Structure** | Yes (Parent/NextNodes) | No (flat list) |
 | **Sequence Tracking** | Yes (Seq column) | No |
@@ -691,8 +692,10 @@ Both editors share common UI patterns and integrate with the generation pipeline
 
 ## Dialogue Table Editor
 
-### Features (v4.5.4)
-- 11 columns: Seq, DialogueID, NodeID, NodeType, Speaker, Text, OptionText, Parent, NextNodes, Skip, Notes
+### Features (v4.12.7)
+- 17 columns covering node metadata, content, events, conditions, navigation, and meta
+- v4.12.7: Events split into Events (type) + EventOptions (params) + Quests (refs)
+- v4.11.4: Conditions split into Condition (type) + Options (params)
 - FillWidth columns with proportional widths
 - Live text filtering (OnTextChanged)
 - Multi-select dropdown filters with checkbox UI
@@ -701,10 +704,41 @@ Both editors share common UI patterns and integrate with the generation pipeline
 - XLSX Import/Export with 3-way sync support
 - Smart Add Node with auto-populated fields
 - Delete with re-parenting or cascade delete branch
-- Skippable and Notes columns
+- Click-to-open for DialogueID cells (opens DialogueBlueprint editor)
 - Preview tooltips for long text
 - Status bar with live counts
 - Validation coloring in Seq column
+
+### Column Structure (v4.12.7)
+
+**Node Metadata (6):**
+1. Seq (auto-calculated sequence)
+2. Status (validation badge)
+3. Dialogue File (click-to-open + dropdown)
+4. Node ID
+5. Type (npc/player dropdown)
+6. Speaker (with autocomplete)
+
+**Content (2):**
+7. Text (main dialogue text)
+8. Option Text (player choice label)
+
+**Events (3):**
+9. Events (event type only, e.g., NE_BeginQuest)
+10. Event Opts (event parameters, e.g., QuestId=X)
+11. Quests (quest references extracted from events)
+
+**Conditions (2):**
+12. Conditions (condition type, e.g., NC_HasDialogueNodePlayed)
+13. Options (condition parameters, e.g., NodeId=X)
+
+**Navigation (2):**
+14. Parent (parent node link)
+15. Next Nodes (child node links)
+
+**Meta (2):**
+16. Skip (skippable checkbox)
+17. Notes (designer notes)
 
 ### Files
 - `SDialogueTableEditor.h` - Widget definitions
@@ -723,8 +757,11 @@ Both editors share common UI patterns and integrate with the generation pipeline
 | SPEAKER | FSpeakerInfo.NPCDefinition |
 | TEXT | FDialogueLine.Text |
 | OPTION_TEXT | Player choice label |
-| EVENTS | Node Events (token format) |
-| CONDITIONS | Node Conditions (token format) |
+| EVENTS | Event type (e.g., NE_BeginQuest) |
+| EVENT_OPTIONS | Event parameters (e.g., QuestId=X) |
+| QUESTS | Quest references from events |
+| CONDITIONS | Condition type (e.g., NC_HasDialogueNodePlayed) |
+| OPTIONS | Condition parameters (e.g., NodeId=X) |
 | PARENT_NODE_ID | Parent node link |
 | NEXT_NODE_IDS | Node linking (PlayerReplies/NPCReplies) |
 
@@ -732,8 +769,8 @@ Both editors share common UI patterns and integrate with the generation pipeline
 
 ## NPC Table Editor
 
-### Features (v4.5.4)
-- 17 columns covering identity, AI, combat, vendor, spawning, meta
+### Features (v4.12.7)
+- 18 columns covering identity, AI, combat, vendor, dialogues, items, spawning, meta
 - Sync from existing NPCDefinition assets
 - POI scanning from loaded world
 - Cell edit dropdowns with asset filtering
@@ -743,36 +780,39 @@ Both editors share common UI patterns and integrate with the generation pipeline
 - Save/Open persistent table data
 - Validation coloring in Status column
 
-### Column Structure
+### Column Structure (v4.12.7)
 
-**Core Identity (5):**
+**Core Identity (4):**
 1. Status (auto-calculated)
-2. NPC Name (asset name)
-3. NPC ID
-4. Display Name
-5. Blueprint (NarrativeNPCCharacter filter)
+2. NPC File (asset name, click-to-open)
+3. NPC Name (display name)
+4. Blueprint (NarrativeNPCCharacter filter)
 
 **AI & Behavior (3):**
-6. Ability Config
-7. Activity Config
-8. Schedule
+5. Ability Config
+6. Activity Config
+7. Schedule
 
 **Combat (3):**
-9. Level Range (min/max)
-10. Factions
-11. Attack Priority
+8. Level Range (min/max)
+9. Factions
+10. AP (Attack Priority)
 
-**Vendor (2):**
-12. Is Vendor
-13. Shop Name
+**Vendor (1):**
+11. Vendor (checkbox)
 
-**Items & Spawning (2):**
-14. Default Items
+**Dialogues (1):**
+12. Dialogues (Dialogue + TaggedDialogueSet, both clickable)
+
+**Items & Spawning (3):**
+13. IC (Item Collections, multi-select)
+14. Items (individual items with qty, multi-select)
 15. Spawner/POI
 
-**Meta (2):**
-16. Appearance
-17. Notes
+**Meta (3):**
+16. Appearance (without Appearance_ prefix)
+17. Tags (gameplay tags, multi-select)
+18. Notes
 
 ### Files
 - `NPCTableEditorTypes.h` - FNPCTableRow, UNPCTableData
