@@ -55,6 +55,7 @@
 #include "NPCTableEditor/SNPCApplyPreview.h"
 #include "GasAbilityGeneratorGenerators.h"
 #include "Widgets/Docking/SDockTab.h"  // v4.6: For dirty indicator
+#include "Subsystems/AssetEditorSubsystem.h"  // v4.12.6: For opening assets in editor
 
 #define LOCTEXT_NAMESPACE "NPCTableEditor"
 
@@ -1121,101 +1122,153 @@ TSharedRef<SWidget> SNPCTableRow::CreatePOIDropdownCell()
 
 TSharedRef<SWidget> SNPCTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value, UClass* AssetClass, const FString& AssetPrefix)
 {
+	// v4.12.6: Dual-function cell - clickable hyperlink to open asset + dropdown to change reference
 	FSoftObjectPath* ValuePtr = &Value;
 
-	// Use a combo button that builds menu on-demand (avoids lifetime issues)
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SComboButton)
-				.OnGetMenuContent_Lambda([this, ValuePtr, AssetClass]() -> TSharedRef<SWidget>
-				{
-					FMenuBuilder MenuBuilder(true, nullptr);
+			SNew(SHorizontalBox)
 
-					// None option
-					MenuBuilder.AddMenuEntry(
-						NSLOCTEXT("NPCTableEditor", "None", "(None)"),
-						FText::GetEmpty(),
-						FSlateIcon(),
-						FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
-						{
-							// Confirmation prompt
-							FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
-							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClear", "Clear '{0}' and set to (None)?\n\nThis will mark the NPC as modified."),
-									FText::FromString(CurrentValue)));
-
-							if (Result == EAppReturnType::Yes)
-							{
-								ValuePtr->Reset();
-								MarkModified();
-							}
-						}))
-					);
-
-					MenuBuilder.AddSeparator();
-
-					// Get available assets
-					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-					TArray<FAssetData> Assets;
-					Registry.Get().GetAssetsByClass(AssetClass->GetClassPathName(), Assets, true);
-
-					for (const FAssetData& Asset : Assets)
+			// Clickable hyperlink text - opens asset in editor
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([ValuePtr]() -> FReply
 					{
-						FString AssetName = Asset.AssetName.ToString();
-						FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
-
-						MenuBuilder.AddMenuEntry(
-							FText::FromString(AssetName),
-							FText::FromString(Asset.GetObjectPathString()),
-							FSlateIcon(),
-							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+						if (!ValuePtr->IsNull())
+						{
+							if (UObject* Asset = ValuePtr->TryLoad())
 							{
-								// Confirmation prompt
+								GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Asset);
+							}
+						}
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([ValuePtr]()
+					{
+						if (ValuePtr->IsNull())
+						{
+							return FText::FromString(TEXT("No asset selected"));
+						}
+						return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenAsset", "Click to open: {0}"),
+							FText::FromString(ValuePtr->GetAssetPathString()));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([ValuePtr]()
+							{
+								if (ValuePtr->IsNull())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								FString AssetName = ValuePtr->GetAssetName();
+								if (AssetName.IsEmpty())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								int32 DotIndex;
+								if (AssetName.FindChar(TEXT('.'), DotIndex))
+								{
+									AssetName = AssetName.Left(DotIndex);
+								}
+								return FText::FromString(TrimAssetPrefix_NPC(AssetName));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([ValuePtr]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (ValuePtr->IsNull())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+							// Underline style via font decoration
+							.TextStyle(&FCoreStyle::Get().GetWidgetStyle<FTextBlockStyle>("NormalText"))
+					]
+			]
+
+			// Dropdown arrow - shows selection menu
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, ValuePtr, AssetClass]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// None option
+						MenuBuilder.AddMenuEntry(
+							NSLOCTEXT("NPCTableEditor", "None", "(None)"),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+							{
 								FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
 								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-									FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmChange", "Change from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
-										FText::FromString(CurrentValue),
-										FText::FromString(AssetName)));
+									FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClear", "Clear '{0}' and set to (None)?\n\nThis will mark the NPC as modified."),
+										FText::FromString(CurrentValue)));
 
 								if (Result == EAppReturnType::Yes)
 								{
-									*ValuePtr = AssetPath;
+									ValuePtr->Reset();
 									MarkModified();
 								}
 							}))
 						);
-					}
 
-					return MenuBuilder.MakeWidget();
-				})
-				.ButtonContent()
-				[
-					SNew(STextBlock)
-						.Text_Lambda([ValuePtr]()
+						MenuBuilder.AddSeparator();
+
+						// Get available assets
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(AssetClass->GetClassPathName(), Assets, true);
+
+						for (const FAssetData& Asset : Assets)
 						{
-							// Show "(None)" for null OR empty asset name
-							if (ValuePtr->IsNull())
-							{
-								return FText::FromString(TEXT("(None)"));
-							}
-							FString AssetName = ValuePtr->GetAssetName();
-							if (AssetName.IsEmpty())
-							{
-								return FText::FromString(TEXT("(None)"));
-							}
-							// v4.8.1: Extract short name - strip any path prefix and extension
-							// GetAssetName() may return "AssetName.AssetName" format
-							int32 DotIndex;
-							if (AssetName.FindChar(TEXT('.'), DotIndex))
-							{
-								AssetName = AssetName.Left(DotIndex);
-							}
-							// v4.12.5: Trim common prefixes for cleaner display
-							return FText::FromString(TrimAssetPrefix_NPC(AssetName));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				]
+							FString AssetName = Asset.AssetName.ToString();
+							FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+							MenuBuilder.AddMenuEntry(
+								FText::FromString(AssetName),
+								FText::FromString(Asset.GetObjectPathString()),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+								{
+									FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmChange", "Change from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
+											FText::FromString(CurrentValue),
+											FText::FromString(AssetName)));
+
+									if (Result == EAppReturnType::Yes)
+									{
+										*ValuePtr = AssetPath;
+										MarkModified();
+									}
+								}))
+							);
+						}
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 

@@ -45,6 +45,8 @@
 #include "Items/GameplayEffectItem.h"
 #include "Items/WeaponAttachmentItem.h"
 #include "Engine/BlueprintCore.h"  // v4.12.5: FBlueprintTags for parent class filtering
+#include "Widgets/Input/SComboButton.h"  // v4.12.6: For dropdown arrow
+#include "Subsystems/AssetEditorSubsystem.h"  // v4.12.6: For opening assets in editor
 
 #define LOCTEXT_NAMESPACE "ItemTableEditor"
 
@@ -613,104 +615,160 @@ TSharedRef<SWidget> SItemTableRow::CreateEquipmentSlotCell()
 
 TSharedRef<SWidget> SItemTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value, UClass* AssetClass, const FString& AssetPrefix)
 {
-	// v4.12.5: Match NPC Table - use SComboButton with asset dropdown menu
+	// v4.12.6: Dual-function cell - clickable hyperlink to open asset + dropdown to change reference
 	FSoftObjectPath* ValuePtr = &Value;
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SComboButton)
-				.OnGetMenuContent_Lambda([this, ValuePtr, AssetClass, AssetPrefix]() -> TSharedRef<SWidget>
-				{
-					FMenuBuilder MenuBuilder(true, nullptr);
+			SNew(SHorizontalBox)
 
-					// None option
-					MenuBuilder.AddMenuEntry(
-						NSLOCTEXT("ItemTableEditor", "None", "(None)"),
-						FText::GetEmpty(),
-						FSlateIcon(),
-						FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+			// Clickable hyperlink text - opens asset in editor
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([ValuePtr]() -> FReply
+					{
+						if (!ValuePtr->IsNull())
 						{
-							FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
-							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-								FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClear", "Clear '{0}' and set to (None)?\n\nThis will mark the Item as modified."),
-									FText::FromString(CurrentValue)));
-
-							if (Result == EAppReturnType::Yes)
+							if (UObject* Asset = ValuePtr->TryLoad())
 							{
-								ValuePtr->Reset();
-								MarkModified();
+								GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(Asset);
 							}
-						}))
-					);
-
-					MenuBuilder.AddSeparator();
-
-					// Get available assets - scan by prefix if no class specified
-					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-					TArray<FAssetData> Assets;
-
-					if (AssetClass)
-					{
-						Registry.Get().GetAssetsByClass(AssetClass->GetClassPathName(), Assets, true);
-					}
-					else if (!AssetPrefix.IsEmpty())
-					{
-						// Scan all blueprints and filter by prefix
-						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
-					}
-
-					for (const FAssetData& Asset : Assets)
-					{
-						FString AssetName = Asset.AssetName.ToString();
-
-						// Filter by prefix if specified
-						if (!AssetPrefix.IsEmpty() && !AssetName.StartsWith(AssetPrefix))
-						{
-							continue;
 						}
-
-						FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
-
-						MenuBuilder.AddMenuEntry(
-							FText::FromString(TrimAssetPrefix_Item(AssetName)),
-							FText::FromString(Asset.GetObjectPathString()),
-							FSlateIcon(),
-							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([ValuePtr]()
+					{
+						if (ValuePtr->IsNull())
+						{
+							return FText::FromString(TEXT("No asset selected"));
+						}
+						return FText::Format(NSLOCTEXT("ItemTableEditor", "ClickToOpenAsset", "Click to open: {0}"),
+							FText::FromString(ValuePtr->GetAssetPathString()));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([ValuePtr]()
 							{
-								if (*ValuePtr != AssetPath)
+								if (ValuePtr->IsNull())
 								{
-									FString OldValue = ValuePtr->IsNull() ? TEXT("(None)") : TrimAssetPrefix_Item(ValuePtr->GetAssetName());
-									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmAssetChange", "Change from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
-											FText::FromString(OldValue),
-											FText::FromString(TrimAssetPrefix_Item(AssetName))));
+									return FText::FromString(TEXT("(None)"));
+								}
+								return FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([ValuePtr]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (ValuePtr->IsNull())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
 
-									if (Result == EAppReturnType::Yes)
-									{
-										*ValuePtr = AssetPath;
-										MarkModified();
-									}
+			// Dropdown arrow - shows selection menu
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, ValuePtr, AssetClass, AssetPrefix]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// None option
+						MenuBuilder.AddMenuEntry(
+							NSLOCTEXT("ItemTableEditor", "None", "(None)"),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+							{
+								FString CurrentValue = ValuePtr->IsNull() ? TEXT("(None)") : ValuePtr->GetAssetName();
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClear", "Clear '{0}' and set to (None)?\n\nThis will mark the Item as modified."),
+										FText::FromString(CurrentValue)));
+
+								if (Result == EAppReturnType::Yes)
+								{
+									ValuePtr->Reset();
+									MarkModified();
 								}
 							}))
 						);
-					}
 
-					return MenuBuilder.MakeWidget();
-				})
-				.ButtonContent()
-				[
-					SNew(STextBlock)
-						.Text_Lambda([ValuePtr]()
+						MenuBuilder.AddSeparator();
+
+						// Get available assets - scan by prefix if no class specified
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+
+						if (AssetClass)
 						{
-							if (ValuePtr->IsNull())
+							Registry.Get().GetAssetsByClass(AssetClass->GetClassPathName(), Assets, true);
+						}
+						else if (!AssetPrefix.IsEmpty())
+						{
+							// Scan all blueprints and filter by prefix
+							Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+						}
+
+						for (const FAssetData& Asset : Assets)
+						{
+							FString AssetName = Asset.AssetName.ToString();
+
+							// Filter by prefix if specified
+							if (!AssetPrefix.IsEmpty() && !AssetName.StartsWith(AssetPrefix))
 							{
-								return FText::FromString(TEXT("(None)"));
+								continue;
 							}
-							return FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				]
+
+							FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+							MenuBuilder.AddMenuEntry(
+								FText::FromString(TrimAssetPrefix_Item(AssetName)),
+								FText::FromString(Asset.GetObjectPathString()),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+								{
+									if (*ValuePtr != AssetPath)
+									{
+										FString OldValue = ValuePtr->IsNull() ? TEXT("(None)") : TrimAssetPrefix_Item(ValuePtr->GetAssetName());
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmAssetChange", "Change from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+												FText::FromString(OldValue),
+												FText::FromString(TrimAssetPrefix_Item(AssetName))));
+
+										if (Result == EAppReturnType::Yes)
+										{
+											*ValuePtr = AssetPath;
+											MarkModified();
+										}
+									}
+								}))
+							);
+						}
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 
