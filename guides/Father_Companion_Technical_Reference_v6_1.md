@@ -1,5 +1,5 @@
 # Father Companion Technical Reference
-## Narrative Pro v2.2 | Unreal Engine 5.6 | Consolidated Reference
+## Narrative Pro v2.2 | Unreal Engine 5.7 | Consolidated Reference
 
 ---
 
@@ -8,12 +8,78 @@
 | Field | Value |
 |-------|-------|
 | Document Type | Technical Reference |
-| Engine Version | Unreal Engine 5.6 |
+| Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.0 |
+| Version | 6.1 |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
 | Replaces | Father_Companion_Technical_Reference_v5_14.md |
+
+---
+
+## VERSION 6.1 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **Option B Form State Architecture** | Form identity now uses GE-based persistent state (GE_*State) instead of ActivationOwnedTags |
+| **Form State Law Section Added** | New canonical section defining form state taxonomy, invariants, and transition sequence |
+| **Errata Marked** | §11.9, §19.*, §58.7-8 marked as ERRATA - ActivationOwnedTags pattern replaced |
+| **UE Version Updated** | 5.6 → 5.7 |
+| **Audit Reference** | See Form_State_Architecture_Audit_v1_0.md for full rationale |
+
+---
+
+## FORM STATE LAW (Option B Architecture)
+
+**Reference:** `ClaudeContext/Handoffs/Form_State_Architecture_Audit_v1_0.md`
+
+### Taxonomy
+
+| Category | Tags | Purpose |
+|----------|------|---------|
+| **Eligibility Gates** | Father.State.Alive, Father.State.Recruited, Father.State.Dormant | World state checks for activation |
+| **Form Identity** | Effect.Father.FormState.* | System-owned form ownership |
+| **During-Ability State** | Father.Form.* (ActivationOwnedTags) | Active while ability executes |
+
+### Locked Invariants
+
+| Invariant | Rule |
+|-----------|------|
+| **Single Active Form State** | Exactly one Effect.Father.FormState.* must exist at runtime |
+| **GE Split Rule** | GE_*State = identity + invulnerability; GE_*Boost = stats only |
+| **bWasCancelled Scope** | EndAbility cleanup (speed, detach) only when bWasCancelled=true |
+| **Net Execution Policy** | Form abilities are ServerOnly (NPC-owned, cross-actor operations) |
+
+### Transition Sequence (Option B)
+
+```
+NEW form ActivateAbility:
+  1. Remove ALL prior form state GEs → BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState.*)
+  2. Apply GE_[NewForm]State → Grants Effect.Father.FormState.[Form] + Narrative.State.Invulnerable (attached forms)
+  3. Apply GE_[NewForm]Boost → Stats only (if applicable)
+  4. Commit cooldown
+  5. EndAbility (bWasCancelled=false) → Form is now active, state persists via GE
+
+OLD form EndAbility (bWasCancelled=true):
+  - Restore movement speed
+  - Detach from player
+  - Reset state variables
+  - DO NOT remove form state GE here (already removed by NEW form)
+```
+
+### GE_*State Definitions
+
+| GE | Grants Tags | Invulnerable |
+|----|-------------|--------------|
+| GE_CrawlerState | Effect.Father.FormState.Crawler | No |
+| GE_ArmorState | Effect.Father.FormState.Armor, Narrative.State.Invulnerable | Yes |
+| GE_ExoskeletonState | Effect.Father.FormState.Exoskeleton, Narrative.State.Invulnerable | Yes |
+| GE_SymbioteState | Effect.Father.FormState.Symbiote, Narrative.State.Invulnerable | Yes |
+| GE_EngineerState | Effect.Father.FormState.Engineer | No |
+
+### Default Form at Spawn
+
+AC_FatherCompanion includes `startup_effects: [GE_CrawlerState]` to ensure Father spawns with Crawler form identity.
 
 ---
 
@@ -348,7 +414,7 @@
 | Addition | Details |
 |----------|---------|
 | Transition Animation | 5s Niagara VFX during form change |
-| Father Invulnerability | State.Invulnerable during 5s transition |
+| Father Invulnerability | Narrative.State.Invulnerable during 5s transition |
 | Form Activation Tags | Required: Father.State.Alive, Blocked: Transitioning, SymbioteLocked, Dormant |
 | Symbiote Lock | Father.State.SymbioteLocked blocks T wheel during 30s |
 | Symbiote Auto-Return | Returns to Armor form (not Crawler) after 30s |
@@ -648,7 +714,7 @@ NarrativeAbilitySystemComponent.cpp lines 283-311 (within AbilityInputTagPressed
 
 | Check | Behavior |
 |-------|----------|
-| State.Invulnerable tag | Blocks ALL damage automatically |
+| Narrative.State.Invulnerable tag | Blocks ALL damage automatically |
 | Armor attribute | Reduces damage per formula |
 | AttackRating attribute | Multiplies damage per formula |
 
@@ -1630,7 +1696,7 @@ Built-in Narrative Pro States:
 
 | Tag | Purpose | Used By Father |
 |-----|---------|----------------|
-| State.Invulnerable | Blocks all damage | YES |
+| Narrative.State.Invulnerable | Blocks all damage | YES |
 | State.InvisibleToEnemies | AI ignores target | YES |
 | State.Weapon.Blocking | Blocking state | NO |
 | Narrative.State.Movement.Lock | Prevents all movement (immobilize) | YES (Electric Trap) |
@@ -1953,7 +2019,7 @@ Pattern Key:
 | 7 | Timer-Based Checks | Periodic detection |
 | 8 | Trace-Based Combat | GenerateTargetDataUsingTrace |
 | 9 | Movement Speed Modification | CharacterMovement direct |
-| 10 | Invulnerability | State.Invulnerable tag |
+| 10 | Invulnerability | Narrative.State.Invulnerable tag |
 | 11 | AoE Sphere Overlap | Sphere Overlap Actors |
 | 12 | Projectile Spawn | Projectile actor pattern |
 
@@ -3199,7 +3265,7 @@ Blueprint Usage:
 |-----------------|----------------|
 | Resource Cost | Cost Gameplay Effect Class |
 | Movement | Play Montage + Motion Warping |
-| I-Frames | Apply GE with State.Invulnerable |
+| I-Frames | Apply GE with Narrative.State.Invulnerable |
 
 ### 27.3) GA_Death (Event-Triggered)
 
@@ -7690,7 +7756,7 @@ Father can alert player about enemies using Report Noise Event:
 | Pattern | Verified In |
 |---------|-------------|
 | GA_Melee_Unarmed parent class | GA_FatherAttack v3.0 |
-| State.Invulnerable i-frames | GA_FatherExoskeletonDash v3.0 |
+| Narrative.State.Invulnerable i-frames | GA_FatherExoskeletonDash v3.0 |
 | StealthRating + State.Invisible | GA_StealthField v3.0 |
 | Component-based GE in UE 5.6 | All v2.0+ guides |
 | CharacterMovement speed | Sprint v2.2, Dash v3.0, Stealth v3.0 |

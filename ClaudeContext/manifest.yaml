@@ -477,13 +477,58 @@ enumerations:
       - Right
 
 # ============================================================================
-# GAMEPLAY EFFECTS (30)
+# GAMEPLAY EFFECTS (35) - +5 GE_*State (Option B Form Identity)
 # ============================================================================
 gameplay_effects:
-  # Form Equipment Modifier Effects (7) - Per Tech Doc Section 58.7
-  # Child GEs of GE_EquipmentModifier with 0 Components (no granted_tags)
-  # Form tags come from GA Activation Owned Tags to prevent duplicate tag granting
+  # ==========================================================================
+  # FORM STATE EFFECTS (5) - Option B Architecture (Form_State_Architecture_Audit_v1_0.md)
+  # GE_*State grants form identity tag + invulnerability (attached forms only)
+  # Applied in NEW form's ActivateAbility after removing prior form state
+  # Single Active Form State Invariant: exactly one Effect.Father.FormState.* at runtime
+  # ==========================================================================
+  - name: GE_CrawlerState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Crawler
+    asset_tag: Effect.Father.FormState.Crawler
+
+  - name: GE_ArmorState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Armor
+      - Narrative.State.Invulnerable
+    asset_tag: Effect.Father.FormState.Armor
+
+  - name: GE_ExoskeletonState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Exoskeleton
+      - Narrative.State.Invulnerable
+    asset_tag: Effect.Father.FormState.Exoskeleton
+
+  - name: GE_SymbioteState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Symbiote
+      - Narrative.State.Invulnerable
+    asset_tag: Effect.Father.FormState.Symbiote
+
+  - name: GE_EngineerState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Engineer
+    asset_tag: Effect.Father.FormState.Engineer
+
+  # ==========================================================================
+  # FORM EQUIPMENT MODIFIER EFFECTS (7) - Stats Only (GE Split Rule)
+  # Child GEs of GE_EquipmentModifier for stat modifications
   # Stats applied via SetByCaller from EquippableItem equipment_effect_values
+  # ==========================================================================
   - name: GE_EquipmentModifier_FatherCrawler
     folder: Effects/Forms
     parent_class: GE_EquipmentModifier
@@ -677,7 +722,7 @@ gameplay_effects:
     duration_policy: HasDuration
     duration_magnitude: 5.0
     granted_tags:
-      - State.Invulnerable
+      - Narrative.State.Invulnerable
       - Father.State.Transitioning
 
   - name: GE_DashInvulnerability
@@ -685,7 +730,7 @@ gameplay_effects:
     duration_policy: HasDuration
     duration_magnitude: 0.3
     granted_tags:
-      - State.Invulnerable
+      - Narrative.State.Invulnerable
       - Father.State.Dashing
 
   - name: GE_SacrificeInvulnerability
@@ -693,7 +738,7 @@ gameplay_effects:
     duration_policy: HasDuration
     duration_magnitude: 10.0
     granted_tags:
-      - State.Invulnerable
+      - Narrative.State.Invulnerable
 
   - name: GE_FatherOffline
     folder: Effects/Utility
@@ -751,7 +796,7 @@ gameplay_abilities:
   # FORM ABILITIES (5)
   # ---------------------------------------------------------------------------
   
-  # GA_FatherCrawler - Detach and Follow Mode
+  # GA_FatherCrawler - Detach and Follow Mode (Option B Form Identity)
   - name: GA_FatherCrawler
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -766,15 +811,15 @@ gameplay_abilities:
         - Ability.Father.Exoskeleton
         - Ability.Father.Symbiote
         - Ability.Father.Engineer
-      activation_owned_tags:
-        - Father.Form.Crawler
-        - Father.State.Detached
+      # activation_owned_tags removed - form identity via GE_CrawlerState (Option B)
       activation_required_tags:
+        - Father.State.Alive
         - Father.State.Recruited
       activation_blocked_tags:
-        - Cooldown.Father.FormChange
+        - Father.State.Dormant
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
+        - Cooldown.Father.FormChange
     variables:
       - name: FatherRef
         type: Object
@@ -912,7 +957,7 @@ gameplay_abilities:
         - from: [GetFirstActivation, bIsFirstActivation]
           to: [Branch_First, Condition]
 
-  # GA_FatherArmor - Attach to Player Chest
+  # GA_FatherArmor - Attach to Player Chest (Option B Form Identity)
   - name: GA_FatherArmor
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -928,14 +973,16 @@ gameplay_abilities:
         - Ability.Father.Symbiote
         - Ability.Father.Engineer
       activation_owned_tags:
-        - Father.Form.Armor
+        # Father.Form.Armor removed - form identity via GE_ArmorState (Option B)
         - Father.State.Attached
       activation_required_tags:
+        - Father.State.Alive
         - Father.State.Recruited
       activation_blocked_tags:
-        - Cooldown.Father.FormChange
+        - Father.State.Dormant
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
+        - Cooldown.Father.FormChange
     variables:
       - name: FatherRef
         type: Object
@@ -1210,7 +1257,7 @@ gameplay_abilities:
         - from: [GetOrigSpeed, OriginalWalkSpeed]
           to: [RestoreSpeed, NewMaxWalkSpeed]
 
-  # GA_FatherExoskeleton - Attach to Player Back with Speed Boost
+  # GA_FatherExoskeleton - Attach to Player Back with Speed Boost (Option B Form Identity)
   - name: GA_FatherExoskeleton
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -1226,14 +1273,15 @@ gameplay_abilities:
         - Ability.Father.Symbiote
         - Ability.Father.Engineer
       activation_owned_tags:
-        - Father.Form.Exoskeleton
         - Father.State.Attached
       activation_required_tags:
+        - Father.State.Alive
         - Father.State.Recruited
       activation_blocked_tags:
-        - Cooldown.Father.FormChange
+        - Father.State.Dormant
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
+        - Cooldown.Father.FormChange
     variables:
       - name: FatherRef
         type: Object
@@ -1469,7 +1517,7 @@ gameplay_abilities:
         - from: [GetOrigSpeed_End, OriginalWalkSpeed]
           to: [RestoreSpeed_End, NewMaxWalkSpeed]
 
-  # GA_FatherSymbiote - Merge with Player (Timed)
+  # GA_FatherSymbiote - Merge with Player (Timed) (Option B Form Identity)
   - name: GA_FatherSymbiote
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -1485,15 +1533,16 @@ gameplay_abilities:
         - Ability.Father.Exoskeleton
         - Ability.Father.Engineer
       activation_owned_tags:
-        - Father.Form.Symbiote
         - Symbiote.State.Merged
       activation_required_tags:
+        - Father.State.Alive
         - Father.State.Recruited
         - Symbiote.Charge.Ready
       activation_blocked_tags:
-        - Cooldown.Father.FormChange
+        - Father.State.Dormant
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
+        - Cooldown.Father.FormChange
     variables:
       - name: FatherRef
         type: Object
@@ -1682,7 +1731,7 @@ gameplay_abilities:
         - from: [GetPlayerASC, ReturnValue]
           to: [TryActivateArmor, Target]
 
-  # GA_FatherEngineer - Deploy as Turret
+  # GA_FatherEngineer - Deploy as Turret (Option B Form Identity)
   - name: GA_FatherEngineer
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -1698,14 +1747,15 @@ gameplay_abilities:
         - Ability.Father.Exoskeleton
         - Ability.Father.Symbiote
       activation_owned_tags:
-        - Father.Form.Engineer
         - Father.State.TurretDeployed
       activation_required_tags:
+        - Father.State.Alive
         - Father.State.Recruited
       activation_blocked_tags:
-        - Cooldown.Father.FormChange
+        - Father.State.Dormant
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
+        - Cooldown.Father.FormChange
     variables:
       - name: FatherRef
         type: Object
@@ -4427,6 +4477,7 @@ activities:
 # ============================================================================
 ability_configurations:
   # Per Tech Doc Section 57.7: AC_FatherCompanion_Default pattern (matches AC_NPC_Default)
+  # Option B: startup_effects applies default form state at spawn
   - name: AC_FatherCompanion
     folder: Configs
     abilities:
@@ -4440,6 +4491,8 @@ ability_configurations:
       - GA_FatherMark
       - GA_FatherSacrifice
       - GA_Death  # Per Tech Doc Section 57.1: "Same as AC_NPC_Default - ADD THIS"
+    startup_effects:
+      - GE_CrawlerState  # Default form state at spawn (Option B)
 
 # ============================================================================
 # ACTIVITY CONFIGURATIONS (1)

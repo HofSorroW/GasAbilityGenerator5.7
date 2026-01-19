@@ -1,13 +1,28 @@
 # GA_FatherArmor - Armor Form Ability Implementation Guide
-## VERSION 4.3 - Blueprint Node Consistency Fixes
-## For Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## VERSION 4.4 - Option B Form State Architecture
+## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.3
+**Version:** 4.4
 **Date:** January 2026
-**Engine:** Unreal Engine 5.6
+**Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
+**Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Audit_v1_0.md
+
+---
+
+## **AUTOMATION VS MANUAL**
+
+| Feature | Automation Status | Notes |
+|---------|-------------------|-------|
+| GE_ArmorState definition | ✅ Auto-generated | manifest.yaml gameplay_effects section |
+| GA_FatherArmor blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
+| Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
+| Transition prelude nodes | ⚠️ Manual | Remove old state GE, apply new state GE |
+| Attachment logic | ⚠️ Manual | AttachActorToComponent nodes |
+| VFX spawning | ⚠️ Manual | GameplayCues preferred (Category C roadmap) |
+| EndAbility cleanup | ⚠️ Manual | Speed restore, state reset |
 
 ---
 
@@ -20,10 +35,11 @@ This guide provides step-by-step instructions for implementing GA_FatherArmor, t
 - Armor boost: +50 armor (via EquippableItem and GE_EquipmentModifier_FatherArmor)
 - Movement penalty: -15% speed while attached
 - Automatic stacking with existing armor via GAS
-- Form state managed by Activation Owned Tags (replicated via ReplicateActivationOwnedTags)
+- **Form identity via GE_ArmorState** (Infinite-duration GE grants Effect.Father.FormState.Armor + Narrative.State.Invulnerable)
 - Mutual exclusivity via Cancel Abilities With Tag
 - Animation-driven attachment sequence
-- 5-second transition animation with VFX and father invulnerability
+- **Transition prelude removes prior form state before applying new** (Option B)
+- 5-second transition animation with VFX
 - 15-second shared form cooldown
 - Full multiplayer compatibility via server authority
 
@@ -41,8 +57,8 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 6. Enhanced Input System must be enabled in project settings
 7. Narrative Pro v2.2 plugin must be installed and enabled
 8. E_FatherForm enum must include: Crawler, Armor, Exoskeleton, Symbiote, Engineer
-9. ReplicateActivationOwnedTags must be ENABLED in Project Settings -> Gameplay Abilities Settings
-10. GE_Invulnerable Gameplay Effect must exist (grants State.Invulnerable tag)
+9. **GE_ArmorState Gameplay Effect must exist** (Infinite duration, grants Effect.Father.FormState.Armor + Narrative.State.Invulnerable)
+10. GE_TransitionInvulnerability Gameplay Effect must exist (5s duration, grants Narrative.State.Invulnerable + Father.State.Transitioning)
 11. GE_FormChangeCooldown Gameplay Effect must exist (15s duration, grants Cooldown.Father.FormChange)
 13. NS_FatherFormTransition Niagara System must be created (5s transition VFX)
 14. AC_FatherCompanion_Default must be configured (see Father_Companion_System_Setup_Guide_v2_3.md Phase 24)
@@ -755,11 +771,15 @@ GA_FatherArmor only handles physical attachment and movement penalty.
 
 ---
 
-## **PHASE 5A: FORM SWITCH WITH TRANSITION ANIMATION**
+## **PHASE 5A: FORM SWITCH WITH TRANSITION ANIMATION (Option B)**
 
 This section covers the extended logic when switching TO Armor from another form via the T wheel. The initial spawn flow (PHASE 5) uses bActivateAbilityOnGranted and skips transition animation.
 
-### **1) Add Transitioning State Tag**
+**CRITICAL (Option B):** The transition prelude MUST:
+1. Remove ALL prior form state GEs (Single Active Form State Invariant)
+2. Apply GE_ArmorState (grants Effect.Father.FormState.Armor + Narrative.State.Invulnerable)
+
+### **1) TRANSITION PRELUDE: Remove Prior Form State (Option B)**
 
 #### 1.1) Get Father Ability System Component
    - 1.1.1) From Branch node **False** execution pin
@@ -767,27 +787,40 @@ This section covers the extended logic when switching TO Armor from another form
    - 1.1.3) Search: `Get Ability System Component`
    - 1.1.4) Select node
 
-#### 1.2) Add Loose Gameplay Tag
+#### 1.2) Remove All Prior Form State GEs
    - 1.2.1) Drag from **Get Ability System Component** -> **Return Value**
-   - 1.2.2) Search: `Add Loose Gameplay Tag`
+   - 1.2.2) Search: `BP_RemoveGameplayEffectFromOwnerWithGrantedTags`
    - 1.2.3) Select node
-   - 1.2.4) In **Gameplay Tag** field, set: `Father.State.Transitioning`
+   - 1.2.4) Connect Father ASC to **Target**
+   - 1.2.5) In **Tags** field, add: `Effect.Father.FormState` (parent tag removes ALL form states)
+   - 1.2.6) **Purpose:** Enforces Single Active Form State Invariant - exactly one form state at a time
 
-### **2) Apply Invulnerability**
+### **2) TRANSITION PRELUDE: Apply New Form State (Option B)**
 
-#### 2.1) Add Apply Gameplay Effect to Self
-   - 2.1.1) Drag from **Add Loose Gameplay Tag** execution pin
+#### 2.1) Apply GE_ArmorState
+   - 2.1.1) Drag from **BP_RemoveGameplayEffectFromOwnerWithGrantedTags** execution pin
    - 2.1.2) Search: `Apply Gameplay Effect to Self`
    - 2.1.3) Select node
-   - 2.1.4) Connect **Get Ability System Component** -> **Return Value** to **Target**
-   - 2.1.5) Set **Gameplay Effect Class**: `GE_Invulnerable`
+   - 2.1.4) Connect Father ASC to **Target**
+   - 2.1.5) Set **Gameplay Effect Class**: `GE_ArmorState`
+   - 2.1.6) **Result:** Father now has Effect.Father.FormState.Armor + Narrative.State.Invulnerable tags
 
-### **3) Spawn Transition VFX**
+### **3) Apply Transition Invulnerability**
 
-#### 3.1) Add Spawn System Attached Node
-   - 3.1.1) Drag from **Apply GE_Invulnerable** execution pin
-   - 3.1.2) Search: `Spawn System Attached`
+#### 3.1) Apply GE_TransitionInvulnerability
+   - 3.1.1) Drag from **Apply GE_ArmorState** execution pin
+   - 3.1.2) Search: `Apply Gameplay Effect to Self`
    - 3.1.3) Select node
+   - 3.1.4) Connect Father ASC to **Target**
+   - 3.1.5) Set **Gameplay Effect Class**: `GE_TransitionInvulnerability`
+   - 3.1.6) **Note:** This adds Father.State.Transitioning tag (blocks form switch during VFX)
+
+### **4) Spawn Transition VFX**
+
+#### 4.1) Add Spawn System Attached Node
+   - 4.1.1) Drag from **Apply GE_TransitionInvulnerability** execution pin
+   - 4.1.2) Search: `Spawn System Attached`
+   - 4.1.3) Select node
 
 #### 3.2) Configure VFX Parameters
    - 3.2.1) **System Template**: Select `NS_FatherFormTransition`
@@ -889,7 +922,7 @@ Stat bonuses (+50 Armor) are handled automatically by BP_FatherArmorForm Equippa
    - 12.1.2) Search: `Remove Active Gameplay Effects with Granted Tags`
    - 12.1.3) Select node
    - 12.1.4) Connect Father ASC to **Target**
-   - 12.1.5) Set **Tags**: `State.Invulnerable`
+   - 12.1.5) Set **Tags**: `Narrative.State.Invulnerable`
 
 ### **13) Apply Form Cooldown**
 
@@ -1280,9 +1313,9 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 ---
 
-**END OF GA_FATHERARMOR IMPLEMENTATION GUIDE VERSION 4.3**
+**END OF GA_FATHERARMOR IMPLEMENTATION GUIDE VERSION 4.4**
 
-**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro v2.2**
+**Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro v2.2**
 
 ---
 
@@ -1290,6 +1323,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Version | Changes |
 |---------|---------|
+| 4.4 | **Option B Form State Architecture:** Replaced ActivationOwnedTags form identity with GE-based persistent state (GE_ArmorState). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags, then apply GE_ArmorState. GE_ArmorState grants Effect.Father.FormState.Armor + Narrative.State.Invulnerable (Infinite duration). Removed ReplicateActivationOwnedTags prerequisite. Added Automation vs Manual table. Updated UE version to 5.7. See Form_State_Architecture_Audit_v1_0.md for architecture rationale. |
 | 4.3 | Blueprint Node Consistency Fixes: Removed incorrect Target pin documentation from Play Montage and Wait (AbilityTask nodes use owning ability avatar automatically). Fixed End Ability terminal node issue - Set bIsFirstActivation now executes BEFORE End Ability since End Ability has no output execution pin. |
 | 4.2 | Fixed tag format: State.Father.Alive changed to Father.State.Alive per DefaultGameplayTags. Updated Related Documents to Technical Reference v5.12 and Setup Guide v2.3. Fixed curly quotes to straight ASCII. |
 | 4.1 | Removed GE_ArmorBoost and ability handle cleanup - stats and abilities now handled by BP_FatherArmorForm EquippableItem via GE_EquipmentModifier_FatherArmor. GA_FatherArmor only handles physical attachment and movement penalty. Removed ArmorBoostHandle, DomeAbilityHandle, DomeBurstAbilityHandle from requirements. Simplified EndAbility to only restore movement speed and reset state. Updated all references from GE_ArmorBoost to EquippableItem pattern. |
