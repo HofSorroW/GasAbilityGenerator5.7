@@ -136,6 +136,11 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	{
 		return CreateTokenCell(RowData->EventsTokenStr, RowData->bEventsValid, ETokenCategory::Event);
 	}
+	// v4.12.7: Quests column - extracts quest references from Events
+	if (ColumnName == TEXT("Quests"))
+	{
+		return CreateQuestsCell();
+	}
 	// v4.11.4: Split Conditions into Condition (type) and Options (parameters)
 	if (ColumnName == TEXT("Condition"))
 	{
@@ -1186,6 +1191,199 @@ TSharedRef<SWidget> SDialogueTableRow::CreateConditionOptionsCell()
 		];
 }
 
+// v4.12.7: Quest references extracted from Events column
+TSharedRef<SWidget> SDialogueTableRow::CreateQuestsCell()
+{
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	// Helper to extract quest references from EventsTokenStr
+	// Parses tokens like NE_BeginQuest(QuestId=Quest_Example) or NE_CompleteQuest(Quest=QBP_Demo)
+	auto ExtractQuestRefs = [](const FString& EventsStr) -> TArray<FString>
+	{
+		TArray<FString> QuestRefs;
+		if (EventsStr.IsEmpty())
+		{
+			return QuestRefs;
+		}
+
+		// Quest-related token prefixes
+		TArray<FString> QuestTokens = { TEXT("NE_BeginQuest"), TEXT("NE_CompleteQuest"), TEXT("NE_FailQuest"),
+			TEXT("NE_SetQuestState"), TEXT("NE_QuestStateChanged") };
+
+		// Split by semicolon for multiple events
+		TArray<FString> Tokens;
+		EventsStr.ParseIntoArray(Tokens, TEXT(";"), true);
+
+		for (const FString& Token : Tokens)
+		{
+			FString TrimmedToken = Token.TrimStartAndEnd();
+
+			// Check if this is a quest-related token
+			bool bIsQuestToken = false;
+			for (const FString& QuestTokenPrefix : QuestTokens)
+			{
+				if (TrimmedToken.StartsWith(QuestTokenPrefix))
+				{
+					bIsQuestToken = true;
+					break;
+				}
+			}
+
+			if (!bIsQuestToken) continue;
+
+			// Extract parameters from parentheses
+			int32 ParenStart = TrimmedToken.Find(TEXT("("));
+			int32 ParenEnd = TrimmedToken.Find(TEXT(")"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+
+			if (ParenStart != INDEX_NONE && ParenEnd != INDEX_NONE && ParenEnd > ParenStart)
+			{
+				FString ParamStr = TrimmedToken.Mid(ParenStart + 1, ParenEnd - ParenStart - 1);
+
+				// Parse parameter pairs
+				TArray<FString> ParamPairs;
+				ParamStr.ParseIntoArray(ParamPairs, TEXT(","), true);
+
+				for (const FString& Pair : ParamPairs)
+				{
+					FString Key, Value;
+					if (Pair.Split(TEXT("="), &Key, &Value))
+					{
+						Key = Key.TrimStartAndEnd();
+						Value = Value.TrimStartAndEnd();
+
+						// Quest parameter names: QuestId, Quest, QuestName, QuestClass
+						if (Key.Equals(TEXT("QuestId"), ESearchCase::IgnoreCase) ||
+							Key.Equals(TEXT("Quest"), ESearchCase::IgnoreCase) ||
+							Key.Equals(TEXT("QuestName"), ESearchCase::IgnoreCase) ||
+							Key.Equals(TEXT("QuestClass"), ESearchCase::IgnoreCase))
+						{
+							if (!Value.IsEmpty() && !QuestRefs.Contains(Value))
+							{
+								QuestRefs.Add(Value);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return QuestRefs;
+	};
+
+	// Helper to open quest asset
+	auto OpenQuestAsset = [](const FString& QuestName)
+	{
+		// Try common quest asset patterns: Quest_*, QBP_*, Q_*
+		TArray<FString> SearchPatterns = {
+			FString::Printf(TEXT("/Game/*/Quests/*/%s.%s"), *QuestName, *QuestName),
+			FString::Printf(TEXT("/Game/*/%s.%s"), *QuestName, *QuestName),
+			FString::Printf(TEXT("/Game/Quests/*/%s.%s"), *QuestName, *QuestName)
+		};
+
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+		IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+		// Search for the quest blueprint by name
+		TArray<FAssetData> FoundAssets;
+		AssetRegistry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), FoundAssets);
+
+		for (const FAssetData& Asset : FoundAssets)
+		{
+			if (Asset.AssetName.ToString() == QuestName ||
+				Asset.AssetName.ToString().Contains(QuestName))
+			{
+				if (UObject* LoadedAsset = Asset.GetAsset())
+				{
+					GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+					return;
+				}
+			}
+		}
+
+		// Fallback: show message if not found
+		FMessageDialog::Open(EAppMsgType::Ok,
+			FText::Format(NSLOCTEXT("DialogueTableEditor", "QuestNotFound", "Quest asset '{0}' not found in Asset Registry."),
+				FText::FromString(QuestName)));
+	};
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SWrapBox)
+					.UseAllottedSize(true)
+					.InnerSlotPadding(FVector2D(4.0f, 2.0f))
+					+ SWrapBox::Slot()
+					[
+						SNew(STextBlock)
+							.Text_Lambda([RowData, ExtractQuestRefs, OpenQuestAsset]()
+							{
+								TArray<FString> Quests = ExtractQuestRefs(RowData->EventsTokenStr);
+								if (Quests.Num() == 0)
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								return FText::FromString(FString::Join(Quests, TEXT(", ")));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([RowData, ExtractQuestRefs]()
+							{
+								TArray<FString> Quests = ExtractQuestRefs(RowData->EventsTokenStr);
+								return Quests.Num() > 0 ?
+									FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f)) :
+									FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+							})
+					]
+			]
+
+			// Click to open button (only visible when there are quests)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(FMargin(4.0f, 0.0f, 0.0f, 0.0f))
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+					.ContentPadding(FMargin(2.0f))
+					.Visibility_Lambda([RowData, ExtractQuestRefs]()
+					{
+						TArray<FString> Quests = ExtractQuestRefs(RowData->EventsTokenStr);
+						return Quests.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed;
+					})
+					.OnClicked_Lambda([RowData, ExtractQuestRefs, OpenQuestAsset]() -> FReply
+					{
+						TArray<FString> Quests = ExtractQuestRefs(RowData->EventsTokenStr);
+						if (Quests.Num() > 0)
+						{
+							// Open first quest (could add multi-select later)
+							OpenQuestAsset(Quests[0]);
+						}
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([RowData, ExtractQuestRefs]()
+					{
+						TArray<FString> Quests = ExtractQuestRefs(RowData->EventsTokenStr);
+						if (Quests.Num() > 0)
+						{
+							return FText::Format(NSLOCTEXT("DialogueTableEditor", "OpenQuestTooltip", "Click to open: {0}"),
+								FText::FromString(Quests[0]));
+						}
+						return FText::GetEmpty();
+					})
+					[
+						SNew(SImage)
+							.Image(FAppStyle::GetBrush("Icons.Search"))
+							.DesiredSizeOverride(FVector2D(12.0f, 12.0f))
+					]
+			]
+		];
+}
+
 void SDialogueTableRow::MarkModified()
 {
 	// v4.7: Update row status to Modified (unless New)
@@ -1567,6 +1765,13 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildColumnHeaderContent(const FDialog
 									else
 									{
 										State->SelectedValues.Remove(OptionValue);
+
+										// v4.12.7 FIX: If removing the last item, set __NONE_SELECTED__ instead of empty
+										// Empty means "show all", but we want "show none" when user deselects the last item
+										if (State->SelectedValues.Num() == 0)
+										{
+											State->SelectedValues.Add(TEXT("__NONE_SELECTED__"));
+										}
 									}
 									ApplyFilters();
 								})

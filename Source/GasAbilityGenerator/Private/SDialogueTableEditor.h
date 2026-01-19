@@ -33,7 +33,7 @@ struct FDialogueTableColumn
 		: ColumnId(InId), DisplayName(InName), ManualWidth(InWidth) {}
 };
 
-/** Get default column definitions for dialogue table (15 columns) - v4.12.5: ManualWidth in pixels */
+/** Get default column definitions for dialogue table (16 columns) - v4.12.7: Added Quests column */
 inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 {
 	return {
@@ -45,7 +45,8 @@ inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        90.0f },
 		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           220.0f },
 		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    120.0f },
-		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         140.0f },
+		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         120.0f },  // v4.12.7: Reduced width
+		{ TEXT("Quests"),       FText::FromString(TEXT("Quests")),         100.0f },  // v4.12.7: Quest refs from events
 		{ TEXT("Condition"),    FText::FromString(TEXT("Conditions")),     120.0f },
 		{ TEXT("Options"),      FText::FromString(TEXT("Options")),        90.0f },
 		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         80.0f },
@@ -108,6 +109,7 @@ private:
 	TSharedRef<SWidget> CreateTokenCell(FString& TokenStr, bool& bValid, ETokenCategory Category);  // v4.4: Events/Conditions with autocomplete
 	TSharedRef<SWidget> CreateConditionTypeCell();   // v4.11.4: Condition type (e.g., NC_HasDialogueNodePlayed)
 	TSharedRef<SWidget> CreateConditionOptionsCell(); // v4.11.4: Condition options (e.g., NodeId=X)
+	TSharedRef<SWidget> CreateQuestsCell();          // v4.12.7: Quest references from Events
 
 	void MarkModified();
 };

@@ -102,36 +102,56 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	float AttackPriority = 0.5f;
 
 	//=========================================================================
-	// Vendor (2 columns)
+	// Vendor (1 column) - v4.12.7: Removed ShopName
 	//=========================================================================
 
 	/** Is this NPC a vendor/merchant */
 	UPROPERTY(EditAnywhere, Category = "Vendor")
 	bool bIsVendor = false;
 
-	/** Shop display name */
+	/** Shop display name - v4.12.7: Deprecated, kept for data compatibility */
 	UPROPERTY(EditAnywhere, Category = "Vendor")
 	FString ShopName;
 
 	//=========================================================================
-	// Items & Spawning (2 columns)
+	// Dialogues (v4.12.7: New section)
+	//=========================================================================
+
+	/** Dialogue Blueprint asset - main conversation dialogue */
+	UPROPERTY(EditAnywhere, Category = "Dialogues")
+	FSoftObjectPath Dialogue;
+
+	/** Tagged Dialogue Set asset - contextual barks */
+	UPROPERTY(EditAnywhere, Category = "Dialogues")
+	FSoftObjectPath TaggedDialogueSet;
+
+	//=========================================================================
+	// Items & Spawning (3 columns)
 	//=========================================================================
 
 	/** Default item loadout - IC_* collections (multi-select dropdown) */
 	UPROPERTY(EditAnywhere, Category = "Items")
 	FString DefaultItems;
 
+	/** Individual inventory items with quantities - v4.12.7: Format "ItemName:Qty,ItemName:Qty" */
+	UPROPERTY(EditAnywhere, Category = "Items")
+	FString InventoryItems;
+
 	/** POI where this NPC spawns (dropdown from level POIs) */
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	FString SpawnerPOI;
 
 	//=========================================================================
-	// Meta (2 columns)
+	// Meta (3 columns) - v4.12.7: Added Tags
 	//=========================================================================
 
 	/** Appearance preset - dropdown asset picker */
 	UPROPERTY(EditAnywhere, Category = "Meta")
 	FSoftObjectPath Appearance;
+
+	/** Gameplay tags - v4.12.7: Multi-select from DefaultTags.ini */
+	UPROPERTY(EditAnywhere, Category = "Meta")
+	FString Tags;
 
 	/** Designer notes/comments */
 	UPROPERTY(EditAnywhere, Category = "Meta")
@@ -219,9 +239,13 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 		Hash = HashCombine(Hash, GetTypeHash(AttackPriority));
 		Hash = HashCombine(Hash, GetTypeHash(bIsVendor));
 		Hash = HashCombine(Hash, GetTypeHash(ShopName));
+		Hash = HashCombine(Hash, GetTypeHash(Dialogue.ToString()));         // v4.12.7
+		Hash = HashCombine(Hash, GetTypeHash(TaggedDialogueSet.ToString())); // v4.12.7
 		Hash = HashCombine(Hash, GetTypeHash(DefaultItems));
+		Hash = HashCombine(Hash, GetTypeHash(InventoryItems));              // v4.12.7
 		Hash = HashCombine(Hash, GetTypeHash(SpawnerPOI));
 		Hash = HashCombine(Hash, GetTypeHash(Appearance.ToString()));
+		Hash = HashCombine(Hash, GetTypeHash(Tags));                        // v4.12.7
 		Hash = HashCombine(Hash, GetTypeHash(bDeleted));  // v4.6: Include soft delete
 		return Hash;
 	}
@@ -323,12 +347,12 @@ struct GASABILITYGENERATOR_API FNPCTableRow
 	/** Get factions as short display string */
 	FString GetFactionsDisplay() const
 	{
-		TArray<FString> Tags;
-		Factions.ParseIntoArray(Tags, TEXT(","));
+		TArray<FString> FactionTags;
+		Factions.ParseIntoArray(FactionTags, TEXT(","));
 		TArray<FString> ShortNames;
-		for (const FString& Tag : Tags)
+		for (const FString& FTag : FactionTags)
 		{
-			ShortNames.Add(ToShortFactionName(Tag));
+			ShortNames.Add(ToShortFactionName(FTag));
 		}
 		return FString::Join(ShortNames, TEXT(", "));
 	}

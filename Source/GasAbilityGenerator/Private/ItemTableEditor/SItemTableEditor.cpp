@@ -363,8 +363,8 @@ TSharedRef<SWidget> SItemTableRow::CreateItemNameCell()
 					{
 						if (!ValuePtr->IsEmpty())
 						{
-							// v4.12.6 FIX: Find Item Blueprint asset by name and open it
-							// Expanded to handle all item types (weapons, armor, consumables, etc.)
+							// v4.12.7 FIX: Find any Blueprint asset by name and open it
+							// Removed parent class filter - any clickable item should open
 							FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 							TArray<FAssetData> Assets;
 							Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
@@ -373,31 +373,13 @@ TSharedRef<SWidget> SItemTableRow::CreateItemNameCell()
 							{
 								if (Asset.AssetName.ToString().Equals(*ValuePtr, ESearchCase::IgnoreCase))
 								{
-									// Check if this is any item-related blueprint (expanded check)
-									FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
-									if (ParentClassTag.IsSet())
+									// v4.12.7: Open any matching Blueprint without parent class filter
+									// This allows BI_, BPNI_, EI_ and any other item types to be clickable
+									if (UObject* LoadedAsset = Asset.GetAsset())
 									{
-										FString ParentClassPath = ParentClassTag.GetValue();
-										// Include all Narrative Pro item classes and their subclasses
-										if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
-											ParentClassPath.Contains(TEXT("EquippableItem")) ||
-											ParentClassPath.Contains(TEXT("WeaponItem")) ||
-											ParentClassPath.Contains(TEXT("MeleeWeaponItem")) ||
-											ParentClassPath.Contains(TEXT("RangedWeaponItem")) ||
-											ParentClassPath.Contains(TEXT("MagicWeaponItem")) ||
-											ParentClassPath.Contains(TEXT("ThrowableWeaponItem")) ||
-											ParentClassPath.Contains(TEXT("Clothing")) ||
-											ParentClassPath.Contains(TEXT("AmmoItem")) ||
-											ParentClassPath.Contains(TEXT("AttachmentItem")) ||
-											ParentClassPath.Contains(TEXT("ConsumableItem")))
-										{
-											if (UObject* LoadedAsset = Asset.GetAsset())
-											{
-												GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
-											}
-											break;
-										}
+										GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
 									}
+									break;
 								}
 							}
 						}
@@ -472,57 +454,57 @@ TSharedRef<SWidget> SItemTableRow::CreateItemNameCell()
 
 						MenuBuilder.AddSeparator();
 
-						// Get all Item Blueprint assets (NarrativeItem/EquippableItem)
+						// Get all Item Blueprint assets - v4.12.7: Use prefix-based filtering instead of parent class
 						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 						TArray<FAssetData> Assets;
 						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
 
+						// Collect and sort item assets
+						TArray<FAssetData> ItemAssets;
 						for (const FAssetData& Asset : Assets)
 						{
-							// v4.12.6 FIX: Check if this is any item-related blueprint (expanded to all item types)
-							FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
-							if (ParentClassTag.IsSet())
+							FString AssetName = Asset.AssetName.ToString();
+							// v4.12.7: Include all item-prefixed Blueprints (BI_, BPNI_, EI_)
+							if (AssetName.StartsWith(TEXT("BI_")) ||
+								AssetName.StartsWith(TEXT("BPNI_")) ||
+								AssetName.StartsWith(TEXT("EI_")))
 							{
-								FString ParentClassPath = ParentClassTag.GetValue();
-								// Include all Narrative Pro item classes and their subclasses
-								if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
-									ParentClassPath.Contains(TEXT("EquippableItem")) ||
-									ParentClassPath.Contains(TEXT("WeaponItem")) ||
-									ParentClassPath.Contains(TEXT("MeleeWeaponItem")) ||
-									ParentClassPath.Contains(TEXT("RangedWeaponItem")) ||
-									ParentClassPath.Contains(TEXT("MagicWeaponItem")) ||
-									ParentClassPath.Contains(TEXT("ThrowableWeaponItem")) ||
-									ParentClassPath.Contains(TEXT("Clothing")) ||
-									ParentClassPath.Contains(TEXT("AmmoItem")) ||
-									ParentClassPath.Contains(TEXT("AttachmentItem")) ||
-									ParentClassPath.Contains(TEXT("ConsumableItem")))
-								{
-									FString AssetName = Asset.AssetName.ToString();
-
-									MenuBuilder.AddMenuEntry(
-										FText::FromString(TrimAssetPrefix_Item(AssetName)),
-										FText::FromString(Asset.GetObjectPathString()),
-										FSlateIcon(),
-										FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetName]()
-										{
-											if (*ValuePtr != AssetName)
-											{
-												FString OldValue = ValuePtr->IsEmpty() ? TEXT("(None)") : TrimAssetPrefix_Item(*ValuePtr);
-												EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-													FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmItemNameChange", "Change Item Name from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
-														FText::FromString(OldValue),
-														FText::FromString(TrimAssetPrefix_Item(AssetName))));
-
-												if (Result == EAppReturnType::Yes)
-												{
-													*ValuePtr = AssetName;
-													MarkModified();
-												}
-											}
-										}))
-									);
-								}
+								ItemAssets.Add(Asset);
 							}
+						}
+
+						// v4.12.7: Sort alphabetically
+						ItemAssets.Sort([](const FAssetData& A, const FAssetData& B)
+						{
+							return A.AssetName.ToString() < B.AssetName.ToString();
+						});
+
+						for (const FAssetData& Asset : ItemAssets)
+						{
+							FString AssetName = Asset.AssetName.ToString();
+
+							MenuBuilder.AddMenuEntry(
+								FText::FromString(TrimAssetPrefix_Item(AssetName)),
+								FText::FromString(Asset.GetObjectPathString()),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetName]()
+								{
+									if (*ValuePtr != AssetName)
+									{
+										FString OldValue = ValuePtr->IsEmpty() ? TEXT("(None)") : TrimAssetPrefix_Item(*ValuePtr);
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmItemNameChange", "Change Item Name from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+												FText::FromString(OldValue),
+												FText::FromString(TrimAssetPrefix_Item(AssetName))));
+
+										if (Result == EAppReturnType::Yes)
+										{
+											*ValuePtr = AssetName;
+											MarkModified();
+										}
+									}
+								}))
+							);
 						}
 
 						return MenuBuilder.MakeWidget();
@@ -2202,6 +2184,13 @@ void SItemTableEditor::OnColumnDropdownFilterChanged(FName ColumnId, const FStri
 		else
 		{
 			State->SelectedValues.Remove(Value);
+
+			// v4.12.7 FIX: If removing the last item, set __NONE_SELECTED__ instead of empty
+			// Empty means "show all", but we want "show none" when user deselects the last item
+			if (State->SelectedValues.Num() == 0)
+			{
+				State->SelectedValues.Add(TEXT("__NONE_SELECTED__"));
+			}
 		}
 	}
 

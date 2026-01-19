@@ -1246,6 +1246,13 @@ void SQuestTableEditor::OnColumnDropdownFilterChanged(FName ColumnId, const FStr
 		else
 		{
 			State->SelectedValues.Remove(Value);
+
+			// v4.12.7 FIX: If removing the last item, set __NONE_SELECTED__ instead of empty
+			// Empty means "show all", but we want "show none" when user deselects the last item
+			if (State->SelectedValues.Num() == 0)
+			{
+				State->SelectedValues.Add(TEXT("__NONE_SELECTED__"));
+			}
 		}
 	}
 

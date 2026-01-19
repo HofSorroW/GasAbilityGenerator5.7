@@ -118,7 +118,7 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 	}
 
 	//=========================================================================
-	// Core Identity (5 columns)
+	// Core Identity (4 columns) - v4.12.7: Removed NPCId column
 	//=========================================================================
 
 	// 1. Status - read-only colored badge
@@ -127,25 +127,19 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 		return CreateStatusCell();
 	}
 
-	// 2. NPCName - text input with NPC_ prefix trimming (required)
+	// 2. NPCName (NPC File) - text input with NPC_ prefix trimming (required)
 	if (ColumnName == TEXT("NPCName"))
 	{
 		return CreateNPCNameCell();
 	}
 
-	// 3. NPCId - text input (required)
-	if (ColumnName == TEXT("NPCId"))
-	{
-		return CreateTextCell(RowData->NPCId, TEXT("npc_id"));
-	}
-
-	// 4. DisplayName - text input
+	// 3. DisplayName (NPC Name) - text input
 	if (ColumnName == TEXT("DisplayName"))
 	{
-		return CreateTextCell(RowData->DisplayName, TEXT("Display Name"));
+		return CreateTextCell(RowData->DisplayName, TEXT("NPC Name"));
 	}
 
-	// 5. Blueprint - asset dropdown (only NarrativeNPCCharacter subclasses)
+	// 4. Blueprint - asset dropdown (only NarrativeNPCCharacter subclasses)
 	if (ColumnName == TEXT("Blueprint"))
 	{
 		return CreateNPCBlueprintDropdownCell();
@@ -196,45 +190,61 @@ TSharedRef<SWidget> SNPCTableRow::GenerateWidgetForColumn(const FName& ColumnNam
 	}
 
 	//=========================================================================
-	// Vendor (2 columns)
+	// Vendor (1 column) - v4.12.7: Removed ShopName
 	//=========================================================================
 
-	// 13. bIsVendor - checkbox
+	// 11. bIsVendor - checkbox
 	if (ColumnName == TEXT("bIsVendor"))
 	{
 		return CreateCheckboxCell(RowData->bIsVendor);
 	}
 
-	// 14. ShopName - text input
-	if (ColumnName == TEXT("ShopName"))
+	//=========================================================================
+	// Dialogues (1 column) - v4.12.7: New
+	//=========================================================================
+
+	// 12. Dialogues - shows Dialogue + TaggedDialogueSet (both clickable)
+	if (ColumnName == TEXT("Dialogues"))
 	{
-		return CreateTextCell(RowData->ShopName, TEXT("Shop Name"));
+		return CreateDialoguesCell();
 	}
 
 	//=========================================================================
-	// Items & Spawning (2 columns)
+	// Items & Spawning (3 columns) - v4.12.7: Added InventoryItems
 	//=========================================================================
 
-	// 15. DefaultItems - multi-select dropdown (IC_*)
+	// 13. DefaultItems (IC) - multi-select dropdown (IC_*)
 	if (ColumnName == TEXT("DefaultItems"))
 	{
 		return CreateItemsCell();
 	}
 
-	// 16. SpawnerPOI - dropdown (POI tags)
+	// 14. InventoryItems (Items) - v4.12.7: Individual items with quantity
+	if (ColumnName == TEXT("InventoryItems"))
+	{
+		return CreateInventoryItemsCell();
+	}
+
+	// 15. SpawnerPOI - dropdown (POI tags)
 	if (ColumnName == TEXT("SpawnerPOI"))
 	{
 		return CreatePOIDropdownCell();
 	}
 
 	//=========================================================================
-	// Meta (2 columns)
+	// Meta (3 columns) - v4.12.7: Added Tags
 	//=========================================================================
 
-	// 17. Appearance - asset dropdown
+	// 16. Appearance - asset dropdown
 	if (ColumnName == TEXT("Appearance"))
 	{
 		return CreateAssetDropdownCell(RowData->Appearance, UCharacterAppearanceBase::StaticClass(), TEXT("Appearance_"));
+	}
+
+	// 17. Tags - v4.12.7: Multi-select dropdown (gameplay tags)
+	if (ColumnName == TEXT("Tags"))
+	{
+		return CreateTagsCell();
 	}
 
 	// 18. Notes - text input with tooltip preview for long text
@@ -1192,6 +1202,768 @@ TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 		];
 }
 
+TSharedRef<SWidget> SNPCTableRow::CreateDialoguesCell()
+{
+	// v4.12.7: Shows two clickable assets - Dialogue and TaggedDialogueSet
+	// Similar pattern to CreateItemsCell but for dialogue assets
+	auto OpenDialogueAsset = [](const FSoftObjectPath& Path)
+	{
+		if (!Path.IsNull())
+		{
+			if (UObject* LoadedAsset = Path.TryLoad())
+			{
+				GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+			}
+		}
+	};
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+
+			// Clickable dialogue links
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SWrapBox)
+					.UseAllottedSize(true)
+
+					// Dialogue asset link
+					+ SWrapBox::Slot()
+					.Padding(FMargin(0.0f, 0.0f, 4.0f, 0.0f))
+					[
+						SNew(SButton)
+							.ButtonStyle(FAppStyle::Get(), "NoBorder")
+							.ContentPadding(FMargin(0))
+							.OnClicked_Lambda([this, OpenDialogueAsset]() -> FReply
+							{
+								OpenDialogueAsset(RowData->Dialogue);
+								return FReply::Handled();
+							})
+							.ToolTipText_Lambda([this]()
+							{
+								if (RowData->Dialogue.IsNull())
+								{
+									return FText::FromString(TEXT("No dialogue selected"));
+								}
+								return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenDialogue", "Click to open: {0}"),
+									FText::FromString(RowData->Dialogue.GetAssetName()));
+							})
+							.Cursor(EMouseCursor::Hand)
+							[
+								SNew(STextBlock)
+									.Text_Lambda([this]()
+									{
+										if (RowData->Dialogue.IsNull())
+										{
+											return FText::FromString(TEXT("(None)"));
+										}
+										return FText::FromString(TrimAssetPrefix_NPC(RowData->Dialogue.GetAssetName()));
+									})
+									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+									.ColorAndOpacity_Lambda([this]()
+									{
+										return RowData->Dialogue.IsNull() ?
+											FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)) :
+											FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+									})
+							]
+					]
+
+					// Separator
+					+ SWrapBox::Slot()
+					.Padding(FMargin(0.0f, 0.0f, 4.0f, 0.0f))
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(TEXT("|")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)))
+					]
+
+					// TaggedDialogueSet asset link
+					+ SWrapBox::Slot()
+					[
+						SNew(SButton)
+							.ButtonStyle(FAppStyle::Get(), "NoBorder")
+							.ContentPadding(FMargin(0))
+							.OnClicked_Lambda([this, OpenDialogueAsset]() -> FReply
+							{
+								OpenDialogueAsset(RowData->TaggedDialogueSet);
+								return FReply::Handled();
+							})
+							.ToolTipText_Lambda([this]()
+							{
+								if (RowData->TaggedDialogueSet.IsNull())
+								{
+									return FText::FromString(TEXT("No tagged dialogue set selected"));
+								}
+								return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenTaggedDialogue", "Click to open: {0}"),
+									FText::FromString(RowData->TaggedDialogueSet.GetAssetName()));
+							})
+							.Cursor(EMouseCursor::Hand)
+							[
+								SNew(STextBlock)
+									.Text_Lambda([this]()
+									{
+										if (RowData->TaggedDialogueSet.IsNull())
+										{
+											return FText::FromString(TEXT("(None)"));
+										}
+										// Strip "_TaggedDialogue" suffix for cleaner display
+										FString Name = RowData->TaggedDialogueSet.GetAssetName();
+										if (Name.EndsWith(TEXT("_TaggedDialogue")))
+										{
+											Name = Name.LeftChop(15);
+										}
+										return FText::FromString(Name);
+									})
+									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+									.ColorAndOpacity_Lambda([this]()
+									{
+										return RowData->TaggedDialogueSet.IsNull() ?
+											FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)) :
+											FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+									})
+							]
+					]
+			]
+
+			// Dropdown arrow for editing
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// Dialogue section
+						MenuBuilder.BeginSection(NAME_None, NSLOCTEXT("NPCTableEditor", "DialogueSection", "Dialogue"));
+						{
+							// Clear dialogue
+							MenuBuilder.AddMenuEntry(
+								NSLOCTEXT("NPCTableEditor", "ClearDialogue", "(Clear Dialogue)"),
+								FText::GetEmpty(),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this]()
+								{
+									if (!RowData->Dialogue.IsNull())
+									{
+										RowData->Dialogue.Reset();
+										MarkModified();
+									}
+								}))
+							);
+
+							// Get all dialogue assets
+							FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+							TArray<FAssetData> Assets;
+							Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+							TArray<FAssetData> DialogueAssets;
+							for (const FAssetData& Asset : Assets)
+							{
+								FString AssetName = Asset.AssetName.ToString();
+								if (AssetName.StartsWith(TEXT("DBP_")))
+								{
+									DialogueAssets.Add(Asset);
+								}
+							}
+
+							// Sort alphabetically
+							DialogueAssets.Sort([](const FAssetData& A, const FAssetData& B)
+							{
+								return A.AssetName.ToString() < B.AssetName.ToString();
+							});
+
+							for (const FAssetData& Asset : DialogueAssets)
+							{
+								FString AssetName = Asset.AssetName.ToString();
+								FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+								MenuBuilder.AddMenuEntry(
+									FText::FromString(TrimAssetPrefix_NPC(AssetName)),
+									FText::FromString(Asset.GetObjectPathString()),
+									FSlateIcon(),
+									FUIAction(FExecuteAction::CreateLambda([this, AssetPath]()
+									{
+										RowData->Dialogue = AssetPath;
+										MarkModified();
+									}))
+								);
+							}
+						}
+						MenuBuilder.EndSection();
+
+						// TaggedDialogueSet section
+						MenuBuilder.BeginSection(NAME_None, NSLOCTEXT("NPCTableEditor", "TaggedDialogueSection", "Tagged Dialogue Set"));
+						{
+							// Clear tagged dialogue
+							MenuBuilder.AddMenuEntry(
+								NSLOCTEXT("NPCTableEditor", "ClearTaggedDialogue", "(Clear Tagged Dialogue)"),
+								FText::GetEmpty(),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this]()
+								{
+									if (!RowData->TaggedDialogueSet.IsNull())
+									{
+										RowData->TaggedDialogueSet.Reset();
+										MarkModified();
+									}
+								}))
+							);
+
+							// Get tagged dialogue set assets (UDataAsset with _TaggedDialogue suffix)
+							FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+							TArray<FAssetData> AllAssets;
+							Registry.Get().GetAssetsByPath(FName(TEXT("/Game")), AllAssets, true);
+
+							TArray<FAssetData> TaggedDialogueAssets;
+							for (const FAssetData& Asset : AllAssets)
+							{
+								FString AssetName = Asset.AssetName.ToString();
+								if (AssetName.Contains(TEXT("TaggedDialogue")))
+								{
+									TaggedDialogueAssets.Add(Asset);
+								}
+							}
+
+							// Sort alphabetically
+							TaggedDialogueAssets.Sort([](const FAssetData& A, const FAssetData& B)
+							{
+								return A.AssetName.ToString() < B.AssetName.ToString();
+							});
+
+							for (const FAssetData& Asset : TaggedDialogueAssets)
+							{
+								FString AssetName = Asset.AssetName.ToString();
+								FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+								// Strip suffix for display
+								FString DisplayName = AssetName;
+								if (DisplayName.EndsWith(TEXT("_TaggedDialogue")))
+								{
+									DisplayName = DisplayName.LeftChop(15);
+								}
+
+								MenuBuilder.AddMenuEntry(
+									FText::FromString(DisplayName),
+									FText::FromString(Asset.GetObjectPathString()),
+									FSlateIcon(),
+									FUIAction(FExecuteAction::CreateLambda([this, AssetPath]()
+									{
+										RowData->TaggedDialogueSet = AssetPath;
+										MarkModified();
+									}))
+								);
+							}
+						}
+						MenuBuilder.EndSection();
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
+		];
+}
+
+TSharedRef<SWidget> SNPCTableRow::CreateInventoryItemsCell()
+{
+	// v4.12.7: Multi-select dropdown for individual items with quantity
+	// Format: "ItemName:Qty,ItemName:Qty"
+	FString* ValuePtr = &RowData->InventoryItems;
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+
+			// Display current items
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+					.Text_Lambda([ValuePtr]()
+					{
+						if (ValuePtr->IsEmpty())
+						{
+							return FText::FromString(TEXT("(None)"));
+						}
+						// Parse and display items with qty
+						TArray<FString> Items;
+						ValuePtr->ParseIntoArray(Items, TEXT(","));
+						TArray<FString> DisplayItems;
+						for (const FString& Item : Items)
+						{
+							FString Trimmed = Item.TrimStartAndEnd();
+							// Format: ItemName:Qty or just ItemName
+							int32 ColonIdx;
+							if (Trimmed.FindChar(TEXT(':'), ColonIdx))
+							{
+								FString Name = Trimmed.Left(ColonIdx);
+								FString Qty = Trimmed.Mid(ColonIdx + 1);
+								// Trim prefixes for display
+								if (Name.StartsWith(TEXT("EI_"))) Name = Name.Mid(3);
+								else if (Name.StartsWith(TEXT("BI_"))) Name = Name.Mid(3);
+								else if (Name.StartsWith(TEXT("BPNI_"))) Name = Name.Mid(5);
+								DisplayItems.Add(FString::Printf(TEXT("%s(%s)"), *Name, *Qty));
+							}
+							else
+							{
+								DisplayItems.Add(Trimmed);
+							}
+						}
+						return FText::FromString(FString::Join(DisplayItems, TEXT(", ")));
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity_Lambda([ValuePtr]()
+					{
+						return ValuePtr->IsEmpty() ?
+							FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)) :
+							FSlateColor(FLinearColor::White);
+					})
+			]
+
+			// Dropdown for editing
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
+					{
+						TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+						// Clear All button
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(4.0f, 2.0f)
+						[
+							SNew(SButton)
+								.Text(NSLOCTEXT("NPCTableEditor", "ClearAllInventoryItems", "(Clear All)"))
+								.OnClicked_Lambda([this, ValuePtr]()
+								{
+									if (!ValuePtr->IsEmpty())
+									{
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											NSLOCTEXT("NPCTableEditor", "ConfirmClearInventory", "Clear all inventory items?"));
+										if (Result == EAppReturnType::Yes)
+										{
+											ValuePtr->Empty();
+											MarkModified();
+										}
+									}
+									return FReply::Handled();
+								})
+						];
+
+						MenuContent->AddSlot()
+						.AutoHeight()
+						[
+							SNew(SSeparator)
+						];
+
+						// Get all item Blueprint assets
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+						TArray<FAssetData> ItemAssets;
+						for (const FAssetData& Asset : Assets)
+						{
+							FString AssetName = Asset.AssetName.ToString();
+							// Include EI_, BI_, BPNI_ prefixed items
+							if (AssetName.StartsWith(TEXT("EI_")) ||
+								AssetName.StartsWith(TEXT("BI_")) ||
+								AssetName.StartsWith(TEXT("BPNI_")))
+							{
+								ItemAssets.Add(Asset);
+							}
+						}
+
+						// Sort alphabetically
+						ItemAssets.Sort([](const FAssetData& A, const FAssetData& B)
+						{
+							return A.AssetName.ToString() < B.AssetName.ToString();
+						});
+
+						// Parse current items for checkbox state
+						TMap<FString, int32> CurrentItemQtys;
+						TArray<FString> Items;
+						ValuePtr->ParseIntoArray(Items, TEXT(","));
+						for (const FString& Item : Items)
+						{
+							FString Trimmed = Item.TrimStartAndEnd();
+							int32 ColonIdx;
+							if (Trimmed.FindChar(TEXT(':'), ColonIdx))
+							{
+								FString Name = Trimmed.Left(ColonIdx);
+								int32 Qty = FCString::Atoi(*Trimmed.Mid(ColonIdx + 1));
+								CurrentItemQtys.Add(Name, Qty);
+							}
+							else
+							{
+								CurrentItemQtys.Add(Trimmed, 1);
+							}
+						}
+
+						for (const FAssetData& Asset : ItemAssets)
+						{
+							FString AssetName = Asset.AssetName.ToString();
+							int32* CurrentQty = CurrentItemQtys.Find(AssetName);
+							bool bIsSelected = (CurrentQty != nullptr);
+							int32 Qty = bIsSelected ? *CurrentQty : 1;
+
+							MenuContent->AddSlot()
+							.AutoHeight()
+							.Padding(4.0f, 1.0f)
+							[
+								SNew(SHorizontalBox)
+
+								// Checkbox
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(SCheckBox)
+										.IsChecked(bIsSelected ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+										.OnCheckStateChanged_Lambda([this, ValuePtr, AssetName](ECheckBoxState NewState)
+										{
+											TMap<FString, int32> ItemQtys;
+											TArray<FString> Items;
+											ValuePtr->ParseIntoArray(Items, TEXT(","));
+											for (const FString& Item : Items)
+											{
+												FString Trimmed = Item.TrimStartAndEnd();
+												int32 ColonIdx;
+												if (Trimmed.FindChar(TEXT(':'), ColonIdx))
+												{
+													ItemQtys.Add(Trimmed.Left(ColonIdx), FCString::Atoi(*Trimmed.Mid(ColonIdx + 1)));
+												}
+												else if (!Trimmed.IsEmpty())
+												{
+													ItemQtys.Add(Trimmed, 1);
+												}
+											}
+
+											if (NewState == ECheckBoxState::Checked)
+											{
+												if (!ItemQtys.Contains(AssetName))
+												{
+													ItemQtys.Add(AssetName, 1);
+												}
+											}
+											else
+											{
+												ItemQtys.Remove(AssetName);
+											}
+
+											// Rebuild string
+											TArray<FString> NewItems;
+											for (const auto& Pair : ItemQtys)
+											{
+												NewItems.Add(FString::Printf(TEXT("%s:%d"), *Pair.Key, Pair.Value));
+											}
+											*ValuePtr = FString::Join(NewItems, TEXT(", "));
+											MarkModified();
+										})
+								]
+
+								// Item name
+								+ SHorizontalBox::Slot()
+								.FillWidth(1.0f)
+								.VAlign(VAlign_Center)
+								.Padding(4.0f, 0.0f)
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(TrimAssetPrefix_NPC(AssetName)))
+										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+								]
+
+								// Quantity spinbox
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(SBox)
+									.WidthOverride(50.0f)
+									[
+										SNew(SSpinBox<int32>)
+											.MinValue(1)
+											.MaxValue(999)
+											.Value(Qty)
+											.OnValueCommitted_Lambda([this, ValuePtr, AssetName](int32 NewQty, ETextCommit::Type)
+											{
+												TMap<FString, int32> ItemQtys;
+												TArray<FString> Items;
+												ValuePtr->ParseIntoArray(Items, TEXT(","));
+												for (const FString& Item : Items)
+												{
+													FString Trimmed = Item.TrimStartAndEnd();
+													int32 ColonIdx;
+													if (Trimmed.FindChar(TEXT(':'), ColonIdx))
+													{
+														ItemQtys.Add(Trimmed.Left(ColonIdx), FCString::Atoi(*Trimmed.Mid(ColonIdx + 1)));
+													}
+													else if (!Trimmed.IsEmpty())
+													{
+														ItemQtys.Add(Trimmed, 1);
+													}
+												}
+
+												if (ItemQtys.Contains(AssetName))
+												{
+													ItemQtys[AssetName] = NewQty;
+
+													// Rebuild string
+													TArray<FString> NewItems;
+													for (const auto& Pair : ItemQtys)
+													{
+														NewItems.Add(FString::Printf(TEXT("%s:%d"), *Pair.Key, Pair.Value));
+													}
+													*ValuePtr = FString::Join(NewItems, TEXT(", "));
+													MarkModified();
+												}
+											})
+									]
+								]
+							];
+						}
+
+						return SNew(SBox)
+							.MaxDesiredHeight(300.0f)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									MenuContent
+								]
+							];
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
+		];
+}
+
+TSharedRef<SWidget> SNPCTableRow::CreateTagsCell()
+{
+	// v4.12.7: Multi-select dropdown for gameplay tags
+	FString* ValuePtr = &RowData->Tags;
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+
+			// Display current tags
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+					.Text_Lambda([ValuePtr]()
+					{
+						if (ValuePtr->IsEmpty())
+						{
+							return FText::FromString(TEXT("(None)"));
+						}
+						// Show short tag names (last segment)
+						TArray<FString> Tags;
+						ValuePtr->ParseIntoArray(Tags, TEXT(","));
+						TArray<FString> ShortTags;
+						for (const FString& Tag : Tags)
+						{
+							FString Trimmed = Tag.TrimStartAndEnd();
+							int32 LastDot;
+							if (Trimmed.FindLastChar(TEXT('.'), LastDot))
+							{
+								ShortTags.Add(Trimmed.Mid(LastDot + 1));
+							}
+							else
+							{
+								ShortTags.Add(Trimmed);
+							}
+						}
+						return FText::FromString(FString::Join(ShortTags, TEXT(", ")));
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity_Lambda([ValuePtr]()
+					{
+						return ValuePtr->IsEmpty() ?
+							FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)) :
+							FSlateColor(FLinearColor::White);
+					})
+			]
+
+			// Dropdown for editing
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
+					{
+						TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+						// Clear All button
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(4.0f, 2.0f)
+						[
+							SNew(SButton)
+								.Text(NSLOCTEXT("NPCTableEditor", "ClearAllTags", "(Clear All)"))
+								.OnClicked_Lambda([this, ValuePtr]()
+								{
+									if (!ValuePtr->IsEmpty())
+									{
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											NSLOCTEXT("NPCTableEditor", "ConfirmClearTags", "Clear all tags?"));
+										if (Result == EAppReturnType::Yes)
+										{
+											ValuePtr->Empty();
+											MarkModified();
+										}
+									}
+									return FReply::Handled();
+								})
+						];
+
+						MenuContent->AddSlot()
+						.AutoHeight()
+						[
+							SNew(SSeparator)
+						];
+
+						// Get all gameplay tags from the GameplayTagsManager
+						TArray<FString> AllTags;
+						FGameplayTagContainer AllTagsContainer;
+						UGameplayTagsManager::Get().RequestAllGameplayTags(AllTagsContainer, false);
+						for (const FGameplayTag& Tag : AllTagsContainer)
+						{
+							AllTags.Add(Tag.ToString());
+						}
+
+						// Sort alphabetically
+						AllTags.Sort();
+
+						// Parse current tags for checkbox state
+						TSet<FString> CurrentTags;
+						TArray<FString> TagArray;
+						ValuePtr->ParseIntoArray(TagArray, TEXT(","));
+						for (const FString& Tag : TagArray)
+						{
+							CurrentTags.Add(Tag.TrimStartAndEnd());
+						}
+
+						for (const FString& Tag : AllTags)
+						{
+							// Get short name for display
+							FString ShortName = Tag;
+							int32 LastDot;
+							if (Tag.FindLastChar(TEXT('.'), LastDot))
+							{
+								ShortName = Tag.Mid(LastDot + 1);
+							}
+
+							MenuContent->AddSlot()
+							.AutoHeight()
+							.Padding(4.0f, 1.0f)
+							[
+								SNew(SHorizontalBox)
+
+								// Checkbox
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(SCheckBox)
+										.IsChecked(CurrentTags.Contains(Tag) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+										.OnCheckStateChanged_Lambda([this, ValuePtr, Tag](ECheckBoxState NewState)
+										{
+											TSet<FString> Tags;
+											TArray<FString> TagArray;
+											ValuePtr->ParseIntoArray(TagArray, TEXT(","));
+											for (const FString& T : TagArray)
+											{
+												FString Trimmed = T.TrimStartAndEnd();
+												if (!Trimmed.IsEmpty())
+												{
+													Tags.Add(Trimmed);
+												}
+											}
+
+											if (NewState == ECheckBoxState::Checked)
+											{
+												Tags.Add(Tag);
+											}
+											else
+											{
+												Tags.Remove(Tag);
+											}
+
+											// Rebuild string
+											*ValuePtr = FString::Join(Tags.Array(), TEXT(", "));
+											MarkModified();
+										})
+								]
+
+								// Tag name (show full path in tooltip)
+								+ SHorizontalBox::Slot()
+								.FillWidth(1.0f)
+								.VAlign(VAlign_Center)
+								.Padding(4.0f, 0.0f)
+								[
+									SNew(STextBlock)
+										.Text(FText::FromString(ShortName))
+										.ToolTipText(FText::FromString(Tag))
+										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+								]
+							];
+						}
+
+						return SNew(SBox)
+							.MaxDesiredHeight(300.0f)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									MenuContent
+								]
+							];
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
+		];
+}
+
 TSharedRef<SWidget> SNPCTableRow::CreatePOIDropdownCell()
 {
 	// Dropdown for POI selection from level - scans world for APOIActor instances
@@ -1645,7 +2417,7 @@ TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 
 void SNPCTableRow::MarkModified()
 {
-	if (RowData.IsValid())
+	if (RowData.IsValid() && RowData->RowId.IsValid())
 	{
 		if (RowData->Status != ENPCTableRowStatus::New)
 		{
@@ -1653,8 +2425,10 @@ void SNPCTableRow::MarkModified()
 		}
 		// v4.8.4: Clear validation on edit (prevents stale green/red after cell change)
 		RowData->InvalidateValidation();
+
+		// v4.12.7: Only fire delegate if row data is valid
+		OnRowModified.ExecuteIfBound();
 	}
-	OnRowModified.ExecuteIfBound();
 }
 
 //=============================================================================
@@ -2168,6 +2942,13 @@ void SNPCTableEditor::OnColumnDropdownFilterChanged(FName ColumnId, const FStrin
 		else
 		{
 			State->SelectedValues.Remove(Value);
+
+			// v4.12.7 FIX: If removing the last item, set __NONE_SELECTED__ instead of empty
+			// Empty means "show all", but we want "show none" when user deselects the last item
+			if (State->SelectedValues.Num() == 0)
+			{
+				State->SelectedValues.Add(TEXT("__NONE_SELECTED__"));
+			}
 		}
 	}
 
@@ -2611,18 +3392,20 @@ void SNPCTableEditor::ApplySorting()
 void SNPCTableEditor::OnRowModified()
 {
 	// Sync changes from AllRows back to TableData
-	if (TableData)
+	if (!TableData)
 	{
-		for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
+		return;
+	}
+
+	for (const TSharedPtr<FNPCTableRow>& Row : AllRows)
+	{
+		if (Row.IsValid() && Row->RowId.IsValid())
 		{
-			if (Row.IsValid())
+			// Find matching row in TableData by GUID and update it
+			FNPCTableRow* DataRow = TableData->FindRowByGuid(Row->RowId);
+			if (DataRow)
 			{
-				// Find matching row in TableData by GUID and update it
-				FNPCTableRow* DataRow = TableData->FindRowByGuid(Row->RowId);
-				if (DataRow)
-				{
-					*DataRow = *Row; // Copy all fields back
-				}
+				*DataRow = *Row; // Copy all fields back
 			}
 		}
 	}

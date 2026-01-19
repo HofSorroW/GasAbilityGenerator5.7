@@ -337,8 +337,9 @@ int32 FQuestAssetSync::PopulateRowsFromAssets(
 		{
 			const FQuestAssetData& Data = **DataPtr;
 
-			// Update display name if empty
-			if (Row.DisplayName.IsEmpty() && !Data.DisplayName.IsEmpty())
+			// Update display name if empty or default "My New Quest"
+			// v4.12.7: Also update when row has default placeholder value
+			if ((Row.DisplayName.IsEmpty() || Row.DisplayName == TEXT("My New Quest")) && !Data.DisplayName.IsEmpty())
 			{
 				Row.DisplayName = Data.DisplayName;
 			}

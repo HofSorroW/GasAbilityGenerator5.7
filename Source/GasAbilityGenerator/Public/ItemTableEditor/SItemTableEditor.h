@@ -60,8 +60,8 @@ inline TArray<FItemTableColumn> GetItemTableColumns()
 	// 1. Status - read-only badge (auto-calculated)
 	Columns.Add(FItemTableColumn(TEXT("Status"), NSLOCTEXT("ItemTableEditor", "ColStatus", "Status"), 55.0f));
 
-	// 2. ItemName - EI_{ItemName}
-	Columns.Add(FItemTableColumn(TEXT("ItemName"), NSLOCTEXT("ItemTableEditor", "ColItemName", "Item Name"), 130.0f));
+	// 2. ItemName - EI_{ItemName} - v4.12.7: Renamed from "Item Name" to "Item File"
+	Columns.Add(FItemTableColumn(TEXT("ItemName"), NSLOCTEXT("ItemTableEditor", "ColItemName", "Item File"), 130.0f));
 
 	// 3. DisplayName - shown in-game
 	Columns.Add(FItemTableColumn(TEXT("DisplayName"), NSLOCTEXT("ItemTableEditor", "ColDisplayName", "Display Name"), 130.0f));

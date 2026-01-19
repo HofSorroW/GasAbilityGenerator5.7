@@ -57,7 +57,8 @@ enum class ENPCColumnInputType : uint8
 };
 
 /**
- * Get default column definitions for NPC table (v4.1 - 17 columns)
+ * Get default column definitions for NPC table (v4.12.7 - 19 columns)
+ * v4.12.7: Renamed columns (NPC File, NPC Name), removed NPCId/ShopName, added Dialogues/Items/Tags
  * v4.12.5: Changed to ManualWidth (fixed pixels) for consistent sizing
  */
 inline TArray<FNPCTableColumn> GetNPCTableColumns()
@@ -65,78 +66,85 @@ inline TArray<FNPCTableColumn> GetNPCTableColumns()
 	TArray<FNPCTableColumn> Columns;
 
 	//=========================================================================
-	// Core Identity (5 columns)
+	// Core Identity (4 columns)
 	//=========================================================================
 
 	// 1. Status - read-only badge (auto-calculated)
 	Columns.Add(FNPCTableColumn(TEXT("Status"), NSLOCTEXT("NPCTableEditor", "ColStatus", "Status"), 55.0f));
 
-	// 2. NPCName - text input (required, no spaces)
-	Columns.Add(FNPCTableColumn(TEXT("NPCName"), NSLOCTEXT("NPCTableEditor", "ColNPCName", "NPC Name"), 120.0f));
+	// 2. NPCName - asset file name (required, no spaces) - v4.12.7: renamed from "NPC Name" to "NPC File"
+	Columns.Add(FNPCTableColumn(TEXT("NPCName"), NSLOCTEXT("NPCTableEditor", "ColNPCName", "NPC File"), 120.0f));
 
-	// 3. NPCId - text input (required, unique)
-	Columns.Add(FNPCTableColumn(TEXT("NPCId"), NSLOCTEXT("NPCTableEditor", "ColNPCId", "NPC ID"), 100.0f));
+	// 3. DisplayName - in-game display name - v4.12.7: renamed from "Display Name" to "NPC Name"
+	Columns.Add(FNPCTableColumn(TEXT("DisplayName"), NSLOCTEXT("NPCTableEditor", "ColDisplayName", "NPC Name"), 120.0f));
 
-	// 4. DisplayName - text input
-	Columns.Add(FNPCTableColumn(TEXT("DisplayName"), NSLOCTEXT("NPCTableEditor", "ColDisplayName", "Display Name"), 120.0f));
-
-	// 5. Blueprint - asset dropdown (ANarrativeNPCCharacter classes)
+	// 4. Blueprint - asset dropdown (ANarrativeNPCCharacter classes)
 	Columns.Add(FNPCTableColumn(TEXT("Blueprint"), NSLOCTEXT("NPCTableEditor", "ColBlueprint", "Blueprint"), 120.0f));
 
 	//=========================================================================
 	// AI & Behavior (3 columns)
 	//=========================================================================
 
-	// 6. AbilityConfig - asset dropdown (AC_* DataAssets)
+	// 5. AbilityConfig - asset dropdown (AC_* DataAssets)
 	Columns.Add(FNPCTableColumn(TEXT("AbilityConfig"), NSLOCTEXT("NPCTableEditor", "ColAbilityConfig", "Ability Cfg"), 100.0f));
 
-	// 7. ActivityConfig - asset dropdown (AC_*Behavior, UNPCActivityConfiguration)
+	// 6. ActivityConfig - asset dropdown (AC_*Behavior, UNPCActivityConfiguration)
 	Columns.Add(FNPCTableColumn(TEXT("ActivityConfig"), NSLOCTEXT("NPCTableEditor", "ColActivityConfig", "Activity Cfg"), 100.0f));
 
-	// 8. Schedule - asset dropdown (Schedule_* DataAssets)
+	// 7. Schedule - asset dropdown (Schedule_* DataAssets)
 	Columns.Add(FNPCTableColumn(TEXT("Schedule"), NSLOCTEXT("NPCTableEditor", "ColSchedule", "Schedule"), 90.0f));
 
 	//=========================================================================
 	// Combat (3 columns)
 	//=========================================================================
 
-	// 9. LevelRange - dual spinbox "1-10"
+	// 8. LevelRange - dual spinbox "1-10"
 	Columns.Add(FNPCTableColumn(TEXT("LevelRange"), NSLOCTEXT("NPCTableEditor", "ColLevelRange", "Level"), 65.0f));
 
-	// 10. Factions - multi-select dropdown (gameplay tags)
+	// 9. Factions - multi-select dropdown (gameplay tags)
 	Columns.Add(FNPCTableColumn(TEXT("Factions"), NSLOCTEXT("NPCTableEditor", "ColFactions", "Factions"), 100.0f));
 
-	// 11. AttackPriority - slider 0.0-1.0
-	Columns.Add(FNPCTableColumn(TEXT("AttackPriority"), NSLOCTEXT("NPCTableEditor", "ColAttackPriority", "Prio"), 50.0f));
+	// 10. AttackPriority - slider 0.0-1.0 - v4.12.7: renamed from "Prio" to "AP"
+	Columns.Add(FNPCTableColumn(TEXT("AttackPriority"), NSLOCTEXT("NPCTableEditor", "ColAttackPriority", "AP"), 50.0f));
 
 	//=========================================================================
-	// Vendor (2 columns)
+	// Vendor (1 column) - v4.12.7: Removed ShopName column
 	//=========================================================================
 
-	// 12. bIsVendor - checkbox
-	Columns.Add(FNPCTableColumn(TEXT("bIsVendor"), NSLOCTEXT("NPCTableEditor", "ColIsVendor", "V"), 35.0f));
-
-	// 13. ShopName - text input
-	Columns.Add(FNPCTableColumn(TEXT("ShopName"), NSLOCTEXT("NPCTableEditor", "ColShopName", "Shop Name"), 100.0f));
+	// 11. bIsVendor - checkbox - v4.12.7: renamed from "V" to "Vendor"
+	Columns.Add(FNPCTableColumn(TEXT("bIsVendor"), NSLOCTEXT("NPCTableEditor", "ColIsVendor", "Vendor"), 50.0f));
 
 	//=========================================================================
-	// Items & Spawning (2 columns)
+	// Dialogues (1 column) - v4.12.7: New column
 	//=========================================================================
 
-	// 14. DefaultItems - multi-select dropdown (IC_* collections)
-	Columns.Add(FNPCTableColumn(TEXT("DefaultItems"), NSLOCTEXT("NPCTableEditor", "ColDefaultItems", "Items"), 100.0f));
+	// 12. Dialogues - shows Dialogue + TaggedDialogueSet assets (both clickable)
+	Columns.Add(FNPCTableColumn(TEXT("Dialogues"), NSLOCTEXT("NPCTableEditor", "ColDialogues", "Dialogues"), 150.0f));
+
+	//=========================================================================
+	// Items (2 columns) - v4.12.7: Renamed DefaultItems to IC, added Items column
+	//=========================================================================
+
+	// 13. DefaultItems - multi-select dropdown (IC_* collections) - v4.12.7: renamed from "Items" to "IC"
+	Columns.Add(FNPCTableColumn(TEXT("DefaultItems"), NSLOCTEXT("NPCTableEditor", "ColDefaultItems", "IC"), 100.0f));
+
+	// 14. InventoryItems - v4.12.7: New column for individual items with quantity
+	Columns.Add(FNPCTableColumn(TEXT("InventoryItems"), NSLOCTEXT("NPCTableEditor", "ColInventoryItems", "Items"), 130.0f));
 
 	// 15. SpawnerPOI - asset dropdown (POI tags from level)
 	Columns.Add(FNPCTableColumn(TEXT("SpawnerPOI"), NSLOCTEXT("NPCTableEditor", "ColSpawnerPOI", "POI"), 100.0f));
 
 	//=========================================================================
-	// Meta (2 columns)
+	// Meta (3 columns) - v4.12.7: Added Tags column
 	//=========================================================================
 
 	// 16. Appearance - asset dropdown (Appearance_* assets)
 	Columns.Add(FNPCTableColumn(TEXT("Appearance"), NSLOCTEXT("NPCTableEditor", "ColAppearance", "Appearance"), 100.0f));
 
-	// 17. Notes - text input (free text, with tooltip)
+	// 17. Tags - multi-select dropdown (gameplay tags from DefaultTags.ini)
+	Columns.Add(FNPCTableColumn(TEXT("Tags"), NSLOCTEXT("NPCTableEditor", "ColTags", "Tags"), 120.0f));
+
+	// 18. Notes - text input (free text, with tooltip)
 	Columns.Add(FNPCTableColumn(TEXT("Notes"), NSLOCTEXT("NPCTableEditor", "ColNotes", "Notes"), 150.0f));
 
 	return Columns;
@@ -199,6 +207,15 @@ private:
 
 	/** Create items multi-select dropdown (IC_* collections) */
 	TSharedRef<SWidget> CreateItemsCell();
+
+	/** Create inventory items cell with quantity (v4.12.7) */
+	TSharedRef<SWidget> CreateInventoryItemsCell();
+
+	/** Create dialogues cell showing Dialogue + TaggedDialogueSet (v4.12.7) */
+	TSharedRef<SWidget> CreateDialoguesCell();
+
+	/** Create tags multi-select dropdown (v4.12.7) */
+	TSharedRef<SWidget> CreateTagsCell();
 
 	/** Create POI dropdown (from level POIs) */
 	TSharedRef<SWidget> CreatePOIDropdownCell();
