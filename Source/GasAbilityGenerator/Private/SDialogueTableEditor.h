@@ -33,7 +33,7 @@ struct FDialogueTableColumn
 		: ColumnId(InId), DisplayName(InName), ManualWidth(InWidth) {}
 };
 
-/** Get default column definitions for dialogue table (16 columns) - v4.12.7: Added Quests column */
+/** Get default column definitions for dialogue table (17 columns) - v4.12.7: Split Events into Events+EventOptions+Quests */
 inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 {
 	return {
@@ -45,10 +45,11 @@ inline TArray<FDialogueTableColumn> GetDialogueTableColumns()
 		{ TEXT("Speaker"),      FText::FromString(TEXT("Speaker")),        90.0f },
 		{ TEXT("Text"),         FText::FromString(TEXT("Text")),           220.0f },
 		{ TEXT("OptionText"),   FText::FromString(TEXT("Option Text")),    120.0f },
-		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         120.0f },  // v4.12.7: Reduced width
+		{ TEXT("Events"),       FText::FromString(TEXT("Events")),         100.0f },  // v4.12.7: Type only (e.g., NE_BeginQuest)
+		{ TEXT("EventOptions"), FText::FromString(TEXT("Event Opts")),     100.0f },  // v4.12.7: Parameters (e.g., QuestId=X)
 		{ TEXT("Quests"),       FText::FromString(TEXT("Quests")),         100.0f },  // v4.12.7: Quest refs from events
-		{ TEXT("Condition"),    FText::FromString(TEXT("Conditions")),     120.0f },
-		{ TEXT("Options"),      FText::FromString(TEXT("Options")),        90.0f },
+		{ TEXT("Condition"),    FText::FromString(TEXT("Conditions")),     100.0f },  // v4.12.7: Type only
+		{ TEXT("Options"),      FText::FromString(TEXT("Options")),        100.0f },  // Parameters
 		{ TEXT("ParentNodeID"), FText::FromString(TEXT("Parent")),         80.0f },
 		{ TEXT("NextNodeIDs"),  FText::FromString(TEXT("Next Nodes")),     100.0f },
 		{ TEXT("Skippable"),    FText::FromString(TEXT("Skip")),           45.0f },
@@ -107,9 +108,11 @@ private:
 	TSharedRef<SWidget> CreateSkippableCell();  // Yes/No checkbox
 	TSharedRef<SWidget> CreateNotesCell();  // Designer notes
 	TSharedRef<SWidget> CreateTokenCell(FString& TokenStr, bool& bValid, ETokenCategory Category);  // v4.4: Events/Conditions with autocomplete
-	TSharedRef<SWidget> CreateConditionTypeCell();   // v4.11.4: Condition type (e.g., NC_HasDialogueNodePlayed)
+	TSharedRef<SWidget> CreateEventTypeCell();        // v4.12.7: Event type only (e.g., NE_BeginQuest)
+	TSharedRef<SWidget> CreateEventOptionsCell();     // v4.12.7: Event parameters (e.g., QuestId=X)
+	TSharedRef<SWidget> CreateConditionTypeCell();    // v4.11.4: Condition type (e.g., NC_HasDialogueNodePlayed)
 	TSharedRef<SWidget> CreateConditionOptionsCell(); // v4.11.4: Condition options (e.g., NodeId=X)
-	TSharedRef<SWidget> CreateQuestsCell();          // v4.12.7: Quest references from Events
+	TSharedRef<SWidget> CreateQuestsCell();           // v4.12.7: Quest references from Events
 
 	void MarkModified();
 };

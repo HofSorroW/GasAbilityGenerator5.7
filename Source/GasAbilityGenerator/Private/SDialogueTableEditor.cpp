@@ -132,11 +132,15 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	{
 		return CreateTextCell(RowData->OptionText, TEXT("Player choice text"), true);  // With tooltip
 	}
+	// v4.12.7: Split Events into Events (type) + EventOptions (params) + Quests (quest refs)
 	if (ColumnName == TEXT("Events"))
 	{
-		return CreateTokenCell(RowData->EventsTokenStr, RowData->bEventsValid, ETokenCategory::Event);
+		return CreateEventTypeCell();
 	}
-	// v4.12.7: Quests column - extracts quest references from Events
+	if (ColumnName == TEXT("EventOptions"))
+	{
+		return CreateEventOptionsCell();
+	}
 	if (ColumnName == TEXT("Quests"))
 	{
 		return CreateQuestsCell();
@@ -962,6 +966,39 @@ TSharedRef<SWidget> SDialogueTableRow::CreateTokenCell(FString& TokenStr, bool& 
 		];
 }
 
+// v4.12.7: Helper to extract event type from token string (e.g., "NE_BeginQuest" from "NE_BeginQuest(QuestId=X)")
+static FString ExtractEventType(const FString& TokenStr)
+{
+	if (TokenStr.IsEmpty())
+	{
+		return TEXT("");
+	}
+	int32 ParenIndex;
+	if (TokenStr.FindChar(TEXT('('), ParenIndex))
+	{
+		return TokenStr.Left(ParenIndex);
+	}
+	return TokenStr;  // No parentheses, return as-is
+}
+
+// v4.12.7: Helper to extract options from event token string (e.g., "QuestId=X" from "NE_BeginQuest(QuestId=X)")
+static FString ExtractEventOptions(const FString& TokenStr)
+{
+	if (TokenStr.IsEmpty())
+	{
+		return TEXT("");
+	}
+	int32 OpenParen, CloseParen;
+	if (TokenStr.FindChar(TEXT('('), OpenParen) && TokenStr.FindLastChar(TEXT(')'), CloseParen))
+	{
+		if (CloseParen > OpenParen + 1)
+		{
+			return TokenStr.Mid(OpenParen + 1, CloseParen - OpenParen - 1);
+		}
+	}
+	return TEXT("");  // No options found
+}
+
 // v4.11.4: Helper to extract condition type from token string (e.g., "NC_HasDialogueNodePlayed" from "NC_HasDialogueNodePlayed(NodeId=X)")
 static FString ExtractConditionType(const FString& TokenStr)
 {
@@ -993,6 +1030,203 @@ static FString ExtractConditionOptions(const FString& TokenStr)
 		}
 	}
 	return TEXT("");  // No options found
+}
+
+// v4.12.7: Event type cell (e.g., "NE_BeginQuest") - matches Condition pattern
+TSharedRef<SWidget> SDialogueTableRow::CreateEventTypeCell()
+{
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	// Build autocomplete options from registry (events only)
+	TArray<TSharedPtr<FString>> AutocompleteOptions;
+	const FDialogueTokenRegistry& Registry = FDialogueTokenRegistry::Get();
+	for (const FDialogueTokenSpec& Spec : Registry.GetAllSpecs())
+	{
+		if (Spec.Category == ETokenCategory::Event)
+		{
+			AutocompleteOptions.Add(MakeShared<FString>(Spec.TokenName));
+		}
+	}
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNew(SEditableText)
+					.Text_Lambda([RowData]()
+					{
+						FString EventType = ExtractEventType(RowData->EventsTokenStr);
+						return EventType.IsEmpty() ? FText::FromString(TEXT("(None)")) : FText::FromString(EventType);
+					})
+					.HintText(LOCTEXT("EventTypeHint", "NE_..."))
+					.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
+					{
+						FString NewType = NewText.ToString();
+						if (NewType == TEXT("(None)"))
+						{
+							NewType = TEXT("");
+						}
+
+						// Get existing options
+						FString OldOptions = ExtractEventOptions(RowData->EventsTokenStr);
+
+						// Rebuild token string
+						if (NewType.IsEmpty())
+						{
+							RowData->EventsTokenStr = TEXT("");
+						}
+						else if (OldOptions.IsEmpty())
+						{
+							RowData->EventsTokenStr = NewType + TEXT("()");
+						}
+						else
+						{
+							RowData->EventsTokenStr = NewType + TEXT("(") + OldOptions + TEXT(")");
+						}
+
+						// Validate
+						FDialogueTokenRegistry& Reg = FDialogueTokenRegistry::Get();
+						FTokenParseResult ParseResult = Reg.ParseTokenString(RowData->EventsTokenStr);
+						RowData->bEventsValid = ParseResult.bSuccess || RowData->EventsTokenStr.IsEmpty();
+						MarkModified();
+					})
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity_Lambda([RowData]()
+					{
+						return RowData->bEventsValid ? FSlateColor(FLinearColor::White) : FSlateColor(FLinearColor::Red);
+					})
+			]
+			// Autocomplete dropdown button
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+					.OnGetMenuContent_Lambda([this, RowData, AutocompleteOptions]() -> TSharedRef<SWidget>
+					{
+						TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+						// Add CLEAR option at top
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(2.0f, 1.0f)
+						[
+							SNew(SButton)
+								.Text(LOCTEXT("ClearEvent", "(Clear)"))
+								.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+								.OnClicked_Lambda([this, RowData]()
+								{
+									RowData->EventsTokenStr = TEXT("");
+									RowData->bEventsValid = true;
+									MarkModified();
+									FSlateApplication::Get().DismissAllMenus();
+									return FReply::Handled();
+								})
+						];
+
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(2.0f)
+						[
+							SNew(SSeparator)
+						];
+
+						// Add event type templates
+						for (const TSharedPtr<FString>& Option : AutocompleteOptions)
+						{
+							MenuContent->AddSlot()
+							.AutoHeight()
+							.Padding(2.0f, 1.0f)
+							[
+								SNew(SButton)
+									.Text(FText::FromString(*Option))
+									.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+									.OnClicked_Lambda([this, RowData, Option]()
+									{
+										// Keep existing options
+										FString OldOptions = ExtractEventOptions(RowData->EventsTokenStr);
+										if (OldOptions.IsEmpty())
+										{
+											RowData->EventsTokenStr = *Option + TEXT("()");
+										}
+										else
+										{
+											RowData->EventsTokenStr = *Option + TEXT("(") + OldOptions + TEXT(")");
+										}
+										RowData->bEventsValid = true;
+										MarkModified();
+										FSlateApplication::Get().DismissAllMenus();
+										return FReply::Handled();
+									})
+							];
+						}
+
+						return SNew(SBox)
+							.MaxDesiredHeight(300.0f)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									MenuContent
+								]
+							];
+					})
+			]
+		];
+}
+
+// v4.12.7: Event options cell (e.g., "QuestId=X") - matches Condition Options pattern
+TSharedRef<SWidget> SDialogueTableRow::CreateEventOptionsCell()
+{
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SEditableText)
+				.Text_Lambda([RowData]()
+				{
+					FString Options = ExtractEventOptions(RowData->EventsTokenStr);
+					return Options.IsEmpty() ? FText::FromString(TEXT("(None)")) : FText::FromString(Options);
+				})
+				.HintText(LOCTEXT("EventOptionsHint", "Param=Value"))
+				.OnTextCommitted_Lambda([this, RowData](const FText& NewText, ETextCommit::Type)
+				{
+					FString NewOptions = NewText.ToString();
+					if (NewOptions == TEXT("(None)"))
+					{
+						NewOptions = TEXT("");
+					}
+
+					// Get existing event type
+					FString EventType = ExtractEventType(RowData->EventsTokenStr);
+
+					// Rebuild token string
+					if (EventType.IsEmpty())
+					{
+						// No event type, can't set options without a type
+						return;
+					}
+
+					RowData->EventsTokenStr = EventType + TEXT("(") + NewOptions + TEXT(")");
+
+					// Validate
+					FDialogueTokenRegistry& Reg = FDialogueTokenRegistry::Get();
+					FTokenParseResult ParseResult = Reg.ParseTokenString(RowData->EventsTokenStr);
+					RowData->bEventsValid = ParseResult.bSuccess || RowData->EventsTokenStr.IsEmpty();
+					MarkModified();
+				})
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.ColorAndOpacity_Lambda([RowData]()
+				{
+					return RowData->bEventsValid ? FSlateColor(FLinearColor::White) : FSlateColor(FLinearColor::Red);
+				})
+		];
 }
 
 TSharedRef<SWidget> SDialogueTableRow::CreateConditionTypeCell()
@@ -2379,10 +2613,17 @@ FString SDialogueTableEditor::GetColumnValue(const FDialogueTableRowEx& RowEx, F
 
 	if (ColumnId == TEXT("Skippable")) return Row.bSkippable ? TEXT("Yes") : TEXT("No");
 
-	// Events - show (None) if empty
+	// v4.12.7: Split Events into Events (type) + EventOptions (params)
 	if (ColumnId == TEXT("Events"))
 	{
-		return Row.EventsTokenStr.IsEmpty() ? TEXT("(None)") : Row.EventsTokenStr;
+		FString EventType = ExtractEventType(Row.EventsTokenStr);
+		return EventType.IsEmpty() ? TEXT("(None)") : EventType;
+	}
+
+	if (ColumnId == TEXT("EventOptions"))
+	{
+		FString Options = ExtractEventOptions(Row.EventsTokenStr);
+		return Options.IsEmpty() ? TEXT("(None)") : Options;
 	}
 
 	// v4.11.4: Split Conditions into Condition (type) and Options (parameters)
