@@ -363,7 +363,8 @@ TSharedRef<SWidget> SItemTableRow::CreateItemNameCell()
 					{
 						if (!ValuePtr->IsEmpty())
 						{
-							// Find Item Blueprint asset by name (NarrativeItem/EquippableItem are Blueprint assets)
+							// v4.12.6 FIX: Find Item Blueprint asset by name and open it
+							// Expanded to handle all item types (weapons, armor, consumables, etc.)
 							FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 							TArray<FAssetData> Assets;
 							Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
@@ -372,13 +373,23 @@ TSharedRef<SWidget> SItemTableRow::CreateItemNameCell()
 							{
 								if (Asset.AssetName.ToString().Equals(*ValuePtr, ESearchCase::IgnoreCase))
 								{
-									// Check if this is a NarrativeItem/EquippableItem blueprint
+									// Check if this is any item-related blueprint (expanded check)
 									FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
 									if (ParentClassTag.IsSet())
 									{
 										FString ParentClassPath = ParentClassTag.GetValue();
+										// Include all Narrative Pro item classes and their subclasses
 										if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
-											ParentClassPath.Contains(TEXT("EquippableItem")))
+											ParentClassPath.Contains(TEXT("EquippableItem")) ||
+											ParentClassPath.Contains(TEXT("WeaponItem")) ||
+											ParentClassPath.Contains(TEXT("MeleeWeaponItem")) ||
+											ParentClassPath.Contains(TEXT("RangedWeaponItem")) ||
+											ParentClassPath.Contains(TEXT("MagicWeaponItem")) ||
+											ParentClassPath.Contains(TEXT("ThrowableWeaponItem")) ||
+											ParentClassPath.Contains(TEXT("Clothing")) ||
+											ParentClassPath.Contains(TEXT("AmmoItem")) ||
+											ParentClassPath.Contains(TEXT("AttachmentItem")) ||
+											ParentClassPath.Contains(TEXT("ConsumableItem")))
 										{
 											if (UObject* LoadedAsset = Asset.GetAsset())
 											{
@@ -468,13 +479,23 @@ TSharedRef<SWidget> SItemTableRow::CreateItemNameCell()
 
 						for (const FAssetData& Asset : Assets)
 						{
-							// Check if this is a NarrativeItem/EquippableItem blueprint
+							// v4.12.6 FIX: Check if this is any item-related blueprint (expanded to all item types)
 							FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
 							if (ParentClassTag.IsSet())
 							{
 								FString ParentClassPath = ParentClassTag.GetValue();
+								// Include all Narrative Pro item classes and their subclasses
 								if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
-									ParentClassPath.Contains(TEXT("EquippableItem")))
+									ParentClassPath.Contains(TEXT("EquippableItem")) ||
+									ParentClassPath.Contains(TEXT("WeaponItem")) ||
+									ParentClassPath.Contains(TEXT("MeleeWeaponItem")) ||
+									ParentClassPath.Contains(TEXT("RangedWeaponItem")) ||
+									ParentClassPath.Contains(TEXT("MagicWeaponItem")) ||
+									ParentClassPath.Contains(TEXT("ThrowableWeaponItem")) ||
+									ParentClassPath.Contains(TEXT("Clothing")) ||
+									ParentClassPath.Contains(TEXT("AmmoItem")) ||
+									ParentClassPath.Contains(TEXT("AttachmentItem")) ||
+									ParentClassPath.Contains(TEXT("ConsumableItem")))
 								{
 									FString AssetName = Asset.AssetName.ToString();
 
@@ -970,10 +991,27 @@ TSharedRef<SWidget> SItemTableRow::CreateModifierGECell()
 					{
 						if (!ValuePtr->IsNull())
 						{
-							// Load the GE Blueprint and open it
+							// v4.12.6 FIX: Path may point to Generated Class, need to open actual Blueprint
 							if (UObject* LoadedAsset = ValuePtr->TryLoad())
 							{
-								GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+								// If it's a class (Blueprint Generated Class), get its source Blueprint
+								if (UClass* AsClass = Cast<UClass>(LoadedAsset))
+								{
+									if (UBlueprint* BP = Cast<UBlueprint>(AsClass->ClassGeneratedBy))
+									{
+										GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(BP);
+									}
+								}
+								else if (UBlueprint* BP = Cast<UBlueprint>(LoadedAsset))
+								{
+									// It's already a Blueprint
+									GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(BP);
+								}
+								else
+								{
+									// Fallback - open whatever was loaded (DataAssets, etc.)
+									GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+								}
 							}
 						}
 						return FReply::Handled();

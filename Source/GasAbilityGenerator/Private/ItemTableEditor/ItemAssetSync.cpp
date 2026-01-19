@@ -144,9 +144,10 @@ FItemAssetData FItemAssetSync::SyncFromAsset(UNarrativeItem* ItemAsset)
 			}
 		};
 
+		// v4.12.6 FIX: Correct property names from WeaponItem.h
 		ExtractAbilitiesFromProperty(TEXT("WeaponAbilities"));
-		ExtractAbilitiesFromProperty(TEXT("MainhandAbilities"));
-		ExtractAbilitiesFromProperty(TEXT("OffhandAbilities"));
+		ExtractAbilitiesFromProperty(TEXT("MainhandWeaponAbilities"));
+		ExtractAbilitiesFromProperty(TEXT("OffhandWeaponAbilities"));
 
 		// Combine with any EquipmentAbilities already extracted
 		if (AllWeaponAbilities.Num() > 0)

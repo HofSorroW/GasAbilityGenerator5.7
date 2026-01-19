@@ -931,98 +931,89 @@ TSharedRef<SWidget> SNPCTableRow::CreateFloatSliderCell(float& Value)
 
 TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 {
-	// v4.12.6: Multi-select dropdown for IC_* item collections with click-to-open for each item
+	// v4.12.6 FIX: Multi-select dropdown for IC_* item collections with each item individually clickable
+	// Helper lambda to open an item collection by name
+	auto OpenItemCollection = [](const FString& ItemName)
+	{
+		FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+		TArray<FAssetData> Assets;
+		Registry.Get().GetAssetsByClass(UItemCollection::StaticClass()->GetClassPathName(), Assets, true);
+
+		for (const FAssetData& Asset : Assets)
+		{
+			if (Asset.AssetName.ToString().Equals(ItemName, ESearchCase::IgnoreCase))
+			{
+				if (UObject* LoadedAsset = Asset.GetAsset())
+				{
+					GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+				}
+				break;
+			}
+		}
+	};
+
+	// Build the clickable items widget - each item is individually clickable
+	TSharedRef<SWrapBox> ItemsWrapBox = SNew(SWrapBox)
+		.UseAllottedSize(true);
+
+	if (RowData->DefaultItems.IsEmpty())
+	{
+		// No items - show "(None)" in gray
+		ItemsWrapBox->AddSlot()
+		[
+			SNew(STextBlock)
+				.Text(FText::FromString(TEXT("(None)")))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+		];
+	}
+	else
+	{
+		// Parse items and create clickable buttons for each
+		TArray<FString> Items;
+		RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
+
+		for (int32 i = 0; i < Items.Num(); ++i)
+		{
+			FString ItemName = Items[i].TrimStartAndEnd();
+			FString TrimmedName = TrimAssetPrefix_NPC(ItemName);
+
+			// Add clickable button for this item
+			ItemsWrapBox->AddSlot()
+			.Padding(FMargin(0.0f, 0.0f, 2.0f, 0.0f))
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([ItemName, OpenItemCollection]() -> FReply
+					{
+						OpenItemCollection(ItemName);
+						return FReply::Handled();
+					})
+					.ToolTipText(FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenItemLoadout", "Click to open: {0}"),
+						FText::FromString(ItemName)))
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text(FText::FromString(TrimmedName + (i < Items.Num() - 1 ? TEXT(",") : TEXT(""))))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity(FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f)))
+					]
+			];
+		}
+	}
+
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
 			SNew(SHorizontalBox)
 
-			// Clickable item list - each item opens its asset
+			// Clickable item list - each item individually clickable
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
 			.VAlign(VAlign_Center)
 			[
-				SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "NoBorder")
-					.ContentPadding(FMargin(0))
-					.OnClicked_Lambda([this]() -> FReply
-					{
-						// On click, open the first item (if exists) or do nothing
-						// For multi-item, user can click dropdown to see all and click individual items there
-						if (!RowData->DefaultItems.IsEmpty())
-						{
-							TArray<FString> Items;
-							RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
-							if (Items.Num() > 0)
-							{
-								FString FirstItem = Items[0].TrimStartAndEnd();
-								// Find and open the item collection asset
-								FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-								TArray<FAssetData> Assets;
-								Registry.Get().GetAssetsByClass(UItemCollection::StaticClass()->GetClassPathName(), Assets, true);
-
-								for (const FAssetData& Asset : Assets)
-								{
-									if (Asset.AssetName.ToString().Equals(FirstItem, ESearchCase::IgnoreCase))
-									{
-										if (UObject* LoadedAsset = Asset.GetAsset())
-										{
-											GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
-										}
-										break;
-									}
-								}
-							}
-						}
-						return FReply::Handled();
-					})
-					.ToolTipText_Lambda([this]()
-					{
-						if (RowData->DefaultItems.IsEmpty())
-						{
-							return FText::FromString(TEXT("No items - use dropdown to add"));
-						}
-						TArray<FString> Items;
-						RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
-						if (Items.Num() == 1)
-						{
-							return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenItem", "Click to open: {0}"),
-								FText::FromString(Items[0].TrimStartAndEnd()));
-						}
-						return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenFirstItem", "Click to open first item: {0}\n({1} total items)"),
-							FText::FromString(Items[0].TrimStartAndEnd()),
-							FText::AsNumber(Items.Num()));
-					})
-					.Cursor(EMouseCursor::Hand)
-					[
-						SNew(STextBlock)
-							.Text_Lambda([this]()
-							{
-								if (RowData->DefaultItems.IsEmpty())
-								{
-									return FText::FromString(TEXT("(None)"));
-								}
-								// v4.12.5: Trim IC_ prefix from displayed items
-								TArray<FString> Items;
-								RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
-								TArray<FString> TrimmedItems;
-								for (const FString& Item : Items)
-								{
-									TrimmedItems.Add(TrimAssetPrefix_NPC(Item.TrimStartAndEnd()));
-								}
-								return FText::FromString(FString::Join(TrimmedItems, TEXT(", ")));
-							})
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-							.ColorAndOpacity_Lambda([this]()
-							{
-								// Blue color for clickable assets, gray for (None)
-								if (RowData->DefaultItems.IsEmpty())
-								{
-									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
-								}
-								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
-							})
-					]
+				ItemsWrapBox
 			]
 
 			// Dropdown arrow - shows multi-select menu with click-to-open per item
@@ -1497,13 +1488,25 @@ TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 					{
 						if (!RowData->Blueprint.IsNull())
 						{
-							// Find Blueprint asset by path
-							FString AssetPath = RowData->Blueprint.GetAssetPath().ToString();
-							if (!AssetPath.IsEmpty())
+							// v4.12.6 FIX: Blueprint paths may point to Generated Class, need to open actual Blueprint
+							if (UObject* LoadedAsset = RowData->Blueprint.TryLoad())
 							{
-								// Load the blueprint and open it
-								if (UObject* LoadedAsset = RowData->Blueprint.TryLoad())
+								// If it's a class (Blueprint Generated Class), get its source Blueprint
+								if (UClass* AsClass = Cast<UClass>(LoadedAsset))
 								{
+									if (UBlueprint* BP = Cast<UBlueprint>(AsClass->ClassGeneratedBy))
+									{
+										GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(BP);
+									}
+								}
+								else if (UBlueprint* BP = Cast<UBlueprint>(LoadedAsset))
+								{
+									// It's already a Blueprint
+									GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(BP);
+								}
+								else
+								{
+									// Fallback - open whatever was loaded
 									GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
 								}
 							}
@@ -2258,21 +2261,21 @@ FString SNPCTableEditor::GetColumnValue(const TSharedPtr<FNPCTableRow>& Row, FNa
 		{
 			return TEXT("(None)");
 		}
+		// v4.12.6 FIX: Use consistent trimming with TrimAssetPrefix_NPC
+		// GetAssetName() may return "Asset.Object" format, strip at dot first
 		FString AppearanceName = Row->Appearance.GetAssetName();
 		if (AppearanceName.IsEmpty())
 		{
 			return TEXT("(None)");
 		}
-		// Strip "Appearance." or "Appearance_" prefix for shorter display
-		if (AppearanceName.StartsWith(TEXT("Appearance.")))
+		// Strip at dot if present (e.g., "Appearance_Merchant.Appearance_Merchant" -> "Appearance_Merchant")
+		int32 DotIndex;
+		if (AppearanceName.FindChar(TEXT('.'), DotIndex))
 		{
-			AppearanceName = AppearanceName.RightChop(11);  // Remove "Appearance."
+			AppearanceName = AppearanceName.Left(DotIndex);
 		}
-		else if (AppearanceName.StartsWith(TEXT("Appearance_")))
-		{
-			AppearanceName = AppearanceName.RightChop(11);  // Remove "Appearance_"
-		}
-		return AppearanceName;
+		// Use consistent prefix trimming
+		return TrimAssetPrefix_NPC(AppearanceName);
 	}
 	if (ColumnId == TEXT("Notes")) return Row->Notes.IsEmpty() ? TEXT("(None)") : Row->Notes;
 
