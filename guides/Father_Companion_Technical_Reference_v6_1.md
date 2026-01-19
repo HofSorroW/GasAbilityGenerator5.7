@@ -2753,6 +2753,136 @@ Engineer form father becomes turret:
 
 No separate recall ability needed - Cancel Abilities With Tag triggers EndAbility cleanup.
 
+### 19.12) Option B: Form Identity via GE_*State (v6.1)
+
+Form identity persists via Infinite-duration GameplayEffects, NOT Activation Owned Tags alone.
+
+| Form | State GE | Identity Tag |
+|------|----------|--------------|
+| Crawler | GE_CrawlerState | Effect.Father.FormState.Crawler |
+| Armor | GE_ArmorState | Effect.Father.FormState.Armor |
+| Exoskeleton | GE_ExoskeletonState | Effect.Father.FormState.Exoskeleton |
+| Symbiote | GE_SymbioteState | Effect.Father.FormState.Symbiote |
+| Engineer | GE_EngineerState | Effect.Father.FormState.Engineer |
+
+**Invariant:** Exactly one `Effect.Father.FormState.*` tag must exist on the Father ASC at runtime.
+
+**Migration Note:** Option B is the target architecture. Legacy manifests may still reference `Father.Form.*` until cleanup is complete.
+
+### 19.13) Attached Form Invulnerability
+
+Attached forms grant damage immunity via Narrative Pro's built-in tag:
+
+| Form | Attached | Grants Narrative.State.Invulnerable |
+|------|----------|-------------------------------------|
+| Crawler | No | No |
+| Armor | Yes | Yes |
+| Exoskeleton | Yes | Yes |
+| Symbiote | Yes | Yes |
+| Engineer | No | No |
+
+**Implementation:** GE_ArmorState, GE_ExoskeletonState, and GE_SymbioteState include `Narrative.State.Invulnerable` in their `granted_tags` array.
+
+### 19.14) Form Transition Prelude
+
+Transition logic executes in the **NEW** form's ActivateAbility:
+
+| Step | Action |
+|------|--------|
+| 1 | Remove any active form state GEs by targeting parent tag `Effect.Father.FormState` |
+| 2 | Apply new GE_*State (establishes new identity) |
+| 3 | Continue with form-specific setup |
+
+**Why NEW form handles transition:** The old form ability may already be ending/removed when the new form activates. Only the new form can reliably know what state to establish.
+
+### 19.15) ASC Boundary Rule (Cross-ASC Gating)
+
+`activation_required_tags` and `activation_blocked_tags` check the **owning ASC only**.
+
+| Ability Owner | ASC Checked | Can Gate On Father Tags? |
+|---------------|-------------|--------------------------|
+| Father-owned (GA_FatherCrawler) | Father ASC | Yes |
+| Player-owned (GA_ProtectiveDome) | Player ASC | **No** |
+
+**Cross-ASC tag gating is impossible.** Equipment-granted abilities are Player-owned and cannot see Father ASC tags.
+
+**Correct Pattern:** If a player-owned ability needs to depend on Father state, it must be gated by ability existence (equipment grant) or by player-side tags/effects, not Father tags.
+
+### 19.16) Two-Part Ability System
+
+Father abilities are granted via two mechanisms:
+
+| Part | Granted Via | Owner ASC | Contents |
+|------|-------------|-----------|----------|
+| Baseline Abilities | AC_FatherCompanion_Default | Father | Form abilities + AI abilities (always present) |
+| Form-Specific Abilities | EquippableItem abilities_to_grant | Player | Action abilities (conditionally granted when form equipped) |
+
+### 19.17) Baseline Abilities (AC_FatherCompanion_Default)
+
+| Category | Abilities | Trigger |
+|----------|-----------|---------|
+| Form abilities | GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer | T wheel |
+| Crawler AI | GA_FatherAttack, GA_FatherLaserShot, GA_FatherMark | AI automatic |
+| Engineer AI | GA_TurretShoot, GA_FatherElectricTrap | AI automatic |
+| General | GA_FatherSacrifice | Auto trigger |
+
+**Total:** 11 baseline abilities on Father ASC.
+
+### 19.18) Form-Specific Abilities (Equipment-Granted)
+
+| Form | EquippableItem | Abilities Granted | Owner ASC |
+|------|----------------|-------------------|-----------|
+| Armor | EI_FatherArmorForm | GA_ProtectiveDome, GA_DomeBurst | Player |
+| Exoskeleton | EI_FatherExoskeletonForm | GA_ExoskeletonDash, GA_ExoskeletonSprint, GA_StealthField, GA_Backstab | Player |
+| Symbiote | EI_FatherSymbioteForm | GA_ProximityStrike | Player |
+
+**Gate Pattern:** Ability existence IS the gate. If form is equipped, abilities are available. If unequipped, abilities are revoked.
+
+**DO NOT** add `activation_required_tags` referencing Father tags to equipment-granted abilities.
+
+### 19.19) Form Activation Mechanism
+
+| Form | Activation Method | Equipment Required? |
+|------|-------------------|---------------------|
+| Crawler | T wheel -> GAS ability directly | NO |
+| Engineer | T wheel -> GAS ability directly | NO |
+| Armor | T wheel -> Equip EI_FatherArmorForm | YES |
+| Exoskeleton | T wheel -> Equip EI_FatherExoskeletonForm | YES |
+| Symbiote | T wheel -> Equip EI_FatherSymbioteForm | YES |
+| Rifle | Equip command | YES (weapon) |
+| Sword | Equip command | YES (weapon) |
+
+**Key Distinction:**
+- Crawler/Engineer: Father-owned AI abilities, activated via GAS
+- Armor/Exo/Symbiote: Attach to player, grant player-owned abilities via equipment
+
+### 19.20) Weapons vs Forms
+
+Weapons (Rifle, Sword) are equipment-mode selections, not body-form transitions:
+
+| Weapon | Equipment Item | Form Change? | State GE? |
+|--------|----------------|--------------|-----------|
+| GA_FatherRifle | EI_FatherRifleForm | No | No |
+| GA_FatherSword | EI_FatherSwordForm | No | No |
+
+Weapons live in the FatherForm slot for UI/NP consistency but do not establish body-form identity and must not use GE_*State / Effect.Father.FormState.*.
+
+### 19.21) Orphan Tags (DO NOT USE for Gating)
+
+The following tags are legacy/non-authoritative for identity:
+
+| Tag | Status | Replacement |
+|-----|--------|-------------|
+| Father.Form.Crawler | Orphan | Effect.Father.FormState.Crawler |
+| Father.Form.Armor | Orphan | Effect.Father.FormState.Armor |
+| Father.Form.Exoskeleton | Orphan | Effect.Father.FormState.Exoskeleton |
+| Father.Form.Symbiote | Orphan | Effect.Father.FormState.Symbiote |
+| Father.Form.Engineer | Orphan | Effect.Father.FormState.Engineer |
+
+**Why Orphan:** No GE grants these tags. They were used in legacy Activation Owned Tags pattern but are not persistent.
+
+**Rule:** Do not use `Father.Form.*` for activation_required_tags or activation_blocked_tags. Use `Effect.Father.FormState.*` for Father-owned abilities.
+
 ---
 
 ## SECTION 20: ABILITYCONFIGURATION SYSTEM
@@ -2789,7 +2919,7 @@ Parent Class: AbilityConfiguration.h / AbilityConfiguration.cpp
 
 | Asset | Contents |
 |-------|----------|
-| AC_FatherCompanion_Default | GA_FatherCrawler, GA_FatherAttack, GA_FatherLaserShot, GA_FatherMark, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer |
+| AC_FatherCompanion_Default | GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer, GA_FatherAttack, GA_FatherLaserShot, GA_FatherMark, GA_TurretShoot, GA_FatherElectricTrap, GA_FatherSacrifice |
 
 All form abilities granted at spawn. Form wheel controls which one activates.
 

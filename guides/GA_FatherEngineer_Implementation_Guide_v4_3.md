@@ -1132,10 +1132,10 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
    - Engineer is exception to source-based removal pattern (Tech Ref v1.7 Section 15.3)
    - Handle-based removal required because effects on father, not player
 
-3. **BP_FatherEngineerForm Prerequisite**
-   - Added reference to Forms Guide v4.0 PHASE 7
-   - EquippableItem creates form-specific abilities (TurretShoot, ElectricTrap)
-   - GA_FatherEngineer and GA_FatherMark in baseline AC_FatherCompanion_Default
+3. **Engineer Ability Architecture (Corrected v4.4)**
+   - All Engineer abilities are baseline abilities on Father ASC
+   - GA_FatherEngineer, GA_TurretShoot, GA_FatherElectricTrap, GA_FatherMark all in AC_FatherCompanion_Default
+   - Engineer does NOT use EquippableItem - form activated via GAS directly from T wheel
 
 #### **Technical Reference Alignment:**
 
@@ -1301,9 +1301,11 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 | Ability | Type | Trigger | Granted Via |
 |---------|------|---------|-------------|
 | GA_FatherEngineer | Form | T (Wheel) | AC_FatherCompanion_Default |
-| GA_TurretShoot | AI | Auto (far enemies) | BP_FatherEngineerForm |
-| GA_FatherElectricTrap | AI | Auto (close enemies) | BP_FatherEngineerForm |
+| GA_TurretShoot | AI | Auto (far enemies) | AC_FatherCompanion_Default |
+| GA_FatherElectricTrap | AI | Auto (close enemies) | AC_FatherCompanion_Default |
 | GA_FatherMark | Passive | On enemy detection | AC_FatherCompanion_Default |
+
+**Note (v4.4):** All Engineer abilities are baseline abilities on Father ASC. Engineer does NOT use EquippableItem for ability granting - form is activated via GAS directly from T wheel.
 
 ### **6. BP_FatherCompanion Variables Required**
 

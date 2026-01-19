@@ -1900,6 +1900,7 @@ gameplay_abilities:
   # ---------------------------------------------------------------------------
   
   # GA_FatherAttack - Melee Attack (NarrativeGameplayAbility for custom logic)
+  # NOTE: Runs on Father ASC, only in Crawler form
   - name: GA_FatherAttack
     folder: Abilities/Combat
     parent_class: NarrativeGameplayAbility
@@ -1912,7 +1913,7 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Attacking
       activation_required_tags:
-        - Father.Form.Crawler
+        - Effect.Father.FormState.Crawler  # Uses GE-granted tag (Option B)
       activation_blocked_tags:
         - Cooldown.Father.Attack
         - Father.State.Transitioning
@@ -1998,6 +1999,7 @@ gameplay_abilities:
           to: [EndAbility, Exec]
 
   # GA_FatherLaserShot - Ranged Laser Attack
+  # NOTE: Runs on Father ASC, only in Crawler form
   - name: GA_FatherLaserShot
     folder: Abilities/Combat
     parent_class: NarrativeGameplayAbility
@@ -2010,7 +2012,7 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Attacking
       activation_required_tags:
-        - Father.Form.Crawler
+        - Effect.Father.FormState.Crawler  # Uses GE-granted tag (Option B)
       activation_blocked_tags:
         - Cooldown.Father.LaserShot
         - Father.State.Transitioning
@@ -2139,6 +2141,7 @@ gameplay_abilities:
           to: [EndAbility, Exec]
 
   # GA_TurretShoot - Engineer Turret Auto-Fire
+  # NOTE: Runs on Father ASC, only in Engineer form when deployed
   - name: GA_TurretShoot
     folder: Abilities/Combat
     parent_class: NarrativeGameplayAbility
@@ -2152,7 +2155,7 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Attacking
       activation_required_tags:
-        - Father.Form.Engineer
+        - Effect.Father.FormState.Engineer  # Uses GE-granted tag (Option B)
         - Father.State.TurretDeployed
       activation_blocked_tags:
         - Cooldown.Father.TurretShoot
@@ -2281,6 +2284,7 @@ gameplay_abilities:
           to: [EndAbility, Exec]
 
   # GA_FatherElectricTrap - Engineer Electric Web Trap
+  # NOTE: Runs on Father ASC, only in Engineer form
   - name: GA_FatherElectricTrap
     folder: Abilities/Combat
     parent_class: NarrativeGameplayAbility
@@ -2294,7 +2298,7 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Attacking
       activation_required_tags:
-        - Father.Form.Engineer
+        - Effect.Father.FormState.Engineer  # Uses GE-granted tag (Option B)
       activation_blocked_tags:
         - Cooldown.Father.ElectricTrap
     variables:
@@ -2400,6 +2404,7 @@ gameplay_abilities:
   # ---------------------------------------------------------------------------
   
   # GA_ProtectiveDome - Armor Passive Damage Absorption (player-owned toggle)
+  # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
   - name: GA_ProtectiveDome
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -2410,10 +2415,8 @@ gameplay_abilities:
         - Ability.Father.ProtectiveDome
       activation_owned_tags:
         - Father.Dome.Active
-      activation_required_tags:
-        - Father.Form.Armor
-      activation_blocked_tags:
-        - Father.State.Transitioning
+      # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
+      # Equipment granting already ensures this ability is only available in Armor form
     variables:
       - name: PlayerRef
         type: Object
@@ -2538,6 +2541,7 @@ gameplay_abilities:
           to: [RemoveGE, Handle]
 
   # GA_DomeBurst - Armor Active AOE Damage (player-owned instant)
+  # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
   - name: GA_DomeBurst
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -2550,11 +2554,10 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Attacking
       activation_required_tags:
-        - Father.Form.Armor
-        - Father.Dome.Active
+        - Father.Dome.Active  # On Player ASC (from GA_ProtectiveDome)
+        # Father.Form.Armor removed - cross-ASC gate, equipment granting handles this
       activation_blocked_tags:
         - Cooldown.Father.DomeBurst
-        - Father.State.Transitioning
     variables:
       - name: PlayerRef
         type: Object
@@ -2743,6 +2746,7 @@ gameplay_abilities:
           to: [ApplyGE, Spec]
 
   # GA_FatherExoskeletonDash - Exoskeleton Dash with I-Frames
+  # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
   - name: GA_FatherExoskeletonDash
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -2754,12 +2758,11 @@ gameplay_abilities:
         - Ability.Father.Exoskeleton.Dash
       activation_owned_tags:
         - Father.State.Dashing
-      activation_required_tags:
-        - Father.Form.Exoskeleton
+      # activation_required_tags removed - Father.Form.Exoskeleton is cross-ASC gate
+      # Equipment granting already ensures this ability is only available in Exoskeleton form
       activation_blocked_tags:
         - Cooldown.Father.Exoskeleton.Dash
-        - Father.State.Transitioning
-        - Father.State.Dashing
+        - Father.State.Dashing  # On Player ASC (from this ability's activation_owned_tags)
     variables:
       - name: PlayerRef
         type: Object
@@ -2906,6 +2909,7 @@ gameplay_abilities:
           to: [Delay, Duration]
 
   # GA_FatherExoskeletonSprint - Exoskeleton Sprint Speed Boost
+  # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
   - name: GA_FatherExoskeletonSprint
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -2916,11 +2920,10 @@ gameplay_abilities:
         - Ability.Father.Exoskeleton.Sprint
       activation_owned_tags:
         - Father.State.Sprinting
-      activation_required_tags:
-        - Father.Form.Exoskeleton
+      # activation_required_tags removed - Father.Form.Exoskeleton is cross-ASC gate
+      # Equipment granting already ensures this ability is only available in Exoskeleton form
       activation_blocked_tags:
-        - Father.State.Transitioning
-        - Father.State.Dashing
+        - Father.State.Dashing  # On Player ASC (from GA_FatherExoskeletonDash)
     variables:
       - name: PlayerRef
         type: Object
@@ -3072,6 +3075,7 @@ gameplay_abilities:
           to: [RestoreSpeed, NewMaxWalkSpeed]
 
   # GA_StealthField - Exoskeleton Stealth Invisibility (player-owned toggle)
+  # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
   - name: GA_StealthField
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -3083,11 +3087,10 @@ gameplay_abilities:
         - Ability.Father.StealthField
       activation_owned_tags:
         - Father.State.Stealthed
-      activation_required_tags:
-        - Father.Form.Exoskeleton
+      # activation_required_tags removed - Father.Form.Exoskeleton is cross-ASC gate
+      # Equipment granting already ensures this ability is only available in Exoskeleton form
       activation_blocked_tags:
         - Cooldown.Father.StealthField
-        - Father.State.Transitioning
     variables:
       - name: PlayerRef
         type: Object
@@ -3244,6 +3247,7 @@ gameplay_abilities:
           to: [RemoveGE, Handle]
 
   # GA_Backstab - Player Default Passive Backstab Damage
+  # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
   - name: GA_Backstab
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -3254,10 +3258,8 @@ gameplay_abilities:
         - Ability.Father.Backstab
       activation_owned_tags:
         - State.BackstabReady
-      activation_required_tags:
-        - Father.Form.Exoskeleton
-      activation_blocked_tags:
-        - Father.State.Transitioning
+      # activation_required_tags removed - Father.Form.Exoskeleton is cross-ASC gate
+      # Equipment granting already ensures this ability is only available in Exoskeleton form
     variables:
       - name: BackstabDamageMultiplier
         type: Float
@@ -3297,6 +3299,7 @@ gameplay_abilities:
           to: [Branch_Valid, Condition]
 
   # GA_ProximityStrike - Symbiote AOE Damage
+  # NOTE: Runs on Player ASC, granted via EI_FatherSymbioteForm - no cross-ASC gates
   - name: GA_ProximityStrike
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -3309,8 +3312,8 @@ gameplay_abilities:
         - Ability.Father.Symbiote.ProximityStrike
       activation_owned_tags:
         - Father.State.ProximityActive
-      activation_required_tags:
-        - Father.Form.Symbiote
+      # activation_required_tags removed - Father.Form.Symbiote is cross-ASC gate
+      # Equipment granting already ensures this ability is only available in Symbiote form
       activation_blocked_tags:
         - Cooldown.Father.ProximityStrike
     variables:
@@ -3501,6 +3504,7 @@ gameplay_abilities:
           to: [ApplyGE, Spec]
 
   # GA_FatherMark - Mark Enemy for Bonus Damage
+  # NOTE: Runs on Father ASC, only in Crawler form
   - name: GA_FatherMark
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -3512,7 +3516,7 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Marking
       activation_required_tags:
-        - Father.Form.Crawler
+        - Effect.Father.FormState.Crawler  # Uses GE-granted tag (Option B)
       activation_blocked_tags:
         - Father.State.Transitioning
     variables:
@@ -4257,30 +4261,12 @@ gameplay_abilities:
           to: [RemoveWeapon, Item]
 
 # ============================================================================
-# EQUIPPABLE ITEMS (9)
+# EQUIPPABLE ITEMS (7) - Attached forms (3) + Weapons (2) + Rifle/Sword forms (2)
 # ============================================================================
 equippable_items:
   # Per Tech Doc Section 58.5, 58.10, 58.11: Dual Entry System + Activities to Grant
-  - name: EI_FatherCrawlerForm
-    folder: Items/Forms
-    parent_class: EquippableItem
-    equipment_slot: Narrative.Equipment.Slot.FatherForm
-    abilities_to_grant:
-      - GA_FatherCrawler
-      - GA_FatherAttack
-      - GA_FatherLaserShot
-      - GA_FatherMark
-    activities_to_grant:  # Per Section 58.11
-      - BPA_FollowCharacter
-    equipment_modifier_ge: GE_EquipmentModifier_FatherCrawler
-    # Dual Entry System (Section 58.10): equipment_effect_values + rating properties
-    equipment_effect_values:
-      SetByCaller.Armor: 0.0
-      SetByCaller.AttackRating: 0.0
-      SetByCaller.StealthRating: 0.0
-    armor_rating: 0.0
-    attack_rating: 0.0
-    stealth_rating: 0.0
+  # NOTE: Crawler/Engineer do NOT have EquippableItems - activated via GAS directly (Option B)
+  # Only attached forms (Armor, Exoskeleton, Symbiote) and weapons (Rifle, Sword) use equipment
 
   - name: EI_FatherArmorForm
     folder: Items/Forms
@@ -4335,24 +4321,6 @@ equippable_items:
       SetByCaller.StealthRating: 0.0
     armor_rating: 0.0
     attack_rating: 100.0
-    stealth_rating: 0.0
-
-  - name: EI_FatherEngineerForm
-    folder: Items/Forms
-    parent_class: EquippableItem
-    equipment_slot: Narrative.Equipment.Slot.FatherForm
-    abilities_to_grant:
-      - GA_FatherEngineer
-      - GA_TurretShoot
-      - GA_FatherElectricTrap
-    equipment_modifier_ge: GE_EquipmentModifier_FatherEngineer
-    # Per Section 58.5: No stat bonuses (turret mode)
-    equipment_effect_values:
-      SetByCaller.Armor: 0.0
-      SetByCaller.AttackRating: 0.0
-      SetByCaller.StealthRating: 0.0
-    armor_rating: 0.0
-    attack_rating: 0.0
     stealth_rating: 0.0
 
   - name: EI_FatherRifleForm
@@ -4481,13 +4449,19 @@ ability_configurations:
   - name: AC_FatherCompanion
     folder: Configs
     abilities:
+      # Form abilities (5 forms)
       - GA_FatherCrawler
       - GA_FatherArmor
       - GA_FatherExoskeleton
       - GA_FatherSymbiote
       - GA_FatherEngineer
+      # AI abilities - Crawler mode
       - GA_FatherAttack
       - GA_FatherLaserShot
+      # AI abilities - Engineer mode (baseline, not equipment-granted)
+      - GA_TurretShoot
+      - GA_FatherElectricTrap
+      # Passive/utility abilities
       - GA_FatherMark
       - GA_FatherSacrifice
       - GA_Death  # Per Tech Doc Section 57.1: "Same as AC_NPC_Default - ADD THIS"
@@ -4542,16 +4516,14 @@ character_definitions:
 item_collections:
   - name: IC_FatherForms
     folder: Items
+    # NOTE: Only forms with EquippableItems (attached forms + weapons)
+    # Crawler/Engineer activate via GAS directly - no equipment needed
     items:
-      - item: EI_FatherCrawlerForm
-        quantity: 1
       - item: EI_FatherArmorForm
         quantity: 1
       - item: EI_FatherExoskeletonForm
         quantity: 1
       - item: EI_FatherSymbioteForm
-        quantity: 1
-      - item: EI_FatherEngineerForm
         quantity: 1
       - item: EI_FatherRifleForm
         quantity: 1

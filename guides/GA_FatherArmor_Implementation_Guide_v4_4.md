@@ -74,11 +74,11 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Armor | Father armor form ability - chest attachment with defense boost |
-| Father.Form.Armor | Father is in armor form (chest attachment) |
 | Father.State.Attached | Father is attached to player |
 | Effect.Father.ArmorBoost | Father armor form defense boost effect |
-| Effect.Father.FormState.Armor | Armor form state gameplay effect |
+| Effect.Father.FormState.Armor | Armor form identity tag (granted by GE_ArmorState) |
 | Father.Buff.Armor | Player has armor buff from father active |
+| Narrative.State.Invulnerable | Invulnerability state (NP built-in, granted by GE_ArmorState for attached forms) |
 
 ### **Verify Existing Tags**
 
@@ -88,10 +88,8 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 | Ability.Father.Exoskeleton | Back attachment form ability |
 | Ability.Father.Symbiote | Full body merge form ability |
 | Ability.Father.Engineer | Turret deployment form ability |
-| Father.Form.Crawler | Following/attacking mode |
-| Father.Form.Exoskeleton | Speed boost mode |
-| Father.Form.Symbiote | Berserker mode |
-| Father.Form.Engineer | Turret mode |
+
+**Note (v4.5):** `Father.Form.*` tags are **orphan tags** - no persistent GE grants them. Form identity uses `Effect.Father.FormState.*` tags granted by infinite-duration GE_*State effects. Do NOT use Father.Form.* for activation gating.
 
 ---
 
@@ -234,9 +232,11 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 |----------|------|
 | Ability Tags | Ability.Father.Armor |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Exoskeleton, Ability.Father.Symbiote, Ability.Father.Engineer |
-| Activation Owned Tags | Father.Form.Armor, Father.State.Attached |
+| Activation Owned Tags | Father.State.Attached |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Armor, Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
+| Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
+
+**Note (v4.5):** Father.Form.Armor removed from tags - form identity persists via GE_ArmorState which grants `Effect.Father.FormState.Armor` (Option B architecture). See Form_State_Architecture_Audit_v1_0.md.
 
 ### **6) Configure Input Tag**
 
@@ -420,14 +420,15 @@ Before implementing GA_FatherArmor, ensure the following are complete:
    - 5.2.3.3) White **Is Valid** execution output pin (valid path)
    - 5.2.3.4) White **Is Not Valid** execution output pin (invalid path)
 
-### **6) Form Tags Via Activation Owned Tags**
+### **6) State Tags Via Activation Owned Tags**
 
-#### 5.1) Form Tags Automatically Applied
-   - 5.1.1) Form tags (Father.Form.Armor, Father.State.Attached) are in Activation Owned Tags
-   - 5.1.2) Tags automatically granted when ability activates
-   - 5.1.3) Tags automatically removed when ability ends
+#### 5.1) State Tags Automatically Applied
+   - 5.1.1) State tag (Father.State.Attached) is in Activation Owned Tags
+   - 5.1.2) Tag automatically granted when ability activates
+   - 5.1.3) Tag automatically removed when ability ends
    - 5.1.4) Multiplayer replication enabled via ReplicateActivationOwnedTags setting
    - 5.1.5) Stat bonuses handled by BP_FatherArmorForm EquippableItem via GE_EquipmentModifier_FatherArmor
+   - 5.1.6) **Form identity** persists via GE_ArmorState (grants Effect.Father.FormState.Armor) - NOT Activation Owned Tags
 
 ### **7) Store Original Movement Speed**
 
@@ -1115,11 +1116,11 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
    - 4.3.2.3) Release to connect
    - 4.3.2.4) Player speed restored only if OriginalMaxWalkSpeed was stored (> 0)
 
-### **5) Form Tags Auto-Removed by Ability Lifecycle**
+### **5) State Tags Auto-Removed by Ability Lifecycle**
 
 #### 5.1) Automatic Cleanup
-   - 5.1.1) Father.Form.Armor tag automatically removed when ability ends
-   - 5.1.2) Father.State.Attached tag automatically removed when ability ends
+   - 5.1.1) Father.State.Attached tag automatically removed when ability ends (Activation Owned Tag)
+   - 5.1.2) Form identity tag (Effect.Father.FormState.Armor) removed by GE_ArmorState removal in graph
 
 ### **6) Stat and Ability Cleanup (Handled by EquippableItem)**
 
@@ -1174,16 +1175,17 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 |----------|------|
 | Ability Tags | `Ability.Father.Armor` |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Exoskeleton, Symbiote, Engineer |
-| Activation Owned Tags | Father.Form.Armor, Father.State.Attached |
+| Activation Owned Tags | Father.State.Attached |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Armor, Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
+| Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
 | Input Tag | `Narrative.Input.Father.FormChange` |
 
-### **Form State Architecture**
+### **Form State Architecture (Option B)**
 
 | Component | Description |
 |-----------|-------------|
-| Activation Owned Tags | Father.Form.Armor, Father.State.Attached (auto-granted on activation) |
+| Activation Owned Tags | Father.State.Attached (auto-granted on activation, ephemeral) |
+| Form Identity | GE_ArmorState grants Effect.Father.FormState.Armor (persists via infinite GE) |
 | ReplicateActivationOwnedTags | ENABLED in Project Settings (enables multiplayer replication) |
 | GE_Invulnerable | Applied during 5s transition |
 | GE_FormChangeCooldown | 15s cooldown after form change |
@@ -1236,7 +1238,8 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Approach | Method | Used By |
 |----------|--------|---------|
-| Activation Owned Tags | Auto-removed when ability ends | Form tags (Father.Form.Armor, Father.State.Attached) |
+| Activation Owned Tags | Auto-removed when ability ends | State tag (Father.State.Attached) |
+| GE_ArmorState Removal | Explicitly removed in EndAbility graph | Form identity (Effect.Father.FormState.Armor) |
 | EquippableItem HandleUnequip | Automatic removal via parent method | Stats and abilities |
 | Speed Restoration | Set Max Walk Speed to original value | CharacterMovement component |
 

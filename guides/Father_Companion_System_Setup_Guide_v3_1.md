@@ -130,19 +130,23 @@ This guide consolidates all father companion system setup into a single comprehe
 | 2 | GA_FatherExoskeleton | Form | Back attachment |
 | 3 | GA_FatherSymbiote | Form | Full body merge |
 | 4 | GA_FatherEngineer | Form | Turret deployment |
-| 5 | GA_FatherAttack | AI | Melee attack |
-| 6 | GA_FatherLaserShot | AI | Ranged attack |
+| 5 | GA_FatherAttack | AI | Melee attack (Crawler) |
+| 6 | GA_FatherLaserShot | AI | Ranged attack (Crawler) |
 | 7 | GA_FatherMark | Passive | Enemy marking |
 | 8 | GA_FatherSacrifice | Passive | Emergency save |
+| 9 | GA_TurretShoot | AI | Auto-targeting ranged (Engineer) |
+| 10 | GA_FatherElectricTrap | AI | Area denial trap (Engineer) |
 
 ### **Form-Specific Abilities (via EquippableItem)**
+
+Only attached forms (Armor, Exoskeleton, Symbiote) use EquippableItem for player-owned abilities.
+Crawler and Engineer activate via GAS directly - their AI abilities are in baseline.
 
 | Form | Abilities Granted | Stat Bonuses |
 |------|-------------------|--------------|
 | Armor | GA_ProtectiveDome, GA_DomeBurst | Armor Rating: +50 |
 | Exoskeleton | GA_ExoskeletonDash, GA_ExoskeletonSprint, GA_StealthField | Attack Rating: +10 |
 | Symbiote | GA_ProximityStrike | Attack Rating: +100 |
-| Engineer | GA_TurretShoot, GA_FatherElectricTrap | None (turret has own stats) |
 
 ### **Why EquippableItem (NOT WeaponItem)**
 
