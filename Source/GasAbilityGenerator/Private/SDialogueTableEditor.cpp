@@ -109,7 +109,8 @@ TSharedRef<SWidget> SDialogueTableRow::GenerateWidgetForColumn(const FName& Colu
 	}
 	if (ColumnName == TEXT("DialogueID"))
 	{
-		return CreateFNameCell(RowData->DialogueID, TEXT("DBP_NPCName"));
+		// v4.12.6: Click-to-open Dialogue Blueprint asset + dropdown + trimmed display
+		return CreateDialogueIDCell();
 	}
 	if (ColumnName == TEXT("NodeID"))
 	{
@@ -403,6 +404,199 @@ TSharedRef<SWidget> SDialogueTableRow::CreateFNameCell(FName& Value, const FStri
 					}
 				})
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+		];
+}
+
+TSharedRef<SWidget> SDialogueTableRow::CreateDialogueIDCell()
+{
+	// v4.12.6: Click-to-open DialogueBlueprint asset + dropdown for single-select + trimmed display
+	FDialogueTableRow* RowData = RowDataEx->Data.Get();
+
+	// Helper to trim DBP_ prefix for display
+	auto TrimDBPPrefix = [](const FString& AssetName) -> FString
+	{
+		if (AssetName.StartsWith(TEXT("DBP_")))
+		{
+			return AssetName.RightChop(4);
+		}
+		return AssetName;
+	};
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+
+			// Clickable hyperlink text - opens DialogueBlueprint asset in editor
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([RowData]() -> FReply
+					{
+						if (!RowData->DialogueID.IsNone())
+						{
+							// Find DialogueBlueprint asset by name
+							FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+							TArray<FAssetData> Assets;
+							Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+							FString DialogueName = RowData->DialogueID.ToString();
+							for (const FAssetData& Asset : Assets)
+							{
+								if (Asset.AssetName.ToString().Equals(DialogueName, ESearchCase::IgnoreCase))
+								{
+									// Check if this is a Dialogue blueprint
+									FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+									if (ParentClassTag.IsSet())
+									{
+										FString ParentClassPath = ParentClassTag.GetValue();
+										if (ParentClassPath.Contains(TEXT("Dialogue")) ||
+											Asset.AssetName.ToString().StartsWith(TEXT("DBP_")))
+										{
+											if (UObject* LoadedAsset = Asset.GetAsset())
+											{
+												GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+											}
+											break;
+										}
+									}
+								}
+							}
+						}
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([RowData]()
+					{
+						if (RowData->DialogueID.IsNone())
+						{
+							return FText::FromString(TEXT("No Dialogue selected"));
+						}
+						return FText::Format(NSLOCTEXT("DialogueTableEditor", "ClickToOpenDialogue", "Click to open: {0}"),
+							FText::FromName(RowData->DialogueID));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([RowData, TrimDBPPrefix]()
+							{
+								if (RowData->DialogueID.IsNone())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								return FText::FromString(TrimDBPPrefix(RowData->DialogueID.ToString()));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([RowData]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (RowData->DialogueID.IsNone())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
+
+			// Dropdown arrow - shows selection menu
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, RowData, TrimDBPPrefix]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// None option
+						MenuBuilder.AddMenuEntry(
+							NSLOCTEXT("DialogueTableEditor", "DialogueNone", "(None)"),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, RowData, TrimDBPPrefix]()
+							{
+								if (!RowData->DialogueID.IsNone())
+								{
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("DialogueTableEditor", "ConfirmClearDialogue", "Clear Dialogue '{0}'?\n\nThis will mark the node as modified."),
+											FText::FromString(TrimDBPPrefix(RowData->DialogueID.ToString()))));
+									if (Result == EAppReturnType::Yes)
+									{
+										RowData->DialogueID = NAME_None;
+										MarkModified();
+									}
+								}
+							}))
+						);
+
+						MenuBuilder.AddSeparator();
+
+						// Get all DialogueBlueprint assets (DBP_*)
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+						for (const FAssetData& Asset : Assets)
+						{
+							FString AssetName = Asset.AssetName.ToString();
+
+							// Must have DBP_ prefix (DialogueBlueprint) or contain Dialogue in parent class
+							bool bIsDialogue = AssetName.StartsWith(TEXT("DBP_"));
+							if (!bIsDialogue)
+							{
+								FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+								if (ParentClassTag.IsSet())
+								{
+									bIsDialogue = ParentClassTag.GetValue().Contains(TEXT("Dialogue"));
+								}
+							}
+
+							if (!bIsDialogue)
+							{
+								continue;
+							}
+
+							MenuBuilder.AddMenuEntry(
+								FText::FromString(TrimDBPPrefix(AssetName)),
+								FText::FromString(Asset.GetObjectPathString()),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this, RowData, AssetName, TrimDBPPrefix]()
+								{
+									FName NewDialogueID = FName(*AssetName);
+									if (RowData->DialogueID != NewDialogueID)
+									{
+										FString OldValue = RowData->DialogueID.IsNone() ? TEXT("(None)") : TrimDBPPrefix(RowData->DialogueID.ToString());
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											FText::Format(NSLOCTEXT("DialogueTableEditor", "ConfirmDialogueChange", "Change Dialogue from '{0}' to '{1}'?\n\nThis will mark the node as modified."),
+												FText::FromString(OldValue),
+												FText::FromString(TrimDBPPrefix(AssetName))));
+
+										if (Result == EAppReturnType::Yes)
+										{
+											RowData->DialogueID = NewDialogueID;
+											MarkModified();
+										}
+									}
+								}))
+							);
+						}
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 

@@ -43,6 +43,7 @@ struct FItemAssetData
 	FString ItemClassName;  // To determine item type
 	FString ParentClass;    // Parent class name (e.g., "Clothing", "RangedWeaponItem")
 	FString Abilities;      // Comma-separated GA_* ability class names (from EquipmentAbilities)
+	FString ItemTags;       // v4.12.6: Comma-separated gameplay tags (from ItemTags)
 };
 
 /**

@@ -163,6 +163,9 @@ private:
 	/** Create text cell (editable) */
 	TSharedRef<SWidget> CreateTextCell(FString& Value, const FString& Hint = TEXT(""));
 
+	/** v4.12.6: Create item name cell with click-to-open + dropdown + trimmed display */
+	TSharedRef<SWidget> CreateItemNameCell();
+
 	/** Create float cell */
 	TSharedRef<SWidget> CreateFloatCell(float& Value, const FString& Hint = TEXT(""));
 

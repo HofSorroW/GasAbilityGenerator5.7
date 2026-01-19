@@ -121,7 +121,8 @@ TSharedRef<SWidget> SItemTableRow::GenerateWidgetForColumn(const FName& ColumnNa
 	}
 	else if (ColumnName == TEXT("ItemName"))
 	{
-		return CreateTextCell(Row.ItemName, TEXT("Item name (no EI_ prefix)"));
+		// v4.12.6: Click-to-open + dropdown + trimmed display
+		return CreateItemNameCell();
 	}
 	else if (ColumnName == TEXT("DisplayName"))
 	{
@@ -337,6 +338,181 @@ TSharedRef<SWidget> SItemTableRow::CreateTextCell(FString& Value, const FString&
 				})
 				.SelectAllTextWhenFocused(true)
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+		];
+}
+
+TSharedRef<SWidget> SItemTableRow::CreateItemNameCell()
+{
+	// v4.12.6: Click-to-open Item asset + dropdown for single-select + trimmed display
+	FString* ValuePtr = &RowData->ItemName;
+
+	return SNew(SBox)
+		.Padding(FMargin(4.0f, 2.0f))
+		[
+			SNew(SHorizontalBox)
+
+			// Clickable hyperlink text - opens Item Blueprint asset in editor
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([ValuePtr]() -> FReply
+					{
+						if (!ValuePtr->IsEmpty())
+						{
+							// Find Item Blueprint asset by name (NarrativeItem/EquippableItem are Blueprint assets)
+							FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+							TArray<FAssetData> Assets;
+							Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+							for (const FAssetData& Asset : Assets)
+							{
+								if (Asset.AssetName.ToString().Equals(*ValuePtr, ESearchCase::IgnoreCase))
+								{
+									// Check if this is a NarrativeItem/EquippableItem blueprint
+									FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+									if (ParentClassTag.IsSet())
+									{
+										FString ParentClassPath = ParentClassTag.GetValue();
+										if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
+											ParentClassPath.Contains(TEXT("EquippableItem")))
+										{
+											if (UObject* LoadedAsset = Asset.GetAsset())
+											{
+												GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+											}
+											break;
+										}
+									}
+								}
+							}
+						}
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([ValuePtr]()
+					{
+						if (ValuePtr->IsEmpty())
+						{
+							return FText::FromString(TEXT("No Item selected"));
+						}
+						return FText::Format(NSLOCTEXT("ItemTableEditor", "ClickToOpenItem", "Click to open: {0}"),
+							FText::FromString(*ValuePtr));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([ValuePtr]()
+							{
+								if (ValuePtr->IsEmpty())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								return FText::FromString(TrimAssetPrefix_Item(*ValuePtr));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([ValuePtr]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (ValuePtr->IsEmpty())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
+
+			// Dropdown arrow - shows selection menu
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// None option
+						MenuBuilder.AddMenuEntry(
+							NSLOCTEXT("ItemTableEditor", "ItemNameNone", "(None)"),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+							{
+								if (!ValuePtr->IsEmpty())
+								{
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearItemName", "Clear Item Name '{0}'?\n\nThis will mark the Item as modified."),
+											FText::FromString(TrimAssetPrefix_Item(*ValuePtr))));
+									if (Result == EAppReturnType::Yes)
+									{
+										ValuePtr->Empty();
+										MarkModified();
+									}
+								}
+							}))
+						);
+
+						MenuBuilder.AddSeparator();
+
+						// Get all Item Blueprint assets (NarrativeItem/EquippableItem)
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+						for (const FAssetData& Asset : Assets)
+						{
+							// Check if this is a NarrativeItem/EquippableItem blueprint
+							FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+							if (ParentClassTag.IsSet())
+							{
+								FString ParentClassPath = ParentClassTag.GetValue();
+								if (ParentClassPath.Contains(TEXT("NarrativeItem")) ||
+									ParentClassPath.Contains(TEXT("EquippableItem")))
+								{
+									FString AssetName = Asset.AssetName.ToString();
+
+									MenuBuilder.AddMenuEntry(
+										FText::FromString(TrimAssetPrefix_Item(AssetName)),
+										FText::FromString(Asset.GetObjectPathString()),
+										FSlateIcon(),
+										FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetName]()
+										{
+											if (*ValuePtr != AssetName)
+											{
+												FString OldValue = ValuePtr->IsEmpty() ? TEXT("(None)") : TrimAssetPrefix_Item(*ValuePtr);
+												EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+													FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmItemNameChange", "Change Item Name from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+														FText::FromString(OldValue),
+														FText::FromString(TrimAssetPrefix_Item(AssetName))));
+
+												if (Result == EAppReturnType::Yes)
+												{
+													*ValuePtr = AssetName;
+													MarkModified();
+												}
+											}
+										}))
+									);
+								}
+							}
+						}
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 
@@ -774,272 +950,444 @@ TSharedRef<SWidget> SItemTableRow::CreateAssetDropdownCell(FSoftObjectPath& Valu
 
 TSharedRef<SWidget> SItemTableRow::CreateModifierGECell()
 {
-	// v4.12.5: Dropdown filtered to only show equipment modifier GEs (GE_EquipmentModifier and children)
+	// v4.12.6: Click-to-open + dropdown filtered to only show equipment modifier GEs + trimmed display
 	FSoftObjectPath* ValuePtr = &RowData->ModifierGE;
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SComboButton)
-				.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
-				{
-					FMenuBuilder MenuBuilder(true, nullptr);
+			SNew(SHorizontalBox)
 
-					// None option
-					MenuBuilder.AddMenuEntry(
-						NSLOCTEXT("ItemTableEditor", "ModifierNone", "(None)"),
-						FText::GetEmpty(),
-						FSlateIcon(),
-						FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
-						{
-							if (!ValuePtr->IsNull())
-							{
-								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-									FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearModifier", "Clear Modifier GE '{0}'?\n\nThis will mark the Item as modified."),
-										FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()))));
-								if (Result == EAppReturnType::Yes)
-								{
-									ValuePtr->Reset();
-									MarkModified();
-								}
-							}
-						}))
-					);
-
-					MenuBuilder.AddSeparator();
-
-					// Get GameplayEffect blueprints and filter for equipment modifiers
-					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-					TArray<FAssetData> Assets;
-					Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
-
-					for (const FAssetData& Asset : Assets)
+			// Clickable hyperlink text - opens GE Blueprint asset in editor
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([ValuePtr]() -> FReply
 					{
-						FString AssetName = Asset.AssetName.ToString();
-
-						// Must have GE_ prefix
-						if (!AssetName.StartsWith(TEXT("GE_")))
+						if (!ValuePtr->IsNull())
 						{
-							continue;
-						}
-
-						// Filter for equipment modifiers:
-						// 1. Asset path contains "Equipment" folder
-						// 2. OR asset name contains "EquipmentModifier"
-						// 3. OR asset is in a GameplayEffects/Equipment path
-						FString AssetPathStr = Asset.GetObjectPathString();
-						bool bIsEquipmentModifier =
-							AssetPathStr.Contains(TEXT("/Equipment/")) ||
-							AssetName.Contains(TEXT("EquipmentModifier")) ||
-							AssetName.Contains(TEXT("Equipment"));
-
-						if (!bIsEquipmentModifier)
-						{
-							continue;
-						}
-
-						FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
-
-						MenuBuilder.AddMenuEntry(
-							FText::FromString(TrimAssetPrefix_Item(AssetName)),
-							FText::FromString(AssetPathStr),
-							FSlateIcon(),
-							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+							// Load the GE Blueprint and open it
+							if (UObject* LoadedAsset = ValuePtr->TryLoad())
 							{
-								if (*ValuePtr != AssetPath)
+								GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+							}
+						}
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([ValuePtr]()
+					{
+						if (ValuePtr->IsNull())
+						{
+							return FText::FromString(TEXT("No Modifier GE selected"));
+						}
+						return FText::Format(NSLOCTEXT("ItemTableEditor", "ClickToOpenModifier", "Click to open: {0}"),
+							FText::FromString(ValuePtr->GetAssetName()));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([ValuePtr]()
+							{
+								if (ValuePtr->IsNull())
 								{
-									FString OldValue = ValuePtr->IsNull() ? TEXT("(None)") : TrimAssetPrefix_Item(ValuePtr->GetAssetName());
-									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmModifierChange", "Change Modifier GE from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
-											FText::FromString(OldValue),
-											FText::FromString(TrimAssetPrefix_Item(AssetName))));
+									return FText::FromString(TEXT("(None)"));
+								}
+								return FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([ValuePtr]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (ValuePtr->IsNull())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
 
+			// Dropdown arrow - shows selection menu
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// None option
+						MenuBuilder.AddMenuEntry(
+							NSLOCTEXT("ItemTableEditor", "ModifierNone", "(None)"),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+							{
+								if (!ValuePtr->IsNull())
+								{
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearModifier", "Clear Modifier GE '{0}'?\n\nThis will mark the Item as modified."),
+											FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()))));
 									if (Result == EAppReturnType::Yes)
 									{
-										*ValuePtr = AssetPath;
+										ValuePtr->Reset();
 										MarkModified();
 									}
 								}
 							}))
 						);
-					}
 
-					return MenuBuilder.MakeWidget();
-				})
-				.ButtonContent()
-				[
-					SNew(STextBlock)
-						.Text_Lambda([ValuePtr]()
+						MenuBuilder.AddSeparator();
+
+						// Get GameplayEffect blueprints and filter for equipment modifiers
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+						for (const FAssetData& Asset : Assets)
 						{
-							if (ValuePtr->IsNull())
+							FString AssetName = Asset.AssetName.ToString();
+
+							// Must have GE_ prefix
+							if (!AssetName.StartsWith(TEXT("GE_")))
 							{
-								return FText::FromString(TEXT("(None)"));
+								continue;
 							}
-							return FText::FromString(TrimAssetPrefix_Item(ValuePtr->GetAssetName()));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				]
+
+							// Filter for equipment modifiers:
+							// 1. Asset path contains "Equipment" folder
+							// 2. OR asset name contains "EquipmentModifier"
+							// 3. OR asset is in a GameplayEffects/Equipment path
+							FString AssetPathStr = Asset.GetObjectPathString();
+							bool bIsEquipmentModifier =
+								AssetPathStr.Contains(TEXT("/Equipment/")) ||
+								AssetName.Contains(TEXT("EquipmentModifier")) ||
+								AssetName.Contains(TEXT("Equipment"));
+
+							if (!bIsEquipmentModifier)
+							{
+								continue;
+							}
+
+							FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+							MenuBuilder.AddMenuEntry(
+								FText::FromString(TrimAssetPrefix_Item(AssetName)),
+								FText::FromString(AssetPathStr),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetPath, AssetName]()
+								{
+									if (*ValuePtr != AssetPath)
+									{
+										FString OldValue = ValuePtr->IsNull() ? TEXT("(None)") : TrimAssetPrefix_Item(ValuePtr->GetAssetName());
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmModifierChange", "Change Modifier GE from '{0}' to '{1}'?\n\nThis will mark the Item as modified."),
+												FText::FromString(OldValue),
+												FText::FromString(TrimAssetPrefix_Item(AssetName))));
+
+										if (Result == EAppReturnType::Yes)
+										{
+											*ValuePtr = AssetPath;
+											MarkModified();
+										}
+									}
+								}))
+							);
+						}
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 
 TSharedRef<SWidget> SItemTableRow::CreateAbilitiesCell()
 {
-	// v4.12.5: Multi-select dropdown for GA_* abilities (matching NPC table CreateItemsCell pattern)
+	// v4.12.6: Multi-select dropdown for GA_* abilities with click-to-open for each ability
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SComboButton)
-				.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
-				{
-					TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+			SNew(SHorizontalBox)
 
-					// Clear All button
-					MenuContent->AddSlot()
-					.AutoHeight()
-					.Padding(4.0f, 2.0f)
-					[
-						SNew(SButton)
-							.Text(NSLOCTEXT("ItemTableEditor", "ClearAllAbilities", "(Clear All)"))
-							.OnClicked_Lambda([this]()
+			// Clickable ability list - opens first ability on click
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([this]() -> FReply
+					{
+						// On click, open the first ability (if exists)
+						if (!RowData->Abilities.IsEmpty())
+						{
+							TArray<FString> Abilities;
+							RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
+							if (Abilities.Num() > 0)
 							{
-								if (!RowData->Abilities.IsEmpty())
+								FString FirstAbility = Abilities[0].TrimStartAndEnd();
+								// Find and open the ability blueprint
+								FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+								TArray<FAssetData> Assets;
+								Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+								for (const FAssetData& Asset : Assets)
 								{
-									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-										FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearAbilities", "Clear all abilities?\n\nCurrent: {0}"),
-											FText::FromString(RowData->Abilities)));
-									if (Result == EAppReturnType::Yes)
+									if (Asset.AssetName.ToString().Equals(FirstAbility, ESearchCase::IgnoreCase))
 									{
-										RowData->Abilities.Empty();
-										MarkModified();
+										if (UObject* LoadedAsset = Asset.GetAsset())
+										{
+											GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+										}
+										break;
 									}
 								}
-								return FReply::Handled();
-							})
-					];
-
-					MenuContent->AddSlot()
-					.AutoHeight()
-					.Padding(4.0f, 0.0f)
-					[
-						SNew(SSeparator)
-					];
-
-					// Get GameplayAbility blueprints (GA_*)
-					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-					TArray<FAssetData> Assets;
-					Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
-
-					for (const FAssetData& Asset : Assets)
-					{
-						FString AssetName = Asset.AssetName.ToString();
-
-						// Must have GA_ prefix (GameplayAbility)
-						if (!AssetName.StartsWith(TEXT("GA_")))
-						{
-							continue;
+							}
 						}
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([this]()
+					{
+						if (RowData->Abilities.IsEmpty())
+						{
+							return FText::FromString(TEXT("No abilities - use dropdown to add"));
+						}
+						TArray<FString> Abilities;
+						RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
+						if (Abilities.Num() == 1)
+						{
+							return FText::Format(NSLOCTEXT("ItemTableEditor", "ClickToOpenAbility", "Click to open: {0}"),
+								FText::FromString(Abilities[0].TrimStartAndEnd()));
+						}
+						return FText::Format(NSLOCTEXT("ItemTableEditor", "ClickToOpenFirstAbility", "Click to open first ability: {0}\n({1} total abilities)"),
+							FText::FromString(Abilities[0].TrimStartAndEnd()),
+							FText::AsNumber(Abilities.Num()));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([this]()
+							{
+								if (RowData->Abilities.IsEmpty())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								// Trim GA_ prefix from displayed abilities
+								TArray<FString> Abilities;
+								RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
+								TArray<FString> TrimmedAbilities;
+								for (const FString& Ability : Abilities)
+								{
+									TrimmedAbilities.Add(TrimAssetPrefix_Item(Ability.TrimStartAndEnd()));
+								}
+								return FText::FromString(FString::Join(TrimmedAbilities, TEXT(", ")));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([this]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (RowData->Abilities.IsEmpty())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
+
+			// Dropdown arrow - shows multi-select menu with click-to-open per ability
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+					{
+						TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+						// Clear All button
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(4.0f, 2.0f)
+						[
+							SNew(SButton)
+								.Text(NSLOCTEXT("ItemTableEditor", "ClearAllAbilities", "(Clear All)"))
+								.OnClicked_Lambda([this]()
+								{
+									if (!RowData->Abilities.IsEmpty())
+									{
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmClearAbilities", "Clear all abilities?\n\nCurrent: {0}"),
+												FText::FromString(RowData->Abilities)));
+										if (Result == EAppReturnType::Yes)
+										{
+											RowData->Abilities.Empty();
+											MarkModified();
+										}
+									}
+									return FReply::Handled();
+								})
+						];
 
 						MenuContent->AddSlot()
 						.AutoHeight()
-						.Padding(4.0f, 1.0f)
+						.Padding(4.0f, 0.0f)
 						[
-							SNew(SCheckBox)
-								.IsChecked_Lambda([this, AssetName]()
-								{
-									TArray<FString> CurrentAbilities;
-									RowData->Abilities.ParseIntoArray(CurrentAbilities, TEXT(","));
-									for (FString& Ability : CurrentAbilities) { Ability = Ability.TrimStartAndEnd(); }
-									return CurrentAbilities.Contains(AssetName) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-								})
-								.OnCheckStateChanged_Lambda([this, AssetName](ECheckBoxState NewState)
-								{
-									TArray<FString> Abilities;
-									RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
-									for (FString& Ability : Abilities) { Ability = Ability.TrimStartAndEnd(); }
-
-									// Check if already exists
-									bool bAlreadyExists = false;
-									int32 ExistingIndex = INDEX_NONE;
-									for (int32 i = 0; i < Abilities.Num(); i++)
-									{
-										if (Abilities[i].Equals(AssetName, ESearchCase::IgnoreCase))
-										{
-											bAlreadyExists = true;
-											ExistingIndex = i;
-											break;
-										}
-									}
-
-									if (NewState == ECheckBoxState::Checked)
-									{
-										if (!bAlreadyExists)
-										{
-											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-												FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmAddAbility", "Add ability '{0}' to this item?\n\nThis will mark the Item as modified."),
-													FText::FromString(TrimAssetPrefix_Item(AssetName))));
-											if (Result == EAppReturnType::Yes)
-											{
-												Abilities.Add(AssetName);
-												RowData->Abilities = FString::Join(Abilities, TEXT(", "));
-												MarkModified();
-											}
-										}
-									}
-									else
-									{
-										if (bAlreadyExists)
-										{
-											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-												FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmRemoveAbility", "Remove ability '{0}' from this item?\n\nThis will mark the Item as modified."),
-													FText::FromString(TrimAssetPrefix_Item(AssetName))));
-											if (Result == EAppReturnType::Yes)
-											{
-												Abilities.RemoveAt(ExistingIndex);
-												RowData->Abilities = FString::Join(Abilities, TEXT(", "));
-												MarkModified();
-											}
-										}
-									}
-								})
-								[
-									SNew(STextBlock)
-										.Text(FText::FromString(TrimAssetPrefix_Item(AssetName)))
-										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-								]
+							SNew(SSeparator)
 						];
-					}
 
-					return SNew(SBox)
-						.MaxDesiredHeight(400.0f)
-						[
-							SNew(SScrollBox)
-							+ SScrollBox::Slot()
-							[
-								MenuContent
-							]
-						];
-				})
-				.ButtonContent()
-				[
-					SNew(STextBlock)
-						.Text_Lambda([this]()
+						// Get GameplayAbility blueprints (GA_*)
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+						for (const FAssetData& Asset : Assets)
 						{
-							if (RowData->Abilities.IsEmpty())
+							FString AssetName = Asset.AssetName.ToString();
+							FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+							// Must have GA_ prefix (GameplayAbility)
+							if (!AssetName.StartsWith(TEXT("GA_")))
 							{
-								return NSLOCTEXT("ItemTableEditor", "NoAbilities", "(None)");
+								continue;
 							}
-							// Trim GA_ prefix from displayed abilities
-							TArray<FString> Abilities;
-							RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
-							TArray<FString> TrimmedAbilities;
-							for (const FString& Ability : Abilities)
-							{
-								TrimmedAbilities.Add(TrimAssetPrefix_Item(Ability.TrimStartAndEnd()));
-							}
-							return FText::FromString(FString::Join(TrimmedAbilities, TEXT(", ")));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				]
+
+							MenuContent->AddSlot()
+							.AutoHeight()
+							.Padding(4.0f, 1.0f)
+							[
+								SNew(SHorizontalBox)
+
+								// Checkbox for selection
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(SCheckBox)
+										.IsChecked_Lambda([this, AssetName]()
+										{
+											TArray<FString> CurrentAbilities;
+											RowData->Abilities.ParseIntoArray(CurrentAbilities, TEXT(","));
+											for (FString& Ability : CurrentAbilities) { Ability = Ability.TrimStartAndEnd(); }
+											return CurrentAbilities.Contains(AssetName) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+										})
+										.OnCheckStateChanged_Lambda([this, AssetName](ECheckBoxState NewState)
+										{
+											TArray<FString> Abilities;
+											RowData->Abilities.ParseIntoArray(Abilities, TEXT(","));
+											for (FString& Ability : Abilities) { Ability = Ability.TrimStartAndEnd(); }
+
+											// Check if already exists
+											bool bAlreadyExists = false;
+											int32 ExistingIndex = INDEX_NONE;
+											for (int32 i = 0; i < Abilities.Num(); i++)
+											{
+												if (Abilities[i].Equals(AssetName, ESearchCase::IgnoreCase))
+												{
+													bAlreadyExists = true;
+													ExistingIndex = i;
+													break;
+												}
+											}
+
+											if (NewState == ECheckBoxState::Checked)
+											{
+												if (!bAlreadyExists)
+												{
+													EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+														FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmAddAbility", "Add ability '{0}' to this item?\n\nThis will mark the Item as modified."),
+															FText::FromString(TrimAssetPrefix_Item(AssetName))));
+													if (Result == EAppReturnType::Yes)
+													{
+														Abilities.Add(AssetName);
+														RowData->Abilities = FString::Join(Abilities, TEXT(", "));
+														MarkModified();
+													}
+												}
+											}
+											else
+											{
+												if (bAlreadyExists)
+												{
+													EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+														FText::Format(NSLOCTEXT("ItemTableEditor", "ConfirmRemoveAbility", "Remove ability '{0}' from this item?\n\nThis will mark the Item as modified."),
+															FText::FromString(TrimAssetPrefix_Item(AssetName))));
+													if (Result == EAppReturnType::Yes)
+													{
+														Abilities.RemoveAt(ExistingIndex);
+														RowData->Abilities = FString::Join(Abilities, TEXT(", "));
+														MarkModified();
+													}
+												}
+											}
+										})
+								]
+
+								// Clickable ability name - opens asset
+								+ SHorizontalBox::Slot()
+								.FillWidth(1.0f)
+								.VAlign(VAlign_Center)
+								.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+								[
+									SNew(SButton)
+										.ButtonStyle(FAppStyle::Get(), "NoBorder")
+										.ContentPadding(FMargin(0))
+										.OnClicked_Lambda([AssetPath]() -> FReply
+										{
+											if (UObject* LoadedAsset = AssetPath.TryLoad())
+											{
+												GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+											}
+											return FReply::Handled();
+										})
+										.ToolTipText(FText::Format(NSLOCTEXT("ItemTableEditor", "ClickToOpenAbilityInMenu", "Click to open: {0}"),
+											FText::FromString(AssetName)))
+										.Cursor(EMouseCursor::Hand)
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TrimAssetPrefix_Item(AssetName)))
+												.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+												.ColorAndOpacity(FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f)))
+										]
+								]
+							];
+						}
+
+						return SNew(SBox)
+							.MaxDesiredHeight(400.0f)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									MenuContent
+								]
+							];
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 

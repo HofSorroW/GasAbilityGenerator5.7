@@ -299,7 +299,7 @@ TSharedRef<SWidget> SQuestTableRow::CreateTokenCell(FString& Value, const FStrin
 
 TSharedRef<SWidget> SQuestTableRow::CreateQuestNameCell()
 {
-	// v4.12.5: Match NPC Table cell styling with prefix trimming and confirmation dialog
+	// v4.12.6: Click-to-open Quest asset + dropdown for single-select + trimmed display
 	FString* ValuePtr = &RowDataEx->Data->QuestName;
 
 	return SNew(SBox)
@@ -314,64 +314,182 @@ TSharedRef<SWidget> SQuestTableRow::CreateQuestNameCell()
 				})
 				.Padding(FMargin(4.0f, 2.0f))
 				[
-					SNew(SEditableTextBox)
-						.Text_Lambda([ValuePtr]()
-						{
-							if (ValuePtr->IsEmpty())
+					SNew(SHorizontalBox)
+
+					// Clickable hyperlink text - opens Quest Blueprint asset in editor
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(SButton)
+							.ButtonStyle(FAppStyle::Get(), "NoBorder")
+							.ContentPadding(FMargin(0))
+							.OnClicked_Lambda([ValuePtr]() -> FReply
 							{
-								return FText::FromString(TEXT("(None)"));
-							}
-							// v4.12.5: Trim Q_ or QBP_ prefix for cleaner display
-							return FText::FromString(TrimQuestPrefix(*ValuePtr));
-						})
-						.HintText(LOCTEXT("QuestNameHint", "Quest name"))
-						.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
-						{
-							if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
-							{
-								FString NewValue = NewText.ToString();
-								if (NewValue == TEXT("(None)"))
+								if (!ValuePtr->IsEmpty())
 								{
-									NewValue = TEXT("");
+									// Find Quest Blueprint asset by name
+									FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+									TArray<FAssetData> Assets;
+									Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+									for (const FAssetData& Asset : Assets)
+									{
+										if (Asset.AssetName.ToString().Equals(*ValuePtr, ESearchCase::IgnoreCase))
+										{
+											// Check if this is a Quest blueprint
+											FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+											if (ParentClassTag.IsSet())
+											{
+												FString ParentClassPath = ParentClassTag.GetValue();
+												if (ParentClassPath.Contains(TEXT("Quest")) ||
+													Asset.AssetName.ToString().StartsWith(TEXT("Q_")) ||
+													Asset.AssetName.ToString().StartsWith(TEXT("QBP_")))
+												{
+													if (UObject* LoadedAsset = Asset.GetAsset())
+													{
+														GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+													}
+													break;
+												}
+											}
+										}
+									}
 								}
-								// v4.12.5: Preserve prefix if user edited trimmed name
-								if (!NewValue.IsEmpty() && !NewValue.StartsWith(TEXT("Q_")) && !NewValue.StartsWith(TEXT("QBP_")))
+								return FReply::Handled();
+							})
+							.ToolTipText_Lambda([ValuePtr]()
+							{
+								if (ValuePtr->IsEmpty())
 								{
-									// Check if old value had a prefix and preserve it
-									if (ValuePtr->StartsWith(TEXT("QBP_")))
+									return FText::FromString(TEXT("No Quest selected"));
+								}
+								return FText::Format(NSLOCTEXT("QuestTableEditor", "ClickToOpenQuest", "Click to open: {0}"),
+									FText::FromString(*ValuePtr));
+							})
+							.Cursor(EMouseCursor::Hand)
+							[
+								SNew(STextBlock)
+									.Text_Lambda([ValuePtr]()
 									{
-										NewValue = TEXT("QBP_") + NewValue;
-									}
-									else if (ValuePtr->StartsWith(TEXT("Q_")))
+										if (ValuePtr->IsEmpty())
+										{
+											return FText::FromString(TEXT("(None)"));
+										}
+										return FText::FromString(TrimQuestPrefix(*ValuePtr));
+									})
+									.Font_Lambda([this]()
 									{
-										NewValue = TEXT("Q_") + NewValue;
+										return RowDataEx.IsValid() && RowDataEx->bIsFirstInQuest ?
+											FCoreStyle::GetDefaultFontStyle("Bold", 9) :
+											FCoreStyle::GetDefaultFontStyle("Regular", 9);
+									})
+									.ColorAndOpacity_Lambda([ValuePtr]()
+									{
+										// Blue color for clickable assets, gray for (None)
+										if (ValuePtr->IsEmpty())
+										{
+											return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+										}
+										return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+									})
+							]
+					]
+
+					// Dropdown arrow - shows selection menu
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SComboButton)
+							.HasDownArrow(true)
+							.ButtonStyle(FAppStyle::Get(), "NoBorder")
+							.ContentPadding(FMargin(2.0f, 0.0f))
+							.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
+							{
+								FMenuBuilder MenuBuilder(true, nullptr);
+
+								// None option
+								MenuBuilder.AddMenuEntry(
+									NSLOCTEXT("QuestTableEditor", "QuestNone", "(None)"),
+									FText::GetEmpty(),
+									FSlateIcon(),
+									FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+									{
+										if (!ValuePtr->IsEmpty())
+										{
+											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+												FText::Format(NSLOCTEXT("QuestTableEditor", "ConfirmClearQuest", "Clear Quest '{0}'?\n\nThis will mark the Quest as modified."),
+													FText::FromString(TrimQuestPrefix(*ValuePtr))));
+											if (Result == EAppReturnType::Yes)
+											{
+												ValuePtr->Empty();
+												MarkModified();
+											}
+										}
+									}))
+								);
+
+								MenuBuilder.AddSeparator();
+
+								// Get all Quest Blueprint assets (Q_*, QBP_*)
+								FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+								TArray<FAssetData> Assets;
+								Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, true);
+
+								for (const FAssetData& Asset : Assets)
+								{
+									FString AssetName = Asset.AssetName.ToString();
+
+									// Must have Q_ or QBP_ prefix or Quest in parent class
+									bool bIsQuest = AssetName.StartsWith(TEXT("Q_")) || AssetName.StartsWith(TEXT("QBP_"));
+									if (!bIsQuest)
+									{
+										FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+										if (ParentClassTag.IsSet())
+										{
+											bIsQuest = ParentClassTag.GetValue().Contains(TEXT("Quest"));
+										}
 									}
+
+									if (!bIsQuest)
+									{
+										continue;
+									}
+
+									MenuBuilder.AddMenuEntry(
+										FText::FromString(TrimQuestPrefix(AssetName)),
+										FText::FromString(Asset.GetObjectPathString()),
+										FSlateIcon(),
+										FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetName]()
+										{
+											if (*ValuePtr != AssetName)
+											{
+												FString OldValue = ValuePtr->IsEmpty() ? TEXT("(None)") : TrimQuestPrefix(*ValuePtr);
+												EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+													FText::Format(NSLOCTEXT("QuestTableEditor", "ConfirmQuestNameChange", "Change Quest Name from '{0}' to '{1}'?\n\nThis will mark the Quest as modified."),
+														FText::FromString(OldValue),
+														FText::FromString(TrimQuestPrefix(AssetName))));
+
+												if (Result == EAppReturnType::Yes)
+												{
+													*ValuePtr = AssetName;
+													MarkModified();
+												}
+											}
+										}))
+									);
 								}
 
-								if (*ValuePtr != NewValue)
-								{
-									FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : TrimQuestPrefix(*ValuePtr);
-									FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : TrimQuestPrefix(NewValue);
-									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-										FText::Format(NSLOCTEXT("QuestTableEditor", "ConfirmQuestNameChange", "Change Quest Name from '{0}' to '{1}'?\n\nThis will mark the Quest as modified."),
-											FText::FromString(DisplayOld),
-											FText::FromString(DisplayNew)));
-
-									if (Result == EAppReturnType::Yes)
-									{
-										*ValuePtr = NewValue;
-										MarkModified();
-									}
-								}
-							}
-						})
-						.SelectAllTextWhenFocused(true)
-						.Font_Lambda([this]()
-						{
-							return RowDataEx.IsValid() && RowDataEx->bIsFirstInQuest ?
-								FCoreStyle::GetDefaultFontStyle("Bold", 9) :
-								FCoreStyle::GetDefaultFontStyle("Regular", 9);
-						})
+								return MenuBuilder.MakeWidget();
+							})
+							.ButtonContent()
+							[
+								SNew(SBox)
+									.WidthOverride(12.0f)
+									.HeightOverride(12.0f)
+							]
+					]
 				]
 		];
 }

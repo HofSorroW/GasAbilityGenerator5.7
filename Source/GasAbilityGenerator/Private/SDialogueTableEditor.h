@@ -96,6 +96,7 @@ private:
 
 	TSharedRef<SWidget> CreateTextCell(FString& Value, const FString& Hint = TEXT(""), bool bWithTooltip = false);
 	TSharedRef<SWidget> CreateFNameCell(FName& Value, const FString& Hint = TEXT(""));
+	TSharedRef<SWidget> CreateDialogueIDCell();  // v4.12.6: Click-to-open + dropdown + trimmed
 	TSharedRef<SWidget> CreateNodeTypeCell();
 	TSharedRef<SWidget> CreateSpeakerCell();  // Shows "Player" for player nodes
 	TSharedRef<SWidget> CreateNextNodesCell();

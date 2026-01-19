@@ -385,63 +385,156 @@ TSharedRef<SWidget> SNPCTableRow::CreateTextCell(FString& Value, const FString& 
 
 TSharedRef<SWidget> SNPCTableRow::CreateNPCNameCell()
 {
-	// v4.12.5: NPCName cell with NPC_ prefix trimming for display
+	// v4.12.6: Click-to-open NPC_* asset + dropdown for single-select + trimmed display
 	FString* ValuePtr = &RowData->NPCName;
 
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SEditableTextBox)
-				.Text_Lambda([ValuePtr]()
-				{
-					if (ValuePtr->IsEmpty())
-					{
-						return FText::FromString(TEXT("(None)"));
-					}
-					// Trim NPC_ prefix for cleaner display
-					if (ValuePtr->StartsWith(TEXT("NPC_")))
-					{
-						return FText::FromString(ValuePtr->RightChop(4));
-					}
-					return FText::FromString(*ValuePtr);
-				})
-				.HintText(LOCTEXT("NPCNameHint", "NPC_Name"))
-				.OnTextCommitted_Lambda([this, ValuePtr](const FText& NewText, ETextCommit::Type CommitType)
-				{
-					if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus)
-					{
-						FString NewValue = NewText.ToString();
-						if (NewValue == TEXT("(None)"))
-						{
-							NewValue = TEXT("");
-						}
-						// Preserve NPC_ prefix if user edited trimmed name
-						if (!NewValue.IsEmpty() && !NewValue.StartsWith(TEXT("NPC_")))
-						{
-							if (ValuePtr->StartsWith(TEXT("NPC_")))
-							{
-								NewValue = TEXT("NPC_") + NewValue;
-							}
-						}
-						if (NewValue != *ValuePtr)
-						{
-							FString DisplayOld = ValuePtr->IsEmpty() ? TEXT("(None)") : *ValuePtr;
-							FString DisplayNew = NewValue.IsEmpty() ? TEXT("(None)") : NewValue;
-							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmNPCNameChange", "Change 'NPCName' from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
-									FText::FromString(DisplayOld),
-									FText::FromString(DisplayNew)));
+			SNew(SHorizontalBox)
 
-							if (Result == EAppReturnType::Yes)
+			// Clickable hyperlink text - opens NPC asset in editor
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([ValuePtr]() -> FReply
+					{
+						if (!ValuePtr->IsEmpty())
+						{
+							// Find NPC_* asset by name
+							FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+							TArray<FAssetData> Assets;
+							Registry.Get().GetAssetsByClass(UNPCDefinition::StaticClass()->GetClassPathName(), Assets, true);
+
+							for (const FAssetData& Asset : Assets)
 							{
-								*ValuePtr = NewValue;
-								MarkModified();
+								if (Asset.AssetName.ToString().Equals(*ValuePtr, ESearchCase::IgnoreCase))
+								{
+									if (UObject* LoadedAsset = Asset.GetAsset())
+									{
+										GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+									}
+									break;
+								}
 							}
 						}
-					}
-				})
-				.SelectAllTextWhenFocused(true)
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([ValuePtr]()
+					{
+						if (ValuePtr->IsEmpty())
+						{
+							return FText::FromString(TEXT("No NPC selected"));
+						}
+						return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenNPC", "Click to open: {0}"),
+							FText::FromString(*ValuePtr));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([ValuePtr]()
+							{
+								if (ValuePtr->IsEmpty())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								return FText::FromString(TrimAssetPrefix_NPC(*ValuePtr));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([ValuePtr]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (ValuePtr->IsEmpty())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
+
+			// Dropdown arrow - shows selection menu
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this, ValuePtr]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// None option
+						MenuBuilder.AddMenuEntry(
+							NSLOCTEXT("NPCTableEditor", "NPCNameNone", "(None)"),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this, ValuePtr]()
+							{
+								if (!ValuePtr->IsEmpty())
+								{
+									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+										FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearNPCName", "Clear NPC Name '{0}'?\n\nThis will mark the NPC as modified."),
+											FText::FromString(TrimAssetPrefix_NPC(*ValuePtr))));
+									if (Result == EAppReturnType::Yes)
+									{
+										ValuePtr->Empty();
+										MarkModified();
+									}
+								}
+							}))
+						);
+
+						MenuBuilder.AddSeparator();
+
+						// Get all NPCDefinition assets
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(UNPCDefinition::StaticClass()->GetClassPathName(), Assets, true);
+
+						for (const FAssetData& Asset : Assets)
+						{
+							FString AssetName = Asset.AssetName.ToString();
+
+							MenuBuilder.AddMenuEntry(
+								FText::FromString(TrimAssetPrefix_NPC(AssetName)),
+								FText::FromString(Asset.GetObjectPathString()),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([this, ValuePtr, AssetName]()
+								{
+									if (*ValuePtr != AssetName)
+									{
+										FString OldValue = ValuePtr->IsEmpty() ? TEXT("(None)") : TrimAssetPrefix_NPC(*ValuePtr);
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmNPCNameChange", "Change NPC Name from '{0}' to '{1}'?\n\nThis will mark the NPC as modified."),
+												FText::FromString(OldValue),
+												FText::FromString(TrimAssetPrefix_NPC(AssetName))));
+
+										if (Result == EAppReturnType::Yes)
+										{
+											*ValuePtr = AssetName;
+											MarkModified();
+										}
+									}
+								}))
+							);
+						}
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 
@@ -838,161 +931,273 @@ TSharedRef<SWidget> SNPCTableRow::CreateFloatSliderCell(float& Value)
 
 TSharedRef<SWidget> SNPCTableRow::CreateItemsCell()
 {
-	// Multi-select dropdown for IC_* item collections - checkbox style like header filters
+	// v4.12.6: Multi-select dropdown for IC_* item collections with click-to-open for each item
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SComboButton)
-				.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
-				{
-					TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+			SNew(SHorizontalBox)
 
-					// Clear All button
-					MenuContent->AddSlot()
-					.AutoHeight()
-					.Padding(4.0f, 2.0f)
-					[
-						SNew(SButton)
-							.Text(NSLOCTEXT("NPCTableEditor", "ClearAllItems", "(Clear All)"))
-							.OnClicked_Lambda([this]()
-							{
-								if (!RowData->DefaultItems.IsEmpty())
-								{
-									EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-										FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearItems", "Clear all items?\n\nCurrent: {0}"),
-											FText::FromString(RowData->DefaultItems)));
-									if (Result == EAppReturnType::Yes)
-									{
-										RowData->DefaultItems.Empty();
-										MarkModified();
-									}
-								}
-								return FReply::Handled();
-							})
-					];
-
-					// Separator
-					MenuContent->AddSlot()
-					.AutoHeight()
-					[
-						SNew(SSeparator)
-					];
-
-					// Get all ItemCollection assets
-					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-					TArray<FAssetData> Assets;
-					Registry.Get().GetAssetsByClass(UItemCollection::StaticClass()->GetClassPathName(), Assets, true);
-
-					// Checkboxes for each item collection
-					for (const FAssetData& Asset : Assets)
+			// Clickable item list - each item opens its asset
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([this]() -> FReply
 					{
-						FString AssetName = Asset.AssetName.ToString();
-
-						MenuContent->AddSlot()
-						.AutoHeight()
-						.Padding(4.0f, 1.0f)
-						[
-							SNew(SCheckBox)
-								.IsChecked_Lambda([this, AssetName]()
-								{
-									TArray<FString> CurrentItems;
-									RowData->DefaultItems.ParseIntoArray(CurrentItems, TEXT(","));
-									for (FString& Item : CurrentItems) { Item = Item.TrimStartAndEnd(); }
-									return CurrentItems.Contains(AssetName) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-								})
-								.OnCheckStateChanged_Lambda([this, AssetName](ECheckBoxState NewState)
-								{
-									TArray<FString> Items;
-									RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
-									for (FString& Item : Items) { Item = Item.TrimStartAndEnd(); }
-
-									// Check if already exists (case-insensitive)
-									bool bAlreadyExists = false;
-									int32 ExistingIndex = INDEX_NONE;
-									for (int32 i = 0; i < Items.Num(); i++)
-									{
-										if (Items[i].Equals(AssetName, ESearchCase::IgnoreCase))
-										{
-											bAlreadyExists = true;
-											ExistingIndex = i;
-											break;
-										}
-									}
-
-									if (NewState == ECheckBoxState::Checked)
-									{
-										// Only add if not already present (prevents duplicates)
-										if (!bAlreadyExists)
-										{
-											// Confirmation prompt for adding item
-											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-												FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmAddItem", "Add item collection '{0}' to this NPC?\n\nThis will mark the NPC as modified."),
-													FText::FromString(AssetName)));
-											if (Result == EAppReturnType::Yes)
-											{
-												Items.Add(AssetName);
-												RowData->DefaultItems = FString::Join(Items, TEXT(", "));
-												MarkModified();
-											}
-										}
-									}
-									else
-									{
-										// Remove if exists
-										if (bAlreadyExists && ExistingIndex != INDEX_NONE)
-										{
-											// Confirmation prompt for removing item
-											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-												FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmRemoveItem", "Remove item collection '{0}' from this NPC?\n\nThis will mark the NPC as modified."),
-													FText::FromString(AssetName)));
-											if (Result == EAppReturnType::Yes)
-											{
-												Items.RemoveAt(ExistingIndex);
-												RowData->DefaultItems = FString::Join(Items, TEXT(", "));
-												MarkModified();
-											}
-										}
-									}
-								})
-								[
-									SNew(STextBlock)
-										.Text(FText::FromString(TrimAssetPrefix_NPC(AssetName)))
-										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-								]
-						];
-					}
-
-					return SNew(SBox)
-						.MaxDesiredHeight(300.0f)
-						[
-							SNew(SScrollBox)
-							+ SScrollBox::Slot()
-							[
-								MenuContent
-							]
-						];
-				})
-				.ButtonContent()
-				[
-					SNew(STextBlock)
-						.Text_Lambda([this]()
+						// On click, open the first item (if exists) or do nothing
+						// For multi-item, user can click dropdown to see all and click individual items there
+						if (!RowData->DefaultItems.IsEmpty())
 						{
-							if (RowData->DefaultItems.IsEmpty())
-							{
-								return NSLOCTEXT("NPCTableEditor", "NoItems", "(None)");
-							}
-							// v4.12.5: Trim IC_ prefix from displayed items
 							TArray<FString> Items;
 							RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
-							TArray<FString> TrimmedItems;
-							for (const FString& Item : Items)
+							if (Items.Num() > 0)
 							{
-								TrimmedItems.Add(TrimAssetPrefix_NPC(Item.TrimStartAndEnd()));
+								FString FirstItem = Items[0].TrimStartAndEnd();
+								// Find and open the item collection asset
+								FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+								TArray<FAssetData> Assets;
+								Registry.Get().GetAssetsByClass(UItemCollection::StaticClass()->GetClassPathName(), Assets, true);
+
+								for (const FAssetData& Asset : Assets)
+								{
+									if (Asset.AssetName.ToString().Equals(FirstItem, ESearchCase::IgnoreCase))
+									{
+										if (UObject* LoadedAsset = Asset.GetAsset())
+										{
+											GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+										}
+										break;
+									}
+								}
 							}
-							return FText::FromString(FString::Join(TrimmedItems, TEXT(", ")));
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				]
+						}
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([this]()
+					{
+						if (RowData->DefaultItems.IsEmpty())
+						{
+							return FText::FromString(TEXT("No items - use dropdown to add"));
+						}
+						TArray<FString> Items;
+						RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
+						if (Items.Num() == 1)
+						{
+							return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenItem", "Click to open: {0}"),
+								FText::FromString(Items[0].TrimStartAndEnd()));
+						}
+						return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenFirstItem", "Click to open first item: {0}\n({1} total items)"),
+							FText::FromString(Items[0].TrimStartAndEnd()),
+							FText::AsNumber(Items.Num()));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([this]()
+							{
+								if (RowData->DefaultItems.IsEmpty())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								// v4.12.5: Trim IC_ prefix from displayed items
+								TArray<FString> Items;
+								RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
+								TArray<FString> TrimmedItems;
+								for (const FString& Item : Items)
+								{
+									TrimmedItems.Add(TrimAssetPrefix_NPC(Item.TrimStartAndEnd()));
+								}
+								return FText::FromString(FString::Join(TrimmedItems, TEXT(", ")));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([this]()
+							{
+								// Blue color for clickable assets, gray for (None)
+								if (RowData->DefaultItems.IsEmpty())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
+
+			// Dropdown arrow - shows multi-select menu with click-to-open per item
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+					{
+						TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
+
+						// Clear All button
+						MenuContent->AddSlot()
+						.AutoHeight()
+						.Padding(4.0f, 2.0f)
+						[
+							SNew(SButton)
+								.Text(NSLOCTEXT("NPCTableEditor", "ClearAllItems", "(Clear All)"))
+								.OnClicked_Lambda([this]()
+								{
+									if (!RowData->DefaultItems.IsEmpty())
+									{
+										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+											FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearItems", "Clear all items?\n\nCurrent: {0}"),
+												FText::FromString(RowData->DefaultItems)));
+										if (Result == EAppReturnType::Yes)
+										{
+											RowData->DefaultItems.Empty();
+											MarkModified();
+										}
+									}
+									return FReply::Handled();
+								})
+						];
+
+						// Separator
+						MenuContent->AddSlot()
+						.AutoHeight()
+						[
+							SNew(SSeparator)
+						];
+
+						// Get all ItemCollection assets
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> Assets;
+						Registry.Get().GetAssetsByClass(UItemCollection::StaticClass()->GetClassPathName(), Assets, true);
+
+						// Checkboxes for each item collection with click-to-open
+						for (const FAssetData& Asset : Assets)
+						{
+							FString AssetName = Asset.AssetName.ToString();
+							FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+							MenuContent->AddSlot()
+							.AutoHeight()
+							.Padding(4.0f, 1.0f)
+							[
+								SNew(SHorizontalBox)
+
+								// Checkbox for selection
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								[
+									SNew(SCheckBox)
+										.IsChecked_Lambda([this, AssetName]()
+										{
+											TArray<FString> CurrentItems;
+											RowData->DefaultItems.ParseIntoArray(CurrentItems, TEXT(","));
+											for (FString& Item : CurrentItems) { Item = Item.TrimStartAndEnd(); }
+											return CurrentItems.Contains(AssetName) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+										})
+										.OnCheckStateChanged_Lambda([this, AssetName](ECheckBoxState NewState)
+										{
+											TArray<FString> Items;
+											RowData->DefaultItems.ParseIntoArray(Items, TEXT(","));
+											for (FString& Item : Items) { Item = Item.TrimStartAndEnd(); }
+
+											// Check if already exists (case-insensitive)
+											bool bAlreadyExists = false;
+											int32 ExistingIndex = INDEX_NONE;
+											for (int32 i = 0; i < Items.Num(); i++)
+											{
+												if (Items[i].Equals(AssetName, ESearchCase::IgnoreCase))
+												{
+													bAlreadyExists = true;
+													ExistingIndex = i;
+													break;
+												}
+											}
+
+											if (NewState == ECheckBoxState::Checked)
+											{
+												if (!bAlreadyExists)
+												{
+													EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+														FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmAddItem", "Add item collection '{0}' to this NPC?\n\nThis will mark the NPC as modified."),
+															FText::FromString(TrimAssetPrefix_NPC(AssetName))));
+													if (Result == EAppReturnType::Yes)
+													{
+														Items.Add(AssetName);
+														RowData->DefaultItems = FString::Join(Items, TEXT(", "));
+														MarkModified();
+													}
+												}
+											}
+											else
+											{
+												if (bAlreadyExists && ExistingIndex != INDEX_NONE)
+												{
+													EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+														FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmRemoveItem", "Remove item collection '{0}' from this NPC?\n\nThis will mark the NPC as modified."),
+															FText::FromString(TrimAssetPrefix_NPC(AssetName))));
+													if (Result == EAppReturnType::Yes)
+													{
+														Items.RemoveAt(ExistingIndex);
+														RowData->DefaultItems = FString::Join(Items, TEXT(", "));
+														MarkModified();
+													}
+												}
+											}
+										})
+								]
+
+								// Clickable item name - opens asset
+								+ SHorizontalBox::Slot()
+								.FillWidth(1.0f)
+								.VAlign(VAlign_Center)
+								.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+								[
+									SNew(SButton)
+										.ButtonStyle(FAppStyle::Get(), "NoBorder")
+										.ContentPadding(FMargin(0))
+										.OnClicked_Lambda([AssetPath]() -> FReply
+										{
+											if (UObject* LoadedAsset = AssetPath.TryLoad())
+											{
+												GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+											}
+											return FReply::Handled();
+										})
+										.ToolTipText(FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenItemInMenu", "Click to open: {0}"),
+											FText::FromString(AssetName)))
+										.Cursor(EMouseCursor::Hand)
+										[
+											SNew(STextBlock)
+												.Text(FText::FromString(TrimAssetPrefix_NPC(AssetName)))
+												.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+												.ColorAndOpacity(FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f)))
+										]
+								]
+							];
+						}
+
+						return SNew(SBox)
+							.MaxDesiredHeight(300.0f)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								[
+									MenuContent
+								]
+							];
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 
@@ -1274,105 +1479,164 @@ TSharedRef<SWidget> SNPCTableRow::CreateAssetDropdownCell(FSoftObjectPath& Value
 
 TSharedRef<SWidget> SNPCTableRow::CreateNPCBlueprintDropdownCell()
 {
-	// Dropdown that only shows Blueprint classes inheriting from ANarrativeNPCCharacter
+	// v4.12.6: Click-to-open Blueprint asset + dropdown for single-select + trimmed display
 	return SNew(SBox)
 		.Padding(FMargin(4.0f, 2.0f))
 		[
-			SNew(SComboButton)
-				.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
-				{
-					FMenuBuilder MenuBuilder(true, nullptr);
+			SNew(SHorizontalBox)
 
-					// None option
-					MenuBuilder.AddMenuEntry(
-						NSLOCTEXT("NPCTableEditor", "NoneBlueprint", "(None)"),
-						FText::GetEmpty(),
-						FSlateIcon(),
-						FUIAction(FExecuteAction::CreateLambda([this]()
-						{
-							// For TSoftClassPtr: extract Blueprint name from asset path
-							FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
-							EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-								FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearBlueprint", "Clear Blueprint from '{0}'?"),
-									FText::FromString(CurrentValue)));
-							if (Result == EAppReturnType::Yes)
-							{
-								RowData->Blueprint.Reset();
-								MarkModified();
-							}
-						}))
-					);
-
-					MenuBuilder.AddSeparator();
-
-					// Get all Blueprint assets and filter for ANarrativeNPCCharacter subclasses
-					FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-					TArray<FAssetData> AllBlueprints;
-					Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AllBlueprints, true);
-
-					for (const FAssetData& Asset : AllBlueprints)
+			// Clickable hyperlink text - opens Blueprint asset in editor
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(0))
+					.OnClicked_Lambda([this]() -> FReply
 					{
-						// Check if this blueprint's parent class is ANarrativeNPCCharacter or a subclass
-						FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
-						if (ParentClassTag.IsSet())
+						if (!RowData->Blueprint.IsNull())
 						{
-							FString ParentClassPath = ParentClassTag.GetValue();
-
-							// Check if parent class path contains NarrativeNPCCharacter or common NPC character classes
-							if (ParentClassPath.Contains(TEXT("NarrativeNPCCharacter")) ||
-								ParentClassPath.Contains(TEXT("NarrativeCharacter")) ||
-								ParentClassPath.Contains(TEXT("BP_NarrativeNPC")))
+							// Find Blueprint asset by path
+							FString AssetPath = RowData->Blueprint.GetAssetPath().ToString();
+							if (!AssetPath.IsEmpty())
 							{
-								FString AssetName = Asset.AssetName.ToString();
-								FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
-
-								MenuBuilder.AddMenuEntry(
-									FText::FromString(AssetName),
-									FText::FromString(Asset.GetObjectPathString()),
-									FSlateIcon(),
-									FUIAction(FExecuteAction::CreateLambda([this, AssetPath, AssetName]()
-									{
-										// For TSoftClassPtr: extract Blueprint name from asset path
-										FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
-										EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
-											FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmChangeBlueprint", "Change Blueprint from '{0}' to '{1}'?"),
-												FText::FromString(CurrentValue),
-												FText::FromString(AssetName)));
-										if (Result == EAppReturnType::Yes)
-										{
-											RowData->Blueprint = AssetPath;
-											MarkModified();
-										}
-									}))
-								);
+								// Load the blueprint and open it
+								if (UObject* LoadedAsset = RowData->Blueprint.TryLoad())
+								{
+									GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(LoadedAsset);
+								}
 							}
 						}
-					}
-
-					return MenuBuilder.MakeWidget();
-				})
-				.ButtonContent()
-				[
-					SNew(STextBlock)
-						.Text_Lambda([this]()
+						return FReply::Handled();
+					})
+					.ToolTipText_Lambda([this]()
+					{
+						if (RowData->Blueprint.IsNull())
 						{
-							// Show "(None)" for null OR empty asset name
-							if (RowData->Blueprint.IsNull())
+							return FText::FromString(TEXT("No Blueprint selected"));
+						}
+						FString AssetName = FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
+						return FText::Format(NSLOCTEXT("NPCTableEditor", "ClickToOpenBlueprint", "Click to open: {0}"),
+							FText::FromString(AssetName));
+					})
+					.Cursor(EMouseCursor::Hand)
+					[
+						SNew(STextBlock)
+							.Text_Lambda([this]()
 							{
-								return FText::FromString(TEXT("(None)"));
-							}
-							// For TSoftClassPtr: extract Blueprint name from asset path
-							// Path format: "/Package/Path/BP_Name.BP_Name_C"
-							// GetAssetPath() returns: "/Package/Path/BP_Name" -> extract "BP_Name"
-							FString AssetName = FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
-							if (AssetName.IsEmpty())
+								// Show "(None)" for null OR empty asset name
+								if (RowData->Blueprint.IsNull())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								// For TSoftClassPtr: extract Blueprint name from asset path
+								FString AssetName = FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString());
+								if (AssetName.IsEmpty())
+								{
+									return FText::FromString(TEXT("(None)"));
+								}
+								return FText::FromString(TrimAssetPrefix_NPC(AssetName));
+							})
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity_Lambda([this]()
 							{
-								return FText::FromString(TEXT("(None)"));
+								// Blue color for clickable assets, gray for (None)
+								if (RowData->Blueprint.IsNull())
+								{
+									return FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f));
+								}
+								return FSlateColor(FLinearColor(0.3f, 0.5f, 0.85f));
+							})
+					]
+			]
+
+			// Dropdown arrow - shows selection menu
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SComboButton)
+					.HasDownArrow(true)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 0.0f))
+					.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+					{
+						FMenuBuilder MenuBuilder(true, nullptr);
+
+						// None option
+						MenuBuilder.AddMenuEntry(
+							NSLOCTEXT("NPCTableEditor", "NoneBlueprint", "(None)"),
+							FText::GetEmpty(),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([this]()
+							{
+								FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : TrimAssetPrefix_NPC(FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString()));
+								EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+									FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmClearBlueprint", "Clear Blueprint from '{0}'?"),
+										FText::FromString(CurrentValue)));
+								if (Result == EAppReturnType::Yes)
+								{
+									RowData->Blueprint.Reset();
+									MarkModified();
+								}
+							}))
+						);
+
+						MenuBuilder.AddSeparator();
+
+						// Get all Blueprint assets and filter for ANarrativeNPCCharacter subclasses
+						FAssetRegistryModule& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+						TArray<FAssetData> AllBlueprints;
+						Registry.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AllBlueprints, true);
+
+						for (const FAssetData& Asset : AllBlueprints)
+						{
+							// Check if this blueprint's parent class is ANarrativeNPCCharacter or a subclass
+							FAssetDataTagMapSharedView::FFindTagResult ParentClassTag = Asset.TagsAndValues.FindTag(FBlueprintTags::ParentClassPath);
+							if (ParentClassTag.IsSet())
+							{
+								FString ParentClassPath = ParentClassTag.GetValue();
+
+								// Check if parent class path contains NarrativeNPCCharacter or common NPC character classes
+								if (ParentClassPath.Contains(TEXT("NarrativeNPCCharacter")) ||
+									ParentClassPath.Contains(TEXT("NarrativeCharacter")) ||
+									ParentClassPath.Contains(TEXT("BP_NarrativeNPC")))
+								{
+									FString AssetName = Asset.AssetName.ToString();
+									FSoftObjectPath AssetPath = Asset.GetSoftObjectPath();
+
+									MenuBuilder.AddMenuEntry(
+										FText::FromString(TrimAssetPrefix_NPC(AssetName)),
+										FText::FromString(Asset.GetObjectPathString()),
+										FSlateIcon(),
+										FUIAction(FExecuteAction::CreateLambda([this, AssetPath, AssetName]()
+										{
+											FString CurrentValue = RowData->Blueprint.IsNull() ? TEXT("(None)") : TrimAssetPrefix_NPC(FPaths::GetBaseFilename(RowData->Blueprint.GetAssetPath().ToString()));
+											EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo,
+												FText::Format(NSLOCTEXT("NPCTableEditor", "ConfirmChangeBlueprint", "Change Blueprint from '{0}' to '{1}'?"),
+													FText::FromString(CurrentValue),
+													FText::FromString(TrimAssetPrefix_NPC(AssetName))));
+											if (Result == EAppReturnType::Yes)
+											{
+												RowData->Blueprint = AssetPath;
+												MarkModified();
+											}
+										}))
+									);
+								}
 							}
-							return FText::FromString(AssetName);
-						})
-						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				]
+						}
+
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(SBox)
+							.WidthOverride(12.0f)
+							.HeightOverride(12.0f)
+					]
+			]
 		];
 }
 

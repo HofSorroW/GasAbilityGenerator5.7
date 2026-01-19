@@ -113,6 +113,83 @@ FItemAssetData FItemAssetSync::SyncFromAsset(UNarrativeItem* ItemAsset)
 		{
 			Data.AttackDamage = DamageProp->GetPropertyValue_InContainer(WeaponItem);
 		}
+
+		// v4.12.6: Extract weapon-specific abilities - WeaponAbilities, MainhandAbilities, OffhandAbilities
+		TArray<FString> AllWeaponAbilities;
+
+		// Lambda to extract abilities from a TArray<TSubclassOf<...>> property
+		auto ExtractAbilitiesFromProperty = [WeaponItem, &AllWeaponAbilities](const TCHAR* PropertyName)
+		{
+			FArrayProperty* AbilityProp = CastField<FArrayProperty>(
+				WeaponItem->GetClass()->FindPropertyByName(PropertyName));
+
+			if (AbilityProp)
+			{
+				FScriptArrayHelper ArrayHelper(AbilityProp,
+					AbilityProp->ContainerPtrToValuePtr<void>(WeaponItem));
+
+				for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+				{
+					void* ElementPtr = ArrayHelper.GetRawPtr(i);
+					UClass* AbilityClass = *(UClass**)ElementPtr;
+					if (AbilityClass)
+					{
+						FString AbilityName = AbilityClass->GetName();
+						if (!AllWeaponAbilities.Contains(AbilityName))
+						{
+							AllWeaponAbilities.Add(AbilityName);
+						}
+					}
+				}
+			}
+		};
+
+		ExtractAbilitiesFromProperty(TEXT("WeaponAbilities"));
+		ExtractAbilitiesFromProperty(TEXT("MainhandAbilities"));
+		ExtractAbilitiesFromProperty(TEXT("OffhandAbilities"));
+
+		// Combine with any EquipmentAbilities already extracted
+		if (AllWeaponAbilities.Num() > 0)
+		{
+			if (Data.Abilities.IsEmpty())
+			{
+				Data.Abilities = FString::Join(AllWeaponAbilities, TEXT(", "));
+			}
+			else
+			{
+				// Merge with existing abilities (avoiding duplicates)
+				TArray<FString> ExistingAbilities;
+				Data.Abilities.ParseIntoArray(ExistingAbilities, TEXT(","));
+				for (FString& Ability : ExistingAbilities) { Ability = Ability.TrimStartAndEnd(); }
+
+				for (const FString& WeaponAbility : AllWeaponAbilities)
+				{
+					if (!ExistingAbilities.Contains(WeaponAbility))
+					{
+						ExistingAbilities.Add(WeaponAbility);
+					}
+				}
+				Data.Abilities = FString::Join(ExistingAbilities, TEXT(", "));
+			}
+		}
+	}
+
+	// v4.12.6: Extract ItemTags from UNarrativeItem
+	if (FStructProperty* ItemTagsProp = CastField<FStructProperty>(
+		ItemAsset->GetClass()->FindPropertyByName(TEXT("ItemTags"))))
+	{
+		const FGameplayTagContainer* TagContainer = ItemTagsProp->ContainerPtrToValuePtr<FGameplayTagContainer>(ItemAsset);
+		if (TagContainer && TagContainer->Num() > 0)
+		{
+			TArray<FString> TagStrings;
+			TArray<FGameplayTag> Tags;
+			TagContainer->GetGameplayTagArray(Tags);
+			for (const FGameplayTag& Tag : Tags)
+			{
+				TagStrings.Add(Tag.ToString());
+			}
+			Data.ItemTags = FString::Join(TagStrings, TEXT(", "));
+		}
 	}
 
 #endif
