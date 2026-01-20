@@ -1,6 +1,6 @@
 # Father Companion - GA_FatherMark Implementation Guide
-## VERSION 1.8 - Simplified Tag Configuration
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## VERSION 1.9 - Form State Tag Update (INV-1 Compliant)
+## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
 
@@ -13,8 +13,8 @@
 | Parent Class | NarrativeGameplayAbility |
 | Forms | Crawler, Engineer |
 | Input | None (Triggers on enemy engagement) |
-| Version | 1.7 |
-| Engine | Unreal Engine 5.6 |
+| Version | 1.9 |
+| Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 
 ---
@@ -118,9 +118,9 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 |----------|---------|
 | Father.State.Recruited | Must be recruited (Activation Required) |
 | Narrative.State.IsDead | Block when dead (Activation Blocked) |
-| Father.Form.Armor | Block in Armor form (Activation Blocked) |
-| Father.Form.Exoskeleton | Block in Exoskeleton form (Activation Blocked) |
-| Father.Form.Symbiote | Block in Symbiote form (Activation Blocked) |
+| Effect.Father.FormState.Armor | Block in Armor form (Activation Blocked) |
+| Effect.Father.FormState.Exoskeleton | Block in Exoskeleton form (Activation Blocked) |
+| Effect.Father.FormState.Symbiote | Block in Symbiote form (Activation Blocked) |
 
 ---
 
@@ -275,7 +275,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 |----------|------|
 | Ability Tags | Ability.Father.Mark |
 | Activation Required Tags | Father.State.Recruited |
-| Activation Blocked Tags | Narrative.State.IsDead, Father.Form.Armor, Father.Form.Exoskeleton, Father.Form.Symbiote |
+| Activation Blocked Tags | Narrative.State.IsDead, Effect.Father.FormState.Armor, Effect.Father.FormState.Exoskeleton, Effect.Father.FormState.Symbiote |
 | Activation Owned Tags | Father.State.Marking |
 
 ### **5) Configure Replication Settings**
@@ -909,6 +909,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.9 | January 2026 | Form State Tag Update (INV-1 Compliant): Changed Activation Blocked Tags from `Father.Form.*` (orphan tags) to `Effect.Father.FormState.*` (granted by form state GEs). Updated UE version from 5.6 to 5.7. |
 | 1.8 | January 2026 | Updated Narrative Pro version reference from v2.1 to v2.2. |
 | 1.7 | January 2026 | Simplified documentation: Tag configuration (PHASE 3 Section 4) converted to single Property/Tags table. |
 | 1.6 | January 2026 | Added RefreshMark() call in refresh path (Section 7.2) to sync widget timer with GE duration on re-hit. Removed PENDING DOCUMENTS section (WBP_MarkIndicator now complete). Updated Prerequisites table. |
@@ -930,7 +931,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 | Ability Tags | `Ability.Father.Mark` |
 | Activation Required | `Father.State.Recruited` |
 | Activation Owned | `Father.State.Marking` |
-| Activation Blocked | `Narrative.State.IsDead`, `Father.Form.Armor`, `Father.Form.Exoskeleton`, `Father.Form.Symbiote` |
+| Activation Blocked | `Narrative.State.IsDead`, `Effect.Father.FormState.Armor`, `Effect.Father.FormState.Exoskeleton`, `Effect.Father.FormState.Symbiote` |
 | InputTag | None (passive) |
 
 ### **Replication Settings**
@@ -999,10 +1000,10 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 
 ---
 
-**END OF GA_FATHERMARK IMPLEMENTATION GUIDE v1.7**
+**END OF GA_FATHERMARK IMPLEMENTATION GUIDE v1.9**
 
 **Crawler/Engineer Form - Passive Enemy Marking**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
 
 **Blueprint-Only Implementation**

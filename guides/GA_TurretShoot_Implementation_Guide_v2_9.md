@@ -1,6 +1,6 @@
 # Father Companion - GA_TurretShoot Implementation Guide
 ## VERSION 3.0 - Form State Tag Update (INV-1 Compliant)
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
 
@@ -1074,6 +1074,6 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 
 **Engineer Form - AI Ranged Attack**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
 
 **Blueprint-Only Implementation**
