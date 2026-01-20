@@ -548,6 +548,19 @@ public:
 		const FString& ProjectRoot);
 
 	/**
+	 * v4.14: Generate a new custom Blueprint function (not an override)
+	 * Creates a function graph with UK2Node_FunctionEntry and UK2Node_FunctionResult
+	 * @param Blueprint The blueprint to add the function to
+	 * @param FunctionDefinition The function definition with inputs, outputs, nodes, and connections
+	 * @param ProjectRoot Project root path for asset lookups
+	 * @return true if function was created successfully
+	 */
+	static bool GenerateCustomFunction(
+		UBlueprint* Blueprint,
+		const FManifestCustomFunctionDefinition& FunctionDefinition,
+		const FString& ProjectRoot);
+
+	/**
 	 * Find an event graph definition by name in manifest data
 	 */
 	static const FManifestEventGraphDefinition* FindEventGraphByName(

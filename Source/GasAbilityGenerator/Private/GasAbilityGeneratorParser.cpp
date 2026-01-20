@@ -1172,9 +1172,23 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			}
 			else if (bInEventGraph)
 			{
+				// v4.14: Check if we're exiting event_graph section (hit custom_functions)
+				// Handle it directly here since we can't re-evaluate the else-if chain
+				if (TrimmedLine.Equals(TEXT("custom_functions:")) || TrimmedLine.StartsWith(TEXT("custom_functions:")))
+				{
+					bInEventGraph = false;
+					bInVariables = false;
+					bInTags = false;
+					CurrentTagArray = ECurrentTagArray::None;
+					// Parse custom functions subsection directly
+					int32 CustomFunctionsIndent = CurrentIndent;
+					LineIndex++;
+					ParseCustomFunctions(Lines, LineIndex, CustomFunctionsIndent, CurrentDef.CustomFunctions);
+					continue;
+				}
 				// Parse nodes and connections subsections within event_graph
 				// Use a temporary graph definition for parsing, then copy to arrays
-				if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
+				else if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
 				{
 					int32 NodesIndent = CurrentIndent;
 					LineIndex++;
@@ -1331,6 +1345,44 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				bInCueTriggers = false;
 				bInVFXSpawns = false;
 				CurrentTagArray = ECurrentTagArray::None;
+			}
+			// v4.14: Custom functions section (new Blueprint functions)
+			else if (TrimmedLine.Equals(TEXT("custom_functions:")) || TrimmedLine.StartsWith(TEXT("custom_functions:")))
+			{
+				// Save pending data from other sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+				{
+					CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+				}
+				if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+				{
+					CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+				}
+				if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+				{
+					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+				}
+				bInVariables = false;
+				bInTags = false;
+				bInEventGraph = false;
+				bInCueTriggers = false;
+				bInVFXSpawns = false;
+				bInDelegateBindings = false;
+				CurrentTagArray = ECurrentTagArray::None;
+
+				// Parse custom functions subsection
+				int32 CustomFunctionsIndent = CurrentIndent;
+				LineIndex++;
+				ParseCustomFunctions(Lines, LineIndex, CustomFunctionsIndent, CurrentDef.CustomFunctions);
+				continue;
 			}
 			else if (bInDelegateBindings)
 			{
@@ -3872,6 +3924,192 @@ void FGasAbilityGeneratorParser::ParseFunctionOverrides(const TArray<FString>& L
 	{
 		OutOverrides.Add(CurrentOverride);
 	}
+}
+
+// ============================================================================
+// v4.14: Custom Blueprint Function Parser (new functions, not overrides)
+// ============================================================================
+
+void FGasAbilityGeneratorParser::ParseCustomFunctions(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, TArray<FManifestCustomFunctionDefinition>& OutFunctions)
+{
+	FManifestCustomFunctionDefinition CurrentFunction;
+	FManifestFunctionParameterDefinition CurrentParam;
+	bool bInFunction = false;
+	bool bInInputs = false;
+	bool bInOutputs = false;
+	bool bInNodes = false;
+	bool bInConnections = false;
+	int32 FunctionIndent = -1;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		// Exit if we're back at or before subsection level with a new section
+		if (!TrimmedLine.IsEmpty() && !TrimmedLine.StartsWith(TEXT("#")))
+		{
+			if (CurrentIndent <= SubsectionIndent && TrimmedLine.Contains(TEXT(":")))
+			{
+				// Save pending function
+				if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
+				{
+					OutFunctions.Add(CurrentFunction);
+				}
+				return;
+			}
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for new function item (- function_name: name or - function: name)
+		// NOTE: Don't match "- name:" here as it conflicts with parameter names inside inputs:/outputs:
+		if (TrimmedLine.StartsWith(TEXT("- function_name:")) || TrimmedLine.StartsWith(TEXT("- function:")))
+		{
+			// Save previous function
+			if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
+			{
+				OutFunctions.Add(CurrentFunction);
+			}
+			CurrentFunction = FManifestCustomFunctionDefinition();
+			CurrentFunction.FunctionName = GetLineValue(TrimmedLine.Mid(2));  // Skip "- "
+			bInFunction = true;
+			bInInputs = false;
+			bInOutputs = false;
+			bInNodes = false;
+			bInConnections = false;
+			FunctionIndent = CurrentIndent;
+		}
+		else if (bInFunction)
+		{
+			// v4.14: Check for section transitions FIRST (before catch-all bInInputs/bInOutputs)
+			if (TrimmedLine.StartsWith(TEXT("pure:")))
+			{
+				FString Val = GetLineValue(TrimmedLine);
+				CurrentFunction.bPure = Val.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+			}
+			else if (TrimmedLine.Equals(TEXT("inputs:")) || TrimmedLine.StartsWith(TEXT("inputs:")))
+			{
+				bInInputs = true;
+				bInOutputs = false;
+				bInNodes = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("outputs:")) || TrimmedLine.StartsWith(TEXT("outputs:")))
+			{
+				// Save any pending input param
+				if (bInInputs && !CurrentParam.Name.IsEmpty())
+				{
+					CurrentFunction.Inputs.Add(CurrentParam);
+					CurrentParam = FManifestFunctionParameterDefinition();
+				}
+				bInInputs = false;
+				bInOutputs = true;
+				bInNodes = false;
+				bInConnections = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("nodes:")) || TrimmedLine.StartsWith(TEXT("nodes:")))
+			{
+				// Save any pending output param
+				if (bInOutputs && !CurrentParam.Name.IsEmpty())
+				{
+					CurrentFunction.Outputs.Add(CurrentParam);
+					CurrentParam = FManifestFunctionParameterDefinition();
+				}
+				bInInputs = false;
+				bInOutputs = false;
+				bInNodes = true;
+				bInConnections = false;
+				int32 NodesIndent = CurrentIndent;
+				LineIndex++;
+				FManifestEventGraphDefinition TempGraph;
+				ParseGraphNodes(Lines, LineIndex, NodesIndent, TempGraph);
+				CurrentFunction.Nodes = MoveTemp(TempGraph.Nodes);
+				continue;
+			}
+			else if (TrimmedLine.Equals(TEXT("connections:")) || TrimmedLine.StartsWith(TEXT("connections:")))
+			{
+				// Save any pending output param
+				if (bInOutputs && !CurrentParam.Name.IsEmpty())
+				{
+					CurrentFunction.Outputs.Add(CurrentParam);
+					CurrentParam = FManifestFunctionParameterDefinition();
+				}
+				bInInputs = false;
+				bInOutputs = false;
+				bInNodes = false;
+				bInConnections = true;
+				int32 ConnectionsIndent = CurrentIndent;
+				LineIndex++;
+				FManifestEventGraphDefinition TempGraph;
+				ParseGraphConnections(Lines, LineIndex, ConnectionsIndent, TempGraph);
+				CurrentFunction.Connections = MoveTemp(TempGraph.Connections);
+				continue;
+			}
+			// v4.14: Catch-all for input/output parameters (AFTER section checks)
+			else if (bInInputs)
+			{
+				// Parse input parameters
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					if (!CurrentParam.Name.IsEmpty())
+					{
+						CurrentFunction.Inputs.Add(CurrentParam);
+					}
+					CurrentParam = FManifestFunctionParameterDefinition();
+					CurrentParam.Name = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentParam.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default:")))
+				{
+					CurrentParam.Default = GetLineValue(TrimmedLine);
+				}
+			}
+			else if (bInOutputs)
+			{
+				// Parse output parameters
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					if (!CurrentParam.Name.IsEmpty())
+					{
+						CurrentFunction.Outputs.Add(CurrentParam);
+					}
+					CurrentParam = FManifestFunctionParameterDefinition();
+					CurrentParam.Name = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentParam.Type = GetLineValue(TrimmedLine);
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save any pending param
+	if (bInInputs && !CurrentParam.Name.IsEmpty())
+	{
+		CurrentFunction.Inputs.Add(CurrentParam);
+	}
+	if (bInOutputs && !CurrentParam.Name.IsEmpty())
+	{
+		CurrentFunction.Outputs.Add(CurrentParam);
+	}
+	// Save last function
+	if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
+	{
+		OutFunctions.Add(CurrentFunction);
+	}
+
 }
 
 // ============================================================================

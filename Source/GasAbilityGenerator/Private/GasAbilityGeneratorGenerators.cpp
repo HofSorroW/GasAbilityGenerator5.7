@@ -305,6 +305,7 @@
 #include "K2Node_GetArrayItem.h"  // v2.7.0: GetArrayItem support
 #include "K2Node_Self.h"  // v2.7.8: Self reference support
 #include "K2Node_FunctionEntry.h"  // v2.8.3: Function override entry
+#include "K2Node_FunctionResult.h"  // v4.14: Custom function return node
 #include "K2Node_CallParentFunction.h"  // v2.8.3: Call parent function
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
@@ -2686,8 +2687,28 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
 	}
 
-	// Recompile blueprint after adding Category C nodes
-	if (Definition.CueTriggers.Num() > 0 || Definition.VFXSpawns.Num() > 0 || Definition.DelegateBindings.Num() > 0)
+	// v4.14: Generate custom Blueprint functions
+	if (Definition.CustomFunctions.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Generating %d custom function(s)"), Definition.CustomFunctions.Num()));
+		int32 FunctionsGenerated = 0;
+		for (const FManifestCustomFunctionDefinition& FuncDef : Definition.CustomFunctions)
+		{
+			if (FEventGraphGenerator::GenerateCustomFunction(Blueprint, FuncDef, ProjectRoot))
+			{
+				FunctionsGenerated++;
+				LogGeneration(FString::Printf(TEXT("    Generated custom function: %s"), *FuncDef.FunctionName));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    WARNING: Failed to generate custom function: %s"), *FuncDef.FunctionName));
+			}
+		}
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d custom functions"), FunctionsGenerated, Definition.CustomFunctions.Num()));
+	}
+
+	// Recompile blueprint after adding Category C nodes or custom functions
+	if (Definition.CueTriggers.Num() > 0 || Definition.VFXSpawns.Num() > 0 || Definition.DelegateBindings.Num() > 0 || Definition.CustomFunctions.Num() > 0)
 	{
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
@@ -8942,6 +8963,221 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 
 	LogGeneration(FString::Printf(TEXT("Function override '%s': %d nodes created, %d failed, %d connections, %d failed"),
 		*OverrideDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsFailed));
+
+	// Mark blueprint as modified
+	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+	return NodesFailed == 0 && ConnectionsFailed == 0;
+}
+
+// ============================================================================
+// v4.14: GenerateCustomFunction - Create new Blueprint functions (not overrides)
+// ============================================================================
+
+bool FEventGraphGenerator::GenerateCustomFunction(
+	UBlueprint* Blueprint,
+	const FManifestCustomFunctionDefinition& FunctionDefinition,
+	const FString& ProjectRoot)
+{
+	if (!Blueprint || FunctionDefinition.FunctionName.IsEmpty())
+	{
+		LogGeneration(TEXT("GenerateCustomFunction: Invalid blueprint or empty function name"));
+		return false;
+	}
+
+	FName FunctionName(*FunctionDefinition.FunctionName);
+	LogGeneration(FString::Printf(TEXT("GenerateCustomFunction: Creating function '%s'"), *FunctionDefinition.FunctionName));
+
+	// Check if function already exists
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+	{
+		if (Graph && Graph->GetFName() == FunctionName)
+		{
+			LogGeneration(FString::Printf(TEXT("  Function '%s' already exists, skipping"), *FunctionDefinition.FunctionName));
+			return true;
+		}
+	}
+
+	// Create new function graph using FBlueprintEditorUtils
+	UEdGraph* FunctionGraph = FBlueprintEditorUtils::CreateNewGraph(
+		Blueprint,
+		FunctionName,
+		UEdGraph::StaticClass(),
+		UEdGraphSchema_K2::StaticClass());
+
+	if (!FunctionGraph)
+	{
+		LogGeneration(FString::Printf(TEXT("GenerateCustomFunction: Failed to create graph for '%s'"), *FunctionDefinition.FunctionName));
+		return false;
+	}
+
+	FunctionGraph->bAllowDeletion = true;
+	Blueprint->FunctionGraphs.Add(FunctionGraph);
+
+	// Create function entry node
+	FGraphNodeCreator<UK2Node_FunctionEntry> EntryNodeCreator(*FunctionGraph);
+	UK2Node_FunctionEntry* EntryNode = EntryNodeCreator.CreateNode();
+	EntryNode->CreateNewGuid();
+	EntryNode->PostPlacedNewNode();
+	EntryNode->NodePosX = 0;
+	EntryNode->NodePosY = 0;
+
+	// Configure function flags
+	if (FunctionDefinition.bPure)
+	{
+		EntryNode->AddExtraFlags(FUNC_BlueprintPure);
+	}
+	EntryNode->AddExtraFlags(FUNC_BlueprintCallable);
+
+	EntryNodeCreator.Finalize();
+
+	// Add input parameters to the entry node
+	for (const FManifestFunctionParameterDefinition& Input : FunctionDefinition.Inputs)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(Input.Type);
+		// Create user defined pin for the input
+		TSharedPtr<FUserPinInfo> NewPinInfo = MakeShareable(new FUserPinInfo());
+		NewPinInfo->PinName = FName(*Input.Name);
+		NewPinInfo->PinType = PinType;
+		NewPinInfo->DesiredPinDirection = EGPD_Output;  // Entry node outputs are function inputs
+		EntryNode->UserDefinedPins.Add(NewPinInfo);
+	}
+
+	// Recreate pins after adding user defined pins
+	EntryNode->ReconstructNode();
+
+	// Create function result node if there are outputs
+	UK2Node_FunctionResult* ResultNode = nullptr;
+	if (FunctionDefinition.Outputs.Num() > 0)
+	{
+		ResultNode = NewObject<UK2Node_FunctionResult>(FunctionGraph);
+		FunctionGraph->AddNode(ResultNode, false, false);
+		ResultNode->CreateNewGuid();
+		ResultNode->PostPlacedNewNode();
+		ResultNode->NodePosX = 600;
+		ResultNode->NodePosY = 0;
+
+		// Add output parameters to the result node
+		for (const FManifestFunctionParameterDefinition& Output : FunctionDefinition.Outputs)
+		{
+			FEdGraphPinType PinType = GetPinTypeFromString(Output.Type);
+			TSharedPtr<FUserPinInfo> NewPinInfo = MakeShareable(new FUserPinInfo());
+			NewPinInfo->PinName = FName(*Output.Name);
+			NewPinInfo->PinType = PinType;
+			NewPinInfo->DesiredPinDirection = EGPD_Input;  // Result node inputs are function outputs
+			ResultNode->UserDefinedPins.Add(NewPinInfo);
+		}
+
+		ResultNode->ReconstructNode();
+	}
+
+	// Map to track created nodes by their definition IDs
+	TMap<FString, UK2Node*> NodeMap;
+	NodeMap.Add(TEXT("FunctionEntry"), EntryNode);
+	if (ResultNode)
+	{
+		NodeMap.Add(TEXT("FunctionResult"), ResultNode);
+		NodeMap.Add(TEXT("Return"), ResultNode);  // Alias for manifest convenience
+	}
+
+	int32 NodesCreated = 0;
+	int32 NodesFailed = 0;
+
+	// Create all nodes from definition
+	for (const FManifestGraphNodeDefinition& NodeDef : FunctionDefinition.Nodes)
+	{
+		UK2Node* CreatedNode = nullptr;
+
+		if (NodeDef.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateCallFunctionNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		else if (NodeDef.Type.Equals(TEXT("Branch"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateBranchNode(FunctionGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("VariableGet"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateVariableGetNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		else if (NodeDef.Type.Equals(TEXT("VariableSet"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateVariableSetNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		else if (NodeDef.Type.Equals(TEXT("Sequence"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSequenceNode(FunctionGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("PrintString"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreatePrintStringNode(FunctionGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSelfNode(FunctionGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("DynamicCast"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateDynamicCastNode(FunctionGraph, NodeDef);
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Unknown/unsupported node type '%s' for custom function node '%s'"),
+				*NodeDef.Type, *NodeDef.Id));
+			NodesFailed++;
+			continue;
+		}
+
+		if (CreatedNode)
+		{
+			NodeMap.Add(NodeDef.Id, CreatedNode);
+			NodesCreated++;
+
+			// Set position if specified
+			if (NodeDef.bHasPosition)
+			{
+				CreatedNode->NodePosX = static_cast<int32>(NodeDef.PositionX);
+				CreatedNode->NodePosY = static_cast<int32>(NodeDef.PositionY);
+			}
+			else
+			{
+				// Default positioning
+				CreatedNode->NodePosX = 200 + (NodesCreated * 250);
+				CreatedNode->NodePosY = 0;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Created node: %s (%s)"), *NodeDef.Id, *NodeDef.Type));
+		}
+		else
+		{
+			NodesFailed++;
+		}
+	}
+
+	// Create connections
+	int32 ConnectionsCreated = 0;
+	int32 ConnectionsFailed = 0;
+
+	for (const FManifestGraphConnectionDefinition& Connection : FunctionDefinition.Connections)
+	{
+		if (ConnectPins(NodeMap, Connection))
+		{
+			ConnectionsCreated++;
+			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
+				*Connection.From.NodeId, *Connection.From.PinName,
+				*Connection.To.NodeId, *Connection.To.PinName));
+		}
+		else
+		{
+			ConnectionsFailed++;
+			LogGeneration(FString::Printf(TEXT("  FAILED to connect: %s.%s -> %s.%s"),
+				*Connection.From.NodeId, *Connection.From.PinName,
+				*Connection.To.NodeId, *Connection.To.PinName));
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("Custom function '%s': %d nodes created, %d failed, %d connections, %d failed"),
+		*FunctionDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsFailed));
 
 	// Mark blueprint as modified
 	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);

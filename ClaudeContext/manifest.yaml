@@ -4383,6 +4383,9 @@ gameplay_abilities:
 
   # GA_Backstab - Player Default Passive Backstab Damage
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
+  # PASSIVE ABILITY: Contains CheckBackstabCondition and ApplyBackstabBonus FUNCTIONS
+  # These functions are CALLED BY attack abilities - GA_Backstab itself does not activate
+  # Functions must be created manually in editor (manifest only generates event_graph)
   - name: GA_Backstab
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -4401,37 +4404,136 @@ gameplay_abilities:
         default_value: 2.0
         instance_editable: true
     event_graph:
+      # Minimal event_graph - passive ability immediately ends on activation
+      # Actual logic is in CheckBackstabCondition/ApplyBackstabBonus custom functions
       nodes:
         - id: Event_Activate
           type: Event
           properties:
             event_name: K2_ActivateAbility
           position: [0, 0]
-        - id: GetOwningActor
+        - id: EndAbility
           type: CallFunction
           properties:
-            function: GetOwningActorFromActorInfo
+            function: K2_EndAbility
             target_self: true
           position: [300, 0]
-        - id: IsValid
-          type: CallFunction
-          properties:
-            function: IsValid
-          position: [600, 0]
-        - id: Branch_Valid
-          type: Branch
-          position: [900, 0]
       connections:
-        # Exec flow (skip pure IsValid)
         - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [Branch_Valid, Exec]
-        # Data flow
-        - from: [GetOwningActor, ReturnValue]
-          to: [IsValid, Object]
-        - from: [IsValid, ReturnValue]
-          to: [Branch_Valid, Condition]
+          to: [EndAbility, Exec]
+    # v4.14: Custom functions for backstab detection and bonus application
+    # NOTE: Simplified to use only supported node types. FunctionEntry and FunctionResult
+    # are auto-created by the generator. Greater_FloatFloat B pin defaults to 0.
+    custom_functions:
+      # CheckBackstabCondition - Returns true if enemy is facing away from player
+      # Logic: Get dot product of enemy forward vector and direction to player
+      # Positive dot means enemy is facing toward player (not backstab)
+      # Negative dot means enemy is facing away (valid backstab)
+      - function_name: CheckBackstabCondition
+        inputs:
+          - name: EnemyActor
+            type: Actor
+        outputs:
+          - name: CanBackstab
+            type: Boolean
+        nodes:
+          # Get the owning actor (player)
+          - id: GetOwningActor
+            type: CallFunction
+            properties:
+              function: GetAvatarActorFromActorInfo
+              target_self: true
+            position: [0, 0]
+          # Get enemy's forward vector
+          - id: GetEnemyForward
+            type: CallFunction
+            properties:
+              function: GetActorForwardVector
+            position: [200, 100]
+          # Get player location
+          - id: GetPlayerLocation
+            type: CallFunction
+            properties:
+              function: GetActorLocation
+            position: [200, 200]
+          # Get enemy location
+          - id: GetEnemyLocation
+            type: CallFunction
+            properties:
+              function: GetActorLocation
+            position: [200, 300]
+          # Subtract to get direction (player - enemy)
+          - id: SubtractVectors
+            type: CallFunction
+            properties:
+              function: Subtract_VectorVector
+              class: KismetMathLibrary
+            position: [400, 250]
+          # Normalize the direction
+          - id: NormalizeDir
+            type: CallFunction
+            properties:
+              function: Normal
+              class: KismetMathLibrary
+            position: [600, 250]
+          # Dot product - positive means same direction (not backstab)
+          - id: DotProduct
+            type: CallFunction
+            properties:
+              function: Dot_VectorVector
+              class: KismetMathLibrary
+            position: [800, 150]
+          # Check if dot < 0 (enemy facing away = backstab)
+          - id: CheckNegative
+            type: CallFunction
+            properties:
+              function: Less_FloatFloat
+              class: KismetMathLibrary
+            position: [1000, 150]
+        connections:
+          # EnemyActor -> GetEnemyForward target
+          - from: [FunctionEntry, EnemyActor]
+            to: [GetEnemyForward, Target]
+          # EnemyActor -> GetEnemyLocation target
+          - from: [FunctionEntry, EnemyActor]
+            to: [GetEnemyLocation, Target]
+          # GetOwningActor -> GetPlayerLocation target
+          - from: [GetOwningActor, ReturnValue]
+            to: [GetPlayerLocation, Target]
+          # Player location - Enemy location = direction to player
+          - from: [GetPlayerLocation, ReturnValue]
+            to: [SubtractVectors, A]
+          - from: [GetEnemyLocation, ReturnValue]
+            to: [SubtractVectors, B]
+          # Normalize the direction
+          - from: [SubtractVectors, ReturnValue]
+            to: [NormalizeDir, A]
+          # Dot product of enemy forward and direction to player
+          - from: [GetEnemyForward, ReturnValue]
+            to: [DotProduct, A]
+          - from: [NormalizeDir, ReturnValue]
+            to: [DotProduct, B]
+          # Check if dot < 0 (B defaults to 0)
+          - from: [DotProduct, ReturnValue]
+            to: [CheckNegative, A]
+          # Return the result (connects to auto-created FunctionResult)
+          - from: [CheckNegative, ReturnValue]
+            to: [FunctionResult, CanBackstab]
+      # ApplyBackstabBonus - Simple placeholder function
+      # In practice, attack abilities would call this to apply bonus damage
+      - function_name: ApplyBackstabBonus
+        pure: false
+        nodes:
+          # Just print a debug message for now - actual implementation would apply GE
+          - id: PrintBonus
+            type: PrintString
+            properties:
+              message: "Backstab bonus applied!"
+            position: [0, 0]
+        connections:
+          # Connect FunctionEntry exec to PrintBonus
+          - from: [FunctionEntry, Then]
+            to: [PrintBonus, Exec]
 
   # GA_ProximityStrike - Symbiote AOE Damage
   # NOTE: Runs on Player ASC, granted via EI_FatherSymbioteForm - no cross-ASC gates

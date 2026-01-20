@@ -106,6 +106,9 @@ private:
 	// v2.8.3: Function override parser
 	static void ParseFunctionOverrides(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, TArray<FManifestFunctionOverrideDefinition>& OutOverrides);
 
+	// v4.14: Custom function parser (new Blueprint functions, not overrides)
+	static void ParseCustomFunctions(const TArray<FString>& Lines, int32& LineIndex, int32 SubsectionIndent, TArray<FManifestCustomFunctionDefinition>& OutFunctions);
+
 	// Helper functions
 	static FString StripYamlComment(const FString& Value);  // v3.9.10: Strip inline YAML comments
 	static FString GetLineValue(const FString& Line);

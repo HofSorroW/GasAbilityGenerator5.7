@@ -1017,9 +1017,77 @@ struct FManifestEventGraphDefinition
 };
 
 // ============================================================================
+// v4.14: Custom Blueprint Function Support (forward declarations for GameplayAbility)
+// ============================================================================
+
+/**
+ * Function parameter definition
+ * v4.14: Used for custom Blueprint function inputs/outputs
+ */
+struct FManifestFunctionParameterDefinition
+{
+	FString Name;     // Parameter name
+	FString Type;     // Type name (e.g., "Actor", "Boolean", "Float")
+	FString Default;  // Default value (optional, for inputs only)
+
+	/** v4.14: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 4;
+		Hash ^= GetTypeHash(Default) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * Custom Blueprint function definition
+ * v4.14: Used for creating new Blueprint functions (not overrides)
+ * Example: CheckBackstabCondition with EnemyActor input and CanBackstab output
+ */
+struct FManifestCustomFunctionDefinition
+{
+	FString FunctionName;  // Name of function to create (e.g., "CheckBackstabCondition")
+	TArray<FManifestFunctionParameterDefinition> Inputs;   // Function input parameters
+	TArray<FManifestFunctionParameterDefinition> Outputs;  // Function output parameters (return values)
+	TArray<FManifestGraphNodeDefinition> Nodes;
+	TArray<FManifestGraphConnectionDefinition> Connections;
+	bool bPure = false;  // True for pure functions (no exec pins)
+
+	/** v4.14: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(FunctionName);
+		Hash ^= (bPure ? 1ULL : 0ULL) << 4;
+		for (const auto& Input : Inputs)
+		{
+			Hash ^= Input.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Output : Outputs)
+		{
+			Hash ^= Output.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		for (const auto& Node : Nodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		for (const auto& Conn : Connections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 9) | (Hash >> 55);
+		}
+		return Hash;
+	}
+};
+
+// ============================================================================
 
 /**
  * Gameplay ability definition
+ * v4.14: Added CustomFunctions for creating new Blueprint functions
  * v4.8: Added InputTag and bActivateAbilityOnGranted for input binding automation
  */
 struct FManifestGameplayAbilityDefinition
@@ -1052,7 +1120,10 @@ struct FManifestGameplayAbilityDefinition
 	TArray<FManifestVFXSpawnDefinition> VFXSpawns;         // P3.1: Auto-spawned Niagara systems
 	TArray<FManifestDelegateBindingDefinition> DelegateBindings;  // P2.1: Auto-bound delegates
 
-	/** v4.8: Compute hash for change detection (excludes Folder - presentational only) */
+	// v4.14: Custom Blueprint functions (new functions, not overrides)
+	TArray<FManifestCustomFunctionDefinition> CustomFunctions;
+
+	/** v4.14: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -1104,6 +1175,13 @@ struct FManifestGameplayAbilityDefinition
 		{
 			Hash ^= Del.ComputeHash();
 			Hash = (Hash << 13) | (Hash >> 51);
+		}
+
+		// v4.14: Custom functions
+		for (const auto& Func : CustomFunctions)
+		{
+			Hash ^= Func.ComputeHash();
+			Hash = (Hash << 15) | (Hash >> 49);
 		}
 
 		return Hash;
