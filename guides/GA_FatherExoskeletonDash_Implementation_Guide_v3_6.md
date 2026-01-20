@@ -1,5 +1,5 @@
 # GA_FatherExoskeletonDash Implementation Guide
-## Version 3.7 - Form State Tag Update (INV-1 Compliant)
+## Version 3.8 - INV-1 Compliance (Invulnerability Removed)
 
 ---
 
@@ -12,8 +12,8 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Exoskeleton (active only when attached) |
 | Input | Double-press directional keys (W/A/S/D) |
-| Version | 3.6 |
-| Engine | Unreal Engine 5.6 |
+| Version | 3.8 |
+| Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 
 ---
@@ -36,7 +36,9 @@
 
 ### **Ability Overview**
 
-GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exoskeleton form. Players activate dashes by double-tapping directional movement keys (W/A/S/D), launching themselves in the corresponding direction at high speed. During the dash, the player gains temporary invulnerability and deals damage to enemies they pass through, with knockback applied radially from the player position.
+GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exoskeleton form. Players activate dashes by double-tapping directional movement keys (W/A/S/D), launching themselves in the corresponding direction at high speed. During the dash, the player deals damage to enemies they pass through, with knockback applied radially from the player position.
+
+> **INV-1 Note:** Per GAS Audit decision INV-1, dash invulnerability was REMOVED. The dash no longer grants damage immunity - only GA_FatherSacrifice provides invulnerability (to the player for 8 seconds).
 
 ### **Key Features**
 
@@ -45,7 +47,6 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 | Double-Press Input | Detection on W/A/S/D keys for directional control |
 | Four-Direction Dash | Forward, Backward, Left, Right |
 | Dash Duration | 0.5 seconds |
-| Invulnerability | State.Invulnerable tag blocks damage via NarrativeDamageExecCalc |
 | Enemy Damage | Deals damage to enemies passed through |
 | Knockback | Radial impulse from player position |
 | Cooldown | Prevents spam activation |
@@ -59,16 +60,15 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 | 2 | Player double-taps W key | Input component detects double-press |
 | 3 | Component calls TriggerDash(Forward) | Sets PendingDashDirection variable |
 | 4 | GA_FatherExoskeletonDash activates | Checks Required Tags and Cooldown |
-| 5 | Apply GE_DashInvulnerability | Grants State.Invulnerable |
-| 6 | Set CharacterMovement speed | Boosts Max Walk Speed |
-| 7 | Launch Character | Applies velocity in dash direction |
-| 8 | Detect nearby enemies | Sphere overlap for Character.Enemy tag |
-| 9 | Apply GE_DashDamage | Deals damage per enemy |
-| 10 | Apply knockback | Radial impulse from player |
-| 11 | Wait for duration | Dash completes |
-| 12 | Restore original speed | Reset Max Walk Speed |
-| 13 | Apply GE_DashCooldown | Cooldown starts |
-| 14 | End ability | Cleanup |
+| 5 | Set CharacterMovement speed | Boosts Max Walk Speed |
+| 6 | Launch Character | Applies velocity in dash direction |
+| 7 | Detect nearby enemies | Sphere overlap for Character.Enemy tag |
+| 8 | Apply GE_DashDamage | Deals damage per enemy |
+| 9 | Apply knockback | Radial impulse from player |
+| 10 | Wait for duration | Dash completes |
+| 11 | Restore original speed | Reset Max Walk Speed |
+| 12 | Apply GE_DashCooldown | Cooldown starts |
+| 13 | End ability | Cleanup |
 
 ### **Form Restriction**
 
@@ -102,7 +102,6 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 | Effect.Father.FormState.Exoskeleton | Form requirement |
 | Father.State.Attached | Attachment requirement |
 | Father.State.Recruited | Recruitment requirement |
-| State.Invulnerable | Narrative Pro damage immunity |
 | Character.Enemy | Enemy identification |
 | Cooldown.Father.Exoskeleton.Dash | Cooldown tracking |
 
@@ -125,37 +124,15 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 | Effect.Father.FormState.Exoskeleton | Form requirement (Activation Required) |
 | Father.State.Attached | Attachment requirement (Activation Required) |
 | Father.State.Recruited | Recruitment requirement (Activation Required) |
-| State.Invulnerable | Narrative Pro damage immunity |
 | Character.Enemy | Enemy identification for damage detection |
 
 ---
 
 ## **PHASE 2: GAMEPLAY EFFECTS CREATION**
 
-### **1) Create GE_DashInvulnerability**
+> **INV-1 Note:** GE_DashInvulnerability was REMOVED per GAS Audit decision INV-1. Dash no longer grants damage immunity.
 
-#### 1.1) Create GameplayEffect Blueprint
-   - 1.1.1) Right-click in Content Browser -> Blueprint Class -> GameplayEffect
-   - 1.1.2) Name: `GE_DashInvulnerability`
-   - 1.1.3) Save in: `/Content/FatherCompanion/Abilities/ExoskeletonDash/Effects/`
-
-#### 1.2) Configure GE_DashInvulnerability Properties
-
-| Property | Value |
-|----------|-------|
-| Duration Policy | Has Duration |
-| Magnitude Calculation Type | Scalable Float |
-| Scalable Float Value | 0.5 |
-
-#### 1.3) Configure GE_DashInvulnerability Components
-
-| Component | Configuration |
-|-----------|---------------|
-| Grant Tags to Target Actor | State.Invulnerable |
-
-#### 1.4) Compile and Save
-
-### **2) Create GE_DashDamage**
+### **1) Create GE_DashDamage**
 
 #### 2.1) Create GameplayEffect Blueprint
    - 2.1.1) Right-click in Content Browser -> Blueprint Class -> GameplayEffect

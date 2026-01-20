@@ -117,6 +117,10 @@
 #include "BehaviorTree/BTDecorator.h"
 #include "BehaviorTree/Decorators/BTDecorator_Blackboard.h"
 #include "BehaviorTree/BTService.h"
+// v4.15: BehaviorTreeEditor includes for proper graph creation
+#include "BehaviorTreeGraph.h"
+#include "BehaviorTreeGraphNode_Root.h"
+#include "EdGraphSchema_BehaviorTree.h"
 // v2.6.0: Blackboard key types for full key automation
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Bool.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
@@ -2391,19 +2395,18 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		}
 	}
 
-	// v2.3.0: Add granted tags
-	// Note: Using InheritableOwnedTagsContainer for direct GE objects as component-based tags
-	// may not serialize properly. This is deprecated but still functional for tag granting.
+	// v4.15: Add granted tags using UE5.7 component system (replaces deprecated InheritableOwnedTagsContainer)
+	// UTargetTagsGameplayEffectComponent is the UE5.3+ way to grant tags to targets
 	if (Definition.GrantedTags.Num() > 0)
 	{
+		// Build the tag container
+		FInheritedTagContainer TagContainer;
 		for (const FString& TagName : Definition.GrantedTags)
 		{
 			FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagName), false);
 			if (Tag.IsValid())
 			{
-				PRAGMA_DISABLE_DEPRECATION_WARNINGS
-				Effect->InheritableOwnedTagsContainer.AddTag(Tag);
-				PRAGMA_ENABLE_DEPRECATION_WARNINGS
+				TagContainer.AddTag(Tag);
 				LogGeneration(FString::Printf(TEXT("  Added granted tag: %s"), *TagName));
 			}
 			else
@@ -2411,6 +2414,11 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 				LogGeneration(FString::Printf(TEXT("  WARNING: Tag '%s' not found in GameplayTags"), *TagName));
 			}
 		}
+
+		// Get or create the TargetTags component and apply tags
+		UTargetTagsGameplayEffectComponent& TagsComponent = Effect->FindOrAddComponent<UTargetTagsGameplayEffectComponent>();
+		TagsComponent.SetAndApplyTargetTagChanges(TagContainer);
+		LogGeneration(FString::Printf(TEXT("  Applied %d tags via UTargetTagsGameplayEffectComponent"), Definition.GrantedTags.Num()));
 	}
 
 	// v4.14: Removed redundant compile - compile is done BEFORE setting CDO properties now
@@ -4218,6 +4226,15 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 UBlackboardData* FBlackboardGenerator::FindGeneratedBlackboard(const FString& BlackboardName)
 {
 	UBlackboardData** Found = GeneratedBlackboardsCache.Find(BlackboardName);
+	if (!Found)
+	{
+		// Debug: Log what's in the cache
+		LogGeneration(FString::Printf(TEXT("  [DEBUG] BB cache lookup failed for '%s'. Cache has %d entries:"), *BlackboardName, GeneratedBlackboardsCache.Num()));
+		for (const auto& Entry : GeneratedBlackboardsCache)
+		{
+			LogGeneration(FString::Printf(TEXT("    - '%s'"), *Entry.Key));
+		}
+	}
 	return Found ? *Found : nullptr;
 }
 
@@ -4316,11 +4333,18 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		if (BB)
 		{
 			BT->BlackboardAsset = BB;
-			LogGeneration(FString::Printf(TEXT("  Linked Blackboard: %s"), *Definition.BlackboardAsset));
+			LogGeneration(FString::Printf(TEXT("  Linked Blackboard: %s (actual: %s, path: %s)"),
+				*Definition.BlackboardAsset, *BB->GetName(), *BB->GetPathName()));
+			// v4.15: Verify the assignment worked
+			if (BT->BlackboardAsset != BB)
+			{
+				LogGeneration(TEXT("  [ERROR] BlackboardAsset assignment failed!"));
+			}
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Blackboard not found: %s"), *Definition.BlackboardAsset));
+			LogGeneration(FString::Printf(TEXT("  [WARNING] Blackboard not found: %s - session cache has %d entries"),
+				*Definition.BlackboardAsset, FBlackboardGenerator::GetCacheSize()));
 		}
 	}
 
@@ -4848,15 +4872,74 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		}
 	}
 
+	// ============================================================================
+	// v4.15: Create the UBehaviorTreeGraph (editor graph) for proper editor display
+	// Without this, the editor creates the graph on load but nodes show errors
+	// ============================================================================
+	{
+		// Create the editor graph using the proper schema
+		const FName GraphName = TEXT("BehaviorTreeGraph");
+		UClass* GraphClass = UBehaviorTreeGraph::StaticClass();
+		UClass* SchemaClass = UEdGraphSchema_BehaviorTree::StaticClass();
+
+		UBehaviorTreeGraph* BTGraph = CastChecked<UBehaviorTreeGraph>(FBlueprintEditorUtils::CreateNewGraph(
+			BT, GraphName, GraphClass, SchemaClass));
+
+		if (BTGraph)
+		{
+			BT->BTGraph = BTGraph;
+
+			// Create default nodes (creates the root graph node)
+			const UEdGraphSchema* Schema = BTGraph->GetSchema();
+			if (Schema)
+			{
+				Schema->CreateDefaultNodesForGraph(*BTGraph);
+			}
+
+			// Initialize the graph - this calls SpawnMissingNodes() which creates
+			// editor graph nodes from our runtime node structure
+			BTGraph->OnCreated();
+
+			// Update the graph to sync runtime and editor structures
+			BTGraph->UpdateAsset();
+
+			LogGeneration(TEXT("  Created UBehaviorTreeGraph with editor nodes"));
+		}
+		else
+		{
+			LogGeneration(TEXT("  [WARNING] Failed to create UBehaviorTreeGraph"));
+		}
+	}
+
 	// Mark dirty and register
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(BT);
+
+	// v4.15: Log blackboard state before save
+	if (BT->BlackboardAsset)
+	{
+		LogGeneration(FString::Printf(TEXT("  Pre-save BB check: %s"), *BT->BlackboardAsset->GetName()));
+	}
+	else
+	{
+		LogGeneration(TEXT("  Pre-save BB check: NULL"));
+	}
 
 	// Save package
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, BT, *PackageFileName, SaveArgs);
+
+	// v4.15: Log blackboard state after save
+	if (BT->BlackboardAsset)
+	{
+		LogGeneration(FString::Printf(TEXT("  Post-save BB check: %s"), *BT->BlackboardAsset->GetName()));
+	}
+	else
+	{
+		LogGeneration(TEXT("  Post-save BB check: NULL"));
+	}
 
 	LogGeneration(FString::Printf(TEXT("Created Behavior Tree: %s"), *Definition.Name));
 

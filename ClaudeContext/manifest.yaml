@@ -5496,6 +5496,12 @@ equippable_items:
     display_name: Father Rifle
     description: Transform your father companion into a bio-organic rifle. Fires high-energy projectiles with precision accuracy.
     equipment_slot: Narrative.Equipment.Slot.Weapon_Back
+    # v4.15: Weapon properties
+    weapon_hand: TwoHanded
+    attack_damage: 10.0
+    clip_size: 30
+    allow_manual_reload: true
+    bot_attack_range: 2000.0
 
   - name: EI_FatherSwordWeapon
     folder: FatherCompanion/Weapons

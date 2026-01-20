@@ -383,6 +383,7 @@ public:
 	static UBlackboardData* FindGeneratedBlackboard(const FString& BlackboardName);
 	static void RegisterGeneratedBlackboard(const FString& BlackboardName, UBlackboardData* Blackboard);
 	static void ClearGeneratedBlackboardsCache();
+	static int32 GetCacheSize() { return GeneratedBlackboardsCache.Num(); }
 
 private:
 	static TMap<FString, UBlackboardData*> GeneratedBlackboardsCache;

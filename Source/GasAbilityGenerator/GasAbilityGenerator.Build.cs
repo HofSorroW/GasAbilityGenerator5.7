@@ -46,6 +46,7 @@ public class GasAbilityGenerator : ModuleRules
 			"UMGEditor",
 
 			// Behavior tree generation
+			"AIGraph",
 			"BehaviorTreeEditor",
 
 			// Material generation

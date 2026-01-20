@@ -47,8 +47,8 @@ Any party with access to this document acknowledges the intellectual property ri
 
 | Field | Value |
 |-------|-------|
-| Version | 2.0 |
-| Engine | Unreal Engine 5.6 |
+| Version | 2.1 |
+| Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only |
 | Multiplayer | Compatible |
@@ -251,7 +251,7 @@ The Father Companion is a mechanical/energy hybrid entity that bonds with the pl
 | Attack Rating Bonus | +10 AttackRating |
 | Dash Distance | 800 units |
 | Dash Cooldown | 3 seconds |
-| Dash I-Frames | Yes (brief invulnerability) |
+| Dash I-Frames | No (removed per GAS Audit INV-1) |
 
 #### 2.3.4) Abilities
 
@@ -805,26 +805,24 @@ Narrative.Input.Father.Ability3      (E)
 | 2 | GAS checks Activation Required/Blocked Tags | Instant |
 | 3 | If blocked: nothing happens, no cooldown | - |
 | 4 | If allowed: New form ability activates | - |
-| 5 | Add Father.State.Transitioning tag | - |
-| 6 | Apply GE_Invulnerable to father | - |
-| 7 | Cancel Abilities With Tag cancels old form | - |
-| 8 | Old form EndAbility restores stats (instant) | - |
-| 9 | Spawn Niagara transition VFX | - |
-| 10 | Wait for VFX duration | 5s |
-| 11 | Reposition father to new socket/location | - |
-| 12 | Apply new form stat effects | - |
-| 13 | Set CurrentForm variable | - |
-| 14 | Remove Father.State.Transitioning tag | - |
-| 15 | Remove GE_Invulnerable from father | - |
-| 16 | Apply Cooldown.Father.FormChange (15s) | - |
-| 17 | End ability (or stay active for Symbiote) | - |
+| 5 | Add Father.State.Transitioning tag (via AddLooseGameplayTag) | - |
+| 6 | Cancel Abilities With Tag cancels old form | - |
+| 7 | Old form EndAbility restores stats (instant) | - |
+| 8 | Spawn Niagara transition VFX | - |
+| 9 | Wait for VFX duration | 5s |
+| 10 | Reposition father to new socket/location | - |
+| 11 | Apply new form stat effects | - |
+| 12 | Set CurrentForm variable | - |
+| 13 | Remove Father.State.Transitioning tag (via RemoveLooseGameplayTag) | - |
+| 14 | Apply Cooldown.Father.FormChange (15s) | - |
+| 15 | End ability (or stay active for Symbiote) | - |
 
 #### 10.6.2) Transition Parameters
 
 | Parameter | Value |
 |-----------|-------|
 | VFX Duration | 5 seconds |
-| Father Invulnerable During Transition | Yes |
+| Father Invulnerable During Transition | No (removed per GAS Audit INV-1) |
 | Player Movement During Transition | Allowed |
 | Player Combat During Transition | Allowed |
 | Cancel Transition | Not allowed |
@@ -879,6 +877,7 @@ Narrative.Input.Father.Ability3      (E)
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | January 2026 | **GAS Audit INV-1 Compliance:** Removed all unintended invulnerability per dual-agent audit decision. Section 2.3.3: Exoskeleton Dash I-Frames changed from "Yes" to "No (removed per GAS Audit INV-1)". Section 10.6.1: Removed GE_Invulnerable steps (old steps 6, 15), updated to use AddLooseGameplayTag/RemoveLooseGameplayTag for Father.State.Transitioning. Section 10.6.2: Father Invulnerable During Transition changed from "Yes" to "No (removed per GAS Audit INV-1)". **KEPT:** GA_FatherSacrifice 8-second PLAYER invulnerability (intentional design). |
 | 2.0 | January 2026 | Renamed from Spider to Father throughout entire document. All tags, abilities, references updated. |
 | 1.9 | January 2026 | Updated Narrative Pro version from v2.1 to v2.2. Fixed ability names: GA_ExoskeletonDash to GA_FatherExoskeletonDash, GA_ExoskeletonSprint to GA_FatherExoskeletonSprint (matching implementation guides). Fixed tag format: Father.State.* changed to Father.State.* per DefaultGameplayTags_FatherCompanion_v4_0.ini (affected Alive, Dormant, Transitioning, SymbioteLocked tags in Sections 10.6.1, 10.6.3, 10.6.4). |
 | 1.8 | January 2026 | Major compaction and corrections. Fixed Armor defense to +50 Armor (was incorrectly showing 30% reduction). Added Father.State.Recruited to Section 7.2 and 10.6.3. Fixed duplicate section numbering 2.1.5 (now 2.1.5 and 2.1.6). Standardized Symbiote post-form cooldown to 120 seconds. Removed Implementation Phases section (work in progress). Removed Future Considerations section. Removed Pending Decisions section. Added Form Change to Cooldown Summary. Simplified Visual Design Language and HUD sections. Added stat boost column to Form Overview table. |
