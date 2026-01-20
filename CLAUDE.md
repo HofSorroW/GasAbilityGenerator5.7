@@ -1005,6 +1005,7 @@ When looking for classes/enums, the plugin searches:
 
 | File | Purpose |
 |------|---------|
+| `Handoffs/Father_Companion_GAS_Audit_Locked_Decisions.md` | **v2.0** GAS lifecycle audit, EndAbility rules, severity matrix, Track A/B strategy |
 | `Handoffs/VFX_System_Reference.md` | v4.9/4.9.1 VFX automation, MIC session cache, whitelist verification |
 | `Handoffs/v4.8_Coverage_Expansion_Handoff.md` | Quest/Item Table Editors implementation guide |
 | `Handoffs/v4.7_Report_System_Reference.md` | Machine-readable report system, JSON export, structured errors |

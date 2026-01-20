@@ -1,8 +1,43 @@
 # GasAbilityGenerator TODO Tracking
 
 **Created:** 2026-01-18
-**Plugin Version:** v4.12.4
+**Updated:** 2026-01-21
+**Plugin Version:** v4.14.x
 **Status:** Consolidated tracking file for all pending tasks
+
+---
+
+## 🔴 CRITICAL - GAS Audit Blockers (Must Fix Before Build)
+
+**Source:** `Handoffs/Father_Companion_GAS_Audit_Locked_Decisions.md` v2.0
+
+| Task | Ability | Issue | Lines |
+|------|---------|-------|-------|
+| CRIT-1 | GA_FatherExoskeletonDash | Dead nodes referencing removed GE_DashInvulnerability | 3947-4036 |
+| CRIT-2 | GA_FatherSacrifice | Incomplete flow - ends at SetIsMonitoring | 4900-4989 |
+| CRIT-3 | GA_CoreLaser | No event_graph defined | 7068-7078 |
+| CRIT-4 | GA_FatherCrawler | No Event_EndAbility + ORPHAN CONNECTIONS | 1079-1083 |
+
+**Implementation Order (Track A):**
+1. GA_FatherCrawler - Remove orphan connections, add Event_EndAbility + guards
+2. GA_FatherExoskeletonDash - Remove dead invuln nodes, rewire flow
+3. GA_FatherSacrifice - Implement full sacrifice logic
+4. GA_CoreLaser - Implement or remove
+
+---
+
+## 🟡 MEDIUM - Race Condition Fixes
+
+| Ability | Issue | Notes |
+|---------|-------|-------|
+| GA_FatherArmor | Guard executes AFTER GE operations | Move guard before state changes |
+| GA_FatherExoskeleton | No post-delay guards | Add 3-layer guards |
+| GA_FatherEngineer | No post-delay guards | Add 3-layer guards |
+| GA_StealthField | Has Delay (8s), no guards | Add guards after delay |
+| GA_FatherRifle | No guards in Event_EndAbility | Add validity guards |
+| GA_FatherSword | No guards in Event_EndAbility | Add validity guards |
+
+**Reference Implementation:** GA_FatherSymbiote (lines 2348-2400) - 3-layer guard pattern
 
 ---
 

@@ -1,9 +1,11 @@
 # Father Companion GAS Audit - Locked Decisions
-## Version 1.0 - January 2026
+## Version 2.0 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from the dual-agent audit (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
-**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.13.x
+**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.14.x
+
+**v2.0 Updates:** Added EndAbility lifecycle rules, complete severity matrix, orphan connection findings, and Track A/B implementation strategy from dual-agent verification session.
 
 ---
 
@@ -70,6 +72,7 @@ No jumping directly to implementation without research validation.
 
 **Remove:**
 - GE_TransitionInvulnerability (5s during form transitions)
+- GE_DashInvulnerability (dash i-frames)
 - GE_Invulnerable
 - Narrative.State.Invulnerable from all GE_*State effects
 - State.Invulnerable tag references in Father system
@@ -80,10 +83,173 @@ No jumping directly to implementation without research validation.
 
 **Rationale:** Invulnerability was NEVER intended in the Father design - it was an oversight discovered during audit. Form transitions should be vulnerable.
 
-**Affected Files:**
-- manifest.yaml - Remove invulnerability GE applications
-- GE_ArmorState, GE_ExoskeletonState, GE_SymbioteState - Remove Narrative.State.Invulnerable from GrantedTags
-- All form ability guides - Remove invulnerability documentation
+---
+
+## ENDABILITY LIFECYCLE RULES (CANONICAL)
+
+### Rule 1 — Instant Abilities
+**Status:** LOCKED
+**Examples:** GA_FatherAttack, GA_DomeBurst, GA_ProximityStrike, GA_TurretShoot, GA_Backstab, GA_FatherElectricTrap, GA_FatherLaserShot
+
+**Requirements:**
+- ✅ Call `K2_EndAbility` at end of activation flow
+- ❌ `Event_EndAbility` NOT required
+- ❌ No delays, timers, or persistent state
+
+**Pattern:**
+```
+Event_Activate → Logic → CommitCooldown → K2_EndAbility
+```
+
+---
+
+### Rule 2 — Abilities with Delay or Timer
+**Status:** LOCKED
+**Examples:** All form abilities (GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer), GA_FatherExoskeletonDash, GA_StealthField
+
+**Requirements:**
+- ✅ MUST have `Event_EndAbility` with `bWasCancelled` check
+- ✅ MUST clean up persistent state (timers, GE handles)
+- ✅ MUST prevent post-delay execution after cancellation
+
+**How to prevent post-delay execution:**
+- **Preferred (Track B):** WaitDelay AbilityTask (auto-cancels)
+- **Temporary (Track A):** Explicit guards after Delay node
+
+**Guard Pattern (3-layer):**
+```
+After Delay:
+  → IsValid(ActorRef) → Branch
+    True → CurrentForm == ExpectedForm → Branch
+      True → HasMatchingGameplayTag(ExpectedTag) → Branch
+        True → [Execute post-delay logic]
+        False → Return (ability already ended)
+```
+
+**Violation = race condition + corrupted state**
+
+---
+
+### Rule 3 — Toggle / Persistent Abilities
+**Status:** LOCKED
+**Examples:** GA_ProtectiveDome, GA_FatherExoskeletonSprint, GA_FatherRifle, GA_FatherSword
+
+**Requirements:**
+- ❌ Do NOT call `K2_EndAbility` on activation
+- ✅ MUST have `Event_EndAbility` for cleanup
+- ✅ Stay active until cancelled externally
+
+**Pattern:**
+```
+Event_Activate → Setup state → [ability stays active]
+
+Event_EndAbility → Cleanup state (remove GE, restore values)
+```
+
+---
+
+## SEVERITY MATRIX (LOCKED)
+
+### 🔴 CRITICAL — Must Fix Before Build
+
+| Ability | Issue | Lines |
+|---------|-------|-------|
+| GA_FatherExoskeletonDash | Dead nodes referencing removed GE_DashInvulnerability (MakeInvulnSpec, ApplyInvuln) | 3947-4036 |
+| GA_FatherSacrifice | Incomplete flow - ends at SetIsMonitoring, missing invuln/dormant/EndAbility logic | 4900-4989 |
+| GA_CoreLaser | No event_graph defined | 7068-7078 |
+| GA_FatherCrawler | No Event_EndAbility + ORPHAN CONNECTIONS referencing non-existent nodes | 785-1084 |
+
+### 🟡 MEDIUM — Race Conditions
+
+| Ability | Issue | Notes |
+|---------|-------|-------|
+| GA_FatherArmor | Guard (Branch_Valid) executes AFTER GE operations | Ineffective placement |
+| GA_FatherExoskeleton | No post-delay guards | Has Event_EndAbility |
+| GA_FatherEngineer | No post-delay guards | Has Event_EndAbility |
+| GA_StealthField | Has Delay (8s), no guards | Miscategorized as toggle |
+| GA_FatherRifle | No guards in Event_EndAbility | Persistent ability |
+| GA_FatherSword | No guards in Event_EndAbility | Persistent ability |
+
+### 🟢 CORRECT — Gold Standard
+
+| Ability | Pattern | Notes |
+|---------|---------|-------|
+| GA_FatherSymbiote | 3-layer guards + Event_EndAbility + bWasCancelled | Reference implementation |
+| GA_FatherAttack | Instant (Rule 1) | No Event_EndAbility needed |
+| GA_TurretShoot | Instant (Rule 1) | No Event_EndAbility needed |
+| GA_ProximityStrike | Instant (Rule 1) | No Event_EndAbility needed |
+| GA_DomeBurst | Instant (Rule 1) | No Event_EndAbility needed |
+| GA_ProtectiveDome | Toggle (Rule 3) | Event_EndAbility for cleanup |
+| GA_FatherExoskeletonSprint | Toggle (Rule 3) | Event_EndAbility for cleanup |
+
+---
+
+## CRITICAL DEFECT DETAILS
+
+### CRIT-1: GA_FatherExoskeletonDash Dead Nodes
+**Status:** CRITICAL BLOCKER
+**Location:** manifest.yaml lines 3947-4036
+
+The ability references removed GE_DashInvulnerability via:
+- Node `MakeInvulnSpec` (line 3947)
+- Node `ApplyInvuln` (line 3953)
+- Connections at lines 4008-4011, 4034-4036
+
+**Fix Required:**
+1. Remove MakeInvulnSpec and ApplyInvuln nodes
+2. Rewire: `SetPlayerRef → LaunchCharacter → Delay → CommitCooldown → EndAbility`
+
+---
+
+### CRIT-2: GA_FatherSacrifice Incomplete Flow
+**Status:** CRITICAL BLOCKER
+**Location:** manifest.yaml lines 4900-4989
+
+Current flow ends at `SetIsMonitoring` with no actual sacrifice logic.
+
+**Missing (per design):**
+1. Apply GE_SacrificeInvulnerability to PLAYER (8 seconds)
+2. Hide Father actor
+3. Add Father.State.Dormant tag
+4. Start dormant timer
+5. Timer callback: Unhide Father, remove dormant tag
+6. Call K2_EndAbility
+
+---
+
+### CRIT-3: GA_CoreLaser No Event Graph
+**Status:** CRITICAL BLOCKER
+**Location:** manifest.yaml lines 7068-7078
+
+GA_CoreLaser has only tags definition, no event_graph section. Cannot activate.
+
+**Fix Required:** Either:
+- A) Implement minimal activation graph (instant attack pattern)
+- B) Remove from manifest if unused
+
+---
+
+### CRIT-4: GA_FatherCrawler Orphan Connections
+**Status:** CRITICAL BLOCKER (NEW in v2.0)
+**Location:** manifest.yaml lines 1079-1083
+
+Connections reference **non-existent nodes**:
+```yaml
+- from: [MakeLiteralTag_Transition, ReturnValue]
+  to: [MakeTagContainer_Transition, Tag]
+- from: [MakeTagContainer_Transition, ReturnValue]
+  to: [RemoveTransitionInvuln, WithGrantedTags]
+```
+
+Grep confirms these nodes do NOT exist anywhere in manifest:
+- `id: MakeLiteralTag_Transition` - **NO MATCHES**
+- `id: MakeTagContainer_Transition` - **NO MATCHES**
+- `id: RemoveTransitionInvuln` - **NO MATCHES**
+
+**Fix Required:**
+1. Remove orphan connections (lines 1079-1083)
+2. Add Event_EndAbility handler
+3. Add post-delay guards (following Symbiote pattern)
 
 ---
 
@@ -92,9 +258,8 @@ No jumping directly to implementation without research validation.
 ### VTF-1: Delay vs Wait Delay (AbilityTask)
 **Status:** VALIDATED
 **Sources:**
-- UE5.7 AbilityTask_WaitDelay.cpp (lines 37-49)
-- UE5.7 AbilityTask.cpp (lines 197-206)
-- UE5.7 GameplayTask.cpp (lines 53-67)
+- [UE5 Gameplay Ability Tasks Documentation](https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-ability-tasks-in-unreal-engine)
+- [GAS Documentation (tranek)](https://github.com/tranek/GASDocumentation)
 
 | Node Type | Behavior | Protection Layers |
 |-----------|----------|-------------------|
@@ -106,62 +271,43 @@ No jumping directly to implementation without research validation.
 2. **Delegate Auto-Unbinding** - UObject destruction cleans up delegates
 3. **ShouldBroadcastAbilityTaskDelegates()** - Checks `Ability->IsActive()` before firing
 
-```cpp
-// AbilityTask.cpp:197-206
-bool UAbilityTask::ShouldBroadcastAbilityTaskDelegates() const
-{
-    bool ShouldBroadcast = (Ability && Ability->IsActive());
-    return ShouldBroadcast;
-}
-```
-
-**Decision:** For abilities using timer patterns (Symbiote 30s), either:
-- A) Enhance generator to support AbilityTask nodes (preferred long-term)
-- B) Use Delay + defensive guards in callback (immediate workaround)
+**Quote from UE5 docs:**
+> "AbilityTasks... will be automatically ended on UGameplayAbility::EndAbility"
 
 ---
 
-### VTF-2: ActivationOwnedTags Auto-Removal
+### VTF-2: UK2Node_LatentAbilityCall
+**Status:** VALIDATED
+**Source:** [GAS Documentation](https://github.com/tranek/GASDocumentation)
+
+**Quote:**
+> "We have code in K2Node_LatentAbilityCall to make using these in blueprints streamlined."
+
+AbilityTask Blueprint nodes use `UK2Node_LatentAbilityCall` (in GameplayAbilitiesEditor module), not standard `UK2Node_CallFunction`.
+
+**Current Generator Limitation:**
+- Missing: GameplayAbilitiesEditor dependency
+- Cannot generate WaitDelay AbilityTask nodes
+
+---
+
+### VTF-3: ActivationOwnedTags Auto-Removal
 **Status:** VALIDATED
 **Source:** UE5.7 GameplayAbility.cpp (line 870)
 
-ActivationOwnedTags are automatically removed when EndAbility() is called:
+ActivationOwnedTags are automatically removed when EndAbility() is called.
 
-```cpp
-// GameplayAbility.cpp:870
-AbilitySystemComponent->RemoveLooseGameplayTags(ActivationOwnedTags, ...);
-```
-
-**Implication:** Tags like `Symbiote.State.Merged` (in ActivationOwnedTags) can be used as guards - if ability ended, tag is gone.
+**Implication:** Tags like `Symbiote.State.Merged` can be used as guards - if ability ended, tag is gone.
 
 ---
 
-### VTF-3: Activation Required Tags NOT Continuously Checked
+### VTF-4: Activation Required Tags NOT Continuously Checked
 **Status:** VALIDATED
-**Source:** UE5.7 GameplayAbility.cpp, Technical Reference v6.0 Section 11.11
+**Source:** UE5.7 GameplayAbility.cpp
 
-Activation Required Tags are ONLY checked at activation time. They are NOT re-checked during ability execution.
-
-**Problem:** GA_ProximityStrike has `Effect.Father.FormState.Symbiote` as Activation Required Tag. If Symbiote form ends mid-execution, GA_ProximityStrike continues running.
+Activation Required Tags are ONLY checked at activation time, NOT re-checked during execution.
 
 **Solution:** Use `Cancel Abilities with Tag` on form abilities to cascade-cancel dependent abilities.
-
----
-
-### VTF-4: K2_OnEndAbility Blueprint Event
-**Status:** VALIDATED
-**Source:** UE5.7 GameplayAbility.h (line 621)
-
-```cpp
-// GameplayAbility.h:621
-UFUNCTION(BlueprintImplementableEvent, Category = Ability, DisplayName = "OnEndAbility",
-          meta = (ScriptName = "OnEndAbility"))
-void K2_OnEndAbility(bool bWasCancelled);
-```
-
-- Blueprint-accessible via `Event OnEndAbility`
-- `bWasCancelled` parameter distinguishes normal end vs cancellation
-- Called AFTER ability cleanup (ActivationOwnedTags removed)
 
 ---
 
@@ -169,126 +315,45 @@ void K2_OnEndAbility(bool bWasCancelled);
 **Status:** VALIDATED
 **Source:** UE5.7 GameplayAbility.h (line 235)
 
-```cpp
-// GameplayAbility.h:235
-bool IsActive() const; // No UFUNCTION macro = C++ only
-```
+`IsActive()` is NOT exposed to Blueprint (no UFUNCTION macro).
 
-`IsActive()` is NOT exposed to Blueprint. Cannot use "If Ability Is Not Active" guard pattern.
-
-**Workaround:** Use ActivationOwnedTags as proxy - check `HasMatchingGameplayTag(Symbiote.State.Merged)` instead.
+**Workaround:** Use ActivationOwnedTags as proxy via `HasMatchingGameplayTag()`.
 
 ---
 
-### VTF-6: Generator AbilityTask Limitation
-**Status:** VALIDATED
-**Source:** GasAbilityGenerator Build.cs analysis
+## IMPLEMENTATION STRATEGY (LOCKED)
 
-Current generator modules:
-- Has: GameplayAbilities, GameplayTasks, BlueprintGraph, Kismet, KismetCompiler
-- Missing: GameplayTasksEditor, GameplayAbilitiesEditor
+### Track A — Immediate Manifest Fixes
+**Status:** APPROVED
+**Timeline:** Now
 
-AbilityTask nodes use `UK2Node_LatentAbilityCall` (in GameplayAbilitiesEditor module), not standard `UK2Node_CallFunction`.
+Fix all CRITICAL blockers via manifest.yaml updates:
+1. GA_FatherCrawler - Remove orphan connections, add Event_EndAbility + guards
+2. GA_FatherExoskeletonDash - Remove dead invuln nodes, rewire flow
+3. GA_FatherSacrifice - Implement full sacrifice logic
+4. GA_CoreLaser - Implement or remove
 
-**Impact:** Cannot currently generate Wait Delay AbilityTask nodes via manifest.
+Then fix MEDIUM issues:
+5. Add guards to GA_FatherArmor (move before GE ops)
+6. Add guards to GA_FatherExoskeleton, GA_FatherEngineer
+7. Add guards to GA_StealthField
+8. Add guards to GA_FatherRifle, GA_FatherSword
 
-**Options:**
-- A) Add GameplayAbilitiesEditor dependency, implement UK2Node_LatentAbilityCall support
-- B) Use standard Delay + defensive guards (immediate)
-
----
-
-## REQUIRED FIXES
-
-### FIX-1: GA_FatherSymbiote Missing Event_EndAbility
-**Status:** NEEDS IMPLEMENTATION
-**Priority:** HIGH
-
-GA_FatherSymbiote manifest does NOT have Event_EndAbility handler. If ability is cancelled (e.g., by another form's `Cancel Abilities with Tag`), cleanup doesn't run.
-
-**Required:**
-1. Add `Event_EndAbility` node to manifest event_graph
-2. Clear timer via `Clear and Invalidate Timer by Handle`
-3. Restore movement speed if stored
-4. Call GA_FatherArmor activation (return to default form)
-
-**Reference:** GA_FatherArmor guide PHASE 7 (has Event_EndAbility with proper cleanup)
+**This is defensive, not ideal.**
 
 ---
 
-### FIX-2: Timer Callback Missing Guards
-**Status:** NEEDS IMPLEMENTATION
-**Priority:** HIGH
+### Track B — Generator Enhancement (Future)
+**Status:** APPROVED FOR FUTURE
+**Timeline:** After Track A complete
 
-Current manifest (lines 2299-2316):
-```yaml
-# === TIMER EXPIRED FLOW ===
-- from: [CustomEvent_TimerExpired, Then]
-  to: [ShowFather, Exec]  # Direct execution - NO GUARDS!
-```
+Enhance GasAbilityGenerator to support AbilityTask nodes:
+1. Add GameplayAbilitiesEditor dependency
+2. Implement `UK2Node_LatentAbilityCall` node generation
+3. Add new manifest node type: `type: AbilityTaskWaitDelay`
+4. Replace all Delay nodes with WaitDelay in form abilities
 
-**Problem:** If timer fires after ability ended (edge case), callback executes without checking validity.
-
-**Required Guards (in order):**
-1. `IsValid(FatherRef)` - Father still exists
-2. `CurrentForm == Symbiote` - Still in Symbiote form (enum check)
-3. `HasMatchingGameplayTag(Symbiote.State.Merged)` - Ability still active (tag proxy)
-
-**Pattern:**
-```
-CustomEvent_TimerExpired -> IsValid(FatherRef) -> Branch
-  True -> GetCurrentForm -> Equal(Symbiote) -> Branch
-    True -> HasMatchingGameplayTag(Symbiote.State.Merged) -> Branch
-      True -> [Actual cleanup logic]
-      False -> Return (ability already ended)
-    False -> Return (form changed)
-  False -> Return (father destroyed)
-```
-
----
-
-### FIX-3: Guide Invulnerability References
-**Status:** NEEDS IMPLEMENTATION
-**Priority:** MEDIUM
-
-GA_FatherSymbiote_Implementation_Guide_v4_4.md has invulnerability references that must be removed:
-
-| Line | Content | Action |
-|------|---------|--------|
-| 32 | `GE_TransitionInvulnerability` in Dependencies | REMOVE |
-| 121 | `Narrative.State.Invulnerable` in GE_SymbioteState | REMOVE |
-| 124 | Comment about attached forms granting invulnerability | REMOVE |
-| 137 | `Granted Tags [1]` Narrative.State.Invulnerable | REMOVE |
-| 392-418 | Apply GE_Invulnerable during transition | REMOVE section |
-| 768-769 | GE_TransitionInvulnerability table entry | REMOVE |
-| 838 | GE_SymbioteState grants Narrative.State.Invulnerable | UPDATE |
-| 841 | GE_TransitionInvulnerability table entry | REMOVE |
-
-Similar cleanup needed in:
-- GA_FatherArmor_Implementation_Guide_v4_4.md
-- GA_FatherExoskeleton_Implementation_Guide_v3_10.md
-- Father_Companion_Technical_Reference_v6_0.md
-
----
-
-## SPEED/JUMP RESTORATION PATTERN
-
-### Pattern: Store-on-Activate, Restore-on-End
-**Status:** VALIDATED (Low Priority Concern)
-
-Current pattern:
-1. On activate: Store `OriginalMaxWalkSpeed = CharacterMovement.MaxWalkSpeed`
-2. Apply boost: `MaxWalkSpeed = Original * Multiplier`
-3. On end: Restore `MaxWalkSpeed = OriginalMaxWalkSpeed`
-
-**Edge Case:** If player has other speed modifier active (sprint, slow debuff) when Symbiote activates, "original" captures the MODIFIED value.
-
-**Assessment:** Low priority. In practice:
-- Sprint is typically cancelled when entering combat/ability
-- Debuffs are temporary and would expire
-- The pattern works for normal gameplay
-
-**Future Improvement (Optional):** Store baseline speed once on character spawn, not during ability activation.
+**This restores true GAS lifecycle safety.**
 
 ---
 
@@ -319,19 +384,43 @@ Current pattern:
 
 ---
 
-## TAG HIERARCHY MATCHING (VALIDATED)
+## GA_FatherSymbiote — GOLD STANDARD REFERENCE
 
-### How Tag Matching Works
-**Source:** UE5.7 GameplayTagContainer.cpp
+### 3-Layer Guard Pattern (lines 2348-2400)
 
-| Container Has | Check For | Result |
-|---------------|-----------|--------|
-| Parent.Child (child) | Parent (parent) | TRUE |
-| Parent (exact) | Parent (exact) | TRUE |
-| Parent (only) | Parent.Child (child) | FALSE |
+```yaml
+# Guard 1: Validate FatherRef
+- id: Branch_FatherValid
+  type: Branch
+  # Condition: IsValid(FatherRef)
 
-`HasMatchingGameplayTag()` expands to include parents of asset tags.
-`HasTagExact()` does NOT expand - requires exact match.
+# Guard 2: Check CurrentForm == Symbiote
+- id: Branch_FormCheck
+  type: Branch
+  # Condition: CurrentForm == E_FatherForm::Symbiote
+
+# Guard 3: Check Symbiote.State.Merged tag
+- id: Branch_MergedTag
+  type: Branch
+  # Condition: HasMatchingGameplayTag(Symbiote.State.Merged)
+```
+
+### Event_EndAbility Handler (lines 2435-2490)
+
+```yaml
+- id: Event_EndAbility
+  type: Event
+  properties:
+    event_name: K2_OnEndAbility
+
+- id: Branch_WasCancelled
+  type: Branch
+  # Condition: bWasCancelled
+  # True → Cleanup (clear timer, show Father, activate Armor)
+  # False → Normal end (already cleaned up)
+```
+
+**All form abilities should follow this pattern.**
 
 ---
 
@@ -340,6 +429,7 @@ Current pattern:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-01-20 | Initial creation from dual-agent audit session |
+| 2.0 | 2026-01-21 | Added EndAbility rules, complete severity matrix, orphan connections finding, Track A/B strategy, GA_StealthField reclassification |
 
 ---
 
