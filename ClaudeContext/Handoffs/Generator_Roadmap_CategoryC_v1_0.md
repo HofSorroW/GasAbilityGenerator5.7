@@ -1,5 +1,7 @@
 # Generator Roadmap - Category C Features
 
+> **NOTE (v4.14.1):** Some function names in examples are outdated. `BP_ApplyGameplayEffectToSelf` should be `BP_ApplyGameplayEffectToOwner` with `target_self: true`. See manifest.yaml for current patterns.
+
 **Version:** 1.0
 **Date:** January 2026
 **Status:** ROADMAP (Not Implemented)

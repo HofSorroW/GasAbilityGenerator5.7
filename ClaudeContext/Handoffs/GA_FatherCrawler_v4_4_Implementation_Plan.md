@@ -1,5 +1,7 @@
 # GA_FatherCrawler v4.4 Implementation Plan
 
+> **SUPERSEDED (v4.14.1):** Function names in this document are outdated. `BP_ApplyGameplayEffectToSelf` should be `BP_ApplyGameplayEffectToOwner` with `target_self: true`. See manifest.yaml for current implementation.
+
 ## STATUS: Ready for Execution
 
 **Date:** January 2026
