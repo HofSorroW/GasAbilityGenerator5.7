@@ -66,27 +66,21 @@ if (!DecoratorDef.Operation.IsEmpty() && DecoratorClass == UBTDecorator_Blackboa
 
 ---
 
-### H2. ActivitySchedule `Location` Field - PARSED BUT NOT USED
+### H2. ActivitySchedule `Location` Field - **RESOLVED (Documentation Fixed)**
 
-**Location:** `FActivityScheduleGenerator::Generate()`
+**Investigation Result:**
+- `UScheduledBehavior_AddNPCGoal` (Narrative Pro) has NO location property
+- `UScheduledBehavior_AddNPCGoalByClass` (our helper) only has: `GoalClass`, inherited `ScoreOverride`, `bReselect`
+- The `location:` field was **aspirational documentation**, not a real feature
 
-**Problem:**
-- CLAUDE.md documents `location:` field for schedule behaviors
-- Parser would need to parse this field
-- Generator does NOT set any location property on `UScheduledBehavior_AddNPCGoalByClass`
-
-**Manifest Example (from CLAUDE.md):**
-```yaml
-behaviors:
-  - start_time: 600
-    end_time: 1200
-    goal_class: Goal_Work
-    location: Forge        # <-- DOCUMENTED BUT NOT USED
-```
-
-**Impact:** NPCs cannot be scheduled to go to specific locations during their daily routines.
-
-**Note:** Need to verify if `UScheduledBehavior_AddNPCGoalByClass` even HAS a location property. If not, this is a documentation issue, not a code issue.
+**Resolution:**
+CLAUDE.md already fixed (lines 778-786):
+- Removed `location:` field from activity_schedules example
+- Added NOTE explaining Narrative Pro handles locations via goal-specific classes:
+  - `Goal_MoveToDestination` (GoToLocation) - walk to a point
+  - `Goal_DriveToDestination` - drive a vehicle to a point
+  - `Goal_FlyToDestination` - fly to a point
+- Solution: Create goal subclasses with preset destinations (e.g., Goal_GoToForge)
 
 ---
 
@@ -343,9 +337,9 @@ if (!DecoratorDef.Operation.IsEmpty())
 }
 ```
 
-### Priority 2: ActivitySchedule Location (H2)
+### Priority 2: ActivitySchedule Location (H2) - **RESOLVED**
 
-**Investigate:** Check if `UScheduledBehavior_AddNPCGoalByClass` has a location parameter. If yes, add parsing and generation. If no, update documentation to remove the field.
+**Resolution:** Investigated `UScheduledBehavior_AddNPCGoal` and `UScheduledBehavior_AddNPCGoalByClass` - neither has a location property. The `location:` field was aspirational documentation. CLAUDE.md already fixed to remove the field and add NOTE about goal-specific location classes.
 
 ### Priority 3: Quest State Machine (H3) - **RESOLVED**
 
@@ -363,7 +357,7 @@ After fixes are applied, verify:
 
 - [x] BT with `key_query: IsSet` generates decorator with correct KeyQuery **(RESOLVED v4.13.2)**
 - [x] BT with `notify_observer: OnResultChange` generates decorator with correct observer **(RESOLVED v4.13.2)**
-- [ ] Activity schedules with `location:` field either work or doc is updated
+- [x] Activity schedules `location:` field - doc updated to remove unsupported field **(RESOLVED)**
 - [x] Quest generator creates full state machine **(RESOLVED v4.13+)**
 
 ---
@@ -373,13 +367,14 @@ After fixes are applied, verify:
 The GasAbilityGenerator plugin has **excellent overall alignment** between manifest, parser, and generator.
 
 **Status Update (v4.13.2):**
-- ~~**3 HIGH severity**~~ → **1 HIGH severity remaining:** ActivitySchedule location
-  - ✅ BT decorator fields (H1) - **RESOLVED** in v4.13.2 (key_query alias, notify_observer, BasicOperation, NotifyObserver)
-  - ✅ Quest state machine (H3) - **RESOLVED** in v4.13+ (full AddState/AddBranch/SetQuestStartState automation)
+- ~~**3 HIGH severity**~~ → **ALL HIGH SEVERITY RESOLVED** ✅
+  - ✅ H1: BT decorator fields - **RESOLVED** in v4.13.2 (key_query alias, notify_observer, BasicOperation, NotifyObserver)
+  - ✅ H2: ActivitySchedule location - **RESOLVED** (doc fixed - field was aspirational, not a real NP feature)
+  - ✅ H3: Quest state machine - **RESOLVED** in v4.13+ (full AddState/AddBranch/SetQuestStartState automation)
 - **5 MEDIUM severity:** Mostly naming inconsistencies (some already handled as aliases)
 - **4 LOW severity:** Documentation gaps and intentional limitations
 
-**Remaining work:** ActivitySchedule location field (H2) needs investigation.
+**All HIGH severity issues resolved.** Remaining work is MEDIUM/LOW severity cleanup.
 
 ---
 
