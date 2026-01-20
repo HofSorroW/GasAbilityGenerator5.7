@@ -881,6 +881,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTag
+            class: AbilitySystemComponent
           position: [1700, 200]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
@@ -941,6 +942,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTag
+            class: AbilitySystemComponent
           position: [2700, 200]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
@@ -1184,6 +1186,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTag
+            class: AbilitySystemComponent
           position: [1900, 200]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
@@ -1244,6 +1247,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTag
+            class: AbilitySystemComponent
           position: [2900, 200]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
@@ -1658,6 +1662,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTag
+            class: AbilitySystemComponent
           position: [1600, 200]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
@@ -1718,6 +1723,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTag
+            class: AbilitySystemComponent
           position: [2600, 200]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
@@ -2154,6 +2160,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTag
+            class: AbilitySystemComponent
           position: [1700, 200]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
@@ -2214,6 +2221,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTag
+            class: AbilitySystemComponent
           position: [2700, 200]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
@@ -2318,6 +2326,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
           position: [950, 500]
         - id: MakeLiteralTag_Merged
           type: CallFunction
@@ -2707,6 +2716,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTag
+            class: AbilitySystemComponent
           position: [1600, 200]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
@@ -2767,6 +2777,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTag
+            class: AbilitySystemComponent
           position: [2600, 200]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
