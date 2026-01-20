@@ -1,7 +1,16 @@
 # Father Companion - Symbiote Ultimate Ability Implementation Guide
-## VERSION 3.5 - EquippableItem Stat Integration
+## VERSION 4.4 - Option B Form State Architecture
+## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Document Purpose**: Complete step-by-step guide for implementing the ultimate Symbiote ability for the father companion system using Narrative Pro v2.2 and Unreal Engine 5.6. This ability transforms the father into a full-body symbiote covering the player, providing massive stat boosts for 30 seconds after accumulating damage equal to the level-scaled threshold.
+**Version:** 4.4
+**Date:** January 2026
+**Engine:** Unreal Engine 5.7
+**Plugin:** Narrative Pro v2.2
+**Implementation:** Blueprint Only
+**Parent Class:** NarrativeGameplayAbility
+**Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Fix_v4.13.2.md
+
+**Document Purpose**: Complete step-by-step guide for implementing the ultimate Symbiote ability for the father companion system using Narrative Pro v2.2 and Unreal Engine 5.7. This ability transforms the father into a full-body symbiote covering the player, providing massive stat boosts for 30 seconds after accumulating damage equal to the level-scaled threshold.
 
 **System Overview**: The Symbiote ability is a powerful ultimate that requires charging through combat. The player and father together must deal damage equal to the threshold (scaled by player level via FC_UltimateThreshold curve) to charge the ability. Player damage counts 100%, father damage counts 50%. Once charged, activating the ability via Form Wheel (Z key) covers the player in a full-body father symbiote for 30 seconds, granting +50% movement speed, +30% jump height, +100 Attack Rating, infinite stamina, and a proximity aura that damages nearby enemies (40 damage per 0.5s within 350 units). During the 30-second duration, the player cannot switch forms (Z wheel locked via Father.State.SymbioteLocked tag). After duration expires, the father auto-returns to Armor form. After use, the ability enters a 120-second cooldown. Charge resets on player death.
 
@@ -18,8 +27,24 @@
 | Input | Z Key (Form Wheel) when charged |
 | Charge Component | UltimateChargeComponent |
 | Threshold Scaling | FC_UltimateThreshold (CurveFloat) |
-| Version | 3.5 |
+| Version | 4.4 |
 | Last Updated | January 2026 |
+| Dependencies | GE_SymbioteState, GE_TransitionInvulnerability, GE_FormChangeCooldown, GE_SymbioteLock |
+
+---
+
+## **AUTOMATION VS MANUAL**
+
+| Feature | Automation Status | Notes |
+|---------|-------------------|-------|
+| GE_SymbioteState definition | ✅ Auto-generated | manifest.yaml gameplay_effects section |
+| GA_FatherSymbiote blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
+| Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
+| Transition prelude nodes | ✅ Auto-generated | Remove old state GE, apply new state GE (in manifest) |
+| Merge/Hide logic | ⚠️ Manual | SetActorHiddenInGame, collision disable |
+| VFX spawning | ⚠️ Manual | GameplayCues preferred (Category C roadmap) |
+| Duration timer | ⚠️ Manual | 30s timer with EndSymbiote callback |
+| EndAbility cleanup | ⚠️ Manual | Speed restore, state reset, return to Armor |
 
 ---
 
@@ -67,21 +92,52 @@
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Symbiote | Father Symbiote ultimate ability |
-| Father.Form.Symbiote | Father is in full-body symbiote form |
-| Father.State.Merged | Father completely merged with player body |
+| Effect.Father.FormState.Symbiote | Symbiote form identity tag (granted by GE_SymbioteState) |
+| Symbiote.State.Merged | Father completely merged with player body (Activation Owned Tag) |
+| Symbiote.Charge.Ready | Ultimate charge is full, ability can activate |
 | Cooldown.Father.Symbiote | Cooldown applied after Symbiote ability ends |
-| Effect.Symbiote.StatBoost | Gameplay Effect providing Symbiote stat boosts |
+| Father.State.SymbioteLocked | Form changes blocked during 30s Symbiote duration |
 
 ### **Verify Existing Tags**
 
 | Tag Name | Purpose |
 |----------|---------|
+| Father.State.Alive | Required for activation |
 | Father.State.Recruited | Recruitment state (Activation Required) |
-| Narrative.State.IsDead | Block when dead (Activation Blocked) |
+| Father.State.Transitioning | Blocks during 5s VFX |
+| Father.State.Dormant | Blocks activation |
+
+**Note (v4.4):** `Father.Form.*` tags are **orphan tags** - no persistent GE grants them. Form identity uses `Effect.Father.FormState.*` tags granted by infinite-duration GE_*State effects. Do NOT use Father.Form.* for activation gating.
 
 ---
 
 ## **PHASE 2: CREATE GAMEPLAY EFFECTS**
+
+### **6A) Verify GE_SymbioteState Exists (Option B Form Identity)**
+
+#### 6A.1) GE_SymbioteState Purpose
+This Gameplay Effect establishes Symbiote form identity using Option B architecture:
+- **Duration Policy:** Infinite (persists until explicitly removed by next form's transition prelude)
+- **Granted Tags:** Effect.Father.FormState.Symbiote, Narrative.State.Invulnerable
+- **Asset Tag:** Effect.Father.FormState.Symbiote
+
+**Note:** Attached/merged forms (Armor, Exoskeleton, Symbiote) grant `Narrative.State.Invulnerable` via their GE_*State because father is physically merged with/attached to player and should not take damage.
+
+#### 6A.2) Verify Asset Location
+   - 6A.2.1) Navigate to: /Content/FatherCompanion/Effects/FormState/
+   - 6A.2.2) Verify GE_SymbioteState exists
+   - 6A.2.3) If missing, generate from manifest using GasAbilityGenerator
+
+#### 6A.3) GE_SymbioteState Properties
+
+| Property | Value |
+|----------|-------|
+| Duration Policy | Infinite |
+| Granted Tags [0] | Effect.Father.FormState.Symbiote |
+| Granted Tags [1] | Narrative.State.Invulnerable |
+| Asset Tag | Effect.Father.FormState.Symbiote |
+
+---
 
 ### **7) Stat Bonuses (Handled by EquippableItem)**
 
@@ -143,9 +199,11 @@ GA_FatherSymbiote does NOT need to apply stat modifiers. See Father_Companion_Sy
 |----------|------|
 | Ability Tags | Ability.Father.Symbiote |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Engineer |
-| Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Symbiote, Father.State.Dormant, Father.State.Transitioning |
-| Activation Owned Tags | Father.Form.Symbiote, Father.State.Attached |
+| Activation Required Tags | Father.State.Alive, Father.State.Recruited, Symbiote.Charge.Ready |
+| Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
+| Activation Owned Tags | Symbiote.State.Merged |
+
+**Note (v4.4):** Form identity (`Effect.Father.FormState.Symbiote`) is NOT in Activation Owned Tags. It persists via `GE_SymbioteState` (Option B architecture). Only ephemeral state tags (`Symbiote.State.Merged`) belong in Activation Owned Tags.
 
 #### 10.3) Configure Cooldown (Built-in System)
    - 10.3.1) Find: **Cooldown** section in Class Defaults
@@ -693,21 +751,27 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 |----------|------|
 | Ability Tags | Ability.Father.Symbiote |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Armor, Exoskeleton, Engineer |
-| Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Symbiote, Father.State.Dormant, Father.State.Transitioning |
+| Activation Required Tags | Father.State.Alive, Father.State.Recruited, Symbiote.Charge.Ready |
+| Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
 | Cooldown Gameplay Effect Class | GE_FormChangeCooldown |
-| Activation Owned Tags | Father.Form.Symbiote, Father.State.Attached |
+| Activation Owned Tags | Symbiote.State.Merged |
 | InputTag | Narrative.Input.Father.FormChange |
 
-### **Form State Architecture**
+**Note (v4.4):** Form identity (`Effect.Father.FormState.Symbiote`) is NOT in Activation Owned Tags. It persists via `GE_SymbioteState` (Option B architecture). Only ephemeral state tags (`Symbiote.State.Merged`) belong in Activation Owned Tags. `Father.Form.*` tags are **orphan tags**.
+
+### **Form State Architecture (Option B)**
 
 | Component | Description |
 |-----------|-------------|
-| Activation Owned Tags | Father.Form.Symbiote, Father.State.Attached (auto-granted) |
-| GE_Invulnerable | Applied during 5s transition |
+| Activation Owned Tags | `Symbiote.State.Merged` (ephemeral, auto-granted on activation) |
+| Form Identity | GE_SymbioteState grants `Effect.Father.FormState.Symbiote` (persists via infinite GE) |
+| Form Protection | GE_SymbioteState also grants `Narrative.State.Invulnerable` (merged form protection) |
+| GE_TransitionInvulnerability | Applied during 5s transition (grants `Narrative.State.Invulnerable` + `Father.State.Transitioning`) |
 | GE_FormChangeCooldown | 15s cooldown after form change |
 | GE_SymbioteLock | 30s duration lock preventing form switching |
 | Replication | Tags replicate via ReplicateActivationOwnedTags |
+| Cleanup (State Tags) | Activation Owned Tags auto-removed when ability ends |
+| Cleanup (Form Identity) | GE_SymbioteState removed by next form's transition prelude |
 
 ### **Variable Summary**
 
@@ -771,9 +835,10 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
+| GE_SymbioteState | Infinite | Form identity (Effect.Father.FormState.Symbiote + Narrative.State.Invulnerable) |
 | GE_EquipmentModifier_FatherSymbiote | Infinite (via EquippableItem) | +100 Attack, Infinite Stamina |
 | GE_SymbioteLock | 30 seconds | Grants Father.State.SymbioteLocked |
-| GE_Invulnerable | 5 seconds | Block damage during transition |
+| GE_TransitionInvulnerability | 5 seconds | Block damage during transition (grants Narrative.State.Invulnerable + Father.State.Transitioning) |
 | GE_FormChangeCooldown | 15 seconds | Shared cooldown between form changes |
 
 ### **UltimateChargeComponent Integration**
@@ -798,9 +863,11 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 
 | Effect | Target ASC | Removal Method |
 |--------|------------|----------------|
-| Form Tags | Father | Activation Owned Tags (automatic) |
+| State Tags (Symbiote.State.Merged) | Father | Activation Owned Tags (automatic) |
+| Form Identity (GE_SymbioteState) | Father | Next form's transition prelude |
 | Stat Bonuses | Player | EquippableItem HandleUnequip (automatic) |
 | GE_SymbioteLock | Father | Remove Active GE (SymbioteLockHandle) |
+| GE_TransitionInvulnerability | Father | Class-based removal (BP_RemoveGameplayEffectFromOwnerByClass) |
 
 ### **EndSymbiote Cleanup Flow**
 
@@ -836,6 +903,7 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.4 | January 2026 | **Option B Form State Architecture:** GE_SymbioteState for form identity (grants Effect.Father.FormState.Symbiote + Narrative.State.Invulnerable), transition prelude documented. Fixed Activation Owned Tags to `Symbiote.State.Merged` only (per manifest). Added `Symbiote.Charge.Ready` to Activation Required Tags. Fixed GE_Invulnerable → GE_TransitionInvulnerability. Updated to UE 5.7. Added AUTOMATION VS MANUAL table. Added orphan tag notes. |
 | 3.5 | January 2026 | EquippableItem stat integration: Removed SymbioteBoostHandle variable and all GE_SymbioteBoost removal code. Stat bonuses (Attack Rating +100, Stamina Regen infinite) now handled by BP_FatherSymbioteForm EquippableItem via GE_EquipmentModifier_FatherSymbiote. Removed Section 17.5 (Remove GE_SymbioteBoost) and Section 18.6 (Remove GE_SymbioteBoost in EndAbility). Renumbered remaining sections. Updated Quick Reference tables. Technical Reference v5.12 Section 58.8 documents this architecture. |
 | 3.4 | January 2026 | Simplified documentation: Tag configuration (Section 10), variable creation (Section 11), and GameplayEffect configuration (Sections 7-8) converted to markdown tables. |
 | 3.3 | January 2026 | Simplified PHASE 1: Replaced 6 detailed subsections with consolidated tag tables. Tags now listed in Create Required Tags and Verify Existing Tags tables. Reduced PHASE 1 from 54 lines to 18 lines. |
@@ -850,6 +918,7 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 ---
 
-**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 3.5**
+**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.4**
 
-**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.2**
+**Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
+**Architecture: Option B (GE-Based Form Identity)**

@@ -881,40 +881,78 @@ gameplay_abilities:
             function: K2_EndAbility
             target_self: true
           position: [2400, -100]
-        # TRANSITION PRELUDE (Option B) - False branch (form switch)
+        # FULL TRANSITION FLOW (Option B + VFX + Invulnerability) - False branch (form switch)
+        # v4.14: Added 5s transition with GE_TransitionInvulnerability and VFX
         - id: GetFatherASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
           position: [1500, 200]
+        # Step 1: Apply transition invulnerability (5s duration, grants Narrative.State.Invulnerable + Father.State.Transitioning)
+        - id: ApplyTransitionInvuln
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [1700, 200]
+        # Step 2: Spawn transition VFX
+        - id: GetFatherMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [1700, 350]
+        - id: SpawnTransitionVFX
+          type: CallFunction
+          properties:
+            function: SpawnSystemAttached
+            class: NiagaraFunctionLibrary
+          position: [1900, 200]
+        # Step 3: Wait 5 seconds for transition animation
+        - id: TransitionDelay
+          type: Delay
+          properties:
+            duration: 5.0
+          position: [2100, 200]
+        # Step 4: Remove prior form state (Option B prelude)
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: RemoveGameplayEffectFromOwnerWithGrantedTags
             class: AbilitySystemBlueprintLibrary
-          position: [1800, 200]
+          position: [2300, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [1700, 350]
+          position: [2200, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [1500, 350]
+          position: [2000, 350]
+        # Step 5: Apply new form state
         - id: ApplyCrawlerState
           type: CallFunction
           properties:
             function: ApplyGameplayEffectToSelf
             class: AbilitySystemBlueprintLibrary
             gameplay_effect_class: GE_CrawlerState
-          position: [2100, 200]
-        # Continue form switch flow after prelude
+          position: [2500, 200]
+        # Step 6: Remove transition invulnerability by class (NOT by tag - preserves GE_CrawlerState's tags)
+        - id: RemoveTransitionInvuln
+          type: CallFunction
+          properties:
+            function: BP_RemoveGameplayEffectFromOwnerByClass
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [2700, 200]
+        # Continue form switch flow after transition
         - id: DetachFromActor
           type: CallFunction
           properties:
@@ -961,14 +999,22 @@ gameplay_abilities:
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
           to: [EndAbility_First, Exec]
-        # Branch False path (form switch) - TRANSITION PRELUDE (Option B)
+        # Branch False path (form switch) - FULL TRANSITION FLOW (v4.14)
         - from: [Branch_First, False]
           to: [GetFatherASC, Exec]
         - from: [GetFatherASC, Exec]
+          to: [ApplyTransitionInvuln, Exec]
+        - from: [ApplyTransitionInvuln, Exec]
+          to: [SpawnTransitionVFX, Exec]
+        - from: [SpawnTransitionVFX, Exec]
+          to: [TransitionDelay, Exec]
+        - from: [TransitionDelay, Completed]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyCrawlerState, Exec]
         - from: [ApplyCrawlerState, Exec]
+          to: [RemoveTransitionInvuln, Exec]
+        - from: [RemoveTransitionInvuln, Exec]
           to: [DetachFromActor, Exec]
         - from: [DetachFromActor, Exec]
           to: [SetCurrentForm_Switch, Exec]
@@ -996,17 +1042,27 @@ gameplay_abilities:
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
           to: [Branch_First, Condition]
-        # Data flow - Transition prelude (Option B)
+        # Data flow - Full transition (v4.14)
         - from: [SetFatherRef, FatherRef]
           to: [GetFatherASC, Actor]
         - from: [GetFatherASC, ReturnValue]
+          to: [ApplyTransitionInvuln, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
           to: [RemovePriorFormState, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyCrawlerState, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemoveTransitionInvuln, AbilitySystemComponent]
+        # Data flow - VFX spawn
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherMesh, Target]
+        - from: [GetFatherMesh, Mesh]
+          to: [SpawnTransitionVFX, AttachToComponent]
+        # Data flow - Tag container for form state removal
         - from: [MakeLiteralTag_FormState, ReturnValue]
           to: [MakeTagContainer_FormState, Tag]
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
-        - from: [GetFatherASC, ReturnValue]
-          to: [ApplyCrawlerState, AbilitySystemComponent]
 
   # GA_FatherArmor - Attach to Player Chest (Option B Form Identity)
   - name: GA_FatherArmor
@@ -1053,6 +1109,9 @@ gameplay_abilities:
         type: Name
         default_value: FatherChestSocket
         instance_editable: true
+      - name: bIsFirstActivation
+        type: Bool
+        default_value: true
     event_graph:
       nodes:
         # === ACTIVATION FLOW (Row Y=0 for exec, Y=-150 for pure getters) ===
@@ -1077,39 +1136,117 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [1200, 0]
-        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        # v4.14: First activation vs form switch branch
+        - id: GetFirstActivation
+          type: VariableGet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [1400, 100]
+        - id: Branch_First
+          type: Branch
+          position: [1500, 0]
+        # === FIRST ACTIVATION PATH (Row Y=-200) - Simple setup, no VFX/delay ===
+        - id: GetFatherASC_First
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1700, -200]
+        - id: RemovePriorFormState_First
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1900, -200]
+        - id: ApplyArmorState_First
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_ArmorState
+          position: [2100, -200]
+        - id: SetFirstFalse
+          type: VariableSet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [2300, -200]
+        - id: EndAbility_First
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2500, -200]
+        # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
+        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
         - id: GetFatherASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
-          position: [1350, 0]
+          position: [1700, 200]
+        # Step 1: Apply transition invulnerability
+        - id: ApplyTransitionInvuln
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [1900, 200]
+        # Step 2: Spawn transition VFX
+        - id: GetFatherMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [1900, 350]
+        - id: SpawnTransitionVFX
+          type: CallFunction
+          properties:
+            function: SpawnSystemAttached
+            class: NiagaraFunctionLibrary
+          position: [2100, 200]
+        # Step 3: Wait 5 seconds
+        - id: TransitionDelay
+          type: Delay
+          properties:
+            duration: 5.0
+          position: [2300, 200]
+        # Step 4: Remove prior form state
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: RemoveGameplayEffectFromOwnerWithGrantedTags
             class: AbilitySystemBlueprintLibrary
-          position: [1500, 0]
+          position: [2500, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [1400, 150]
+          position: [2400, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [1200, 150]
+          position: [2200, 350]
+        # Step 5: Apply new form state
         - id: ApplyArmorState
           type: CallFunction
           properties:
             function: ApplyGameplayEffectToSelf
             class: AbilitySystemBlueprintLibrary
             gameplay_effect_class: GE_ArmorState
-          position: [1650, 0]
+          position: [2700, 200]
+        # Step 6: Remove transition invulnerability by class
+        - id: RemoveTransitionInvuln
+          type: CallFunction
+          properties:
+            function: BP_RemoveGameplayEffectFromOwnerByClass
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [2900, 200]
         # Pure nodes - below main exec flow
         - id: GetOwnerPlayer
           type: PropertyGet
@@ -1249,14 +1386,35 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
-        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [Branch_First, Exec]
+        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        - from: [Branch_First, True]
+          to: [GetFatherASC_First, Exec]
+        - from: [GetFatherASC_First, Exec]
+          to: [RemovePriorFormState_First, Exec]
+        - from: [RemovePriorFormState_First, Exec]
+          to: [ApplyArmorState_First, Exec]
+        - from: [ApplyArmorState_First, Exec]
+          to: [SetFirstFalse, Exec]
+        - from: [SetFirstFalse, Exec]
+          to: [EndAbility_First, Exec]
+        # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        - from: [Branch_First, False]
           to: [GetFatherASC, Exec]
         - from: [GetFatherASC, Exec]
+          to: [ApplyTransitionInvuln, Exec]
+        - from: [ApplyTransitionInvuln, Exec]
+          to: [SpawnTransitionVFX, Exec]
+        - from: [SpawnTransitionVFX, Exec]
+          to: [TransitionDelay, Exec]
+        - from: [TransitionDelay, Completed]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyArmorState, Exec]
         - from: [ApplyArmorState, Exec]
+          to: [RemoveTransitionInvuln, Exec]
+        - from: [RemoveTransitionInvuln, Exec]
           to: [Branch_Valid, Exec]
         - from: [Branch_Valid, then]
           to: [SetPlayerRef, Exec]
@@ -1276,7 +1434,6 @@ gameplay_abilities:
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         # Data flow - Cast output to SetFatherRef INPUT and other destinations
-        # NOTE: VariableSet only has INPUT pins, use Cast output directly for all FatherRef usages
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, AsBP_FatherCompanion]
@@ -1287,17 +1444,38 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
-        # v4.13.2: Data flow - Transition prelude (Option B)
+        # Data flow - Branch condition
+        - from: [GetFirstActivation, bIsFirstActivation]
+          to: [Branch_First, Condition]
+        # Data flow - First activation path
         - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetFatherASC, Actor]
-        - from: [GetFatherASC, ReturnValue]
-          to: [RemovePriorFormState, AbilitySystemComponent]
+          to: [GetFatherASC_First, Actor]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [RemovePriorFormState_First, AbilitySystemComponent]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [ApplyArmorState_First, AbilitySystemComponent]
         - from: [MakeLiteralTag_FormState, ReturnValue]
           to: [MakeTagContainer_FormState, Tag]
         - from: [MakeTagContainer_FormState, ReturnValue]
-          to: [RemovePriorFormState, WithGrantedTags]
+          to: [RemovePriorFormState_First, WithGrantedTags]
+        # Data flow - Form switch path (full transition)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyTransitionInvuln, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
         - from: [GetFatherASC, ReturnValue]
           to: [ApplyArmorState, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemoveTransitionInvuln, AbilitySystemComponent]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        # Data flow - VFX spawn
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherMesh, Target]
+        - from: [GetFatherMesh, Mesh]
+          to: [SpawnTransitionVFX, AttachToComponent]
         # Data flow - GetOwnerPlayer to IsValid
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [IsValid_Player, Object]
@@ -1305,7 +1483,6 @@ gameplay_abilities:
         - from: [IsValid_Player, ReturnValue]
           to: [Branch_Valid, Condition]
         # Data flow - OwnerPlayer to SetPlayerRef INPUT and other destinations
-        # NOTE: VariableSet only has INPUT pins, use GetOwnerPlayer output directly
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [GetOwnerPlayer, OwnerPlayer]
@@ -1411,6 +1588,9 @@ gameplay_abilities:
         type: Name
         default_value: FatherBackSocket
         instance_editable: true
+      - name: bIsFirstActivation
+        type: Bool
+        default_value: true
     event_graph:
       nodes:
         - id: Event_Activate
@@ -1434,39 +1614,118 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
-        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        # v4.14: First activation vs form switch branch
+        - id: GetFirstActivation
+          type: VariableGet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [1100, 100]
+        - id: Branch_First
+          type: Branch
+          position: [1200, 0]
+        # === FIRST ACTIVATION PATH (Row Y=-200) - Simple setup, no VFX/delay ===
+        - id: GetFatherASC_First
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1400, -200]
+        - id: RemovePriorFormState_First
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1600, -200]
+        - id: ApplyExoskeletonState_First
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_ExoskeletonState
+          position: [1800, -200]
+        - id: SetFirstFalse
+          type: VariableSet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [2000, -200]
+        - id: EndAbility_First
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2200, -200]
+        # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
+        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
         - id: GetFatherASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
-          position: [1050, 0]
+          position: [1400, 200]
+        # Step 1: Apply transition invulnerability
+        - id: ApplyTransitionInvuln
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [1600, 200]
+        # Step 2: Spawn transition VFX
+        - id: GetFatherMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [1600, 350]
+        - id: SpawnTransitionVFX
+          type: CallFunction
+          properties:
+            function: SpawnSystemAttached
+            class: NiagaraFunctionLibrary
+          position: [1800, 200]
+        # Step 3: Wait 5 seconds
+        - id: TransitionDelay
+          type: Delay
+          properties:
+            duration: 5.0
+          position: [2000, 200]
+        # Step 4: Remove prior form state
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: RemoveGameplayEffectFromOwnerWithGrantedTags
             class: AbilitySystemBlueprintLibrary
-          position: [1200, 0]
+          position: [2200, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [1100, 150]
+          position: [2100, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [900, 150]
+          position: [1900, 350]
+        # Step 5: Apply new form state
         - id: ApplyExoskeletonState
           type: CallFunction
           properties:
             function: ApplyGameplayEffectToSelf
             class: AbilitySystemBlueprintLibrary
             gameplay_effect_class: GE_ExoskeletonState
-          position: [1350, 0]
+          position: [2400, 200]
+        # Step 6: Remove transition invulnerability by class
+        - id: RemoveTransitionInvuln
+          type: CallFunction
+          properties:
+            function: BP_RemoveGameplayEffectFromOwnerByClass
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [2600, 200]
+        # Continue form switch flow after transition
         - id: GetOwnerPlayer
           type: PropertyGet
           properties:
@@ -1578,19 +1837,41 @@ gameplay_abilities:
             target_class: CharacterMovementComponent
           position: [1200, 400]
       connections:
+        # === ACTIVATION FLOW ===
         # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
-        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [Branch_First, Exec]
+        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        - from: [Branch_First, True]
+          to: [GetFatherASC_First, Exec]
+        - from: [GetFatherASC_First, Exec]
+          to: [RemovePriorFormState_First, Exec]
+        - from: [RemovePriorFormState_First, Exec]
+          to: [ApplyExoskeletonState_First, Exec]
+        - from: [ApplyExoskeletonState_First, Exec]
+          to: [SetFirstFalse, Exec]
+        - from: [SetFirstFalse, Exec]
+          to: [EndAbility_First, Exec]
+        # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        - from: [Branch_First, False]
           to: [GetFatherASC, Exec]
         - from: [GetFatherASC, Exec]
+          to: [ApplyTransitionInvuln, Exec]
+        - from: [ApplyTransitionInvuln, Exec]
+          to: [SpawnTransitionVFX, Exec]
+        - from: [SpawnTransitionVFX, Exec]
+          to: [TransitionDelay, Exec]
+        - from: [TransitionDelay, Completed]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyExoskeletonState, Exec]
         - from: [ApplyExoskeletonState, Exec]
+          to: [RemoveTransitionInvuln, Exec]
+        - from: [RemoveTransitionInvuln, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
           to: [SetOrigSpeed, Exec]
@@ -1604,9 +1885,10 @@ gameplay_abilities:
           to: [SetIsAttached, Exec]
         - from: [SetIsAttached, Exec]
           to: [CommitCooldown, Exec]
-        # Data flow - Cast
+        # Data flow - GetAvatarActor to Cast
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
+        # Data flow - Cast output to SetFatherRef INPUT and other destinations
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, AsBP_FatherCompanion]
@@ -1617,17 +1899,38 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
-        # v4.13.2: Data flow - Transition prelude (Option B)
+        # Data flow - Branch condition
+        - from: [GetFirstActivation, bIsFirstActivation]
+          to: [Branch_First, Condition]
+        # Data flow - First activation path
         - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetFatherASC, Actor]
-        - from: [GetFatherASC, ReturnValue]
-          to: [RemovePriorFormState, AbilitySystemComponent]
+          to: [GetFatherASC_First, Actor]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [RemovePriorFormState_First, AbilitySystemComponent]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [ApplyExoskeletonState_First, AbilitySystemComponent]
         - from: [MakeLiteralTag_FormState, ReturnValue]
           to: [MakeTagContainer_FormState, Tag]
         - from: [MakeTagContainer_FormState, ReturnValue]
-          to: [RemovePriorFormState, WithGrantedTags]
+          to: [RemovePriorFormState_First, WithGrantedTags]
+        # Data flow - Form switch path (full transition)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyTransitionInvuln, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
         - from: [GetFatherASC, ReturnValue]
           to: [ApplyExoskeletonState, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemoveTransitionInvuln, AbilitySystemComponent]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        # Data flow - VFX spawn
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherMesh, Target]
+        - from: [GetFatherMesh, Mesh]
+          to: [SpawnTransitionVFX, AttachToComponent]
         # Data flow - Player
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -1654,7 +1957,8 @@ gameplay_abilities:
           to: [AttachToComponent, Parent]
         - from: [GetBackSocket, BackSocketName]
           to: [AttachToComponent, SocketName]
-        # EndAbility flow - v2.5.5: check bWasCancelled first
+        # === END ABILITY FLOW ===
+        # v2.5.5: check bWasCancelled first
         - from: [Event_EndAbility, Then]
           to: [Branch_WasCancelled, Exec]
         - from: [Event_EndAbility, bWasCancelled]
@@ -1709,6 +2013,9 @@ gameplay_abilities:
         instance_editable: true
       - name: DurationTimerHandle
         type: TimerHandle
+      - name: bIsFirstActivation
+        type: Bool
+        default_value: true
     event_graph:
       nodes:
         - id: Event_Activate
@@ -1732,39 +2039,118 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
-        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        # v4.14: First activation vs form switch branch
+        - id: GetFirstActivation
+          type: VariableGet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [1100, 100]
+        - id: Branch_First
+          type: Branch
+          position: [1200, 0]
+        # === FIRST ACTIVATION PATH (Row Y=-200) - Simple setup, no VFX/delay ===
+        - id: GetFatherASC_First
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1400, -200]
+        - id: RemovePriorFormState_First
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1600, -200]
+        - id: ApplySymbioteState_First
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_SymbioteState
+          position: [1800, -200]
+        - id: SetFirstFalse
+          type: VariableSet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [2000, -200]
+        - id: EndAbility_First
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2200, -200]
+        # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
+        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
         - id: GetFatherASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
-          position: [1050, 0]
+          position: [1400, 200]
+        # Step 1: Apply transition invulnerability
+        - id: ApplyTransitionInvuln
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [1600, 200]
+        # Step 2: Spawn transition VFX
+        - id: GetFatherMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [1600, 350]
+        - id: SpawnTransitionVFX
+          type: CallFunction
+          properties:
+            function: SpawnSystemAttached
+            class: NiagaraFunctionLibrary
+          position: [1800, 200]
+        # Step 3: Wait 5 seconds
+        - id: TransitionDelay
+          type: Delay
+          properties:
+            duration: 5.0
+          position: [2000, 200]
+        # Step 4: Remove prior form state
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: RemoveGameplayEffectFromOwnerWithGrantedTags
             class: AbilitySystemBlueprintLibrary
-          position: [1200, 0]
+          position: [2200, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [1100, 150]
+          position: [2100, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [900, 150]
+          position: [1900, 350]
+        # Step 5: Apply new form state
         - id: ApplySymbioteState
           type: CallFunction
           properties:
             function: ApplyGameplayEffectToSelf
             class: AbilitySystemBlueprintLibrary
             gameplay_effect_class: GE_SymbioteState
-          position: [1350, 0]
+          position: [2400, 200]
+        # Step 6: Remove transition invulnerability by class
+        - id: RemoveTransitionInvuln
+          type: CallFunction
+          properties:
+            function: BP_RemoveGameplayEffectFromOwnerByClass
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [2600, 200]
+        # Continue form switch flow after transition
         - id: GetOwnerPlayer
           type: PropertyGet
           properties:
@@ -1856,19 +2242,41 @@ gameplay_abilities:
             target_self: true
           position: [1200, 400]
       connections:
+        # === ACTIVATION FLOW ===
         # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
-        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [Branch_First, Exec]
+        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        - from: [Branch_First, True]
+          to: [GetFatherASC_First, Exec]
+        - from: [GetFatherASC_First, Exec]
+          to: [RemovePriorFormState_First, Exec]
+        - from: [RemovePriorFormState_First, Exec]
+          to: [ApplySymbioteState_First, Exec]
+        - from: [ApplySymbioteState_First, Exec]
+          to: [SetFirstFalse, Exec]
+        - from: [SetFirstFalse, Exec]
+          to: [EndAbility_First, Exec]
+        # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        - from: [Branch_First, False]
           to: [GetFatherASC, Exec]
         - from: [GetFatherASC, Exec]
+          to: [ApplyTransitionInvuln, Exec]
+        - from: [ApplyTransitionInvuln, Exec]
+          to: [SpawnTransitionVFX, Exec]
+        - from: [SpawnTransitionVFX, Exec]
+          to: [TransitionDelay, Exec]
+        - from: [TransitionDelay, Completed]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplySymbioteState, Exec]
         - from: [ApplySymbioteState, Exec]
+          to: [RemoveTransitionInvuln, Exec]
+        - from: [RemoveTransitionInvuln, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
           to: [HideFather, Exec]
@@ -1882,9 +2290,10 @@ gameplay_abilities:
           to: [SetTimer, Exec]
         - from: [SetTimer, Exec]
           to: [SetTimerHandle, Exec]
-        # Data flow - Cast
+        # Data flow - GetAvatarActor to Cast
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
+        # Data flow - Cast output to SetFatherRef INPUT and other destinations
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, AsBP_FatherCompanion]
@@ -1897,17 +2306,38 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
-        # v4.13.2: Data flow - Transition prelude (Option B)
+        # Data flow - Branch condition
+        - from: [GetFirstActivation, bIsFirstActivation]
+          to: [Branch_First, Condition]
+        # Data flow - First activation path
         - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetFatherASC, Actor]
-        - from: [GetFatherASC, ReturnValue]
-          to: [RemovePriorFormState, AbilitySystemComponent]
+          to: [GetFatherASC_First, Actor]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [RemovePriorFormState_First, AbilitySystemComponent]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [ApplySymbioteState_First, AbilitySystemComponent]
         - from: [MakeLiteralTag_FormState, ReturnValue]
           to: [MakeTagContainer_FormState, Tag]
         - from: [MakeTagContainer_FormState, ReturnValue]
-          to: [RemovePriorFormState, WithGrantedTags]
+          to: [RemovePriorFormState_First, WithGrantedTags]
+        # Data flow - Form switch path (full transition)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyTransitionInvuln, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
         - from: [GetFatherASC, ReturnValue]
           to: [ApplySymbioteState, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemoveTransitionInvuln, AbilitySystemComponent]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        # Data flow - VFX spawn
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherMesh, Target]
+        - from: [GetFatherMesh, Mesh]
+          to: [SpawnTransitionVFX, AttachToComponent]
         # Data flow - Player
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -1916,7 +2346,7 @@ gameplay_abilities:
           to: [SetTimer, Time]
         - from: [SetTimer, ReturnValue]
           to: [SetTimerHandle, DurationTimerHandle]
-        # Timer expired flow
+        # === TIMER EXPIRED FLOW ===
         - from: [CustomEvent_TimerExpired, Then]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
@@ -1966,6 +2396,9 @@ gameplay_abilities:
         class: BP_FatherCompanion
       - name: DeployLocation
         type: Vector
+      - name: bIsFirstActivation
+        type: Bool
+        default_value: true
     event_graph:
       nodes:
         - id: Event_Activate
@@ -1989,39 +2422,118 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
-        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        # v4.14: First activation vs form switch branch
+        - id: GetFirstActivation
+          type: VariableGet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [1100, 100]
+        - id: Branch_First
+          type: Branch
+          position: [1200, 0]
+        # === FIRST ACTIVATION PATH (Row Y=-200) - Simple setup, no VFX/delay ===
+        - id: GetFatherASC_First
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1400, -200]
+        - id: RemovePriorFormState_First
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1600, -200]
+        - id: ApplyEngineerState_First
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_EngineerState
+          position: [1800, -200]
+        - id: SetFirstFalse
+          type: VariableSet
+          properties:
+            variable_name: bIsFirstActivation
+          position: [2000, -200]
+        - id: EndAbility_First
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [2200, -200]
+        # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
+        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
         - id: GetFatherASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
-          position: [1050, 0]
+          position: [1400, 200]
+        # Step 1: Apply transition invulnerability
+        - id: ApplyTransitionInvuln
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [1600, 200]
+        # Step 2: Spawn transition VFX
+        - id: GetFatherMesh
+          type: PropertyGet
+          properties:
+            property_name: Mesh
+            target_class: Character
+          position: [1600, 350]
+        - id: SpawnTransitionVFX
+          type: CallFunction
+          properties:
+            function: SpawnSystemAttached
+            class: NiagaraFunctionLibrary
+          position: [1800, 200]
+        # Step 3: Wait 5 seconds
+        - id: TransitionDelay
+          type: Delay
+          properties:
+            duration: 5.0
+          position: [2000, 200]
+        # Step 4: Remove prior form state
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: RemoveGameplayEffectFromOwnerWithGrantedTags
             class: AbilitySystemBlueprintLibrary
-          position: [1200, 0]
+          position: [2200, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [1100, 150]
+          position: [2100, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [900, 150]
+          position: [1900, 350]
+        # Step 5: Apply new form state
         - id: ApplyEngineerState
           type: CallFunction
           properties:
             function: ApplyGameplayEffectToSelf
             class: AbilitySystemBlueprintLibrary
             gameplay_effect_class: GE_EngineerState
-          position: [1350, 0]
+          position: [2400, 200]
+        # Step 6: Remove transition invulnerability by class
+        - id: RemoveTransitionInvuln
+          type: CallFunction
+          properties:
+            function: BP_RemoveGameplayEffectFromOwnerByClass
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_TransitionInvulnerability
+          position: [2600, 200]
+        # Continue form switch flow after transition
         - id: GetFatherLocation
           type: CallFunction
           properties:
@@ -2087,14 +2599,35 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
-        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [Branch_First, Exec]
+        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        - from: [Branch_First, True]
+          to: [GetFatherASC_First, Exec]
+        - from: [GetFatherASC_First, Exec]
+          to: [RemovePriorFormState_First, Exec]
+        - from: [RemovePriorFormState_First, Exec]
+          to: [ApplyEngineerState_First, Exec]
+        - from: [ApplyEngineerState_First, Exec]
+          to: [SetFirstFalse, Exec]
+        - from: [SetFirstFalse, Exec]
+          to: [EndAbility_First, Exec]
+        # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        - from: [Branch_First, False]
           to: [GetFatherASC, Exec]
         - from: [GetFatherASC, Exec]
+          to: [ApplyTransitionInvuln, Exec]
+        - from: [ApplyTransitionInvuln, Exec]
+          to: [SpawnTransitionVFX, Exec]
+        - from: [SpawnTransitionVFX, Exec]
+          to: [TransitionDelay, Exec]
+        - from: [TransitionDelay, Completed]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyEngineerState, Exec]
         - from: [ApplyEngineerState, Exec]
+          to: [RemoveTransitionInvuln, Exec]
+        - from: [RemoveTransitionInvuln, Exec]
           to: [GetFatherLocation, Exec]
         - from: [GetFatherLocation, Exec]
           to: [SetDeployLocation, Exec]
@@ -2104,9 +2637,10 @@ gameplay_abilities:
           to: [SetIsAttached, Exec]
         - from: [SetIsAttached, Exec]
           to: [CommitCooldown, Exec]
-        # Data flow - Cast
+        # Data flow - GetAvatarActor to Cast
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
+        # Data flow - Cast output to SetFatherRef INPUT and other destinations
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, AsBP_FatherCompanion]
@@ -2115,17 +2649,38 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
-        # v4.13.2: Data flow - Transition prelude (Option B)
+        # Data flow - Branch condition
+        - from: [GetFirstActivation, bIsFirstActivation]
+          to: [Branch_First, Condition]
+        # Data flow - First activation path
         - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetFatherASC, Actor]
-        - from: [GetFatherASC, ReturnValue]
-          to: [RemovePriorFormState, AbilitySystemComponent]
+          to: [GetFatherASC_First, Actor]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [RemovePriorFormState_First, AbilitySystemComponent]
+        - from: [GetFatherASC_First, ReturnValue]
+          to: [ApplyEngineerState_First, AbilitySystemComponent]
         - from: [MakeLiteralTag_FormState, ReturnValue]
           to: [MakeTagContainer_FormState, Tag]
         - from: [MakeTagContainer_FormState, ReturnValue]
-          to: [RemovePriorFormState, WithGrantedTags]
+          to: [RemovePriorFormState_First, WithGrantedTags]
+        # Data flow - Form switch path (full transition)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyTransitionInvuln, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
         - from: [GetFatherASC, ReturnValue]
           to: [ApplyEngineerState, AbilitySystemComponent]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemoveTransitionInvuln, AbilitySystemComponent]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        # Data flow - VFX spawn
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherMesh, Target]
+        - from: [GetFatherMesh, Mesh]
+          to: [SpawnTransitionVFX, AttachToComponent]
         # Data flow - Location
         - from: [GetFatherLocation, ReturnValue]
           to: [SetDeployLocation, DeployLocation]

@@ -1,6 +1,28 @@
 # Father Companion - GA_FatherEngineer Implementation Guide
-## VERSION 4.3 - Tag Format and Reference Updates
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## VERSION 4.4 - Option B Form State Architecture
+## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
+
+**Version:** 4.4
+**Date:** January 2026
+**Engine:** Unreal Engine 5.7
+**Plugin:** Narrative Pro v2.2
+**Implementation:** Blueprint Only
+**Parent Class:** NarrativeGameplayAbility
+**Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Fix_v4.13.2.md
+
+---
+
+## **AUTOMATION VS MANUAL**
+
+| Feature | Automation Status | Notes |
+|---------|-------------------|-------|
+| GE_EngineerState definition | ✅ Auto-generated | manifest.yaml gameplay_effects section |
+| GA_FatherEngineer blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
+| Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
+| Transition prelude nodes | ✅ Auto-generated | Remove old state GE, apply new state GE (in manifest) |
+| Deployment logic | ⚠️ Manual | Line trace, teleport, AI setup |
+| VFX spawning | ⚠️ Manual | GameplayCues preferred (Category C roadmap) |
+| EndAbility cleanup | ⚠️ Manual | State reset, turret mode removal |
 
 ---
 
@@ -13,7 +35,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Engineer (Stationary Turret) |
 | Input | T (Form Wheel) |
-| Version | 4.2 |
+| Version | 4.4 |
 | Last Updated | January 2026 |
 | Estimated Time | 2-3 hours |
 
@@ -122,6 +144,11 @@ The Engineer form transforms the father into a tactical asset. Player aims at de
    - 1.6.1) ReplicateActivationOwnedTags: Enabled
    - 1.6.2) Location: Project Settings -> Gameplay Abilities
 
+#### 1.7) GE_EngineerState Gameplay Effect Must Exist
+   - 1.7.1) Duration: Infinite
+   - 1.7.2) Grants: `Effect.Father.FormState.Engineer`
+   - 1.7.3) Form identity persists via this GE (Option B architecture)
+
 ### **2) Required Variables in BP_FatherCompanion**
 
 #### 2.1) Existing Variables (Should Already Exist)
@@ -173,9 +200,9 @@ GE_TurretMode modifies MaxHealth to 500 when deploying as turret.
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Engineer | Father in Engineer form (Activation Owned Tag) |
 | Ability.Father.Engineer | Form activation ability |
-| Father.State.Deployed | Turret deployment state (Activation Owned Tag) |
+| Effect.Father.FormState.Engineer | Form identity tag (granted by GE_EngineerState) |
+| Father.State.TurretDeployed | Turret deployment state (Activation Owned Tag) |
 | Father.State.TurretActive | Granted by GE_TurretMode effect |
 | Effect.Father.TurretMode | Asset tag for GE_TurretMode effect |
 | Cooldown.Father.Engineer | Post-recall cooldown |
@@ -185,6 +212,8 @@ GE_TurretMode modifies MaxHealth to 500 when deploying as turret.
 | Father.State.Transitioning | Blocked during 5s transition |
 | Father.State.SymbioteLocked | Blocked during 30s Symbiote |
 | Cooldown.Father.FormChange | 15s shared form cooldown |
+
+**Note (v4.4):** `Father.Form.*` tags are **orphan tags** - no persistent GE grants them. Form identity uses `Effect.Father.FormState.*` tags granted by infinite-duration GE_*State effects. Do NOT use Father.Form.* for activation gating.
 
 ---
 
@@ -259,6 +288,35 @@ This effect sets the father's MaxHealth and Health to turret values using native
    - 3.4.1) Click **Compile** button
    - 3.4.2) Click **Save** button
 
+### **3A) Create GE_EngineerState (Option B Form Identity)**
+
+This effect grants the Engineer form identity tag. Applied in the transition prelude when switching TO Engineer form.
+
+#### 3A.1) Create Gameplay Effect Asset
+   - 3A.1.1) Right-click in `/Content/FatherCompanion/Engineer/Effects/`
+   - 3A.1.2) Select **Gameplay** -> **Gameplay Effect**
+   - 3A.1.3) Name: `GE_EngineerState`
+   - 3A.1.4) Double-click to open
+
+#### 3A.2) Configure GE_EngineerState Properties
+
+| Property | Value |
+|----------|-------|
+| Duration Policy | Infinite |
+
+#### 3A.3) Configure GE_EngineerState Components
+
+| Component | Configuration |
+|-----------|---------------|
+| Grant Tags to Target Actor | Effect.Father.FormState.Engineer |
+| Tags This Effect Has (Asset Tags) | Effect.Father.FormState.Engineer |
+
+#### 3A.4) Compile and Save
+   - 3A.4.1) Click **Compile** button
+   - 3A.4.2) Click **Save** button
+
+**Note:** GE_EngineerState does NOT grant Narrative.State.Invulnerable because Engineer is a deployed (not attached) form. Only attached forms (Armor, Exoskeleton, Symbiote) grant invulnerability via their form state GE.
+
 ### **4) Create GE_EngineerCooldown**
 
 #### 4.1) Create Gameplay Effect Asset
@@ -327,9 +385,11 @@ This effect sets the father's MaxHealth and Health to turret values using native
 |----------|------|
 | Ability Tags | Ability.Father.Engineer |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Symbiote |
-| Activation Owned Tags | Father.Form.Engineer, Father.State.Deployed |
+| Activation Owned Tags | Father.State.TurretDeployed |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Engineer, Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
+| Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
+
+**Note (v4.4):** Form identity (`Effect.Father.FormState.Engineer`) is NOT in Activation Owned Tags. It persists via `GE_EngineerState` (Option B architecture). Only ephemeral state tags (`Father.State.TurretDeployed`) belong in Activation Owned Tags.
 
 ### **5) Configure Replication Settings**
 
@@ -763,113 +823,136 @@ This effect sets the father's MaxHealth and Health to turret values using native
 
 This phase handles switching TO Engineer form from another form via the T wheel. The bIsFirstActivation Branch False path routes here.
 
-### **1) Add Transitioning State Tag**
+**CRITICAL (Option B):** The transition prelude MUST:
+1. Remove ALL prior form state GEs (Single Active Form State Invariant)
+2. Apply GE_EngineerState (grants Effect.Father.FormState.Engineer)
 
-#### 1.1) Get Father ASC (Form Switch)
-   - 1.1.1) From Branch **False** execution pin (Section 2.9):
-      - 1.1.1.1) Drag outward and search: `Get Ability System Component`
-      - 1.1.1.2) Add **Get Ability System Component** node
-   - 1.1.2) Connect **FatherRef** to Target
+### **1) TRANSITION PRELUDE: Remove Prior Form State (Option B)**
 
-#### 1.2) Add Loose Gameplay Tag
-   - 1.2.1) From Get ASC execution:
-      - 1.2.1.1) Drag outward and search: `Add Loose Gameplay Tag`
-      - 1.2.1.2) Add **Add Loose Gameplay Tag** node
-   - 1.2.2) Connect ASC Return Value to Target
-   - 1.2.3) **Gameplay Tag**: `Father.State.Transitioning`
+#### 1.1) Get Father Ability System Component
+   - 1.1.1) From Branch **False** execution pin (Section 2.9)
+   - 1.1.2) Drag from **FatherRef** (or **As BP Father Companion**)
+   - 1.1.3) Search: `Get Ability System Component`
+   - 1.1.4) Add node
 
-### **2) Apply Invulnerability**
+#### 1.2) Remove All Prior Form State GEs
+   - 1.2.1) Drag from **Get Ability System Component** execution pin
+   - 1.2.2) Search: `BP_RemoveGameplayEffectFromOwnerWithGrantedTags`
+   - 1.2.3) Add node
+   - 1.2.4) Connect Father ASC to **Target**
+   - 1.2.5) In **Tags** field, add: `Effect.Father.FormState` (parent tag removes ALL form states)
+   - 1.2.6) **Purpose:** Enforces Single Active Form State Invariant - exactly one form state at a time
 
-#### 2.1) Apply GE_Invulnerable
-   - 2.1.1) From Add Loose Gameplay Tag execution:
-      - 2.1.1.1) Drag outward and search: `Apply Gameplay Effect to Self`
-      - 2.1.1.2) Add **Apply Gameplay Effect to Self** node
-   - 2.1.2) Connect ASC Return Value to Target
-   - 2.1.3) **Gameplay Effect Class**: `GE_Invulnerable`
+### **2) TRANSITION PRELUDE: Apply New Form State (Option B)**
 
-### **3) Spawn Transition VFX**
+#### 2.1) Apply GE_EngineerState
+   - 2.1.1) Drag from **BP_RemoveGameplayEffectFromOwnerWithGrantedTags** execution pin
+   - 2.1.2) Search: `Apply Gameplay Effect to Self`
+   - 2.1.3) Add node
+   - 2.1.4) Connect Father ASC to **Target**
+   - 2.1.5) Set **Gameplay Effect Class**: `GE_EngineerState`
+   - 2.1.6) **Result:** Father now has Effect.Father.FormState.Engineer tag
 
-#### 3.1) Add Spawn System Attached
-   - 3.1.1) From Apply GE_Invulnerable execution:
-      - 3.1.1.1) Drag outward and search: `Spawn System Attached`
-      - 3.1.1.2) Add **Spawn System Attached** node
+### **3) Apply Transition Invulnerability**
 
-#### 3.2) Configure VFX
-   - 3.2.1) **System Template**: `NS_FatherFormTransition`
-   - 3.2.2) For **Attach to Component**:
-      - 3.2.2.1) From FatherRef, drag and add **Get Mesh** node
-      - 3.2.2.2) Connect Get Mesh Return Value to Attach to Component
-   - 3.2.3) **Attach Point Name**: `root`
-   - 3.2.4) **Location Type**: `Snap to Target`
+#### 3.1) Apply GE_TransitionInvulnerability
+   - 3.1.1) Drag from **Apply GE_EngineerState** execution pin
+   - 3.1.2) Search: `Apply Gameplay Effect to Self`
+   - 3.1.3) Add node
+   - 3.1.4) Connect Father ASC to **Target**
+   - 3.1.5) Set **Gameplay Effect Class**: `GE_TransitionInvulnerability`
+   - 3.1.6) **Note:** This adds Father.State.Transitioning tag (blocks form switch during VFX)
 
-### **4) Wait 5 Seconds**
+### **4) Spawn Transition VFX**
 
-#### 4.1) Add Delay Node
-   - 4.1.1) From Spawn System Attached execution:
-      - 4.1.1.1) Drag outward and search: `Delay`
-      - 4.1.1.2) Add **Delay** node
-   - 4.1.2) **Duration**: `5.0`
+#### 4.1) Add Spawn System Attached
+   - 4.1.1) From Apply GE_TransitionInvulnerability execution:
+      - 4.1.1.1) Drag outward and search: `Spawn System Attached`
+      - 4.1.1.2) Add **Spawn System Attached** node
 
-### **5) Detach Father From Previous Form**
+#### 4.2) Configure VFX
+   - 4.2.1) **System Template**: `NS_FatherFormTransition`
+   - 4.2.2) For **Attach to Component**:
+      - 4.2.2.1) From FatherRef, drag and add **Get Mesh** node
+      - 4.2.2.2) Connect Get Mesh Return Value to Attach to Component
+   - 4.2.3) **Attach Point Name**: `root`
+   - 4.2.4) **Location Type**: `Snap to Target`
 
-#### 5.1) Add Detach From Actor
-   - 5.1.1) From Delay **Completed** execution:
-      - 5.1.1.1) Drag outward and search: `Detach From Actor`
-      - 5.1.1.2) Add **Detach From Actor** node
-   - 5.1.2) Connect **FatherRef** to Target
+### **5) Wait 5 Seconds**
 
-#### 5.2) Configure Detach Rules
-   - 5.2.1) **Location Rule**: `Keep World`
-   - 5.2.2) **Rotation Rule**: `Keep World`
-   - 5.2.3) **Scale Rule**: `Keep World`
+#### 5.1) Add Delay Node
+   - 5.1.1) From Spawn System Attached execution:
+      - 5.1.1.1) Drag outward and search: `Delay`
+      - 5.1.1.2) Add **Delay** node
+   - 5.1.2) **Duration**: `5.0`
 
-### **6) Execute Deployment Logic**
+### **6) Detach Father From Previous Form**
 
-#### 6.1) Merge to Main Deployment Flow
-   - 6.1.1) From Detach From Actor execution:
-   - 6.1.2) Connect to same deployment flow as initial spawn (Section 4 onward)
-   - 6.1.3) Calculate deploy position, move father, apply turret mode, etc.
-   - 6.1.4) Deployment logic is identical for both initial spawn and form switch
+#### 6.1) Add Detach From Actor
+   - 6.1.1) From Delay **Completed** execution:
+      - 6.1.1.1) Drag outward and search: `Detach From Actor`
+      - 6.1.1.2) Add **Detach From Actor** node
+   - 6.1.2) Connect **FatherRef** to Target
 
-### **7) Remove Transitioning State**
+#### 6.2) Configure Detach Rules
+   - 6.2.1) **Location Rule**: `Keep World`
+   - 6.2.2) **Rotation Rule**: `Keep World`
+   - 6.2.3) **Scale Rule**: `Keep World`
 
-#### 7.1) Remove Loose Gameplay Tag
-   - 7.1.1) After Set Is Deployed execution (before End Ability):
-      - 7.1.1.1) Drag outward and search: `Remove Loose Gameplay Tag`
-      - 7.1.1.2) Add **Remove Loose Gameplay Tag** node
-   - 7.1.2) Connect ASC to Target
-   - 7.1.3) **Gameplay Tag**: `Father.State.Transitioning`
+### **7) Execute Deployment Logic**
 
-### **8) Remove Invulnerability**
+#### 7.1) Merge to Main Deployment Flow
+   - 7.1.1) From Detach From Actor execution:
+   - 7.1.2) Connect to same deployment flow as initial spawn (Section 4 onward)
+   - 7.1.3) Calculate deploy position, move father, apply turret mode, etc.
+   - 7.1.4) Deployment logic is identical for both initial spawn and form switch
 
-#### 8.1) Remove Active Gameplay Effects with Granted Tags
-   - 8.1.1) From Remove Loose Gameplay Tag execution:
-      - 8.1.1.1) Drag outward and search: `Remove Active Gameplay Effects with Granted Tags`
-      - 8.1.1.2) Add **Remove Active Gameplay Effects with Granted Tags** node
+### **8) Remove Transitioning State**
+
+#### 8.1) Remove Loose Gameplay Tag
+   - 8.1.1) After Set Is Deployed execution (before End Ability):
+      - 8.1.1.1) Drag outward and search: `Remove Loose Gameplay Tag`
+      - 8.1.1.2) Add **Remove Loose Gameplay Tag** node
    - 8.1.2) Connect ASC to Target
-   - 8.1.3) **Tags**: `State.Invulnerable`
+   - 8.1.3) **Gameplay Tag**: `Father.State.Transitioning`
 
-### **9) Apply Form Cooldown**
+### **9) Remove Transition Invulnerability**
 
-#### 9.1) Commit Ability Cooldown
-   - 9.1.1) From Remove Invulnerability execution:
-      - 9.1.1.1) Drag outward and search: `Commit Ability Cooldown`
-      - 9.1.1.2) Select **Commit Ability Cooldown** node
-   - 9.1.2) No parameters needed - uses CooldownGameplayEffectClass automatically
+> **CRITICAL (v4.13.2):** DO NOT remove by `Narrative.State.Invulnerable` tag!
+> GE_ArmorState, GE_ExoskeletonState, GE_SymbioteState all grant this tag.
+> Tag-based removal would break form identity when switching FROM those forms.
+> Always remove by specific class (GE_TransitionInvulnerability) instead.
 
-### **10) End Ability (Form Switch)**
+#### 9.1) Remove GE_TransitionInvulnerability by Class
+   - 9.1.1) From Remove Loose Gameplay Tag execution:
+      - 9.1.1.1) Drag outward and search: `Remove Gameplay Effect from Owner`
+      - 9.1.1.2) Add **BP Remove Gameplay Effect from Owner by Class** node
+   - 9.1.2) Connect Father ASC to **Target**
+   - 9.1.3) Set **Gameplay Effect Class**: `GE_TransitionInvulnerability`
 
-#### 10.1) Call End Ability
-   - 10.1.1) From Commit Ability Cooldown execution:
-      - 10.1.1.1) Drag outward and search: `End Ability`
-      - 10.1.1.2) Add **End Ability** node
-   - 10.1.2) **Was Cancelled**: Uncheck (false)
+   > **Alternative:** You can skip this step entirely - GE_TransitionInvulnerability has 5s duration and expires naturally.
+
+### **10) Apply Form Cooldown**
+
+#### 10.1) Commit Ability Cooldown
+   - 10.1.1) From Remove Invulnerability execution:
+      - 10.1.1.1) Drag outward and search: `Commit Ability Cooldown`
+      - 10.1.1.2) Select **Commit Ability Cooldown** node
+   - 10.1.2) No parameters needed - uses CooldownGameplayEffectClass automatically
+
+### **11) End Ability (Form Switch)**
+
+#### 11.1) Call End Ability
+   - 11.1.1) From Commit Ability Cooldown execution:
+      - 11.1.1.1) Drag outward and search: `End Ability`
+      - 11.1.1.2) Add **End Ability** node
+   - 11.1.2) **Was Cancelled**: Uncheck (false)
 
 ---
 
 ## **PHASE 5B: ENDABILITY CLEANUP**
 
-Form tags (Father.Form.Engineer, Father.State.Deployed) are automatically removed when ability ends via Activation Owned Tags. This section handles GE_TurretMode cleanup.
+State tag (`Father.State.TurretDeployed`) is automatically removed when ability ends via Activation Owned Tags. Form identity tag (`Effect.Father.FormState.Engineer`) persists via GE_EngineerState until the next form's transition prelude removes it. This section handles GE_TurretMode cleanup.
 
 ### **1) Add Event OnEndAbility**
 
@@ -1108,6 +1191,7 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.4 | January 2026 | **Option B Form State Architecture:** Complete rewrite for GE-based form identity. Added GE_EngineerState (Infinite, grants Effect.Father.FormState.Engineer). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState parent tag), then apply GE_EngineerState. Updated Activation Owned Tags from `Father.Form.Engineer, Father.State.Deployed` to `Father.State.TurretDeployed` (removed orphan tags). Fixed invulnerability removal from tag-based (State.Invulnerable) to class-based (GE_TransitionInvulnerability) per v4.13.2 handoff. Fixed GE_Invulnerable references to GE_TransitionInvulnerability. Updated UE version to 5.7. Added Automation vs Manual table. Added Option B architecture section to Quick Reference. See Form_State_Architecture_Fix_v4.13.2.md for architecture rationale. |
 | 4.3 | January 2026 | Fixed tag format: State.Father.Alive changed to Father.State.Alive per DefaultGameplayTags. Updated Related Documents to Technical Reference v5.12, Design Document v1.8, and Setup Guide v2.3. Fixed curly quotes to straight ASCII. |
 | 4.2 | January 2026 | Simplified documentation: Variable creation (PHASE 4 Section 1) converted to markdown table - reduced from 76 lines to 14 lines. |
 | 4.1 | January 2026 | Simplified configuration sections: Tag Config (Class Defaults) reduced from 51 to 8 lines. GE configs (TurretMode, TurretHealth, EngineerCooldown) reduced from 98 to 35 lines using table format. Total reduction: ~100 lines. |
@@ -1241,23 +1325,30 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 |----------|------|
 | Ability Tags | `Ability.Father.Engineer` |
 | Cancel Abilities with Tag | `Ability.Father.Crawler`, `Ability.Father.Armor`, `Ability.Father.Exoskeleton`, `Ability.Father.Symbiote` |
-| Activation Owned Tags | `Father.Form.Engineer`, `Father.State.Deployed` |
+| Activation Owned Tags | `Father.State.TurretDeployed` |
 | Activation Required | `Father.State.Alive`, `Father.State.Recruited` |
-| Activation Blocked | `Father.Form.Engineer`, `Father.State.Dormant`, `Father.State.Transitioning`, `Father.State.SymbioteLocked` |
+| Activation Blocked | `Father.State.Dormant`, `Father.State.Transitioning`, `Father.State.SymbioteLocked`, `Cooldown.Father.FormChange` |
 | Cooldown Gameplay Effect Class | `GE_FormChangeCooldown` |
 | InputTag | `Narrative.Input.Father.FormChange` |
 
-### **1.1 Form State Tags (Activation Owned Tags)**
+### **1.1 Form State Architecture (Option B)**
 
-| Tag | Purpose |
-|-----|---------|
-| `Father.Form.Engineer` | Form identification (auto-granted on activation) |
-| `Father.State.Deployed` | Deployment state (auto-granted on activation) |
+| Component | Description |
+|-----------|-------------|
+| Activation Owned Tags | `Father.State.TurretDeployed` (ephemeral, auto-granted on activation) |
+| Form Identity | GE_EngineerState grants `Effect.Father.FormState.Engineer` (persists via infinite GE) |
+| GE_TransitionInvulnerability | Applied during 5s transition (grants `Narrative.State.Invulnerable` + `Father.State.Transitioning`) |
+| GE_FormChangeCooldown | 15s cooldown after form change |
+| Mutual Exclusivity | Cancel Abilities With Tag cancels other form abilities |
+| Transition Prelude | Remove `Effect.Father.FormState.*` → Apply `GE_EngineerState` |
+
+**Note (v4.4):** `Father.Form.*` tags are **orphan tags** - no persistent GE grants them. Form identity uses `Effect.Father.FormState.*` tags. Do NOT use Father.Form.* for activation gating.
 
 ### **1.2 Effect Asset Tags**
 
 | Tag | Purpose |
 |-----|---------|
+| `Effect.Father.FormState.Engineer` | Form identity (granted by GE_EngineerState) |
 | `Effect.Father.TurretMode` | Turret mode effect identifier |
 | `Cooldown.Father.Engineer` | Post-recall cooldown |
 
@@ -1279,8 +1370,9 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
+| GE_EngineerState | Infinite | Form identity (grants Effect.Father.FormState.Engineer) |
 | GE_TurretMode | Infinite | Grants turret behavior state tags |
-| GE_Invulnerable | 5 seconds | Block damage during transition |
+| GE_TransitionInvulnerability | 5 seconds | Block damage during transition (grants Narrative.State.Invulnerable + Father.State.Transitioning) |
 | GE_FormChangeCooldown | 15 seconds | Shared cooldown between form changes |
 | GE_EngineerCooldown | 5 seconds | Post-recall cooldown |
 
@@ -1335,13 +1427,16 @@ Turret health uses father's existing NarrativeAttributeSetBase attributes:
 | Replicate Input Directly | Unchecked | Use AbilityTasks instead |
 | Server Respects Remote Ability Cancellation | Unchecked | Server authoritative |
 
-### **8. Form State Architecture**
+### **8. Form State Architecture (Option B)**
 
 | Component | Description |
 |-----------|-------------|
-| **Activation Owned Tags** | Father.Form.Engineer, Father.State.Deployed (auto-granted) |
+| **Activation Owned Tags** | `Father.State.TurretDeployed` (ephemeral, auto-granted) |
+| **Form Identity** | GE_EngineerState grants `Effect.Father.FormState.Engineer` (persists via infinite GE) |
+| **Transition Prelude** | Remove `Effect.Father.FormState.*` parent tag → Apply `GE_EngineerState` |
 | **Replication** | Tags replicate via ReplicateActivationOwnedTags setting |
-| **Cleanup** | Tags auto-removed when ability ends |
+| **Cleanup (State Tags)** | Activation Owned Tags auto-removed when ability ends |
+| **Cleanup (Form Identity)** | GE_EngineerState removed by next form's transition prelude |
 
 ### **9. Related Documents**
 
@@ -1355,10 +1450,10 @@ Turret health uses father's existing NarrativeAttributeSetBase attributes:
 
 ---
 
-**END OF GA_FATHERENGINEER IMPLEMENTATION GUIDE v4.0**
+**END OF GA_FATHERENGINEER IMPLEMENTATION GUIDE v4.4**
 
 **Engineer Form - Stationary Turret Deployment**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
 
-**Blueprint-Only Implementation - Full Multiplayer Support via Activation Owned Tags**
+**Blueprint-Only Implementation - Option B Form State Architecture (GE-Based Form Identity)**

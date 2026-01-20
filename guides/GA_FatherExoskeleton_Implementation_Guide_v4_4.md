@@ -1,12 +1,14 @@
 # GA_FatherExoskeleton Implementation Guide
+## VERSION 4.4 - Option B Form State Architecture
+## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-## Father Companion with Gameplay Ability System
-
-## For Unreal Engine 5.6 + Narrative Pro Plugin v2.2
-
-**Version:** 3.10
+**Version:** 4.4
 **Date:** January 2026
-**Parent Guide:** Father Companion System Design Document v1.8
+**Engine:** Unreal Engine 5.7
+**Plugin:** Narrative Pro v2.2
+**Implementation:** Blueprint Only
+**Parent Class:** NarrativeGameplayAbility
+**Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Fix_v4.13.2.md
 
 ---
 
@@ -19,8 +21,23 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Exoskeleton (Back Attachment) |
 | Input | Narrative.Input.Father.FormChange (T key via wheel) |
-| Multiplayer | Compatible (Replicated via Activation Owned Tags) |
-| Dependencies | BP_FatherCompanion, E_FatherForm enum, GE_Invulnerable, GE_FormChangeCooldown |
+| Multiplayer | Compatible (Server Only execution, replicated state) |
+| Dependencies | BP_FatherCompanion, E_FatherForm enum, GE_ExoskeletonState, GE_TransitionInvulnerability, GE_FormChangeCooldown |
+
+---
+
+## **AUTOMATION VS MANUAL**
+
+| Feature | Automation Status | Notes |
+|---------|-------------------|-------|
+| GE_ExoskeletonState definition | ✅ Auto-generated | manifest.yaml gameplay_effects section |
+| GA_FatherExoskeleton blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
+| Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
+| Transition prelude nodes | ✅ Auto-generated | Remove old state GE, apply new state GE (in manifest) |
+| Attachment logic | ⚠️ Manual | AttachActorToComponent nodes |
+| Speed/Jump boost logic | ⚠️ Manual | CharacterMovement manipulation |
+| VFX spawning | ⚠️ Manual | GameplayCues preferred (Category C roadmap) |
+| EndAbility cleanup | ⚠️ Manual | Speed restore, state reset, ability cleanup |
 
 ---
 
@@ -30,12 +47,14 @@ This guide provides step-by-step instructions for implementing GA_FatherExoskele
 
 **Key Features:**
 - Father attaches to player's back socket (FatherBackSocket)
-- Base movement speed boost: +50% increase
-- Base jump height boost: +30% increase
+- Base movement speed boost: +25% increase (SpeedBoostMultiplier: 1.25)
+- Base jump height boost: +30% increase (JumpBoostMultiplier: 1.3)
 - Direct CharacterMovement manipulation (NO attribute-based speed modification)
-- Form tags via Activation Owned Tags (multiplayer replicated)
+- **Form identity via GE_ExoskeletonState** (Infinite-duration GE grants Effect.Father.FormState.Exoskeleton + Narrative.State.Invulnerable)
+- Ephemeral state tag (Father.State.Attached) via Activation Owned Tags
 - Mutual exclusivity with other forms via Cancel Abilities With Tag
-- 5-second transition animation with invulnerability
+- **Transition prelude removes prior form state before applying new** (Option B)
+- 5-second transition animation with GE_TransitionInvulnerability
 - 15-second form change cooldown
 - Animation integration for attachment sequence
 
@@ -79,9 +98,10 @@ This guide provides step-by-step instructions for implementing GA_FatherExoskele
 
 | Effect | Responsibility |
 |--------|----------------|
-| Activation Owned Tags | Form tags (Father.Form.Exoskeleton, Father.State.Attached) |
-| CharacterMovement | Speed boost (+50%), Jump boost (+30%) - applied directly in ability |
-| GE_Invulnerable | Block damage during 5s transition |
+| GE_ExoskeletonState | Form identity (Effect.Father.FormState.Exoskeleton) + Narrative.State.Invulnerable (attached form protection) |
+| Activation Owned Tags | Ephemeral state only (Father.State.Attached) |
+| CharacterMovement | Speed boost (+25%), Jump boost (+30%) - applied directly in ability |
+| GE_TransitionInvulnerability | Block damage during 5s transition (grants Narrative.State.Invulnerable + Father.State.Transitioning) |
 | GE_FormChangeCooldown | Apply 15s cooldown after transition |
 
 ---
@@ -94,12 +114,13 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 2. Ability System Component initialized automatically (handled by NarrativeNPCCharacter)
 3. Player character has Narrative Ability System Component
 4. Player skeletal mesh has FatherBackSocket created
-5. GE_Invulnerable created (Narrative Pro built-in or custom)
-6. GE_FormChangeCooldown created (grants Cooldown.Father.FormChange for 15s)
-7. NS_FatherFormTransition Niagara system created
-8. Gameplay Tags configured in DefaultGameplayTags.ini
-9. NPCDef_FatherCompanion configured with AC_FatherCompanion_Default
-10. ReplicateActivationOwnedTags ENABLED in Project Settings
+5. **GE_ExoskeletonState Gameplay Effect must exist** (Infinite duration, grants Effect.Father.FormState.Exoskeleton + Narrative.State.Invulnerable)
+6. GE_TransitionInvulnerability created (5s duration, grants Narrative.State.Invulnerable + Father.State.Transitioning)
+7. GE_FormChangeCooldown created (grants Cooldown.Father.FormChange for 15s)
+8. NS_FatherFormTransition Niagara system created
+9. Gameplay Tags configured in DefaultGameplayTags.ini
+10. NPCDef_FatherCompanion configured with AC_FatherCompanion_Default
+11. ReplicateActivationOwnedTags ENABLED in Project Settings
 
 ---
 
@@ -110,28 +131,30 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Tag Type | Tag | Purpose |
 |----------|-----|---------|
 | Ability Tags | Ability.Father.Exoskeleton | Identifies this ability |
-| Activation Owned | Father.Form.Exoskeleton | Form state tag |
-| Activation Owned | Father.State.Attached | Attachment state tag |
+| Activation Owned | Father.State.Attached | Ephemeral attachment state tag |
 | Activation Required | Father.State.Alive | Father must be alive |
 | Activation Required | Father.State.Recruited | Father must be recruited |
-| Activation Blocked | Father.Form.Exoskeleton | Prevents re-activation |
 | Activation Blocked | Father.State.Dormant | Blocked when dormant |
 | Activation Blocked | Father.State.Transitioning | Blocked during 5s VFX |
 | Activation Blocked | Father.State.SymbioteLocked | Blocked during Symbiote 30s |
+| Activation Blocked | Cooldown.Father.FormChange | Blocked during 15s cooldown |
 | Cooldown Gameplay Effect Class | GE_FormChangeCooldown | 15s cooldown (GAS built-in) |
 | Cancel Abilities with Tag | Ability.Father.Crawler | Cancel Crawler form |
 | Cancel Abilities with Tag | Ability.Father.Armor | Cancel Armor form |
 | Cancel Abilities with Tag | Ability.Father.Symbiote | Cancel Symbiote form |
 | Cancel Abilities with Tag | Ability.Father.Engineer | Cancel Engineer form |
 
+**Note (v4.4):** Form identity (`Effect.Father.FormState.Exoskeleton`) is NOT in Activation Owned Tags. It persists via `GE_ExoskeletonState` (Option B architecture). Only ephemeral state tags (`Father.State.Attached`) belong in Activation Owned Tags. `Father.Form.*` tags are **orphan tags** - no persistent GE grants them.
+
 ### **Variable Summary**
 
 | Variable | Type | Default | Instance Editable | Purpose |
 |----------|------|---------|-------------------|---------|
-| bIsFirstActivation | Boolean | True | No | Distinguishes spawn vs form switch |
-| OriginalMaxWalkSpeed | Float | 0.0 | No | Stores player original walk speed |
-| OriginalJumpZVelocity | Float | 0.0 | No | Stores player original jump velocity |
-| SpeedBoostMultiplier | Float | 1.5 | Yes | Walk speed multiplier (50% increase) |
+| FatherRef | Object (BP_FatherCompanion) | None | No | Cached father reference |
+| PlayerRef | Object (NarrativePlayerCharacter) | None | No | Cached player reference |
+| OriginalWalkSpeed | Float | 0.0 | Yes | Stores player original walk speed |
+| OriginalJumpZVelocity | Float | 0.0 | Yes | Stores player original jump velocity |
+| SpeedBoostMultiplier | Float | 1.25 | Yes | Walk speed multiplier (25% increase) |
 | JumpBoostMultiplier | Float | 1.3 | Yes | Jump height multiplier (30% increase) |
 | BackSocketName | Name | FatherBackSocket | Yes | Socket for back attachment |
 
@@ -206,8 +229,8 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Exoskeleton | Father Exoskeleton form ability |
-| Father.Form.Exoskeleton | Form identifier (Activation Owned Tag) |
-| Father.State.Attached | Attachment state (Activation Owned Tag) |
+| Effect.Father.FormState.Exoskeleton | Exoskeleton form identity tag (granted by GE_ExoskeletonState) |
+| Father.State.Attached | Ephemeral attachment state (Activation Owned Tag) |
 | Father.State.Alive | Required for activation |
 | Father.State.Recruited | Recruitment requirement |
 | Father.State.Dormant | Blocks activation |
@@ -219,9 +242,37 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Ability.Father.Symbiote | Cancel Abilities with Tag |
 | Ability.Father.Engineer | Cancel Abilities with Tag |
 
+**Note (v4.4):** `Father.Form.*` tags are **orphan tags** - no persistent GE grants them. Form identity uses `Effect.Father.FormState.*` tags granted by infinite-duration GE_*State effects. Do NOT use Father.Form.* for activation gating.
+
 ---
 
 # PHASE 2: GAMEPLAY ABILITY BLUEPRINT CREATION
+
+## 2A) Verify GE_ExoskeletonState Exists
+
+### 2A.1) GE_ExoskeletonState Purpose
+This Gameplay Effect establishes Exoskeleton form identity using Option B architecture:
+- **Duration Policy:** Infinite (persists until explicitly removed by next form's transition prelude)
+- **Granted Tags:** Effect.Father.FormState.Exoskeleton, Narrative.State.Invulnerable
+- **Asset Tag:** Effect.Father.FormState.Exoskeleton
+
+**Note:** Attached forms (Armor, Exoskeleton, Symbiote) grant `Narrative.State.Invulnerable` via their GE_*State because father is physically merged with/attached to player and should not take damage. Deployed forms (Crawler, Engineer) do NOT grant invulnerability.
+
+### 2A.2) Verify Asset Location
+   - 2A.2.1) Navigate to: /Content/FatherCompanion/Effects/FormState/
+   - 2A.2.2) Verify GE_ExoskeletonState exists
+   - 2A.2.3) If missing, generate from manifest using GasAbilityGenerator
+
+### 2A.3) GE_ExoskeletonState Properties
+
+| Property | Value |
+|----------|-------|
+| Duration Policy | Infinite |
+| Granted Tags [0] | Effect.Father.FormState.Exoskeleton |
+| Granted Tags [1] | Narrative.State.Invulnerable |
+| Asset Tag | Effect.Father.FormState.Exoskeleton |
+
+---
 
 ## 2) Create GA_FatherExoskeleton Ability
 
@@ -257,10 +308,12 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Exoskeleton |
-| Activation Owned Tags | Father.Form.Exoskeleton, Father.State.Attached |
+| Activation Owned Tags | Father.State.Attached |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Symbiote, Ability.Father.Engineer |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Father.Form.Exoskeleton, Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
+| Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
+
+**Note (v4.4):** Form identity (`Effect.Father.FormState.Exoskeleton`) is NOT in Activation Owned Tags. It persists via `GE_ExoskeletonState` (Option B architecture). Only ephemeral state tags (`Father.State.Attached`) belong in Activation Owned Tags.
 
 ### 3.3) Configure Instancing and Replication
 
@@ -618,7 +671,7 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 7.3.1.3) Search: Apply Gameplay Effect to Self
 7.3.1.4) Select node
 7.3.1.5) Connect ASC Return Value to Target
-7.3.1.6) Gameplay Effect Class: GE_Invulnerable
+7.3.1.6) Gameplay Effect Class: GE_TransitionInvulnerability (grants Narrative.State.Invulnerable + Father.State.Transitioning for 5s)
 
 ### 7.4) Spawn Transition VFX
 
@@ -643,10 +696,43 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 7.5.1.4) Select node
 7.5.1.5) Duration: 5.0
 
+### 7.5A) Remove Prior Form State (TRANSITION PRELUDE - Option B)
+
+**Purpose:** Before applying GE_ExoskeletonState, remove any existing form state GE. This ensures the Single Active Form State Invariant - exactly one Effect.Father.FormState.* tag at runtime.
+
+#### 7.5A.1) Add BP_RemoveGameplayEffectFromOwnerWithGrantedTags
+7.5A.1.1) From Delay Completed execution pin
+7.5A.1.2) Drag to right
+7.5A.1.3) Search: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
+7.5A.1.4) Select node
+7.5A.1.5) Connect Father ASC Return Value to Target
+7.5A.1.6) Tags: Create tag container with `Effect.Father.FormState` (parent tag - removes ANY prior form state GE)
+
+#### 7.5A.2) Create Tag Container for Parent Tag
+7.5A.2.1) Add Make Literal Gameplay Tag node
+7.5A.2.2) Tag Value: Effect.Father.FormState
+7.5A.2.3) Add Make Gameplay Tag Container From Tag node
+7.5A.2.4) Connect Make Literal Tag output to input
+7.5A.2.5) Connect container output to BP_RemoveGameplayEffectFromOwnerWithGrantedTags Tags pin
+
+### 7.5B) Apply GE_ExoskeletonState (TRANSITION PRELUDE - Option B)
+
+**Purpose:** Apply the new form state GE to establish Exoskeleton form identity.
+
+#### 7.5B.1) Add Apply Gameplay Effect to Self
+7.5B.1.1) From BP_RemoveGameplayEffectFromOwnerWithGrantedTags execution pin
+7.5B.1.2) Drag to right
+7.5B.1.3) Search: Apply Gameplay Effect to Self
+7.5B.1.4) Select node
+7.5B.1.5) Connect Father ASC Return Value to Target
+7.5B.1.6) Gameplay Effect Class: GE_ExoskeletonState
+
+**Note:** GE_ExoskeletonState grants `Effect.Father.FormState.Exoskeleton` + `Narrative.State.Invulnerable` (infinite duration). The invulnerability persists while in Exoskeleton form because father is attached to player.
+
 ### 7.6) Detach Father From Previous Form
 
 #### 7.6.1) Add Detach From Actor
-7.6.1.1) From Delay Completed execution pin
+7.6.1.1) From Apply GE_ExoskeletonState execution pin
 7.6.1.2) Drag to right
 7.6.1.3) Search: Detach From Actor
 7.6.1.4) Select node
@@ -698,7 +784,7 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 
 #### 7.8.3) Apply Speed and Jump Boosts
 7.8.3.1) Follow same pattern as Phase 6.6 - 6.7
-7.8.3.2) Apply SpeedBoostMultiplier (1.5) and JumpBoostMultiplier (1.3)
+7.8.3.2) Apply SpeedBoostMultiplier (1.25) and JumpBoostMultiplier (1.3)
 
 ### 7.9) Attach Father to Player Back (Form Switch)
 
@@ -734,15 +820,19 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 7.12.1.5) Connect ASC to Target
 7.12.1.6) Gameplay Tag: Father.State.Transitioning
 
-### 7.13) Remove Invulnerability
+### 7.13) Remove Transition Invulnerability
 
-#### 7.13.1) Remove Active Gameplay Effects with Granted Tags
+**CRITICAL (v4.4):** Use class-based removal, NOT tag-based removal. Tag-based removal (`Narrative.State.Invulnerable`) would also remove the invulnerability granted by GE_ExoskeletonState, breaking form protection for attached forms.
+
+#### 7.13.1) Remove GE_TransitionInvulnerability by Class
 7.13.1.1) From Remove Loose Gameplay Tag execution pin
 7.13.1.2) Drag to right
-7.13.1.3) Search: Remove Active Gameplay Effects with Granted Tags
+7.13.1.3) Search: BP_RemoveGameplayEffectFromOwnerByClass
 7.13.1.4) Select node
-7.13.1.5) Connect ASC to Target
-7.13.1.6) Tags: State.Invulnerable
+7.13.1.5) Connect Father ASC to Target
+7.13.1.6) Gameplay Effect Class: GE_TransitionInvulnerability
+
+**Note:** This removes only the 5s transition invulnerability effect. The `Narrative.State.Invulnerable` tag granted by GE_ExoskeletonState remains active, providing ongoing protection while in Exoskeleton form.
 
 ### 7.14) Apply Form Cooldown
 
@@ -1050,13 +1140,25 @@ GA_FatherExoskeleton is granted automatically via the NPCDefinition system:
 - NPCDef_FatherCompanion references AC_FatherCompanion_Default
 - AC_FatherCompanion_Default includes GA_FatherExoskeleton at index [2]
 
-### Form State Tags
+### Form State Architecture (Option B)
 
-Form tags managed via Activation Owned Tags:
-- Father.Form.Exoskeleton and Father.State.Attached granted on activation
-- Tags automatically replicate via ReplicateActivationOwnedTags setting
-- Tags automatically removed when ability ends
-- Mutual exclusivity via Cancel Abilities With Tag
+| Component | Description |
+|-----------|-------------|
+| Activation Owned Tags | `Father.State.Attached` (ephemeral, auto-granted on activation) |
+| Form Identity | GE_ExoskeletonState grants `Effect.Father.FormState.Exoskeleton` (persists via infinite GE) |
+| Form Protection | GE_ExoskeletonState also grants `Narrative.State.Invulnerable` (attached form protection) |
+| GE_TransitionInvulnerability | Applied during 5s transition (grants `Narrative.State.Invulnerable` + `Father.State.Transitioning`) |
+| Replication | Tags replicate via ReplicateActivationOwnedTags setting |
+| Cleanup (State Tags) | Activation Owned Tags auto-removed when ability ends |
+| Cleanup (Form Identity) | GE_ExoskeletonState removed by next form's transition prelude |
+
+### Transition Prelude (Option B)
+
+When switching TO Exoskeleton form, the transition prelude executes:
+1. `BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState)` - removes any prior form state
+2. `ApplyGameplayEffectToSelf(GE_ExoskeletonState)` - applies new form identity
+
+This ensures the Single Active Form State Invariant - exactly one `Effect.Father.FormState.*` tag at runtime.
 
 ### Form-Specific Abilities
 
@@ -1076,9 +1178,10 @@ Stat bonuses are handled by BP_FatherExoskeletonForm EquippableItem via GE_Equip
 
 EndAbility performs comprehensive cleanup when another form ability cancels this ability:
 1. CharacterMovement values restored to original values stored in ability variables
-2. Form tags (Father.Form.Exoskeleton, Father.State.Attached) auto-removed by Activation Owned Tags
-3. All three granted abilities (Dash, Sprint, Stealth) cleaned up via two-step process
-4. Is Attached variable reset to false
+2. State tag (`Father.State.Attached`) auto-removed by Activation Owned Tags
+3. Form identity tag (`Effect.Father.FormState.Exoskeleton`) persists via GE_ExoskeletonState until next form's transition prelude removes it
+4. All three granted abilities (Dash, Sprint, Stealth) cleaned up via two-step process
+5. Is Attached variable reset to false
 
 ---
 
@@ -1100,6 +1203,7 @@ EndAbility performs comprehensive cleanup when another form ability cancels this
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.4 | January 2026 | **Option B Form State Architecture:** GE_ExoskeletonState for form identity (grants Effect.Father.FormState.Exoskeleton + Narrative.State.Invulnerable), transition prelude (RemovePriorFormState + ApplyExoskeletonState), class-based invuln removal (GE_TransitionInvulnerability). Fixed Activation Owned Tags to `Father.State.Attached` only. Updated to UE 5.7. Added AUTOMATION VS MANUAL table. Added orphan tag notes. Fixed SpeedBoostMultiplier to 1.25 per manifest. |
 | 3.10 | January 2026 | Fixed tag format: State.Father.Alive changed to Father.State.Alive per DefaultGameplayTags. Updated Related Documents to Technical Reference v5.12 and Setup Guide v2.3. Fixed curly quotes to straight ASCII. |
 | 3.9 | January 2026 | Fixed truncated GE name in Quick Reference: GE_EquipmentMod corrected to GE_EquipmentModifier_FatherExoskeleton. |
 | 3.8 | January 2026 | Simplified documentation: Tag configuration (PHASE 3) and variable creation (PHASE 4) converted to single markdown tables. |
@@ -1114,6 +1218,7 @@ EndAbility performs comprehensive cleanup when another form ability cancels this
 
 ---
 
-**END OF GA_FATHEREXOSKELETON IMPLEMENTATION GUIDE v3.10**
+**END OF GA_FATHEREXOSKELETON IMPLEMENTATION GUIDE v4.4**
 
-**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.2**
+**Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
+**Architecture: Option B (GE-Based Form Identity)**
