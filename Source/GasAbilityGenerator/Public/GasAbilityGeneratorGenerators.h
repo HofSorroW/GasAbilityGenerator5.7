@@ -333,6 +333,18 @@ public:
 	static FGenerationResult Generate(
 		const FManifestGameplayAbilityDefinition& Definition,
 		const FString& ProjectRoot = TEXT(""));
+
+	/**
+	 * v4.13: Category C - P1.2 Transition Prelude Validation
+	 * Validates that form abilities follow the Option B pattern:
+	 * - Required: Father.State.Alive, Father.State.Recruited in activation_required_tags
+	 * - Required: Father.State.Dormant in activation_blocked_tags
+	 * - Warning: Father.State.Transitioning should be in activation_blocked_tags
+	 * - Warning: cancel_abilities_with_tag should not be empty
+	 * @param Definition The ability definition to validate
+	 * @param OutWarnings Warnings array to populate (pipe-delimited: CODE | ContextPath | Message | SuggestedFix)
+	 */
+	static void ValidateFormAbility(const FManifestGameplayAbilityDefinition& Definition, TArray<FString>& OutWarnings);
 };
 
 /**
@@ -532,6 +544,40 @@ public:
 		const FManifestData& ManifestData,
 		const FString& GraphName);
 
+	/**
+	 * v4.13: Category C - P3.2 GameplayCue Auto-Wiring
+	 * Generates ExecuteGameplayCue nodes at specified trigger points in an ability's event graph.
+	 * Trigger points: OnActivate (ActivateAbility event), OnEndAbility (K2_EndAbility), OnCommit (K2_CommitAbility)
+	 * @param Blueprint The ability blueprint to modify
+	 * @param CueTriggers Array of cue trigger definitions
+	 * @return Number of cue trigger nodes successfully generated
+	 */
+	static int32 GenerateCueTriggerNodes(
+		UBlueprint* Blueprint,
+		const TArray<FManifestCueTriggerDefinition>& CueTriggers);
+
+	/**
+	 * v4.13: Category C - P3.1 Niagara Spawning Support
+	 * Generates SpawnSystemAttached nodes for VFX with optional cleanup on EndAbility.
+	 * @param Blueprint The ability blueprint to modify
+	 * @param VFXSpawns Array of VFX spawn definitions
+	 * @return Number of VFX spawn nodes successfully generated
+	 */
+	static int32 GenerateVFXSpawnNodes(
+		UBlueprint* Blueprint,
+		const TArray<FManifestVFXSpawnDefinition>& VFXSpawns);
+
+	/**
+	 * v4.13: Category C - P2.1 Delegate Binding IR + Codegen
+	 * Generates custom event handlers and delegate binding nodes.
+	 * @param Blueprint The ability blueprint to modify
+	 * @param DelegateBindings Array of delegate binding definitions
+	 * @return Number of delegate binding nodes successfully generated
+	 */
+	static int32 GenerateDelegateBindingNodes(
+		UBlueprint* Blueprint,
+		const TArray<FManifestDelegateBindingDefinition>& DelegateBindings);
+
 	// v2.6.7: Missing dependency tracking for deferred generation
 	static const TArray<FMissingDependencyInfo>& GetMissingDependencies() { return MissingDependencies; }
 	static bool HasMissingDependencies() { return MissingDependencies.Num() > 0; }
@@ -690,6 +736,15 @@ class GASABILITYGENERATOR_API FAbilityConfigurationGenerator : public FGenerator
 {
 public:
 	static FGenerationResult Generate(const FManifestAbilityConfigurationDefinition& Definition);
+
+	/**
+	 * v4.13: Category C - P1.3 Startup Effects Validation
+	 * Validates that ability configurations with form abilities have a default form state:
+	 * - Warning: If abilities contains GA_Father* forms, startup_effects should contain GE_*State
+	 * @param Definition The ability configuration definition to validate
+	 * @param OutWarnings Warnings array to populate (pipe-delimited: CODE | ContextPath | Message | SuggestedFix)
+	 */
+	static void ValidateStartupEffects(const FManifestAbilityConfigurationDefinition& Definition, TArray<FString>& OutWarnings);
 };
 
 class GASABILITYGENERATOR_API FActivityConfigurationGenerator : public FGeneratorBase

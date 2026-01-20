@@ -85,6 +85,9 @@ private:
 	// v4.9: TriggerSet parser
 	static void ParseTriggerSets(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 
+	// v4.13: Category C - FormStateEffects preset parser (P1.1)
+	static void ParseFormStateEffects(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+
 	// v3.9.8: Mesh-to-Item Pipeline parsers
 	static void ParsePipelineConfig(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParsePipelineItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);

@@ -735,6 +735,108 @@ struct FManifestGameplayEffectDefinition
 };
 
 /**
+ * v4.13: Form State Effect Preset Definition (Category C - P1.1)
+ * Expands to a GE_*State GameplayEffect with standardized form state pattern.
+ * Used via form_state_effects: manifest section.
+ */
+struct FManifestFormStateEffectDefinition
+{
+	FString Form;                                      // Form name (e.g., "Armor", "Crawler")
+	bool bInvulnerable = false;                        // If true, adds Narrative.State.Invulnerable
+	FString Folder = TEXT("Effects/FormState");        // Default folder for generated GE
+
+	/** v4.13: Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Form);
+		Hash ^= (bInvulnerable ? 1ULL : 0ULL) << 8;
+		// NOTE: Folder excluded - presentational only
+		return Hash;
+	}
+
+	/** Expand to a GameplayEffect definition for generation */
+	FManifestGameplayEffectDefinition ToGameplayEffectDefinition() const
+	{
+		FManifestGameplayEffectDefinition GE;
+		GE.Name = FString::Printf(TEXT("GE_%sState"), *Form);
+		GE.Folder = Folder;
+		GE.DurationPolicy = TEXT("Infinite");
+		GE.GrantedTags.Add(FString::Printf(TEXT("Effect.Father.FormState.%s"), *Form));
+		if (bInvulnerable)
+		{
+			GE.GrantedTags.Add(TEXT("Narrative.State.Invulnerable"));
+		}
+		return GE;
+	}
+};
+
+/**
+ * v4.13: Category C - P3.2 GameplayCue Trigger Definition
+ * Auto-generates ExecuteGameplayCue nodes at ability trigger points.
+ */
+struct FManifestCueTriggerDefinition
+{
+	FString Trigger;    // "OnActivate", "OnEndAbility", "OnCommit"
+	FString CueTag;     // GameplayCue tag (e.g., "GameplayCue.Father.FormChange")
+
+	/** Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Trigger);
+		Hash ^= GetTypeHash(CueTag) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v4.13: Category C - P3.1 Niagara VFX Spawn Definition
+ * Auto-generates SpawnSystemAttached nodes with optional cleanup on EndAbility.
+ */
+struct FManifestVFXSpawnDefinition
+{
+	FString Id;                          // Unique ID for this spawn
+	FString NiagaraSystem;               // Asset name (e.g., "NS_FormTransition")
+	FString AttachTo = TEXT("Self");     // "Self" or component name
+	FString Socket;                      // Socket/bone name (optional)
+	bool bDestroyOnEndAbility = true;    // Cleanup when ability ends
+
+	/** Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(NiagaraSystem) << 4;
+		Hash ^= GetTypeHash(AttachTo) << 8;
+		Hash ^= GetTypeHash(Socket) << 12;
+		Hash ^= (bDestroyOnEndAbility ? 1ULL : 0ULL) << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v4.13: Category C - P2.1 Delegate Binding Definition
+ * Auto-generates delegate binding nodes (OnDied, OnDamagedBy, OnAttributeChanged).
+ */
+struct FManifestDelegateBindingDefinition
+{
+	FString Delegate;              // "OnDied", "OnDamagedBy", "OnAttributeChanged"
+	FString Source;                // "OwnerASC", "PlayerASC", "Self"
+	FString Attribute;             // For OnAttributeChanged: attribute name
+	FString Handler;               // Custom event handler name
+	bool bUnbindOnEnd = true;      // Remove binding when ability ends
+
+	/** Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Delegate);
+		Hash ^= GetTypeHash(Source) << 4;
+		Hash ^= GetTypeHash(Attribute) << 8;
+		Hash ^= GetTypeHash(Handler) << 12;
+		Hash ^= (bUnbindOnEnd ? 1ULL : 0ULL) << 16;
+		return Hash;
+	}
+};
+
+/**
  * Gameplay ability tag configuration
  */
 struct FManifestAbilityTagsDefinition
@@ -945,6 +1047,11 @@ struct FManifestGameplayAbilityDefinition
 	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
 	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
 
+	// v4.13: Category C features - cue triggers, VFX spawns, delegate bindings
+	TArray<FManifestCueTriggerDefinition> CueTriggers;     // P3.2: Auto-wired GameplayCue triggers
+	TArray<FManifestVFXSpawnDefinition> VFXSpawns;         // P3.1: Auto-spawned Niagara systems
+	TArray<FManifestDelegateBindingDefinition> DelegateBindings;  // P2.1: Auto-bound delegates
+
 	/** v4.8: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -980,6 +1087,23 @@ struct FManifestGameplayAbilityDefinition
 		{
 			Hash ^= Conn.ComputeHash();
 			Hash = (Hash << 7) | (Hash >> 57);
+		}
+
+		// v4.13: Category C features
+		for (const auto& Cue : CueTriggers)
+		{
+			Hash ^= Cue.ComputeHash();
+			Hash = (Hash << 9) | (Hash >> 55);
+		}
+		for (const auto& VFX : VFXSpawns)
+		{
+			Hash ^= VFX.ComputeHash();
+			Hash = (Hash << 11) | (Hash >> 53);
+		}
+		for (const auto& Del : DelegateBindings)
+		{
+			Hash ^= Del.ComputeHash();
+			Hash = (Hash << 13) | (Hash >> 51);
 		}
 
 		return Hash;
@@ -4967,6 +5091,9 @@ struct FManifestData
 	// v4.9: TriggerSets (event-driven NPC behaviors)
 	TArray<FManifestTriggerSetDefinition> TriggerSets;
 
+	// v4.13: Category C Feature Presets
+	TArray<FManifestFormStateEffectDefinition> FormStateEffects;  // P1.1: Form state effect presets
+
 	// v3.9.8: Mesh-to-Item Pipeline
 	FManifestPipelineConfig PipelineConfig;
 	TArray<FManifestPipelineItemDefinition> PipelineItems;
@@ -5023,6 +5150,8 @@ struct FManifestData
 		for (const auto& Def : Quests) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : CharacterAppearances) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TriggerSets) AssetWhitelist.Add(Def.Name);  // v4.9
+		// v4.13: FormStateEffects expand to GE_*State assets
+		for (const auto& Def : FormStateEffects) AssetWhitelist.Add(FString::Printf(TEXT("GE_%sState"), *Def.Form));
 		// v4.12: Pipeline items
 		for (const auto& Def : PipelineItems)
 		{

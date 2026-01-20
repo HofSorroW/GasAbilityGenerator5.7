@@ -194,6 +194,31 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		return 1;
 	}
 
+	// v4.13: Category C - Expand FormStateEffects to GameplayEffects (P1.1)
+	if (ManifestData.FormStateEffects.Num() > 0)
+	{
+		LogMessage(FString::Printf(TEXT("Expanding %d form_state_effects to gameplay_effects"), ManifestData.FormStateEffects.Num()));
+		for (const auto& FormState : ManifestData.FormStateEffects)
+		{
+			FManifestGameplayEffectDefinition ExpandedGE = FormState.ToGameplayEffectDefinition();
+			// Check for duplicates (don't overwrite explicit GE definitions)
+			bool bExists = ManifestData.GameplayEffects.ContainsByPredicate([&](const FManifestGameplayEffectDefinition& Existing) {
+				return Existing.Name == ExpandedGE.Name;
+			});
+			if (!bExists)
+			{
+				ManifestData.GameplayEffects.Add(ExpandedGE);
+				LogMessage(FString::Printf(TEXT("  Expanded: %s -> %s%s"),
+					*FormState.Form, *ExpandedGE.Name,
+					FormState.bInvulnerable ? TEXT(" (invulnerable)") : TEXT("")));
+			}
+			else
+			{
+				LogMessage(FString::Printf(TEXT("  Skipped: %s (explicit GE definition exists)"), *ExpandedGE.Name));
+			}
+		}
+	}
+
 	LogMessage(FString::Printf(TEXT("Parsed manifest with %d tags, %d enumerations, %d abilities, %d effects, %d blueprints, %d MICs"),
 		ManifestData.Tags.Num(),
 		ManifestData.Enumerations.Num(),

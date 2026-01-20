@@ -229,6 +229,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseTriggerSets(Lines, i, OutData);
 		}
+		// v4.13: Category C - FormStateEffects (P1.1)
+		else if (IsSectionHeader(TrimmedLine, TEXT("form_state_effects:")))
+		{
+			ParseFormStateEffects(Lines, i, OutData);
+		}
 		// v3.9.8: Mesh-to-Item Pipeline parsers
 		else if (IsSectionHeader(TrimmedLine, TEXT("pipeline_config:")))
 		{
@@ -947,8 +952,14 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	bool bInTags = false;
 	bool bInVariables = false;
 	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
+	bool bInCueTriggers = false;  // v4.13: Category C - P3.2
+	bool bInVFXSpawns = false;    // v4.13: Category C - P3.1
+	bool bInDelegateBindings = false;  // v4.13: Category C - P2.1
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
+	FManifestCueTriggerDefinition CurrentCueTrigger;   // v4.13: Category C
+	FManifestVFXSpawnDefinition CurrentVFXSpawn;       // v4.13: Category C
+	FManifestDelegateBindingDefinition CurrentDelegateBinding;  // v4.13: P2.1
 
 	// Track which tag array we're currently parsing
 	enum class ECurrentTagArray { None, AbilityTags, CancelAbilitiesWithTag, ActivationOwnedTags, ActivationRequiredTags, ActivationBlockedTags };
@@ -966,6 +977,21 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			if (bInVariables && !CurrentVar.Name.IsEmpty())
 			{
 				CurrentDef.Variables.Add(CurrentVar);
+			}
+			// v4.13: Save pending cue trigger
+			if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+			{
+				CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+			}
+			// v4.13: Save pending VFX spawn
+			if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+			{
+				CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+			}
+			// v4.13: Save pending delegate binding
+			if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+			{
+				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 			}
 			// v2.6.14: Prefix validation - only add if GA_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
@@ -997,9 +1023,30 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				CurrentDef.Variables.Add(CurrentVar);
 				CurrentVar = FManifestActorVariableDefinition();
 			}
+			// v4.13: Save pending cue trigger
+			if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+			{
+				CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+				CurrentCueTrigger = FManifestCueTriggerDefinition();
+			}
+			// v4.13: Save pending VFX spawn
+			if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+			{
+				CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+				CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+			}
+			// v4.13: Save pending delegate binding
+			if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+			{
+				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+				CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+			}
 			bInVariables = false;
 			bInTags = false;
 			bInEventGraph = false;
+			bInCueTriggers = false;
+			bInVFXSpawns = false;
+			bInDelegateBindings = false;
 			CurrentTagArray = ECurrentTagArray::None;
 
 			// Save current ability and start new one - v2.6.14: Prefix validation
@@ -1021,6 +1068,9 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			bInTags = false;
 			bInVariables = false;
 			bInEventGraph = false;
+			bInCueTriggers = false;
+			bInVFXSpawns = false;
+			bInDelegateBindings = false;
 			CurrentTagArray = ECurrentTagArray::None;
 		}
 		else if (bInItem)
@@ -1141,6 +1191,186 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 					ParseGraphConnections(Lines, LineIndex, ConnectionsIndent, TempGraph);
 					CurrentDef.EventGraphConnections = MoveTemp(TempGraph.Connections);
 					continue; // ParseGraphConnections already advanced LineIndex
+				}
+			}
+			// v4.13: Category C - P3.2 cue_triggers section
+			else if (TrimmedLine.Equals(TEXT("cue_triggers:")) || TrimmedLine.StartsWith(TEXT("cue_triggers:")))
+			{
+				// Save pending data from other sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+				{
+					CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+				}
+				bInCueTriggers = true;
+				bInVariables = false;
+				bInTags = false;
+				bInEventGraph = false;
+				bInVFXSpawns = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			// v4.13: Category C - P3.1 vfx_spawns section
+			else if (TrimmedLine.Equals(TEXT("vfx_spawns:")) || TrimmedLine.StartsWith(TEXT("vfx_spawns:")))
+			{
+				// Save pending data from other sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+				{
+					CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+				}
+				bInVFXSpawns = true;
+				bInVariables = false;
+				bInTags = false;
+				bInEventGraph = false;
+				bInCueTriggers = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			else if (bInCueTriggers)
+			{
+				// Parse cue trigger items
+				if (TrimmedLine.StartsWith(TEXT("- trigger:")) || TrimmedLine.StartsWith(TEXT("- cue_tag:")))
+				{
+					// Save previous trigger
+					if (!CurrentCueTrigger.CueTag.IsEmpty())
+					{
+						CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					}
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+					if (TrimmedLine.StartsWith(TEXT("- trigger:")))
+					{
+						CurrentCueTrigger.Trigger = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else
+					{
+						CurrentCueTrigger.CueTag = GetLineValue(TrimmedLine.Mid(2));
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("trigger:")))
+				{
+					CurrentCueTrigger.Trigger = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("cue_tag:")))
+				{
+					CurrentCueTrigger.CueTag = GetLineValue(TrimmedLine);
+				}
+			}
+			else if (bInVFXSpawns)
+			{
+				// Parse VFX spawn items
+				if (TrimmedLine.StartsWith(TEXT("- id:")) || TrimmedLine.StartsWith(TEXT("- niagara_system:")))
+				{
+					// Save previous spawn
+					if (!CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+					{
+						CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					}
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+					if (TrimmedLine.StartsWith(TEXT("- id:")))
+					{
+						CurrentVFXSpawn.Id = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else
+					{
+						CurrentVFXSpawn.NiagaraSystem = GetLineValue(TrimmedLine.Mid(2));
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("id:")))
+				{
+					CurrentVFXSpawn.Id = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("niagara_system:")))
+				{
+					CurrentVFXSpawn.NiagaraSystem = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attach_to:")))
+				{
+					CurrentVFXSpawn.AttachTo = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("socket:")))
+				{
+					CurrentVFXSpawn.Socket = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("destroy_on_end_ability:")))
+				{
+					CurrentVFXSpawn.bDestroyOnEndAbility = GetLineValue(TrimmedLine).ToBool();
+				}
+			}
+			// v4.13: Category C - P2.1 delegate_bindings section
+			else if (TrimmedLine.Equals(TEXT("delegate_bindings:")) || TrimmedLine.StartsWith(TEXT("delegate_bindings:")))
+			{
+				// Save pending data from other sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+				{
+					CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+				}
+				if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+				{
+					CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+				}
+				bInDelegateBindings = true;
+				bInVariables = false;
+				bInTags = false;
+				bInEventGraph = false;
+				bInCueTriggers = false;
+				bInVFXSpawns = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			else if (bInDelegateBindings)
+			{
+				// Parse delegate binding items
+				if (TrimmedLine.StartsWith(TEXT("- delegate:")) || TrimmedLine.StartsWith(TEXT("- handler:")))
+				{
+					// Save previous binding
+					if (!CurrentDelegateBinding.Delegate.IsEmpty())
+					{
+						CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					}
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+					if (TrimmedLine.StartsWith(TEXT("- delegate:")))
+					{
+						CurrentDelegateBinding.Delegate = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else
+					{
+						CurrentDelegateBinding.Handler = GetLineValue(TrimmedLine.Mid(2));
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("delegate:")))
+				{
+					CurrentDelegateBinding.Delegate = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("source:")))
+				{
+					CurrentDelegateBinding.Source = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attribute:")))
+				{
+					CurrentDelegateBinding.Attribute = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("handler:")))
+				{
+					CurrentDelegateBinding.Handler = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("unbind_on_end:")))
+				{
+					CurrentDelegateBinding.bUnbindOnEnd = GetLineValue(TrimmedLine).ToBool();
 				}
 			}
 			else if (bInVariables)
@@ -1265,6 +1495,19 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	if (bInVariables && !CurrentVar.Name.IsEmpty())
 	{
 		CurrentDef.Variables.Add(CurrentVar);
+	}
+	// v4.13: Save pending cue trigger, VFX spawn, and delegate binding
+	if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+	{
+		CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+	}
+	if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+	{
+		CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+	}
+	if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+	{
+		CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 	}
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
 	{
@@ -10525,5 +10768,73 @@ void FGasAbilityGeneratorParser::ParseNPCSpawnerPlacements(const TArray<FString>
 			CurrentDef.NPCs.Add(CurrentNPC);
 		}
 		OutData.NPCSpawnerPlacements.Add(CurrentDef);
+	}
+}
+
+// v4.13: Category C - FormStateEffects preset parser (P1.1)
+// Manifest syntax:
+//   form_state_effects:
+//     - form: Armor
+//       invulnerable: true
+//     - form: Crawler
+//       invulnerable: false
+void FGasAbilityGeneratorParser::ParseFormStateEffects(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestFormStateEffectDefinition CurrentDef;
+	bool bInItem = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section (non-list line at or before section indent)
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			break;
+		}
+
+		// New form state entry
+		if (TrimmedLine.StartsWith(TEXT("- form:")))
+		{
+			// Save previous
+			if (bInItem && !CurrentDef.Form.IsEmpty())
+			{
+				OutData.FormStateEffects.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestFormStateEffectDefinition();
+			CurrentDef.Form = GetLineValue(TrimmedLine);
+			bInItem = true;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("invulnerable:")))
+			{
+				CurrentDef.bInvulnerable = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last item
+	if (bInItem && !CurrentDef.Form.IsEmpty())
+	{
+		OutData.FormStateEffects.Add(CurrentDef);
 	}
 }

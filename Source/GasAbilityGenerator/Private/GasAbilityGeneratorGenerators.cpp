@@ -1,5 +1,7 @@
-// GasAbilityGenerator v4.10
+// GasAbilityGenerator v4.13
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.13: Category C Full Automation - P3.2 GameplayCue Auto-Wiring (ExecuteGameplayCue nodes),
+//        P3.1 Niagara Spawning Support (SpawnSystemAttached + cleanup), P2.1 Delegate Binding IR + Codegen
 // v4.10: Widget Property Enhancement - ConfigureWidgetProperties lambda with dotted properties,
 //        struct types (FSlateColor, FSlateBrush, FLinearColor, FVector2D), enum types (FEnumProperty, TEnumAsByte),
 //        machine-readable warnings via FGenerationResult.Warnings, FSlateBrush field restrictions
@@ -259,6 +261,7 @@
 #include "DialogueBlueprint.h"  // v3.7: UDialogueBlueprint for dialogue tree generation
 #include "QuestBlueprint.h"  // v3.9.4: UQuestBlueprint for quest state machine generation
 #include "NiagaraSystem.h"
+#include "NiagaraComponent.h"  // v4.13: Category C P3.1 VFX Spawning
 // v3.9: NPC Pipeline includes
 #include "AI/Activities/NPCActivitySchedule.h"
 #include "AI/Activities/NPCGoalItem.h"
@@ -340,7 +343,7 @@ TMap<FString, UMaterialInterface*> FMaterialGenerator::GeneratedMaterialsCache;
 TMap<FString, UMaterialFunctionInterface*> FMaterialGenerator::GeneratedMaterialFunctionsCache;
 
 // v3.0: Generator version constant for metadata tracking
-static const FString GENERATOR_VERSION = TEXT("4.10");
+static const FString GENERATOR_VERSION = TEXT("4.13");
 
 // v4.10: Explicit enum mapping tables for switch expressions (hallucination-proof)
 static const TMap<FString, int32> QualitySwitchKeyMap = {
@@ -2468,6 +2471,23 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		return Result;
 	}
 
+	// v4.13: Category C - P1.2 Transition Prelude Validation for form abilities
+	TArray<FString> ValidationWarnings;
+	ValidateFormAbility(Definition, ValidationWarnings);
+	for (const FString& Warning : ValidationWarnings)
+	{
+		Result.Warnings.Add(Warning);
+		// Log errors and warnings for visibility
+		if (Warning.StartsWith(TEXT("E_")))
+		{
+			LogGeneration(FString::Printf(TEXT("  ERROR: %s"), *Warning));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  WARNING: %s"), *Warning));
+		}
+	}
+
 	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
 	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Gameplay Ability"), Definition.ComputeHash(), Result))
 	{
@@ -2630,6 +2650,29 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 
 	LogGeneration(FString::Printf(TEXT("Created Gameplay Ability: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
 
+	// v4.13: Category C - Generate cue triggers, VFX spawns, delegate bindings (P3.2, P3.1, P2.1)
+	if (Definition.CueTriggers.Num() > 0)
+	{
+		int32 CueNodesGenerated = FEventGraphGenerator::GenerateCueTriggerNodes(Blueprint, Definition.CueTriggers);
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d cue trigger nodes"), CueNodesGenerated, Definition.CueTriggers.Num()));
+	}
+	if (Definition.VFXSpawns.Num() > 0)
+	{
+		int32 VFXNodesGenerated = FEventGraphGenerator::GenerateVFXSpawnNodes(Blueprint, Definition.VFXSpawns);
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d VFX spawn nodes"), VFXNodesGenerated, Definition.VFXSpawns.Num()));
+	}
+	if (Definition.DelegateBindings.Num() > 0)
+	{
+		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateDelegateBindingNodes(Blueprint, Definition.DelegateBindings);
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
+	}
+
+	// Recompile blueprint after adding Category C nodes
+	if (Definition.CueTriggers.Num() > 0 || Definition.VFXSpawns.Num() > 0 || Definition.DelegateBindings.Num() > 0)
+	{
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	}
+
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("GameplayAbility"), Definition.Name, Definition.ComputeHash());
 
@@ -2638,6 +2681,57 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	Result.GeneratorId = TEXT("GameplayAbility");
 	Result.DetermineCategory();
 	return Result;
+}
+
+// v4.13: Category C - P1.2 Transition Prelude Validation
+void FGameplayAbilityGenerator::ValidateFormAbility(const FManifestGameplayAbilityDefinition& Definition, TArray<FString>& OutWarnings)
+{
+	// Only validate form abilities (GA_Father* but not attack/utility abilities)
+	// Form abilities: GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer
+	static TArray<FString> FormAbilityNames = {
+		TEXT("GA_FatherCrawler"),
+		TEXT("GA_FatherArmor"),
+		TEXT("GA_FatherExoskeleton"),
+		TEXT("GA_FatherSymbiote"),
+		TEXT("GA_FatherEngineer")
+	};
+
+	if (!FormAbilityNames.Contains(Definition.Name))
+	{
+		return;  // Not a form ability, skip validation
+	}
+
+	FString ContextPath = FString::Printf(TEXT("GameplayAbility/%s"), *Definition.Name);
+
+	// Required: Father.State.Alive in activation_required_tags
+	if (!Definition.Tags.ActivationRequiredTags.Contains(TEXT("Father.State.Alive")))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("E_FORM_MISSING_ALIVE | %s | Form ability must require Father.State.Alive | Add 'Father.State.Alive' to activation_required_tags"), *ContextPath));
+	}
+
+	// Required: Father.State.Recruited in activation_required_tags
+	if (!Definition.Tags.ActivationRequiredTags.Contains(TEXT("Father.State.Recruited")))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("E_FORM_MISSING_RECRUITED | %s | Form ability must require Father.State.Recruited | Add 'Father.State.Recruited' to activation_required_tags"), *ContextPath));
+	}
+
+	// Required: Father.State.Dormant in activation_blocked_tags
+	if (!Definition.Tags.ActivationBlockedTags.Contains(TEXT("Father.State.Dormant")))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("E_FORM_MISSING_DORMANT | %s | Form ability must block Father.State.Dormant | Add 'Father.State.Dormant' to activation_blocked_tags"), *ContextPath));
+	}
+
+	// Warning: Father.State.Transitioning should be in activation_blocked_tags
+	if (!Definition.Tags.ActivationBlockedTags.Contains(TEXT("Father.State.Transitioning")))
+	{
+		OutWarnings.Add(FString::Printf(TEXT("W_FORM_MISSING_TRANSITIONING | %s | Form ability should block Father.State.Transitioning for safety | Add 'Father.State.Transitioning' to activation_blocked_tags"), *ContextPath));
+	}
+
+	// Warning: cancel_abilities_with_tag should not be empty
+	if (Definition.Tags.CancelAbilitiesWithTag.Num() == 0)
+	{
+		OutWarnings.Add(FString::Printf(TEXT("W_FORM_NO_CANCEL_TAG | %s | Form ability should cancel other forms | Add 'Ability.Father.Form' or similar to cancel_abilities_with_tag"), *ContextPath));
+	}
 }
 
 // ============================================================================
@@ -10377,6 +10471,587 @@ void FEventGraphGenerator::AutoLayoutNodes(
 }
 
 // ============================================================================
+// v4.13: Category C - P3.2 GameplayCue Auto-Wiring
+// ============================================================================
+
+int32 FEventGraphGenerator::GenerateCueTriggerNodes(
+	UBlueprint* Blueprint,
+	const TArray<FManifestCueTriggerDefinition>& CueTriggers)
+{
+	if (!Blueprint || CueTriggers.Num() == 0)
+	{
+		return 0;
+	}
+
+	// Find the event graph
+	UEdGraph* EventGraph = nullptr;
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (Graph)
+		{
+			EventGraph = Graph;
+			break;
+		}
+	}
+
+	if (!EventGraph)
+	{
+		LogGeneration(TEXT("  GenerateCueTriggerNodes: No event graph found"));
+		return 0;
+	}
+
+	int32 NodesGenerated = 0;
+
+	// Helper lambda to find trigger node by event name or function call
+	auto FindTriggerNode = [EventGraph](const FString& TriggerType) -> UK2Node*
+	{
+		if (TriggerType.Equals(TEXT("OnActivate"), ESearchCase::IgnoreCase))
+		{
+			// Find ActivateAbility event (K2_ActivateAbility or similar)
+			for (UEdGraphNode* Node : EventGraph->Nodes)
+			{
+				if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+				{
+					FString EventName = EventNode->GetFunctionName().ToString();
+					if (EventName.Contains(TEXT("ActivateAbility")) || EventName.Contains(TEXT("K2_ActivateAbility")))
+					{
+						return EventNode;
+					}
+				}
+			}
+		}
+		else if (TriggerType.Equals(TEXT("OnEndAbility"), ESearchCase::IgnoreCase))
+		{
+			// Find K2_EndAbility function call
+			for (UEdGraphNode* Node : EventGraph->Nodes)
+			{
+				if (UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node))
+				{
+					if (CallNode->GetFunctionName().ToString().Contains(TEXT("EndAbility")))
+					{
+						return CallNode;
+					}
+				}
+			}
+		}
+		else if (TriggerType.Equals(TEXT("OnCommit"), ESearchCase::IgnoreCase))
+		{
+			// Find K2_CommitAbility function call
+			for (UEdGraphNode* Node : EventGraph->Nodes)
+			{
+				if (UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node))
+				{
+					if (CallNode->GetFunctionName().ToString().Contains(TEXT("CommitAbility")))
+					{
+						return CallNode;
+					}
+				}
+			}
+		}
+		return nullptr;
+	};
+
+	for (const FManifestCueTriggerDefinition& CueTrigger : CueTriggers)
+	{
+		UK2Node* TriggerNode = FindTriggerNode(CueTrigger.Trigger);
+
+		if (!TriggerNode)
+		{
+			LogGeneration(FString::Printf(TEXT("  CueTrigger: Trigger point '%s' not found in event graph"), *CueTrigger.Trigger));
+			continue;
+		}
+
+		// Create K2_ExecuteGameplayCue function call node
+		UK2Node_CallFunction* CueNode = NewObject<UK2Node_CallFunction>(EventGraph);
+		EventGraph->AddNode(CueNode, false, false);
+
+		// Find the K2_ExecuteGameplayCue function on UGameplayAbility
+		UFunction* ExecuteCueFunc = UGameplayAbility::StaticClass()->FindFunctionByName(TEXT("K2_ExecuteGameplayCue"));
+		if (!ExecuteCueFunc)
+		{
+			LogGeneration(TEXT("  CueTrigger: K2_ExecuteGameplayCue function not found"));
+			CueNode->DestroyNode();
+			continue;
+		}
+
+		CueNode->SetFromFunction(ExecuteCueFunc);
+		CueNode->CreateNewGuid();
+		CueNode->PostPlacedNewNode();
+		CueNode->AllocateDefaultPins();
+
+		// Set the GameplayCueTag pin value
+		UEdGraphPin* TagPin = CueNode->FindPin(TEXT("GameplayCueTag"));
+		if (TagPin)
+		{
+			// Format for FGameplayTag default value
+			TagPin->DefaultValue = FString::Printf(TEXT("(TagName=\"%s\")"), *CueTrigger.CueTag);
+		}
+
+		// Position the node near the trigger
+		CueNode->NodePosX = TriggerNode->NodePosX + 300;
+		CueNode->NodePosY = TriggerNode->NodePosY;
+
+		// Wire the execution: Insert cue node after trigger node's exec output
+		UEdGraphPin* TriggerExecOut = nullptr;
+		UEdGraphPin* CueExecIn = CueNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+		UEdGraphPin* CueExecOut = CueNode->FindPin(UEdGraphSchema_K2::PN_Then);
+
+		if (CueTrigger.Trigger.Equals(TEXT("OnActivate"), ESearchCase::IgnoreCase))
+		{
+			// For events, find the "Then" or "exec" output pin
+			TriggerExecOut = TriggerNode->FindPin(UEdGraphSchema_K2::PN_Then);
+		}
+		else
+		{
+			// For function calls (EndAbility, CommitAbility), find the exec input
+			// We want to insert BEFORE the call, so we need to find what's connected to its exec input
+			UEdGraphPin* CallExecIn = TriggerNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+			if (CallExecIn && CallExecIn->LinkedTo.Num() > 0)
+			{
+				TriggerExecOut = CallExecIn->LinkedTo[0];
+				// Break the existing connection
+				TriggerExecOut->BreakLinkTo(CallExecIn);
+				// Connect: Source -> CueNode -> OriginalCall
+				TriggerExecOut->MakeLinkTo(CueExecIn);
+				if (CueExecOut)
+				{
+					CueExecOut->MakeLinkTo(CallExecIn);
+				}
+				NodesGenerated++;
+				LogGeneration(FString::Printf(TEXT("  Generated CueTrigger: %s at %s (inserted before call)"),
+					*CueTrigger.CueTag, *CueTrigger.Trigger));
+				continue;
+			}
+		}
+
+		// For OnActivate: Connect after the event
+		if (TriggerExecOut && CueExecIn)
+		{
+			// Check if there are existing connections
+			if (TriggerExecOut->LinkedTo.Num() > 0)
+			{
+				// Insert cue node in the chain
+				UEdGraphPin* NextNode = TriggerExecOut->LinkedTo[0];
+				TriggerExecOut->BreakLinkTo(NextNode);
+				TriggerExecOut->MakeLinkTo(CueExecIn);
+				if (CueExecOut)
+				{
+					CueExecOut->MakeLinkTo(NextNode);
+				}
+			}
+			else
+			{
+				// No existing connections, just connect
+				TriggerExecOut->MakeLinkTo(CueExecIn);
+			}
+			NodesGenerated++;
+			LogGeneration(FString::Printf(TEXT("  Generated CueTrigger: %s at %s"),
+				*CueTrigger.CueTag, *CueTrigger.Trigger));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  CueTrigger: Failed to wire %s - pins not found"),
+				*CueTrigger.CueTag));
+		}
+	}
+
+	return NodesGenerated;
+}
+
+// ============================================================================
+// v4.13: Category C - P3.1 Niagara Spawning Support
+// ============================================================================
+
+int32 FEventGraphGenerator::GenerateVFXSpawnNodes(
+	UBlueprint* Blueprint,
+	const TArray<FManifestVFXSpawnDefinition>& VFXSpawns)
+{
+	if (!Blueprint || VFXSpawns.Num() == 0)
+	{
+		return 0;
+	}
+
+	// Find the event graph
+	UEdGraph* EventGraph = nullptr;
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (Graph)
+		{
+			EventGraph = Graph;
+			break;
+		}
+	}
+
+	if (!EventGraph)
+	{
+		LogGeneration(TEXT("  GenerateVFXSpawnNodes: No event graph found"));
+		return 0;
+	}
+
+	int32 NodesGenerated = 0;
+
+	// Find the ActivateAbility event
+	UK2Node_Event* ActivateEvent = nullptr;
+	for (UEdGraphNode* Node : EventGraph->Nodes)
+	{
+		if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+		{
+			FString EventName = EventNode->GetFunctionName().ToString();
+			if (EventName.Contains(TEXT("ActivateAbility")))
+			{
+				ActivateEvent = EventNode;
+				break;
+			}
+		}
+	}
+
+	// Find K2_EndAbility call for cleanup
+	UK2Node_CallFunction* EndAbilityNode = nullptr;
+	for (UEdGraphNode* Node : EventGraph->Nodes)
+	{
+		if (UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node))
+		{
+			if (CallNode->GetFunctionName().ToString().Contains(TEXT("EndAbility")))
+			{
+				EndAbilityNode = CallNode;
+				break;
+			}
+		}
+	}
+
+	for (const FManifestVFXSpawnDefinition& VFXSpawn : VFXSpawns)
+	{
+		// Create a variable to store the NiagaraComponent reference
+		FName VarName = FName(*FString::Printf(TEXT("NiagaraComp_%s"), *VFXSpawn.Id));
+		FEdGraphPinType ComponentPinType;
+		ComponentPinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+		ComponentPinType.PinSubCategoryObject = UNiagaraComponent::StaticClass();
+
+		// Add variable to blueprint (if not exists)
+		if (FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, VarName) == INDEX_NONE)
+		{
+			FBlueprintEditorUtils::AddMemberVariable(Blueprint, VarName, ComponentPinType);
+			LogGeneration(FString::Printf(TEXT("  Added VFX variable: %s"), *VarName.ToString()));
+		}
+
+		// Create SpawnSystemAttached node
+		UK2Node_CallFunction* SpawnNode = NewObject<UK2Node_CallFunction>(EventGraph);
+		EventGraph->AddNode(SpawnNode, false, false);
+
+		// Find UNiagaraFunctionLibrary::SpawnSystemAttached
+		UClass* NiagaraLibClass = FindObject<UClass>(nullptr, TEXT("/Script/Niagara.NiagaraFunctionLibrary"));
+		if (!NiagaraLibClass)
+		{
+			LogGeneration(TEXT("  VFXSpawn: NiagaraFunctionLibrary not found"));
+			SpawnNode->DestroyNode();
+			continue;
+		}
+
+		UFunction* SpawnFunc = NiagaraLibClass->FindFunctionByName(TEXT("SpawnSystemAttached"));
+		if (!SpawnFunc)
+		{
+			LogGeneration(TEXT("  VFXSpawn: SpawnSystemAttached function not found"));
+			SpawnNode->DestroyNode();
+			continue;
+		}
+
+		SpawnNode->SetFromFunction(SpawnFunc);
+		SpawnNode->CreateNewGuid();
+		SpawnNode->PostPlacedNewNode();
+		SpawnNode->AllocateDefaultPins();
+
+		// Set NiagaraSystem parameter
+		UEdGraphPin* SystemPin = SpawnNode->FindPin(TEXT("SystemTemplate"));
+		if (SystemPin)
+		{
+			// Format as soft object path
+			SystemPin->DefaultValue = FString::Printf(TEXT("/Game/%s.%s"),
+				*VFXSpawn.NiagaraSystem, *FPaths::GetBaseFilename(VFXSpawn.NiagaraSystem));
+		}
+
+		// Set Socket parameter
+		if (!VFXSpawn.Socket.IsEmpty())
+		{
+			UEdGraphPin* SocketPin = SpawnNode->FindPin(TEXT("AttachPointName"));
+			if (SocketPin)
+			{
+				SocketPin->DefaultValue = VFXSpawn.Socket;
+			}
+		}
+
+		// Position node
+		if (ActivateEvent)
+		{
+			SpawnNode->NodePosX = ActivateEvent->NodePosX + 400 + (NodesGenerated * 200);
+			SpawnNode->NodePosY = ActivateEvent->NodePosY + 100;
+		}
+
+		// Create VariableSet node to store component reference
+		UK2Node_VariableSet* SetVarNode = NewObject<UK2Node_VariableSet>(EventGraph);
+		EventGraph->AddNode(SetVarNode, false, false);
+		SetVarNode->VariableReference.SetSelfMember(VarName);
+		SetVarNode->CreateNewGuid();
+		SetVarNode->PostPlacedNewNode();
+		SetVarNode->AllocateDefaultPins();
+		SetVarNode->NodePosX = SpawnNode->NodePosX + 250;
+		SetVarNode->NodePosY = SpawnNode->NodePosY;
+
+		// Wire SpawnNode Return -> SetVar input
+		UEdGraphPin* SpawnReturnPin = SpawnNode->FindPin(TEXT("ReturnValue"));
+		UEdGraphPin* SetVarValuePin = SetVarNode->FindPin(VarName, EGPD_Input);
+		if (SpawnReturnPin && SetVarValuePin)
+		{
+			SpawnReturnPin->MakeLinkTo(SetVarValuePin);
+		}
+
+		// Wire exec: SpawnNode -> SetVarNode
+		UEdGraphPin* SpawnExecOut = SpawnNode->FindPin(UEdGraphSchema_K2::PN_Then);
+		UEdGraphPin* SetVarExecIn = SetVarNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+		if (SpawnExecOut && SetVarExecIn)
+		{
+			SpawnExecOut->MakeLinkTo(SetVarExecIn);
+		}
+
+		// Wire into ActivateAbility
+		if (ActivateEvent)
+		{
+			UEdGraphPin* ActivateExecOut = ActivateEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+			UEdGraphPin* SpawnExecIn = SpawnNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+			if (ActivateExecOut && SpawnExecIn)
+			{
+				// Insert at the beginning of the chain
+				if (ActivateExecOut->LinkedTo.Num() > 0)
+				{
+					UEdGraphPin* ExistingNext = ActivateExecOut->LinkedTo[0];
+					ActivateExecOut->BreakLinkTo(ExistingNext);
+					UEdGraphPin* SetVarExecOut = SetVarNode->FindPin(UEdGraphSchema_K2::PN_Then);
+					if (SetVarExecOut)
+					{
+						SetVarExecOut->MakeLinkTo(ExistingNext);
+					}
+				}
+				ActivateExecOut->MakeLinkTo(SpawnExecIn);
+			}
+		}
+
+		// If destroy_on_end_ability, add cleanup in EndAbility
+		if (VFXSpawn.bDestroyOnEndAbility && EndAbilityNode)
+		{
+			// Create IsValid check
+			UK2Node_CallFunction* IsValidNode = NewObject<UK2Node_CallFunction>(EventGraph);
+			EventGraph->AddNode(IsValidNode, false, false);
+			UFunction* IsValidFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(TEXT("IsValid"));
+			if (IsValidFunc)
+			{
+				IsValidNode->SetFromFunction(IsValidFunc);
+				IsValidNode->CreateNewGuid();
+				IsValidNode->PostPlacedNewNode();
+				IsValidNode->AllocateDefaultPins();
+				IsValidNode->NodePosX = EndAbilityNode->NodePosX - 400;
+				IsValidNode->NodePosY = EndAbilityNode->NodePosY + 100;
+
+				// Create VariableGet for the component
+				UK2Node_VariableGet* GetVarNode = NewObject<UK2Node_VariableGet>(EventGraph);
+				EventGraph->AddNode(GetVarNode, false, false);
+				GetVarNode->VariableReference.SetSelfMember(VarName);
+				GetVarNode->CreateNewGuid();
+				GetVarNode->PostPlacedNewNode();
+				GetVarNode->AllocateDefaultPins();
+				GetVarNode->NodePosX = IsValidNode->NodePosX - 150;
+				GetVarNode->NodePosY = IsValidNode->NodePosY;
+
+				// Wire GetVar -> IsValid input
+				UEdGraphPin* GetVarOut = GetVarNode->FindPin(VarName);
+				UEdGraphPin* IsValidInput = IsValidNode->FindPin(TEXT("Object"));
+				if (GetVarOut && IsValidInput)
+				{
+					GetVarOut->MakeLinkTo(IsValidInput);
+				}
+
+				// Create DestroyComponent call
+				UK2Node_CallFunction* DestroyNode = NewObject<UK2Node_CallFunction>(EventGraph);
+				EventGraph->AddNode(DestroyNode, false, false);
+				UFunction* DestroyFunc = UActorComponent::StaticClass()->FindFunctionByName(TEXT("DestroyComponent"));
+				if (DestroyFunc)
+				{
+					DestroyNode->SetFromFunction(DestroyFunc);
+					DestroyNode->CreateNewGuid();
+					DestroyNode->PostPlacedNewNode();
+					DestroyNode->AllocateDefaultPins();
+					DestroyNode->NodePosX = IsValidNode->NodePosX + 200;
+					DestroyNode->NodePosY = IsValidNode->NodePosY;
+
+					// Wire GetVar -> DestroyComponent Target
+					UEdGraphPin* DestroyTarget = DestroyNode->FindPin(TEXT("self"));
+					if (GetVarOut && DestroyTarget)
+					{
+						// Need another GetVar for target (or reuse)
+						GetVarOut->MakeLinkTo(DestroyTarget);
+					}
+
+					// Create Branch for IsValid check
+					UK2Node_IfThenElse* BranchNode = NewObject<UK2Node_IfThenElse>(EventGraph);
+					EventGraph->AddNode(BranchNode, false, false);
+					BranchNode->CreateNewGuid();
+					BranchNode->PostPlacedNewNode();
+					BranchNode->AllocateDefaultPins();
+					BranchNode->NodePosX = IsValidNode->NodePosX + 100;
+					BranchNode->NodePosY = IsValidNode->NodePosY - 50;
+
+					// Wire IsValid return -> Branch condition
+					UEdGraphPin* IsValidReturn = IsValidNode->FindPin(TEXT("ReturnValue"));
+					UEdGraphPin* BranchCondition = BranchNode->FindPin(TEXT("Condition"));
+					if (IsValidReturn && BranchCondition)
+					{
+						IsValidReturn->MakeLinkTo(BranchCondition);
+					}
+
+					// Wire Branch True -> Destroy
+					UEdGraphPin* BranchTrue = BranchNode->FindPin(TEXT("IfTrue"));
+					UEdGraphPin* DestroyExec = DestroyNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+					if (BranchTrue && DestroyExec)
+					{
+						BranchTrue->MakeLinkTo(DestroyExec);
+					}
+
+					// Insert before EndAbility
+					UEdGraphPin* EndAbilityExecIn = EndAbilityNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+					if (EndAbilityExecIn && EndAbilityExecIn->LinkedTo.Num() > 0)
+					{
+						UEdGraphPin* PrevExecOut = EndAbilityExecIn->LinkedTo[0];
+						PrevExecOut->BreakLinkTo(EndAbilityExecIn);
+
+						// Wire: Previous -> Branch -> EndAbility
+						UEdGraphPin* BranchExecIn = BranchNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+						if (BranchExecIn)
+						{
+							PrevExecOut->MakeLinkTo(BranchExecIn);
+						}
+
+						// Wire both Branch outputs to EndAbility
+						UEdGraphPin* BranchFalse = BranchNode->FindPin(TEXT("IfFalse"));
+						UEdGraphPin* DestroyExecOut = DestroyNode->FindPin(UEdGraphSchema_K2::PN_Then);
+						if (BranchFalse)
+						{
+							BranchFalse->MakeLinkTo(EndAbilityExecIn);
+						}
+						if (DestroyExecOut)
+						{
+							DestroyExecOut->MakeLinkTo(EndAbilityExecIn);
+						}
+					}
+				}
+			}
+		}
+
+		NodesGenerated++;
+		LogGeneration(FString::Printf(TEXT("  Generated VFXSpawn: %s (%s, socket: %s, cleanup: %s)"),
+			*VFXSpawn.Id, *VFXSpawn.NiagaraSystem,
+			VFXSpawn.Socket.IsEmpty() ? TEXT("none") : *VFXSpawn.Socket,
+			VFXSpawn.bDestroyOnEndAbility ? TEXT("yes") : TEXT("no")));
+	}
+
+	return NodesGenerated;
+}
+
+// ============================================================================
+// v4.13: Category C - P2.1 Delegate Binding IR + Codegen
+// ============================================================================
+
+int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
+	UBlueprint* Blueprint,
+	const TArray<FManifestDelegateBindingDefinition>& DelegateBindings)
+{
+	if (!Blueprint || DelegateBindings.Num() == 0)
+	{
+		return 0;
+	}
+
+	// Find the event graph
+	UEdGraph* EventGraph = nullptr;
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (Graph)
+		{
+			EventGraph = Graph;
+			break;
+		}
+	}
+
+	if (!EventGraph)
+	{
+		LogGeneration(TEXT("  GenerateDelegateBindingNodes: No event graph found"));
+		return 0;
+	}
+
+	int32 NodesGenerated = 0;
+
+	// Find the ActivateAbility event for binding setup
+	UK2Node_Event* ActivateEvent = nullptr;
+	for (UEdGraphNode* Node : EventGraph->Nodes)
+	{
+		if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+		{
+			FString EventName = EventNode->GetFunctionName().ToString();
+			if (EventName.Contains(TEXT("ActivateAbility")))
+			{
+				ActivateEvent = EventNode;
+				break;
+			}
+		}
+	}
+
+	for (const FManifestDelegateBindingDefinition& Binding : DelegateBindings)
+	{
+		// Create Custom Event for the handler
+		UK2Node_CustomEvent* HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
+		EventGraph->AddNode(HandlerEvent, false, false);
+		HandlerEvent->CustomFunctionName = FName(*Binding.Handler);
+		HandlerEvent->CreateNewGuid();
+		HandlerEvent->PostPlacedNewNode();
+		HandlerEvent->AllocateDefaultPins();
+
+		// Position the handler event
+		HandlerEvent->NodePosX = 1000 + (NodesGenerated * 400);
+		HandlerEvent->NodePosY = 500;
+
+		// Add parameters based on delegate type
+		if (Binding.Delegate.Equals(TEXT("OnDied"), ESearchCase::IgnoreCase))
+		{
+			// OnDied typically passes the killed actor and damage info
+			// Parameters depend on the actual delegate signature
+			LogGeneration(FString::Printf(TEXT("  Generated handler event: %s (OnDied - params depend on ASC delegate)"), *Binding.Handler));
+		}
+		else if (Binding.Delegate.Equals(TEXT("OnAttributeChanged"), ESearchCase::IgnoreCase))
+		{
+			// OnAttributeChanged passes attribute, old value, new value
+			LogGeneration(FString::Printf(TEXT("  Generated handler event: %s (OnAttributeChanged for %s)"),
+				*Binding.Handler, *Binding.Attribute));
+		}
+		else if (Binding.Delegate.Equals(TEXT("OnDamagedBy"), ESearchCase::IgnoreCase))
+		{
+			LogGeneration(FString::Printf(TEXT("  Generated handler event: %s (OnDamagedBy)"), *Binding.Handler));
+		}
+
+		// Note: Full delegate binding requires UK2Node_AddDelegate which is complex
+		// For now, create the handler events and log binding intent
+		// The actual BindDynamic macro expansion is non-trivial to generate programmatically
+
+		LogGeneration(FString::Printf(TEXT("  DelegateBinding: %s.%s -> %s (handler created, manual bind required)"),
+			*Binding.Source, *Binding.Delegate, *Binding.Handler));
+
+		NodesGenerated++;
+	}
+
+	if (NodesGenerated > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Generated %d delegate handler events (manual binding setup may be required)"), NodesGenerated));
+	}
+
+	return NodesGenerated;
+}
+
+// ============================================================================
 // v2.3.0: New Asset Type Generators
 // ============================================================================
 
@@ -13625,6 +14300,15 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		return Result;
 	}
 
+	// v4.13: Category C - P1.3 Startup Effects Validation
+	TArray<FString> ValidationWarnings;
+	ValidateStartupEffects(Definition, ValidationWarnings);
+	for (const FString& Warning : ValidationWarnings)
+	{
+		Result.Warnings.Add(Warning);
+		LogGeneration(FString::Printf(TEXT("  WARNING: %s"), *Warning));
+	}
+
 	// v3.0: Use metadata-aware existence check
 	uint64 InputHash = Definition.ComputeHash();
 	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Ability Configuration"), InputHash, Result))
@@ -13758,6 +14442,55 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 	Result.GeneratorId = TEXT("AbilityConfiguration");
 	Result.DetermineCategory();
 	return Result;
+}
+
+// v4.13: Category C - P1.3 Startup Effects Validation
+void FAbilityConfigurationGenerator::ValidateStartupEffects(const FManifestAbilityConfigurationDefinition& Definition, TArray<FString>& OutWarnings)
+{
+	// Form abilities that require a default form state
+	static TArray<FString> FormAbilityNames = {
+		TEXT("GA_FatherCrawler"),
+		TEXT("GA_FatherArmor"),
+		TEXT("GA_FatherExoskeleton"),
+		TEXT("GA_FatherSymbiote"),
+		TEXT("GA_FatherEngineer")
+	};
+
+	// Check if this configuration contains any form abilities
+	bool bHasFormAbility = false;
+	for (const FString& AbilityName : Definition.Abilities)
+	{
+		if (FormAbilityNames.Contains(AbilityName))
+		{
+			bHasFormAbility = true;
+			break;
+		}
+	}
+
+	if (!bHasFormAbility)
+	{
+		return;  // No form abilities, skip validation
+	}
+
+	// Check if startup_effects contains a GE_*State effect
+	bool bHasFormState = false;
+	for (const FString& EffectName : Definition.StartupEffects)
+	{
+		// Check for GE_*State pattern (e.g., GE_CrawlerState, GE_ArmorState)
+		if (EffectName.StartsWith(TEXT("GE_")) && EffectName.EndsWith(TEXT("State")))
+		{
+			bHasFormState = true;
+			break;
+		}
+	}
+
+	if (!bHasFormState)
+	{
+		FString ContextPath = FString::Printf(TEXT("AbilityConfiguration/%s"), *Definition.Name);
+		OutWarnings.Add(FString::Printf(
+			TEXT("W_AC_MISSING_FORM_STATE | %s | Ability configuration with form abilities should have a default GE_*State in startup_effects | Add 'GE_CrawlerState' or another form state to startup_effects"),
+			*ContextPath));
+	}
 }
 
 // v2.3.0: Activity Configuration Generator - creates UNPCActivityConfiguration data assets
