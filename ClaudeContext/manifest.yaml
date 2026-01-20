@@ -1532,8 +1532,8 @@ gameplay_abilities:
         - from: [GetOrigSpeed, OriginalWalkSpeed]
           to: [RestoreSpeed, NewMaxWalkSpeed]
 
-  # GA_FatherExoskeleton - Attach to Player Back with Speed Boost (Option B Form Identity)
-  # v4.13.5: GAS Audit compliant - NO invulnerability per INV-1
+  # GA_FatherExoskeleton - Attach to Player Back with Speed/Jump Boost (Option B Form Identity)
+  # v4.14.3: GAS Audit FIX-3 - Added JumpZVelocity boost and restore; INV-1 compliant (no invulnerability)
   - name: GA_FatherExoskeleton
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -1772,6 +1772,35 @@ gameplay_abilities:
             property_name: MaxWalkSpeed
             target_class: CharacterMovementComponent
           position: [3000, 0]
+        # v4.14.3: Jump boost (FIX-3 per GAS Audit)
+        - id: GetJumpZVelocity
+          type: PropertyGet
+          properties:
+            property_name: JumpZVelocity
+            target_class: CharacterMovementComponent
+          position: [3000, -100]
+        - id: SetOrigJump
+          type: VariableSet
+          properties:
+            variable_name: OriginalJumpZVelocity
+          position: [3200, 0]
+        - id: GetJumpBoost
+          type: VariableGet
+          properties:
+            variable_name: JumpBoostMultiplier
+          position: [3200, 100]
+        - id: MultiplyJump
+          type: CallFunction
+          properties:
+            function: Multiply_FloatFloat
+            class: KismetMathLibrary
+          position: [3400, 0]
+        - id: SetJumpVelocity
+          type: PropertySet
+          properties:
+            property_name: JumpZVelocity
+            target_class: CharacterMovementComponent
+          position: [3600, 0]
         - id: GetMesh
           type: PropertyGet
           properties:
@@ -1837,6 +1866,18 @@ gameplay_abilities:
             property_name: MaxWalkSpeed
             target_class: CharacterMovementComponent
           position: [1200, 400]
+        # v4.14.3: Jump restore (FIX-3 per GAS Audit)
+        - id: GetOrigJump_End
+          type: VariableGet
+          properties:
+            variable_name: OriginalJumpZVelocity
+          position: [1500, 500]
+        - id: RestoreJump_End
+          type: PropertySet
+          properties:
+            property_name: JumpZVelocity
+            target_class: CharacterMovementComponent
+          position: [1500, 400]
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (GetAvatarActor is pure - no exec pins)
@@ -1876,6 +1917,11 @@ gameplay_abilities:
         - from: [SetOrigSpeed, Exec]
           to: [SetMaxSpeed, Exec]
         - from: [SetMaxSpeed, Exec]
+          to: [SetOrigJump, Exec]
+        # v4.14.3: Jump boost exec flow (FIX-3 per GAS Audit)
+        - from: [SetOrigJump, Exec]
+          to: [SetJumpVelocity, Exec]
+        - from: [SetJumpVelocity, Exec]
           to: [AttachToComponent, Exec]
         - from: [AttachToComponent, Exec]
           to: [SetCurrentForm, Exec]
@@ -1945,6 +1991,19 @@ gameplay_abilities:
           to: [MultiplySpeed, B]
         - from: [MultiplySpeed, ReturnValue]
           to: [SetMaxSpeed, NewMaxWalkSpeed]
+        # v4.14.3: Data flow - Jump (FIX-3 per GAS Audit)
+        - from: [GetCharMov, CharacterMovement]
+          to: [GetJumpZVelocity, Target]
+        - from: [GetJumpZVelocity, JumpZVelocity]
+          to: [SetOrigJump, OriginalJumpZVelocity]
+        - from: [GetJumpZVelocity, JumpZVelocity]
+          to: [MultiplyJump, A]
+        - from: [GetJumpBoost, JumpBoostMultiplier]
+          to: [MultiplyJump, B]
+        - from: [MultiplyJump, ReturnValue]
+          to: [SetJumpVelocity, NewJumpZVelocity]
+        - from: [GetCharMov, CharacterMovement]
+          to: [SetJumpVelocity, Target]
         # Data flow - Attach
         - from: [GetMesh, Mesh]
           to: [AttachToComponent, Parent]
@@ -1959,6 +2018,9 @@ gameplay_abilities:
         # TRUE path (was cancelled by form switch) - do cleanup
         - from: [Branch_WasCancelled, then]
           to: [RestoreSpeed_End, Exec]
+        # v4.14.3: Chain jump restore after speed restore (FIX-3 per GAS Audit)
+        - from: [RestoreSpeed_End, Exec]
+          to: [RestoreJump_End, Exec]
         # FALSE path (normal end) - skip cleanup (no connection needed)
         - from: [GetPlayerRef_End, PlayerRef]
           to: [GetCharMov_End, Target]
@@ -1966,6 +2028,11 @@ gameplay_abilities:
           to: [RestoreSpeed_End, Target]
         - from: [GetOrigSpeed_End, OriginalWalkSpeed]
           to: [RestoreSpeed_End, NewMaxWalkSpeed]
+        # v4.14.3: Jump restore data flow (FIX-3 per GAS Audit)
+        - from: [GetCharMov_End, CharacterMovement]
+          to: [RestoreJump_End, Target]
+        - from: [GetOrigJump_End, OriginalJumpZVelocity]
+          to: [RestoreJump_End, NewJumpZVelocity]
 
   # GA_FatherSymbiote - Merge with Player (Timed) (Option B Form Identity)
   # v4.13.5: GAS Audit compliant - NO invulnerability, timer guards, Event_EndAbility
