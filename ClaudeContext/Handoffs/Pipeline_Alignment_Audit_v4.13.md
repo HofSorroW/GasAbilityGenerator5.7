@@ -116,9 +116,13 @@ branches:
           dialogue: DBP_BlacksmithQuest
 ```
 
-**Impact:** Quest state machines require manual setup in editor. The generator only creates the shell blueprint.
+**Impact:** ~~Quest state machines require manual setup in editor.~~ **RESOLVED in v4.13+**
 
-**Workaround:** States and branches are documented as requiring manual setup per CLAUDE.md.
+**Status:** Quest generator now fully automates runtime state machine:
+- `Quest->AddState(State)` for each state
+- `Quest->AddBranch(Branch)` for each branch
+- `Quest->SetQuestStartState()` for initial state
+- UEdGraph visual nodes (editor UI only) are not generated but not required for runtime.
 
 ---
 
@@ -343,12 +347,13 @@ if (!DecoratorDef.Operation.IsEmpty())
 
 **Investigate:** Check if `UScheduledBehavior_AddNPCGoalByClass` has a location parameter. If yes, add parsing and generation. If no, update documentation to remove the field.
 
-### Priority 3: Quest State Machine (H3)
+### Priority 3: Quest State Machine (H3) - **RESOLVED**
 
-**Options:**
-1. Implement full state machine generation (complex)
-2. Document that quests require manual state machine setup (current approach)
-3. Generate stub states/branches that can be completed in editor
+**Resolution:** Full state machine generation implemented in v4.13+. Generator uses correct UQuest APIs:
+- `Quest->AddState(State)` creates UQuestState objects
+- `Quest->AddBranch(Branch)` creates UQuestBranch objects
+- `Quest->SetQuestStartState()` sets initial state
+- Runtime state machine fully functional without UEdGraph visual nodes
 
 ---
 
@@ -356,22 +361,25 @@ if (!DecoratorDef.Operation.IsEmpty())
 
 After fixes are applied, verify:
 
-- [ ] BT with `key_query: IsSet` generates decorator with correct KeyQuery
-- [ ] BT with `notify_observer: OnResultChange` generates decorator with correct observer
+- [x] BT with `key_query: IsSet` generates decorator with correct KeyQuery **(RESOLVED v4.13.2)**
+- [x] BT with `notify_observer: OnResultChange` generates decorator with correct observer **(RESOLVED v4.13.2)**
 - [ ] Activity schedules with `location:` field either work or doc is updated
-- [ ] Quest generator either creates state machine or doc clearly states manual setup required
+- [x] Quest generator creates full state machine **(RESOLVED v4.13+)**
 
 ---
 
 ## Conclusion
 
-The GasAbilityGenerator plugin has **excellent overall alignment** between manifest, parser, and generator. The issues found are:
+The GasAbilityGenerator plugin has **excellent overall alignment** between manifest, parser, and generator.
 
-- **3 HIGH severity:** BT decorator fields, ActivitySchedule location, Quest state machine
+**Status Update (v4.13.2):**
+- ~~**3 HIGH severity**~~ → **1 HIGH severity remaining:** ActivitySchedule location
+  - ✅ BT decorator fields (H1) - **RESOLVED** in v4.13.2 (key_query alias, notify_observer, BasicOperation, NotifyObserver)
+  - ✅ Quest state machine (H3) - **RESOLVED** in v4.13+ (full AddState/AddBranch/SetQuestStartState automation)
 - **5 MEDIUM severity:** Mostly naming inconsistencies (some already handled as aliases)
 - **4 LOW severity:** Documentation gaps and intentional limitations
 
-The BT decorator issue (H1) is the most impactful and should be fixed first, as it causes decorators to potentially have incorrect behavior.
+**Remaining work:** ActivitySchedule location field (H2) needs investigation.
 
 ---
 

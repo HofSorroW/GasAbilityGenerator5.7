@@ -824,11 +824,12 @@ goal_items:
 #   NPC (NPCDefinition.dialogue) → Dialogue (with start_quest event) → Quest begins
 #   The `questgiver` field is for documentation - UQuest has no Questgiver property.
 #   The actual questgiver is the NPC whose dialogue contains a start_quest event for this quest.
-# NOTE: Quest State Machine - REQUIRES MANUAL SETUP:
-#   The generator creates the UQuestBlueprint shell and applies CDO properties (dialogue, etc.)
-#   but does NOT generate UQuestState/UQuestBranch nodes. States/branches defined below are
-#   parsed and logged, but the actual state machine graph must be created manually in editor.
-#   This is intentional - the quest editor provides specialized tooling for state machine design.
+# NOTE: Quest State Machine - FULLY AUTOMATED (v4.13+):
+#   The generator creates UQuestState and UQuestBranch runtime objects using:
+#   - Quest->AddState(State) for each state
+#   - Quest->AddBranch(Branch) for each branch
+#   - Quest->SetQuestStartState() for the initial state
+#   UEdGraph visual nodes (editor UI) are not generated - runtime state machine works without them.
 quests:
   - name: Quest_ForgeSupplies
     folder: Quests/Town
