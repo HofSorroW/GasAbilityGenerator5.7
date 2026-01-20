@@ -2342,7 +2342,8 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 		}
 		else if (bInItem)
 		{
-			if (TrimmedLine.StartsWith(TEXT("blackboard_asset:")))
+			// v4.13.1: Support both blackboard_asset: and blackboard: aliases
+			if (TrimmedLine.StartsWith(TEXT("blackboard_asset:")) || TrimmedLine.StartsWith(TEXT("blackboard:")))
 			{
 				CurrentDef.BlackboardAsset = GetLineValue(TrimmedLine);
 				bInNodes = false;
@@ -2356,6 +2357,12 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 			else if (TrimmedLine.StartsWith(TEXT("root_type:")))
 			{
 				CurrentDef.RootType = GetLineValue(TrimmedLine);
+				bInNodes = false;
+			}
+			// v4.13.1: description field (ignored but handled to prevent fall-through)
+			else if (TrimmedLine.StartsWith(TEXT("description:")))
+			{
+				// Description is for documentation only, not stored
 				bInNodes = false;
 			}
 			// v3.1: nodes array
@@ -2488,9 +2495,15 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				{
 					CurrentDecorator.BlackboardKey = GetLineValue(TrimmedLine);
 				}
-				else if (bInDecorators && TrimmedLine.StartsWith(TEXT("operation:")))
+				// v4.13.2: Support both operation: and key_query: aliases
+				else if (bInDecorators && (TrimmedLine.StartsWith(TEXT("operation:")) || TrimmedLine.StartsWith(TEXT("key_query:"))))
 				{
 					CurrentDecorator.Operation = GetLineValue(TrimmedLine);
+				}
+				// v4.13.2: NotifyObserver for BTDecorator_Blackboard (OnResultChange, OnValueChange)
+				else if (bInDecorators && (TrimmedLine.StartsWith(TEXT("notify_observer:")) || TrimmedLine.StartsWith(TEXT("notifyobserver:"))))
+				{
+					CurrentDecorator.NotifyObserver = GetLineValue(TrimmedLine);
 				}
 				// v4.0: Enhanced decorator properties
 				else if (bInDecorators && (TrimmedLine.StartsWith(TEXT("inverse_condition:")) || TrimmedLine.StartsWith(TEXT("binversecondition:"))))

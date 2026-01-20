@@ -4241,11 +4241,21 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 	// Link blackboard if specified
 	if (!Definition.BlackboardAsset.IsEmpty())
 	{
-		// Try multiple paths for blackboard
+		// Try multiple paths for blackboard (project paths first, then NarrativePro)
 		TArray<FString> BBPaths;
+		// Project paths
+		BBPaths.Add(FString::Printf(TEXT("%s/AI/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
 		BBPaths.Add(FString::Printf(TEXT("%s/AI/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("/Game/AI/Blackboards/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
 		BBPaths.Add(FString::Printf(TEXT("/Game/AI/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
 		BBPaths.Add(FString::Printf(TEXT("%s/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		// v4.13.2: NarrativePro standard blackboard paths
+		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Flee/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
 
 		UBlackboardData* BB = nullptr;
 		for (const FString& BBPath : BBPaths)
@@ -4609,6 +4619,71 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 							if (!DecoratorDef.BlackboardKey.IsEmpty())
 							{
 								SetBlackboardKey(Decorator, DecoratorDef.BlackboardKey);
+							}
+
+							// v4.13.2: Set key operation (IsSet, IsNotSet, etc.) for BTDecorator_Blackboard
+							if (!DecoratorDef.Operation.IsEmpty())
+							{
+								// BTDecorator_Blackboard uses BasicOperation (EBasicKeyOperation) for simple checks
+								// or StringOperation/ArithmeticOperation for typed checks
+								// Map common operation strings to EBasicKeyOperation values
+								int32 OperationValue = -1;
+								FString OpLower = DecoratorDef.Operation.ToLower();
+								if (OpLower == TEXT("isset") || OpLower == TEXT("is_set"))
+								{
+									OperationValue = 0; // EBasicKeyOperation::Set
+								}
+								else if (OpLower == TEXT("isnotset") || OpLower == TEXT("is_not_set"))
+								{
+									OperationValue = 1; // EBasicKeyOperation::NotSet
+								}
+
+								if (OperationValue >= 0)
+								{
+									// Try BasicOperation first (for basic key queries)
+									if (FByteProperty* BasicOpProp = CastField<FByteProperty>(DecoratorClass->FindPropertyByName(TEXT("BasicOperation"))))
+									{
+										BasicOpProp->SetPropertyValue(BasicOpProp->ContainerPtrToValuePtr<void>(Decorator), (uint8)OperationValue);
+										LogGeneration(FString::Printf(TEXT("      Set BasicOperation = %s"), *DecoratorDef.Operation));
+									}
+									else if (FEnumProperty* EnumOpProp = CastField<FEnumProperty>(DecoratorClass->FindPropertyByName(TEXT("BasicOperation"))))
+									{
+										void* ValuePtr = EnumOpProp->ContainerPtrToValuePtr<void>(Decorator);
+										EnumOpProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, (int64)OperationValue);
+										LogGeneration(FString::Printf(TEXT("      Set BasicOperation = %s"), *DecoratorDef.Operation));
+									}
+								}
+							}
+
+							// v4.13.2: Set NotifyObserver for BTDecorator_Blackboard
+							if (!DecoratorDef.NotifyObserver.IsEmpty())
+							{
+								// Map notify observer strings to EBTBlackboardRestart values
+								int32 NotifyValue = -1;
+								FString NotifyLower = DecoratorDef.NotifyObserver.ToLower();
+								if (NotifyLower == TEXT("onresultchange") || NotifyLower == TEXT("on_result_change") || NotifyLower == TEXT("resultchange"))
+								{
+									NotifyValue = 0; // EBTBlackboardRestart::ResultChange
+								}
+								else if (NotifyLower == TEXT("onvaluechange") || NotifyLower == TEXT("on_value_change") || NotifyLower == TEXT("valuechange"))
+								{
+									NotifyValue = 1; // EBTBlackboardRestart::ValueChange
+								}
+
+								if (NotifyValue >= 0)
+								{
+									if (FByteProperty* NotifyProp = CastField<FByteProperty>(DecoratorClass->FindPropertyByName(TEXT("NotifyObserver"))))
+									{
+										NotifyProp->SetPropertyValue(NotifyProp->ContainerPtrToValuePtr<void>(Decorator), (uint8)NotifyValue);
+										LogGeneration(FString::Printf(TEXT("      Set NotifyObserver = %s"), *DecoratorDef.NotifyObserver));
+									}
+									else if (FEnumProperty* EnumNotifyProp = CastField<FEnumProperty>(DecoratorClass->FindPropertyByName(TEXT("NotifyObserver"))))
+									{
+										void* ValuePtr = EnumNotifyProp->ContainerPtrToValuePtr<void>(Decorator);
+										EnumNotifyProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, (int64)NotifyValue);
+										LogGeneration(FString::Printf(TEXT("      Set NotifyObserver = %s"), *DecoratorDef.NotifyObserver));
+									}
+								}
 							}
 
 							// v4.0: Apply custom properties

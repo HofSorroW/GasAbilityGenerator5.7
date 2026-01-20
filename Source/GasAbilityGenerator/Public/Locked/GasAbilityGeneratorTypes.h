@@ -1473,12 +1473,15 @@ struct FManifestBTDecoratorDefinition
 {
 	FString Class;                        // Decorator class (e.g., BTDecorator_Blackboard, custom BP class)
 	FString BlackboardKey;                // Blackboard key to check (if applicable)
-	FString Operation;                    // Condition operation (IsSet, IsNotSet, etc.)
+	FString Operation;                    // Condition operation (IsSet, IsNotSet, etc.) - alias: key_query
 	TMap<FString, FString> Properties;    // Additional properties
 
 	// v4.0: Enhanced decorator configuration
 	bool bInverseCondition = false;       // Invert the decorator condition
 	FString FlowAbortMode;                // None, Self, LowerPriority, Both
+
+	// v4.13.2: NotifyObserver for BTDecorator_Blackboard
+	FString NotifyObserver;               // OnResultChange, OnValueChange (controls when decorator re-evaluates)
 
 	uint64 ComputeHash() const
 	{
@@ -1487,6 +1490,7 @@ struct FManifestBTDecoratorDefinition
 		Hash ^= GetTypeHash(Operation) << 16;
 		Hash ^= static_cast<uint64>(bInverseCondition ? 1 : 0) << 24;
 		Hash ^= GetTypeHash(FlowAbortMode) << 28;
+		Hash ^= static_cast<uint64>(GetTypeHash(NotifyObserver)) << 32;  // Cast to uint64 before shifting
 		for (const auto& Prop : Properties)
 		{
 			Hash ^= GetTypeHash(Prop.Key);

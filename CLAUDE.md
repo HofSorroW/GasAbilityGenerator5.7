@@ -778,6 +778,12 @@ equippable_items:
 # v3.9: ActivitySchedule for NPC daily routines
 # Uses UScheduledBehavior_AddNPCGoalByClass - concrete helper for goal-based scheduling
 # Time format: 0-2400 where 100 = 1 hour (e.g., 600 = 6:00 AM, 1800 = 6:00 PM)
+# NOTE on Locations: Narrative Pro handles locations via goal-specific classes, not schedule-level:
+#   - Goal_MoveToDestination (GoToLocation) - walk to a point
+#   - Goal_DriveToDestination - drive a vehicle to a point
+#   - Goal_FlyToDestination - fly to a point
+#   To schedule NPC location changes, create goal subclasses with preset destinations
+#   (e.g., Goal_GoToForge, Goal_GoToTavern) and reference those in the schedule.
 activity_schedules:
   - name: Schedule_BlacksmithDay
     folder: AI/Schedules
@@ -787,19 +793,15 @@ activity_schedules:
         goal_class: Goal_Work                       # UNPCGoalItem class to add
         score_override: 100.0                       # Priority score (-1 = use goal's default)
         reselect: true                              # Trigger activity reselection
-        location: Forge                             # Optional location tag
       - start_time: 1200
         end_time: 1300                              # 1:00 PM
         goal_class: Goal_Eat
-        location: Tavern
       - start_time: 1300
         end_time: 1800                              # 6:00 PM
         goal_class: Goal_Work
-        location: Forge
       - start_time: 2200                            # 10:00 PM
         end_time: 600                               # Next day 6:00 AM (wraps)
         goal_class: Goal_Sleep
-        location: BlacksmithHome
 
 # v3.9: GoalItem for AI objectives
 goal_items:
@@ -817,11 +819,16 @@ goal_items:
     require_tags:                                   # Tags required to pursue goal
       - State.Alive
 
-# v3.9.3: Quest blueprint with full state machine
+# v3.9.3: Quest blueprint with state machine definition
 # NOTE: Questgiver Pattern in Narrative Pro:
 #   NPC (NPCDefinition.dialogue) → Dialogue (with start_quest event) → Quest begins
 #   The `questgiver` field is for documentation - UQuest has no Questgiver property.
 #   The actual questgiver is the NPC whose dialogue contains a start_quest event for this quest.
+# NOTE: Quest State Machine - REQUIRES MANUAL SETUP:
+#   The generator creates the UQuestBlueprint shell and applies CDO properties (dialogue, etc.)
+#   but does NOT generate UQuestState/UQuestBranch nodes. States/branches defined below are
+#   parsed and logged, but the actual state machine graph must be created manually in editor.
+#   This is intentional - the quest editor provides specialized tooling for state machine design.
 quests:
   - name: Quest_ForgeSupplies
     folder: Quests/Town

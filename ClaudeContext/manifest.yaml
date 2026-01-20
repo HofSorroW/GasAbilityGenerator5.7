@@ -881,35 +881,69 @@ gameplay_abilities:
             function: K2_EndAbility
             target_self: true
           position: [2400, -100]
+        # TRANSITION PRELUDE (Option B) - False branch (form switch)
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1500, 200]
+        - id: RemovePriorFormState
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1800, 200]
+        - id: MakeTagContainer_FormState
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1700, 350]
+        - id: MakeLiteralTag_FormState
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [1500, 350]
+        - id: ApplyCrawlerState
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_CrawlerState
+          position: [2100, 200]
+        # Continue form switch flow after prelude
         - id: DetachFromActor
           type: CallFunction
           properties:
             function: K2_DetachFromActor
-          position: [1500, 200]
+          position: [2400, 200]
         - id: SetCurrentForm_Switch
           type: PropertySet
           properties:
             property_name: CurrentForm
             target_class: BP_FatherCompanion
-          position: [1800, 200]
+          position: [2700, 200]
         - id: SetIsAttached_Switch
           type: PropertySet
           properties:
             property_name: IsAttached
             target_class: BP_FatherCompanion
-          position: [2100, 200]
+          position: [3000, 200]
         - id: CommitCooldown
           type: CallFunction
           properties:
             function: K2_CommitAbilityCooldown
             target_self: true
-          position: [2400, 200]
+          position: [3300, 200]
         - id: EndAbility_Switch
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [2700, 200]
+          position: [3600, 200]
       connections:
         # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
@@ -927,8 +961,14 @@ gameplay_abilities:
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
           to: [EndAbility_First, Exec]
-        # Branch False path (form switch)
+        # Branch False path (form switch) - TRANSITION PRELUDE (Option B)
         - from: [Branch_First, False]
+          to: [GetFatherASC, Exec]
+        - from: [GetFatherASC, Exec]
+          to: [RemovePriorFormState, Exec]
+        - from: [RemovePriorFormState, Exec]
+          to: [ApplyCrawlerState, Exec]
+        - from: [ApplyCrawlerState, Exec]
           to: [DetachFromActor, Exec]
         - from: [DetachFromActor, Exec]
           to: [SetCurrentForm_Switch, Exec]
@@ -956,6 +996,17 @@ gameplay_abilities:
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
           to: [Branch_First, Condition]
+        # Data flow - Transition prelude (Option B)
+        - from: [SetFatherRef, FatherRef]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
+        - from: [MakeLiteralTag_FormState, ReturnValue]
+          to: [MakeTagContainer_FormState, Tag]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyCrawlerState, AbilitySystemComponent]
 
   # GA_FatherArmor - Attach to Player Chest (Option B Form Identity)
   - name: GA_FatherArmor
@@ -4376,9 +4427,18 @@ blackboards:
   - name: BB_FatherCompanion
     folder: AI/Blackboards
     keys:
+      - key_name: SelfActor
+        key_type: Object
+        base_class: Actor
       - key_name: OwnerPlayer
         key_type: Object
         base_class: NarrativePlayerCharacter
+      - key_name: TargetPlayer
+        key_type: Object
+        base_class: NarrativePlayerCharacter
+      - key_name: AttackTarget
+        key_type: Object
+        base_class: Actor
       - key_name: CurrentTarget
         key_type: Object
         base_class: Actor
@@ -4404,8 +4464,14 @@ blackboards:
   - name: BB_FatherEngineer
     folder: AI/Blackboards
     keys:
+      - key_name: SelfActor
+        key_type: Object
+        base_class: Actor
       - key_name: TurretLocation
         key_type: Vector
+      - key_name: AttackTarget
+        key_type: Object
+        base_class: Actor
       - key_name: CurrentTarget
         key_type: Object
         base_class: Actor
@@ -4424,12 +4490,80 @@ behavior_trees:
     blackboard: BB_FatherCompanion
     root_type: Selector
     description: Main father companion AI for following and combat
+    nodes:
+      # Root Selector - Chooses between combat and follow behaviors
+      - id: root_selector
+        type: Selector
+        decorators:
+          - class: BTDecorator_Blackboard
+            blackboard_key: TargetPlayer
+            key_query: IsSet
+            flow_abort_mode: Both
+        children:
+          - combat_sequence
+          - follow_sequence
+      # Combat Sequence - Attack if enemy detected
+      - id: combat_sequence
+        type: Sequence
+        decorators:
+          - class: BTDecorator_Blackboard
+            blackboard_key: AttackTarget
+            key_query: IsSet
+        children:
+          - move_to_enemy
+      - id: move_to_enemy
+        type: Task
+        task_class: BTTask_MoveTo
+        blackboard_key: AttackTarget
+        properties:
+          AcceptableRadius: "100.0"
+      # Follow Sequence - Follow player when no combat
+      - id: follow_sequence
+        type: Sequence
+        children:
+          - move_to_player
+      - id: move_to_player
+        type: Task
+        task_class: BTTask_MoveTo
+        blackboard_key: TargetPlayer
+        properties:
+          AcceptableRadius: "200.0"
 
   - name: BT_FatherEngineer
     folder: AI/BehaviorTrees
     blackboard: BB_FatherEngineer
     root_type: Selector
     description: Engineer turret mode AI for automated combat
+    nodes:
+      # Root Selector - Turret mode selects targets
+      - id: root_selector
+        type: Selector
+        children:
+          - attack_sequence
+          - idle_wait
+      # Attack Sequence - Shoot at detected targets
+      - id: attack_sequence
+        type: Sequence
+        decorators:
+          - class: BTDecorator_Blackboard
+            blackboard_key: AttackTarget
+            key_query: IsSet
+        services:
+          - class: BTS_SetAIFocus
+            interval: 0.5
+        children:
+          - turret_wait
+      - id: turret_wait
+        type: Task
+        task_class: BTTask_Wait
+        properties:
+          WaitTime: "1.0"
+      # Idle - Wait when no targets
+      - id: idle_wait
+        type: Task
+        task_class: BTTask_Wait
+        properties:
+          WaitTime: "0.5"
 
 # ============================================================================
 # ACTIVITIES (1)
@@ -5767,6 +5901,9 @@ blackboards:  # GUARD FORMATION
       - key_name: FollowTarget
         key_type: Object
         base_class: Actor
+      - key_name: TargetCharacter
+        key_type: Object
+        base_class: Actor
       - key_name: FormationOffset
         key_type: Vector
       - key_name: TargetLocation
@@ -5778,6 +5915,32 @@ behavior_trees:  # GUARD FORMATION
     blackboard: BB_FormationFollow
     root_type: Selector
     description: Formation follow behavior
+    nodes:
+      # Root Selector - Formation follow with position calculation
+      - id: root_selector
+        type: Selector
+        decorators:
+          - class: BTDecorator_Blackboard
+            blackboard_key: TargetCharacter
+            key_query: IsSet
+        children:
+          - formation_sequence
+      # Formation Sequence - Calculate position and move
+      - id: formation_sequence
+        type: Sequence
+        services:
+          - class: BTS_CalculateFormationPosition
+            interval: 0.25
+          - class: BTS_AdjustFormationSpeed
+            interval: 0.1
+        children:
+          - move_to_formation
+      - id: move_to_formation
+        type: Task
+        task_class: BTTask_MoveTo
+        blackboard_key: TargetLocation
+        properties:
+          AcceptableRadius: "50.0"
 
 activities:  # GUARD FORMATION
   - name: BPA_FormationFollow
@@ -5872,11 +6035,41 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
     parent_class: BTService_BlueprintBase
 
 behavior_trees:  # POSSESSED EXPLODER
+# NOTE: Uses NarrativePro's BB_Attack at /NarrativePro/Pro/Core/AI/Activities/Attacks/
   - name: BT_Explode
     folder: AI/BehaviorTrees
     blackboard: BB_Attack
     root_type: Selector
     description: Suicide explosion behavior
+    nodes:
+      # Selector - Only run if AttackTarget is set
+      - id: root_selector
+        type: Selector
+        decorators:
+          - class: BTDecorator_Blackboard
+            blackboard_key: AttackTarget
+            key_query: IsSet
+            notify_observer: OnResultChange
+        children:
+          - pursuit_sequence
+      # Sequence - Pursue target with proximity check service
+      - id: pursuit_sequence
+        type: Sequence
+        services:
+          - class: BTS_CheckExplosionProximity
+            interval: 0.1
+        children:
+          - move_to_target
+      # Move To - Chase the attack target
+      - id: move_to_target
+        type: Task
+        task_class: BTTask_MoveTo
+        blackboard_key: AttackTarget
+        properties:
+          AcceptableRadius: "50.0"
+          bAllowStrafe: "false"
+          bReachTestIncludesAgentRadius: "true"
+          bTrackMovingGoal: "true"
 
 activities:  # POSSESSED EXPLODER
   - name: BPA_Explode
@@ -5940,11 +6133,36 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
     parent_class: BTService_BlueprintBase
 
 behavior_trees:  # SUPPORT BUFFER
+# NOTE: Uses NarrativePro's BB_FollowCharacter at /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/
   - name: BT_SupportFollow
     folder: AI/BehaviorTrees
     blackboard: BB_FollowCharacter
     root_type: Selector
     description: Support follow with healing behavior
+    nodes:
+      # Root Selector - Follow target while healing allies
+      - id: root_selector
+        type: Selector
+        decorators:
+          - class: BTDecorator_Blackboard
+            blackboard_key: TargetCharacter
+            key_query: IsSet
+        children:
+          - follow_heal_sequence
+      # Follow Sequence - Move to target while healing nearby allies
+      - id: follow_heal_sequence
+        type: Sequence
+        services:
+          - class: BTS_HealNearbyAllies
+            interval: 1.0
+        children:
+          - move_to_target
+      - id: move_to_target
+        type: Task
+        task_class: BTTask_MoveTo
+        blackboard_key: TargetCharacter
+        properties:
+          AcceptableRadius: "150.0"
 
 activities:  # SUPPORT BUFFER
   - name: BPA_SupportFollow
