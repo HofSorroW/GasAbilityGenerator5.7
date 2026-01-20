@@ -916,14 +916,20 @@ Stat bonuses (+50 Armor) are handled automatically by BP_FatherArmorForm Equippa
    - 11.1.4) Connect Father ASC to **Target**
    - 11.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
 
-### **12) Remove Invulnerability**
+### **12) Remove Transition Invulnerability**
 
-#### 12.1) Remove GE_Invulnerable
+> **CRITICAL (v4.13.2):** DO NOT remove by `Narrative.State.Invulnerable` tag!
+> GE_ArmorState also grants this tag. Removing by tag would break form identity.
+> Always remove by specific class (GE_TransitionInvulnerability) instead.
+
+#### 12.1) Remove GE_TransitionInvulnerability by Class
    - 12.1.1) Drag from **Remove Loose Gameplay Tag** execution pin
-   - 12.1.2) Search: `Remove Active Gameplay Effects with Granted Tags`
-   - 12.1.3) Select node
+   - 12.1.2) Search: `Remove Gameplay Effect from Owner`
+   - 12.1.3) Select **BP Remove Gameplay Effect from Owner with Handle** node
    - 12.1.4) Connect Father ASC to **Target**
-   - 12.1.5) Set **Tags**: `Narrative.State.Invulnerable`
+   - 12.1.5) Set **Gameplay Effect Class**: `GE_TransitionInvulnerability`
+
+   > **Alternative:** You can skip this step entirely - GE_TransitionInvulnerability has 5s duration and expires naturally.
 
 ### **13) Apply Form Cooldown**
 

@@ -527,14 +527,21 @@ This section covers the extended logic when switching TO Crawler from another fo
    - 9.1.4) Connect Father ASC to **Target**
    - 9.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
 
-### **10) Remove Invulnerability**
+### **10) Remove Transition Invulnerability**
 
-#### 10.1) Remove GE with Granted Tags
+> **CRITICAL (v4.13.2):** DO NOT remove by `Narrative.State.Invulnerable` tag!
+> Other form states (Armor, Exo, Symbiote) grant this tag via their GE_*State.
+> Removing by tag could break form identity when switching FROM those forms.
+> Always remove by specific class (GE_TransitionInvulnerability) instead.
+
+#### 10.1) Remove GE_TransitionInvulnerability by Class
    - 10.1.1) Drag from **Remove Loose Gameplay Tag** execution pin
-   - 10.1.2) Search: `Remove Active Gameplay Effects with Granted Tags`
-   - 10.1.3) Select node
+   - 10.1.2) Search: `Remove Gameplay Effect from Owner`
+   - 10.1.3) Select **BP Remove Gameplay Effect from Owner with Handle** node
    - 10.1.4) Connect Father ASC to **Target**
-   - 10.1.5) Set **Tags**: `Narrative.State.Invulnerable`
+   - 10.1.5) Set **Gameplay Effect Class**: `GE_TransitionInvulnerability`
+
+   > **Alternative:** You can skip this step entirely - GE_TransitionInvulnerability has 5s duration and expires naturally.
 
 ### **11) Apply Form Cooldown**
 

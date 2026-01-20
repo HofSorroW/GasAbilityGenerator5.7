@@ -1077,6 +1077,39 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [1200, 0]
+        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1350, 0]
+        - id: RemovePriorFormState
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1500, 0]
+        - id: MakeTagContainer_FormState
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1400, 150]
+        - id: MakeLiteralTag_FormState
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [1200, 150]
+        - id: ApplyArmorState
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_ArmorState
+          position: [1650, 0]
         # Pure nodes - below main exec flow
         - id: GetOwnerPlayer
           type: PropertyGet
@@ -1216,7 +1249,14 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
+        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [GetFatherASC, Exec]
+        - from: [GetFatherASC, Exec]
+          to: [RemovePriorFormState, Exec]
+        - from: [RemovePriorFormState, Exec]
+          to: [ApplyArmorState, Exec]
+        - from: [ApplyArmorState, Exec]
           to: [Branch_Valid, Exec]
         - from: [Branch_Valid, then]
           to: [SetPlayerRef, Exec]
@@ -1247,6 +1287,17 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
+        # v4.13.2: Data flow - Transition prelude (Option B)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
+        - from: [MakeLiteralTag_FormState, ReturnValue]
+          to: [MakeTagContainer_FormState, Tag]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyArmorState, AbilitySystemComponent]
         # Data flow - GetOwnerPlayer to IsValid
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [IsValid_Player, Object]
@@ -1383,17 +1434,50 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
+        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1050, 0]
+        - id: RemovePriorFormState
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1200, 0]
+        - id: MakeTagContainer_FormState
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1100, 150]
+        - id: MakeLiteralTag_FormState
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [900, 150]
+        - id: ApplyExoskeletonState
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_ExoskeletonState
+          position: [1350, 0]
         - id: GetOwnerPlayer
           type: PropertyGet
           properties:
             property_name: OwnerPlayer
             target_class: BP_FatherCompanion
-          position: [1200, 0]
+          position: [1500, 0]
         - id: SetPlayerRef
           type: VariableSet
           properties:
             variable_name: PlayerRef
-          position: [1500, 0]
+          position: [1800, 0]
         - id: GetCharMov
           type: PropertyGet
           properties:
@@ -1499,7 +1583,14 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
+        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [GetFatherASC, Exec]
+        - from: [GetFatherASC, Exec]
+          to: [RemovePriorFormState, Exec]
+        - from: [RemovePriorFormState, Exec]
+          to: [ApplyExoskeletonState, Exec]
+        - from: [ApplyExoskeletonState, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
           to: [SetOrigSpeed, Exec]
@@ -1526,6 +1617,17 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
+        # v4.13.2: Data flow - Transition prelude (Option B)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
+        - from: [MakeLiteralTag_FormState, ReturnValue]
+          to: [MakeTagContainer_FormState, Tag]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyExoskeletonState, AbilitySystemComponent]
         # Data flow - Player
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -1630,6 +1732,39 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
+        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1050, 0]
+        - id: RemovePriorFormState
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1200, 0]
+        - id: MakeTagContainer_FormState
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1100, 150]
+        - id: MakeLiteralTag_FormState
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [900, 150]
+        - id: ApplySymbioteState
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_SymbioteState
+          position: [1350, 0]
         - id: GetOwnerPlayer
           type: PropertyGet
           properties:
@@ -1726,7 +1861,14 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
+        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [GetFatherASC, Exec]
+        - from: [GetFatherASC, Exec]
+          to: [RemovePriorFormState, Exec]
+        - from: [RemovePriorFormState, Exec]
+          to: [ApplySymbioteState, Exec]
+        - from: [ApplySymbioteState, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
           to: [HideFather, Exec]
@@ -1755,6 +1897,17 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
+        # v4.13.2: Data flow - Transition prelude (Option B)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
+        - from: [MakeLiteralTag_FormState, ReturnValue]
+          to: [MakeTagContainer_FormState, Tag]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplySymbioteState, AbilitySystemComponent]
         # Data flow - Player
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -1836,6 +1989,39 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [900, 0]
+        # v4.13.2: TRANSITION PRELUDE (Option B) - applies form state GE
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1050, 0]
+        - id: RemovePriorFormState
+          type: CallFunction
+          properties:
+            function: RemoveGameplayEffectFromOwnerWithGrantedTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1200, 0]
+        - id: MakeTagContainer_FormState
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1100, 150]
+        - id: MakeLiteralTag_FormState
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [900, 150]
+        - id: ApplyEngineerState
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToSelf
+            class: AbilitySystemBlueprintLibrary
+            gameplay_effect_class: GE_EngineerState
+          position: [1350, 0]
         - id: GetFatherLocation
           type: CallFunction
           properties:
@@ -1901,7 +2087,14 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
+        # v4.13.2: Transition prelude exec flow (Option B)
         - from: [SetFatherRef, Exec]
+          to: [GetFatherASC, Exec]
+        - from: [GetFatherASC, Exec]
+          to: [RemovePriorFormState, Exec]
+        - from: [RemovePriorFormState, Exec]
+          to: [ApplyEngineerState, Exec]
+        - from: [ApplyEngineerState, Exec]
           to: [GetFatherLocation, Exec]
         - from: [GetFatherLocation, Exec]
           to: [SetDeployLocation, Exec]
@@ -1922,6 +2115,17 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
+        # v4.13.2: Data flow - Transition prelude (Option B)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [RemovePriorFormState, AbilitySystemComponent]
+        - from: [MakeLiteralTag_FormState, ReturnValue]
+          to: [MakeTagContainer_FormState, Tag]
+        - from: [MakeTagContainer_FormState, ReturnValue]
+          to: [RemovePriorFormState, WithGrantedTags]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyEngineerState, AbilitySystemComponent]
         # Data flow - Location
         - from: [GetFatherLocation, ReturnValue]
           to: [SetDeployLocation, DeployLocation]
