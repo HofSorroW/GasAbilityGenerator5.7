@@ -18898,6 +18898,78 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	UPackage::SavePackage(Package, QuestBP, *PackageFileName, SaveArgs);
 
+	// ========================================================================
+	// v4.13.3: Quest SM Semantic Verification
+	// ========================================================================
+	int32 TotalTasks = 0;
+	int32 UnresolvedDestinations = 0;
+	int32 DuplicateStateIds = 0;
+	int32 DuplicateBranchIds = 0;
+	TSet<FString> SeenStateIds;
+	TSet<FString> SeenBranchIds;
+	bool bStartStateValid = false;
+
+	// Verify start state exists
+	if (Quest->GetQuestStartState() != nullptr)
+	{
+		bStartStateValid = true;
+	}
+	else
+	{
+		LogGeneration(TEXT("  [WARN] Quest has no valid start state"));
+	}
+
+	// Verify states and collect metrics
+	for (const auto& StateDef : Definition.States)
+	{
+		// Check for duplicate state IDs
+		if (SeenStateIds.Contains(StateDef.Id))
+		{
+			DuplicateStateIds++;
+			LogGeneration(FString::Printf(TEXT("  [WARN] Duplicate state ID: %s"), *StateDef.Id));
+		}
+		else
+		{
+			SeenStateIds.Add(StateDef.Id);
+		}
+
+		// Count tasks and verify branch destinations
+		for (const auto& BranchDef : StateDef.Branches)
+		{
+			TotalTasks += BranchDef.Tasks.Num();
+
+			// Check for duplicate branch IDs
+			if (!BranchDef.Id.IsEmpty())
+			{
+				if (SeenBranchIds.Contains(BranchDef.Id))
+				{
+					DuplicateBranchIds++;
+					LogGeneration(FString::Printf(TEXT("  [WARN] Duplicate branch ID: %s"), *BranchDef.Id));
+				}
+				else
+				{
+					SeenBranchIds.Add(BranchDef.Id);
+				}
+			}
+
+			// Verify destination state exists
+			if (!BranchDef.DestinationState.IsEmpty() && !StateMap.Contains(BranchDef.DestinationState))
+			{
+				UnresolvedDestinations++;
+				// Warning already logged during branch creation
+			}
+		}
+	}
+
+	// Quest SM semantic summary line (consistent with global RESULT pattern)
+	LogGeneration(FString::Printf(TEXT("RESULT QuestSM: states=%d branches=%d tasks=%d unresolved=%d duplicates=%d start_valid=%s"),
+		Definition.States.Num(),
+		TotalBranches,
+		TotalTasks,
+		UnresolvedDestinations,
+		DuplicateStateIds + DuplicateBranchIds,
+		bStartStateValid ? TEXT("true") : TEXT("false")));
+
 	LogGeneration(FString::Printf(TEXT("Created Quest Blueprint: %s (%d states, %d branches)"),
 		*Definition.Name, Definition.States.Num(), TotalBranches));
 
