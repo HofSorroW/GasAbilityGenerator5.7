@@ -9012,6 +9012,10 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 	}
 
 	FunctionGraph->bAllowDeletion = true;
+
+	// v4.14: Add graph to FunctionGraphs array manually (NOT using AddFunctionGraph
+	// because it calls CreateFunctionGraphTerminators which creates default entry/result nodes,
+	// but we need to create custom entry/result with our own pins)
 	Blueprint->FunctionGraphs.Add(FunctionGraph);
 
 	// Create function entry node
@@ -9022,12 +9026,18 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 	EntryNode->NodePosX = 0;
 	EntryNode->NodePosY = 0;
 
-	// Configure function flags
+	// v4.14: Configure function flags - these match what CreateFunctionGraph sets for user-created functions
+	// FUNC_BlueprintCallable: Function can be called from Blueprints
+	// FUNC_BlueprintEvent: Function is a Blueprint event (editable)
+	// FUNC_Public: Function is publicly accessible
 	if (FunctionDefinition.bPure)
 	{
 		EntryNode->AddExtraFlags(FUNC_BlueprintPure);
 	}
-	EntryNode->AddExtraFlags(FUNC_BlueprintCallable);
+	EntryNode->AddExtraFlags(FUNC_BlueprintCallable | FUNC_BlueprintEvent | FUNC_Public);
+
+	// v4.14: Mark entry node as editable so users can modify inputs in the editor
+	EntryNode->bIsEditable = true;
 
 	EntryNodeCreator.Finalize();
 
@@ -9056,6 +9066,9 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 		ResultNode->PostPlacedNewNode();
 		ResultNode->NodePosX = 600;
 		ResultNode->NodePosY = 0;
+
+		// v4.14: Mark result node as editable so users can modify outputs in the editor
+		ResultNode->bIsEditable = true;
 
 		// Add output parameters to the result node
 		for (const FManifestFunctionParameterDefinition& Output : FunctionDefinition.Outputs)
@@ -9179,8 +9192,9 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 	LogGeneration(FString::Printf(TEXT("Custom function '%s': %d nodes created, %d failed, %d connections, %d failed"),
 		*FunctionDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsFailed));
 
-	// Mark blueprint as modified
-	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+	// v4.14: Mark blueprint as STRUCTURALLY modified (required for function graph changes)
+	// This tells the Blueprint system that the class structure has changed (new function added)
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
 
 	return NodesFailed == 0 && ConnectionsFailed == 0;
 }
