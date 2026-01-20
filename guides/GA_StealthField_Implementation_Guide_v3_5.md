@@ -1,4 +1,4 @@
-# GA_StealthField Implementation Guide v3.5
+# GA_StealthField Implementation Guide v3.6 - Form State Tag Update (INV-1 Compliant)
 
 ## Exoskeleton Form - Player + Attached Father Invisibility
 
@@ -61,7 +61,7 @@
 
 | Tag | Purpose |
 |-----|---------|
-| Father.Form.Exoskeleton | Form identification |
+| Effect.Father.FormState.Exoskeleton | Form identification |
 | Father.State.Attached | Attachment state |
 | Father.State.Recruited | Recruitment state |
 
@@ -110,7 +110,7 @@
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Exoskeleton | Form identification (Activation Required) |
+| Effect.Father.FormState.Exoskeleton | Form identification (Activation Required) |
 | Father.State.Attached | Attachment state (Activation Required) |
 | Father.State.Recruited | Recruitment state (Activation Required) |
 
@@ -296,7 +296,7 @@
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Exoskeleton.StealthField |
-| Activation Required Tags | Father.Form.Exoskeleton, Father.State.Attached, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Exoskeleton, Father.State.Attached, Father.State.Recruited |
 | Activation Blocked Tags | Cooldown.Father.Exoskeleton.StealthField, Father.State.Stealthed |
 | Activation Owned Tags | Father.State.Stealthed |
 | Cancel Abilities with Tag | State.Attacking |
@@ -907,7 +907,7 @@
 | Tag Type | Tag Name | Purpose |
 |----------|----------|---------|
 | Ability Tag | Ability.Father.Exoskeleton.StealthField | Identifies this ability |
-| Activation Required | Father.Form.Exoskeleton | Must be in Exoskeleton form |
+| Activation Required | Effect.Father.FormState.Exoskeleton | Must be in Exoskeleton form |
 | Activation Required | Father.State.Attached | Must be attached to player |
 | Activation Required | Father.State.Recruited | Must be recruited |
 | Activation Blocked | Cooldown.Father.Exoskeleton.StealthField | Cannot activate during cooldown |

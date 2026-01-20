@@ -1,5 +1,5 @@
 # GA_FatherExoskeletonDash Implementation Guide
-## Version 3.6 - Reference Updates
+## Version 3.7 - Form State Tag Update (INV-1 Compliant)
 
 ---
 
@@ -99,7 +99,7 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 |-----|---------|
 | Ability.Father.Exoskeleton.Dash | Identifies this ability |
 | Father.State.Dashing | Active dash state indicator |
-| Father.Form.Exoskeleton | Form requirement |
+| Effect.Father.FormState.Exoskeleton | Form requirement |
 | Father.State.Attached | Attachment requirement |
 | Father.State.Recruited | Recruitment requirement |
 | State.Invulnerable | Narrative Pro damage immunity |
@@ -122,7 +122,7 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Exoskeleton | Form requirement (Activation Required) |
+| Effect.Father.FormState.Exoskeleton | Form requirement (Activation Required) |
 | Father.State.Attached | Attachment requirement (Activation Required) |
 | Father.State.Recruited | Recruitment requirement (Activation Required) |
 | State.Invulnerable | Narrative Pro damage immunity |
@@ -343,7 +343,7 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 #### 2.4) Set Activation Required Tags
    - 2.4.1) Find Activation Required Tags section
    - 2.4.2) Click + button
-   - 2.4.3) Element [0]: Select `Father.Form.Exoskeleton`
+   - 2.4.3) Element [0]: Select `Effect.Father.FormState.Exoskeleton`
    - 2.4.4) Click + button
    - 2.4.5) Element [1]: Select `Father.State.Attached`
    - 2.4.6) Click + button
@@ -698,7 +698,7 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 |----------|------|
 | Ability Tags | Ability.Father.Exoskeleton.Dash |
 | Block Abilities with Tag | Father.State.Dashing, Cooldown.Father.Exoskeleton.Dash |
-| Activation Required Tags | Father.Form.Exoskeleton, Father.State.Attached, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Exoskeleton, Father.State.Attached, Father.State.Recruited |
 | Activation Owned Tags | Father.State.Dashing |
 
 ### **Multiplayer Configuration**

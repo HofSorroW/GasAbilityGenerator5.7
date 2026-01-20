@@ -1,6 +1,6 @@
 # Father Companion - GA_FatherAttack Implementation Guide
 
-## VERSION 3.4 - Simplified Tag Creation
+## VERSION 3.5 - Form State Tag Update (INV-1 Compliant)
 
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
@@ -15,7 +15,7 @@
 | Parent Class | GA_Melee_Unarmed |
 | Form | Crawler (Active only in Crawler form) |
 | Input | Narrative.Input.Father.Attack |
-| Version | 3.4 |
+| Version | 3.5 |
 | Last Updated | December 2025 |
 | Engine | Unreal Engine 5.6 |
 | Plugin | Narrative Pro v2.2 |
@@ -83,8 +83,8 @@ Version 3.3 adds multi-hit support using Narrative Pro v2.2's CachedHitActors pa
 | Crawler | Yes | Required tags present |
 | Armor | No | Blocked: Father.State.Attached |
 | Exoskeleton | No | Blocked: Father.State.Attached |
-| Symbiote | No | Required: Father.Form.Crawler |
-| Engineer | No | Required: Father.Form.Crawler |
+| Symbiote | No | Required: Effect.Father.FormState.Crawler |
+| Engineer | No | Required: Effect.Father.FormState.Crawler |
 
 ### **Recruitment Gate**
 
@@ -115,7 +115,7 @@ This ability requires Father.State.Recruited tag to activate. This prevents wild
 
 | Tag | Purpose | Reference |
 |-----|---------|-----------|
-| Father.Form.Crawler | Form identification | DefaultGameplayTags_FatherCompanion_v3_5.ini |
+| Effect.Father.FormState.Crawler | Form identification | DefaultGameplayTags_FatherCompanion_v3_5.ini |
 | Father.State.Recruited | Recruitment gate | DefaultGameplayTags_FatherCompanion_v3_5.ini |
 | Father.State.Attached | Blocked state | DefaultGameplayTags_FatherCompanion_v3_5.ini |
 
@@ -136,7 +136,7 @@ This ability requires Father.State.Recruited tag to activate. This prevents wild
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Crawler | Crawler form identification |
+| Effect.Father.FormState.Crawler | Crawler form identification |
 | Father.State.Attached | Attachment state (blocked) |
 | Father.State.Recruited | Recruitment gate |
 
@@ -216,7 +216,7 @@ This ability requires Father.State.Recruited tag to activate. This prevents wild
 |----------|------|
 | Asset Tags | Ability.Father.Crawler.Attack |
 | Activation Owned Tags | Ability.Father.Crawler.Attack, Father.State.Attacking |
-| Activation Required Tags | Father.Form.Crawler, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Crawler, Father.State.Recruited |
 | Activation Blocked Tags | Narrative.State.Busy, Narrative.State.IsDead, Narrative.State.Movement.Climbing, Narrative.State.Movement.Falling, Narrative.State.OnMount, Narrative.State.Weapon.BlockFiring, Father.State.Attached |
 
 ### **9) Configure Replication Settings**
@@ -533,7 +533,7 @@ This ability requires Father.State.Recruited tag to activate. This prevents wild
 | Input Tag | Narrative.Input.Attack | Narrative.Input.Father.Attack |
 | AssetTags | Abilities.Attacks.MeleeAttack | Ability.Father.Crawler.Attack |
 | Activation Owned Tags | Abilities.Attacks.MeleeAttack | Ability.Father.Crawler.Attack, Father.State.Attacking |
-| Activation Required Tags | Empty | Father.Form.Crawler, Father.State.Recruited |
+| Activation Required Tags | Empty | Effect.Father.FormState.Crawler, Father.State.Recruited |
 | Activation Blocked Tags | (existing list) | (existing) + Father.State.Attached |
 
 ### **2. Multi-Hit Configuration (v3.3 New)**
@@ -566,7 +566,7 @@ This ability requires Father.State.Recruited tag to activate. This prevents wild
 | Input Tag | Narrative.Input.Father.Attack |
 | State Tag | Father.State.Attacking |
 | Cooldown Tag | Cooldown.Father.Crawler.Attack |
-| Activation Required | Father.Form.Crawler, Father.State.Recruited |
+| Activation Required | Effect.Father.FormState.Crawler, Father.State.Recruited |
 | Activation Blocked | Father.State.Attached |
 
 ### **5. Assets Created**

@@ -2,7 +2,7 @@
 ## Father Companion with Gameplay Ability System
 ## For Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
-**Version:** 1.3
+**Version:** 1.5 - Form State Tag Update (INV-1 Compliant)
 **Date:** January 2026
 **Engine:** Unreal Engine 5.6
 **Plugin:** Narrative Pro v2.2
@@ -62,7 +62,7 @@ Before implementing the Rifle Form, ensure the following are complete:
 |----------|------|
 | Ability Tags | Ability.Father.Rifle |
 | Equippable Slot | Narrative.Equipment.Slot.Weapon_Back |
-| Form State Tag | Father.Form.Rifle |
+| Form State Tag | Effect.Father.FormState.Rifle |
 | State Tag | Father.State.Wielded |
 
 ### Multiplayer Settings
@@ -94,7 +94,7 @@ Before implementing the Rifle Form, ensure the following are complete:
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Rifle | Father rifle weapon form ability |
-| Father.Form.Rifle | Father is transformed into rifle weapon |
+| Effect.Father.FormState.Rifle | Father is transformed into rifle weapon |
 | Ability.Father.Rifle.Fire | Father rifle fire ability |
 | Ability.Father.Rifle.Aim | Father rifle aim-down-sights ability |
 | Ability.Father.Rifle.Detach | Detach rifle and restore father |
@@ -424,7 +424,7 @@ Before implementing the Rifle Form, ensure the following are complete:
 |----------|-------|
 | Duration Policy | Infinite |
 | Components | Grant Tags to Target Actor |
-| Granted Tags [0] | Father.Form.Rifle |
+| Granted Tags [0] | Effect.Father.FormState.Rifle |
 | Granted Tags [1] | Father.State.Wielded |
 | Components | Remove Other Gameplay Effect on Application |
 | Remove GE Query -> Any Tags Match | Father.Form |
@@ -467,7 +467,7 @@ Before implementing the Rifle Form, ensure the following are complete:
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Rifle |
-| Activation Blocked Tags | Father.Form.Rifle |
+| Activation Blocked Tags | Effect.Father.FormState.Rifle |
 
 ##### 8.3.3) Configure Advanced Section
 
@@ -642,7 +642,7 @@ Before implementing the Rifle Form, ensure the following are complete:
    - 9.2.2.1.1) Add: Ability.Father.Rifle.Fire
 
 ###### 9.2.2.2) Activation Required Tags
-   - 9.2.2.2.1) Add: Father.Form.Rifle
+   - 9.2.2.2.1) Add: Effect.Father.FormState.Rifle
 
 ##### 9.2.3) Configure Input Tag
    - 9.2.3.1) Input Tag: Narrative.Input.Attack
@@ -720,7 +720,7 @@ Before implementing the Rifle Form, ensure the following are complete:
    - 10.2.2.1.1) Add: Ability.Father.Rifle.Aim
 
 ###### 10.2.2.2) Activation Required Tags
-   - 10.2.2.2.1) Add: Father.Form.Rifle
+   - 10.2.2.2.1) Add: Effect.Father.FormState.Rifle
 
 ##### 10.2.3) Configure Input Tag
    - 10.2.3.1) Input Tag: Narrative.Input.AltAttack
@@ -749,7 +749,7 @@ Before implementing the Rifle Form, ensure the following are complete:
 
 ##### 11.2.1) Tags
    - 11.2.1.1) Ability Tags: Ability.Father.Rifle.Detach
-   - 11.2.1.2) Activation Required Tags: Father.Form.Rifle
+   - 11.2.1.2) Activation Required Tags: Effect.Father.FormState.Rifle
 
 ##### 11.2.2) Input Tag
    - 11.2.2.1) Input Tag: Narrative.Input.Father.Detach
@@ -890,7 +890,7 @@ Before implementing the Rifle Form, ensure the following are complete:
 | Ability.Father.Rifle.Fire | Fire ability identifier |
 | Ability.Father.Rifle.Aim | Aim ability identifier |
 | Ability.Father.Rifle.Detach | Detach ability identifier |
-| Father.Form.Rifle | Form state tag (granted by GE) |
+| Effect.Father.FormState.Rifle | Form state tag (granted by GE) |
 | Father.State.Wielded | State tag indicating weapon wielded |
 
 ### Ability Flow
@@ -898,7 +898,7 @@ Before implementing the Rifle Form, ensure the following are complete:
 | Step | Action | Result |
 |------|--------|--------|
 | 1 | Player activates GA_FatherRifle | Form change initiated |
-| 2 | Apply GE_RifleState to father | Father.Form.Rifle granted |
+| 2 | Apply GE_RifleState to father | Effect.Father.FormState.Rifle granted |
 | 3 | Hide father actor | Father visually disappears |
 | 4 | Give BP_FatherRifleWeapon to player | Weapon in inventory |
 | 5 | Equip and Wield weapon | Player holds rifle |

@@ -1,5 +1,5 @@
 # Father Companion - GA_FatherElectricTrap Implementation Guide
-## VERSION 3.1 - BTTask_ActivateAbilityByClass Integration
+## VERSION 3.2 - Form State Tag Update (INV-1 Compliant)
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 ---
@@ -104,7 +104,7 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 | BP_FatherCompanion | Father character with NarrativeNPCCharacter parent |
 | GA_FatherEngineer | Engineer form activation ability (creates BT_FatherEngineer) |
 | NPCDefinition_Father | Father NPCDefinition asset with AbilityConfiguration |
-| Father.Form.Engineer tag | Form identification tag |
+| Effect.Father.FormState.Engineer tag | Form identification tag |
 | Father.State.Deployed tag | Turret deployment state tag |
 | BT_FatherEngineer | Engineer form behavior tree (created in GA_FatherEngineer guide) |
 | BB_FatherEngineer | Engineer form blackboard (created in GA_FatherEngineer guide) |
@@ -130,7 +130,7 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Engineer | Form identification tag |
+| Effect.Father.FormState.Engineer | Form identification tag |
 | Father.State.Deployed | Turret deployment state tag |
 | Father.State.Recruited | Recruitment gate |
 | Narrative.State.Movement.Lock | Built-in from Narrative Pro - locks movement |
@@ -487,7 +487,7 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Engineer.ElectricTrap |
-| Activation Required Tags | Father.Form.Engineer, Father.State.Deployed, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Engineer, Father.State.Deployed, Father.State.Recruited |
 | Activation Blocked Tags | Cooldown.Father.Engineer.ElectricTrap, Narrative.State.IsDead |
 | Activation Owned Tags | Father.State.ThrowingWeb |
 
@@ -1121,7 +1121,7 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 | Property | Tags |
 |----------|------|
 | Ability Tags | `Ability.Father.Engineer.ElectricTrap` |
-| Activation Required | `Father.Form.Engineer`, `Father.State.Deployed`, `Father.State.Recruited` |
+| Activation Required | `Effect.Father.FormState.Engineer`, `Father.State.Deployed`, `Father.State.Recruited` |
 | Activation Owned | `Father.State.ThrowingWeb` |
 | Activation Blocked | `Cooldown.Father.Engineer.ElectricTrap`, `Narrative.State.IsDead` |
 | InputTag | None (AI-controlled) |

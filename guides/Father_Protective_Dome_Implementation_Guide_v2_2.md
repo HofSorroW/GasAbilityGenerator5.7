@@ -1,5 +1,5 @@
 # Father Companion - Protective Dome Ability Implementation Guide
-## VERSION 2.2 - Reference Updates
+## VERSION 2.3 - Form State Tag Update (INV-1 Compliant)
 
 **Document Purpose**: Complete step-by-step guide for implementing a damage-absorbing protective dome ability for the father companion in Armor form using proper GAS attributes created via Gameplay Blueprint Attributes plugin.
 
@@ -15,7 +15,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Armor |
 | Input | Automatic (passive) / Q Key (manual burst) |
-| Version | 2.1 |
+| Version | 2.3 |
 | Last Updated | January 2026 |
 
 ---
@@ -111,7 +111,7 @@
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Armor | Form requirement (Activation Required) |
+| Effect.Father.FormState.Armor | Form identity tag (granted by GE_ArmorState, used for Activation Required) |
 | Father.State.Attached | Attachment requirement (Activation Required) |
 | Father.State.Recruited | Recruitment requirement (Activation Required) |
 
@@ -559,7 +559,7 @@
 
 ##### **25.2.3) Activation Required Tags**
 25.2.3.1) Activation Required Tags -> +
-25.2.3.2) Element [0]: Father.Form.Armor
+25.2.3.2) Element [0]: Effect.Father.FormState.Armor
 25.2.3.3) Click: +
 25.2.3.4) Element [1]: Father.State.Attached
 25.2.3.5) Click: +
@@ -897,7 +897,7 @@
 
 ##### **26.2.3) Activation Required Tags**
 26.2.3.1) Activation Required Tags -> +
-26.2.3.2) Element [0]: Father.Form.Armor
+26.2.3.2) Element [0]: Effect.Father.FormState.Armor
 26.2.3.3) Click: +
 26.2.3.4) Element [1]: Father.Dome.Active
 26.2.3.5) Click: +
@@ -1322,7 +1322,7 @@
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Armor.ProtectiveDome |
-| Activation Required | Father.Form.Armor, Father.State.Attached, Father.State.Recruited |
+| Activation Required | Effect.Father.FormState.Armor, Father.State.Attached, Father.State.Recruited |
 | Activation Blocked | Father.Dome.OnCooldown |
 | Activation Owned | Ability.Father.Armor.ProtectiveDome.Active |
 
@@ -1331,7 +1331,7 @@
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Armor.DomeBurst |
-| Activation Required | Father.Form.Armor, Father.Dome.Active, Father.State.Recruited |
+| Activation Required | Effect.Father.FormState.Armor, Father.Dome.Active, Father.State.Recruited |
 | Activation Owned | Father.State.Bursting |
 | Activation Blocked | Cooldown.Father.DomeBurst, Father.State.Bursting |
 | InputTag | Narrative.Input.Father.Ability1 |
@@ -1490,6 +1490,16 @@ The following items require architectural decisions that may affect multiple gui
 
 ## CHANGELOG
 
+### Version 2.3 - January 2026 (INV-1 Compliant)
+
+| Change | Description |
+|--------|-------------|
+| Form State Tags | Changed `Father.Form.Armor` to `Effect.Father.FormState.Armor` in all Activation Required Tags |
+| INV-1 Compliance | Aligned with Father_Companion_GAS_Audit_Locked_Decisions.md form state architecture |
+| Tag Architecture | `Father.Form.*` tags are orphan tags; form identity now uses GE-granted `Effect.Father.FormState.*` tags |
+
+---
+
 ### Version 2.2 - January 2026
 
 | Change | Description |
@@ -1572,7 +1582,7 @@ The following items require architectural decisions that may affect multiple gui
 
 **END OF IMPLEMENTATION GUIDE**
 
-**VERSION 2.1 - Simplified Tag Creation**
+**VERSION 2.3 - Form State Tag Update (INV-1 Compliant)**
 
 **Compatible with Unreal Engine 5.6 + Narrative Pro v2.2**
 

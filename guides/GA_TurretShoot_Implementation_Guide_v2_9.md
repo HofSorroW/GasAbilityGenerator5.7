@@ -1,5 +1,5 @@
 # Father Companion - GA_TurretShoot Implementation Guide
-## VERSION 2.9 - BTTask_ActivateAbilityByClass Integration
+## VERSION 3.0 - Form State Tag Update (INV-1 Compliant)
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 ---
@@ -96,7 +96,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 |-------------|-------------|
 | BP_FatherCompanion | Father with NarrativeNPCCharacter parent |
 | GA_FatherEngineer | Engineer form activation ability |
-| Father.Form.Engineer tag | Form identification |
+| Effect.Father.FormState.Engineer tag | Form identification |
 | Father.State.Deployed tag | Turret deployment state |
 | Engineer AI Controller | AI controller for turret behavior |
 
@@ -118,7 +118,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Engineer.TurretShoot |
-| Activation Required | Father.Form.Engineer, Father.State.Deployed, Father.State.Recruited |
+| Activation Required | Effect.Father.FormState.Engineer, Father.State.Deployed, Father.State.Recruited |
 | Activation Owned | Father.State.Shooting |
 | Activation Blocked | Cooldown.Father.Engineer.TurretShoot |
 | InputTag | None (AI-controlled) |
@@ -224,7 +224,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Engineer | Form identification (Activation Required) |
+| Effect.Father.FormState.Engineer | Form identification (Activation Required) |
 | Father.State.Deployed | Turret deployment state (Activation Required) |
 | Father.State.Recruited | Recruitment state (Activation Required) |
 
@@ -474,7 +474,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Engineer.TurretShoot |
-| Activation Required Tags | Father.Form.Engineer, Father.State.Deployed, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Engineer, Father.State.Deployed, Father.State.Recruited |
 | Activation Blocked Tags | Cooldown.Father.Engineer.TurretShoot |
 | Activation Owned Tags | Father.State.Shooting |
 
@@ -901,7 +901,7 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 
 ## CHANGELOG
 
-### VERSION 2.9 - BTTask_ActivateAbilityByClass Integration
+### VERSION 3.0 - Form State Tag Update (INV-1 Compliant)
 
 **Release Date:** January 2026
 
@@ -1055,7 +1055,7 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 
 **Tag Configuration:**
 - Ability Tags: Ability.Father.Engineer.TurretShoot
-- Activation Required: Father.Form.Engineer, Father.State.Deployed
+- Activation Required: Effect.Father.FormState.Engineer, Father.State.Deployed
 - Activation Owned: Father.State.Shooting
 - Activation Blocked: Cooldown.Father.Engineer.TurretShoot
 - InputTag: None (AI-controlled)

@@ -2,7 +2,7 @@
 ## Father Companion with Gameplay Ability System
 ## For Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
-**Version:** 1.3
+**Version:** 1.5 - Form State Tag Update (INV-1 Compliant)
 **Date:** January 2026
 **Engine:** Unreal Engine 5.6
 **Plugin:** Narrative Pro v2.2
@@ -60,7 +60,7 @@ Before implementing the Sword Form, ensure the following are complete:
 |----------|------|
 | Ability Tags | Ability.Father.Sword |
 | Equippable Slot | Narrative.Equipment.Slot.Weapon_Back |
-| Form State Tag | Father.Form.Sword |
+| Form State Tag | Effect.Father.FormState.Sword |
 | State Tag | Father.State.Wielded |
 
 ### Multiplayer Settings
@@ -89,7 +89,7 @@ Before implementing the Sword Form, ensure the following are complete:
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Sword | Father sword weapon form ability |
-| Father.Form.Sword | Father is transformed into sword weapon |
+| Effect.Father.FormState.Sword | Father is transformed into sword weapon |
 | Father.State.Wielded | Father weapon is actively wielded by player |
 | Narrative.Anim.AnimSets.Attacks.FatherSword | Attack animation set parent |
 | Narrative.Anim.AnimSets.Attacks.FatherSword.Light | Light attack combo |
@@ -348,7 +348,7 @@ Before implementing the Sword Form, ensure the following are complete:
 |----------|-------|
 | Duration Policy | Infinite |
 | Components | Grant Tags to Target Actor |
-| Granted Tags [0] | Father.Form.Sword |
+| Granted Tags [0] | Effect.Father.FormState.Sword |
 | Granted Tags [1] | Father.State.Wielded |
 | Components | Remove Other Gameplay Effect on Application |
 | Remove GE Query -> Any Tags Match | Father.Form |
@@ -391,7 +391,7 @@ Before implementing the Sword Form, ensure the following are complete:
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Sword |
-| Activation Blocked Tags | Father.Form.Sword |
+| Activation Blocked Tags | Effect.Father.FormState.Sword |
 
 ##### 8.3.3) Configure Advanced Section
 
@@ -561,7 +561,7 @@ Before implementing the Sword Form, ensure the following are complete:
    - 9.2.2.1.1) Add: Ability.Father.Sword.Attack
 
 ###### 9.2.2.2) Activation Required Tags
-   - 9.2.2.2.1) Add: Father.Form.Sword
+   - 9.2.2.2.1) Add: Effect.Father.FormState.Sword
 
 ##### 9.2.3) Configure Input Tag
    - 9.2.3.1) Input Tag: Narrative.Input.Attack
@@ -634,7 +634,7 @@ Before implementing the Sword Form, ensure the following are complete:
 
 ##### 11.2.1) Tags
    - 11.2.1.1) Ability Tags: Ability.Father.Sword.Detach
-   - 11.2.1.2) Activation Required Tags: Father.Form.Sword
+   - 11.2.1.2) Activation Required Tags: Effect.Father.FormState.Sword
 
 ##### 11.2.2) Input Tag
    - 11.2.2.1) Input Tag: Narrative.Input.Father.Detach
@@ -737,7 +737,7 @@ Before implementing the Sword Form, ensure the following are complete:
 | Ability.Father.Sword | Form ability identifier |
 | Ability.Father.Sword.Attack | Attack ability identifier |
 | Ability.Father.Sword.Detach | Detach ability identifier |
-| Father.Form.Sword | Form state tag (granted by GE) |
+| Effect.Father.FormState.Sword | Form state tag (granted by GE) |
 | Father.State.Wielded | State tag indicating weapon wielded |
 | Narrative.Anim.AnimSets.Attacks.FatherSword.Light | Light attack animation set |
 | Narrative.Anim.AnimSets.Attacks.FatherSword.Heavy | Heavy attack animation set |
@@ -747,7 +747,7 @@ Before implementing the Sword Form, ensure the following are complete:
 | Step | Action | Result |
 |------|--------|--------|
 | 1 | Player activates GA_FatherSword | Form change initiated |
-| 2 | Apply GE_SwordState to father | Father.Form.Sword granted |
+| 2 | Apply GE_SwordState to father | Effect.Father.FormState.Sword granted |
 | 3 | Hide father actor | Father visually disappears |
 | 4 | Give BP_FatherSwordWeapon to player | Weapon in inventory |
 | 5 | Equip and Wield weapon | Player holds sword |

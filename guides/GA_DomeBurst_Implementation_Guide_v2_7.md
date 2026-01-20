@@ -1,5 +1,5 @@
 # Father Companion - GA_DomeBurst Implementation Guide
-## VERSION 2.7 - Blueprint Node Consistency Fixes
+## VERSION 2.8 - Form State Tag Update (INV-1 Compliant)
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 ---
@@ -13,7 +13,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Armor |
 | Input | Q Key (Manual) or Auto (When Dome Full) |
-| Version | 2.7 |
+| Version | 2.8 |
 | Last Updated | January 2026 |
 
 ---
@@ -128,7 +128,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 | Tag | Purpose |
 |-----|---------|
-| Father.Form.Armor | Armor form active |
+| Effect.Father.FormState.Armor | Form identity tag (granted by GE_ArmorState, used for Activation Required) |
 | Father.Dome.Active | Dome system running |
 | Father.Dome.Charging | Dome absorbing damage |
 | Father.State.Recruited | Father recruited by player |
@@ -260,7 +260,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Armor.DomeBurst |
-| Activation Required Tags | Father.Form.Armor, Father.Dome.Active, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Armor, Father.Dome.Active, Father.State.Recruited |
 | Activation Owned Tags | Father.State.Bursting |
 | Activation Blocked Tags | Cooldown.Father.Armor.DomeBurst, Father.State.Bursting |
 
@@ -797,6 +797,18 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 
 ## **CHANGELOG**
 
+### **VERSION 2.8 - Form State Tag Update (INV-1 Compliant)**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Form State Tags | Changed `Father.Form.Armor` to `Effect.Father.FormState.Armor` in all Activation Required Tags |
+| INV-1 Compliance | Aligned with Father_Companion_GAS_Audit_Locked_Decisions.md form state architecture |
+| Tag Architecture | `Father.Form.*` tags are orphan tags; form identity now uses GE-granted `Effect.Father.FormState.*` tags |
+
+---
+
 ### **VERSION 2.7 - Blueprint Node Consistency Fixes**
 
 **Release Date:** January 2026
@@ -944,7 +956,7 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 | Property | Tags |
 |----------|------|
 | Ability Tags | `Ability.Father.Armor.DomeBurst` |
-| Activation Required | `Father.Form.Armor`, `Father.Dome.Active`, `Father.State.Recruited` |
+| Activation Required | `Effect.Father.FormState.Armor`, `Father.Dome.Active`, `Father.State.Recruited` |
 | Activation Owned | `Father.State.Bursting` |
 | Activation Blocked | `Cooldown.Father.Armor.DomeBurst`, `Father.State.Bursting` |
 | InputTag | `Narrative.Input.Father.Ability1` |
@@ -1051,9 +1063,9 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 
 ---
 
-**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.7**
+**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.8**
 
-**Armor Form - Active/Auto AOE Explosion**
+**Armor Form - Active/Auto AOE Explosion (INV-1 Compliant)**
 
 **Unreal Engine 5.6 + Narrative Pro v2.2**
 

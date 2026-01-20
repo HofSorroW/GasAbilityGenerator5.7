@@ -1,5 +1,5 @@
 # Father Companion - GA_ProximityStrike Implementation Guide
-## VERSION 2.7 - Blueprint Node Consistency Fixes
+## VERSION 2.8 - Form State Tag Update (INV-1 Compliant)
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 ---
@@ -96,7 +96,7 @@ In Symbiote form, the father fully merges with the player body, creating a berse
 | 1 | Player equips BP_FatherSymbioteForm | Parent:HandleEquip grants GA_ProximityStrike |
 | 2 | bActivateAbilityOnGranted = false | No auto-activation attempt |
 | 3 | BP_FatherSymbioteForm activates GA_FatherSymbiote | Form ability starts |
-| 4 | GA_FatherSymbiote applies Activation Owned Tags | Father.Form.Symbiote + Father.State.Merged present |
+| 4 | GA_FatherSymbiote applies Activation Owned Tags | Effect.Father.FormState.Symbiote + Father.State.Merged present |
 | 5 | GA_FatherSymbiote calls TryActivateAbilityByClass | GA_ProximityStrike activation requested |
 | 6 | GA_ProximityStrike validates Activation Required Tags | Tags now present - activation succeeds |
 | 7 | ProximityStrike timer starts | AOE damage begins |
@@ -122,7 +122,7 @@ In Symbiote form, the father fully merges with the player body, creating a berse
 | BP_FatherCompanion | Father character with NarrativeNPCCharacter parent | Father_Companion_System_Setup_Guide_v1_3 |
 | GA_FatherSymbiote | Symbiote form activation ability | GA_FatherSymbiote_Implementation_Guide_v2_9 |
 | BP_FatherSymbioteForm | EquippableItem for Symbiote form (PENDING) | Father_Companion_Forms_Implementation_Guide_v4_0, PHASE 6 |
-| Father.Form.Symbiote tag | Form identification tag | DefaultGameplayTags_FatherCompanion_v3_5.ini |
+| Effect.Father.FormState.Symbiote tag | Form identification tag | DefaultGameplayTags_FatherCompanion_v3_5.ini |
 | Father.State.Merged tag | Full body merge state tag | DefaultGameplayTags_FatherCompanion_v3_5.ini |
 | Father.State.Recruited tag | Father recruited by player | DefaultGameplayTags_FatherCompanion_v3_5.ini |
 | Player Character | Player with NarrativeAbilitySystemComponent | Narrative Pro default |
@@ -148,7 +148,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Symbiote | Father is in Symbiote/Berserker form |
+| Effect.Father.FormState.Symbiote | Father is in Symbiote/Berserker form |
 | Father.State.Merged | Father fully merged with player body |
 | Father.State.Recruited | Father recruited by player |
 
@@ -288,7 +288,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 4.2.1) Find **Activation Required Tags** property
    - 4.2.2) Expand property
    - 4.2.3) Under **Gameplay Tags**, click **+ (Plus)**
-   - 4.2.4) Add tag: `Father.Form.Symbiote`
+   - 4.2.4) Add tag: `Effect.Father.FormState.Symbiote`
    - 4.2.5) Click **+ (Plus)** again
    - 4.2.6) Add tag: `Father.State.Merged`
    - 4.2.7) Click **+ (Plus)** again
@@ -975,7 +975,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | Property | Tags |
 |----------|------|
 | Ability Tags | `Ability.Father.Symbiote.ProximityStrike` |
-| Activation Required | `Father.Form.Symbiote`, `Father.State.Merged`, `Father.State.Recruited` |
+| Activation Required | `Effect.Father.FormState.Symbiote`, `Father.State.Merged`, `Father.State.Recruited` |
 | Activation Owned | `Father.State.ProximityActive` |
 | Activation Blocked | `Father.State.ProximityActive` |
 | InputTag | None (passive) |

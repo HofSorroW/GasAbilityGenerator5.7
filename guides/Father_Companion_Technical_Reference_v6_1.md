@@ -667,8 +667,8 @@ Shared Input, Form-Specific Activation:
 
 | Ability | InputTag | ActivationRequired |
 |---------|----------|--------------------|
-| GA_ElectricTrap | Narrative.Input.Father.Ability1 | Father.Form.Engineer |
-| GA_ExoskeletonDash | Narrative.Input.Father.Ability1 | Father.Form.Exoskeleton |
+| GA_ElectricTrap | Narrative.Input.Father.Ability1 | Effect.Father.FormState.Engineer |
+| GA_ExoskeletonDash | Narrative.Input.Father.Ability1 | Effect.Father.FormState.Exoskeleton |
 
 AI + Manual Trigger:
 - GA_FatherElectricTrap: InputTag=Narrative.Input.Father.Ability1
@@ -1496,7 +1496,7 @@ Examples: FatherAttackDamage, ProximityStrikeDamage, DashImpact
 | Tag Type | Purpose | Example |
 |----------|---------|---------|
 | Ability Tags | Unique identifier | Ability.Father.Crawler.Attack |
-| Activation Required Tags | Must have to activate | Father.Form.Crawler |
+| Activation Required Tags | Must have to activate | Effect.Father.FormState.Crawler |
 | Activation Blocked Tags | Cannot activate if present | Father.State.Attached |
 | Cancel Abilities with Tag | Cancel on activation | Ability.Father.Armor |
 | Cooldown Gameplay Effect Class | GAS built-in cooldown | GE_FormChangeCooldown |
@@ -1564,9 +1564,9 @@ Legacy Pattern (manual):
 
 | Ability | Activation Required Tags | Result |
 |---------|--------------------------|--------|
-| GA_FatherElectricTrap | Father.Form.Engineer | Only activates in Engineer form |
-| GA_ExoskeletonDash | Father.Form.Exoskeleton | Only activates in Exoskeleton form |
-| GA_ProtectiveDome | Father.Form.Armor | Only activates in Armor form |
+| GA_FatherElectricTrap | Effect.Father.FormState.Engineer | Only activates in Engineer form |
+| GA_ExoskeletonDash | Effect.Father.FormState.Exoskeleton | Only activates in Exoskeleton form |
+| GA_ProtectiveDome | Effect.Father.FormState.Armor | Only activates in Armor form |
 
 ### PATTERN 9: Movement Speed Modification
 

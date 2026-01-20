@@ -1,6 +1,6 @@
 # GA_FatherLaserShot - Implementation Guide
 
-## VERSION 3.7 | Unreal Engine 5.6 | Narrative Pro Plugin v2.2
+## VERSION 3.8 - Form State Tag Update (INV-1 Compliant) | Unreal Engine 5.6 | Narrative Pro Plugin v2.2
 
 ---
 
@@ -121,7 +121,7 @@ GA_FatherLaserShot is an autonomous AI-controlled ranged attack that allows the 
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Crawler | Must be in Crawler form (Activation Required) |
+| Effect.Father.FormState.Crawler | Must be in Crawler form (Activation Required) |
 | Father.State.Detached | Must not be attached (Activation Required) |
 | Father.State.Recruited | Must be recruited (Activation Required) |
 
@@ -353,7 +353,7 @@ GA_FatherLaserShot is an autonomous AI-controlled ranged attack that allows the 
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Crawler.LaserShot |
-| Activation Required Tags | Father.Form.Crawler, Father.State.Detached, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Crawler, Father.State.Detached, Father.State.Recruited |
 | Activation Blocked Tags | Cooldown.Father.Crawler.LaserShot |
 | Activation Owned Tags | Father.State.ShootingLaser |
 
@@ -713,7 +713,7 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 | Cooldown.Father.Crawler.LaserShot | Cooldown | Blocks activation during cooldown |
 | Father.State.ShootingLaser | State | Active while ability executes |
 | Effect.Damage.Laser | Effect | Identifies damage type |
-| Father.Form.Crawler | Required | Must be in Crawler form |
+| Effect.Father.FormState.Crawler | Required | Must be in Crawler form |
 | Father.State.Detached | Required | Must not be attached |
 | Father.State.Recruited | Required | Must be recruited |
 

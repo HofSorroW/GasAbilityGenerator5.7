@@ -1,5 +1,5 @@
 # GA_FatherExoskeletonSprint Implementation Guide
-## VERSION 2.7 - Simplified Configuration Sections
+## VERSION 2.8 - Form State Tag Update (INV-1 Compliant)
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 **Version:** 2.6
@@ -14,7 +14,7 @@
 This guide provides step-by-step instructions for implementing GA_FatherExoskeletonSprint, a continuous sprint ability for the Exoskeleton form. While sprinting, the player moves significantly faster with enhanced jump height and pushes away nearby hostile actors without dealing damage.
 
 **Key Features:**
-- Exoskeleton form only (requires Father.Form.Exoskeleton tag)
+- Exoskeleton form only (requires Effect.Father.FormState.Exoskeleton tag)
 - Continuous sprint while key held (ends on release)
 - Movement speed boost: 75% increase
 - Jump height boost: 50% increase (stacks with Exoskeleton base boost)
@@ -73,7 +73,7 @@ Before implementing GA_FatherExoskeletonSprint, ensure the following are complet
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Form.Exoskeleton | Required form |
+| Effect.Father.FormState.Exoskeleton | Required form |
 | Father.State.Attached | Required state |
 | Father.State.Recruited | Recruitment requirement |
 
@@ -170,7 +170,7 @@ Before implementing GA_FatherExoskeletonSprint, ensure the following are complet
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Exoskeleton.Sprint |
-| Activation Required Tags | Father.Form.Exoskeleton, Father.State.Attached, Father.State.Recruited |
+| Activation Required Tags | Effect.Father.FormState.Exoskeleton, Father.State.Attached, Father.State.Recruited |
 | Activation Owned Tags | Father.State.Sprinting |
 
 #### 3.2.4) Configure Replication Settings
@@ -807,7 +807,7 @@ Before implementing GA_FatherExoskeletonSprint, ensure the following are complet
 |-----|---------|
 | Ability.Father.Exoskeleton.Sprint | Ability identifier |
 | Father.State.Sprinting | Active sprint state |
-| Father.Form.Exoskeleton | Required form |
+| Effect.Father.FormState.Exoskeleton | Required form |
 | Father.State.Attached | Required state |
 | Father.State.Recruited | Recruitment requirement |
 | Effect.Father.SprintPush | Push effect marker |
