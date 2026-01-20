@@ -177,8 +177,7 @@ tags:
     comment: Base father damage effect
   - tag: Effect.Father.DashDamage
     comment: Dash collision damage
-  - tag: Effect.Father.DashInvulnerability
-    comment: Dash i-frames effect
+  # v4.13.5: Effect.Father.DashInvulnerability REMOVED per GAS Audit INV-1
   - tag: Effect.Father.DashKnockback
     comment: Dash knockback effect
   - tag: Effect.Father.DashSpeed
@@ -227,8 +226,7 @@ tags:
     comment: Symbiote form active effect
   - tag: Effect.Father.SymbioteDuration
     comment: Symbiote duration timer
-  - tag: Effect.Father.TransitionInvulnerability
-    comment: 5s invulnerability during form transition
+  # v4.13.5: Effect.Father.TransitionInvulnerability REMOVED per GAS Audit INV-1
   - tag: Effect.Father.TurretDamage
     comment: Turret shot damage
   - tag: Effect.Father.TurretMode
@@ -493,12 +491,12 @@ gameplay_effects:
       - Effect.Father.FormState.Crawler
     asset_tag: Effect.Father.FormState.Crawler
 
+  # v4.13.5: Removed Narrative.State.Invulnerable per GAS Audit INV-1
   - name: GE_ArmorState
     folder: Effects/FormState
     duration_policy: Infinite
     granted_tags:
       - Effect.Father.FormState.Armor
-      - Narrative.State.Invulnerable
     asset_tag: Effect.Father.FormState.Armor
 
   - name: GE_ExoskeletonState
@@ -506,7 +504,6 @@ gameplay_effects:
     duration_policy: Infinite
     granted_tags:
       - Effect.Father.FormState.Exoskeleton
-      - Narrative.State.Invulnerable
     asset_tag: Effect.Father.FormState.Exoskeleton
 
   - name: GE_SymbioteState
@@ -514,7 +511,6 @@ gameplay_effects:
     duration_policy: Infinite
     granted_tags:
       - Effect.Father.FormState.Symbiote
-      - Narrative.State.Invulnerable
     asset_tag: Effect.Father.FormState.Symbiote
 
   - name: GE_EngineerState
@@ -717,21 +713,11 @@ gameplay_effects:
       - Character.Marked
     asset_tag: Effect.Father.Mark
 
-  - name: GE_TransitionInvulnerability
-    folder: Effects/Utility
-    duration_policy: HasDuration
-    duration_magnitude: 5.0
-    granted_tags:
-      - Narrative.State.Invulnerable
-      - Father.State.Transitioning
+  # v4.13.5: GE_TransitionInvulnerability REMOVED per GAS Audit INV-1
+  # Form transitions now use AddLooseGameplayTag(Father.State.Transitioning) directly
 
-  - name: GE_DashInvulnerability
-    folder: Effects/Utility
-    duration_policy: HasDuration
-    duration_magnitude: 0.3
-    granted_tags:
-      - Narrative.State.Invulnerable
-      - Father.State.Dashing
+  # v4.13.5: GE_DashInvulnerability REMOVED per GAS Audit INV-1
+  # Dash now uses Father.State.Dashing tag only (no invulnerability)
 
   - name: GE_SacrificeInvulnerability
     folder: Effects/Utility
@@ -797,6 +783,7 @@ gameplay_abilities:
   # ---------------------------------------------------------------------------
   
   # GA_FatherCrawler - Detach and Follow Mode (Option B Form Identity)
+  # v4.13.5: GAS Audit compliant - NO invulnerability per INV-1
   - name: GA_FatherCrawler
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -881,23 +868,34 @@ gameplay_abilities:
             function: K2_EndAbility
             target_self: true
           position: [2400, -100]
-        # FULL TRANSITION FLOW (Option B + VFX + Invulnerability) - False branch (form switch)
-        # v4.14: Added 5s transition with GE_TransitionInvulnerability and VFX
-        # Step 1: Apply transition invulnerability (5s duration, grants Narrative.State.Invulnerable + Father.State.Transitioning)
-        - id: ApplyTransitionInvuln
+        # FULL TRANSITION FLOW (Option B + VFX, NO Invulnerability) - False branch (form switch)
+        # v4.13.5: Using AddLooseGameplayTag instead of GE_TransitionInvulnerability per GAS Audit INV-1
+        # Step 1: Add Transitioning tag
+        - id: GetFatherASC_Transition
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
-            gameplay_effect_class: GE_TransitionInvulnerability
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1500, 300]
+        - id: AddTransitioningTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTag
           position: [1700, 200]
+        - id: MakeLiteralTag_AddTransitioning
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [1500, 350]
         # Step 2: Spawn transition VFX
         - id: GetFatherMesh
           type: PropertyGet
           properties:
             property_name: Mesh
             target_class: Character
-          position: [1700, 350]
+          position: [1700, 450]
         - id: SpawnTransitionVFX
           type: CallFunction
           properties:
@@ -938,56 +936,49 @@ gameplay_abilities:
             target_self: true
             gameplay_effect_class: GE_CrawlerState
           position: [2500, 200]
-        # Step 6: Remove transition invulnerability by granted tag (Father.State.Transitioning)
-        - id: RemoveTransitionInvuln
+        # Step 6: Remove Transitioning tag
+        - id: RemoveTransitioningTag
           type: CallFunction
           properties:
-            function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
-            target_self: true
+            function: RemoveLooseGameplayTag
           position: [2700, 200]
-        - id: MakeTagContainer_Transition
-          type: CallFunction
-          properties:
-            function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
-          position: [2600, 350]
-        - id: MakeLiteralTag_Transition
+        - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Father.State.Transitioning
-          position: [2400, 350]
+          position: [2500, 350]
         # Continue form switch flow after transition
         - id: DetachFromActor
           type: CallFunction
           properties:
             function: K2_DetachFromActor
-          position: [2400, 200]
+          position: [2900, 200]
         - id: SetCurrentForm_Switch
           type: PropertySet
           properties:
             property_name: CurrentForm
             target_class: BP_FatherCompanion
-          position: [2700, 200]
+          position: [3100, 200]
         - id: SetIsAttached_Switch
           type: PropertySet
           properties:
             property_name: IsAttached
             target_class: BP_FatherCompanion
-          position: [3000, 200]
+          position: [3300, 200]
         - id: CommitCooldown
           type: CallFunction
           properties:
             function: K2_CommitAbilityCooldown
             target_self: true
-          position: [3300, 200]
+          position: [3500, 200]
         - id: EndAbility_Switch
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [3600, 200]
+          position: [3700, 200]
       connections:
         # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
@@ -1005,10 +996,10 @@ gameplay_abilities:
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
           to: [EndAbility_First, Exec]
-        # Branch False path (form switch) - FULL TRANSITION FLOW (v4.14)
+        # Branch False path (form switch) - v4.13.5: NO invulnerability
         - from: [Branch_First, False]
-          to: [ApplyTransitionInvuln, Exec]
-        - from: [ApplyTransitionInvuln, Exec]
+          to: [AddTransitioningTag, Exec]
+        - from: [AddTransitioningTag, Exec]
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
@@ -1017,8 +1008,8 @@ gameplay_abilities:
         - from: [RemovePriorFormState, Exec]
           to: [ApplyCrawlerState, Exec]
         - from: [ApplyCrawlerState, Exec]
-          to: [RemoveTransitionInvuln, Exec]
-        - from: [RemoveTransitionInvuln, Exec]
+          to: [RemoveTransitioningTag, Exec]
+        - from: [RemoveTransitioningTag, Exec]
           to: [DetachFromActor, Exec]
         - from: [DetachFromActor, Exec]
           to: [SetCurrentForm_Switch, Exec]
@@ -1043,9 +1034,20 @@ gameplay_abilities:
           to: [SetCurrentForm_Switch, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached_Switch, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC_Transition, Actor]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
           to: [Branch_First, Condition]
+        # Data flow - Transitioning tag (v4.13.5)
+        - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
+          to: [AddTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [AddTransitioningTag, Target]
+        - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
+          to: [RemoveTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [RemoveTransitioningTag, Target]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -1063,6 +1065,7 @@ gameplay_abilities:
           to: [RemoveTransitionInvuln, WithGrantedTags]
 
   # GA_FatherArmor - Attach to Player Chest (Option B Form Identity)
+  # v4.13.5: GAS Audit compliant - NO invulnerability per INV-1
   - name: GA_FatherArmor
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -1169,22 +1172,33 @@ gameplay_abilities:
             target_self: true
           position: [2500, -200]
         # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
-        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
-        # Step 1: Apply transition invulnerability
-        - id: ApplyTransitionInvuln
+        # v4.13.5: FULL TRANSITION FLOW (Option B + VFX, NO Invulnerability per GAS Audit INV-1)
+        # Step 1: Add Transitioning tag
+        - id: GetFatherASC_Transition
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
-            gameplay_effect_class: GE_TransitionInvulnerability
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1700, 300]
+        - id: AddTransitioningTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTag
           position: [1900, 200]
+        - id: MakeLiteralTag_AddTransitioning
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [1700, 350]
         # Step 2: Spawn transition VFX
         - id: GetFatherMesh
           type: PropertyGet
           properties:
             property_name: Mesh
             target_class: Character
-          position: [1900, 350]
+          position: [1900, 450]
         - id: SpawnTransitionVFX
           type: CallFunction
           properties:
@@ -1225,26 +1239,19 @@ gameplay_abilities:
             target_self: true
             gameplay_effect_class: GE_ArmorState
           position: [2700, 200]
-        # Step 6: Remove transition invulnerability by granted tag
-        - id: RemoveTransitionInvuln
+        # Step 6: Remove Transitioning tag
+        - id: RemoveTransitioningTag
           type: CallFunction
           properties:
-            function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
-            target_self: true
+            function: RemoveLooseGameplayTag
           position: [2900, 200]
-        - id: MakeTagContainer_Transition
-          type: CallFunction
-          properties:
-            function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
-          position: [2800, 350]
-        - id: MakeLiteralTag_Transition
+        - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Father.State.Transitioning
-          position: [2600, 350]
+          position: [2700, 350]
         # Pure nodes - below main exec flow
         - id: GetOwnerPlayer
           type: PropertyGet
@@ -1395,10 +1402,10 @@ gameplay_abilities:
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
           to: [EndAbility_First, Exec]
-        # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        # === FORM SWITCH PATH (False branch) - v4.13.5: NO invulnerability ===
         - from: [Branch_First, False]
-          to: [ApplyTransitionInvuln, Exec]
-        - from: [ApplyTransitionInvuln, Exec]
+          to: [AddTransitioningTag, Exec]
+        - from: [AddTransitioningTag, Exec]
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
@@ -1407,8 +1414,8 @@ gameplay_abilities:
         - from: [RemovePriorFormState, Exec]
           to: [ApplyArmorState, Exec]
         - from: [ApplyArmorState, Exec]
-          to: [RemoveTransitionInvuln, Exec]
-        - from: [RemoveTransitionInvuln, Exec]
+          to: [RemoveTransitioningTag, Exec]
+        - from: [RemoveTransitioningTag, Exec]
           to: [Branch_Valid, Exec]
         - from: [Branch_Valid, then]
           to: [SetPlayerRef, Exec]
@@ -1438,6 +1445,8 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC_Transition, Actor]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
           to: [Branch_First, Condition]
@@ -1449,10 +1458,15 @@ gameplay_abilities:
         # Data flow - Form switch path (tag containers)
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
-        - from: [MakeLiteralTag_Transition, ReturnValue]
-          to: [MakeTagContainer_Transition, Tag]
-        - from: [MakeTagContainer_Transition, ReturnValue]
-          to: [RemoveTransitionInvuln, WithGrantedTags]
+        # v4.13.5: Transitioning tag via AddLooseGameplayTag (not GE)
+        - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
+          to: [AddTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [AddTransitioningTag, Target]
+        - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
+          to: [RemoveTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [RemoveTransitioningTag, Target]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -1519,6 +1533,7 @@ gameplay_abilities:
           to: [RestoreSpeed, NewMaxWalkSpeed]
 
   # GA_FatherExoskeleton - Attach to Player Back with Speed Boost (Option B Form Identity)
+  # v4.13.5: GAS Audit compliant - NO invulnerability per INV-1
   - name: GA_FatherExoskeleton
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -1631,15 +1646,26 @@ gameplay_abilities:
             target_self: true
           position: [2200, -200]
         # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
-        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
-        # Step 1: Apply transition invulnerability
-        - id: ApplyTransitionInvuln
+        # v4.13.5: FULL TRANSITION FLOW (Option B + VFX, NO Invulnerability per GAS Audit INV-1)
+        # Step 1: Add Transitioning tag (instead of GE_TransitionInvulnerability)
+        - id: GetFatherASC_Transition
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
-            gameplay_effect_class: GE_TransitionInvulnerability
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1500, 300]
+        - id: AddTransitioningTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTag
           position: [1600, 200]
+        - id: MakeLiteralTag_AddTransitioning
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [1400, 300]
         # Step 2: Spawn transition VFX
         - id: GetFatherMesh
           type: PropertyGet
@@ -1687,26 +1713,19 @@ gameplay_abilities:
             target_self: true
             gameplay_effect_class: GE_ExoskeletonState
           position: [2400, 200]
-        # Step 6: Remove transition invulnerability by granted tag
-        - id: RemoveTransitionInvuln
+        # Step 6: Remove Transitioning tag (v4.13.5: replaces GE removal)
+        - id: RemoveTransitioningTag
           type: CallFunction
           properties:
-            function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
-            target_self: true
+            function: RemoveLooseGameplayTag
           position: [2600, 200]
-        - id: MakeTagContainer_Transition
-          type: CallFunction
-          properties:
-            function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
-          position: [2500, 350]
-        - id: MakeLiteralTag_Transition
+        - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Father.State.Transitioning
-          position: [2300, 350]
+          position: [2500, 350]
         # Continue form switch flow after transition
         - id: GetOwnerPlayer
           type: PropertyGet
@@ -1837,9 +1856,10 @@ gameplay_abilities:
         - from: [SetFirstFalse, Exec]
           to: [EndAbility_First, Exec]
         # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        # v4.13.5: NO invulnerability - uses AddLooseGameplayTag/RemoveLooseGameplayTag
         - from: [Branch_First, False]
-          to: [ApplyTransitionInvuln, Exec]
-        - from: [ApplyTransitionInvuln, Exec]
+          to: [AddTransitioningTag, Exec]
+        - from: [AddTransitioningTag, Exec]
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
@@ -1848,8 +1868,8 @@ gameplay_abilities:
         - from: [RemovePriorFormState, Exec]
           to: [ApplyExoskeletonState, Exec]
         - from: [ApplyExoskeletonState, Exec]
-          to: [RemoveTransitionInvuln, Exec]
-        - from: [RemoveTransitionInvuln, Exec]
+          to: [RemoveTransitioningTag, Exec]
+        - from: [RemoveTransitioningTag, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
           to: [SetOrigSpeed, Exec]
@@ -1888,10 +1908,17 @@ gameplay_abilities:
         # Data flow - Form switch path (tag containers)
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
-        - from: [MakeLiteralTag_Transition, ReturnValue]
-          to: [MakeTagContainer_Transition, Tag]
-        - from: [MakeTagContainer_Transition, ReturnValue]
-          to: [RemoveTransitionInvuln, WithGrantedTags]
+        # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC_Transition, Actor]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [AddTransitioningTag, Target]
+        - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
+          to: [AddTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [RemoveTransitioningTag, Target]
+        - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
+          to: [RemoveTransitioningTag, GameplayTag]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -1941,6 +1968,7 @@ gameplay_abilities:
           to: [RestoreSpeed_End, NewMaxWalkSpeed]
 
   # GA_FatherSymbiote - Merge with Player (Timed) (Option B Form Identity)
+  # v4.13.5: GAS Audit compliant - NO invulnerability, timer guards, Event_EndAbility
   - name: GA_FatherSymbiote
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -1982,6 +2010,13 @@ gameplay_abilities:
       - name: bIsFirstActivation
         type: Bool
         default_value: true
+      # v4.13.5: Variables for speed/jump restoration (GAS Audit FIX-1)
+      - name: OriginalMaxWalkSpeed
+        type: Float
+        default_value: 0.0
+      - name: OriginalJumpZVelocity
+        type: Float
+        default_value: 0.0
     event_graph:
       nodes:
         - id: Event_Activate
@@ -2040,54 +2075,65 @@ gameplay_abilities:
             target_self: true
           position: [2200, -200]
         # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
-        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
-        # Step 1: Apply transition invulnerability
-        - id: ApplyTransitionInvuln
+        # v4.13.5: FULL TRANSITION FLOW (Option B + VFX, NO Invulnerability per GAS Audit INV-1)
+        # Step 1: Add Transitioning tag (instead of GE_TransitionInvulnerability)
+        - id: GetFatherASC_Transition
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
-            gameplay_effect_class: GE_TransitionInvulnerability
-          position: [1600, 200]
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1500, 300]
+        - id: AddTransitioningTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTag
+          position: [1700, 200]
+        - id: MakeLiteralTag_AddTransitioning
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [1500, 350]
         # Step 2: Spawn transition VFX
         - id: GetFatherMesh
           type: PropertyGet
           properties:
             property_name: Mesh
             target_class: Character
-          position: [1600, 350]
+          position: [1600, 450]
         - id: SpawnTransitionVFX
           type: CallFunction
           properties:
             function: SpawnSystemAttached
             class: NiagaraFunctionLibrary
-          position: [1800, 200]
+          position: [1900, 200]
         # Step 3: Wait 5 seconds
         - id: TransitionDelay
           type: Delay
           properties:
             duration: 5.0
-          position: [2000, 200]
+          position: [2100, 200]
         # Step 4: Remove prior form state
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
             target_self: true
-          position: [2200, 200]
+          position: [2300, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [2100, 350]
+          position: [2200, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [1900, 350]
+          position: [2000, 350]
         # Step 5: Apply new form state
         - id: ApplySymbioteState
           type: CallFunction
@@ -2095,27 +2141,20 @@ gameplay_abilities:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
             gameplay_effect_class: GE_SymbioteState
-          position: [2400, 200]
-        # Step 6: Remove transition invulnerability by granted tag
-        - id: RemoveTransitionInvuln
+          position: [2500, 200]
+        # Step 6: Remove Transitioning tag (instead of GE removal)
+        - id: RemoveTransitioningTag
           type: CallFunction
           properties:
-            function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
-            target_self: true
-          position: [2600, 200]
-        - id: MakeTagContainer_Transition
-          type: CallFunction
-          properties:
-            function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
-          position: [2500, 350]
-        - id: MakeLiteralTag_Transition
+            function: RemoveLooseGameplayTag
+          position: [2700, 200]
+        - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Father.State.Transitioning
-          position: [2300, 350]
+          position: [2500, 350]
         # Continue form switch flow after transition
         - id: GetOwnerPlayer
           type: PropertyGet
@@ -2165,48 +2204,153 @@ gameplay_abilities:
           properties:
             variable_name: DurationTimerHandle
           position: [3300, 0]
+        # === TIMER EXPIRED FLOW (with guards per GAS Audit FIX-2) ===
         - id: CustomEvent_TimerExpired
           type: CustomEvent
           properties:
             event_name: OnSymbioteTimerExpired
           position: [0, 400]
+        # Guard 1: Validate FatherRef
         - id: GetFatherRef_Timer
           type: VariableGet
           properties:
             variable_name: FatherRef
           position: [100, 500]
+        - id: IsValid_FatherRef
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [250, 400]
+        - id: Branch_FatherValid
+          type: Branch
+          position: [400, 400]
+        # Guard 2: Check CurrentForm == Symbiote
+        - id: GetCurrentForm_Timer
+          type: PropertyGet
+          properties:
+            property_name: CurrentForm
+            target_class: BP_FatherCompanion
+          position: [450, 550]
+        - id: EqualEnum_Symbiote
+          type: CallFunction
+          properties:
+            function: EqualEqual_ByteByte
+          position: [600, 500]
+        - id: Branch_FormCheck
+          type: Branch
+          position: [750, 400]
+        # Guard 3: Check Symbiote.State.Merged tag (ability still active)
+        - id: GetFatherASC_Timer
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [800, 550]
+        - id: HasMergedTag
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+          position: [950, 500]
+        - id: MakeLiteralTag_Merged
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Symbiote.State.Merged
+          position: [800, 650]
+        - id: Branch_MergedTag
+          type: Branch
+          position: [1100, 400]
+        # Guarded timer callback logic
         - id: GetPlayerRef_Timer
           type: VariableGet
           properties:
             variable_name: PlayerRef
-          position: [100, 600]
+          position: [1150, 550]
         - id: ShowFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [300, 400]
+          position: [1250, 400]
         - id: EnableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [600, 400]
+          position: [1500, 400]
         - id: GetPlayerASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
-          position: [750, 500]
+          position: [1550, 550]
         - id: TryActivateArmor
           type: CallFunction
           properties:
             function: TryActivateAbilityByClass
-          position: [900, 400]
+          position: [1750, 400]
         - id: EndAbility_Timer
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [1200, 400]
+          position: [2000, 400]
+        # === EVENT_ENDABILITY (with bWasCancelled check per GAS Audit FIX-1) ===
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 800]
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [250, 800]
+        # Cleanup path (only when cancelled)
+        - id: ClearTimer_End
+          type: CallFunction
+          properties:
+            function: K2_ClearAndInvalidateTimerHandle
+            class: KismetSystemLibrary
+          position: [450, 800]
+        - id: GetTimerHandle_End
+          type: VariableGet
+          properties:
+            variable_name: DurationTimerHandle
+          position: [300, 900]
+        - id: GetFatherRef_End
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [500, 900]
+        - id: IsValid_Father_End
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [650, 800]
+        - id: Branch_FatherValid_End
+          type: Branch
+          position: [800, 800]
+        - id: ShowFather_End
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [950, 800]
+        - id: EnableCollision_End
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [1150, 800]
+        - id: TryActivateArmor_End
+          type: CallFunction
+          properties:
+            function: TryActivateAbilityByClass
+          position: [1350, 800]
+        - id: GetFatherASC_End
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1200, 900]
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (GetAvatarActor is pure - no exec pins)
@@ -2226,9 +2370,10 @@ gameplay_abilities:
         - from: [SetFirstFalse, Exec]
           to: [EndAbility_First, Exec]
         # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        # v4.13.5: No invulnerability - use AddLooseGameplayTag instead
         - from: [Branch_First, False]
-          to: [ApplyTransitionInvuln, Exec]
-        - from: [ApplyTransitionInvuln, Exec]
+          to: [AddTransitioningTag, Exec]
+        - from: [AddTransitioningTag, Exec]
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
@@ -2237,8 +2382,8 @@ gameplay_abilities:
         - from: [RemovePriorFormState, Exec]
           to: [ApplySymbioteState, Exec]
         - from: [ApplySymbioteState, Exec]
-          to: [RemoveTransitionInvuln, Exec]
-        - from: [RemoveTransitionInvuln, Exec]
+          to: [RemoveTransitioningTag, Exec]
+        - from: [RemoveTransitioningTag, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
           to: [HideFather, Exec]
@@ -2268,6 +2413,8 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC_Transition, Actor]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
           to: [Branch_First, Condition]
@@ -2279,10 +2426,15 @@ gameplay_abilities:
         # Data flow - Form switch path (tag containers)
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
-        - from: [MakeLiteralTag_Transition, ReturnValue]
-          to: [MakeTagContainer_Transition, Tag]
-        - from: [MakeTagContainer_Transition, ReturnValue]
-          to: [RemoveTransitionInvuln, WithGrantedTags]
+        # v4.13.5: Transitioning tag via AddLooseGameplayTag (not GE)
+        - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
+          to: [AddTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [AddTransitioningTag, Target]
+        - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
+          to: [RemoveTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [RemoveTransitioningTag, Target]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -2296,8 +2448,42 @@ gameplay_abilities:
           to: [SetTimer, Time]
         - from: [SetTimer, ReturnValue]
           to: [SetTimerHandle, DurationTimerHandle]
-        # === TIMER EXPIRED FLOW ===
+        # === TIMER EXPIRED FLOW (with guards per GAS Audit FIX-2) ===
+        # Guard 1: IsValid(FatherRef)
         - from: [CustomEvent_TimerExpired, Then]
+          to: [IsValid_FatherRef, Exec]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [IsValid_FatherRef, Object]
+        - from: [IsValid_FatherRef, ReturnValue]
+          to: [Branch_FatherValid, Condition]
+        - from: [IsValid_FatherRef, Exec]
+          to: [Branch_FatherValid, Exec]
+        # Guard 2: CurrentForm == Symbiote
+        - from: [Branch_FatherValid, True]
+          to: [EqualEnum_Symbiote, Exec]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [GetCurrentForm_Timer, Target]
+        - from: [GetCurrentForm_Timer, CurrentForm]
+          to: [EqualEnum_Symbiote, A]
+        - from: [EqualEnum_Symbiote, ReturnValue]
+          to: [Branch_FormCheck, Condition]
+        - from: [EqualEnum_Symbiote, Exec]
+          to: [Branch_FormCheck, Exec]
+        # Guard 3: HasMatchingGameplayTag(Symbiote.State.Merged)
+        - from: [Branch_FormCheck, True]
+          to: [HasMergedTag, Exec]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [GetFatherASC_Timer, Actor]
+        - from: [GetFatherASC_Timer, ReturnValue]
+          to: [HasMergedTag, Target]
+        - from: [MakeLiteralTag_Merged, ReturnValue]
+          to: [HasMergedTag, Tag]
+        - from: [HasMergedTag, ReturnValue]
+          to: [Branch_MergedTag, Condition]
+        - from: [HasMergedTag, Exec]
+          to: [Branch_MergedTag, Exec]
+        # All guards passed - proceed with cleanup
+        - from: [Branch_MergedTag, True]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
@@ -2314,8 +2500,43 @@ gameplay_abilities:
           to: [GetPlayerASC, Actor]
         - from: [GetPlayerASC, ReturnValue]
           to: [TryActivateArmor, Target]
+        # === EVENT_ENDABILITY FLOW (per GAS Audit FIX-1) ===
+        # Check bWasCancelled - only cleanup when cancelled
+        - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        # True path: Was cancelled - need cleanup
+        - from: [Branch_WasCancelled, True]
+          to: [ClearTimer_End, Exec]
+        - from: [GetTimerHandle_End, DurationTimerHandle]
+          to: [ClearTimer_End, Handle]
+        - from: [ClearTimer_End, Exec]
+          to: [IsValid_Father_End, Exec]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [IsValid_Father_End, Object]
+        - from: [IsValid_Father_End, ReturnValue]
+          to: [Branch_FatherValid_End, Condition]
+        - from: [IsValid_Father_End, Exec]
+          to: [Branch_FatherValid_End, Exec]
+        # Cleanup when father valid
+        - from: [Branch_FatherValid_End, True]
+          to: [ShowFather_End, Exec]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [ShowFather_End, Target]
+        - from: [ShowFather_End, Exec]
+          to: [EnableCollision_End, Exec]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [EnableCollision_End, Target]
+        - from: [EnableCollision_End, Exec]
+          to: [TryActivateArmor_End, Exec]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [GetFatherASC_End, Actor]
+        - from: [GetFatherASC_End, ReturnValue]
+          to: [TryActivateArmor_End, Target]
 
   # GA_FatherEngineer - Deploy as Turret (Option B Form Identity)
+  # v4.13.5: GAS Audit compliant - NO invulnerability per INV-1
   - name: GA_FatherEngineer
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -2407,15 +2628,26 @@ gameplay_abilities:
             target_self: true
           position: [2200, -200]
         # === FORM SWITCH PATH (Row Y=200) - Full transition with VFX/delay ===
-        # v4.14: FULL TRANSITION FLOW (Option B + VFX + Invulnerability)
-        # Step 1: Apply transition invulnerability
-        - id: ApplyTransitionInvuln
+        # v4.13.5: FULL TRANSITION FLOW (Option B + VFX, NO Invulnerability per GAS Audit INV-1)
+        # Step 1: Add Transitioning tag (instead of GE_TransitionInvulnerability)
+        - id: GetFatherASC_Transition
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
-            gameplay_effect_class: GE_TransitionInvulnerability
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1500, 300]
+        - id: AddTransitioningTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTag
           position: [1600, 200]
+        - id: MakeLiteralTag_AddTransitioning
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [1400, 300]
         # Step 2: Spawn transition VFX
         - id: GetFatherMesh
           type: PropertyGet
@@ -2463,26 +2695,19 @@ gameplay_abilities:
             target_self: true
             gameplay_effect_class: GE_EngineerState
           position: [2400, 200]
-        # Step 6: Remove transition invulnerability by granted tag
-        - id: RemoveTransitionInvuln
+        # Step 6: Remove Transitioning tag (v4.13.5: replaces GE removal)
+        - id: RemoveTransitioningTag
           type: CallFunction
           properties:
-            function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
-            target_self: true
+            function: RemoveLooseGameplayTag
           position: [2600, 200]
-        - id: MakeTagContainer_Transition
-          type: CallFunction
-          properties:
-            function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
-          position: [2500, 350]
-        - id: MakeLiteralTag_Transition
+        - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Father.State.Transitioning
-          position: [2300, 350]
+          position: [2500, 350]
         # Continue form switch flow after transition
         - id: GetFatherLocation
           type: CallFunction
@@ -2561,9 +2786,10 @@ gameplay_abilities:
         - from: [SetFirstFalse, Exec]
           to: [EndAbility_First, Exec]
         # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
+        # v4.13.5: NO invulnerability - uses AddLooseGameplayTag/RemoveLooseGameplayTag
         - from: [Branch_First, False]
-          to: [ApplyTransitionInvuln, Exec]
-        - from: [ApplyTransitionInvuln, Exec]
+          to: [AddTransitioningTag, Exec]
+        - from: [AddTransitioningTag, Exec]
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
@@ -2572,8 +2798,8 @@ gameplay_abilities:
         - from: [RemovePriorFormState, Exec]
           to: [ApplyEngineerState, Exec]
         - from: [ApplyEngineerState, Exec]
-          to: [RemoveTransitionInvuln, Exec]
-        - from: [RemoveTransitionInvuln, Exec]
+          to: [RemoveTransitioningTag, Exec]
+        - from: [RemoveTransitioningTag, Exec]
           to: [GetFatherLocation, Exec]
         - from: [GetFatherLocation, Exec]
           to: [SetDeployLocation, Exec]
@@ -2606,10 +2832,17 @@ gameplay_abilities:
         # Data flow - Form switch path (tag containers)
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
-        - from: [MakeLiteralTag_Transition, ReturnValue]
-          to: [MakeTagContainer_Transition, Tag]
-        - from: [MakeTagContainer_Transition, ReturnValue]
-          to: [RemoveTransitionInvuln, WithGrantedTags]
+        # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC_Transition, Actor]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [AddTransitioningTag, Target]
+        - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
+          to: [AddTransitioningTag, GameplayTag]
+        - from: [GetFatherASC_Transition, ReturnValue]
+          to: [RemoveTransitioningTag, Target]
+        - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
+          to: [RemoveTransitioningTag, GameplayTag]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]

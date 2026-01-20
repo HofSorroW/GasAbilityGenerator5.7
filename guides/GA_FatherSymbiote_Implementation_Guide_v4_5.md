@@ -1,8 +1,8 @@
 # Father Companion - Symbiote Ultimate Ability Implementation Guide
-## VERSION 4.4 - Option B Form State Architecture
+## VERSION 4.5 - GAS Audit Fixes (Event_EndAbility, Timer Guards, No Invulnerability)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.4
+**Version:** 4.5
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -29,7 +29,7 @@
 | Threshold Scaling | FC_UltimateThreshold (CurveFloat) |
 | Version | 4.4 |
 | Last Updated | January 2026 |
-| Dependencies | GE_SymbioteState, GE_TransitionInvulnerability, GE_FormChangeCooldown, GE_SymbioteLock |
+| Dependencies | GE_SymbioteState, GE_FormChangeCooldown, GE_SymbioteLock |
 
 ---
 
@@ -118,10 +118,10 @@
 #### 6A.1) GE_SymbioteState Purpose
 This Gameplay Effect establishes Symbiote form identity using Option B architecture:
 - **Duration Policy:** Infinite (persists until explicitly removed by next form's transition prelude)
-- **Granted Tags:** Effect.Father.FormState.Symbiote, Narrative.State.Invulnerable
+- **Granted Tags:** Effect.Father.FormState.Symbiote
 - **Asset Tag:** Effect.Father.FormState.Symbiote
 
-**Note:** Attached/merged forms (Armor, Exoskeleton, Symbiote) grant `Narrative.State.Invulnerable` via their GE_*State because father is physically merged with/attached to player and should not take damage.
+> **AUDIT NOTE (v4.5):** Invulnerability was removed per GAS audit. Father is NOT invulnerable during Symbiote form - this was an unintended oversight. See `Father_Companion_GAS_Audit_Locked_Decisions.md` INV-1.
 
 #### 6A.2) Verify Asset Location
    - 6A.2.1) Navigate to: /Content/FatherCompanion/Effects/FormState/
@@ -134,7 +134,6 @@ This Gameplay Effect establishes Symbiote form identity using Option B architect
 |----------|-------|
 | Duration Policy | Infinite |
 | Granted Tags [0] | Effect.Father.FormState.Symbiote |
-| Granted Tags [1] | Narrative.State.Invulnerable |
 | Asset Tag | Effect.Father.FormState.Symbiote |
 
 ---
@@ -388,44 +387,35 @@ GA_FatherSymbiote does NOT need to apply stat modifiers. See Father_Companion_Sy
       - 15.1.2.2) Add: Add Loose Gameplay Tag node
       - 15.1.2.3) Tag: Father.State.Transitioning
 
-#### 15.2) Apply Invulnerability During Transition
+> **AUDIT NOTE (v4.5):** Invulnerability during transition was REMOVED per GAS audit. Father is vulnerable during the 5-second transition VFX. This is intentional - invulnerability was never part of the design. See `Father_Companion_GAS_Audit_Locked_Decisions.md` INV-1.
+
+#### 15.2) Spawn Transition VFX
    - 15.2.1) From Add Loose Tag execution:
-      - 15.2.1.1) From Father ASC, Apply Gameplay Effect to Self
-      - 15.2.1.2) Gameplay Effect Class: GE_Invulnerable
-      - 15.2.1.3) Level: 1.0
+      - 15.2.1.1) From FatherRef, Get Actor Location
+   - 15.2.2) Add: Spawn System at Location node
+      - 15.2.2.1) System Template: NS_FatherFormTransition
+      - 15.2.2.2) Location: Father Actor Location
+      - 15.2.2.3) Auto Destroy: Checked
 
-#### 15.3) Spawn Transition VFX
-   - 15.3.1) From Apply GE execution:
-      - 15.3.1.1) From FatherRef, Get Actor Location
-   - 15.3.2) Add: Spawn System at Location node
-      - 15.3.2.1) System Template: NS_FatherFormTransition
-      - 15.3.2.2) Location: Father Actor Location
-      - 15.3.2.3) Auto Destroy: Checked
+#### 15.3) Wait 5 Seconds for Transition
+   - 15.3.1) From Spawn System execution:
+      - 15.3.1.1) Add: Delay node
+      - 15.3.1.2) Duration: 5.0
 
-#### 15.4) Wait 5 Seconds for Transition
-   - 15.4.1) From Spawn System execution:
-      - 15.4.1.1) Add: Delay node
-      - 15.4.1.2) Duration: 5.0
+#### 15.4) Remove Transitioning Tag
+   - 15.4.1) From Delay Completed:
+      - 15.4.1.1) From Father ASC, Remove Loose Gameplay Tag
+      - 15.4.1.2) Tag: Father.State.Transitioning
 
-#### 15.5) Remove Transitioning Tag
-   - 15.5.1) From Delay Completed:
-      - 15.5.1.1) From Father ASC, Remove Loose Gameplay Tag
-      - 15.5.1.2) Tag: Father.State.Transitioning
+#### 15.5) Commit Form Change Cooldown
+   - 15.5.1) From Remove Tag execution:
+      - 15.5.1.1) Search: `Commit Ability Cooldown`
+      - 15.5.1.2) Select **Commit Ability Cooldown** node
+      - 15.5.1.3) No parameters needed - uses CooldownGameplayEffectClass automatically
 
-#### 15.6) Remove Invulnerability
-   - 15.7.1) From Remove Tag execution:
-      - 15.7.1.1) From Father ASC, Remove Active Gameplay Effects with Granted Tags
-      - 15.7.1.2) Tags: State.Invulnerable
-
-#### 15.8) Commit Form Change Cooldown
-   - 15.8.1) From Remove Effects execution:
-      - 15.8.1.1) Search: `Commit Ability Cooldown`
-      - 15.8.1.2) Select **Commit Ability Cooldown** node
-      - 15.8.1.3) No parameters needed - uses CooldownGameplayEffectClass automatically
-
-#### 15.9) Continue to Main Symbiote Logic
-   - 15.9.1) From Commit Ability Cooldown execution:
-      - 15.9.1.1) Connect to Section 16 (Main Symbiote Logic)
+#### 15.6) Continue to Main Symbiote Logic
+   - 15.6.1) From Commit Ability Cooldown execution:
+      - 15.6.1.1) Connect to Section 16 (Main Symbiote Logic)
 
 ---
 
@@ -518,7 +508,9 @@ GA_ProximityStrike is handled automatically by BP_FatherSymbioteForm EquippableI
 
 ---
 
-## **PHASE 4: IMPLEMENT ENDSYMBIOTE FUNCTION**
+## **PHASE 4: IMPLEMENT ENDSYMBIOTE FUNCTION (TIMER CALLBACK)**
+
+> **AUDIT NOTE (v4.5):** This function is called by the 30-second timer. It MUST have defensive guards to handle edge cases where the timer fires after the ability has already ended (e.g., death, force-cancel). See `Father_Companion_GAS_Audit_Locked_Decisions.md` FIX-2.
 
 ### **17) Create EndSymbiote Function**
 
@@ -526,8 +518,42 @@ GA_ProximityStrike is handled automatically by BP_FatherSymbioteForm EquippableI
    - 17.1.1) My Blueprint -> Functions: Click +
    - 17.1.2) Rename: EndSymbiote
 
-#### 17.2) Validate OwnerCharRef
-   - 17.2.1) From function entry:
+#### 17.2) CRITICAL: Timer Callback Guards (v4.5)
+
+> **Why Guards Are Needed:** The timer callback (EndSymbiote) can fire AFTER the ability has already ended due to:
+> - Player death
+> - Force-cancellation by another ability
+> - Game state changes
+>
+> Without guards, the callback would execute invalid cleanup logic on a non-existent ability state.
+
+##### 17.2.1) Guard 1: Validate FatherRef
+   - 17.2.1.1) From function entry:
+   - 17.2.1.2) Drag FatherRef variable (GET)
+   - 17.2.1.3) Add: Is Valid node
+   - 17.2.1.4) Add: Branch node
+   - 17.2.1.5) From False: Return immediately (father destroyed)
+
+##### 17.2.2) Guard 2: Check Current Form Is Still Symbiote
+   - 17.2.2.1) From Branch True:
+   - 17.2.2.2) From FatherRef, GET CurrentForm
+   - 17.2.2.3) Add: Equal (Enum) node
+   - 17.2.2.4) Compare with: E_FatherForm::Symbiote
+   - 17.2.2.5) Add: Branch node
+   - 17.2.2.6) From False: Return immediately (form already changed)
+
+##### 17.2.3) Guard 3: Check Ability Still Active via Tag Proxy
+   - 17.2.3.1) From Branch True:
+   - 17.2.3.2) From FatherRef, Get Ability System Component
+   - 17.2.3.3) Search: Has Matching Gameplay Tag
+   - 17.2.3.4) Tag: Symbiote.State.Merged (ActivationOwnedTag - removed when ability ends)
+   - 17.2.3.5) Add: Branch node
+   - 17.2.3.6) From False: Return immediately (ability already ended)
+
+> **Note:** `IsActive()` is NOT exposed to Blueprint (C++ only). We use `Symbiote.State.Merged` tag as a proxy - this tag is in ActivationOwnedTags and automatically removed when the ability ends.
+
+#### 17.3) Validate OwnerCharRef (After All Guards Pass)
+   - 17.3.1) From Guard 3 Branch True:
       - 17.2.1.1) Drag OwnerCharRef variable into graph (GET)
       - 17.2.1.2) Add: Is Valid node
       - 17.2.1.3) Connect OwnerCharRef to Is Valid input
@@ -607,47 +633,98 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 
 ## **PHASE 5: IMPLEMENT ENDABILITY EVENT**
 
+> **AUDIT NOTE (v4.5):** This event MUST include a `bWasCancelled` check. Cleanup should ONLY run when cancelled (form switch in progress). Normal end (after EndSymbiote calls EndAbility) should skip redundant cleanup. Pattern aligned with GA_FatherArmor guide PHASE 7. See `Father_Companion_GAS_Audit_Locked_Decisions.md` FIX-1.
+
 ### **18) Override EndAbility Event**
 
 #### 18.1) Add Event On End Ability
    - 18.1.1) In Event Graph, right-click
    - 18.1.2) Search: Event On End Ability
    - 18.1.3) Add: Event OnEndAbility node
+   - 18.1.4) Node has `bWasCancelled` boolean output pin
 
-#### 18.2) Clear Duration Timer
-   - 18.2.1) From Event OnEndAbility execution:
-      - 18.2.1.1) Add: Clear Timer by Handle node
-      - 18.2.1.2) Handle: GET DurationTimerHandle
+#### 18.2) CRITICAL: Check bWasCancelled (v4.5)
 
-#### 18.3) Validate FatherRef for Cleanup
-   - 18.3.1) From Clear Timer execution:
-      - 18.3.1.1) Drag FatherRef variable (GET)
-      - 18.3.1.2) Add: Is Valid node
-      - 18.3.1.3) Add: Branch node
+> **Why This Check Is Needed:** The EndAbility event fires in TWO scenarios:
+> 1. `bWasCancelled = false`: After EndSymbiote calls EndAbility (cleanup already done)
+> 2. `bWasCancelled = true`: When cancelled by another form's Cancel Abilities With Tag
+>
+> Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
-#### 18.4) Form Tags Auto-Removed
-   - 18.4.1) Form tags (Father.Form.Symbiote, Father.State.Attached) auto-removed by Activation Owned Tags cleanup
+##### 18.2.1) Add Branch on bWasCancelled
+   - 18.2.1.1) From Event OnEndAbility execution pin
+   - 18.2.1.2) Drag wire and search: Branch
+   - 18.2.1.3) Add Branch node
 
-#### 18.5) Validate OwnerCharRef for Player Cleanup
-   - 18.5.1) From Branch True (FatherRef valid):
-      - 18.5.1.1) Drag OwnerCharRef variable (GET)
-      - 18.5.1.2) Add: Is Valid node
-      - 18.5.1.3) Add: Branch node
+##### 18.2.2) Connect bWasCancelled
+   - 18.2.2.1) From Event OnEndAbility `bWasCancelled` pin (boolean)
+   - 18.2.2.2) Drag to Branch `Condition` pin
+
+##### 18.2.3) Configure Branch Paths
+   - 18.2.3.1) **FALSE path**: Skip cleanup - form is now active (EndSymbiote already handled it)
+   - 18.2.3.2) **TRUE path**: Continue to cleanup (form switch in progress)
+
+#### 18.3) Clear Duration Timer (From TRUE path)
+   - 18.3.1) From Branch True execution:
+      - 18.3.1.1) Add: Clear and Invalidate Timer by Handle node
+      - 18.3.1.2) Handle: GET DurationTimerHandle
+      - 18.3.1.3) This prevents the timer from firing after ability is cancelled
+
+#### 18.4) Validate FatherRef for Cleanup
+   - 18.4.1) From Clear Timer execution:
+      - 18.4.1.1) Drag FatherRef variable (GET)
+      - 18.4.1.2) Add: Is Valid node
+      - 18.4.1.3) Add: Branch node
+
+#### 18.5) Form Tags Auto-Removed
+   - 18.5.1) Ephemeral state tags (Symbiote.State.Merged) auto-removed by Activation Owned Tags cleanup
+   - 18.5.2) Form identity (Effect.Father.FormState.Symbiote) persists until next form's transition prelude removes it
+
+#### 18.6) Validate OwnerCharRef for Player Cleanup
+   - 18.6.1) From Branch True (FatherRef valid):
+      - 18.6.1.1) Drag OwnerCharRef variable (GET)
+      - 18.6.1.2) Add: Is Valid node
+      - 18.6.1.3) Add: Branch node
 
 Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbioteForm EquippableItem via GE_EquipmentModifier_FatherSymbiote. No manual GE removal needed in EndAbility.
 
-#### 18.6) Cleanup GA_ProximityStrike if Not Already Cleaned
-   - 18.6.1) From Branch True:
-      - 18.6.1.1) From OwnerCharRef, Get Ability System Component
-      - 18.6.1.2) Validate ProximityAbilityHandle
-      - 18.6.1.3) Add: Is Valid node
-      - 18.6.1.4) Add: Branch node
-   - 18.6.2) From inner Branch True:
-      - 18.6.2.1) From Player ASC, Cancel Ability
-      - 18.6.2.2) Handle: GET ProximityAbilityHandle
-   - 18.6.3) From Cancel Ability:
-      - 18.6.3.1) Set Remove Ability On End
-      - 18.6.3.2) Handle: GET ProximityAbilityHandle
+#### 18.7) Restore Movement Speed (Cancellation Cleanup)
+   - 18.7.1) From Branch True (OwnerCharRef valid):
+      - 18.7.1.1) From OwnerCharRef, Get Character Movement
+   - 18.7.2) Validate OriginalMaxWalkSpeed > 0:
+      - 18.7.2.1) GET OriginalMaxWalkSpeed
+      - 18.7.2.2) Add: Greater Than (float > float) with 0.0
+      - 18.7.2.3) Add: Branch node
+   - 18.7.3) From Branch True:
+      - 18.7.3.1) SET Max Walk Speed = GET OriginalMaxWalkSpeed
+   - 18.7.4) From SET Max Walk Speed:
+      - 18.7.4.1) GET OriginalJumpZVelocity
+      - 18.7.4.2) Add: Greater Than with 0.0
+      - 18.7.4.3) Add: Branch node
+   - 18.7.5) From Branch True:
+      - 18.7.5.1) SET Jump Z Velocity = GET OriginalJumpZVelocity
+
+#### 18.8) Cleanup GA_ProximityStrike if Not Already Cleaned
+   - 18.8.1) From speed restoration (or Branch False if speed not stored):
+      - 18.8.1.1) From OwnerCharRef, Get Ability System Component
+      - 18.8.1.2) Validate ProximityAbilityHandle
+      - 18.8.1.3) Add: Is Valid node
+      - 18.8.1.4) Add: Branch node
+   - 18.8.2) From inner Branch True:
+      - 18.8.2.1) From Player ASC, Cancel Ability
+      - 18.8.2.2) Handle: GET ProximityAbilityHandle
+   - 18.8.3) From Cancel Ability:
+      - 18.8.3.1) Set Remove Ability On End
+      - 18.8.3.2) Handle: GET ProximityAbilityHandle
+
+#### 18.9) Activate GA_FatherArmor (Return to Armor Form on Cancellation)
+   - 18.9.1) From ProximityStrike cleanup (or Branch False):
+      - 18.9.1.1) Validate FatherRef
+      - 18.9.1.2) From FatherRef, Get Ability System Component
+   - 18.9.2) From Father ASC:
+      - 18.9.2.1) Search: Try Activate Ability by Class
+      - 18.9.2.2) Ability Class: GA_FatherArmor
+      - 18.9.2.3) Allow Remote Activation: True
 
 ### **19) Compile and Save Ability**
 
@@ -765,13 +842,13 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 |-----------|-------------|
 | Activation Owned Tags | `Symbiote.State.Merged` (ephemeral, auto-granted on activation) |
 | Form Identity | GE_SymbioteState grants `Effect.Father.FormState.Symbiote` (persists via infinite GE) |
-| Form Protection | GE_SymbioteState also grants `Narrative.State.Invulnerable` (merged form protection) |
-| GE_TransitionInvulnerability | Applied during 5s transition (grants `Narrative.State.Invulnerable` + `Father.State.Transitioning`) |
 | GE_FormChangeCooldown | 15s cooldown after form change |
 | GE_SymbioteLock | 30s duration lock preventing form switching |
 | Replication | Tags replicate via ReplicateActivationOwnedTags |
 | Cleanup (State Tags) | Activation Owned Tags auto-removed when ability ends |
 | Cleanup (Form Identity) | GE_SymbioteState removed by next form's transition prelude |
+
+> **AUDIT NOTE (v4.5):** Invulnerability was REMOVED. Father is NOT invulnerable during Symbiote form or during transitions. See `Father_Companion_GAS_Audit_Locked_Decisions.md` INV-1.
 
 ### **Variable Summary**
 
@@ -809,7 +886,7 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 | Parameter | Value |
 |-----------|-------|
 | VFX Duration | 5 seconds |
-| Father Invulnerable | Yes (during transition) |
+| Father Invulnerable | **NO** (v4.5 audit - invulnerability removed) |
 | Form Cooldown | 15 seconds |
 | VFX System | NS_FatherFormTransition |
 
@@ -835,11 +912,12 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
-| GE_SymbioteState | Infinite | Form identity (Effect.Father.FormState.Symbiote + Narrative.State.Invulnerable) |
+| GE_SymbioteState | Infinite | Form identity (Effect.Father.FormState.Symbiote only) |
 | GE_EquipmentModifier_FatherSymbiote | Infinite (via EquippableItem) | +100 Attack, Infinite Stamina |
 | GE_SymbioteLock | 30 seconds | Grants Father.State.SymbioteLocked |
-| GE_TransitionInvulnerability | 5 seconds | Block damage during transition (grants Narrative.State.Invulnerable + Father.State.Transitioning) |
 | GE_FormChangeCooldown | 15 seconds | Shared cooldown between form changes |
+
+> **AUDIT NOTE (v4.5):** GE_TransitionInvulnerability was REMOVED. Father is vulnerable during 5s transition. See `Father_Companion_GAS_Audit_Locked_Decisions.md` INV-1.
 
 ### **UltimateChargeComponent Integration**
 
@@ -903,7 +981,8 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 4.4 | January 2026 | **Option B Form State Architecture:** GE_SymbioteState for form identity (grants Effect.Father.FormState.Symbiote + Narrative.State.Invulnerable), transition prelude documented. Fixed Activation Owned Tags to `Symbiote.State.Merged` only (per manifest). Added `Symbiote.Charge.Ready` to Activation Required Tags. Fixed GE_Invulnerable → GE_TransitionInvulnerability. Updated to UE 5.7. Added AUTOMATION VS MANUAL table. Added orphan tag notes. |
+| 4.5 | January 2026 | **GAS Audit Fixes:** (1) REMOVED all invulnerability - Father NOT invulnerable during Symbiote or transitions per INV-1 audit decision. Removed GE_TransitionInvulnerability, Narrative.State.Invulnerable from GE_SymbioteState. (2) Added PHASE 4 timer callback guards (FatherRef validity, CurrentForm check, Symbiote.State.Merged tag proxy) per FIX-2. (3) Added PHASE 5 bWasCancelled check - cleanup only runs when cancelled, not on normal EndSymbiote flow per FIX-1. (4) Added movement speed/jump restoration to EndAbility for cancellation cleanup. (5) Added GA_FatherArmor activation on cancellation. See `Father_Companion_GAS_Audit_Locked_Decisions.md`. |
+| 4.4 | January 2026 | **Option B Form State Architecture:** GE_SymbioteState for form identity (grants Effect.Father.FormState.Symbiote), transition prelude documented. Fixed Activation Owned Tags to `Symbiote.State.Merged` only (per manifest). Added `Symbiote.Charge.Ready` to Activation Required Tags. Updated to UE 5.7. Added AUTOMATION VS MANUAL table. Added orphan tag notes. |
 | 3.5 | January 2026 | EquippableItem stat integration: Removed SymbioteBoostHandle variable and all GE_SymbioteBoost removal code. Stat bonuses (Attack Rating +100, Stamina Regen infinite) now handled by BP_FatherSymbioteForm EquippableItem via GE_EquipmentModifier_FatherSymbiote. Removed Section 17.5 (Remove GE_SymbioteBoost) and Section 18.6 (Remove GE_SymbioteBoost in EndAbility). Renumbered remaining sections. Updated Quick Reference tables. Technical Reference v5.12 Section 58.8 documents this architecture. |
 | 3.4 | January 2026 | Simplified documentation: Tag configuration (Section 10), variable creation (Section 11), and GameplayEffect configuration (Sections 7-8) converted to markdown tables. |
 | 3.3 | January 2026 | Simplified PHASE 1: Replaced 6 detailed subsections with consolidated tag tables. Tags now listed in Create Required Tags and Verify Existing Tags tables. Reduced PHASE 1 from 54 lines to 18 lines. |
@@ -918,7 +997,8 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 ---
 
-**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.4**
+**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.5**
 
 **Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
 **Architecture: Option B (GE-Based Form Identity)**
+**GAS Audit Status: COMPLIANT (January 2026)**
