@@ -341,6 +341,8 @@ FString FGeneratorBase::CurrentManifestPath;
 TMap<FString, UMaterialInterface*> FMaterialGenerator::GeneratedMaterialsCache;
 // v4.10: Static member initialization for generated material functions cache
 TMap<FString, UMaterialFunctionInterface*> FMaterialGenerator::GeneratedMaterialFunctionsCache;
+// v4.14: Static member initialization for generated blackboards cache (BT blackboard lookup)
+TMap<FString, UBlackboardData*> FBlackboardGenerator::GeneratedBlackboardsCache;
 
 // v3.0: Generator version constant for metadata tracking
 static const FString GENERATOR_VERSION = TEXT("4.13");
@@ -2227,12 +2229,21 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		GWarn
 	));
 
-	if (!Blueprint || !Blueprint->GeneratedClass)
+	if (!Blueprint)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Gameplay Effect Blueprint"));
 	}
 
-	// Get the CDO to configure properties
+	// v4.14: Compile FIRST to ensure GeneratedClass and CDO exist before setting properties
+	// CDO properties set before compile will be lost when compile recreates the class
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	if (!Blueprint->GeneratedClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to compile Gameplay Effect Blueprint"));
+	}
+
+	// Get the CDO to configure properties (AFTER compile)
 	UGameplayEffect* Effect = Cast<UGameplayEffect>(Blueprint->GeneratedClass->GetDefaultObject());
 	if (!Effect)
 	{
@@ -2402,8 +2413,8 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		}
 	}
 
-	// v2.6.6: Compile Blueprint before saving to ensure GeneratedClass is valid
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.14: Removed redundant compile - compile is done BEFORE setting CDO properties now
+	// Recompiling here would recreate the GeneratedClass and wipe all CDO changes
 
 	// Mark dirty and register
 	Package->MarkPackageDirty();
@@ -4193,11 +4204,36 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 	// v3.0: Store metadata for regeneration tracking
 	StoreDataAssetMetadata(Blackboard, TEXT("BB"), Definition.Name, Definition.ComputeHash());
 
+	// v4.14: Register in session cache for BT generator lookup
+	RegisterGeneratedBlackboard(Definition.Name, Blackboard);
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("Blackboard");
 	Result.DetermineCategory();
 	return Result;
+}
+
+// v4.14: Session-level blackboard cache implementation
+UBlackboardData* FBlackboardGenerator::FindGeneratedBlackboard(const FString& BlackboardName)
+{
+	UBlackboardData** Found = GeneratedBlackboardsCache.Find(BlackboardName);
+	return Found ? *Found : nullptr;
+}
+
+void FBlackboardGenerator::RegisterGeneratedBlackboard(const FString& BlackboardName, UBlackboardData* Blackboard)
+{
+	if (Blackboard)
+	{
+		GeneratedBlackboardsCache.Add(BlackboardName, Blackboard);
+		LogGeneration(FString::Printf(TEXT("  Registered blackboard '%s' in session cache"), *BlackboardName));
+	}
+}
+
+void FBlackboardGenerator::ClearGeneratedBlackboardsCache()
+{
+	GeneratedBlackboardsCache.Empty();
+	LogGeneration(TEXT("Cleared generated blackboards session cache"));
 }
 
 // ============================================================================
@@ -4241,29 +4277,39 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 	// Link blackboard if specified
 	if (!Definition.BlackboardAsset.IsEmpty())
 	{
-		// Try multiple paths for blackboard (project paths first, then NarrativePro)
-		TArray<FString> BBPaths;
-		// Project paths
-		BBPaths.Add(FString::Printf(TEXT("%s/AI/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("%s/AI/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("/Game/AI/Blackboards/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("/Game/AI/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("%s/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		// v4.13.2: NarrativePro standard blackboard paths
-		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Flee/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-		BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-
 		UBlackboardData* BB = nullptr;
-		for (const FString& BBPath : BBPaths)
+
+		// v4.14: Check session cache first (for blackboards generated in same run)
+		BB = FBlackboardGenerator::FindGeneratedBlackboard(Definition.BlackboardAsset);
+		if (BB)
 		{
-			BB = LoadObject<UBlackboardData>(nullptr, *BBPath);
-			if (BB)
+			LogGeneration(FString::Printf(TEXT("  Found blackboard '%s' in session cache"), *Definition.BlackboardAsset));
+		}
+		else
+		{
+			// Try multiple paths for blackboard (project paths first, then NarrativePro)
+			TArray<FString> BBPaths;
+			// Project paths
+			BBPaths.Add(FString::Printf(TEXT("%s/AI/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("%s/AI/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/Game/AI/Blackboards/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/Game/AI/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("%s/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			// v4.13.2: NarrativePro standard blackboard paths
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Flee/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+
+			for (const FString& BBPath : BBPaths)
 			{
-				break;
+				BB = LoadObject<UBlackboardData>(nullptr, *BBPath);
+				if (BB)
+				{
+					break;
+				}
 			}
 		}
 
@@ -12317,8 +12363,8 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			}
 		}
 
-		// Recompile after setting CDO properties
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+		// v4.14: Removed recompile - would wipe CDO property changes
+		// CDO properties are persisted when package is saved without recompile
 	}
 
 	// v4.0: Populate Speakers array on DialogueTemplate
@@ -14101,8 +14147,8 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		}
 	}
 
-	// Recompile to ensure changes are reflected
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.14: Removed redundant recompile - would wipe all CDO property changes
+	// The initial compile at line 12678 is sufficient; CDO changes persist without recompile
 
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Blueprint);
@@ -14339,8 +14385,8 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 		}
 	}
 
-	// Recompile
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.14: Removed redundant recompile - would wipe CDO property changes
+	// Initial compile at line 14218 is sufficient; CDO changes persist without recompile
 
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Blueprint);
@@ -14887,8 +14933,8 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 			}
 		}
 
-		// Recompile after setting CDO properties
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+		// v4.14: Removed recompile - would wipe CDO property changes
+		// Initial compile at line 14840 is sufficient; CDO changes persist without recompile
 	}
 
 	// Log event details
@@ -15433,8 +15479,8 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 		CDO->MarkPackageDirty();
 	}
 
-	// Recompile after property changes
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.14: Removed recompile - would wipe CDO property changes
+	// Initial compile at line 15281 is sufficient; CDO changes persist without recompile
 
 	// Save asset
 	FAssetRegistryModule::AssetCreated(Blueprint);

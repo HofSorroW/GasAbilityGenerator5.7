@@ -546,6 +546,8 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	GenerationDuplicates.Empty();
 	// v4.9.1: Clear session cache for MIC parent material lookup
 	FMaterialGenerator::ClearGeneratedMaterialsCache();
+	// v4.14: Clear session cache for BT blackboard lookup
+	FBlackboardGenerator::ClearGeneratedBlackboardsCache();
 
 	// v2.8.4: Helper lambda to track processed assets with duplicate detection
 	auto TrackProcessedAsset = [this](const FString& AssetName) {

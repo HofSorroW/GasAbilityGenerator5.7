@@ -372,11 +372,20 @@ public:
 
 /**
  * Blackboard Generator
+ * v4.14: Added session cache for BT generator to find same-session blackboards
  */
 class GASABILITYGENERATOR_API FBlackboardGenerator : public FGeneratorBase
 {
 public:
 	static FGenerationResult Generate(const FManifestBlackboardDefinition& Definition);
+
+	// v4.14: Session-level lookup for generated blackboards (used by BT generator)
+	static UBlackboardData* FindGeneratedBlackboard(const FString& BlackboardName);
+	static void RegisterGeneratedBlackboard(const FString& BlackboardName, UBlackboardData* Blackboard);
+	static void ClearGeneratedBlackboardsCache();
+
+private:
+	static TMap<FString, UBlackboardData*> GeneratedBlackboardsCache;
 };
 
 /**

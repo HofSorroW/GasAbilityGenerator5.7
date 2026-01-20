@@ -695,6 +695,8 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 
 	// v4.9.1: Clear session cache for MIC parent material lookup
 	FMaterialGenerator::ClearGeneratedMaterialsCache();
+	// v4.14: Clear session cache for BT blackboard lookup
+	FBlackboardGenerator::ClearGeneratedBlackboardsCache();
 
 	FGenerationSummary Summary;
 
