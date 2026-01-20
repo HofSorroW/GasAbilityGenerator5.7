@@ -1,8 +1,8 @@
 # GA_FatherArmor - Armor Form Ability Implementation Guide
-## VERSION 4.5 - GAS Audit Compliant (INV-1)
+## VERSION 4.6 - GAS Audit Compliant (INV-1)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.5
+**Version:** 4.6
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -1311,7 +1311,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 ---
 
-**END OF GA_FATHERARMOR IMPLEMENTATION GUIDE VERSION 4.4**
+**END OF GA_FATHERARMOR IMPLEMENTATION GUIDE VERSION 4.6**
 
 **Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro v2.2**
 
@@ -1321,7 +1321,8 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Version | Changes |
 |---------|---------|
-| 4.4 | **Option B Form State Architecture:** Replaced ActivationOwnedTags form identity with GE-based persistent state (GE_ArmorState). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags, then apply GE_ArmorState. GE_ArmorState grants Effect.Father.FormState.Armor + Narrative.State.Invulnerable (Infinite duration). Removed ReplicateActivationOwnedTags prerequisite. Added Automation vs Manual table. Updated UE version to 5.7. See Form_State_Architecture_Audit_v1_0.md for architecture rationale. |
+| 4.6 | **INV-1 Compliance:** Fixed changelog entry - GE_ArmorState grants only Effect.Father.FormState.Armor (no Narrative.State.Invulnerable). Only GA_FatherSacrifice grants invulnerability (to player for 8s). |
+| 4.4 | **Option B Form State Architecture:** Replaced ActivationOwnedTags form identity with GE-based persistent state (GE_ArmorState). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags, then apply GE_ArmorState. GE_ArmorState grants Effect.Father.FormState.Armor (Infinite duration). Removed ReplicateActivationOwnedTags prerequisite. Added Automation vs Manual table. Updated UE version to 5.7. See Form_State_Architecture_Audit_v1_0.md for architecture rationale. |
 | 4.3 | Blueprint Node Consistency Fixes: Removed incorrect Target pin documentation from Play Montage and Wait (AbilityTask nodes use owning ability avatar automatically). Fixed End Ability terminal node issue - Set bIsFirstActivation now executes BEFORE End Ability since End Ability has no output execution pin. |
 | 4.2 | Fixed tag format: State.Father.Alive changed to Father.State.Alive per DefaultGameplayTags. Updated Related Documents to Technical Reference v5.12 and Setup Guide v2.3. Fixed curly quotes to straight ASCII. |
 | 4.1 | Removed GE_ArmorBoost and ability handle cleanup - stats and abilities now handled by BP_FatherArmorForm EquippableItem via GE_EquipmentModifier_FatherArmor. GA_FatherArmor only handles physical attachment and movement penalty. Removed ArmorBoostHandle, DomeAbilityHandle, DomeBurstAbilityHandle from requirements. Simplified EndAbility to only restore movement speed and reset state. Updated all references from GE_ArmorBoost to EquippableItem pattern. |
