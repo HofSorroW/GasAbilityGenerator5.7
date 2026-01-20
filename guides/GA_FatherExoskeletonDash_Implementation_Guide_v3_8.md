@@ -134,39 +134,39 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 ### **1) Create GE_DashDamage**
 
-#### 2.1) Create GameplayEffect Blueprint
-   - 2.1.1) Right-click in Content Browser -> Blueprint Class -> GameplayEffect
-   - 2.1.2) Name: `GE_DashDamage`
-   - 2.1.3) Save in: `/Content/FatherCompanion/Abilities/ExoskeletonDash/Effects/`
+#### 1.1) Create GameplayEffect Blueprint
+   - 1.1.1) Right-click in Content Browser -> Blueprint Class -> GameplayEffect
+   - 1.1.2) Name: `GE_DashDamage`
+   - 1.1.3) Save in: `/Content/FatherCompanion/Abilities/ExoskeletonDash/Effects/`
 
-#### 2.2) Configure GE_DashDamage Properties
+#### 1.2) Configure GE_DashDamage Properties
 
 | Property | Value |
 |----------|-------|
 | Duration Policy | Instant |
 
-#### 2.3) Configure GE_DashDamage Modifiers
+#### 1.3) Configure GE_DashDamage Modifiers
 
 | Modifier | Attribute | Modifier Op | Magnitude Type | Value |
 |----------|-----------|-------------|----------------|-------|
 | [0] | Damage (meta-attribute) | Add | Scalable Float | 15.0 |
 
-#### 2.4) Configure GE_DashDamage Executions
+#### 1.4) Configure GE_DashDamage Executions
 
 | Property | Value |
 |----------|-------|
 | Calculation Class | NarrativeDamageExecCalc |
 
-#### 2.5) Compile and Save
+#### 1.5) Compile and Save
 
-### **3) Create GE_DashCooldown**
+### **2) Create GE_DashCooldown**
 
-#### 3.1) Create GameplayEffect Blueprint
-   - 3.1.1) Right-click in Content Browser -> Blueprint Class -> GameplayEffect
-   - 3.1.2) Name: `GE_DashCooldown`
-   - 3.1.3) Save in: `/Content/FatherCompanion/Abilities/ExoskeletonDash/Effects/`
+#### 2.1) Create GameplayEffect Blueprint
+   - 2.1.1) Right-click in Content Browser -> Blueprint Class -> GameplayEffect
+   - 2.1.2) Name: `GE_DashCooldown`
+   - 2.1.3) Save in: `/Content/FatherCompanion/Abilities/ExoskeletonDash/Effects/`
 
-#### 3.2) Configure GE_DashCooldown Properties
+#### 2.2) Configure GE_DashCooldown Properties
 
 | Property | Value |
 |----------|-------|
@@ -174,13 +174,13 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 | Magnitude Calculation Type | Scalable Float |
 | Scalable Float Value | 3.0 |
 
-#### 3.3) Configure GE_DashCooldown Components
+#### 2.3) Configure GE_DashCooldown Components
 
 | Component | Configuration |
 |-----------|---------------|
 | Grant Tags to Target Actor | Cooldown.Father.Exoskeleton.Dash |
 
-#### 3.4) Compile and Save
+#### 2.4) Compile and Save
 
 ---
 
@@ -427,121 +427,114 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
    - 4.7.3) Add Get DashSpeed node
    - 4.7.4) Connect DashSpeed to Max Walk Speed input
 
-#### 4.8) Apply Invulnerability Effect
+#### 4.8) Calculate Dash Direction
    - 4.8.1) From Set Max Walk Speed execution pin:
-   - 4.8.1.1) Drag from PlayerASC variable
-   - 4.8.1.2) Add Apply Gameplay Effect to Self node
-   - 4.8.1.3) Connect PlayerASC to Target
-   - 4.8.1.4) Gameplay Effect Class: GE_DashInvulnerability
+   - 4.8.1.1) Add Get PendingDashDirection node (from PlayerRef)
+   - 4.8.2) From PlayerRef:
+   - 4.8.2.1) Add Get Control Rotation node
+   - 4.8.3) From Control Rotation:
+   - 4.8.3.1) Add Get Forward Vector node
+   - 4.8.3.2) Add Get Right Vector node
+   - 4.8.4) Calculate final direction:
+   - 4.8.4.1) Add Break Vector node on PendingDashDirection
+   - 4.8.4.2) Add Multiply (Vector * Float) node for Forward
+   - 4.8.4.3) Connect Forward Vector to first input
+   - 4.8.4.4) Connect X component to second input
+   - 4.8.4.5) Add Multiply (Vector * Float) node for Right
+   - 4.8.4.6) Connect Right Vector to first input
+   - 4.8.4.7) Connect Y component to second input
+   - 4.8.4.8) Add Add (Vector + Vector) node
+   - 4.8.4.9) Connect both multiply results
 
-#### 4.9) Calculate Dash Direction
-   - 4.9.1) From Apply GE execution pin:
-   - 4.9.1.1) Add Get PendingDashDirection node (from PlayerRef)
-   - 4.9.2) From PlayerRef:
-   - 4.9.2.1) Add Get Control Rotation node
-   - 4.9.3) From Control Rotation:
-   - 4.9.3.1) Add Get Forward Vector node
-   - 4.9.3.2) Add Get Right Vector node
-   - 4.9.4) Calculate final direction:
-   - 4.9.4.1) Add Break Vector node on PendingDashDirection
-   - 4.9.4.2) Add Multiply (Vector * Float) node for Forward
-   - 4.9.4.3) Connect Forward Vector to first input
-   - 4.9.4.4) Connect X component to second input
-   - 4.9.4.5) Add Multiply (Vector * Float) node for Right
-   - 4.9.4.6) Connect Right Vector to first input
-   - 4.9.4.7) Connect Y component to second input
-   - 4.9.4.8) Add Add (Vector + Vector) node
-   - 4.9.4.9) Connect both multiply results
+#### 4.9) Launch Character
+   - 4.9.1) From Add Vector:
+   - 4.9.1.1) Add Multiply (Vector * Float) node
+   - 4.9.1.2) Connect direction to first input
+   - 4.9.1.3) Connect DashForce variable to second input
+   - 4.9.2) Add Launch Character node
+   - 4.9.2.1) Connect PlayerRef to Target
+   - 4.9.2.2) Connect multiplied vector to Launch Velocity
+   - 4.9.2.3) XY Override: Checked
+   - 4.9.2.4) Z Override: Unchecked
 
-#### 4.10) Launch Character
-   - 4.10.1) From Add Vector:
-   - 4.10.1.1) Add Multiply (Vector * Float) node
-   - 4.10.1.2) Connect direction to first input
-   - 4.10.1.3) Connect DashForce variable to second input
-   - 4.10.2) Add Launch Character node
-   - 4.10.2.1) Connect PlayerRef to Target
-   - 4.10.2.2) Connect multiplied vector to Launch Velocity
-   - 4.10.2.3) XY Override: Checked
-   - 4.10.2.4) Z Override: Unchecked
+#### 4.10) Detect and Damage Enemies
+   - 4.10.1) From Launch Character execution pin:
+   - 4.10.1.1) Add Get Actor Location node
+   - 4.10.1.2) Connect PlayerRef to Target
+   - 4.10.2) Add Sphere Overlap Actors node
+   - 4.10.2.1) Connect Actor Location to Sphere Pos
+   - 4.10.2.2) Connect DamageRadius to Sphere Radius
+   - 4.10.2.3) Object Types: Pawn
+   - 4.10.3) From Out Actors:
+   - 4.10.3.1) Add For Each Loop node
+   - 4.10.3.2) Connect Out Actors to Array
 
-#### 4.11) Detect and Damage Enemies
-   - 4.11.1) From Launch Character execution pin:
-   - 4.11.1.1) Add Get Actor Location node
-   - 4.11.1.2) Connect PlayerRef to Target
-   - 4.11.2) Add Sphere Overlap Actors node
-   - 4.11.2.1) Connect Actor Location to Sphere Pos
-   - 4.11.2.2) Connect DamageRadius to Sphere Radius
-   - 4.11.2.3) Object Types: Pawn
-   - 4.11.3) From Out Actors:
-   - 4.11.3.1) Add For Each Loop node
-   - 4.11.3.2) Connect Out Actors to Array
+#### 4.11) Filter and Damage Enemies
+   - 4.11.1) In For Each Loop body:
+   - 4.11.1.1) Add Get Ability System Component node
+   - 4.11.1.2) Connect Array Element to Actor
+   - 4.11.2) From ASC Return Value:
+   - 4.11.2.1) Add Has Matching Gameplay Tag node
+   - 4.11.2.2) Tag to Match: `Character.Enemy`
+   - 4.11.3) From Has Tag Return Value:
+   - 4.11.3.1) Add Branch node
+   - 4.11.3.2) Connect Has Tag to Condition
+   - 4.11.4) From Branch True:
+   - 4.11.4.1) Add Apply Gameplay Effect to Target node
+   - 4.11.4.2) Target: Connect enemy ASC
+   - 4.11.4.3) Gameplay Effect Class: GE_DashDamage
 
-#### 4.12) Filter and Damage Enemies
-   - 4.12.1) In For Each Loop body:
-   - 4.12.1.1) Add Get Ability System Component node
-   - 4.12.1.2) Connect Array Element to Actor
-   - 4.12.2) From ASC Return Value:
-   - 4.12.2.1) Add Has Matching Gameplay Tag node
-   - 4.12.2.2) Tag to Match: `Character.Enemy`
-   - 4.12.3) From Has Tag Return Value:
-   - 4.12.3.1) Add Branch node
-   - 4.12.3.2) Connect Has Tag to Condition
-   - 4.12.4) From Branch True:
-   - 4.12.4.1) Add Apply Gameplay Effect to Target node
-   - 4.12.4.2) Target: Connect enemy ASC
-   - 4.12.4.3) Gameplay Effect Class: GE_DashDamage
+#### 4.12) Apply Knockback to Enemies
+   - 4.12.1) From Apply GE to Target execution pin:
+   - 4.12.1.1) Add Get Actor Location node (player)
+   - 4.12.1.2) Connect PlayerRef to Target
+   - 4.12.2) Add Get Actor Location node (enemy)
+   - 4.12.2.1) Connect Array Element to Target
+   - 4.12.3) Add Subtract (Vector - Vector) node
+   - 4.12.3.1) Connect enemy location to A
+   - 4.12.3.2) Connect player location to B
+   - 4.12.4) Add Normalize node
+   - 4.12.4.1) Connect Subtract result to input
+   - 4.12.5) Add Multiply (Vector * Float) node
+   - 4.12.5.1) Connect Normalize result to first input
+   - 4.12.5.2) Connect KnockbackForce to second input
+   - 4.12.6) Add Cast To Character node
+   - 4.12.6.1) Connect Array Element to Object
+   - 4.12.7) From Cast success:
+   - 4.12.7.1) Add Launch Character node
+   - 4.12.7.2) Connect As Character to Target
+   - 4.12.7.3) Connect knockback vector to Launch Velocity
 
-#### 4.13) Apply Knockback to Enemies
-   - 4.13.1) From Apply GE to Target execution pin:
-   - 4.13.1.1) Add Get Actor Location node (player)
-   - 4.13.1.2) Connect PlayerRef to Target
-   - 4.13.2) Add Get Actor Location node (enemy)
-   - 4.13.2.1) Connect Array Element to Target
-   - 4.13.3) Add Subtract (Vector - Vector) node
-   - 4.13.3.1) Connect enemy location to A
-   - 4.13.3.2) Connect player location to B
-   - 4.13.4) Add Normalize node
-   - 4.13.4.1) Connect Subtract result to input
-   - 4.13.5) Add Multiply (Vector * Float) node
-   - 4.13.5.1) Connect Normalize result to first input
-   - 4.13.5.2) Connect KnockbackForce to second input
-   - 4.13.6) Add Cast To Character node
-   - 4.13.6.1) Connect Array Element to Object
-   - 4.13.7) From Cast success:
-   - 4.13.7.1) Add Launch Character node
-   - 4.13.7.2) Connect As Character to Target
-   - 4.13.7.3) Connect knockback vector to Launch Velocity
+#### 4.13) Wait for Dash Duration
+   - 4.13.1) From For Each Loop Completed pin:
+   - 4.13.1.1) Add Delay node
+   - 4.13.1.2) Connect DashDuration variable to Duration
 
-#### 4.14) Wait for Dash Duration
-   - 4.14.1) From For Each Loop Completed pin:
-   - 4.14.1.1) Add Delay node
-   - 4.14.1.2) Connect DashDuration variable to Duration
+#### 4.14) Restore Original Speed
+   - 4.14.1) From Delay Completed execution pin:
+   - 4.14.1.1) Add Get Character Movement node
+   - 4.14.1.2) Connect PlayerRef to Target
+   - 4.14.2) From Character Movement:
+   - 4.14.2.1) Add Set Max Walk Speed node
+   - 4.14.2.2) Connect OriginalMaxWalkSpeed to Max Walk Speed
 
-#### 4.15) Restore Original Speed
-   - 4.15.1) From Delay Completed execution pin:
-   - 4.15.1.1) Add Get Character Movement node
-   - 4.15.1.2) Connect PlayerRef to Target
-   - 4.15.2) From Character Movement:
-   - 4.15.2.1) Add Set Max Walk Speed node
-   - 4.15.2.2) Connect OriginalMaxWalkSpeed to Max Walk Speed
+#### 4.15) Apply Cooldown
+   - 4.15.1) From Set Max Walk Speed execution pin:
+   - 4.15.1.1) Drag from PlayerASC variable
+   - 4.15.1.2) Add Apply Gameplay Effect to Self node
+   - 4.15.1.3) Connect PlayerASC to Target
+   - 4.15.1.4) Gameplay Effect Class: GE_DashCooldown
 
-#### 4.16) Apply Cooldown
-   - 4.16.1) From Set Max Walk Speed execution pin:
-   - 4.16.1.1) Drag from PlayerASC variable
-   - 4.16.1.2) Add Apply Gameplay Effect to Self node
-   - 4.16.1.3) Connect PlayerASC to Target
-   - 4.16.1.4) Gameplay Effect Class: GE_DashCooldown
-
-#### 4.17) Clear References and End Ability
-   - 4.17.1) From Apply Cooldown execution pin:
-   - 4.17.1.1) Add Set PlayerRef node
-   - 4.17.1.2) Value: None (leave disconnected)
-   - 4.17.2) From Set PlayerRef execution:
-   - 4.17.2.1) Add Set PlayerASC node
-   - 4.17.2.2) Value: None (leave disconnected)
-   - 4.17.3) From Set PlayerASC execution:
-   - 4.17.3.1) Add End Ability node
-   - 4.17.3.2) Was Cancelled: Unchecked
+#### 4.16) Clear References and End Ability
+   - 4.16.1) From Apply Cooldown execution pin:
+   - 4.16.1.1) Add Set PlayerRef node
+   - 4.16.1.2) Value: None (leave disconnected)
+   - 4.16.2) From Set PlayerRef execution:
+   - 4.16.2.1) Add Set PlayerASC node
+   - 4.16.2.2) Value: None (leave disconnected)
+   - 4.16.3) From Set PlayerASC execution:
+   - 4.16.3.1) Add End Ability node
+   - 4.16.3.2) Was Cancelled: Unchecked
 
 ### **5) Implement Event OnEndAbility**
 
@@ -691,9 +684,10 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
-| GE_DashInvulnerability | 0.5s | Grants State.Invulnerable |
 | GE_DashDamage | Instant | 15 base damage via NarrativeDamageExecCalc |
 | GE_DashCooldown | 3.0s | Grants Cooldown.Father.Exoskeleton.Dash |
+
+> **INV-1 Note:** GE_DashInvulnerability was REMOVED per GAS Audit decision INV-1.
 
 ### **Variable Summary**
 
@@ -730,7 +724,6 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 | System | Method |
 |--------|--------|
-| Damage Immunity | State.Invulnerable tag via GE |
 | Damage Dealing | NarrativeDamageExecCalc |
 | Movement Speed | CharacterMovement component direct |
 | Form Restriction | Activation Required Tags |
@@ -758,6 +751,20 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 ## CHANGELOG
 
+### Version 3.8 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| INV-1 Compliance | REMOVED GE_DashInvulnerability per GAS Audit decision INV-1. Dash no longer grants damage immunity - only GA_FatherSacrifice provides invulnerability. |
+| UE Version | Updated from 5.6 to 5.7 |
+| Phase Renumbering | Phase 2 now has 2 GEs (Damage, Cooldown) instead of 3; Phase 4 steps renumbered (4.8-4.16 instead of 4.8-4.17) |
+
+### Version 3.7 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| Form State Tags | Updated to use Effect.Father.FormState.Exoskeleton |
+
 ### Version 3.6 - January 2026
 
 | Change | Description |
@@ -775,7 +782,7 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 | Change | Description |
 |--------|-------------|
-| PHASE 2 Simplified | GE configs (Invulnerability, Damage, Cooldown) reduced from 103 to 55 lines using table format |
+| PHASE 2 Simplified | GE configs (Damage, Cooldown) reduced using table format |
 | Variable Creation Simplified | Section 3 reduced from 54 to 11 lines using table format |
 | Total Line Reduction | ~90 lines saved |
 

@@ -3,6 +3,22 @@
 
 ---
 
+> **⚠️ INV-1 COMPLIANCE WARNING (January 2026)**
+>
+> Per GAS Audit decision INV-1, ALL invulnerability has been REMOVED from the Father companion system EXCEPT GA_FatherSacrifice (8-second player invulnerability).
+>
+> **The following sections contain OUTDATED invulnerability references that no longer apply:**
+> - Form State Law: GE_*State NO LONGER grants Narrative.State.Invulnerable
+> - Section 19.13: Attached Form Invulnerability - REMOVED
+> - Section 26.4: GE_Invulnerable Configuration - For reference only, not used by Father
+> - Section 38: Father Death and Invulnerability - Forms are NO LONGER invulnerable
+>
+> **Current state:** Only GA_FatherSacrifice grants invulnerability (to the player, for 8 seconds). Form transitions use Father.State.Transitioning tag only (no damage immunity).
+>
+> See `ClaudeContext/Handoffs/Father_Companion_GAS_Audit_Locked_Decisions.md` for full details.
+
+---
+
 ## DOCUMENT INFORMATION
 
 | Field | Value |
@@ -46,7 +62,7 @@
 | Invariant | Rule |
 |-----------|------|
 | **Single Active Form State** | Exactly one Effect.Father.FormState.* must exist at runtime |
-| **GE Split Rule** | GE_*State = identity + invulnerability; GE_*Boost = stats only |
+| **GE Split Rule** | GE_*State = identity only (**NO invulnerability** per INV-1); GE_*Boost = stats only |
 | **bWasCancelled Scope** | EndAbility cleanup (speed, detach) only when bWasCancelled=true |
 | **Net Execution Policy** | Form abilities are ServerOnly (NPC-owned, cross-actor operations) |
 
@@ -55,7 +71,7 @@
 ```
 NEW form ActivateAbility:
   1. Remove ALL prior form state GEs → BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState.*)
-  2. Apply GE_[NewForm]State → Grants Effect.Father.FormState.[Form] + Narrative.State.Invulnerable (attached forms)
+  2. Apply GE_[NewForm]State → Grants Effect.Father.FormState.[Form] only (NO invulnerability per INV-1)
   3. Apply GE_[NewForm]Boost → Stats only (if applicable)
   4. Commit cooldown
   5. EndAbility (bWasCancelled=false) → Form is now active, state persists via GE
@@ -69,12 +85,14 @@ OLD form EndAbility (bWasCancelled=true):
 
 ### GE_*State Definitions
 
+> **INV-1 Update:** Per GAS Audit, NO form state GE grants invulnerability. Only GA_FatherSacrifice provides invulnerability.
+
 | GE | Grants Tags | Invulnerable |
 |----|-------------|--------------|
 | GE_CrawlerState | Effect.Father.FormState.Crawler | No |
-| GE_ArmorState | Effect.Father.FormState.Armor, Narrative.State.Invulnerable | Yes |
-| GE_ExoskeletonState | Effect.Father.FormState.Exoskeleton, Narrative.State.Invulnerable | Yes |
-| GE_SymbioteState | Effect.Father.FormState.Symbiote, Narrative.State.Invulnerable | Yes |
+| GE_ArmorState | Effect.Father.FormState.Armor | No (INV-1) |
+| GE_ExoskeletonState | Effect.Father.FormState.Exoskeleton | No (INV-1) |
+| GE_SymbioteState | Effect.Father.FormState.Symbiote | No (INV-1) |
 | GE_EngineerState | Effect.Father.FormState.Engineer | No |
 
 ### Default Form at Spawn

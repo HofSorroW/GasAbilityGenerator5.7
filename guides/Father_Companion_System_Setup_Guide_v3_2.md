@@ -1,8 +1,8 @@
 # Father Companion System Setup Guide
 
-## VERSION 3.1
+## VERSION 3.2 - INV-1 Compliance (InvulnerableHandle Removed)
 
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
 
@@ -10,7 +10,7 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 3.1 |
+| Document Version | 3.2 |
 | Document Type | Consolidated System Setup |
 | Target Blueprints | BP_FatherCompanion, Player Blueprint, EquippableItems, NarrativeEvents |
 | Parent Class | NarrativeNPCCharacter (Father), NarrativeGameplayAbility (Abilities) |
@@ -884,30 +884,20 @@ Crawler and Engineer activate via GAS directly - their AI abilities are in basel
    - 9.2.3) **Category**: `Father|Handles`
    - 9.2.4) **Tooltip**: `Handle for GE_FormChangeCooldown removal`
 
-### **10) Create InvulnerableHandle Variable**
+### **10) Create DomeAbilityHandle Variable**
+
+> **INV-1 Note:** InvulnerableHandle was REMOVED per GAS Audit decision INV-1. Form transitions no longer grant invulnerability.
 
 #### 10.1) Add Variable
    - 10.1.1) Click **+** button
-   - 10.1.2) Name: `InvulnerableHandle`
+   - 10.1.2) Name: `DomeAbilityHandle`
 
 #### 10.2) Configure Variable
-   - 10.2.1) **Variable Type**: `Active Gameplay Effect Handle` (Structure)
-   - 10.2.2) **Replication**: None
-   - 10.2.3) **Category**: `Father|Handles`
-   - 10.2.4) **Tooltip**: `Handle for form transition invulnerability removal`
-
-### **11) Create DomeAbilityHandle Variable**
-
-#### 11.1) Add Variable
-   - 11.1.1) Click **+** button
-   - 11.1.2) Name: `DomeAbilityHandle`
-
-#### 11.2) Configure Variable
-   - 11.2.1) **Variable Type**: Search `Gameplay Ability Spec Handle`
-   - 11.2.2) Select **Gameplay Ability Spec Handle** (Structure)
-   - 11.2.3) **Replication**: None
-   - 11.2.4) **Category**: `Father|Handles`
-   - 11.2.5) **Tooltip**: `Handle for GA_ProtectiveDome granted to player - for two-step cleanup`
+   - 10.2.1) **Variable Type**: Search `Gameplay Ability Spec Handle`
+   - 10.2.2) Select **Gameplay Ability Spec Handle** (Structure)
+   - 10.2.3) **Replication**: None
+   - 10.2.4) **Category**: `Father|Handles`
+   - 10.2.5) **Tooltip**: `Handle for GA_ProtectiveDome granted to player - for two-step cleanup`
 
 ### **12) Create DomeBurstAbilityHandle Variable**
 
@@ -1659,7 +1649,7 @@ Crawler and Engineer activate via GAS directly - their AI abilities are in basel
    - 2.5.3) Repeat pattern for SymbioteStateHandle
    - 2.5.4) Repeat pattern for EngineerStateHandle
    - 2.5.5) Repeat pattern for FormCooldownHandle
-   - 2.5.6) Repeat pattern for InvulnerableHandle
+   ; INV-1: InvulnerableHandle REMOVED - no longer exists
 
 #### 2.6) Clear OwnerPlayer Reference
    - 2.6.1) After all effect removal:
@@ -3313,7 +3303,6 @@ Each form ability cancels all other form abilities via Cancel Abilities with Tag
 | SymbioteBoostHandle | ActiveGEHandle | None | N/A | Handles |
 | EngineerStateHandle | ActiveGEHandle | None | N/A | Handles |
 | FormCooldownHandle | ActiveGEHandle | None | N/A | Handles |
-| InvulnerableHandle | ActiveGEHandle | None | N/A | Handles |
 | DomeAbilityHandle | AbilitySpecHandle | None | N/A | Handles |
 | DomeBurstAbilityHandle | AbilitySpecHandle | None | N/A | Handles |
 | DashAbilityHandle | AbilitySpecHandle | None | N/A | Handles |
