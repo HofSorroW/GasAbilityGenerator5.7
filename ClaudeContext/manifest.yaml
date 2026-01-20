@@ -6962,7 +6962,7 @@ materials:  # WARDEN SYSTEM
     blend_mode: Additive
     shading_model: Unlit
 
-gameplay_abilities:  # WARDEN SYSTEM
+gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_System_Implementation_Guide_v1_2.md)
   - name: GA_CoreLaser
     folder: Enemies/Warden/Abilities
     parent_class: NarrativeGameplayAbility
