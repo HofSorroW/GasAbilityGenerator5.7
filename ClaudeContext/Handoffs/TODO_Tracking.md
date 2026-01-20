@@ -41,6 +41,32 @@
 
 ---
 
+## 🔵 FUTURE - Track B (Generator Enhancement)
+
+**Source:** `Handoffs/Father_Companion_GAS_Audit_Locked_Decisions.md` v2.0
+
+| Task | Description | Complexity |
+|------|-------------|------------|
+| AbilityTask Support | Add GameplayAbilitiesEditor dependency, implement UK2Node_LatentAbilityCall | HIGH |
+| WaitDelay Node Type | Add `type: AbilityTaskWaitDelay` to manifest schema | MEDIUM |
+| Replace Delay Nodes | Convert all form ability Delay nodes to WaitDelay | MEDIUM |
+
+**Rationale:** WaitDelay AbilityTask auto-terminates when ability ends (3-layer protection built-in). This restores true GAS lifecycle safety and eliminates need for manual guards.
+
+**Timeline:** After Track A (CRITICAL + MEDIUM fixes) complete.
+
+---
+
+## ✅ Recently Completed - GAS Audit (v4.14.x)
+
+| Task | Description | Date |
+|------|-------------|------|
+| FIX-1 | GA_FatherSymbiote Event_EndAbility + 3-layer guards | 2026-01-21 |
+| FIX-2 | Timer Callback Guard Pattern (gold standard) | 2026-01-21 |
+| INV-1 | Remove invulnerability from manifest (except GA_FatherSacrifice) | 2026-01-21 |
+
+---
+
 ## Recently Completed (v4.12.4)
 
 | Task | Location | Date |
@@ -167,3 +193,4 @@ These are intentionally not implemented:
 |------|--------|
 | 2026-01-18 | Created consolidated TODO file from System_Audit_v4.12.4.md and Architecture_Reference.md |
 | 2026-01-18 | Completed 8 HIGH/MEDIUM priority tasks |
+| 2026-01-21 | Added GAS Audit sections: CRITICAL blockers, MEDIUM race conditions, Track B future, Completed v4.14.x |
