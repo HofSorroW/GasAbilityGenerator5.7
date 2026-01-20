@@ -1180,7 +1180,8 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 4.4 | January 2026 | **Option B Form State Architecture:** Complete rewrite for GE-based form identity. Added GE_EngineerState (Infinite, grants Effect.Father.FormState.Engineer). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState parent tag), then apply GE_EngineerState. Updated Activation Owned Tags from `Father.Form.Engineer, Father.State.Deployed` to `Father.State.TurretDeployed` (removed orphan tags). Fixed invulnerability removal from tag-based (State.Invulnerable) to class-based (GE_TransitionInvulnerability) per v4.13.2 handoff. Fixed GE_Invulnerable references to GE_TransitionInvulnerability. Updated UE version to 5.7. Added Automation vs Manual table. Added Option B architecture section to Quick Reference. See Form_State_Architecture_Fix_v4.13.2.md for architecture rationale. |
+| 4.5 | January 2026 | **GAS Audit INV-1 Compliance:** REMOVED GE_TransitionInvulnerability - transitions no longer grant invulnerability. Form transitions now use AddLooseGameplayTag(Father.State.Transitioning) directly without damage immunity. Updated Quick Reference and Gameplay Effect Summary. Only GA_FatherSacrifice grants invulnerability in the entire Father system. |
+| 4.4 | January 2026 | **Option B Form State Architecture:** Complete rewrite for GE-based form identity. Added GE_EngineerState (Infinite, grants Effect.Father.FormState.Engineer). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState parent tag), then apply GE_EngineerState. Updated Activation Owned Tags from `Father.Form.Engineer, Father.State.Deployed` to `Father.State.TurretDeployed` (removed orphan tags). ~~Fixed invulnerability removal from tag-based to class-based~~ (SUPERSEDED by INV-1 - invulnerability removed entirely). Updated UE version to 5.7. Added Automation vs Manual table. Added Option B architecture section to Quick Reference. See Form_State_Architecture_Fix_v4.13.2.md for architecture rationale. |
 | 4.3 | January 2026 | Fixed tag format: State.Father.Alive changed to Father.State.Alive per DefaultGameplayTags. Updated Related Documents to Technical Reference v5.12, Design Document v1.8, and Setup Guide v2.3. Fixed curly quotes to straight ASCII. |
 | 4.2 | January 2026 | Simplified documentation: Variable creation (PHASE 4 Section 1) converted to markdown table - reduced from 76 lines to 14 lines. |
 | 4.1 | January 2026 | Simplified configuration sections: Tag Config (Class Defaults) reduced from 51 to 8 lines. GE configs (TurretMode, TurretHealth, EngineerCooldown) reduced from 98 to 35 lines using table format. Total reduction: ~100 lines. |
@@ -1361,9 +1362,10 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 |--------|----------|---------|
 | GE_EngineerState | Infinite | Form identity (grants Effect.Father.FormState.Engineer) |
 | GE_TurretMode | Infinite | Grants turret behavior state tags |
-| GE_TransitionInvulnerability | 5 seconds | Block damage during transition (grants Narrative.State.Invulnerable + Father.State.Transitioning) |
 | GE_FormChangeCooldown | 15 seconds | Shared cooldown between form changes |
 | GE_EngineerCooldown | 5 seconds | Post-recall cooldown |
+
+> **INV-1 Note:** GE_TransitionInvulnerability was REMOVED per GAS Audit decision INV-1. Transitions use AddLooseGameplayTag(Father.State.Transitioning) only - no damage immunity.
 
 ### **4. Turret Parameters**
 

@@ -2610,21 +2610,21 @@ Symbiote form has fixed 30 second duration with form wheel lock:
 |------|--------|
 | 1 | GA_FatherSymbiote activates |
 | 2 | Apply Father.State.Transitioning tag |
-| 3 | Apply GE_Invulnerable |
-| 4 | Cancel old form ability |
-| 5 | Spawn transition VFX, wait 5s |
-| 6 | Apply stat boosts to player |
-| 7 | Remove Father.State.Transitioning tag |
-| 8 | Remove GE_Invulnerable |
-| 9 | CommitAbilityCooldown (applies Cooldown.Father.FormChange 15s) |
-| 10 | Add Father.State.SymbioteLocked tag |
-| 11 | Start 30 second timer |
-| 12 | Ability stays active (does NOT end) |
-| 13 | Timer completes after 30 seconds |
-| 14 | Remove Father.State.SymbioteLocked tag |
-| 15 | Auto-activate GA_FatherArmor |
-| 16 | GA_FatherArmor cancels GA_FatherSymbiote |
-| 17 | EndAbility restores player stats |
+| 3 | Cancel old form ability |
+| 4 | Spawn transition VFX, wait 5s |
+| 5 | Apply stat boosts to player |
+| 6 | Remove Father.State.Transitioning tag |
+| 7 | CommitAbilityCooldown (applies Cooldown.Father.FormChange 15s) |
+| 8 | Add Father.State.SymbioteLocked tag |
+| 9 | Start 30 second timer |
+| 10 | Ability stays active (does NOT end) |
+| 11 | Timer completes after 30 seconds |
+| 12 | Remove Father.State.SymbioteLocked tag |
+| 13 | Auto-activate GA_FatherArmor |
+| 14 | GA_FatherArmor cancels GA_FatherSymbiote |
+| 15 | EndAbility restores player stats |
+
+> **INV-1 Note:** GE_Invulnerable was REMOVED per GAS Audit decision INV-1. Transition no longer grants damage immunity.
 
 ### 19.5.1) Symbiote Lock Behavior
 
@@ -2683,32 +2683,34 @@ Example: Armor to Exoskeleton
 | 3 | Form Wheel | Confirms selection, activates GA_FatherExoskeleton |
 | 4 | GA_FatherExoskeleton | GAS checks Activation Required/Blocked Tags |
 | 5 | GA_FatherExoskeleton | Adds Father.State.Transitioning tag |
-| 6 | GA_FatherExoskeleton | Applies GE_Invulnerable to father |
-| 7 | GA_FatherExoskeleton | Cancel Abilities With Tag cancels GA_FatherArmor |
-| 8 | GA_FatherArmor | EndAbility fires (bWasCancelled = true) |
-| 9 | GA_FatherArmor | Restores player speed to stored original |
-| 10 | GA_FatherArmor | Removes GE_ArmorBoost |
-| 11 | GA_FatherExoskeleton | Spawns NS_FatherFormTransition Niagara VFX |
-| 12 | GA_FatherExoskeleton | Waits 5 seconds (Delay node) |
-| 13 | GA_FatherExoskeleton | Father repositions (chest to back) |
-| 14 | GA_FatherExoskeleton | Stores current player speed |
-| 15 | GA_FatherExoskeleton | Applies GE_ExoskeletonSpeed (+50% speed, +30% jump, +10 attack) |
-| 16 | GA_FatherExoskeleton | Sets CurrentForm = Exoskeleton |
-| 17 | GA_FatherExoskeleton | Removes Father.State.Transitioning tag |
-| 18 | GA_FatherExoskeleton | Removes GE_Invulnerable |
-| 19 | GA_FatherExoskeleton | Calls CommitAbilityCooldown (applies GE_FormChangeCooldown 15s) |
-| 20 | GA_FatherExoskeleton | Ends ability |
+| 6 | GA_FatherExoskeleton | Cancel Abilities With Tag cancels GA_FatherArmor |
+| 7 | GA_FatherArmor | EndAbility fires (bWasCancelled = true) |
+| 8 | GA_FatherArmor | Restores player speed to stored original |
+| 9 | GA_FatherArmor | Removes GE_ArmorBoost |
+| 10 | GA_FatherExoskeleton | Spawns NS_FatherFormTransition Niagara VFX |
+| 11 | GA_FatherExoskeleton | Waits 5 seconds (Delay node) |
+| 12 | GA_FatherExoskeleton | Father repositions (chest to back) |
+| 13 | GA_FatherExoskeleton | Stores current player speed |
+| 14 | GA_FatherExoskeleton | Applies GE_ExoskeletonSpeed (+50% speed, +30% jump, +10 attack) |
+| 15 | GA_FatherExoskeleton | Sets CurrentForm = Exoskeleton |
+| 16 | GA_FatherExoskeleton | Removes Father.State.Transitioning tag |
+| 17 | GA_FatherExoskeleton | Calls CommitAbilityCooldown (applies GE_FormChangeCooldown 15s) |
+| 18 | GA_FatherExoskeleton | Ends ability |
+
+> **INV-1 Note:** GE_Invulnerable steps were REMOVED per GAS Audit decision INV-1. Transition no longer grants damage immunity.
 
 ### 19.7.1) Transition Animation Parameters
 
 | Parameter | Value |
 |-----------|-------|
 | VFX Duration | 5 seconds |
-| Father Invulnerable | Yes (during 5s transition) |
+| Father Invulnerable | **No (INV-1)** |
 | Player Movement | Allowed during transition |
 | Player Combat | Allowed during transition |
 | Cancel Transition | Not allowed once started |
 | Cooldown Start | After transition completes |
+
+> **INV-1 Note:** Father is NO LONGER invulnerable during transition per GAS Audit decision INV-1.
 
 ### 19.7.2) Form Activation Tag Configuration
 
@@ -2787,19 +2789,19 @@ Form identity persists via Infinite-duration GameplayEffects, NOT Activation Own
 
 **Migration Note:** Option B is the target architecture. Legacy manifests may still reference `Father.Form.*` until cleanup is complete.
 
-### 19.13) Attached Form Invulnerability
+### 19.13) Attached Form Invulnerability - REMOVED (INV-1)
 
-Attached forms grant damage immunity via Narrative Pro's built-in tag:
+> **INV-1 COMPLIANCE (January 2026):** Per GAS Audit decision INV-1, ALL form-based invulnerability has been REMOVED from the Father companion system.
 
 | Form | Attached | Grants Narrative.State.Invulnerable |
 |------|----------|-------------------------------------|
-| Crawler | No | No |
-| Armor | Yes | Yes |
-| Exoskeleton | Yes | Yes |
-| Symbiote | Yes | Yes |
-| Engineer | No | No |
+| Crawler | No | **No** |
+| Armor | Yes | **No (INV-1)** |
+| Exoskeleton | Yes | **No (INV-1)** |
+| Symbiote | Yes | **No (INV-1)** |
+| Engineer | No | **No** |
 
-**Implementation:** GE_ArmorState, GE_ExoskeletonState, and GE_SymbioteState include `Narrative.State.Invulnerable` in their `granted_tags` array.
+**Current State:** GE_ArmorState, GE_ExoskeletonState, and GE_SymbioteState do NOT grant `Narrative.State.Invulnerable`. Only GA_FatherSacrifice provides invulnerability (to the player, for 8 seconds).
 
 ### 19.14) Form Transition Prelude
 
@@ -3315,7 +3317,9 @@ Parent: GE_WeaponDamage
 | 2 | AttackRating | Add |
 | 3 | StealthRating | Add |
 
-### 26.4) GE_Invulnerable Configuration
+### 26.4) GE_Invulnerable Configuration (Reference Only)
+
+> **INV-1 Note:** This configuration is documented for reference. Per GAS Audit decision INV-1, Father does NOT use GE_Invulnerable except in GA_FatherSacrifice.
 
 | Property | Value |
 |----------|-------|
@@ -3323,7 +3327,7 @@ Parent: GE_WeaponDamage
 | Components | Grant Tags to Target Actor |
 | Granted Tag | Narrative.State.Invulnerable |
 
-Usage Pattern (I-Frames):
+Usage Pattern (I-Frames) - **NOT used by Father per INV-1**:
 
 | Step | Description |
 |------|-------------|
@@ -3331,6 +3335,8 @@ Usage Pattern (I-Frames):
 | 2 | NarrativeDamageExecCalc checks for Narrative.State.Invulnerable tag |
 | 3 | If tag present, damage is blocked |
 | 4 | Remove GE_Invulnerable after i-frame window ends |
+
+**Father Exception:** Only GA_FatherSacrifice uses invulnerability (GE_SacrificeInvulnerability) to protect the player for 8 seconds.
 
 Father Abilities Using Invulnerability:
 
@@ -4753,19 +4759,21 @@ Narrative Pro uses hybrid approach (from source code):
 
 ---
 
-## SECTION 38: FATHER DEATH AND INVULNERABILITY
+## SECTION 38: FATHER DEATH AND VULNERABILITY
 
-### 38.1) Form-Based Vulnerability
+> **INV-1 COMPLIANCE (January 2026):** Per GAS Audit decision INV-1, ALL form-based invulnerability has been REMOVED. Father is vulnerable in ALL forms.
+
+### 38.1) Form-Based Vulnerability - UPDATED (INV-1)
 
 | Form | Vulnerability | Reason |
 |------|---------------|--------|
-| Crawler | Vulnerable | Detached, can be attacked |
-| Armor | Invulnerable | Attached, merged with player |
-| Exoskeleton | Invulnerable | Attached, merged with player |
-| Symbiote | Invulnerable | Attached, merged with player |
-| Engineer | Vulnerable | Deployed as turret, can be attacked |
+| Crawler | **Vulnerable** | Detached, can be attacked |
+| Armor | **Vulnerable (INV-1)** | Attached, but NO invulnerability |
+| Exoskeleton | **Vulnerable (INV-1)** | Attached, but NO invulnerability |
+| Symbiote | **Vulnerable (INV-1)** | Attached, but NO invulnerability |
+| Engineer | **Vulnerable** | Deployed as turret, can be attacked |
 
-### 38.2) Narrative.State.Invulnerable Tag
+### 38.2) Narrative.State.Invulnerable Tag (Reference)
 
 Built-in Narrative Pro tag for damage immunity:
 
@@ -4775,17 +4783,21 @@ Built-in Narrative Pro tag for damage immunity:
 | Location | NarrativeGameplayTags.cpp |
 | Effect | PreGameplayEffectExecute returns false, damage = 0 |
 
-### 38.3) Invulnerability Implementation
+> **INV-1 Note:** Father's GE_*State effects do NOT grant this tag. Only GA_FatherSacrifice uses invulnerability.
 
-GE State effects grant invulnerability:
+### 38.3) Invulnerability Implementation - UPDATED (INV-1)
+
+GE State effects NO LONGER grant invulnerability:
 
 | GE | Grants Invulnerable |
 |----|---------------------|
-| GE_CrawlerState | No |
-| GE_ArmorState | Yes (Narrative.State.Invulnerable) |
-| GE_ExoskeletonState | Yes (Narrative.State.Invulnerable) |
-| GE_SymbioteState | Yes (Narrative.State.Invulnerable) |
-| GE_EngineerState | No |
+| GE_CrawlerState | **No** |
+| GE_ArmorState | **No (INV-1)** |
+| GE_ExoskeletonState | **No (INV-1)** |
+| GE_SymbioteState | **No (INV-1)** |
+| GE_EngineerState | **No** |
+
+**Only Exception:** GA_FatherSacrifice grants GE_SacrificeInvulnerability to the PLAYER for 8 seconds.
 
 ### 38.4) Death Handling Architecture
 
@@ -4803,12 +4815,14 @@ NarrativeAbilitySystemComponent death flow (HandleOutOfHealth):
 
 | Step | Action | Reason |
 |------|--------|--------|
-| 1 | Check IsAttached | Should never be true (invulnerable when attached) |
+| 1 | Check IsAttached | **Can be true (INV-1 removed invulnerability)** |
 | 2 | Cancel all active abilities | Stop running logic |
 | 3 | Clear or Keep OwnerPlayer | KEEP - ownership persists through death |
 | 4 | SET CurrentForm = Crawler | Reset to default |
 | 5 | Play death animation/ragdoll | Visual feedback |
 | 6 | NPCSpawner handles respawn | System manages respawn timing |
+
+> **INV-1 Note:** Father can now die while attached. Death handling must account for detaching from player.
 
 ### 38.6) Death in Each Form
 
@@ -7904,10 +7918,10 @@ Father can alert player about enemies using Report Noise Event:
 | Pattern | Verified In |
 |---------|-------------|
 | GA_Melee_Unarmed parent class | GA_FatherAttack v3.0 |
-| Narrative.State.Invulnerable i-frames | GA_FatherExoskeletonDash v3.0 |
+| ~~Narrative.State.Invulnerable i-frames~~ | ~~GA_FatherExoskeletonDash v3.0~~ **(REMOVED per INV-1)** |
 | StealthRating + State.Invisible | GA_StealthField v3.0 |
 | Component-based GE in UE 5.6 | All v2.0+ guides |
-| CharacterMovement speed | Sprint v2.2, Dash v3.0, Stealth v3.0 |
+| CharacterMovement speed | Sprint v2.2, Dash v3.8, Stealth v3.0 |
 | NarrativeDamageExecCalc | GA_FatherAttack, GA_Dash, GA_ElectricTrap v2.4 |
 | InputTag property | All ability guides |
 | GE_EquipmentModifier SetByCaller | Section 58 (EquippableItem stat application) |
@@ -8282,7 +8296,7 @@ Fragment Access:
 | Cross-Actor Granting | COMPLETED | SourceObject pattern, grant to player ASC (v4.4) |
 | Ability Validation | COMPLETED | Tag + CanActivateAbility hybrid (v4.4) |
 | Father.State.Recruited | COMPLETED | Primary gate for form abilities (v4.4) |
-| Form-Based Invulnerability | COMPLETED | Narrative.State.Invulnerable for attached forms (v4.4) |
+| Form-Based Invulnerability | **REMOVED (INV-1)** | ~~Narrative.State.Invulnerable for attached forms~~ Removed per GAS Audit |
 | CharacterDefinition Persistence | COMPLETED | PrepareForSave/Initialize pattern (v4.4) |
 | Handle Management | COMPLETED | Per-form handle variables (v4.4) |
 | Cross-Actor Tag Cancellation | COMPLETED | Cancel Abilities with Tag is same-ASC only (v4.5) |
