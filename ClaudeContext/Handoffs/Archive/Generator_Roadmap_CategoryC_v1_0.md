@@ -1,11 +1,15 @@
 # Generator Roadmap - Category C Features
 
+> **ARCHIVED (2026-01-21):** This document has been merged into `TODO_Tracking.md` during the v4.16 consolidation.
+> All P1/P2/P3 features are now tracked in the consolidated TODO file with full implementation details.
+> This file is retained for historical reference only.
+
 > **NOTE (v4.14.1):** Some function names in examples are outdated. `BP_ApplyGameplayEffectToSelf` should be `BP_ApplyGameplayEffectToOwner` with `target_self: true`. See manifest.yaml for current patterns.
 
 **Version:** 1.0
 **Date:** January 2026
-**Status:** ROADMAP (Not Implemented)
-**Related:** Form_State_Architecture_Audit_v1_0.md
+**Status:** ARCHIVED - Merged into TODO_Tracking.md (2026-01-21)
+**Related:** Form_State_Architecture_Audit_v1_0.md (also archived)
 
 ---
 
