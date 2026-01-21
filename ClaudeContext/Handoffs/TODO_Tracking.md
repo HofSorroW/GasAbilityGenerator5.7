@@ -2,7 +2,7 @@
 
 **Created:** 2026-01-18
 **Updated:** 2026-01-21
-**Plugin Version:** v4.14.x
+**Plugin Version:** v4.15.1
 **Status:** Consolidated tracking file for all pending tasks
 
 ---
@@ -35,19 +35,23 @@
 
 ---
 
-## 🔵 IN PROGRESS - Track B (Generator Enhancement)
+## ✅ Track B - Generator Enhancement (COMPLETED 2026-01-21)
 
 **Source:** `Handoffs/Father_Companion_GAS_Audit_Locked_Decisions.md` v2.0
 
-| Task | Description | Complexity |
-|------|-------------|------------|
-| AbilityTask Support | Add GameplayAbilitiesEditor dependency, implement UK2Node_LatentAbilityCall | HIGH |
-| WaitDelay Node Type | Add `type: AbilityTaskWaitDelay` to manifest schema | MEDIUM |
-| Replace Delay Nodes | Convert all form ability Delay nodes to WaitDelay | MEDIUM |
+| Task | Description | Commit |
+|------|-------------|--------|
+| AbilityTask Support | Added GameplayAbilitiesEditor + GameplayTasksEditor dependencies | `ed27cb5` |
+| UK2Node_LatentAbilityCall | Implemented CreateAbilityTaskWaitDelayNode via reflection | `ed27cb5` |
+| WaitDelay Node Type | Added `type: AbilityTaskWaitDelay` handler in node switch | `ed27cb5` |
+| Replace Delay Nodes | Converted 7 Delay nodes to WaitDelay (5 form + 2 other) | `ed27cb5` |
+| Call-site Correction | Fixed AddLooseGameplayTags/RemoveLooseGameplayTags (14 nodes) | `2bb1388` |
 
-**Rationale:** WaitDelay AbilityTask auto-terminates when ability ends (3-layer protection built-in). This restores true GAS lifecycle safety and eliminates need for manual guards.
+**Converted Nodes:**
+- GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer (TransitionDelay → AbilityTaskWaitDelay 5s)
+- GA_FatherExoskeletonDash, GA_StealthField (Delay → AbilityTaskWaitDelay)
 
-**Timeline:** After Track A (CRITICAL + MEDIUM fixes) complete.
+**Call-site Fix:** Changed `class: AbilitySystemComponent` → `class: AbilitySystemBlueprintLibrary` and `Target` pin → `Actor` pin for all AddLooseGameplayTags/RemoveLooseGameplayTags nodes (mechanical correctness, no logic change).
 
 ---
 
@@ -188,3 +192,4 @@ These are intentionally not implemented:
 | 2026-01-18 | Created consolidated TODO file from System_Audit_v4.12.4.md and Architecture_Reference.md |
 | 2026-01-18 | Completed 8 HIGH/MEDIUM priority tasks |
 | 2026-01-21 | Added GAS Audit sections: CRITICAL blockers, MEDIUM race conditions, Track B future, Completed v4.14.x |
+| 2026-01-21 | Track B COMPLETED: AbilityTaskWaitDelay support (7 nodes), call-site correction (14 nodes) → v4.15.1 |
