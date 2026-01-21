@@ -1170,22 +1170,26 @@ All Father-specific state tags use `Father.State.*` format (NOT `State.Father.*`
 
 ### Parent Class Matrix
 
-| Asset Type | Parent Class |
-|------------|--------------|
-| Most GA_* | NarrativeGameplayAbility |
-| GA_FatherAttack | GA_Melee_Unarmed |
-| NPCs (BP_Father*, enemies) | NarrativeNPCCharacter |
-| Form equipment items | EquippableItem |
-| Weapons | RangedWeaponItem, MeleeWeaponItem |
-| Projectiles | NarrativeProjectile |
-| Equipment modifiers | GE_EquipmentModifier |
-| Activities | NarrativeActivityBase or BPA_* children |
-| Goals | NPCGoalItem, NPCGoalGenerator |
-| Widgets | UserWidget |
-| Narrative Events | NarrativeEvent |
-| BT Services | BTService_BlueprintBase |
-| Gameplay Cues (burst) | GameplayCueNotify_Burst, _BurstLatent |
-| Gameplay Cues (persistent) | AGameplayCueNotify_Actor |
+| Prefix | Asset Type | Parent Class |
+|--------|------------|--------------|
+| GA_* | Gameplay Abilities | NarrativeGameplayAbility |
+| GA_FatherAttack | Melee Attack | GA_Melee_Unarmed (motion warping) |
+| GE_* | Gameplay Effects | UGameplayEffect (Blueprint) |
+| BP_* | Actor Blueprints | Actor, NarrativeNPCCharacter |
+| WBP_* | Widget Blueprints | UserWidget |
+| DBP_* | Dialogue Blueprints | NarrativeDialogue |
+| EI_* | Equippable Items | EquippableItem |
+| EI_* (weapons) | Weapon Items | RangedWeaponItem, MeleeWeaponItem |
+| BPA_* | Activities | NarrativeActivityBase |
+| Goal_* | Goal Items | NPCGoalItem |
+| GoalGenerator_* | Goal Generators | NPCGoalGenerator |
+| Quest_* | Quests | UQuest (Blueprint) |
+| NE_* | Narrative Events | NarrativeEvent |
+| GC_* (burst) | Gameplay Cues | GameplayCueNotify_Burst, _BurstLatent |
+| GC_* (looping) | Gameplay Cues | AGameplayCueNotify_Actor |
+| BTS_* | BT Services | BTService_BlueprintBase |
+| NPC_* | NPC Definitions | UNPCDefinition (DataAsset) |
+| CD_* | Character Definitions | UCharacterDefinition (DataAsset) |
 
 ### Manifest Validation (January 2026)
 
