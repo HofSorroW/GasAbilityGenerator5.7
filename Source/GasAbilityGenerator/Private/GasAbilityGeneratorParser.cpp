@@ -1578,16 +1578,20 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			}
 			else if (bInDelegateBindings)
 			{
-				// Parse delegate binding items
-				if (TrimmedLine.StartsWith(TEXT("- delegate:")) || TrimmedLine.StartsWith(TEXT("- handler:")))
+				// v4.21: Parse delegate binding items (audit-approved)
+				if (TrimmedLine.StartsWith(TEXT("- id:")) || TrimmedLine.StartsWith(TEXT("- delegate:")) || TrimmedLine.StartsWith(TEXT("- handler:")))
 				{
 					// Save previous binding
-					if (!CurrentDelegateBinding.Delegate.IsEmpty())
+					if (!CurrentDelegateBinding.Delegate.IsEmpty() || !CurrentDelegateBinding.Id.IsEmpty())
 					{
 						CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 					}
 					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
-					if (TrimmedLine.StartsWith(TEXT("- delegate:")))
+					if (TrimmedLine.StartsWith(TEXT("- id:")))
+					{
+						CurrentDelegateBinding.Id = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- delegate:")))
 					{
 						CurrentDelegateBinding.Delegate = GetLineValue(TrimmedLine.Mid(2));
 					}
@@ -1595,6 +1599,10 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 					{
 						CurrentDelegateBinding.Handler = GetLineValue(TrimmedLine.Mid(2));
 					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("id:")))
+				{
+					CurrentDelegateBinding.Id = GetLineValue(TrimmedLine);
 				}
 				else if (TrimmedLine.StartsWith(TEXT("delegate:")))
 				{

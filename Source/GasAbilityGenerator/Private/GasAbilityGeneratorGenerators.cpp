@@ -264,6 +264,7 @@
 #include "Tales/DialogueSM.h"  // v3.7: UDialogueNode_NPC, UDialogueNode_Player, FDialogueLine
 #include "Tales/NarrativeEvent.h"  // v3.7: UNarrativeEvent for dialogue events
 #include "Tales/NarrativeCondition.h"  // v3.7: UNarrativeCondition for dialogue conditions
+#include "GAS/NarrativeAbilitySystemComponent.h"  // v4.21: For delegate binding automation
 #include "DialogueBlueprint.h"  // v3.7: UDialogueBlueprint for dialogue tree generation
 #include "QuestBlueprint.h"  // v3.9.4: UQuestBlueprint for quest state machine generation
 #include "NiagaraSystem.h"
@@ -310,6 +311,9 @@
 #include "K2Node_FunctionResult.h"  // v4.14: Custom function return node
 #include "K2Node_CallParentFunction.h"  // v2.8.3: Call parent function
 #include "K2Node_LatentAbilityCall.h"  // v4.15: AbilityTask node support (Track B GAS Audit)
+#include "K2Node_AddDelegate.h"        // v4.21: Delegate binding automation
+#include "K2Node_RemoveDelegate.h"     // v4.21: Delegate unbinding automation
+#include "K2Node_CreateDelegate.h"     // v4.21: Delegate creation automation
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"  // v4.15: WaitDelay AbilityTask class
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
@@ -8934,7 +8938,7 @@ bool FEventGraphGenerator::GenerateEventGraph(
 			NodeMap.Add(NodeDef.Id, CreatedNode);
 			NodesCreated++;
 
-			// Set position if specified
+			// Set initial position (v4.20: AutoLayoutNodes will overwrite with computed layout)
 			if (NodeDef.bHasPosition)
 			{
 				CreatedNode->NodePosX = static_cast<int32>(NodeDef.PositionX);
@@ -8950,8 +8954,8 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		}
 	}
 
-	// Auto-layout nodes without explicit positions
-	AutoLayoutNodes(NodeMap, GraphDefinition.Nodes);
+	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
+	AutoLayoutNodes(NodeMap, GraphDefinition.Nodes, GraphDefinition.Connections);
 
 	// v2.5.2: Pre-process exec connections to reroute around pure nodes
 	// Build a map of exec flow: NodeId -> (ExecSourceNodeId, ExecTargetNodeId)
@@ -9498,17 +9502,11 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 			NodeMap.Add(NodeDef.Id, CreatedNode);
 			NodesCreated++;
 
-			// Set position if specified
+			// Set initial position (v4.20: AutoLayoutNodes will overwrite with computed layout)
 			if (NodeDef.bHasPosition)
 			{
 				CreatedNode->NodePosX = static_cast<int32>(NodeDef.PositionX);
 				CreatedNode->NodePosY = static_cast<int32>(NodeDef.PositionY);
-			}
-			else
-			{
-				// Default positioning
-				CreatedNode->NodePosX = 200 + (NodesCreated * 250);
-				CreatedNode->NodePosY = 0;
 			}
 
 			LogGeneration(FString::Printf(TEXT("  Created node: %s (%s)"), *NodeDef.Id, *NodeDef.Type));
@@ -9518,6 +9516,9 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 			NodesFailed++;
 		}
 	}
+
+	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
+	AutoLayoutNodes(NodeMap, OverrideDefinition.Nodes, OverrideDefinition.Connections);
 
 	// Create connections
 	int32 ConnectionsCreated = 0;
@@ -9737,17 +9738,11 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 			NodeMap.Add(NodeDef.Id, CreatedNode);
 			NodesCreated++;
 
-			// Set position if specified
+			// Set initial position (v4.20: AutoLayoutNodes will overwrite with computed layout)
 			if (NodeDef.bHasPosition)
 			{
 				CreatedNode->NodePosX = static_cast<int32>(NodeDef.PositionX);
 				CreatedNode->NodePosY = static_cast<int32>(NodeDef.PositionY);
-			}
-			else
-			{
-				// Default positioning
-				CreatedNode->NodePosX = 200 + (NodesCreated * 250);
-				CreatedNode->NodePosY = 0;
 			}
 
 			LogGeneration(FString::Printf(TEXT("  Created node: %s (%s)"), *NodeDef.Id, *NodeDef.Type));
@@ -9757,6 +9752,9 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 			NodesFailed++;
 		}
 	}
+
+	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
+	AutoLayoutNodes(NodeMap, FunctionDefinition.Nodes, FunctionDefinition.Connections);
 
 	// Create connections
 	int32 ConnectionsCreated = 0;
@@ -11649,40 +11647,532 @@ UEdGraphPin* FEventGraphGenerator::FindPinByName(
 	return nullptr;
 }
 
+// ============================================================================
+// v4.20: Placement Contract v1.0 - Layered Graph Layout Algorithm
+// Audit: Claude ✅ | GPT ✅ | Erdem ✅ (2026-01-21)
+// Reference: ClaudeContext/Handoffs/EventGraph_Node_Placement_Reference.md
+// ============================================================================
+
+namespace NodePlacement
+{
+	// LOCKED CONSTANTS - per Placement Contract v1.0
+	constexpr int32 GRID_SIZE = 16;
+	constexpr int32 HORIZONTAL_LAYER_SPACING = 350;
+	constexpr int32 VERTICAL_NODE_GAP = 50;
+	constexpr int32 LANE_SEPARATION = 150;
+	constexpr int32 DATA_NODE_X_OFFSET = -250;
+
+	// Height formulas - per EdGraphSchema_K2.cpp
+	constexpr float EVENT_BASE_HEIGHT = 48.0f;
+	constexpr float EVENT_HEIGHT_PER_PIN = 16.0f;
+	constexpr float EXEC_BASE_HEIGHT = 80.0f;
+	constexpr float EXEC_HEIGHT_PER_PIN = 18.0f;
+	constexpr float DATA_BASE_HEIGHT = 48.0f;
+
+	/** Snap value to grid */
+	inline int32 SnapToGrid(int32 Value)
+	{
+		return FMath::RoundToInt32((float)Value / (float)GRID_SIZE) * GRID_SIZE;
+	}
+
+	/** Check if pin name is an exec output pin */
+	inline bool IsExecOutputPin(const FString& PinName)
+	{
+		return PinName.Equals(TEXT("Then"), ESearchCase::IgnoreCase) ||
+		       PinName.Equals(TEXT("Exec"), ESearchCase::IgnoreCase) ||
+		       PinName.Equals(TEXT("Completed"), ESearchCase::IgnoreCase) ||
+		       PinName.Equals(TEXT("true"), ESearchCase::IgnoreCase) ||
+		       PinName.Equals(TEXT("false"), ESearchCase::IgnoreCase) ||
+		       PinName.StartsWith(TEXT("Out_"), ESearchCase::IgnoreCase);
+	}
+
+	/** Determine node family from manifest type */
+	enum class ENodeFamily : uint8
+	{
+		Event,      // Event, CustomEvent
+		ExecLogic,  // CallFunction, Branch, Sequence, Delay, etc.
+		DataPure    // VariableGet, PropertyGet, Self, etc.
+	};
+
+	inline ENodeFamily GetNodeFamily(const FString& NodeType)
+	{
+		// Event family
+		if (NodeType.Equals(TEXT("Event"), ESearchCase::IgnoreCase) ||
+		    NodeType.Equals(TEXT("CustomEvent"), ESearchCase::IgnoreCase))
+		{
+			return ENodeFamily::Event;
+		}
+
+		// Data/Pure family (no exec pins)
+		if (NodeType.Equals(TEXT("VariableGet"), ESearchCase::IgnoreCase) ||
+		    NodeType.Equals(TEXT("PropertyGet"), ESearchCase::IgnoreCase) ||
+		    NodeType.Equals(TEXT("Self"), ESearchCase::IgnoreCase) ||
+		    NodeType.Equals(TEXT("BreakStruct"), ESearchCase::IgnoreCase) ||
+		    NodeType.Equals(TEXT("MakeArray"), ESearchCase::IgnoreCase) ||
+		    NodeType.Equals(TEXT("GetArrayItem"), ESearchCase::IgnoreCase))
+		{
+			return ENodeFamily::DataPure;
+		}
+
+		// Everything else is Exec Logic (has exec pins)
+		return ENodeFamily::ExecLogic;
+	}
+
+	/** Estimate node height based on family and pin count */
+	inline int32 EstimateNodeHeight(const FString& NodeType, int32 MaxPinCount)
+	{
+		ENodeFamily Family = GetNodeFamily(NodeType);
+
+		switch (Family)
+		{
+		case ENodeFamily::Event:
+			return static_cast<int32>(EVENT_BASE_HEIGHT + (MaxPinCount * EVENT_HEIGHT_PER_PIN));
+
+		case ENodeFamily::ExecLogic:
+			return static_cast<int32>(EXEC_BASE_HEIGHT + (MaxPinCount * EXEC_HEIGHT_PER_PIN));
+
+		case ENodeFamily::DataPure:
+			// BreakStruct and MakeArray can have many pins
+			if (NodeType.Equals(TEXT("BreakStruct"), ESearchCase::IgnoreCase) ||
+			    NodeType.Equals(TEXT("MakeArray"), ESearchCase::IgnoreCase))
+			{
+				return static_cast<int32>(DATA_BASE_HEIGHT + (MaxPinCount * EXEC_HEIGHT_PER_PIN));
+			}
+			return static_cast<int32>(DATA_BASE_HEIGHT);
+		}
+
+		return static_cast<int32>(EXEC_BASE_HEIGHT);
+	}
+}
+
+/** Placement info for a single node */
+struct FNodePlacementInfo
+{
+	FString NodeId;
+	int32 Layer = -1;           // Execution distance from entry (-1 = unassigned)
+	int32 LaneIndex = -1;       // Which event chain this belongs to
+	int32 IndexInLane = 0;      // Position within the lane's layer
+	int32 EstimatedHeight = 80;
+	int32 PosX = 0;
+	int32 PosY = 0;
+	bool bIsEntryNode = false;
+	bool bIsDataNode = false;
+};
+
 void FEventGraphGenerator::AutoLayoutNodes(
 	TMap<FString, UK2Node*>& NodeMap,
-	const TArray<FManifestGraphNodeDefinition>& NodeDefs)
+	const TArray<FManifestGraphNodeDefinition>& NodeDefs,
+	const TArray<FManifestGraphConnectionDefinition>& Connections)
 {
-	// Simple auto-layout: place nodes without positions in a grid
-	int32 CurrentX = 0;
-	int32 CurrentY = 0;
-	const int32 NodeSpacingX = 300;
-	const int32 NodeSpacingY = 150;
-	const int32 MaxNodesPerRow = 5;
-	int32 NodesInRow = 0;
+	using namespace NodePlacement;
 
+	// v4.20: Per Placement Contract v1.0, ALWAYS compute positions based on graph structure
+	// Manifest position: fields are ignored - algorithm determines optimal layout
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] v4.20: Starting layered graph layout for %d nodes"), NodeDefs.Num()));
+
+	// Build placement info map for ALL nodes
+	TMap<FString, FNodePlacementInfo> PlacementMap;
+	for (int32 Idx = 0; Idx < NodeDefs.Num(); ++Idx)
+	{
+		const FManifestGraphNodeDefinition& NodeDef = NodeDefs[Idx];
+		// v4.20: Process ALL nodes - algorithm computes positions from graph structure
+		FNodePlacementInfo& Info = PlacementMap.Add(NodeDef.Id);
+		Info.NodeId = NodeDef.Id;
+		Info.bIsEntryNode = (NodeDef.Type.Equals(TEXT("Event"), ESearchCase::IgnoreCase) ||
+		                     NodeDef.Type.Equals(TEXT("CustomEvent"), ESearchCase::IgnoreCase));
+
+		// v4.20.1: Determine if node is pure/data by checking actual UK2Node pins
+		// Pure nodes have NO exec pins - this is more accurate than checking manifest type
+		Info.bIsDataNode = false; // Default to exec node
+		int32 MaxPinCount = 2; // Default estimate
+
+		if (UK2Node** NodePtr = NodeMap.Find(NodeDef.Id))
+		{
+			if (*NodePtr)
+			{
+				int32 InputCount = 0;
+				int32 OutputCount = 0;
+				bool bHasExecPin = false;
+
+				for (UEdGraphPin* Pin : (*NodePtr)->Pins)
+				{
+					if (Pin && !Pin->bHidden)
+					{
+						// Check for exec pins (PC_Exec category)
+						if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+						{
+							bHasExecPin = true;
+						}
+
+						if (Pin->Direction == EGPD_Input)
+							InputCount++;
+						else
+							OutputCount++;
+					}
+				}
+
+				// Node is pure/data if it has NO exec pins
+				Info.bIsDataNode = !bHasExecPin;
+				MaxPinCount = FMath::Max(InputCount, OutputCount);
+			}
+		}
+		else
+		{
+			// Fallback to manifest type if node not in map
+			Info.bIsDataNode = (GetNodeFamily(NodeDef.Type) == ENodeFamily::DataPure);
+		}
+
+		Info.EstimatedHeight = EstimateNodeHeight(NodeDef.Type, MaxPinCount);
+	}
+
+	// Debug: count data vs exec nodes
+	int32 DataNodeCount = 0;
+	int32 ExecNodeCount = 0;
+	for (const auto& Pair : PlacementMap)
+	{
+		if (Pair.Value.bIsDataNode)
+			DataNodeCount++;
+		else
+			ExecNodeCount++;
+	}
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Node classification: %d exec nodes, %d data/pure nodes"), ExecNodeCount, DataNodeCount));
+
+	// Build exec adjacency list: NodeId -> array of target NodeIds
+	TMap<FString, TArray<FString>> ExecAdjacency;
+	for (const FManifestGraphConnectionDefinition& Conn : Connections)
+	{
+		if (IsExecOutputPin(Conn.From.PinName))
+		{
+			ExecAdjacency.FindOrAdd(Conn.From.NodeId).Add(Conn.To.NodeId);
+		}
+	}
+
+	// Find entry nodes and assign lanes by manifest order (EntryOrderIndex)
+	TArray<FString> EntryNodes;
 	for (const FManifestGraphNodeDefinition& NodeDef : NodeDefs)
 	{
-		if (!NodeDef.bHasPosition)
+		// v4.20: Check ALL nodes for entry points
+		if (NodeDef.Type.Equals(TEXT("Event"), ESearchCase::IgnoreCase) ||
+		    NodeDef.Type.Equals(TEXT("CustomEvent"), ESearchCase::IgnoreCase))
 		{
-			UK2Node** NodePtr = NodeMap.Find(NodeDef.Id);
-			if (NodePtr && *NodePtr)
+			EntryNodes.Add(NodeDef.Id);
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Found %d entry nodes"), EntryNodes.Num()));
+
+	// BFS from each entry node to assign layers
+	int32 LaneIndex = 0;
+	for (const FString& EntryId : EntryNodes)
+	{
+		FNodePlacementInfo* EntryInfo = PlacementMap.Find(EntryId);
+		if (!EntryInfo)
+		{
+			continue;
+		}
+
+		EntryInfo->Layer = 0;
+		EntryInfo->LaneIndex = LaneIndex;
+
+		// BFS queue: pairs of (NodeId, Layer)
+		TQueue<TPair<FString, int32>> Queue;
+		TSet<FString> Visited;
+
+		Queue.Enqueue(MakeTuple(EntryId, 0));
+		Visited.Add(EntryId);
+
+		while (!Queue.IsEmpty())
+		{
+			TPair<FString, int32> Current;
+			Queue.Dequeue(Current);
+			const FString& CurrentNodeId = Current.Key;
+			int32 CurrentLayer = Current.Value;
+
+			// Update placement info
+			if (FNodePlacementInfo* Info = PlacementMap.Find(CurrentNodeId))
 			{
-				(*NodePtr)->NodePosX = CurrentX;
-				(*NodePtr)->NodePosY = CurrentY;
-
-				CurrentX += NodeSpacingX;
-				NodesInRow++;
-
-				if (NodesInRow >= MaxNodesPerRow)
+				// Take max layer if visited from multiple paths (longest path)
+				Info->Layer = FMath::Max(Info->Layer, CurrentLayer);
+				if (Info->LaneIndex < 0)
 				{
-					CurrentX = 0;
-					CurrentY += NodeSpacingY;
-					NodesInRow = 0;
+					Info->LaneIndex = LaneIndex;
+				}
+			}
+
+			// Enqueue successors
+			if (TArray<FString>* Successors = ExecAdjacency.Find(CurrentNodeId))
+			{
+				for (const FString& NextNodeId : *Successors)
+				{
+					// Skip data nodes in exec traversal
+					if (FNodePlacementInfo* NextInfo = PlacementMap.Find(NextNodeId))
+					{
+						if (NextInfo->bIsDataNode)
+						{
+							continue;
+						}
+					}
+
+					if (!Visited.Contains(NextNodeId))
+					{
+						Visited.Add(NextNodeId);
+						Queue.Enqueue(MakeTuple(NextNodeId, CurrentLayer + 1));
+					}
 				}
 			}
 		}
+
+		LaneIndex++;
 	}
+
+	// Warn about orphan exec nodes (not reachable from any entry)
+	for (auto& Pair : PlacementMap)
+	{
+		if (Pair.Value.Layer < 0 && !Pair.Value.bIsDataNode)
+		{
+			LogGeneration(FString::Printf(TEXT("  [PLACEMENT] WARNING: Orphan exec node '%s' - not reachable from any entry"),
+				*Pair.Key));
+			// Assign orphans to layer 0, lane = num entry nodes (separate lane)
+			Pair.Value.Layer = 0;
+			Pair.Value.LaneIndex = LaneIndex;
+		}
+	}
+	if (LaneIndex > EntryNodes.Num())
+	{
+		LaneIndex++; // Account for orphan lane
+	}
+
+	// Group exec nodes by (Lane, Layer) for position calculation
+	TMap<int32, TMap<int32, TArray<FString>>> LaneLayerNodes; // Lane -> Layer -> NodeIds
+	for (auto& Pair : PlacementMap)
+	{
+		if (!Pair.Value.bIsDataNode && Pair.Value.Layer >= 0)
+		{
+			LaneLayerNodes.FindOrAdd(Pair.Value.LaneIndex)
+			              .FindOrAdd(Pair.Value.Layer)
+			              .Add(Pair.Key);
+		}
+	}
+
+	// Calculate positions for exec nodes
+	int32 CurrentLaneStartY = 0;
+	int32 MaxLayerSeen = 0;
+
+	// Get sorted lane indices
+	TArray<int32> SortedLanes;
+	LaneLayerNodes.GetKeys(SortedLanes);
+	SortedLanes.Sort();
+
+	for (int32 Lane : SortedLanes)
+	{
+		TMap<int32, TArray<FString>>& LayerMap = LaneLayerNodes[Lane];
+
+		// Find max layer in this lane
+		int32 MaxLayerInLane = 0;
+		for (auto& LayerPair : LayerMap)
+		{
+			MaxLayerInLane = FMath::Max(MaxLayerInLane, LayerPair.Key);
+			MaxLayerSeen = FMath::Max(MaxLayerSeen, LayerPair.Key);
+		}
+
+		// Track max height used in this lane across all layers
+		int32 MaxHeightInLane = 0;
+
+		// Process each layer in this lane
+		for (int32 Layer = 0; Layer <= MaxLayerInLane; ++Layer)
+		{
+			TArray<FString>* NodesInLayer = LayerMap.Find(Layer);
+			if (!NodesInLayer)
+			{
+				continue;
+			}
+
+			int32 CurrentY = CurrentLaneStartY;
+
+			for (const FString& NodeId : *NodesInLayer)
+			{
+				FNodePlacementInfo& Info = PlacementMap[NodeId];
+
+				// X based on layer
+				Info.PosX = Layer * HORIZONTAL_LAYER_SPACING;
+
+				// Y based on cumulative height within lane
+				Info.PosY = CurrentY;
+
+				CurrentY += Info.EstimatedHeight + VERTICAL_NODE_GAP;
+			}
+
+			MaxHeightInLane = FMath::Max(MaxHeightInLane, CurrentY - CurrentLaneStartY);
+		}
+
+		// Move to next lane with separation
+		CurrentLaneStartY += MaxHeightInLane + LANE_SEPARATION;
+	}
+
+	// v4.20.3: Assign data nodes to LAYERS (like exec nodes) then recalculate positions
+	// Find connections for data nodes
+	TMap<FString, FString> DataNodeToSource;
+	TMap<FString, FString> DataNodeToConsumer;
+	for (const FManifestGraphConnectionDefinition& Conn : Connections)
+	{
+		if (FNodePlacementInfo* ToInfo = PlacementMap.Find(Conn.To.NodeId))
+		{
+			if (ToInfo->bIsDataNode && !DataNodeToSource.Contains(Conn.To.NodeId))
+			{
+				DataNodeToSource.Add(Conn.To.NodeId, Conn.From.NodeId);
+			}
+		}
+		if (FNodePlacementInfo* FromInfo = PlacementMap.Find(Conn.From.NodeId))
+		{
+			if (FromInfo->bIsDataNode && !DataNodeToConsumer.Contains(Conn.From.NodeId))
+			{
+				DataNodeToConsumer.Add(Conn.From.NodeId, Conn.To.NodeId);
+			}
+		}
+	}
+
+	// Assign layers to data nodes based on their consumer's layer
+	int32 DataNodesPositionedNearConsumer = 0;
+	int32 DataNodesWithInvalidConsumer = 0;
+
+	for (auto& Pair : PlacementMap)
+	{
+		if (!Pair.Value.bIsDataNode || Pair.Value.Layer >= 0)
+		{
+			continue;
+		}
+
+		// Trace to find consumer's layer
+		FString CurrentId = Pair.Key;
+		int32 ConsumerLayer = -1;
+		int32 ChainDepth = 0;
+
+		while (ChainDepth < 10)
+		{
+			FString* ConsumerId = DataNodeToConsumer.Find(CurrentId);
+			if (!ConsumerId)
+			{
+				break;
+			}
+
+			FNodePlacementInfo* ConsumerInfo = PlacementMap.Find(*ConsumerId);
+			if (!ConsumerInfo)
+			{
+				break;
+			}
+
+			if (ConsumerInfo->Layer >= 0)
+			{
+				ConsumerLayer = ConsumerInfo->Layer;
+				break;
+			}
+			else if (ConsumerInfo->bIsDataNode)
+			{
+				// Consumer is also a data node, continue tracing
+				CurrentId = *ConsumerId;
+				ChainDepth++;
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		if (ConsumerLayer >= 0)
+		{
+			// Assign data node to same layer as consumer (it will be positioned at same X)
+			Pair.Value.Layer = ConsumerLayer;
+			Pair.Value.LaneIndex = LaneIndex; // Use the data node lane
+			DataNodesPositionedNearConsumer++;
+		}
+		else
+		{
+			DataNodesWithInvalidConsumer++;
+		}
+	}
+
+	// Now recalculate positions for ALL nodes (including data nodes) by layer
+	// Clear previous positions
+	for (auto& Pair : PlacementMap)
+	{
+		Pair.Value.PosX = 0;
+		Pair.Value.PosY = 0;
+	}
+
+	// Group ALL nodes by layer (exec and data together)
+	TMap<int32, TArray<FString>> NodesByLayer;
+	for (auto& Pair : PlacementMap)
+	{
+		if (Pair.Value.Layer >= 0)
+		{
+			NodesByLayer.FindOrAdd(Pair.Value.Layer).Add(Pair.Key);
+		}
+	}
+
+	// Calculate positions: X by layer, Y by stacking within layer
+	int32 MaxLayer = 0;
+	for (auto& LayerPair : NodesByLayer)
+	{
+		MaxLayer = FMath::Max(MaxLayer, LayerPair.Key);
+	}
+
+	for (int32 Layer = 0; Layer <= MaxLayer; ++Layer)
+	{
+		TArray<FString>* NodesInLayer = NodesByLayer.Find(Layer);
+		if (!NodesInLayer)
+		{
+			continue;
+		}
+
+		int32 CurrentY = 0;
+		for (const FString& NodeId : *NodesInLayer)
+		{
+			FNodePlacementInfo* Info = PlacementMap.Find(NodeId);
+			if (Info)
+			{
+				Info->PosX = Layer * HORIZONTAL_LAYER_SPACING;
+				Info->PosY = CurrentY;
+				CurrentY += Info->EstimatedHeight + VERTICAL_NODE_GAP;
+			}
+		}
+	}
+
+	// Handle data nodes with no consumers (place at origin area)
+	int32 UnconnectedDataY = CurrentLaneStartY + LANE_SEPARATION;
+	int32 UnconnectedDataNodes = 0;
+	for (auto& Pair : PlacementMap)
+	{
+		if (Pair.Value.bIsDataNode && Pair.Value.Layer < 0)
+		{
+			Pair.Value.PosX = DATA_NODE_X_OFFSET;
+			Pair.Value.PosY = UnconnectedDataY;
+			UnconnectedDataY += Pair.Value.EstimatedHeight + VERTICAL_NODE_GAP;
+			UnconnectedDataNodes++;
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Data nodes: %d near consumer, %d invalid consumer, %d unconnected"),
+		DataNodesPositionedNearConsumer, DataNodesWithInvalidConsumer, UnconnectedDataNodes));
+
+	// Grid snap and apply positions to actual nodes
+	int32 NodesPositioned = 0;
+	for (auto& Pair : PlacementMap)
+	{
+		UK2Node** NodePtr = NodeMap.Find(Pair.Key);
+		if (NodePtr && *NodePtr)
+		{
+			// Grid snap
+			Pair.Value.PosX = SnapToGrid(Pair.Value.PosX);
+			Pair.Value.PosY = SnapToGrid(Pair.Value.PosY);
+
+			(*NodePtr)->NodePosX = Pair.Value.PosX;
+			(*NodePtr)->NodePosY = Pair.Value.PosY;
+			NodesPositioned++;
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Positioned %d nodes across %d lanes, max layer %d"),
+		NodesPositioned, SortedLanes.Num(), MaxLayerSeen));
 }
 
 // ============================================================================
@@ -12173,6 +12663,17 @@ int32 FEventGraphGenerator::GenerateVFXSpawnNodes(
 // v4.13: Category C - P2.1 Delegate Binding IR + Codegen
 // ============================================================================
 
+/**
+ * v4.21: Generate delegate binding nodes for GameplayAbility blueprints
+ * Audit-approved: Claude-GPT dual audit 2026-01-21
+ *
+ * Creates full bind/unbind node chains:
+ * - Custom Event with delegate signature parameters
+ * - CreateDelegate_A → AddDelegate (in ActivateAbility path)
+ * - CreateDelegate_B → RemoveDelegate (in EndAbility path)
+ * - Proper PN_Self wiring for all delegate nodes
+ * - Cast to UNarrativeAbilitySystemComponent when source is OwnerASC/PlayerASC
+ */
 int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	UBlueprint* Blueprint,
 	const TArray<FManifestDelegateBindingDefinition>& DelegateBindings)
@@ -12195,72 +12696,373 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 	if (!EventGraph)
 	{
-		LogGeneration(TEXT("  GenerateDelegateBindingNodes: No event graph found"));
+		LogGeneration(TEXT("  [E_DELEGATE_NO_GRAPH] GenerateDelegateBindingNodes: No event graph found"));
 		return 0;
 	}
 
-	int32 NodesGenerated = 0;
+	// Get the schema for connection validation
+	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
 
-	// Find the ActivateAbility event for binding setup
-	UK2Node_Event* ActivateEvent = nullptr;
-	for (UEdGraphNode* Node : EventGraph->Nodes)
-	{
-		if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
-		{
-			FString EventName = EventNode->GetFunctionName().ToString();
-			if (EventName.Contains(TEXT("ActivateAbility")))
-			{
-				ActivateEvent = EventNode;
-				break;
-			}
-		}
-	}
+	// Source class for delegate lookup (Narrative Pro delegates)
+	UClass* NarrativeASCClass = UNarrativeAbilitySystemComponent::StaticClass();
+
+	int32 NodesGenerated = 0;
+	float CurrentPosX = 1500.0f;
+	float CurrentPosY = 0.0f;
+
+	// Track nodes for exec wiring
+	TArray<UK2Node_AddDelegate*> AddDelegateNodes;
+	TArray<UK2Node_RemoveDelegate*> RemoveDelegateNodes;
 
 	for (const FManifestDelegateBindingDefinition& Binding : DelegateBindings)
 	{
-		// Create Custom Event for the handler
+		FString BindingId = Binding.Id.IsEmpty() ? Binding.Handler : Binding.Id;
+		LogGeneration(FString::Printf(TEXT("  Processing delegate binding: %s"), *BindingId));
+
+		// 1. Find delegate property and get signature
+		FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(
+			NarrativeASCClass, FName(*Binding.Delegate));
+
+		if (!DelegateProp)
+		{
+			LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_NOT_FOUND] Delegate '%s' not found on UNarrativeAbilitySystemComponent"),
+				*Binding.Delegate));
+			continue;
+		}
+
+		UFunction* DelegateSignature = DelegateProp->SignatureFunction;
+		if (!DelegateSignature)
+		{
+			LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_NO_SIGNATURE] No signature function for delegate '%s'"),
+				*Binding.Delegate));
+			continue;
+		}
+
+		// 2. Create Custom Event with delegate signature parameters
 		UK2Node_CustomEvent* HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
 		EventGraph->AddNode(HandlerEvent, false, false);
 		HandlerEvent->CustomFunctionName = FName(*Binding.Handler);
+		HandlerEvent->bIsEditable = true;
 		HandlerEvent->CreateNewGuid();
 		HandlerEvent->PostPlacedNewNode();
 		HandlerEvent->AllocateDefaultPins();
+		HandlerEvent->NodePosX = CurrentPosX;
+		HandlerEvent->NodePosY = CurrentPosY;
 
-		// Position the handler event
-		HandlerEvent->NodePosX = 1000 + (NodesGenerated * 400);
-		HandlerEvent->NodePosY = 500;
+		// Add parameters from delegate signature
+		for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+		{
+			FProperty* Param = *PropIt;
+			if (Param->HasAnyPropertyFlags(CPF_Parm) && !Param->HasAnyPropertyFlags(CPF_ReturnParm))
+			{
+				FEdGraphPinType PinType;
+				Schema->ConvertPropertyToPinType(Param, PinType);
 
-		// Add parameters based on delegate type
-		if (Binding.Delegate.Equals(TEXT("OnDied"), ESearchCase::IgnoreCase))
-		{
-			// OnDied typically passes the killed actor and damage info
-			// Parameters depend on the actual delegate signature
-			LogGeneration(FString::Printf(TEXT("  Generated handler event: %s (OnDied - params depend on ASC delegate)"), *Binding.Handler));
-		}
-		else if (Binding.Delegate.Equals(TEXT("OnAttributeChanged"), ESearchCase::IgnoreCase))
-		{
-			// OnAttributeChanged passes attribute, old value, new value
-			LogGeneration(FString::Printf(TEXT("  Generated handler event: %s (OnAttributeChanged for %s)"),
-				*Binding.Handler, *Binding.Attribute));
-		}
-		else if (Binding.Delegate.Equals(TEXT("OnDamagedBy"), ESearchCase::IgnoreCase))
-		{
-			LogGeneration(FString::Printf(TEXT("  Generated handler event: %s (OnDamagedBy)"), *Binding.Handler));
+				HandlerEvent->CreateUserDefinedPin(
+					Param->GetFName(),
+					PinType,
+					EGPD_Output
+				);
+			}
 		}
 
-		// Note: Full delegate binding requires UK2Node_AddDelegate which is complex
-		// For now, create the handler events and log binding intent
-		// The actual BindDynamic macro expansion is non-trivial to generate programmatically
+		LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
+			*Binding.Handler, *DelegateSignature->GetName()));
 
-		LogGeneration(FString::Printf(TEXT("  DelegateBinding: %s.%s -> %s (handler created, manual bind required)"),
+		// 3. Create Self node for ability reference (used by CreateDelegate.PN_Self)
+		UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);
+		EventGraph->AddNode(SelfNode, false, false);
+		SelfNode->CreateNewGuid();
+		SelfNode->PostPlacedNewNode();
+		SelfNode->AllocateDefaultPins();
+		SelfNode->NodePosX = CurrentPosX + 200.0f;
+		SelfNode->NodePosY = CurrentPosY + 100.0f;
+		UEdGraphPin* SelfOutPin = SelfNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+
+		// 4. Create source ASC resolution nodes (with cast for OwnerASC/PlayerASC)
+		UEdGraphPin* SourceASCPin = nullptr;
+		bool bNeedsCast = Binding.Source.Equals(TEXT("OwnerASC"), ESearchCase::IgnoreCase) ||
+		                  Binding.Source.Equals(TEXT("PlayerASC"), ESearchCase::IgnoreCase);
+
+		if (bNeedsCast)
+		{
+			// Create GetAbilitySystemComponentFromActorInfo call
+			UK2Node_CallFunction* GetASCNode = NewObject<UK2Node_CallFunction>(EventGraph);
+			EventGraph->AddNode(GetASCNode, false, false);
+
+			UFunction* GetASCFunc = UAbilitySystemBlueprintLibrary::StaticClass()->FindFunctionByName(
+				TEXT("GetAbilitySystemComponent"));
+			if (GetASCFunc)
+			{
+				GetASCNode->SetFromFunction(GetASCFunc);
+			}
+			GetASCNode->CreateNewGuid();
+			GetASCNode->PostPlacedNewNode();
+			GetASCNode->AllocateDefaultPins();
+			GetASCNode->NodePosX = CurrentPosX + 200.0f;
+			GetASCNode->NodePosY = CurrentPosY + 200.0f;
+
+			// Wire Self to GetASCNode.Actor pin
+			UEdGraphPin* ActorPin = GetASCNode->FindPin(TEXT("Actor"));
+			if (ActorPin && SelfOutPin)
+			{
+				SelfOutPin->MakeLinkTo(ActorPin);
+			}
+
+			// Create Cast to UNarrativeAbilitySystemComponent
+			UK2Node_DynamicCast* CastNode = NewObject<UK2Node_DynamicCast>(EventGraph);
+			CastNode->TargetType = NarrativeASCClass;
+			EventGraph->AddNode(CastNode, false, false);
+			CastNode->CreateNewGuid();
+			CastNode->PostPlacedNewNode();
+			CastNode->AllocateDefaultPins();
+			CastNode->NodePosX = CurrentPosX + 400.0f;
+			CastNode->NodePosY = CurrentPosY + 200.0f;
+
+			// Wire GetASC.ReturnValue → Cast.Object
+			UEdGraphPin* ASCOutPin = GetASCNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+			UEdGraphPin* CastInPin = CastNode->GetCastSourcePin();
+			if (ASCOutPin && CastInPin)
+			{
+				ASCOutPin->MakeLinkTo(CastInPin);
+			}
+
+			SourceASCPin = CastNode->GetCastResultPin();
+			LogGeneration(FString::Printf(TEXT("    Created ASC resolution chain with cast for %s"), *Binding.Source));
+		}
+		else
+		{
+			// Variable lookup - assume already typed correctly
+			// For now, log that manual variable connection is needed
+			LogGeneration(FString::Printf(TEXT("    [W_DELEGATE_VARIABLE_SOURCE] Source '%s' requires manual variable connection"),
+				*Binding.Source));
+		}
+
+		// 5. Create delegate reference for Add/Remove nodes
+		FMemberReference DelegateRef;
+		DelegateRef.SetExternalMember(FName(*Binding.Delegate), NarrativeASCClass);
+
+		// === ACTIVATE PATH ===
+
+		// 6. CreateDelegate_A for ActivateAbility path
+		UK2Node_CreateDelegate* CreateDelegateA = NewObject<UK2Node_CreateDelegate>(EventGraph);
+		CreateDelegateA->SetFunction(FName(*Binding.Handler));
+		EventGraph->AddNode(CreateDelegateA, false, false);
+		CreateDelegateA->CreateNewGuid();
+		CreateDelegateA->PostPlacedNewNode();
+		CreateDelegateA->AllocateDefaultPins();
+		CreateDelegateA->NodePosX = CurrentPosX + 600.0f;
+		CreateDelegateA->NodePosY = CurrentPosY + 100.0f;
+
+		// Wire CreateDelegate_A.PN_Self → Ability Self
+		UEdGraphPin* CreateASelfPin = CreateDelegateA->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+		if (SelfOutPin && CreateASelfPin)
+		{
+			SelfOutPin->MakeLinkTo(CreateASelfPin);
+		}
+
+		// 7. AddDelegate node
+		UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
+		AddDelegateNode->DelegateReference = DelegateRef;
+		EventGraph->AddNode(AddDelegateNode, false, false);
+		AddDelegateNode->CreateNewGuid();
+		AddDelegateNode->PostPlacedNewNode();
+		AddDelegateNode->AllocateDefaultPins();
+		AddDelegateNode->NodePosX = CurrentPosX + 800.0f;
+		AddDelegateNode->NodePosY = CurrentPosY + 100.0f;
+
+		// Wire CreateDelegate_A.OutputDelegate → AddDelegate.Delegate
+		UEdGraphPin* DelegateAOut = CreateDelegateA->FindPin(TEXT("OutputDelegate"), EGPD_Output);
+		UEdGraphPin* AddDelegateIn = AddDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
+		if (DelegateAOut && AddDelegateIn)
+		{
+			DelegateAOut->MakeLinkTo(AddDelegateIn);
+		}
+
+		// Wire SourceASC → AddDelegate.PN_Self (Target)
+		UEdGraphPin* AddSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+		if (SourceASCPin && AddSelfPin)
+		{
+			SourceASCPin->MakeLinkTo(AddSelfPin);
+		}
+
+		AddDelegateNodes.Add(AddDelegateNode);
+
+		// === END PATH ===
+
+		// 8. CreateDelegate_B for EndAbility path (separate node, same function)
+		UK2Node_CreateDelegate* CreateDelegateB = NewObject<UK2Node_CreateDelegate>(EventGraph);
+		CreateDelegateB->SetFunction(FName(*Binding.Handler));
+		EventGraph->AddNode(CreateDelegateB, false, false);
+		CreateDelegateB->CreateNewGuid();
+		CreateDelegateB->PostPlacedNewNode();
+		CreateDelegateB->AllocateDefaultPins();
+		CreateDelegateB->NodePosX = CurrentPosX + 600.0f;
+		CreateDelegateB->NodePosY = CurrentPosY + 400.0f;
+
+		// Wire CreateDelegate_B.PN_Self → Ability Self
+		UEdGraphPin* CreateBSelfPin = CreateDelegateB->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+		if (SelfOutPin && CreateBSelfPin)
+		{
+			SelfOutPin->MakeLinkTo(CreateBSelfPin);
+		}
+
+		// 9. RemoveDelegate node
+		UK2Node_RemoveDelegate* RemoveDelegateNode = NewObject<UK2Node_RemoveDelegate>(EventGraph);
+		RemoveDelegateNode->DelegateReference = DelegateRef;
+		EventGraph->AddNode(RemoveDelegateNode, false, false);
+		RemoveDelegateNode->CreateNewGuid();
+		RemoveDelegateNode->PostPlacedNewNode();
+		RemoveDelegateNode->AllocateDefaultPins();
+		RemoveDelegateNode->NodePosX = CurrentPosX + 800.0f;
+		RemoveDelegateNode->NodePosY = CurrentPosY + 400.0f;
+
+		// Wire CreateDelegate_B.OutputDelegate → RemoveDelegate.Delegate
+		UEdGraphPin* DelegateBOut = CreateDelegateB->FindPin(TEXT("OutputDelegate"), EGPD_Output);
+		UEdGraphPin* RemoveDelegateIn = RemoveDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
+		if (DelegateBOut && RemoveDelegateIn)
+		{
+			DelegateBOut->MakeLinkTo(RemoveDelegateIn);
+		}
+
+		// Wire SourceASC → RemoveDelegate.PN_Self (Target)
+		UEdGraphPin* RemoveSelfPin = RemoveDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+		if (SourceASCPin && RemoveSelfPin)
+		{
+			SourceASCPin->MakeLinkTo(RemoveSelfPin);
+		}
+
+		RemoveDelegateNodes.Add(RemoveDelegateNode);
+
+		LogGeneration(FString::Printf(TEXT("    Created delegate bind/unbind nodes for %s.%s -> %s"),
 			*Binding.Source, *Binding.Delegate, *Binding.Handler));
 
+		CurrentPosY += 600.0f;
 		NodesGenerated++;
+	}
+
+	// 10. Wire AddDelegate nodes into ActivateAbility exec flow
+	if (AddDelegateNodes.Num() > 0)
+	{
+		UK2Node_Event* ActivateEvent = nullptr;
+		for (UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+			{
+				FString EventName = EventNode->GetFunctionName().ToString();
+				if (EventName.Contains(TEXT("ActivateAbility")))
+				{
+					ActivateEvent = EventNode;
+					break;
+				}
+			}
+		}
+
+		if (ActivateEvent)
+		{
+			// Find the last node in the ActivateAbility chain
+			UEdGraphPin* LastExecPin = ActivateEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+			// Follow exec chain to find the end
+			while (LastExecPin && LastExecPin->LinkedTo.Num() > 0)
+			{
+				UEdGraphNode* NextNode = LastExecPin->LinkedTo[0]->GetOwningNode();
+				UEdGraphPin* NextExecOut = NextNode->FindPin(UEdGraphSchema_K2::PN_Then);
+				if (NextExecOut && NextExecOut->LinkedTo.Num() > 0)
+				{
+					LastExecPin = NextExecOut;
+				}
+				else
+				{
+					LastExecPin = NextExecOut;
+					break;
+				}
+			}
+
+			// Chain AddDelegate nodes
+			for (UK2Node_AddDelegate* AddNode : AddDelegateNodes)
+			{
+				if (LastExecPin)
+				{
+					UEdGraphPin* AddExecIn = AddNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+					if (AddExecIn)
+					{
+						LastExecPin->MakeLinkTo(AddExecIn);
+						LastExecPin = AddNode->FindPin(UEdGraphSchema_K2::PN_Then);
+					}
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Wired %d AddDelegate nodes into ActivateAbility chain"), AddDelegateNodes.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [W_DELEGATE_NO_ACTIVATE] ActivateAbility event not found - manual exec wiring required"));
+		}
+	}
+
+	// 11. Wire RemoveDelegate nodes into OnEndAbility exec flow
+	if (RemoveDelegateNodes.Num() > 0)
+	{
+		UK2Node_Event* EndAbilityEvent = nullptr;
+		for (UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+			{
+				FString EventName = EventNode->GetFunctionName().ToString();
+				if (EventName.Contains(TEXT("OnEndAbility")) || EventName.Contains(TEXT("EndAbility")))
+				{
+					EndAbilityEvent = EventNode;
+					break;
+				}
+			}
+		}
+
+		if (EndAbilityEvent)
+		{
+			UEdGraphPin* LastExecPin = EndAbilityEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+			// Chain RemoveDelegate nodes at the START of EndAbility (cleanup first)
+			for (UK2Node_RemoveDelegate* RemoveNode : RemoveDelegateNodes)
+			{
+				if (LastExecPin)
+				{
+					// Save existing connection
+					TArray<UEdGraphPin*> ExistingConnections = LastExecPin->LinkedTo;
+
+					// Break existing connections
+					LastExecPin->BreakAllPinLinks();
+
+					// Wire to RemoveDelegate
+					UEdGraphPin* RemoveExecIn = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+					if (RemoveExecIn)
+					{
+						LastExecPin->MakeLinkTo(RemoveExecIn);
+						LastExecPin = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Then);
+					}
+
+					// Restore connections to RemoveDelegate's Then pin
+					if (LastExecPin && ExistingConnections.Num() > 0)
+					{
+						for (UEdGraphPin* ExistingPin : ExistingConnections)
+						{
+							LastExecPin->MakeLinkTo(ExistingPin);
+						}
+					}
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Wired %d RemoveDelegate nodes into OnEndAbility chain"), RemoveDelegateNodes.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [W_DELEGATE_NO_END] OnEndAbility event not found - manual exec wiring required"));
+		}
 	}
 
 	if (NodesGenerated > 0)
 	{
-		LogGeneration(FString::Printf(TEXT("  Generated %d delegate handler events (manual binding setup may be required)"), NodesGenerated));
+		LogGeneration(FString::Printf(TEXT("  DELEGATE_BIND: Generated %d complete delegate binding chains"), NodesGenerated));
 	}
 
 	return NodesGenerated;

@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 4190,
-	"VersionName": "4.19",
+	"Version": 4210,
+	"VersionName": "4.21",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.19: ActorComponentBlueprintGenerator.",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.21: Delegate Binding Automation.",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",

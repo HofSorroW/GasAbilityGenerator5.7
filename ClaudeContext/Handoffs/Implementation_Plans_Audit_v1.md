@@ -1576,8 +1576,8 @@ Requires module additions to `GasAbilityGenerator.Build.cs`:
 
 ## 9. Delegate Binding Automation (P2.1)
 
-**Status:** PENDING AUDIT
-**Audit Status:** Research complete, awaiting GPT audit
+**Status:** APPROVED
+**Audit Status:** Claude-GPT dual audit PASSED (2026-01-21)
 
 ### Overview
 Automate multicast delegate binding in GameplayAbility event graphs. Enables reactive abilities that respond to OnDied, OnDamagedBy, OnAttributeChanged, etc. without manual Blueprint wiring.
@@ -1598,14 +1598,16 @@ This creates ~8-12 nodes per delegate binding, which cannot be generated from ma
 
 ### Research Summary
 
-#### Narrative Pro Delegates (NarrativeAbilitySystemComponent.h)
+#### Narrative Pro Delegates (NarrativeAbilitySystemComponent.h:56-59)
 
-| Delegate | Signature | Property |
-|----------|-----------|----------|
-| `FOnDied` | `(AActor*, UNarrativeAbilitySystemComponent*)` | `OnDied` |
-| `FOnHealedBy` | `(UNarrativeAbilitySystemComponent*, float, FGameplayEffectSpec)` | `OnHealedBy` |
-| `FOnDamagedBy` | `(UNarrativeAbilitySystemComponent*, float, FGameplayEffectSpec)` | `OnDamagedBy` |
-| `FOnDealtDamage` | `(UNarrativeAbilitySystemComponent*, float, FGameplayEffectSpec)` | `OnDealtDamage` |
+| Delegate | Signature (exact from header) | Property |
+|----------|------------------------------|----------|
+| `FOnDied` | `(AActor* KilledActor, UNarrativeAbilitySystemComponent* KilledActorASC)` | `OnDied` |
+| `FOnHealedBy` | `(UNarrativeAbilitySystemComponent* Healer, const float Amount, const FGameplayEffectSpec& Spec)` | `OnHealedBy` |
+| `FOnDamagedBy` | `(UNarrativeAbilitySystemComponent* DamagerCauserASC, const float Damage, const FGameplayEffectSpec& Spec)` | `OnDamagedBy` |
+| `FOnDealtDamage` | `(UNarrativeAbilitySystemComponent* DamagedASC, const float Damage, const FGameplayEffectSpec& Spec)` | `OnDealtDamage` |
+
+**Critical:** `const float` and `const FGameplayEffectSpec&` - affects Blueprint pin generation.
 
 #### GAS Core Delegates (AbilitySystemComponent.h)
 
@@ -1687,12 +1689,13 @@ gameplay_abilities:
 
 ### Source Resolution
 
-| Source Value | Resolution |
-|--------------|------------|
-| `OwnerASC` | `GetAbilitySystemComponentFromActorInfo(GetOwningActorFromActorInfo())` |
-| `PlayerASC` | `GetAbilitySystemComponentFromActorInfo(GetAvatarActorFromActorInfo())` |
-| `TargetASC` | Variable lookup from `FatherASC` or similar |
-| `{VariableName}` | Lookup variable by name, must be UObject subtype |
+| Source Value | Resolution | Cast Required |
+|--------------|------------|---------------|
+| `OwnerASC` | `GetAbilitySystemComponentFromActorInfo(GetOwningActorFromActorInfo())` | **YES** → `UNarrativeAbilitySystemComponent` |
+| `PlayerASC` | `GetAbilitySystemComponentFromActorInfo(GetAvatarActorFromActorInfo())` | **YES** → `UNarrativeAbilitySystemComponent` |
+| `{VariableName}` | Variable lookup by name | Only if variable type is base `UAbilitySystemComponent` |
+
+**Critical:** `GetAbilitySystemComponentFromActorInfo()` returns `UAbilitySystemComponent*`, but Narrative Pro delegates are on `UNarrativeAbilitySystemComponent`. Cast is mandatory for `OwnerASC`/`PlayerASC` keywords.
 
 ### Implementation Phases
 
@@ -1830,6 +1833,19 @@ static UK2Node_CustomEvent* CreateCustomEventFromDelegateSignature(
 
 #### Phase 4: Create Delegate Binding Nodes
 
+**Architecture Decision (Audit-Approved):** Use TWO CreateDelegate nodes per binding - one for ActivateAbility path, one for EndAbility path. Do NOT share delegate outputs across exec paths.
+
+**Node Wiring Specification:**
+
+| Node | Pin | Wire To |
+|------|-----|---------|
+| `CreateDelegate_A.PN_Self` | Ability Self (handler owner) |
+| `CreateDelegate_A.OutputDelegate` | `AddDelegate.Delegate` |
+| `AddDelegate.PN_Self` | Source ASC (delegate owner) |
+| `CreateDelegate_B.PN_Self` | Ability Self (handler owner) |
+| `CreateDelegate_B.OutputDelegate` | `RemoveDelegate.Delegate` |
+| `RemoveDelegate.PN_Self` | Source ASC (delegate owner) |
+
 ```cpp
 // In event graph generation, for each delegate binding:
 
@@ -1841,70 +1857,133 @@ static void CreateDelegateBindingNodes(
     FVector2D& CurrentPos)
 {
     // 1. Resolve source class for delegate property lookup
-    UClass* SourceClass = UNarrativeAbilitySystemComponent::StaticClass();  // Default
+    UClass* SourceClass = UNarrativeAbilitySystemComponent::StaticClass();
 
     // 2. Get delegate signature
     UFunction* DelegateSignature = GetDelegateSignature(Binding.Delegate, SourceClass);
     if (!DelegateSignature)
     {
-        UE_LOG(LogGasAbilityGenerator, Warning,
-            TEXT("[W_DELEGATE_NOT_FOUND] Delegate '%s' not found on %s"),
+        UE_LOG(LogGasAbilityGenerator, Error,
+            TEXT("[E_DELEGATE_NOT_FOUND] Delegate '%s' not found on %s"),
             *Binding.Delegate, *SourceClass->GetName());
         return;
     }
 
-    // 3. Create Custom Event with matching signature (if not already exists)
+    // 3. Create Custom Event with matching signature
     UK2Node_CustomEvent* HandlerEvent = FindOrCreateCustomEvent(
         EventGraph, Binding.Handler, DelegateSignature, CurrentPos);
     NodeMap.Add(Binding.Handler, HandlerEvent);
     CurrentPos.Y += 200.0f;
 
-    // 4. Create UK2Node_CreateDelegate to bind handler to delegate type
-    UK2Node_CreateDelegate* CreateDelegateNode = NewObject<UK2Node_CreateDelegate>(EventGraph);
-    CreateDelegateNode->SetFunction(FName(*Binding.Handler));
-    EventGraph->AddNode(CreateDelegateNode, false, false);
-    CreateDelegateNode->CreateNewGuid();
-    CreateDelegateNode->PostPlacedNewNode();
-    CreateDelegateNode->AllocateDefaultPins();
-    CreateDelegateNode->NodePosX = CurrentPos.X + 300.0f;
-    CreateDelegateNode->NodePosY = CurrentPos.Y;
-    NodeMap.Add(Binding.Id + TEXT("_CreateDelegate"), CreateDelegateNode);
+    // 4. Resolve source ASC object (with cast if needed)
+    UK2Node* SourceASCNode = nullptr;
+    UEdGraphPin* SourceASCPin = nullptr;
+    bool bNeedsCast = (Binding.Source == TEXT("OwnerASC") || Binding.Source == TEXT("PlayerASC"));
 
-    // 5. Create UK2Node_AddDelegate for binding in ActivateAbility
+    if (bNeedsCast)
+    {
+        // Create GetAbilitySystemComponentFromActorInfo → Cast to UNarrativeAbilitySystemComponent
+        UK2Node_CallFunction* GetASCNode = CreateGetASCFromActorInfoNode(EventGraph, Binding.Source, CurrentPos);
+
+        UK2Node_DynamicCast* CastNode = NewObject<UK2Node_DynamicCast>(EventGraph);
+        CastNode->TargetType = UNarrativeAbilitySystemComponent::StaticClass();
+        EventGraph->AddNode(CastNode, false, false);
+        CastNode->CreateNewGuid();
+        CastNode->PostPlacedNewNode();
+        CastNode->AllocateDefaultPins();
+
+        // Wire GetASC.ReturnValue → Cast.Object
+        UEdGraphPin* ASCOutPin = GetASCNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+        UEdGraphPin* CastInPin = CastNode->GetCastSourcePin();
+        if (ASCOutPin && CastInPin) ASCOutPin->MakeLinkTo(CastInPin);
+
+        SourceASCNode = CastNode;
+        SourceASCPin = CastNode->GetCastResultPin();
+        NodeMap.Add(Binding.Id + TEXT("_Cast"), CastNode);
+    }
+    else
+    {
+        // Variable lookup - assume already typed correctly
+        SourceASCNode = CreateVariableGetNode(EventGraph, Binding.Source, CurrentPos);
+        SourceASCPin = SourceASCNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+    }
+
+    // 5. Get Self reference for CreateDelegate nodes
+    UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);
+    EventGraph->AddNode(SelfNode, false, false);
+    SelfNode->CreateNewGuid();
+    SelfNode->PostPlacedNewNode();
+    SelfNode->AllocateDefaultPins();
+    UEdGraphPin* SelfPin = SelfNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+    NodeMap.Add(Binding.Id + TEXT("_Self"), SelfNode);
+
+    // === ACTIVATE PATH ===
+
+    // 6. CreateDelegate_A for ActivateAbility path
+    UK2Node_CreateDelegate* CreateDelegateA = NewObject<UK2Node_CreateDelegate>(EventGraph);
+    CreateDelegateA->SetFunction(FName(*Binding.Handler));
+    EventGraph->AddNode(CreateDelegateA, false, false);
+    CreateDelegateA->CreateNewGuid();
+    CreateDelegateA->PostPlacedNewNode();
+    CreateDelegateA->AllocateDefaultPins();
+    NodeMap.Add(Binding.Id + TEXT("_CreateDelegate_A"), CreateDelegateA);
+
+    // Wire CreateDelegate_A.PN_Self → Ability Self
+    UEdGraphPin* CreateASelfPin = CreateDelegateA->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+    if (SelfPin && CreateASelfPin) SelfPin->MakeLinkTo(CreateASelfPin);
+
+    // 7. AddDelegate node
     UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
-
-    // Set delegate reference
     FMemberReference DelegateRef;
     DelegateRef.SetExternalMember(FName(*Binding.Delegate), SourceClass);
     AddDelegateNode->DelegateReference = DelegateRef;
-
     EventGraph->AddNode(AddDelegateNode, false, false);
     AddDelegateNode->CreateNewGuid();
     AddDelegateNode->PostPlacedNewNode();
     AddDelegateNode->AllocateDefaultPins();
-    AddDelegateNode->NodePosX = CurrentPos.X + 600.0f;
-    AddDelegateNode->NodePosY = CurrentPos.Y;
     NodeMap.Add(Binding.Id + TEXT("_AddDelegate"), AddDelegateNode);
 
-    // 6. Connect CreateDelegate output to AddDelegate input
-    UEdGraphPin* DelegateOutPin = CreateDelegateNode->FindPin(TEXT("OutputDelegate"), EGPD_Output);
-    UEdGraphPin* DelegateInPin = AddDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
-    if (DelegateOutPin && DelegateInPin)
-    {
-        DelegateOutPin->MakeLinkTo(DelegateInPin);
-    }
+    // Wire CreateDelegate_A.OutputDelegate → AddDelegate.Delegate
+    UEdGraphPin* DelegateAOut = CreateDelegateA->FindPin(TEXT("OutputDelegate"), EGPD_Output);
+    UEdGraphPin* AddDelegateIn = AddDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
+    if (DelegateAOut && AddDelegateIn) DelegateAOut->MakeLinkTo(AddDelegateIn);
 
-    // 7. Create UK2Node_RemoveDelegate for cleanup in EndAbility
+    // Wire SourceASC → AddDelegate.PN_Self (Target)
+    UEdGraphPin* AddSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+    if (SourceASCPin && AddSelfPin) SourceASCPin->MakeLinkTo(AddSelfPin);
+
+    // === END PATH ===
+
+    // 8. CreateDelegate_B for EndAbility path (separate node, same function)
+    UK2Node_CreateDelegate* CreateDelegateB = NewObject<UK2Node_CreateDelegate>(EventGraph);
+    CreateDelegateB->SetFunction(FName(*Binding.Handler));
+    EventGraph->AddNode(CreateDelegateB, false, false);
+    CreateDelegateB->CreateNewGuid();
+    CreateDelegateB->PostPlacedNewNode();
+    CreateDelegateB->AllocateDefaultPins();
+    NodeMap.Add(Binding.Id + TEXT("_CreateDelegate_B"), CreateDelegateB);
+
+    // Wire CreateDelegate_B.PN_Self → Ability Self
+    UEdGraphPin* CreateBSelfPin = CreateDelegateB->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+    if (SelfPin && CreateBSelfPin) SelfPin->MakeLinkTo(CreateBSelfPin);
+
+    // 9. RemoveDelegate node
     UK2Node_RemoveDelegate* RemoveDelegateNode = NewObject<UK2Node_RemoveDelegate>(EventGraph);
     RemoveDelegateNode->DelegateReference = DelegateRef;
-
     EventGraph->AddNode(RemoveDelegateNode, false, false);
     RemoveDelegateNode->CreateNewGuid();
     RemoveDelegateNode->PostPlacedNewNode();
     RemoveDelegateNode->AllocateDefaultPins();
-    RemoveDelegateNode->NodePosX = CurrentPos.X + 600.0f;
-    RemoveDelegateNode->NodePosY = CurrentPos.Y + 400.0f;
     NodeMap.Add(Binding.Id + TEXT("_RemoveDelegate"), RemoveDelegateNode);
+
+    // Wire CreateDelegate_B.OutputDelegate → RemoveDelegate.Delegate
+    UEdGraphPin* DelegateBOut = CreateDelegateB->FindPin(TEXT("OutputDelegate"), EGPD_Output);
+    UEdGraphPin* RemoveDelegateIn = RemoveDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
+    if (DelegateBOut && RemoveDelegateIn) DelegateBOut->MakeLinkTo(RemoveDelegateIn);
+
+    // Wire SourceASC → RemoveDelegate.PN_Self (Target)
+    UEdGraphPin* RemoveSelfPin = RemoveDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+    if (SourceASCPin && RemoveSelfPin) SourceASCPin->MakeLinkTo(RemoveSelfPin);
 
     CurrentPos.Y += 600.0f;
 }
@@ -1971,7 +2050,11 @@ for (const FManifestDelegateBindingDefinition& Binding : Definition.DelegateBind
 | `E_DELEGATE_NOT_FOUND` | Delegate property not found on source class | FAIL |
 | `E_DELEGATE_HANDLER_EXISTS` | Handler event name already exists (conflict) | FAIL |
 | `E_DELEGATE_SOURCE_INVALID` | Source variable not found or wrong type | FAIL |
-| `W_DELEGATE_SIGNATURE_MISMATCH` | Handler params don't match delegate signature | WARN |
+| `E_DELEGATE_SIGNATURE_MISMATCH` | Handler params don't match delegate signature | FAIL |
+| `E_DELEGATE_SELF_PIN_MISSING` | Cannot wire PN_Self pin on delegate node | FAIL |
+| `E_DELEGATE_CAST_FAILED` | Cast to UNarrativeAbilitySystemComponent failed | FAIL |
+
+**Severity Rationale:** Signature mismatch is FAIL (not WARN) because Blueprint compilation will fail anyway. Early detection provides clearer error messages.
 
 ### Breadcrumb Logging
 
@@ -2059,7 +2142,7 @@ Requires module additions to `GasAbilityGenerator.Build.cs`:
 | 6 | (moved to Section 9) | - | - | - | - | - |
 | 7 | Split Generators.cpp | HIGH | HIGH | No | ~17 | Pending |
 | 8 | ActorComponent Generator | HIGH | MEDIUM | No | 3 | ✅ v4.19 |
-| 9 | Delegate Binding Automation | HIGH | MEDIUM | No | 3 | ⏳ Audit |
+| 9 | Delegate Binding Automation | HIGH | MEDIUM | No | 3 | ✅ Approved |
 
 ---
 

@@ -813,25 +813,28 @@ struct FManifestVFXSpawnDefinition
 };
 
 /**
- * v4.13: Category C - P2.1 Delegate Binding Definition
- * Auto-generates delegate binding nodes (OnDied, OnDamagedBy, OnAttributeChanged).
+ * v4.21: Delegate Binding Definition for auto-wired multicast delegates
+ * Audit-approved: Claude-GPT dual audit 2026-01-21
+ * Supports: OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage (NarrativeAbilitySystemComponent)
  */
 struct FManifestDelegateBindingDefinition
 {
-	FString Delegate;              // "OnDied", "OnDamagedBy", "OnAttributeChanged"
-	FString Source;                // "OwnerASC", "PlayerASC", "Self"
-	FString Attribute;             // For OnAttributeChanged: attribute name
-	FString Handler;               // Custom event handler name
-	bool bUnbindOnEnd = true;      // Remove binding when ability ends
+	FString Id;                    // Unique ID for this binding (for NodeMap tracking)
+	FString Delegate;              // "OnDied", "OnDamagedBy", "OnHealedBy", "OnDealtDamage"
+	FString Source;                // "OwnerASC", "PlayerASC", or variable name
+	FString Attribute;             // For OnAttributeChanged: attribute name (future)
+	FString Handler;               // Custom event handler name to create/bind
+	bool bUnbindOnEnd = true;      // Remove binding when ability ends (default: true)
 
 	/** Compute hash for change detection */
 	uint64 ComputeHash() const
 	{
-		uint64 Hash = GetTypeHash(Delegate);
-		Hash ^= GetTypeHash(Source) << 4;
-		Hash ^= GetTypeHash(Attribute) << 8;
-		Hash ^= GetTypeHash(Handler) << 12;
-		Hash ^= (bUnbindOnEnd ? 1ULL : 0ULL) << 16;
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(Delegate) << 4;
+		Hash ^= GetTypeHash(Source) << 8;
+		Hash ^= GetTypeHash(Attribute) << 12;
+		Hash ^= GetTypeHash(Handler) << 16;
+		Hash ^= (bUnbindOnEnd ? 1ULL : 0ULL) << 20;
 		return Hash;
 	}
 };
