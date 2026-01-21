@@ -1,4 +1,4 @@
-# LOCKED_SYSTEMS.md (v4.12.5)
+# LOCKED_SYSTEMS.md (v4.16)
 
 ## Purpose
 
@@ -122,6 +122,37 @@ Use this for traceability during refactors - code can move, but contracts must r
 
 ---
 
+## Contract 10 — Blueprint Compile Gate
+
+| Component | File | Function/Class |
+|-----------|------|----------------|
+| CompileBlueprint pattern | `GasAbilityGeneratorGenerators.cpp` | All 12 BP generator `Generate()` functions |
+| FCompilerResultsLog | UE5 Engine | `FKismetEditorUtilities::CompileBlueprint()` |
+| WBP compile fix | `GasAbilityGeneratorGenerators.cpp:4029-4049` | `FWidgetBlueprintGenerator::Generate()` - MISSING CompileBlueprint |
+| GA restructure | `GasAbilityGeneratorGenerators.cpp:2608-2722` | `FGameplayAbilityGenerator::Generate()` - checkpoint saves |
+| GenerateEventGraph gate | `GasAbilityGeneratorGenerators.cpp:8744-8753` | `FEventGraphGenerator::GenerateEventGraph()` - returns true on errors |
+| MAKE_WITH_CONVERSION | UE5 Engine | `CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE` must fail |
+
+**Blueprint Generators (12 total, all require compile validation):**
+- `FGameplayAbilityGenerator` - lines 2608-2722
+- `FGameplayEffectGenerator` - GE_ assets
+- `FActorBlueprintGenerator` - BP_ assets
+- `FWidgetBlueprintGenerator` - WBP_ assets (MISSING compile call)
+- `FDialogueBlueprintGenerator` - DBP_ assets
+- `FEquippableItemGenerator` - EI_ assets
+- `FActivityGenerator` - BPA_ assets
+- `FNarrativeEventGenerator` - NE_ assets
+- `FGameplayCueGenerator` - GC_ assets
+- `FGoalItemGenerator` - Goal_ assets
+- `FQuestGenerator` - Quest_ assets
+- `FAnimationNotifyGenerator` - NAS_ assets
+
+**Invariant:** `SavePackage()` may only be called ONCE per asset, and only after `FCompilerResultsLog.NumErrors == 0`
+
+**Reference:** `ClaudeContext/Handoffs/Graph_Validation_Audit_v1.md`, `ClaudeContext/Handoffs/Graph_Validation_Implementation_v4.16.md`
+
+---
+
 ## Refactor Guidelines
 
 When moving/renaming files:
@@ -142,3 +173,4 @@ When moving/renaming files:
 | v4.12.5 | 2026-01-18 | Initial creation mapping contracts to implementations |
 | v4.12.5 | 2026-01-18 | Added IsForceMode() anchors to Contract 3 |
 | v4.12.5 | 2026-01-18 | Updated paths after Locked/ folder restructure |
+| v4.16 | 2026-01-21 | Added Contract 10 — Blueprint Compile Gate (GPT audit D-011) |

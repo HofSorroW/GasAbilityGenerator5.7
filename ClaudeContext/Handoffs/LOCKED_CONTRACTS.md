@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.12.5)
+# LOCKED_CONTRACTS.md (v4.16)
 
 ## Purpose
 
@@ -153,6 +153,30 @@ In dry-run mode, the system **MUST NOT** persist changes:
 
 ---
 
+## LOCKED CONTRACT 10 — Blueprint Compile Gate (v4.16 Graph Validation)
+
+### Invariant
+- Every Blueprint-generating generator must call `CompileBlueprint()` with `FCompilerResultsLog`
+- If `FCompilerResultsLog.NumErrors > 0`, the asset **MUST NOT** be saved
+- Each Blueprint generator may call `SavePackage` **at most once**, and only after passing validation gates
+
+### Forbidden
+- Saving a Blueprint without compile validation
+- Checkpoint saves (multiple `SavePackage` calls per asset)
+- Ignoring compile errors and proceeding to save
+- Treating `CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE` as warning (must be hard fail)
+
+### Allowed
+- Multiple `CompileBlueprint()` calls if intermediate compiles are needed for CDO access
+- Collecting all errors before failing (fail after enumeration, not on first error)
+
+### Reference
+- Audit: `ClaudeContext/Handoffs/Graph_Validation_Audit_v1.md`
+- Implementation: `ClaudeContext/Handoffs/Graph_Validation_Implementation_v4.16.md`
+- Decisions: D-006, D-008, D-009, D-010, D-011
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -172,3 +196,4 @@ Any change that touches a LOCKED implementation must:
 | Version | Date | Changes |
 |---------|------|---------|
 | v4.12.5 | 2026-01-18 | Initial creation after GPT validation session |
+| v4.16 | 2026-01-21 | Added Contract 10 — Blueprint Compile Gate (GPT audit) |
