@@ -855,6 +855,18 @@ gameplay_abilities:
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
         - Cooldown.Father.FormChange
+    # v4.21: Delegate bindings - track damage in default form
+    delegate_bindings:
+      - id: BindCrawlerDamageTaken
+        delegate: OnDamagedBy                    # Fires when Father takes damage
+        source: OwnerASC                         # Father's ASC
+        handler: HandleCrawlerDamageTaken        # Custom Event for damage tracking/UI
+        # Handler params: DamagerCauserASC, Damage, Spec
+      - id: BindCrawlerDamageDealt
+        delegate: OnDealtDamage                  # Fires when Father deals damage
+        source: OwnerASC                         # Father's ASC
+        handler: HandleCrawlerDamageDealt        # Custom Event for combat tracking
+        # Handler params: DamagedASC, Damage, Spec - Ultimate charge accumulation
     variables:
       - name: FatherRef
         type: Object
@@ -1281,10 +1293,25 @@ gameplay_abilities:
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
         - Cooldown.Father.FormChange
+    # v4.21: Delegate bindings - auto-bind in ActivateAbility, unbind in EndAbility
+    delegate_bindings:
+      - id: BindArmorDamage
+        delegate: OnDamagedBy                    # Fires when Father takes damage
+        source: OwnerASC                         # Father's ASC (keyword)
+        handler: HandleArmorDamageReceived       # Custom Event (auto-created with signature)
+        # Handler params: DamagerCauserASC, Damage, Spec
+      - id: BindFatherDeath
+        delegate: OnDied                         # Fires when Father dies
+        source: FatherASC                        # Variable source (tests variable resolution)
+        handler: HandleFatherDied                # Custom Event (auto-created with signature)
+        # Handler params: KilledActor, KilledActorASC
     variables:
       - name: FatherRef
         type: Object
         class: BP_FatherCompanion
+      - name: FatherASC
+        type: Object
+        class: NarrativeAbilitySystemComponent   # ASC variable for delegate binding source
       - name: PlayerRef
         type: Object
         class: NarrativePlayerCharacter
@@ -2405,6 +2432,18 @@ gameplay_abilities:
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
         - Cooldown.Father.FormChange
+    # v4.21: Delegate bindings - fires when merged Father deals proximity damage
+    delegate_bindings:
+      - id: BindSymbioteDamageDealt
+        delegate: OnDealtDamage                  # Fires when Father deals damage
+        source: OwnerASC                         # Father's ASC
+        handler: HandleSymbioteDamageDealt       # Custom Event (auto-created with signature)
+        # Handler params: DamagedASC, Damage, Spec
+      - id: BindSymbioteHealing
+        delegate: OnHealedBy                     # Fires when Father is healed (symbiote regen)
+        source: OwnerASC                         # Father's ASC
+        handler: HandleSymbioteHealing           # Custom Event (auto-created with signature)
+        # Handler params: Healer, Amount, Spec
     variables:
       - name: FatherRef
         type: Object
@@ -3901,6 +3940,13 @@ gameplay_abilities:
         - Father.Dome.Active
       # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
       # Equipment granting already ensures this ability is only available in Armor form
+    # v4.21: Delegate bindings - fires when player takes damage while dome is active
+    delegate_bindings:
+      - id: BindDomeDamageAbsorption
+        delegate: OnDamagedBy                    # Fires when owner (player) takes damage
+        source: OwnerASC                         # Player's ASC (ability runs on player)
+        handler: HandleDomeDamageAbsorption      # Custom Event (auto-created with signature)
+        # Handler params: DamagerCauserASC, Damage, Spec - use for dome absorption logic
     variables:
       - name: PlayerRef
         type: Object
@@ -4553,6 +4599,18 @@ gameplay_abilities:
       # Equipment granting already ensures this ability is only available in Exoskeleton form
       activation_blocked_tags:
         - Cooldown.Father.StealthField
+    # v4.21: Delegate bindings - break stealth on damage taken or dealt
+    delegate_bindings:
+      - id: BindStealthDamageBreak
+        delegate: OnDamagedBy                    # Fires when player takes damage
+        source: OwnerASC                         # Player's ASC (ability runs on player)
+        handler: HandleStealthDamageBreak        # Custom Event - ends ability on hit
+        # Handler params: DamagerCauserASC, Damage, Spec
+      - id: BindStealthAttackBreak
+        delegate: OnDealtDamage                  # Fires when player deals damage
+        source: OwnerASC                         # Player's ASC
+        handler: HandleStealthAttackBreak        # Custom Event - ends ability on attack
+        # Handler params: DamagedASC, Damage, Spec - stealth breaks on first hit
     variables:
       - name: PlayerRef
         type: Object

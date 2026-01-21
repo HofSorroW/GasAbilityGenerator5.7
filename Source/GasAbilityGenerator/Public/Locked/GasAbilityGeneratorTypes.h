@@ -840,6 +840,38 @@ struct FManifestDelegateBindingDefinition
 };
 
 /**
+ * v4.22: Attribute Binding Definition for AbilityTask-based attribute change monitoring
+ * Audit-approved: Claude-GPT dual audit 2026-01-22
+ * Uses: UAbilityTask_WaitAttributeChange (AbilityTask_WaitAttributeChange.h)
+ * Handler signature: No parameters (zero-param delegate FWaitAttributeChangeDelegate)
+ */
+struct FManifestAttributeBindingDefinition
+{
+	FString Id;                    // Unique ID for this binding
+	FString AttributeSet;          // AttributeSet class name (e.g., "NarrativeAttributeSet")
+	FString Attribute;             // Attribute property name (e.g., "Health")
+	FString Source;                // "OwnerASC", "PlayerASC", or variable name
+	FString Handler;               // Custom event handler name (no parameters)
+	bool bTriggerOnce = true;      // Default: true (per AbilityTask_WaitAttributeChange.h:50)
+	FString WithTag;               // Optional source tag filter
+	FString WithoutTag;            // Optional exclusion tag filter
+
+	/** Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Id);
+		Hash ^= GetTypeHash(AttributeSet) << 4;
+		Hash ^= GetTypeHash(Attribute) << 8;
+		Hash ^= GetTypeHash(Source) << 12;
+		Hash ^= GetTypeHash(Handler) << 16;
+		Hash ^= (bTriggerOnce ? 1ULL : 0ULL) << 20;
+		Hash ^= GetTypeHash(WithTag) << 24;
+		Hash ^= GetTypeHash(WithoutTag) << 28;
+		return Hash;
+	}
+};
+
+/**
  * Gameplay ability tag configuration
  */
 struct FManifestAbilityTagsDefinition
@@ -1123,6 +1155,9 @@ struct FManifestGameplayAbilityDefinition
 	TArray<FManifestVFXSpawnDefinition> VFXSpawns;         // P3.1: Auto-spawned Niagara systems
 	TArray<FManifestDelegateBindingDefinition> DelegateBindings;  // P2.1: Auto-bound delegates
 
+	// v4.22: Attribute change bindings via AbilityTask (Section 11)
+	TArray<FManifestAttributeBindingDefinition> AttributeBindings;  // AbilityTask-based attribute monitoring
+
 	// v4.14: Custom Blueprint functions (new functions, not overrides)
 	TArray<FManifestCustomFunctionDefinition> CustomFunctions;
 
@@ -1178,6 +1213,13 @@ struct FManifestGameplayAbilityDefinition
 		{
 			Hash ^= Del.ComputeHash();
 			Hash = (Hash << 13) | (Hash >> 51);
+		}
+
+		// v4.22: Attribute bindings
+		for (const auto& Attr : AttributeBindings)
+		{
+			Hash ^= Attr.ComputeHash();
+			Hash = (Hash << 14) | (Hash >> 50);
 		}
 
 		// v4.14: Custom functions

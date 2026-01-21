@@ -1147,11 +1147,13 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	bool bInCueTriggers = false;  // v4.13: Category C - P3.2
 	bool bInVFXSpawns = false;    // v4.13: Category C - P3.1
 	bool bInDelegateBindings = false;  // v4.13: Category C - P2.1
+	bool bInAttributeBindings = false;  // v4.22: Section 11 - Attribute Change Delegates
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestCueTriggerDefinition CurrentCueTrigger;   // v4.13: Category C
 	FManifestVFXSpawnDefinition CurrentVFXSpawn;       // v4.13: Category C
 	FManifestDelegateBindingDefinition CurrentDelegateBinding;  // v4.13: P2.1
+	FManifestAttributeBindingDefinition CurrentAttributeBinding;  // v4.22: Section 11
 
 	// Track which tag array we're currently parsing
 	enum class ECurrentTagArray { None, AbilityTags, CancelAbilitiesWithTag, ActivationOwnedTags, ActivationRequiredTags, ActivationBlockedTags };
@@ -1184,6 +1186,11 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
 			{
 				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+			}
+			// v4.22: Save pending attribute binding
+			if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+			{
+				CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
 			}
 			// v2.6.14: Prefix validation - only add if GA_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
@@ -1233,12 +1240,19 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 				CurrentDelegateBinding = FManifestDelegateBindingDefinition();
 			}
+			// v4.22: Save pending attribute binding
+			if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+			{
+				CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+				CurrentAttributeBinding = FManifestAttributeBindingDefinition();
+			}
 			bInVariables = false;
 			bInTags = false;
 			bInEventGraph = false;
 			bInCueTriggers = false;
 			bInVFXSpawns = false;
 			bInDelegateBindings = false;
+			bInAttributeBindings = false;
 			CurrentTagArray = ECurrentTagArray::None;
 
 			// Save current ability and start new one - v2.6.14: Prefix validation
@@ -1263,6 +1277,7 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			bInCueTriggers = false;
 			bInVFXSpawns = false;
 			bInDelegateBindings = false;
+			bInAttributeBindings = false;
 			CurrentTagArray = ECurrentTagArray::None;
 		}
 		else if (bInItem)
@@ -1536,6 +1551,40 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				bInEventGraph = false;
 				bInCueTriggers = false;
 				bInVFXSpawns = false;
+				bInAttributeBindings = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			// v4.22: Section 11 - attribute_bindings section (AbilityTask-based)
+			else if (TrimmedLine.Equals(TEXT("attribute_bindings:")) || TrimmedLine.StartsWith(TEXT("attribute_bindings:")))
+			{
+				// Save pending data from other sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+				{
+					CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+				}
+				if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+				{
+					CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+				}
+				if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+				{
+					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+				}
+				bInAttributeBindings = true;
+				bInVariables = false;
+				bInTags = false;
+				bInEventGraph = false;
+				bInCueTriggers = false;
+				bInVFXSpawns = false;
+				bInDelegateBindings = false;
 				CurrentTagArray = ECurrentTagArray::None;
 			}
 			// v4.14: Custom functions section (new Blueprint functions)
@@ -1562,12 +1611,18 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
 				}
+				if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+				{
+					CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+					CurrentAttributeBinding = FManifestAttributeBindingDefinition();
+				}
 				bInVariables = false;
 				bInTags = false;
 				bInEventGraph = false;
 				bInCueTriggers = false;
 				bInVFXSpawns = false;
 				bInDelegateBindings = false;
+				bInAttributeBindings = false;
 				CurrentTagArray = ECurrentTagArray::None;
 
 				// Parse custom functions subsection
@@ -1575,6 +1630,63 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				LineIndex++;
 				ParseCustomFunctions(Lines, LineIndex, CustomFunctionsIndent, CurrentDef.CustomFunctions);
 				continue;
+			}
+			else if (bInAttributeBindings)
+			{
+				// v4.22: Parse attribute binding items (AbilityTask-based)
+				if (TrimmedLine.StartsWith(TEXT("- id:")) || TrimmedLine.StartsWith(TEXT("- attribute:")) || TrimmedLine.StartsWith(TEXT("- handler:")))
+				{
+					// Save previous binding
+					if (!CurrentAttributeBinding.Attribute.IsEmpty() || !CurrentAttributeBinding.Id.IsEmpty())
+					{
+						CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+					}
+					CurrentAttributeBinding = FManifestAttributeBindingDefinition();
+					if (TrimmedLine.StartsWith(TEXT("- id:")))
+					{
+						CurrentAttributeBinding.Id = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- attribute:")))
+					{
+						CurrentAttributeBinding.Attribute = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else
+					{
+						CurrentAttributeBinding.Handler = GetLineValue(TrimmedLine.Mid(2));
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("id:")))
+				{
+					CurrentAttributeBinding.Id = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attribute_set:")))
+				{
+					CurrentAttributeBinding.AttributeSet = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("attribute:")))
+				{
+					CurrentAttributeBinding.Attribute = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("source:")))
+				{
+					CurrentAttributeBinding.Source = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("handler:")))
+				{
+					CurrentAttributeBinding.Handler = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("trigger_once:")))
+				{
+					CurrentAttributeBinding.bTriggerOnce = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("with_tag:")))
+				{
+					CurrentAttributeBinding.WithTag = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("without_tag:")))
+				{
+					CurrentAttributeBinding.WithoutTag = GetLineValue(TrimmedLine);
+				}
 			}
 			else if (bInDelegateBindings)
 			{
@@ -1760,6 +1872,11 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
 	{
 		CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+	}
+	// v4.22: Save pending attribute binding
+	if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+	{
+		CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
 	}
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
 	{

@@ -1,9 +1,58 @@
 # GasAbilityGenerator TODO Tracking
 
 **Created:** 2026-01-18
-**Updated:** 2026-01-21
-**Plugin Version:** v4.21.1
+**Updated:** 2026-01-22
+**Plugin Version:** v4.22
 **Status:** Consolidated tracking file for all pending tasks
+
+---
+
+## ✅ Recently Completed - Delegate Binding Extensions (v4.22)
+
+**Source:** `Handoffs/Delegate_Binding_Extensions_Spec_v1_1.md`
+**Audit:** Claude-GPT dual audit PASSED (2026-01-22)
+
+### Section 10: External ASC Binding (Actor→ASC Resolution)
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Actor Type Detection | Detect source variable type via `PinType.PinSubCategoryObject` | ✅ |
+| ASC Extraction | Insert `GetAbilitySystemComponent` node for Actor sources | ✅ |
+| NASC Cast | Auto-cast to `UNarrativeAbilitySystemComponent` after extraction | ✅ |
+| Source Type Validation | Error if explicit `source_type` conflicts with actual type | ✅ |
+
+**Node Generation Order:**
+```
+VariableGet(ActorVar) → GetAbilitySystemComponent(Actor) → Cast to NASC → AddDelegate
+```
+
+### Section 11: Attribute Change Delegates (AbilityTask Pattern)
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| AbilityTask Creation | `UK2Node_LatentAbilityCall` for `UAbilityTask_WaitAttributeChange` | ✅ |
+| Zero-Param Handler | CustomEvent with no parameters per `FWaitAttributeChangeDelegate` | ✅ |
+| Attribute Resolution | `AttributeSet` + `Attribute` → `FGameplayAttribute` | ✅ |
+| Automatic Lifecycle | Task manages unbind via `OnDestroy()` - no EndAbility nodes needed | ✅ |
+| TriggerOnce Support | Default `true` per factory signature | ✅ |
+| Tag Filters | Optional `with_tag` and `without_tag` support | ✅ |
+
+**Error Codes:**
+| Code | Severity | Description |
+|------|----------|-------------|
+| `E_ATTRIBUTE_SET_NOT_FOUND` | FAIL | AttributeSet class not found |
+| `E_ATTRIBUTE_NOT_FOUND` | FAIL | Attribute property not found on AttributeSet |
+| `E_TASK_FACTORY_REQUIRED` | FAIL | AbilityTask created outside official factory |
+
+**Key Technical Detail:**
+- `FDelegateHandle` is NOT Blueprint-serializable - AbilityTask pattern required
+- `FWaitAttributeChangeDelegate` is zero-param: `DECLARE_DYNAMIC_MULTICAST_DELEGATE()`
+
+**Files Modified:**
+- `GasAbilityGeneratorTypes.h` - Added `FManifestAttributeBindingDefinition` struct
+- `GasAbilityGeneratorParser.cpp` - Added `attribute_bindings:` section parsing
+- `GasAbilityGeneratorGenerators.cpp` - Added `GenerateAttributeBindingNodes()` function
+- `GasAbilityGeneratorGenerators.h` - Added function declaration
 
 ---
 
@@ -45,6 +94,26 @@
 - No guards modified - replaced incomplete stub with full implementation
 
 **Commit:** `4fcab76` feat(v4.21): Delegate Binding Automation [LOCKED-CHANGE-APPROVED]
+
+**Manifest Usage (v4.21.1) - 11 Delegate Bindings:**
+| Ability | Delegate | Source | Handler | Use Case |
+|---------|----------|--------|---------|----------|
+| GA_FatherCrawler | OnDamagedBy | OwnerASC | HandleCrawlerDamageTaken | Damage tracking/UI |
+| GA_FatherCrawler | OnDealtDamage | OwnerASC | HandleCrawlerDamageDealt | Ultimate charge |
+| GA_FatherArmor | OnDamagedBy | OwnerASC | HandleArmorDamageReceived | Damage feedback |
+| GA_FatherArmor | OnDied | FatherASC (var) | HandleFatherDied | Death cleanup |
+| GA_FatherSymbiote | OnDealtDamage | OwnerASC | HandleSymbioteDamageDealt | Proximity damage |
+| GA_FatherSymbiote | OnHealedBy | OwnerASC | HandleSymbioteHealing | Regen tracking |
+| GA_ProtectiveDome | OnDamagedBy | OwnerASC | HandleDomeDamageAbsorption | Dome absorption |
+| GA_StealthField | OnDamagedBy | OwnerASC | HandleStealthDamageBreak | Break on hit |
+| GA_StealthField | OnDealtDamage | OwnerASC | HandleStealthAttackBreak | Break on attack |
+
+**Delegate Coverage:**
+- All 4 Narrative Pro delegates used: OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage
+- OwnerASC keyword: 10 bindings
+- Variable source: 1 binding (FatherASC)
+- Player-owned abilities: GA_ProtectiveDome, GA_StealthField (3 bindings)
+- Father-owned abilities: GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote (8 bindings)
 
 ---
 
@@ -203,49 +272,6 @@
 | AutoBuildAndTest.ps1 path fixes | `Tools/AutoBuildAndTest.ps1` | 2026-01-18 |
 | Full sync-from-assets (Item abilities) | `ItemAssetSync.cpp` | 2026-01-18 |
 | Full sync-from-assets (Quest tasks) | `QuestAssetSync.cpp` | 2026-01-18 |
-
----
-
-## HIGH Priority - Delegate Binding Automation
-
-**Source:** `Generator_Roadmap_CategoryC_v1_0.md` (archived) - P2.1
-
-### Delegate Binding IR + Codegen
-
-**Goal:** Automate delegate binding for OnAttributeChange, OnDied, OnDamagedBy, etc.
-
-**Current Limitation:** Generator cannot create delegate binding nodes in Blueprint
-
-**Proposed Manifest Syntax:**
-```yaml
-gameplay_abilities:
-  - name: GA_FatherArmor
-    delegate_bindings:
-      - delegate: OnDied
-        source: OwnerASC
-        handler: HandleOwnerDied  # Custom Event name
-      - delegate: OnAttributeChanged
-        source: PlayerASC
-        attribute: Health
-        handler: HandleHealthChanged
-```
-
-**Required Implementation:**
-1. Add `FManifestDelegateBinding` struct to `GasAbilityGeneratorTypes.h`
-2. Add parser block for `delegate_bindings:` section in `GasAbilityGeneratorParser.cpp`
-3. Create Custom Event nodes for handlers in event graph generation
-4. Create BindToDelegate / AddDynamic nodes in ActivateAbility event
-5. Create Unbind nodes in EndAbility event
-6. Handle delegate signature matching (attribute, damage info, etc.)
-
-**Complexity:** HIGH - Requires new node type generation, delegate signature handling
-
-**Value:** HIGH - Would eliminate most manual Blueprint work for reactive abilities
-
-**Files to Modify:**
-- `GasAbilityGeneratorTypes.h` - Add FManifestDelegateBinding
-- `GasAbilityGeneratorParser.cpp` - Parse delegate_bindings section
-- `GasAbilityGeneratorGenerators.cpp` - Generate delegate bind/unbind nodes
 
 ---
 
@@ -443,6 +469,46 @@ gameplay_abilities:
 
 ---
 
+## ❌ Known Issues - Node Position Persistence (v4.20.x)
+
+**Status:** UNRESOLVED - Positions calculated but not persisting when Blueprint opened in editor
+
+**Problem:**
+Event graph nodes in generated Blueprints stack at origin (0,0) or in vertical columns instead of being spread out according to the layered graph layout algorithm.
+
+**Attempted Fixes (v4.20 - v4.20.11):**
+
+| Version | Approach | Result |
+|---------|----------|--------|
+| v4.20.9 | Pin-level positioning ("spider legs") - position based on connecting pin Y offset | No change |
+| v4.20.10 | Wave-based processing with PIN_SPREAD_MULTIPLIER | No change |
+| v4.20.10 | Added `Modify()` calls on graph and nodes before setting positions | No change |
+| v4.20.11 | Added `NotifyGraphChanged()` and `MarkBlueprintAsModified()` | No change |
+| v4.20.11 | Static position storage + `ReapplyNodePositions()` after `CompileBlueprint` | No change |
+
+**Technical Details:**
+- `AutoLayoutNodes()` calculates correct positions (confirmed via debug logs showing varied X,Y values)
+- Positions are set on `UK2Node::NodePosX` and `NodePosY` properties
+- `Modify()` is called on both `UEdGraph` and `UK2Node` before setting positions
+- `ReapplyNodePositions()` re-applies stored positions after compilation
+- Despite all measures, positions reset when Blueprint is opened in editor
+
+**Root Cause (Suspected):**
+The Blueprint editor may be auto-arranging nodes on open, or the positions are stored in a different location than `NodePosX`/`NodePosY` that we're not persisting.
+
+**Files Modified:**
+- `GasAbilityGeneratorGenerators.cpp` - `AutoLayoutNodes()`, `ReapplyNodePositions()`, `ClearStoredPositions()`
+- `GasAbilityGeneratorGenerators.h` - Added public function declarations
+
+**Impact:** LOW - Nodes are functional, just not visually arranged. Manual arrangement in editor works.
+
+**Future Investigation:**
+- Check if Blueprint editor has auto-arrange on open behavior
+- Investigate if `UEdGraphNode::GetNodePosition()` / `SetNodePosition()` should be used instead
+- Research how other tools (e.g., Control Rig) persist node positions
+
+---
+
 ## Known Edge Cases (Untested/Unsupported)
 
 ### XLSX Sync System
@@ -611,3 +677,10 @@ These are intentionally not implemented:
 | 2026-01-21 | **v4.17:** Circular Dependency Detection complete - Tarjan SCC algorithm detects GA→GE, BT→BB, Any→Parent cycles |
 | 2026-01-21 | **v4.18:** P1.2 Form Transition Validation complete - Tag-based form extraction, `[W_TRANSITION_INVALID]` warnings |
 | 2026-01-21 | **v4.19:** ActorComponentBlueprintGenerator complete - Variables, Event Dispatchers, Functions, Tick config |
+| 2026-01-21 | **v4.20.11:** Node position persistence issue - attempted fixes did not resolve (see Known Issues) |
+| 2026-01-21 | **v4.21.1:** Removed stale "HIGH Priority - Delegate Binding Automation" section - feature completed in v4.21/v4.21.1 |
+| 2026-01-21 | **v4.21.1:** Manifest updated with 11 delegate bindings across 5 abilities (all 4 delegate types covered) |
+| 2026-01-21 | **v4.21.1:** Added: GA_FatherCrawler (2), GA_StealthField (2) - based on Technical Reference §4.5, §38.8 guidance |
+| 2026-01-22 | **v4.22:** Section 10 External ASC Binding - Actor→ASC extraction via `GetAbilitySystemComponent` |
+| 2026-01-22 | **v4.22:** Section 11 Attribute Change Delegates - AbilityTask pattern for `UAbilityTask_WaitAttributeChange` |
+| 2026-01-22 | **v4.22:** Claude-GPT dual audit approved - `Delegate_Binding_Extensions_Spec_v1_1.md` locked |

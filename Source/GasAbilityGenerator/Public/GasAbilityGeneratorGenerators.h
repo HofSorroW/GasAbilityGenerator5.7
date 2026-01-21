@@ -613,10 +613,36 @@ public:
 		UBlueprint* Blueprint,
 		const TArray<FManifestDelegateBindingDefinition>& DelegateBindings);
 
+	/**
+	 * v4.22: Section 11 - Attribute Change Delegate Binding via AbilityTask
+	 * Generates AbilityTask_WaitAttributeChange nodes with handler custom events.
+	 * @param Blueprint The ability blueprint to modify
+	 * @param AttributeBindings Array of attribute binding definitions
+	 * @return Number of attribute binding tasks successfully generated
+	 */
+	static int32 GenerateAttributeBindingNodes(
+		UBlueprint* Blueprint,
+		const TArray<FManifestAttributeBindingDefinition>& AttributeBindings);
+
 	// v2.6.7: Missing dependency tracking for deferred generation
 	static const TArray<FMissingDependencyInfo>& GetMissingDependencies() { return MissingDependencies; }
 	static bool HasMissingDependencies() { return MissingDependencies.Num() > 0; }
 	static void ClearMissingDependencies() { MissingDependencies.Empty(); }
+
+	/** v4.20.11: Re-apply stored node positions after compilation
+	 *  Called after CompileBlueprint to restore positions that may have been lost
+	 */
+	static void ReapplyNodePositions(UBlueprint* Blueprint);
+
+	/** v4.20.11: Clear stored positions for a blueprint (call when starting new generation) */
+	static void ClearStoredPositions(UBlueprint* Blueprint);
+
+	/** v4.22: Diagnostic logging for node position persistence audit
+	 *  Logs NodeGuid, NodePosX/Y, node pointer, graph pointer for all nodes in Blueprint
+	 *  @param Blueprint The blueprint to log positions for
+	 *  @param LogPoint Identifier for the logging point (e.g., "AfterAutoLayout", "BeforeCompile")
+	 */
+	static void LogNodePositionsDiagnostic(UBlueprint* Blueprint, const FString& LogPoint);
 
 private:
 	// v2.6.7: Track missing dependencies during event graph generation
@@ -721,9 +747,11 @@ private:
 		const FString& PinName,
 		EEdGraphPinDirection Direction);
 
+	/** v4.20: Layered graph layout algorithm per Placement Contract v1.0 */
 	static void AutoLayoutNodes(
 		TMap<FString, UK2Node*>& NodeMap,
-		const TArray<FManifestGraphNodeDefinition>& NodeDefs);
+		const TArray<FManifestGraphNodeDefinition>& NodeDefs,
+		const TArray<FManifestGraphConnectionDefinition>& Connections);
 };
 
 // ============================================================================

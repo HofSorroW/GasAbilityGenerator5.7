@@ -315,6 +315,7 @@
 #include "K2Node_RemoveDelegate.h"     // v4.21: Delegate unbinding automation
 #include "K2Node_CreateDelegate.h"     // v4.21: Delegate creation automation
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"  // v4.15: WaitDelay AbilityTask class
+#include "Abilities/Tasks/AbilityTask_WaitAttributeChange.h"  // v4.22: Section 11 Attribute Change Delegate binding
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -2717,6 +2718,12 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateDelegateBindingNodes(Blueprint, Definition.DelegateBindings);
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
 	}
+	// v4.22: Section 11 - Generate attribute binding nodes (AbilityTask-based)
+	if (Definition.AttributeBindings.Num() > 0)
+	{
+		int32 AttrNodesGenerated = FEventGraphGenerator::GenerateAttributeBindingNodes(Blueprint, Definition.AttributeBindings);
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d attribute binding tasks"), AttrNodesGenerated, Definition.AttributeBindings.Num()));
+	}
 
 	// v4.14: Generate custom Blueprint functions
 	if (Definition.CustomFunctions.Num() > 0)
@@ -2738,10 +2745,22 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d custom functions"), FunctionsGenerated, Definition.CustomFunctions.Num()));
 	}
 
+	// v4.22: AUDIT LOGGING POINT 2 - Before final CompileBlueprint
+	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_2_BeforeCompileBlueprint"));
+
 	// v4.16: Final compile with validation (Contract 10 - Blueprint Compile Gate)
 	// Single compile after ALL nodes added - replaces checkpoint save pattern
 	FCompilerResultsLog CompileLog;
 	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.22: AUDIT LOGGING POINT 3 - After CompileBlueprint, before ReapplyNodePositions
+	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_3_AfterCompileBlueprint"));
+
+	// v4.20.11: Re-apply node positions after compilation (compilation may reset positions)
+	FEventGraphGenerator::ReapplyNodePositions(Blueprint);
+
+	// v4.22: AUDIT LOGGING POINT 4 - After ReapplyNodePositions
+	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_4_AfterReapplyNodePositions"));
 
 	// v4.16: Check compile result - abort save if errors (P3, P4)
 	if (CompileLog.NumErrors > 0)
@@ -2775,6 +2794,9 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	// Mark dirty and register
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	// v4.22: AUDIT LOGGING POINT 5 - Before SavePackage
+	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_5_BeforeSavePackage"));
 
 	// v4.16: Single save at end (D-011 invariant) - only reached if compile succeeded
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
@@ -3155,6 +3177,9 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
 	FCompilerResultsLog CompileLog;
 	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.20.11: Re-apply node positions after compilation (compilation may reset positions)
+	FEventGraphGenerator::ReapplyNodePositions(Blueprint);
 
 	// v4.16: Check compile result - abort save if errors (P3, P4)
 	if (CompileLog.NumErrors > 0)
@@ -4148,6 +4173,9 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 	// v4.16: Compile blueprint with validation (D-006, Contract 10)
 	FCompilerResultsLog CompileLog;
 	FKismetEditorUtilities::CompileBlueprint(WidgetBP, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.20.11: Re-apply node positions after compilation (compilation may reset positions)
+	FEventGraphGenerator::ReapplyNodePositions(WidgetBP);
 
 	// v4.16: Check compile result - abort save if errors (P3, P4)
 	if (CompileLog.NumErrors > 0)
@@ -8957,6 +8985,9 @@ bool FEventGraphGenerator::GenerateEventGraph(
 	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
 	AutoLayoutNodes(NodeMap, GraphDefinition.Nodes, GraphDefinition.Connections);
 
+	// v4.22: AUDIT LOGGING POINT 1 - After AutoLayoutNodes
+	LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_1_AfterAutoLayoutNodes"));
+
 	// v2.5.2: Pre-process exec connections to reroute around pure nodes
 	// Build a map of exec flow: NodeId -> (ExecSourceNodeId, ExecTargetNodeId)
 	TMap<FString, FString> ExecSourceMap;  // NodeId -> which node connects TO this node's Exec
@@ -11653,6 +11684,10 @@ UEdGraphPin* FEventGraphGenerator::FindPinByName(
 // Reference: ClaudeContext/Handoffs/EventGraph_Node_Placement_Reference.md
 // ============================================================================
 
+// v4.20.11: Static storage for node positions - keyed by Blueprint path + node GUID
+// This allows re-applying positions after compilation (which may reset them)
+static TMap<FString, TMap<FGuid, FIntPoint>> GStoredNodePositions;
+
 namespace NodePlacement
 {
 	// LOCKED CONSTANTS - per Placement Contract v1.0
@@ -12291,6 +12326,9 @@ void FEventGraphGenerator::AutoLayoutNodes(
 		ParentGraph->Modify();
 	}
 
+	UBlueprint* OwningBlueprint = nullptr;
+	FString BlueprintPath;
+
 	for (auto& Pair : PlacementMap)
 	{
 		UK2Node** NodePtr = NodeMap.Find(Pair.Key);
@@ -12307,11 +12345,197 @@ void FEventGraphGenerator::AutoLayoutNodes(
 			(*NodePtr)->NodePosX = Pair.Value.PosX;
 			(*NodePtr)->NodePosY = Pair.Value.PosY;
 			NodesPositioned++;
+
+			// Get owning Blueprint (needed for MarkBlueprintAsModified and position storage)
+			if (!OwningBlueprint)
+			{
+				OwningBlueprint = (*NodePtr)->GetBlueprint();
+				if (OwningBlueprint)
+				{
+					BlueprintPath = OwningBlueprint->GetPathName();
+				}
+			}
+
+			// v4.20.11: Store position in static map for reapplication after compile
+			if (!BlueprintPath.IsEmpty())
+			{
+				GStoredNodePositions.FindOrAdd(BlueprintPath).Add((*NodePtr)->NodeGuid, FIntPoint(Pair.Value.PosX, Pair.Value.PosY));
+			}
 		}
 	}
 
-	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Positioned %d nodes across %d lanes, max layer %d"),
-		NodesPositioned, SortedLanes.Num(), MaxLayerSeen));
+	// v4.20.11: Notify graph and blueprint that positions have changed
+	// This ensures positions are serialized when the package is saved
+	if (ParentGraph)
+	{
+		ParentGraph->NotifyGraphChanged();
+	}
+	if (OwningBlueprint)
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsModified(OwningBlueprint);
+	}
+
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Positioned %d nodes across %d lanes, max layer %d (stored %d positions)"),
+		NodesPositioned, SortedLanes.Num(), MaxLayerSeen, NodesPositioned));
+}
+
+// ============================================================================
+// v4.20.11: Position Persistence Functions
+// ============================================================================
+
+void FEventGraphGenerator::ClearStoredPositions(UBlueprint* Blueprint)
+{
+	if (!Blueprint)
+	{
+		return;
+	}
+
+	FString BlueprintPath = Blueprint->GetPathName();
+	GStoredNodePositions.Remove(BlueprintPath);
+}
+
+void FEventGraphGenerator::ReapplyNodePositions(UBlueprint* Blueprint)
+{
+	if (!Blueprint)
+	{
+		return;
+	}
+
+	FString BlueprintPath = Blueprint->GetPathName();
+	TMap<FGuid, FIntPoint>* StoredPositions = GStoredNodePositions.Find(BlueprintPath);
+	if (!StoredPositions || StoredPositions->Num() == 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  [PLACEMENT] No stored positions to reapply for %s"), *Blueprint->GetName()));
+		return;
+	}
+
+	int32 RepositionedCount = 0;
+
+	// Iterate all graphs in the Blueprint
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		Graph->Modify();
+
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+
+			FIntPoint* StoredPos = StoredPositions->Find(Node->NodeGuid);
+			if (StoredPos)
+			{
+				Node->Modify();
+				Node->NodePosX = StoredPos->X;
+				Node->NodePosY = StoredPos->Y;
+				RepositionedCount++;
+			}
+		}
+
+		Graph->NotifyGraphChanged();
+	}
+
+	// Also check function graphs
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		Graph->Modify();
+
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+
+			FIntPoint* StoredPos = StoredPositions->Find(Node->NodeGuid);
+			if (StoredPos)
+			{
+				Node->Modify();
+				Node->NodePosX = StoredPos->X;
+				Node->NodePosY = StoredPos->Y;
+				RepositionedCount++;
+			}
+		}
+
+		Graph->NotifyGraphChanged();
+	}
+
+	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Reapplied %d/%d stored positions for %s"),
+		RepositionedCount, StoredPositions->Num(), *Blueprint->GetName()));
+}
+
+// ============================================================================
+// v4.22: Diagnostic Logging for Node Position Persistence Audit
+// ============================================================================
+
+void FEventGraphGenerator::LogNodePositionsDiagnostic(UBlueprint* Blueprint, const FString& LogPoint)
+{
+	if (!Blueprint)
+	{
+		LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT] %s: Blueprint is null"), *LogPoint));
+		return;
+	}
+
+	LogGeneration(TEXT(""));
+	LogGeneration(TEXT("================================================================================"));
+	LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT] LogPoint: %s"), *LogPoint));
+	LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT] Blueprint: %s"), *Blueprint->GetPathName()));
+	LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT] Blueprint Ptr: 0x%p"), Blueprint));
+	LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT] UbergraphPages Count: %d"), Blueprint->UbergraphPages.Num()));
+	LogGeneration(TEXT("================================================================================"));
+
+	int32 GraphIndex = 0;
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (!Graph)
+		{
+			LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]   Graph[%d]: NULL"), GraphIndex));
+			GraphIndex++;
+			continue;
+		}
+
+		LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]   Graph[%d]: %s"), GraphIndex, *Graph->GetPathName()));
+		LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]   Graph Ptr: 0x%p"), Graph));
+		LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]   Graph Name: %s"), *Graph->GetName()));
+		LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]   Node Count: %d"), Graph->Nodes.Num()));
+
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (!Node)
+			{
+				LogGeneration(TEXT("[POSITION_AUDIT]     Node: NULL"));
+				continue;
+			}
+
+			// Get node class name for identification
+			FString NodeClassName = Node->GetClass()->GetName();
+			FString NodeTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
+
+			LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]     Node: %s (%s)"), *NodeTitle, *NodeClassName));
+			LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]       Ptr: 0x%p"), Node));
+			LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]       GUID: %s"), *Node->NodeGuid.ToString()));
+			LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]       Pos: X=%d, Y=%d"), Node->NodePosX, Node->NodePosY));
+			LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT]       Path: %s"), *Node->GetPathName()));
+		}
+
+		GraphIndex++;
+	}
+
+	LogGeneration(FString::Printf(TEXT("[POSITION_AUDIT] === End LogPoint: %s ==="), *LogPoint));
+	LogGeneration(TEXT(""));
 }
 
 // ============================================================================
@@ -13020,43 +13244,94 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 				if (VarOutPin)
 				{
-					// Check if variable is already UNarrativeAbilitySystemComponent or needs cast
+					// v4.22: Section 10 - External ASC Binding (Actor→ASC Resolution)
+					// Detect if variable is an Actor type (not an ASC) and extract ASC first
+					bool bNeedsASCExtraction = false;
 					bool bNeedsVarCast = false;
+					UEdGraphPin* CurrentSourcePin = VarOutPin;
+
 					if (VarOutPin->PinType.PinSubCategoryObject.IsValid())
 					{
 						UClass* VarClass = Cast<UClass>(VarOutPin->PinType.PinSubCategoryObject.Get());
-						if (VarClass && !VarClass->IsChildOf(NarrativeASCClass))
+						if (VarClass)
 						{
-							bNeedsVarCast = true;
+							// Check if variable is Actor type (but not ASC - ASCs are also Actors via component owner)
+							bool bIsActorType = VarClass->IsChildOf(AActor::StaticClass());
+							bool bIsASCType = VarClass->IsChildOf(UAbilitySystemComponent::StaticClass());
+
+							if (bIsActorType && !bIsASCType)
+							{
+								// Actor variable - need GetAbilitySystemComponent extraction
+								bNeedsASCExtraction = true;
+								LogGeneration(FString::Printf(TEXT("    Variable '%s' is Actor type - extracting ASC"), *Binding.Source));
+							}
+							else if (!VarClass->IsChildOf(NarrativeASCClass))
+							{
+								// Not NarrativeASCClass - needs cast
+								bNeedsVarCast = true;
+							}
 						}
 					}
 
-					if (bNeedsVarCast)
+					// Step 1: If Actor type, insert GetAbilitySystemComponent
+					if (bNeedsASCExtraction)
 					{
-						// Create cast node for variable
+						UK2Node_CallFunction* ExtractASCNode = NewObject<UK2Node_CallFunction>(EventGraph);
+						EventGraph->AddNode(ExtractASCNode, false, false);
+
+						UFunction* GetASCFunc = UAbilitySystemBlueprintLibrary::StaticClass()->FindFunctionByName(
+							TEXT("GetAbilitySystemComponent"));
+						if (GetASCFunc)
+						{
+							ExtractASCNode->SetFromFunction(GetASCFunc);
+						}
+						ExtractASCNode->CreateNewGuid();
+						ExtractASCNode->PostPlacedNewNode();
+						ExtractASCNode->AllocateDefaultPins();
+						ExtractASCNode->NodePosX = CurrentPosX + 350.0f;
+						ExtractASCNode->NodePosY = CurrentPosY + 200.0f;
+
+						// Wire Variable → GetASC.Actor
+						UEdGraphPin* ActorInputPin = ExtractASCNode->FindPin(TEXT("Actor"));
+						if (ActorInputPin && VarOutPin)
+						{
+							VarOutPin->MakeLinkTo(ActorInputPin);
+						}
+
+						// Update current source to GetASC output
+						CurrentSourcePin = ExtractASCNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+						bNeedsVarCast = true; // Always need cast after GetAbilitySystemComponent (returns base ASC)
+
+						LogGeneration(FString::Printf(TEXT("    Inserted GetAbilitySystemComponent for Actor variable '%s'"), *Binding.Source));
+					}
+
+					// Step 2: If needed, cast to NarrativeASCClass
+					if (bNeedsVarCast && CurrentSourcePin)
+					{
+						// Create cast node for variable/extracted ASC
 						UK2Node_DynamicCast* VarCastNode = NewObject<UK2Node_DynamicCast>(EventGraph);
 						VarCastNode->TargetType = NarrativeASCClass;
 						EventGraph->AddNode(VarCastNode, false, false);
 						VarCastNode->CreateNewGuid();
 						VarCastNode->PostPlacedNewNode();
 						VarCastNode->AllocateDefaultPins();
-						VarCastNode->NodePosX = CurrentPosX + 400.0f;
+						VarCastNode->NodePosX = CurrentPosX + (bNeedsASCExtraction ? 550.0f : 400.0f);
 						VarCastNode->NodePosY = CurrentPosY + 200.0f;
 
-						// Wire Variable → Cast
+						// Wire CurrentSource → Cast
 						UEdGraphPin* VarCastInPin = VarCastNode->GetCastSourcePin();
 						if (VarCastInPin)
 						{
-							VarOutPin->MakeLinkTo(VarCastInPin);
+							CurrentSourcePin->MakeLinkTo(VarCastInPin);
 						}
 
 						SourceASCPin = VarCastNode->GetCastResultPin();
 						LogGeneration(FString::Printf(TEXT("    Created variable '%s' with cast to UNarrativeAbilitySystemComponent"), *Binding.Source));
 					}
-					else
+					else if (CurrentSourcePin)
 					{
 						// Variable is already correct type, use directly
-						SourceASCPin = VarOutPin;
+						SourceASCPin = CurrentSourcePin;
 						LogGeneration(FString::Printf(TEXT("    Created variable getter for '%s'"), *Binding.Source));
 					}
 				}
@@ -13298,6 +13573,261 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	if (NodesGenerated > 0)
 	{
 		LogGeneration(FString::Printf(TEXT("  DELEGATE_BIND: Generated %d complete delegate binding chains"), NodesGenerated));
+	}
+
+	return NodesGenerated;
+}
+
+// ============================================================================
+// v4.22: Section 11 - Attribute Change Delegate Binding (AbilityTask Pattern)
+// Per Delegate_Binding_Extensions_Spec_v1_1.md
+// ============================================================================
+
+int32 FEventGraphGenerator::GenerateAttributeBindingNodes(
+	UBlueprint* Blueprint,
+	const TArray<FManifestAttributeBindingDefinition>& AttributeBindings)
+{
+	if (!Blueprint || AttributeBindings.Num() == 0)
+	{
+		return 0;
+	}
+
+	UEdGraph* EventGraph = nullptr;
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (Graph && Graph->GetFName() == UEdGraphSchema_K2::GN_EventGraph)
+		{
+			EventGraph = Graph;
+			break;
+		}
+	}
+
+	if (!EventGraph)
+	{
+		LogGeneration(TEXT("  [E_ATTR_BIND_NO_GRAPH] No EventGraph found for attribute binding generation"));
+		return 0;
+	}
+
+	int32 NodesGenerated = 0;
+	TArray<UK2Node_LatentAbilityCall*> TaskNodes;
+
+	for (const FManifestAttributeBindingDefinition& Binding : AttributeBindings)
+	{
+		LogGeneration(FString::Printf(TEXT("  ATTR_BIND[%s]: Processing attribute binding (attr=%s.%s, handler=%s)"),
+			*Binding.Id, *Binding.AttributeSet, *Binding.Attribute, *Binding.Handler));
+
+		// 1. Validate AttributeSet class exists
+		// Use FindParentClass which handles both native and Blueprint classes
+		UClass* AttributeSetClass = FindParentClass(Binding.AttributeSet);
+		if (!AttributeSetClass)
+		{
+			// Try with U prefix for native C++ classes
+			FString FullAttributeSetName = TEXT("U") + Binding.AttributeSet;
+			AttributeSetClass = FindParentClass(FullAttributeSetName);
+		}
+		if (!AttributeSetClass)
+		{
+			// Try direct path for native classes (e.g., "/Script/GameplayAbilities.UNarrativeAttributeSet")
+			FString NativeClassPath = FString::Printf(TEXT("/Script/NarrativeArsenal.U%s"), *Binding.AttributeSet);
+			AttributeSetClass = FindObject<UClass>(nullptr, *NativeClassPath);
+		}
+		if (!AttributeSetClass)
+		{
+			LogGeneration(FString::Printf(TEXT("    [E_ATTRIBUTE_SET_NOT_FOUND] AttributeSet class '%s' not found"), *Binding.AttributeSet));
+			continue;
+		}
+
+		// 2. Validate Attribute property exists on AttributeSet
+		FProperty* AttributeProp = AttributeSetClass->FindPropertyByName(FName(*Binding.Attribute));
+		if (!AttributeProp)
+		{
+			LogGeneration(FString::Printf(TEXT("    [E_ATTRIBUTE_NOT_FOUND] Attribute '%s' not found on AttributeSet '%s'"),
+				*Binding.Attribute, *Binding.AttributeSet));
+			continue;
+		}
+
+		// 3. Create UK2Node_LatentAbilityCall for UAbilityTask_WaitAttributeChange
+		UK2Node_LatentAbilityCall* WaitAttrNode = NewObject<UK2Node_LatentAbilityCall>(EventGraph);
+		EventGraph->AddNode(WaitAttrNode, false, false);
+
+		// Find the WaitForAttributeChange factory function
+		UFunction* WaitAttrFunction = UAbilityTask_WaitAttributeChange::StaticClass()->FindFunctionByName(FName("WaitForAttributeChange"));
+		if (!WaitAttrFunction)
+		{
+			LogGeneration(TEXT("    [E_TASK_FACTORY_REQUIRED] Failed to find WaitForAttributeChange function on UAbilityTask_WaitAttributeChange"));
+			continue;
+		}
+
+		// Set protected base class properties via reflection (UK2Node_BaseAsyncTask members)
+		UClass* NodeClass = WaitAttrNode->GetClass();
+
+		// ProxyFactoryFunctionName = "WaitForAttributeChange"
+		if (FNameProperty* FactoryFuncNameProp = FindFProperty<FNameProperty>(NodeClass, TEXT("ProxyFactoryFunctionName")))
+		{
+			FactoryFuncNameProp->SetPropertyValue_InContainer(WaitAttrNode, WaitAttrFunction->GetFName());
+		}
+
+		// ProxyFactoryClass = UAbilityTask_WaitAttributeChange::StaticClass()
+		if (FObjectProperty* FactoryClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyFactoryClass")))
+		{
+			FactoryClassProp->SetObjectPropertyValue_InContainer(WaitAttrNode, UAbilityTask_WaitAttributeChange::StaticClass());
+		}
+
+		// ProxyClass = UAbilityTask_WaitAttributeChange::StaticClass()
+		if (FObjectProperty* ProxyClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyClass")))
+		{
+			ProxyClassProp->SetObjectPropertyValue_InContainer(WaitAttrNode, UAbilityTask_WaitAttributeChange::StaticClass());
+		}
+
+		WaitAttrNode->CreateNewGuid();
+		WaitAttrNode->PostPlacedNewNode();
+		WaitAttrNode->AllocateDefaultPins();
+
+		// 4. Set Attribute pin - construct FGameplayAttribute from AttributeSet and Property
+		// The pin expects a FGameplayAttribute struct literal, but in Blueprint graph
+		// we need to use a MakeGameplayAttribute node or set the property path directly
+		// For UK2Node_LatentAbilityCall, the Attribute pin is a struct pin
+		UEdGraphPin* AttributePin = WaitAttrNode->FindPin(FName("Attribute"));
+		if (AttributePin)
+		{
+			// FGameplayAttribute pins in Blueprint use a special format:
+			// (AttributeOwner=<ClassPath>,Attribute=<PropertyName>)
+			// Or the pin can be connected to a MakeGameplayAttribute node
+			// For now, set the default value using the struct literal format
+			FString AttributePath = FString::Printf(TEXT("(AttributeOwner=\"%s\",Attribute=\"%s\")"),
+				*AttributeSetClass->GetPathName(), *Binding.Attribute);
+			AttributePin->DefaultValue = AttributePath;
+			LogGeneration(FString::Printf(TEXT("    Set Attribute pin: %s"), *AttributePath));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [W_ATTR_PIN_NOT_FOUND] Could not find Attribute pin on WaitForAttributeChange node"));
+		}
+
+		// 5. Set TriggerOnce parameter (default true per spec 11.1.3)
+		UEdGraphPin* TriggerOncePin = WaitAttrNode->FindPin(FName("TriggerOnce"));
+		if (TriggerOncePin)
+		{
+			TriggerOncePin->DefaultValue = Binding.bTriggerOnce ? TEXT("true") : TEXT("false");
+		}
+
+		// 6. Set optional tag filters
+		if (!Binding.WithTag.IsEmpty())
+		{
+			UEdGraphPin* WithTagPin = WaitAttrNode->FindPin(FName("OptionalExternalOwnerTags"));
+			if (!WithTagPin)
+			{
+				WithTagPin = WaitAttrNode->FindPin(FName("WithTag"));
+			}
+			if (WithTagPin)
+			{
+				WithTagPin->DefaultValue = Binding.WithTag;
+			}
+		}
+
+		// 7. Create CustomEvent for the handler (ZERO PARAMETERS per spec 11.4.1)
+		UK2Node_CustomEvent* HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
+		EventGraph->AddNode(HandlerEvent, false, false);
+		HandlerEvent->CreateNewGuid();
+		HandlerEvent->CustomFunctionName = FName(*Binding.Handler);
+		HandlerEvent->PostPlacedNewNode();
+		HandlerEvent->AllocateDefaultPins();
+
+		LogGeneration(FString::Printf(TEXT("    Created CustomEvent: %s (zero parameters per spec 11.4.1)"), *Binding.Handler));
+
+		// 8. Connect OnChange delegate pin to CustomEvent
+		// The task's OnChange is a dynamic multicast delegate output pin
+		UEdGraphPin* OnChangePin = WaitAttrNode->FindPin(FName("OnChange"));
+		if (OnChangePin)
+		{
+			// The delegate pin connects directly to the custom event's delegate pin
+			// In UK2Node_LatentAbilityCall, delegate pins are exec-style outputs
+			UEdGraphPin* HandlerExecPin = HandlerEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+			if (HandlerExecPin)
+			{
+				// For latent ability call nodes, the delegate output pins trigger the connected event
+				// We wire the OnChange pin to the event's then pin
+				OnChangePin->MakeLinkTo(HandlerExecPin);
+				LogGeneration(TEXT("    Connected OnChange delegate to handler CustomEvent"));
+			}
+		}
+		else
+		{
+			LogGeneration(TEXT("    [W_ONCHANGE_NOT_FOUND] Could not find OnChange pin on WaitForAttributeChange node"));
+		}
+
+		TaskNodes.Add(WaitAttrNode);
+		NodesGenerated++;
+		LogGeneration(FString::Printf(TEXT("    Created WaitForAttributeChange AbilityTask node for %s.%s"),
+			*Binding.AttributeSet, *Binding.Attribute));
+	}
+
+	// 9. Wire AbilityTask nodes into ActivateAbility exec flow
+	if (TaskNodes.Num() > 0)
+	{
+		UK2Node_Event* ActivateEvent = nullptr;
+		for (UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+			{
+				FString EventName = EventNode->GetFunctionName().ToString();
+				if (EventName.Contains(TEXT("ActivateAbility")))
+				{
+					ActivateEvent = EventNode;
+					break;
+				}
+			}
+		}
+
+		if (ActivateEvent)
+		{
+			// Find the last node in the ActivateAbility chain
+			UEdGraphPin* LastExecPin = ActivateEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+			// Follow exec chain to find the end
+			while (LastExecPin && LastExecPin->LinkedTo.Num() > 0)
+			{
+				UEdGraphNode* NextNode = LastExecPin->LinkedTo[0]->GetOwningNode();
+				UEdGraphPin* NextExecOut = NextNode->FindPin(UEdGraphSchema_K2::PN_Then);
+				if (NextExecOut && NextExecOut->LinkedTo.Num() > 0)
+				{
+					LastExecPin = NextExecOut;
+				}
+				else
+				{
+					LastExecPin = NextExecOut;
+					break;
+				}
+			}
+
+			// Chain AbilityTask nodes
+			for (UK2Node_LatentAbilityCall* TaskNode : TaskNodes)
+			{
+				if (LastExecPin)
+				{
+					UEdGraphPin* TaskExecIn = TaskNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+					if (TaskExecIn)
+					{
+						LastExecPin->MakeLinkTo(TaskExecIn);
+						LastExecPin = TaskNode->FindPin(UEdGraphSchema_K2::PN_Then);
+					}
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Wired %d AbilityTask nodes into ActivateAbility chain"), TaskNodes.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [W_ATTR_NO_ACTIVATE] ActivateAbility event not found - manual exec wiring required"));
+		}
+	}
+
+	// Per spec 11.6.2: No explicit unbind nodes required in EndAbility
+	// AbilityTask manages its own lifecycle when created via factory
+
+	if (NodesGenerated > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  ATTR_BIND: Generated %d attribute binding AbilityTasks (lifecycle managed by task)"), NodesGenerated));
 	}
 
 	return NodesGenerated;
@@ -13746,6 +14276,9 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
 	FCompilerResultsLog CompileLog;
 	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.20.11: Re-apply node positions after compilation (compilation may reset positions)
+	FEventGraphGenerator::ReapplyNodePositions(Blueprint);
 
 	// v4.16: Check compile result - abort save if errors (P3, P4)
 	if (CompileLog.NumErrors > 0)
@@ -14723,6 +15256,9 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
 	FCompilerResultsLog CompileLog;
 	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.20.11: Re-apply node positions after compilation (compilation may reset positions)
+	FEventGraphGenerator::ReapplyNodePositions(Blueprint);
 
 	// v4.16: Check compile result - abort save if errors (P3, P4)
 	if (CompileLog.NumErrors > 0)
