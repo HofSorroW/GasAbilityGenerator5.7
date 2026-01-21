@@ -3,7 +3,7 @@
 **Created:** 2026-01-21
 **Updated:** 2026-01-21
 **Purpose:** Detailed implementation plans for remaining TODO items, ready for GPT audit
-**Status:** Sections 1, 3, 8 IMPLEMENTED (v4.17, v4.18, v4.19)
+**Status:** Sections 1, 3, 8 IMPLEMENTED (v4.17, v4.18, v4.19); Section 9 PENDING AUDIT
 
 ---
 
@@ -17,6 +17,7 @@
 6. [Delegate Binding Automation](#6-delegate-binding-automation)
 7. [Split Generators.cpp](#7-split-generatorscpp)
 8. [ActorComponentBlueprintGenerator](#8-actorcomponentblueprintgenerator-ultimatechargecomponent) ✅ IMPLEMENTED
+9. [Delegate Binding Automation](#9-delegate-binding-automation-p21) ⏳ PENDING AUDIT
 
 ---
 
@@ -1573,18 +1574,492 @@ Requires module additions to `GasAbilityGenerator.Build.cs`:
 
 ---
 
+## 9. Delegate Binding Automation (P2.1)
+
+**Status:** PENDING AUDIT
+**Audit Status:** Research complete, awaiting GPT audit
+
+### Overview
+Automate multicast delegate binding in GameplayAbility event graphs. Enables reactive abilities that respond to OnDied, OnDamagedBy, OnAttributeChanged, etc. without manual Blueprint wiring.
+
+**Primary Use Cases:**
+- GA_FatherArmor: OnDamagedBy → redirect damage to Father
+- GA_ProtectiveDome: OnDied → trigger dome destruction
+- Form abilities: OnAttributeChanged → react to health/resource changes
+
+### Problem Statement
+Currently, abilities requiring delegate callbacks (OnDied, OnDamagedBy, OnAttributeChanged) must be wired manually in the Blueprint editor:
+1. Get reference to ASC or target object
+2. Drag from delegate property → "Bind to Event"
+3. Create Custom Event with matching signature
+4. Wire cleanup (unbind) in EndAbility
+
+This creates ~8-12 nodes per delegate binding, which cannot be generated from manifest.
+
+### Research Summary
+
+#### Narrative Pro Delegates (NarrativeAbilitySystemComponent.h)
+
+| Delegate | Signature | Property |
+|----------|-----------|----------|
+| `FOnDied` | `(AActor*, UNarrativeAbilitySystemComponent*)` | `OnDied` |
+| `FOnHealedBy` | `(UNarrativeAbilitySystemComponent*, float, FGameplayEffectSpec)` | `OnHealedBy` |
+| `FOnDamagedBy` | `(UNarrativeAbilitySystemComponent*, float, FGameplayEffectSpec)` | `OnDamagedBy` |
+| `FOnDealtDamage` | `(UNarrativeAbilitySystemComponent*, float, FGameplayEffectSpec)` | `OnDealtDamage` |
+
+#### GAS Core Delegates (AbilitySystemComponent.h)
+
+| Delegate | Access Pattern | Signature |
+|----------|---------------|-----------|
+| `OnGameplayEffectAppliedDelegateToSelf` | Direct property | `(UAbilitySystemComponent*, FGameplayEffectSpec, FActiveGameplayEffectHandle)` |
+| `OnActiveGameplayEffectAddedDelegateToSelf` | Direct property | Same as above (duration GEs only) |
+| `OnGameplayAttributeValueChange` | `GetGameplayAttributeValueChangeDelegate(Attribute)` | `(const FOnAttributeChangeData&)` |
+
+#### Blueprint Node APIs (K2Node_*.h)
+
+| Node Class | Purpose | Key Properties |
+|------------|---------|---------------|
+| `UK2Node_AddDelegate` | Bind delegate += event | `DelegateReference: FMemberReference` |
+| `UK2Node_RemoveDelegate` | Unbind delegate -= event | `DelegateReference: FMemberReference` |
+| `UK2Node_CreateDelegate` | Create delegate from function | `SelectedFunctionName: FName` |
+| `UK2Node_CustomEvent` | Custom event entry | `CustomFunctionName: FName` |
+
+#### FMemberReference Setup Pattern
+```cpp
+FMemberReference DelegateRef;
+DelegateRef.SetFromField<FMulticastDelegateProperty>(DelegateProperty, bSelfContext, OwnerClass);
+// Or for external reference:
+DelegateRef.SetExternalMember(PropertyName, OwnerClass);
+```
+
+### Scope
+- **Files to modify:** `GasAbilityGeneratorTypes.h`, `GasAbilityGeneratorParser.cpp`, `GasAbilityGeneratorGenerators.cpp`
+- **Files to add:** None
+- **Complexity:** HIGH
+- **Risk:** MEDIUM - New K2Node types (AddDelegate, RemoveDelegate, CreateDelegate)
+- **Rare edge case:** No - major feature
+
+### Proposed Manifest Syntax
+
+```yaml
+gameplay_abilities:
+  - name: GA_FatherArmor
+    parent_class: NarrativeGameplayAbility
+    folder: Abilities/Armor
+
+    # Delegate bindings (auto-wired in ActivateAbility, unbound in EndAbility)
+    delegate_bindings:
+      - id: BindDamageRedirect
+        delegate: OnDamagedBy                    # Property name on source
+        source: OwnerASC                         # OwnerASC, PlayerASC, or variable name
+        handler: HandleDamageReceived            # Custom Event name (auto-created)
+        # Handler signature auto-inferred from delegate
+
+      - id: BindDeath
+        delegate: OnDied
+        source: FatherASC                        # Reference a Blueprint variable
+        handler: HandleFatherDied
+
+    variables:
+      - name: FatherASC
+        type: Object
+        object_class: NarrativeAbilitySystemComponent
+
+    event_graph:
+      nodes:
+        # Custom events are auto-created from delegate_bindings
+        # Parameters match delegate signature
+        - id: HandleDamageReceived
+          type: CustomEvent
+          event_name: HandleDamageReceived
+          # Parameters auto-populated: DamagerCauserASC, Damage, Spec
+
+        - id: RedirectDamage
+          type: CallFunction
+          properties:
+            function: ApplyDamageToFather
+            # ... damage redirect logic
+
+      connections:
+        - from: [HandleDamageReceived, Then]
+          to: [RedirectDamage, Exec]
+```
+
+### Source Resolution
+
+| Source Value | Resolution |
+|--------------|------------|
+| `OwnerASC` | `GetAbilitySystemComponentFromActorInfo(GetOwningActorFromActorInfo())` |
+| `PlayerASC` | `GetAbilitySystemComponentFromActorInfo(GetAvatarActorFromActorInfo())` |
+| `TargetASC` | Variable lookup from `FatherASC` or similar |
+| `{VariableName}` | Lookup variable by name, must be UObject subtype |
+
+### Implementation Phases
+
+#### Phase 1: Type Definitions
+
+```cpp
+// In GasAbilityGeneratorTypes.h
+
+// v4.20: Delegate binding definition
+struct FManifestDelegateBindingDefinition
+{
+    FString Id;                      // Unique ID for this binding
+    FString Delegate;                // Property name: "OnDied", "OnDamagedBy"
+    FString Source;                  // "OwnerASC", "PlayerASC", or variable name
+    FString Handler;                 // Custom Event name to create/bind
+
+    uint64 ComputeHash() const
+    {
+        uint64 Hash = GetTypeHash(Id);
+        Hash = HashCombine(Hash, GetTypeHash(Delegate));
+        Hash = HashCombine(Hash, GetTypeHash(Source));
+        Hash = HashCombine(Hash, GetTypeHash(Handler));
+        return Hash;
+    }
+};
+
+// Add to FManifestGameplayAbilityDefinition:
+TArray<FManifestDelegateBindingDefinition> DelegateBindings;
+```
+
+#### Phase 2: Parser Support
+
+```cpp
+// In GasAbilityGeneratorParser.cpp - ParseGameplayAbilities()
+
+// After parsing other fields, look for delegate_bindings:
+if (IsSectionHeader(Lines[LineIndex], TEXT("delegate_bindings")))
+{
+    ++LineIndex;
+    int32 BindingSectionIndent = GetIndentLevel(Lines[LineIndex]);
+
+    while (LineIndex < Lines.Num() && !ShouldExitSection(Lines[LineIndex], BindingSectionIndent))
+    {
+        if (IsArrayItem(Lines[LineIndex]))
+        {
+            FManifestDelegateBindingDefinition Binding;
+            int32 ItemIndent = GetIndentLevel(Lines[LineIndex]);
+            ++LineIndex;
+
+            while (LineIndex < Lines.Num() && GetIndentLevel(Lines[LineIndex]) > ItemIndent)
+            {
+                FString Key, Value;
+                Lines[LineIndex].Split(TEXT(":"), &Key, &Value);
+                Key = Key.TrimStartAndEnd();
+                Value = StripYamlComment(Value.TrimStartAndEnd());
+
+                if (Key == TEXT("id")) Binding.Id = Value;
+                else if (Key == TEXT("delegate")) Binding.Delegate = Value;
+                else if (Key == TEXT("source")) Binding.Source = Value;
+                else if (Key == TEXT("handler")) Binding.Handler = Value;
+
+                ++LineIndex;
+            }
+
+            CurrentAbility.DelegateBindings.Add(Binding);
+        }
+        else
+        {
+            ++LineIndex;
+        }
+    }
+}
+```
+
+#### Phase 3: Delegate Signature Lookup
+
+```cpp
+// Helper: Get delegate signature from property name
+static UFunction* GetDelegateSignature(const FString& DelegateName, UClass* SourceClass)
+{
+    // Find the multicast delegate property
+    FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(
+        SourceClass, FName(*DelegateName));
+
+    if (!DelegateProp)
+    {
+        return nullptr;
+    }
+
+    // Get the signature function
+    return DelegateProp->SignatureFunction;
+}
+
+// Helper: Create custom event with delegate signature parameters
+static UK2Node_CustomEvent* CreateCustomEventFromDelegateSignature(
+    UEdGraph* Graph,
+    const FString& EventName,
+    UFunction* DelegateSignature,
+    FVector2D NodePos)
+{
+    UK2Node_CustomEvent* EventNode = NewObject<UK2Node_CustomEvent>(Graph);
+    EventNode->CustomFunctionName = FName(*EventName);
+    EventNode->bIsEditable = true;
+
+    Graph->AddNode(EventNode, false, false);
+    EventNode->CreateNewGuid();
+    EventNode->PostPlacedNewNode();
+    EventNode->AllocateDefaultPins();
+    EventNode->NodePosX = NodePos.X;
+    EventNode->NodePosY = NodePos.Y;
+
+    // Add parameters from delegate signature
+    if (DelegateSignature)
+    {
+        for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+        {
+            FProperty* Param = *PropIt;
+            if (Param->HasAnyPropertyFlags(CPF_Parm) && !Param->HasAnyPropertyFlags(CPF_ReturnParm))
+            {
+                FEdGraphPinType PinType;
+                GetPinTypeFromProperty(Param, PinType);
+
+                EventNode->CreateUserDefinedPin(
+                    Param->GetFName(),
+                    PinType,
+                    EGPD_Output
+                );
+            }
+        }
+    }
+
+    return EventNode;
+}
+```
+
+#### Phase 4: Create Delegate Binding Nodes
+
+```cpp
+// In event graph generation, for each delegate binding:
+
+static void CreateDelegateBindingNodes(
+    UBlueprint* Blueprint,
+    UEdGraph* EventGraph,
+    const FManifestDelegateBindingDefinition& Binding,
+    TMap<FString, UK2Node*>& NodeMap,
+    FVector2D& CurrentPos)
+{
+    // 1. Resolve source class for delegate property lookup
+    UClass* SourceClass = UNarrativeAbilitySystemComponent::StaticClass();  // Default
+
+    // 2. Get delegate signature
+    UFunction* DelegateSignature = GetDelegateSignature(Binding.Delegate, SourceClass);
+    if (!DelegateSignature)
+    {
+        UE_LOG(LogGasAbilityGenerator, Warning,
+            TEXT("[W_DELEGATE_NOT_FOUND] Delegate '%s' not found on %s"),
+            *Binding.Delegate, *SourceClass->GetName());
+        return;
+    }
+
+    // 3. Create Custom Event with matching signature (if not already exists)
+    UK2Node_CustomEvent* HandlerEvent = FindOrCreateCustomEvent(
+        EventGraph, Binding.Handler, DelegateSignature, CurrentPos);
+    NodeMap.Add(Binding.Handler, HandlerEvent);
+    CurrentPos.Y += 200.0f;
+
+    // 4. Create UK2Node_CreateDelegate to bind handler to delegate type
+    UK2Node_CreateDelegate* CreateDelegateNode = NewObject<UK2Node_CreateDelegate>(EventGraph);
+    CreateDelegateNode->SetFunction(FName(*Binding.Handler));
+    EventGraph->AddNode(CreateDelegateNode, false, false);
+    CreateDelegateNode->CreateNewGuid();
+    CreateDelegateNode->PostPlacedNewNode();
+    CreateDelegateNode->AllocateDefaultPins();
+    CreateDelegateNode->NodePosX = CurrentPos.X + 300.0f;
+    CreateDelegateNode->NodePosY = CurrentPos.Y;
+    NodeMap.Add(Binding.Id + TEXT("_CreateDelegate"), CreateDelegateNode);
+
+    // 5. Create UK2Node_AddDelegate for binding in ActivateAbility
+    UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
+
+    // Set delegate reference
+    FMemberReference DelegateRef;
+    DelegateRef.SetExternalMember(FName(*Binding.Delegate), SourceClass);
+    AddDelegateNode->DelegateReference = DelegateRef;
+
+    EventGraph->AddNode(AddDelegateNode, false, false);
+    AddDelegateNode->CreateNewGuid();
+    AddDelegateNode->PostPlacedNewNode();
+    AddDelegateNode->AllocateDefaultPins();
+    AddDelegateNode->NodePosX = CurrentPos.X + 600.0f;
+    AddDelegateNode->NodePosY = CurrentPos.Y;
+    NodeMap.Add(Binding.Id + TEXT("_AddDelegate"), AddDelegateNode);
+
+    // 6. Connect CreateDelegate output to AddDelegate input
+    UEdGraphPin* DelegateOutPin = CreateDelegateNode->FindPin(TEXT("OutputDelegate"), EGPD_Output);
+    UEdGraphPin* DelegateInPin = AddDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
+    if (DelegateOutPin && DelegateInPin)
+    {
+        DelegateOutPin->MakeLinkTo(DelegateInPin);
+    }
+
+    // 7. Create UK2Node_RemoveDelegate for cleanup in EndAbility
+    UK2Node_RemoveDelegate* RemoveDelegateNode = NewObject<UK2Node_RemoveDelegate>(EventGraph);
+    RemoveDelegateNode->DelegateReference = DelegateRef;
+
+    EventGraph->AddNode(RemoveDelegateNode, false, false);
+    RemoveDelegateNode->CreateNewGuid();
+    RemoveDelegateNode->PostPlacedNewNode();
+    RemoveDelegateNode->AllocateDefaultPins();
+    RemoveDelegateNode->NodePosX = CurrentPos.X + 600.0f;
+    RemoveDelegateNode->NodePosY = CurrentPos.Y + 400.0f;
+    NodeMap.Add(Binding.Id + TEXT("_RemoveDelegate"), RemoveDelegateNode);
+
+    CurrentPos.Y += 600.0f;
+}
+```
+
+#### Phase 5: Wire into Ability Lifecycle
+
+```cpp
+// In FGameplayAbilityGenerator::Generate(), after creating event graph nodes:
+
+// Find or create ActivateAbility event
+UK2Node_Event* ActivateEvent = FindOrCreateEventNode(EventGraph, TEXT("K2_ActivateAbility"));
+
+// Find or create EndAbility event
+UK2Node_Event* EndAbilityEvent = FindOrCreateEventNode(EventGraph, TEXT("K2_OnEndAbility"));
+
+// Chain delegate bind nodes after ActivateAbility
+UEdGraphPin* LastExecPin = ActivateEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+for (const FManifestDelegateBindingDefinition& Binding : Definition.DelegateBindings)
+{
+    UK2Node_AddDelegate* AddNode = Cast<UK2Node_AddDelegate>(
+        NodeMap.FindRef(Binding.Id + TEXT("_AddDelegate")));
+
+    if (AddNode && LastExecPin)
+    {
+        UEdGraphPin* AddExecIn = AddNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+        LastExecPin->MakeLinkTo(AddExecIn);
+        LastExecPin = AddNode->FindPin(UEdGraphSchema_K2::PN_Then);
+    }
+}
+
+// Chain delegate unbind nodes in EndAbility
+LastExecPin = EndAbilityEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+for (const FManifestDelegateBindingDefinition& Binding : Definition.DelegateBindings)
+{
+    UK2Node_RemoveDelegate* RemoveNode = Cast<UK2Node_RemoveDelegate>(
+        NodeMap.FindRef(Binding.Id + TEXT("_RemoveDelegate")));
+
+    if (RemoveNode && LastExecPin)
+    {
+        UEdGraphPin* RemoveExecIn = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+        LastExecPin->MakeLinkTo(RemoveExecIn);
+        LastExecPin = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Then);
+    }
+}
+```
+
+### Known Delegate Property Whitelist
+
+| Delegate Name | Source Class | Signature Function |
+|---------------|--------------|-------------------|
+| `OnDied` | `UNarrativeAbilitySystemComponent` | `FOnDied__DelegateSignature` |
+| `OnDamagedBy` | `UNarrativeAbilitySystemComponent` | `FOnDamagedBy__DelegateSignature` |
+| `OnHealedBy` | `UNarrativeAbilitySystemComponent` | `FOnHealedBy__DelegateSignature` |
+| `OnDealtDamage` | `UNarrativeAbilitySystemComponent` | `FOnDealtDamage__DelegateSignature` |
+| `OnGameplayEffectAppliedDelegateToSelf` | `UAbilitySystemComponent` | ASC-specific |
+
+### Error Codes
+
+| Code | Condition | Severity |
+|------|-----------|----------|
+| `E_DELEGATE_NOT_FOUND` | Delegate property not found on source class | FAIL |
+| `E_DELEGATE_HANDLER_EXISTS` | Handler event name already exists (conflict) | FAIL |
+| `E_DELEGATE_SOURCE_INVALID` | Source variable not found or wrong type | FAIL |
+| `W_DELEGATE_SIGNATURE_MISMATCH` | Handler params don't match delegate signature | WARN |
+
+### Breadcrumb Logging
+
+```
+GA_BP[GA_FatherArmor] DELEGATE_BIND id=BindDamageRedirect delegate=OnDamagedBy handler=HandleDamageReceived OK
+GA_BP[GA_FatherArmor] DELEGATE_BIND id=BindDeath delegate=OnDied handler=HandleFatherDied OK
+GA_BP[GA_FatherArmor] DELEGATE_WIRE ActivateAbility → AddDelegate[2] OK
+GA_BP[GA_FatherArmor] DELEGATE_WIRE EndAbility → RemoveDelegate[2] OK
+```
+
+### Test Cases
+
+| # | Test | Expected |
+|---|------|----------|
+| 1 | Bind OnDied to custom event | AddDelegate node created, wired to ActivateAbility |
+| 2 | Unbind in EndAbility | RemoveDelegate node created, wired to EndAbility |
+| 3 | Handler signature matches delegate | Custom event has correct parameter pins |
+| 4 | OwnerASC source resolution | GetAbilitySystemComponentFromActorInfo chain created |
+| 5 | Variable source resolution | Variable get node created and connected |
+| 6 | Multiple bindings | All bindings chained in order |
+| 7 | Invalid delegate name | `[E_DELEGATE_NOT_FOUND]` error |
+| 8 | Duplicate handler name | `[E_DELEGATE_HANDLER_EXISTS]` error |
+| 9 | Compile with bindings | Blueprint compiles successfully |
+| 10 | Runtime: delegate fires | Custom event executes when delegate broadcasts |
+
+### Dependencies
+
+Requires module additions to `GasAbilityGenerator.Build.cs`:
+- Already present: `BlueprintGraph`, `Kismet`, `KismetCompiler`
+- **No new dependencies required** - K2Node_AddDelegate/RemoveDelegate/CreateDelegate are in BlueprintGraph
+
+### Acceptance Criteria
+
+- [ ] Delegate bindings parsed from manifest
+- [ ] Custom events created with correct delegate signature parameters
+- [ ] UK2Node_CreateDelegate created and configured
+- [ ] UK2Node_AddDelegate created and wired to ActivateAbility
+- [ ] UK2Node_RemoveDelegate created and wired to EndAbility
+- [ ] Source resolution works for OwnerASC, PlayerASC, and variables
+- [ ] Known delegate whitelist validated
+- [ ] Error codes emitted for invalid configurations
+- [ ] Breadcrumb logs emitted for all binding operations
+- [ ] All 10 test cases pass
+- [ ] Blueprint compiles without errors
+
+### Risk Mitigation
+
+| Risk | Mitigation |
+|------|------------|
+| K2Node APIs undocumented | Validated against UE5.7 source: `K2Node_BaseMCDelegate.h`, `K2Node_CreateDelegate.h` |
+| Delegate signature mismatch | Use `GetDelegateSignature()` from FMulticastDelegateProperty |
+| Pin connection failures | Use existing `TryCreateConnection` pattern with Schema validation |
+| Compile failures | Contract 10 (FCompilerResultsLog) catches all compile errors |
+
+### References
+
+**Web Resources:**
+- [Custom K2 Nodes with Delegates](https://forums.unrealengine.com/t/custom-k2-nodes-with-delegates/457550)
+- [GAS Documentation - Delegate Examples](https://github.com/tranek/GASDocumentation)
+- [K2Node Introduction](https://olssondev.github.io/2023-02-13-K2Nodes/)
+- [FMemberReference API](https://docs.unrealengine.com/5.2/en-US/API/Runtime/Engine/Engine/FMemberReference/)
+
+**Engine Source:**
+- `Engine/Source/Editor/BlueprintGraph/Classes/K2Node_BaseMCDelegate.h`
+- `Engine/Source/Editor/BlueprintGraph/Classes/K2Node_AddDelegate.h`
+- `Engine/Source/Editor/BlueprintGraph/Classes/K2Node_CreateDelegate.h`
+- `Engine/Source/Editor/BlueprintGraph/Private/K2Node_MCDelegate.cpp`
+- `Engine/Source/Runtime/Engine/Classes/Engine/MemberReference.h`
+
+**Existing Generator Patterns:**
+- `GasAbilityGeneratorGenerators.cpp:9800-10058` - CreateEventNode, CreateCallFunctionNode
+- `GasAbilityGeneratorGenerators.cpp:12251` - Delegate binding complexity note
+
+---
+
 ## Summary Matrix
 
-| # | Task | Complexity | Risk | Edge Case | Files Changed |
-|---|------|------------|------|-----------|---------------|
-| 1 | P1.2 Transition Validation | LOW | NONE | No | 1 |
-| 2 | P1.3 Startup Validation | MEDIUM | NONE | No | 1 |
-| 3 | Circular Dep Detection | MEDIUM | LOW | Moderate | 1-2 |
-| 4 | FormState Preset Schema | MEDIUM | LOW | No | 2 |
-| 5 | Material Circular Refs | MEDIUM | LOW | Moderate | 1 |
-| 6 | Delegate Binding | HIGH | MEDIUM | No | 3 |
-| 7 | Split Generators.cpp | HIGH | HIGH | No | ~17 |
-| 8 | ActorComponent Generator | HIGH | MEDIUM | No | 3 |
+| # | Task | Complexity | Risk | Edge Case | Files Changed | Status |
+|---|------|------------|------|-----------|---------------|--------|
+| 1 | P1.2 Transition Validation | LOW | NONE | No | 1 | ✅ v4.18 |
+| 2 | P1.3 Startup Validation | MEDIUM | NONE | No | 1 | Pending |
+| 3 | Circular Dep Detection | MEDIUM | LOW | Moderate | 1-2 | ✅ v4.17 |
+| 4 | FormState Preset Schema | MEDIUM | LOW | No | 2 | Pending |
+| 5 | Material Circular Refs | MEDIUM | LOW | Moderate | 1 | Pending |
+| 6 | (moved to Section 9) | - | - | - | - | - |
+| 7 | Split Generators.cpp | HIGH | HIGH | No | ~17 | Pending |
+| 8 | ActorComponent Generator | HIGH | MEDIUM | No | 3 | ✅ v4.19 |
+| 9 | Delegate Binding Automation | HIGH | MEDIUM | No | 3 | ⏳ Audit |
 
 ---
 
