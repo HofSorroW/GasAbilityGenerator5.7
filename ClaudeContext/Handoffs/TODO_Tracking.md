@@ -189,6 +189,19 @@ gameplay_abilities:
 - ✅ Location: `Locked/GasAbilityGeneratorMetadata.h`, `Locked/GasAbilityGeneratorMetadata.cpp`
 - ✅ Additive change only - no guards removed or modified (per Rule #6)
 
+### Case-Duplicate Validation (COMPLETED v4.16.1)
+
+| Task | Description | Complexity | Status |
+|------|-------------|------------|--------|
+| Case-duplicate warning | Detect manifest names differing only by case | LOW | ✅ COMPLETE |
+
+**Details:**
+- ✅ GPT Audit Concern B (MEDIUM) - case-sensitive hashing could cause user confusion
+- ✅ Implemented `ValidateCaseDuplicates()` in parser with global scope
+- ✅ Machine-parseable warning format: `[W_CASE_DUPLICATE] 'X' (Type) matches 'Y' (case-insensitive)`
+- ✅ Location: `GasAbilityGeneratorParser.cpp` (not locked)
+- ✅ Commits: `066cdc9` (validation function), `03b7929` (warning prefix)
+
 ### Material Validation
 
 | Task | Description | Complexity |
