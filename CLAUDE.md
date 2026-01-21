@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.14.2) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.15.1) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -322,7 +322,7 @@ The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.12.4)
+## GasAbilityGenerator Plugin (v4.15.1)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1057,6 +1057,8 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.15.1 - GAS Audit Call-site Correction: Fixed AddLooseGameplayTags/RemoveLooseGameplayTags nodes using wrong UE5 API. Changed `class: AbilitySystemComponent` → `class: AbilitySystemBlueprintLibrary` and `Target` pin → `Actor` pin. These functions are static BlueprintCallable on the library class, not member functions on ASC. Affected 14 node instances across 6 abilities (GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer, GA_FatherSacrifice). Mechanical correctness fix - no guard logic changes.
+- v4.15 - Track B AbilityTaskWaitDelay Support: GAS Audit Track B complete. Added GameplayAbilitiesEditor and GameplayTasksEditor module dependencies. Implemented `CreateAbilityTaskWaitDelayNode()` using UK2Node_LatentAbilityCall with reflection-based property setting (ProxyFactoryFunctionName, ProxyFactoryClass, ProxyClass). Added `type: AbilityTaskWaitDelay` handler in node switch. Converted 7 Delay nodes to AbilityTaskWaitDelay: GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer (5× TransitionDelay 5s), GA_FatherExoskeletonDash (0.5s), GA_StealthField (8s). WaitDelay AbilityTasks auto-terminate when ability ends, providing built-in 3-layer lifecycle protection.
 - v4.14.2 - GAS Audit INV-1 Invulnerability Removal: Complete removal of unintended invulnerability per dual-agent audit decision. Removed `GE_TransitionInvulnerability` and `GE_DashInvulnerability` from manifest. Removed `Narrative.State.Invulnerable` from GE_ArmorState, GE_ExoskeletonState, GE_SymbioteState granted tags. Removed `Effect.Father.TransitionInvulnerability` and `Effect.Father.DashInvulnerability` tags. Form transitions now use `AddLooseGameplayTag(Father.State.Transitioning)` directly instead of GE application. **Kept:** `GE_SacrificeInvulnerability` (intentional 8s player invulnerability in GA_FatherSacrifice). Asset count: 164→162, Effects: 50→48, Tags: 206→204.
 - v4.14.1 - GAS Function Name Corrections: Fixed Blueprint compilation errors in form abilities. `ApplyGameplayEffectToSelf` on `AbilitySystemBlueprintLibrary` doesn't exist - changed to `BP_ApplyGameplayEffectToOwner` with `target_self: true` (function is on UGameplayAbility). `BP_RemoveGameplayEffectFromOwnerByClass` doesn't exist in Blueprint - changed to `BP_RemoveGameplayEffectFromOwnerWithGrantedTags` using granted tag matching. Removed unnecessary `GetFatherASC` nodes since `target_self: true` handles self-targeting. All 5 form abilities updated with correct function calls.
 - v4.14 - Full Transition State Automation: All 5 form abilities include transition state tracking in their event graphs. Pattern: Event_Activate → AddLooseGameplayTag(Father.State.Transitioning) → FormLogic; Event_End → RemoveLooseGameplayTag(Father.State.Transitioning). Standardized across GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer.

@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 4124,
-	"VersionName": "4.12.4",
+	"Version": 4151,
+	"VersionName": "4.15.1",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.12.4: Full sync-from-assets for Item abilities and Quest tasks/events.",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.15.1: Track B complete - AbilityTaskWaitDelay support, call-site corrections for GAS Audit.",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",
