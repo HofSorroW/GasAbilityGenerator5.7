@@ -39,7 +39,7 @@ static void ValidateCaseDuplicates(const FManifestData& Data)
 			if (*Existing != Name)
 			{
 				UE_LOG(LogGasAbilityParser, Warning,
-					TEXT("CASE DUPLICATE DETECTED: '%s' (%s) matches '%s' (case-insensitive). These will have different hashes."),
+					TEXT("[W_CASE_DUPLICATE] '%s' (%s) matches '%s' (case-insensitive). These will have different hashes."),
 					*Name, *AssetType, **Existing);
 			}
 		}
