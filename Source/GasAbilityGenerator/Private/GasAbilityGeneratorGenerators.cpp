@@ -11662,6 +11662,11 @@ namespace NodePlacement
 	constexpr int32 LANE_SEPARATION = 150;
 	constexpr int32 DATA_NODE_X_OFFSET = -250;
 
+	// v4.20.10: Pin-level positioning constants
+	constexpr float PIN_VERTICAL_SPACING = 26.0f;  // Approximate Y spacing between pins
+	constexpr float NODE_HEADER_HEIGHT = 30.0f;    // Height of node title bar
+	constexpr float PIN_SPREAD_MULTIPLIER = 3.0f;  // Amplify vertical spread based on pin position
+
 	// Height formulas - per EdGraphSchema_K2.cpp
 	constexpr float EVENT_BASE_HEIGHT = 48.0f;
 	constexpr float EVENT_HEIGHT_PER_PIN = 16.0f;
@@ -11743,7 +11748,62 @@ namespace NodePlacement
 
 		return static_cast<int32>(EXEC_BASE_HEIGHT);
 	}
+
+	/**
+	 * v4.20.9: Get the Y offset of a specific pin within a node.
+	 * Pin Y offset is calculated based on:
+	 * - Pins are grouped by direction (inputs on left, outputs on right)
+	 * - Exec pins appear at the top, followed by data pins
+	 * @param Node The UK2Node to query
+	 * @param PinName The name of the pin to find
+	 * @param Direction EGPD_Input or EGPD_Output
+	 * @return Y offset from node top (0 if pin not found)
+	 */
+	inline float GetPinYOffset(UK2Node* Node, const FString& PinName, EEdGraphPinDirection Direction)
+	{
+		if (!Node) return 0.0f;
+
+		// Collect visible pins of the requested direction, in order
+		TArray<UEdGraphPin*> DirectionPins;
+		for (UEdGraphPin* Pin : Node->Pins)
+		{
+			if (Pin && !Pin->bHidden && Pin->Direction == Direction)
+			{
+				DirectionPins.Add(Pin);
+			}
+		}
+
+		// Find the target pin and its index
+		int32 PinIndex = -1;
+		for (int32 i = 0; i < DirectionPins.Num(); ++i)
+		{
+			if (DirectionPins[i]->GetFName().ToString().Equals(PinName, ESearchCase::IgnoreCase) ||
+			    DirectionPins[i]->PinFriendlyName.ToString().Equals(PinName, ESearchCase::IgnoreCase))
+			{
+				PinIndex = i;
+				break;
+			}
+		}
+
+		if (PinIndex < 0)
+		{
+			// Pin not found, return middle of node as fallback
+			return NODE_HEADER_HEIGHT + (DirectionPins.Num() / 2.0f) * PIN_VERTICAL_SPACING;
+		}
+
+		// Y offset = header + (pin index * spacing)
+		return NODE_HEADER_HEIGHT + PinIndex * PIN_VERTICAL_SPACING;
+	}
 }
+
+/** v4.20.9: Tracks a specific pin-to-pin connection for layout */
+struct FPinConnection
+{
+	FString FromNodeId;
+	FString FromPinName;
+	FString ToNodeId;
+	FString ToPinName;
+};
 
 /** Placement info for a single node */
 struct FNodePlacementInfo
@@ -12009,135 +12069,190 @@ void FEventGraphGenerator::AutoLayoutNodes(
 		CurrentLaneStartY += MaxHeightInLane + LANE_SEPARATION;
 	}
 
-	// v4.20.3: Assign data nodes to LAYERS (like exec nodes) then recalculate positions
-	// Find connections for data nodes
-	TMap<FString, FString> DataNodeToSource;
-	TMap<FString, FString> DataNodeToConsumer;
+	// v4.20.10: Wave-based pin-level positioning for data nodes
+	// Position data nodes relative to their IMMEDIATE neighbors (not exec chain endpoints)
+	// Process in waves: first nodes connected to exec nodes, then their neighbors, etc.
+
+	// Build connection map: for each data node, track immediate source and consumer
+	struct FDataNodeConnection
+	{
+		FString SourceNodeId;     // Immediate source node (may be exec or data)
+		FString SourcePinName;    // Output pin on source
+		FString InputPinName;     // Input pin on this node
+		FString ConsumerNodeId;   // Immediate consumer node (may be exec or data)
+		FString ConsumerPinName;  // Input pin on consumer
+		FString OutputPinName;    // Output pin on this node
+	};
+	TMap<FString, FDataNodeConnection> DataNodeConnMap;
+
 	for (const FManifestGraphConnectionDefinition& Conn : Connections)
 	{
+		// Skip exec connections
+		if (IsExecOutputPin(Conn.From.PinName) || IsExecOutputPin(Conn.To.PinName))
+			continue;
+
+		// Track incoming connections to data nodes
 		if (FNodePlacementInfo* ToInfo = PlacementMap.Find(Conn.To.NodeId))
 		{
-			if (ToInfo->bIsDataNode && !DataNodeToSource.Contains(Conn.To.NodeId))
+			if (ToInfo->bIsDataNode)
 			{
-				DataNodeToSource.Add(Conn.To.NodeId, Conn.From.NodeId);
+				FDataNodeConnection& DC = DataNodeConnMap.FindOrAdd(Conn.To.NodeId);
+				if (DC.SourceNodeId.IsEmpty())
+				{
+					DC.SourceNodeId = Conn.From.NodeId;
+					DC.SourcePinName = Conn.From.PinName;
+					DC.InputPinName = Conn.To.PinName;
+				}
 			}
 		}
+
+		// Track outgoing connections from data nodes
 		if (FNodePlacementInfo* FromInfo = PlacementMap.Find(Conn.From.NodeId))
 		{
-			if (FromInfo->bIsDataNode && !DataNodeToConsumer.Contains(Conn.From.NodeId))
+			if (FromInfo->bIsDataNode)
 			{
-				DataNodeToConsumer.Add(Conn.From.NodeId, Conn.To.NodeId);
+				FDataNodeConnection& DC = DataNodeConnMap.FindOrAdd(Conn.From.NodeId);
+				if (DC.ConsumerNodeId.IsEmpty())
+				{
+					DC.ConsumerNodeId = Conn.To.NodeId;
+					DC.ConsumerPinName = Conn.To.PinName;
+					DC.OutputPinName = Conn.From.PinName;
+				}
 			}
 		}
 	}
 
-	// Assign layers to data nodes based on their consumer's layer
-	int32 DataNodesPositionedNearConsumer = 0;
-	int32 DataNodesWithInvalidConsumer = 0;
-
-	for (auto& Pair : PlacementMap)
+	// Helper: check if a node has a valid position
+	auto HasPosition = [&PlacementMap](const FString& NodeId) -> bool
 	{
-		if (!Pair.Value.bIsDataNode || Pair.Value.Layer >= 0)
+		if (FNodePlacementInfo* Info = PlacementMap.Find(NodeId))
 		{
-			continue;
+			return Info->Layer >= 0 || (Info->PosX != 0 || Info->PosY != 0);
 		}
+		return false;
+	};
 
-		// Trace to find consumer's layer
-		FString CurrentId = Pair.Key;
-		int32 ConsumerLayer = -1;
-		int32 ChainDepth = 0;
-
-		while (ChainDepth < 10)
+	// Helper: get node position
+	auto GetNodePos = [&PlacementMap](const FString& NodeId) -> TPair<int32, int32>
+	{
+		if (FNodePlacementInfo* Info = PlacementMap.Find(NodeId))
 		{
-			FString* ConsumerId = DataNodeToConsumer.Find(CurrentId);
-			if (!ConsumerId)
-			{
-				break;
-			}
+			return MakeTuple(Info->PosX, Info->PosY);
+		}
+		return MakeTuple(0, 0);
+	};
 
-			FNodePlacementInfo* ConsumerInfo = PlacementMap.Find(*ConsumerId);
-			if (!ConsumerInfo)
-			{
-				break;
-			}
+	int32 DataNodesPositioned = 0;
+	int32 DataNodesUnpositioned = 0;
+	int32 WaveCount = 0;
 
-			if (ConsumerInfo->Layer >= 0)
+	// Process in waves until no more nodes can be positioned
+	bool bProgress = true;
+	while (bProgress && WaveCount < 20)
+	{
+		bProgress = false;
+		WaveCount++;
+
+		for (auto& Pair : PlacementMap)
+		{
+			// Skip non-data nodes and already positioned nodes
+			if (!Pair.Value.bIsDataNode)
+				continue;
+			if (Pair.Value.Layer >= 0)
+				continue;
+
+			const FDataNodeConnection* DC = DataNodeConnMap.Find(Pair.Key);
+			if (!DC)
+				continue;
+
+			// Check if immediate consumer has a position
+			bool bConsumerPositioned = !DC->ConsumerNodeId.IsEmpty() && HasPosition(DC->ConsumerNodeId);
+			bool bSourcePositioned = !DC->SourceNodeId.IsEmpty() && HasPosition(DC->SourceNodeId);
+
+			if (!bConsumerPositioned && !bSourcePositioned)
+				continue; // Can't position yet - wait for neighbors
+
+			// Get the positioned neighbor's info
+			FNodePlacementInfo* NeighborInfo = nullptr;
+			FString NeighborPinName;
+			FString MyPinName;
+			bool bNeighborIsConsumer = false;
+
+			if (bConsumerPositioned)
 			{
-				ConsumerLayer = ConsumerInfo->Layer;
-				break;
-			}
-			else if (ConsumerInfo->bIsDataNode)
-			{
-				// Consumer is also a data node, continue tracing
-				CurrentId = *ConsumerId;
-				ChainDepth++;
+				NeighborInfo = PlacementMap.Find(DC->ConsumerNodeId);
+				NeighborPinName = DC->ConsumerPinName;
+				MyPinName = DC->OutputPinName;
+				bNeighborIsConsumer = true;
 			}
 			else
 			{
-				break;
+				NeighborInfo = PlacementMap.Find(DC->SourceNodeId);
+				NeighborPinName = DC->SourcePinName;
+				MyPinName = DC->InputPinName;
+				bNeighborIsConsumer = false;
 			}
-		}
 
-		if (ConsumerLayer >= 0)
-		{
-			// Assign data node to same layer as consumer (it will be positioned at same X)
-			Pair.Value.Layer = ConsumerLayer;
-			Pair.Value.LaneIndex = LaneIndex; // Use the data node lane
-			DataNodesPositionedNearConsumer++;
-		}
-		else
-		{
-			DataNodesWithInvalidConsumer++;
-		}
-	}
+			if (!NeighborInfo)
+				continue;
 
-	// Now recalculate positions for ALL nodes (including data nodes) by layer
-	// Clear previous positions
-	for (auto& Pair : PlacementMap)
-	{
-		Pair.Value.PosX = 0;
-		Pair.Value.PosY = 0;
-	}
+			// Get UK2Nodes for pin offset calculation
+			UK2Node** NeighborNodePtr = NodeMap.Find(NeighborInfo->NodeId);
+			UK2Node** DataNodePtr = NodeMap.Find(Pair.Key);
 
-	// Group ALL nodes by layer (exec and data together)
-	TMap<int32, TArray<FString>> NodesByLayer;
-	for (auto& Pair : PlacementMap)
-	{
-		if (Pair.Value.Layer >= 0)
-		{
-			NodesByLayer.FindOrAdd(Pair.Value.Layer).Add(Pair.Key);
-		}
-	}
+			// Calculate pin Y offsets
+			float NeighborPinY = 0.0f;
+			float MyPinY = 0.0f;
 
-	// Calculate positions: X by layer, Y by stacking within layer
-	int32 MaxLayer = 0;
-	for (auto& LayerPair : NodesByLayer)
-	{
-		MaxLayer = FMath::Max(MaxLayer, LayerPair.Key);
-	}
-
-	for (int32 Layer = 0; Layer <= MaxLayer; ++Layer)
-	{
-		TArray<FString>* NodesInLayer = NodesByLayer.Find(Layer);
-		if (!NodesInLayer)
-		{
-			continue;
-		}
-
-		int32 CurrentY = 0;
-		for (const FString& NodeId : *NodesInLayer)
-		{
-			FNodePlacementInfo* Info = PlacementMap.Find(NodeId);
-			if (Info)
+			if (NeighborNodePtr && *NeighborNodePtr && !NeighborPinName.IsEmpty())
 			{
-				Info->PosX = Layer * HORIZONTAL_LAYER_SPACING;
-				Info->PosY = CurrentY;
-				CurrentY += Info->EstimatedHeight + VERTICAL_NODE_GAP;
+				EEdGraphPinDirection Dir = bNeighborIsConsumer ? EGPD_Input : EGPD_Output;
+				NeighborPinY = GetPinYOffset(*NeighborNodePtr, NeighborPinName, Dir);
 			}
+
+			if (DataNodePtr && *DataNodePtr && !MyPinName.IsEmpty())
+			{
+				EEdGraphPinDirection Dir = bNeighborIsConsumer ? EGPD_Output : EGPD_Input;
+				MyPinY = GetPinYOffset(*DataNodePtr, MyPinName, Dir);
+			}
+
+			// Calculate position
+			int32 TargetX, TargetY;
+
+			if (bNeighborIsConsumer)
+			{
+				// Position to the LEFT of consumer (data flows left to right)
+				TargetX = NeighborInfo->PosX - HORIZONTAL_LAYER_SPACING / 2;
+				// Spread vertically based on pin position - amplified for visibility
+				float PinDelta = (NeighborPinY - MyPinY) * PIN_SPREAD_MULTIPLIER;
+				TargetY = NeighborInfo->PosY + static_cast<int32>(PinDelta);
+			}
+			else
+			{
+				// Position to the RIGHT of source
+				TargetX = NeighborInfo->PosX + HORIZONTAL_LAYER_SPACING / 2;
+				// Spread vertically based on pin position - amplified for visibility
+				float PinDelta = (NeighborPinY - MyPinY) * PIN_SPREAD_MULTIPLIER;
+				TargetY = NeighborInfo->PosY + static_cast<int32>(PinDelta);
+			}
+
+			// Debug: log position calculation (v4.20.10 with spread multiplier)
+			LogGeneration(FString::Printf(TEXT("    [DEBUG] '%s' -> '%s'.%s: Pos(%d,%d) + PinDelta(%.0f) = Pos(%d,%d)"),
+				*Pair.Key, *NeighborInfo->NodeId, *NeighborPinName,
+				NeighborInfo->PosX, NeighborInfo->PosY, (NeighborPinY - MyPinY) * PIN_SPREAD_MULTIPLIER,
+				TargetX, TargetY));
+
+			// Set position
+			Pair.Value.PosX = TargetX;
+			Pair.Value.PosY = TargetY;
+			Pair.Value.Layer = 0; // Mark as positioned
+
+			DataNodesPositioned++;
+			bProgress = true;
 		}
 	}
 
-	// Handle data nodes with no consumers (place at origin area)
+	// Handle unpositioned data nodes (no positioned neighbors after all waves)
 	int32 UnconnectedDataY = CurrentLaneStartY + LANE_SEPARATION;
 	int32 UnconnectedDataNodes = 0;
 	for (auto& Pair : PlacementMap)
@@ -12151,11 +12266,31 @@ void FEventGraphGenerator::AutoLayoutNodes(
 		}
 	}
 
-	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] Data nodes: %d near consumer, %d invalid consumer, %d unconnected"),
-		DataNodesPositionedNearConsumer, DataNodesWithInvalidConsumer, UnconnectedDataNodes));
+	LogGeneration(FString::Printf(TEXT("  [PLACEMENT] v4.20.10 Wave-based: %d data nodes in %d waves, %d unconnected"),
+		DataNodesPositioned, WaveCount, UnconnectedDataNodes));
 
-	// Grid snap and apply positions to actual nodes
+	// v4.20.10: Grid snap and apply positions to actual nodes
+	// CRITICAL: Must call Modify() on graph and nodes for positions to persist
+	// See: https://easycomplex-tech.com/blog/Unreal/AssetEditor/UEAssetEditorDev-AssetEditorGraphNode/
 	int32 NodesPositioned = 0;
+	UEdGraph* ParentGraph = nullptr;
+
+	// Get the graph from the first node
+	for (auto& Pair : NodeMap)
+	{
+		if (Pair.Value && Pair.Value->GetGraph())
+		{
+			ParentGraph = Pair.Value->GetGraph();
+			break;
+		}
+	}
+
+	// Mark graph for modification (required for position persistence)
+	if (ParentGraph)
+	{
+		ParentGraph->Modify();
+	}
+
 	for (auto& Pair : PlacementMap)
 	{
 		UK2Node** NodePtr = NodeMap.Find(Pair.Key);
@@ -12165,6 +12300,10 @@ void FEventGraphGenerator::AutoLayoutNodes(
 			Pair.Value.PosX = SnapToGrid(Pair.Value.PosX);
 			Pair.Value.PosY = SnapToGrid(Pair.Value.PosY);
 
+			// Mark node for modification (required for transaction system)
+			(*NodePtr)->Modify();
+
+			// Set positions
 			(*NodePtr)->NodePosX = Pair.Value.PosX;
 			(*NodePtr)->NodePosY = Pair.Value.PosY;
 			NodesPositioned++;
@@ -12832,10 +12971,106 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		}
 		else
 		{
-			// Variable lookup - assume already typed correctly
-			// For now, log that manual variable connection is needed
-			LogGeneration(FString::Printf(TEXT("    [W_DELEGATE_VARIABLE_SOURCE] Source '%s' requires manual variable connection"),
-				*Binding.Source));
+			// Variable lookup - find Blueprint variable by name
+			FName VarName = FName(*Binding.Source);
+			bool bVariableFound = false;
+
+			// Check if variable exists in Blueprint
+			for (const FBPVariableDescription& VarDesc : Blueprint->NewVariables)
+			{
+				if (VarDesc.VarName == VarName)
+				{
+					bVariableFound = true;
+					break;
+				}
+			}
+
+			if (bVariableFound)
+			{
+				// Create VariableGet node
+				UK2Node_VariableGet* GetVarNode = NewObject<UK2Node_VariableGet>(EventGraph);
+				EventGraph->AddNode(GetVarNode, false, false);
+				GetVarNode->VariableReference.SetSelfMember(VarName);
+				GetVarNode->CreateNewGuid();
+				GetVarNode->PostPlacedNewNode();
+				GetVarNode->AllocateDefaultPins();
+				GetVarNode->NodePosX = CurrentPosX + 200.0f;
+				GetVarNode->NodePosY = CurrentPosY + 200.0f;
+
+				// Find the variable output pin
+				UEdGraphPin* VarOutPin = GetVarNode->FindPin(VarName);
+				if (!VarOutPin)
+				{
+					// Try finding by return value
+					VarOutPin = GetVarNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+				}
+				if (!VarOutPin)
+				{
+					// Find first non-exec output pin
+					for (UEdGraphPin* Pin : GetVarNode->Pins)
+					{
+						if (Pin && Pin->Direction == EGPD_Output &&
+						    Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
+						{
+							VarOutPin = Pin;
+							break;
+						}
+					}
+				}
+
+				if (VarOutPin)
+				{
+					// Check if variable is already UNarrativeAbilitySystemComponent or needs cast
+					bool bNeedsVarCast = false;
+					if (VarOutPin->PinType.PinSubCategoryObject.IsValid())
+					{
+						UClass* VarClass = Cast<UClass>(VarOutPin->PinType.PinSubCategoryObject.Get());
+						if (VarClass && !VarClass->IsChildOf(NarrativeASCClass))
+						{
+							bNeedsVarCast = true;
+						}
+					}
+
+					if (bNeedsVarCast)
+					{
+						// Create cast node for variable
+						UK2Node_DynamicCast* VarCastNode = NewObject<UK2Node_DynamicCast>(EventGraph);
+						VarCastNode->TargetType = NarrativeASCClass;
+						EventGraph->AddNode(VarCastNode, false, false);
+						VarCastNode->CreateNewGuid();
+						VarCastNode->PostPlacedNewNode();
+						VarCastNode->AllocateDefaultPins();
+						VarCastNode->NodePosX = CurrentPosX + 400.0f;
+						VarCastNode->NodePosY = CurrentPosY + 200.0f;
+
+						// Wire Variable → Cast
+						UEdGraphPin* VarCastInPin = VarCastNode->GetCastSourcePin();
+						if (VarCastInPin)
+						{
+							VarOutPin->MakeLinkTo(VarCastInPin);
+						}
+
+						SourceASCPin = VarCastNode->GetCastResultPin();
+						LogGeneration(FString::Printf(TEXT("    Created variable '%s' with cast to UNarrativeAbilitySystemComponent"), *Binding.Source));
+					}
+					else
+					{
+						// Variable is already correct type, use directly
+						SourceASCPin = VarOutPin;
+						LogGeneration(FString::Printf(TEXT("    Created variable getter for '%s'"), *Binding.Source));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_VARIABLE_PIN] Cannot find output pin for variable '%s'"),
+						*Binding.Source));
+				}
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_SOURCE_INVALID] Variable '%s' not found in Blueprint"),
+					*Binding.Source));
+			}
 		}
 
 		// 5. Create delegate reference for Add/Remove nodes
