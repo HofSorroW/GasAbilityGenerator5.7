@@ -149,6 +149,11 @@ MSG:  'identifier': undeclared identifier
 
 ## Important Rules
 
+### Locked Exception: Father Validation in Core (v4.16)
+**DO NOT** add new project-specific validations (e.g., `GA_Father*`, `Father.State.*`) to core generator code without explicit approval from Erdem. Existing Father validations at lines 2793-2842 and 15378-15425 are a temporary exception.
+
+**Canonical reference:** `ClaudeContext/Handoffs/LOCKED_CONTRACTS.md` — Temporary Exception 1
+
 ### Always Push After Commit
 When committing changes to git, always push to remote immediately after. Combine commit and push in the workflow - don't wait for user to request push separately.
 

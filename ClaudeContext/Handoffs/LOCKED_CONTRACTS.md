@@ -177,6 +177,33 @@ In dry-run mode, the system **MUST NOT** persist changes:
 
 ---
 
+## TEMPORARY EXCEPTION 1 — Rule #9 Father Validation in Core (v4.16)
+
+### Background
+Rule #9 normally forbids project-specific logic in core generator code.
+
+**Exception (temporary, intentional):** The plugin currently contains Father-project-specific validation checks (e.g., `GA_Father*` ability names and `Father.State.*` tags). This is accepted only to preserve critical validation behavior while we prioritize stability and correctness.
+
+### Applies to these exact code locations (enforcement scope)
+- `Source/GasAbilityGenerator/Private/GasAbilityGeneratorGenerators.cpp:2793–2842` — ValidateFormAbility
+- `Source/GasAbilityGenerator/Private/GasAbilityGeneratorGenerators.cpp:15378–15425` — ValidateStartupEffects
+
+### Constraints (must follow)
+1. **No new project-specific validations** may be added to core generator/parser code unless Erdem explicitly approves the change.
+2. **Existing Father validations must remain diagnostic-only** (warnings/errors + reporting). They must not introduce new generation behavior beyond already-locked compile/save/graph gates.
+3. **Father-specific identifiers must remain isolated** to the two locations above (no duplication or spreading to other generators/files).
+
+### Grep Guard
+Any new occurrences of `GA_Father` or `Father.State.` outside the approved ranges (2793–2842, 15378–15425) require explicit approval from Erdem.
+
+### Deferred Generalization
+When scheduled, these validations will be migrated to a manifest-driven opt-in validation profile, and hard-coded Father identifiers will be removed from core.
+
+### Status
+**LOCKED** until Erdem changes it.
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -197,3 +224,4 @@ Any change that touches a LOCKED implementation must:
 |---------|------|---------|
 | v4.12.5 | 2026-01-18 | Initial creation after GPT validation session |
 | v4.16 | 2026-01-21 | Added Contract 10 — Blueprint Compile Gate (GPT audit) |
+| v4.16.1 | 2026-01-21 | Added Temporary Exception 1 — Rule #9 Father Validation (dual-agent audit) |
