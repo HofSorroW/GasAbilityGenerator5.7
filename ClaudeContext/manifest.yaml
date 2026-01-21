@@ -893,7 +893,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [1700, 200]
         - id: MakeTagContainer_AddTransitioning
           type: CallFunction
@@ -960,7 +960,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [2700, 200]
         - id: MakeTagContainer_RemoveTransitioning
           type: CallFunction
@@ -1078,7 +1078,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [900, 600]
         - id: MakeTagContainer_End
           type: CallFunction
@@ -1163,14 +1163,14 @@ gameplay_abilities:
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [AddTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [RemoveTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [RemoveTransitioningTag, Actor]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -1211,8 +1211,8 @@ gameplay_abilities:
           to: [RemoveTransitioningTag_End, Exec]
         - from: [GetFatherRef_End, FatherRef]
           to: [GetFatherASC_End, Actor]
-        - from: [GetFatherASC_End, ReturnValue]
-          to: [RemoveTransitioningTag_End, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [RemoveTransitioningTag_End, Actor]
         - from: [MakeLiteralTag_End, ReturnValue]
           to: [MakeTagContainer_End, Tag]
         - from: [MakeTagContainer_End, ReturnValue]
@@ -1338,7 +1338,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [1900, 200]
         - id: MakeTagContainer_AddTransitioning
           type: CallFunction
@@ -1444,7 +1444,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [2900, 200]
         - id: MakeTagContainer_RemoveTransitioning
           type: CallFunction
@@ -1675,14 +1675,14 @@ gameplay_abilities:
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [AddTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [RemoveTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [RemoveTransitioningTag, Actor]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -1889,7 +1889,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [1600, 200]
         - id: MakeTagContainer_AddTransitioning
           type: CallFunction
@@ -1995,7 +1995,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [2600, 200]
         - id: MakeTagContainer_RemoveTransitioning
           type: CallFunction
@@ -2246,14 +2246,14 @@ gameplay_abilities:
         # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherASC_Transition, Actor]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [AddTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [RemoveTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [RemoveTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
@@ -2462,7 +2462,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [1700, 200]
         - id: MakeTagContainer_AddTransitioning
           type: CallFunction
@@ -2529,7 +2529,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [2700, 200]
         - id: MakeTagContainer_RemoveTransitioning
           type: CallFunction
@@ -2821,14 +2821,14 @@ gameplay_abilities:
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [AddTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [RemoveTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [RemoveTransitioningTag, Actor]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -3034,7 +3034,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [1600, 200]
         - id: MakeTagContainer_AddTransitioning
           type: CallFunction
@@ -3140,7 +3140,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [2600, 200]
         - id: MakeTagContainer_RemoveTransitioning
           type: CallFunction
@@ -3302,14 +3302,14 @@ gameplay_abilities:
         # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherASC_Transition, Actor]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [AddTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [GetFatherASC_Transition, ReturnValue]
-          to: [RemoveTransitioningTag, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [RemoveTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
@@ -5307,7 +5307,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: AddLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [3300, 0]
         - id: MakeTagContainer_Dormant
           type: CallFunction
@@ -5397,7 +5397,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [1450, 600]
         - id: MakeTagContainer_RemoveDormant
           type: CallFunction
@@ -5473,7 +5473,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RemoveLooseGameplayTags
-            class: AbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [1500, 1000]
         - id: MakeTagContainer_End
           type: CallFunction
@@ -5527,8 +5527,8 @@ gameplay_abilities:
           to: [DisableCollision, Target]
         - from: [SetFatherRef, FatherRef]
           to: [GetFatherASC, Actor]
-        - from: [GetFatherASC, ReturnValue]
-          to: [AddDormantTag, Target]
+        - from: [SetFatherRef, FatherRef]
+          to: [AddDormantTag, Actor]
         - from: [MakeLiteralTag_Dormant, ReturnValue]
           to: [MakeTagContainer_Dormant, Tag]
         - from: [MakeTagContainer_Dormant, ReturnValue]
@@ -5567,8 +5567,8 @@ gameplay_abilities:
           to: [ShowFather_Timer, Target]
         - from: [GetFatherRef_Timer, FatherRef]
           to: [EnableCollision_Timer, Target]
-        - from: [GetFatherASC_Timer, ReturnValue]
-          to: [RemoveDormantTag_Timer, Target]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [RemoveDormantTag_Timer, Actor]
         - from: [MakeLiteralTag_RemoveDormant, ReturnValue]
           to: [MakeTagContainer_RemoveDormant, Tag]
         - from: [MakeTagContainer_RemoveDormant, ReturnValue]
@@ -5601,8 +5601,8 @@ gameplay_abilities:
           to: [EnableCollision_End, Target]
         - from: [GetFatherRef_End, FatherRef]
           to: [GetFatherASC_End, Actor]
-        - from: [GetFatherASC_End, ReturnValue]
-          to: [RemoveDormantTag_End, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [RemoveDormantTag_End, Actor]
         - from: [MakeLiteralTag_End, ReturnValue]
           to: [MakeTagContainer_End, Tag]
         - from: [MakeTagContainer_End, ReturnValue]
