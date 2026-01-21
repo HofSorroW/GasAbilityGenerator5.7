@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.15.1) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.20) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -1104,6 +1104,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.20 - Event Graph Node Placement System: Layered graph layout algorithm for readable Blueprint event graphs. Fixes root cause at GasAbilityGeneratorGenerators.cpp:9510-9511 where `NodePosY = 0` caused all nodes to overlap vertically. Implements BFS-based layer assignment from entry events, lane separation for multiple event chains, and data node positioning near consumers. Height formulas: Event family (48 + pins×16), Exec Logic family (80 + pins×18). Constants: GRID_SIZE=16, HORIZONTAL_LAYER_SPACING=350, VERTICAL_NODE_GAP=50, LANE_SEPARATION=150. Manifest type → family mapping table covers 18 node types. 6 acceptance tests: determinism, grid alignment, no overlap, exec monotonicity, lane separation, orphan warnings. Full audit trail in `ClaudeContext/Handoffs/EventGraph_Node_Placement_Reference.md`.
 - v4.19 - ActorComponentBlueprintGenerator: New generator for UActorComponent-derived blueprints. Supports variables (reuses FManifestActorVariableDefinition), event dispatchers with custom parameters (PC_MCDelegate + signature graph), functions with input/output pins and pure flag, tick configuration (bCanEverTick, bStartWithTickEnabled, TickInterval). 7-phase implementation: (1) Create Blueprint with parent class whitelist validation, (2) Add Variables with duplicate guard, (3) Add Event Dispatchers, (4) Add Functions with reserved suffix guard (_Implementation, _Validate, _C, __), (5) Compile (Contract 10), (6) Configure Tick on CDO AFTER compile, (7) Save. New types: FManifestDispatcherParam, FManifestEventDispatcherDefinition, FManifestFunctionParam, FManifestFunctionDefinition, FManifestComponentBlueprintDefinition. Breadcrumb logging: COMP_BP[Name] PH1-PH7.
 - v4.18 - P1.2 Form Transition Validation: Parse-time lint for Father form-transition state machine. Validates that source forms grant tags required by target forms when using cancel_abilities_with_tag. Warns on invalid transitions (e.g., Crawler→Symbiote when Symbiote requires Father.State.Attached). Tag-based extraction from Ability.Father.{Form} pattern. Log-only warnings at parse time with machine-parseable [W_TRANSITION_INVALID] format. Father-specific scope (intentional per Rule #9).
 - v4.17 - Circular Dependency Detection: Parse-time validation using Tarjan's algorithm to detect strongly connected components in asset dependency graph. Tracks dependencies: GA→GE (cooldown), BT→BB, etc. Reports cycles with full path: [E_CIRCULAR_DEPENDENCY] Cycle detected: A → B → C → A. Generation blocked on cycle detection (Error, not Warning). Implemented as Dependency Contract v1 in LOCKED_CONTRACTS.md.
