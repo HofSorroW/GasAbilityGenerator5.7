@@ -518,3 +518,4 @@ These are intentionally not implemented:
 | 2026-01-21 | **v4.16 Consolidation:** Archived Graph_Validation_Implementation_v4.16.md (work complete) |
 | 2026-01-21 | **v4.16 Consolidation:** Archived Generator_Roadmap_CategoryC_v1_0.md (merged into this file) |
 | 2026-01-21 | **v4.16.1:** Hash collision detection complete - `CheckHashCollision()` and `ClearCollisionMap()` added to metadata registry |
+| 2026-01-21 | **v4.16.1:** Case-duplicate validation warning (Concern B) - `ValidateCaseDuplicates()` warns on case-only name differences |

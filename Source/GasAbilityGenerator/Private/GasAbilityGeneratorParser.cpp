@@ -1,5 +1,6 @@
 // GasAbilityGenerator v2.8.2
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.16.1: Added case-duplicate validation warning (Concern B from audit)
 // v2.8.2: Added nested parameters support for CallFunction nodes (parameters: section under properties:)
 // v2.6.14: Prefix validation for all asset types (E_, IA_, IMC_, GE_, GA_, BP_, WBP_, BB_, BT_, M_, MF_, NS_, etc.)
 // v2.5.6: Added NPC system extensions - suffix-based section names (_tags, _gameplay_effects, etc.)
@@ -10,6 +11,78 @@
 // v2.1.7: Fixed variable subsection exit - now properly detects new blueprint items by indent level
 
 #include "GasAbilityGeneratorParser.h"
+
+// v4.16.1: Log category for parser warnings
+DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityParser, Log, All);
+
+/**
+ * v4.16.1: Validate manifest for case-only duplicate asset names
+ * Detects when two assets have names that differ only by case (e.g., GA_Father vs GA_FATHER)
+ * This is a user error that could cause confusion since hashes are case-sensitive
+ */
+static void ValidateCaseDuplicates(const FManifestData& Data)
+{
+	// Map: lowercase name -> original name (first occurrence)
+	TMap<FString, FString> LowerToOriginal;
+
+	// Helper lambda to check and warn
+	auto CheckName = [&LowerToOriginal](const FString& Name, const FString& AssetType)
+	{
+		if (Name.IsEmpty()) return;
+
+		FString LowerName = Name.ToLower();
+		FString* Existing = LowerToOriginal.Find(LowerName);
+
+		if (Existing)
+		{
+			// Case-insensitive match found - check if case differs
+			if (*Existing != Name)
+			{
+				UE_LOG(LogGasAbilityParser, Warning,
+					TEXT("CASE DUPLICATE DETECTED: '%s' (%s) matches '%s' (case-insensitive). These will have different hashes."),
+					*Name, *AssetType, **Existing);
+			}
+		}
+		else
+		{
+			LowerToOriginal.Add(LowerName, Name);
+		}
+	};
+
+	// Check all asset types
+	for (const auto& Def : Data.Enumerations) { CheckName(Def.Name, TEXT("Enumeration")); }
+	for (const auto& Def : Data.InputActions) { CheckName(Def.Name, TEXT("InputAction")); }
+	for (const auto& Def : Data.InputMappingContexts) { CheckName(Def.Name, TEXT("InputMappingContext")); }
+	for (const auto& Def : Data.GameplayEffects) { CheckName(Def.Name, TEXT("GameplayEffect")); }
+	for (const auto& Def : Data.GameplayAbilities) { CheckName(Def.Name, TEXT("GameplayAbility")); }
+	for (const auto& Def : Data.ActorBlueprints) { CheckName(Def.Name, TEXT("ActorBlueprint")); }
+	for (const auto& Def : Data.WidgetBlueprints) { CheckName(Def.Name, TEXT("WidgetBlueprint")); }
+	for (const auto& Def : Data.Blackboards) { CheckName(Def.Name, TEXT("Blackboard")); }
+	for (const auto& Def : Data.BehaviorTrees) { CheckName(Def.Name, TEXT("BehaviorTree")); }
+	for (const auto& Def : Data.Materials) { CheckName(Def.Name, TEXT("Material")); }
+	for (const auto& Def : Data.MaterialFunctions) { CheckName(Def.Name, TEXT("MaterialFunction")); }
+	for (const auto& Def : Data.MaterialInstances) { CheckName(Def.Name, TEXT("MaterialInstance")); }
+	for (const auto& Def : Data.FloatCurves) { CheckName(Def.Name, TEXT("FloatCurve")); }
+	for (const auto& Def : Data.AnimationMontages) { CheckName(Def.Name, TEXT("AnimationMontage")); }
+	for (const auto& Def : Data.AnimationNotifies) { CheckName(Def.Name, TEXT("AnimationNotify")); }
+	for (const auto& Def : Data.DialogueBlueprints) { CheckName(Def.Name, TEXT("DialogueBlueprint")); }
+	for (const auto& Def : Data.EquippableItems) { CheckName(Def.Name, TEXT("EquippableItem")); }
+	for (const auto& Def : Data.Activities) { CheckName(Def.Name, TEXT("Activity")); }
+	for (const auto& Def : Data.AbilityConfigurations) { CheckName(Def.Name, TEXT("AbilityConfiguration")); }
+	for (const auto& Def : Data.ActivityConfigurations) { CheckName(Def.Name, TEXT("ActivityConfiguration")); }
+	for (const auto& Def : Data.ItemCollections) { CheckName(Def.Name, TEXT("ItemCollection")); }
+	for (const auto& Def : Data.NarrativeEvents) { CheckName(Def.Name, TEXT("NarrativeEvent")); }
+	for (const auto& Def : Data.GameplayCues) { CheckName(Def.Name, TEXT("GameplayCue")); }
+	for (const auto& Def : Data.NPCDefinitions) { CheckName(Def.Name, TEXT("NPCDefinition")); }
+	for (const auto& Def : Data.CharacterDefinitions) { CheckName(Def.Name, TEXT("CharacterDefinition")); }
+	for (const auto& Def : Data.CharacterAppearances) { CheckName(Def.Name, TEXT("CharacterAppearance")); }
+	for (const auto& Def : Data.TaggedDialogueSets) { CheckName(Def.Name, TEXT("TaggedDialogueSet")); }
+	for (const auto& Def : Data.NiagaraSystems) { CheckName(Def.Name, TEXT("NiagaraSystem")); }
+	for (const auto& Def : Data.ActivitySchedules) { CheckName(Def.Name, TEXT("ActivitySchedule")); }
+	for (const auto& Def : Data.GoalItems) { CheckName(Def.Name, TEXT("GoalItem")); }
+	for (const auto& Def : Data.Quests) { CheckName(Def.Name, TEXT("Quest")); }
+	for (const auto& Def : Data.TriggerSets) { CheckName(Def.Name, TEXT("TriggerSet")); }
+}
 
 bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, FManifestData& OutData)
 {
@@ -337,6 +410,9 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 			ParseTaggedDialogueSets(Lines, i, OutData);
 		}
 	}
+
+	// v4.16.1: Validate for case-only duplicate asset names (Concern B from audit)
+	ValidateCaseDuplicates(OutData);
 
 	return true;
 }
