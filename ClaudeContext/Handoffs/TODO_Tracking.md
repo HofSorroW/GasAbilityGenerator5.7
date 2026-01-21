@@ -345,26 +345,6 @@ gameplay_abilities:
 
 **Note:** GameplayCues can be created manually with low friction. These are nice-to-have.
 
-### CSV Parser Phase 2 Features
-
-**Source:** `GasAbilityGeneratorDialogueCSVParser.h:20-21`
-
-| Task | Description | Location |
-|------|-------------|----------|
-| NC_* Conditions Parsing | Parse dialogue node conditions from CSV | `GasAbilityGeneratorDialogueCSVParser.h:20` |
-| NE_* Events Parsing | Parse dialogue node events from CSV | `GasAbilityGeneratorDialogueCSVParser.h:21` |
-
-**Current State:** Fields exist in `FDialogueCSVRow` struct but are not processed
-
-**Implementation:**
-1. Parse `Conditions` column for NC_* references
-2. Parse `Events` column for NE_* references
-3. Convert to dialogue node condition/event arrays
-4. Wire up to generated dialogue Blueprint nodes
-
-**Complexity:** MEDIUM
-**Value:** LOW - Manual setup works fine for complex conditions/events
-
 ---
 
 ## Known Edge Cases (Untested/Unsupported)
