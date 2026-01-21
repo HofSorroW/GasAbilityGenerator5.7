@@ -2,8 +2,30 @@
 
 **Created:** 2026-01-18
 **Updated:** 2026-01-21
-**Plugin Version:** v4.16
+**Plugin Version:** v4.17
 **Status:** Consolidated tracking file for all pending tasks
+
+---
+
+## ✅ Recently Completed - Circular Dependency Detection (v4.17)
+
+**Source:** `Handoffs/Implementation_Plans_Audit_v1.md` Section 3
+
+**Dependency Contract v1 Edges:**
+| Edge Type | Source Field | Description |
+|-----------|--------------|-------------|
+| GA → GE | `CooldownGameplayEffectClass` | Cooldown effect reference |
+| BT → BB | `BlackboardAsset` | Behavior tree blackboard |
+| Any → Parent | `ParentClass` | Only if manifest-defined asset |
+
+**Implementation Details:**
+- **Algorithm:** Tarjan's SCC (Strongly Connected Components)
+- **Graph Key Format:** `Type:Name` composite key (e.g., `GameplayAbility:GA_FatherAttack`)
+- **Cycle Criteria:** `SCC.Num() > 1` OR `(SCC.Num() == 1 && HasSelfEdge)`
+- **Status for Cycle Members:** `[FAIL]` with `[E_CIRCULAR_DEPENDENCY]` error code
+- **Non-cycle Assets:** Continue generation normally
+
+**Commit:** `fa5fd34` feat(v4.17): Circular Dependency Detection (Dependency Contract v1)
 
 ---
 
@@ -369,7 +391,7 @@ gameplay_abilities:
 | Area | Status | Notes | Location |
 |------|--------|-------|----------|
 | Missing dependency retry | IMPLEMENTED | Returns Deferred to retry later | `GasAbilityGeneratorGenerators.cpp:2650` |
-| Circular dependencies | UNTESTED | May infinite loop | Commandlet deferred handling |
+| Circular dependencies | ✅ DETECTED (v4.17) | Tarjan SCC algorithm, [E_CIRCULAR_DEPENDENCY] | `GasAbilityGeneratorCommandlet.cpp:30-220` |
 
 ---
 
@@ -512,3 +534,4 @@ These are intentionally not implemented:
 | 2026-01-21 | **v4.16 Consolidation:** Archived Generator_Roadmap_CategoryC_v1_0.md (merged into this file) |
 | 2026-01-21 | **v4.16.1:** Hash collision detection complete - `CheckHashCollision()` and `ClearCollisionMap()` added to metadata registry |
 | 2026-01-21 | **v4.16.1:** Case-duplicate validation warning (Concern B) - `ValidateCaseDuplicates()` warns on case-only name differences |
+| 2026-01-21 | **v4.17:** Circular Dependency Detection complete - Tarjan SCC algorithm detects GA→GE, BT→BB, Any→Parent cycles |
