@@ -2711,6 +2711,14 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	if (Definition.CueTriggers.Num() > 0 || Definition.VFXSpawns.Num() > 0 || Definition.DelegateBindings.Num() > 0 || Definition.CustomFunctions.Num() > 0)
 	{
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+		// v4.14: CRITICAL - Save package again after adding custom functions/Category C nodes
+		// The first save (above) happens before these nodes are added, so they would be lost
+		FAssetRegistryModule::AssetCreated(Blueprint);
+		FSavePackageArgs SaveArgsAfterCustom;
+		SaveArgsAfterCustom.TopLevelFlags = RF_Public | RF_Standalone;
+		UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgsAfterCustom);
+		LogGeneration(FString::Printf(TEXT("  Saved blueprint after adding custom functions/Category C nodes")));
 	}
 
 	// v3.0: Store metadata for regeneration tracking
@@ -9038,6 +9046,17 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 
 	// v4.14: Mark entry node as editable so users can modify inputs in the editor
 	EntryNode->bIsEditable = true;
+
+	// v4.14: CRITICAL - Set CustomGeneratedFunctionName for user-created functions
+	// This tells the compiler what name to use for the generated UFunction.
+	// Without this, SkeletonGeneratedClass->FindFunctionByName(Graph.GetFName()) fails
+	// and the function appears as a "ghost" in MyBlueprint panel.
+	EntryNode->CustomGeneratedFunctionName = FunctionName;
+
+	// v4.14: CRITICAL - Align FunctionReference with the graph name
+	// This ensures the compiler metadata is consistent and refactoring works correctly.
+	// nullptr for class means this is a user-created function, not an override.
+	EntryNode->FunctionReference.SetExternalMember(FunctionName, nullptr);
 
 	EntryNodeCreator.Finalize();
 

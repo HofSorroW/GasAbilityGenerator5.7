@@ -4109,7 +4109,6 @@ void FGasAbilityGeneratorParser::ParseCustomFunctions(const TArray<FString>& Lin
 	{
 		OutFunctions.Add(CurrentFunction);
 	}
-
 }
 
 // ============================================================================

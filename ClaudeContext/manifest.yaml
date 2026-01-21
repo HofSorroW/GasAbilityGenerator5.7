@@ -993,6 +993,94 @@ gameplay_abilities:
             function: K2_EndAbility
             target_self: true
           position: [3700, 200]
+        # === POST-DELAY GUARDS (GAS Audit CRIT-4 fix) ===
+        # Guard 1: Validate FatherRef
+        - id: GetFatherRef_Guard
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2100, 400]
+        - id: IsValid_FatherRef_Guard
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2200, 350]
+        - id: Branch_FatherValid_Guard
+          type: Branch
+          position: [2350, 350]
+        # Guard 2: Check Father.State.Transitioning tag (still in valid transition)
+        - id: GetFatherASC_Guard
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [2400, 450]
+        - id: HasTransitioningTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2550, 400]
+        - id: MakeLiteralTag_Transitioning_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [2400, 500]
+        - id: Branch_TransitioningTag_Guard
+          type: Branch
+          position: [2700, 350]
+        # === EVENT_ENDABILITY (GAS Audit CRIT-4 fix) ===
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 600]
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [250, 600]
+        # Cleanup path (only when cancelled) - remove Transitioning tag
+        - id: GetFatherRef_End
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [400, 700]
+        - id: IsValid_Father_End
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [500, 650]
+        - id: Branch_FatherValid_End
+          type: Branch
+          position: [650, 600]
+        - id: GetFatherASC_End
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [750, 700]
+        - id: RemoveTransitioningTag_End
+          type: CallFunction
+          properties:
+            function: RemoveLooseGameplayTags
+            class: AbilitySystemComponent
+          position: [900, 600]
+        - id: MakeTagContainer_End
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [800, 750]
+        - id: MakeLiteralTag_End
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [700, 800]
       connections:
         # Exec flow (GetAvatarActor is pure - no exec pins)
         - from: [Event_Activate, Then]
@@ -1017,7 +1105,12 @@ gameplay_abilities:
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
+        # v4.14: Route through guards after delay (GAS Audit CRIT-4)
         - from: [TransitionDelay, Completed]
+          to: [Branch_FatherValid_Guard, Exec]
+        - from: [Branch_FatherValid_Guard, True]
+          to: [Branch_TransitioningTag_Guard, Exec]
+        - from: [Branch_TransitioningTag_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyCrawlerState, Exec]
@@ -1076,11 +1169,42 @@ gameplay_abilities:
           to: [MakeTagContainer_FormState, Tag]
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
-        # Data flow - Tag container for transition removal
-        - from: [MakeLiteralTag_Transition, ReturnValue]
-          to: [MakeTagContainer_Transition, Tag]
-        - from: [MakeTagContainer_Transition, ReturnValue]
-          to: [RemoveTransitionInvuln, WithGrantedTags]
+        # === GUARD DATA FLOW (GAS Audit CRIT-4) ===
+        # Guard 1: IsValid(FatherRef)
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [IsValid_FatherRef_Guard, Object]
+        - from: [IsValid_FatherRef_Guard, ReturnValue]
+          to: [Branch_FatherValid_Guard, Condition]
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [GetFatherASC_Guard, Actor]
+        # Guard 2: HasMatchingGameplayTag(Father.State.Transitioning)
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Target]
+        - from: [MakeLiteralTag_Transitioning_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Tag]
+        - from: [HasTransitioningTag_Guard, ReturnValue]
+          to: [Branch_TransitioningTag_Guard, Condition]
+        # === EVENT_ENDABILITY FLOW (GAS Audit CRIT-4) ===
+        - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        - from: [Branch_WasCancelled, True]
+          to: [Branch_FatherValid_End, Exec]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [IsValid_Father_End, Object]
+        - from: [IsValid_Father_End, ReturnValue]
+          to: [Branch_FatherValid_End, Condition]
+        - from: [Branch_FatherValid_End, True]
+          to: [RemoveTransitioningTag_End, Exec]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [GetFatherASC_End, Actor]
+        - from: [GetFatherASC_End, ReturnValue]
+          to: [RemoveTransitioningTag_End, Target]
+        - from: [MakeLiteralTag_End, ReturnValue]
+          to: [MakeTagContainer_End, Tag]
+        - from: [MakeTagContainer_End, ReturnValue]
+          to: [RemoveTransitioningTag_End, GameplayTags]
 
   # GA_FatherArmor - Attach to Player Chest (Option B Form Identity)
   # v4.13.5: GAS Audit compliant - NO invulnerability per INV-1
@@ -1236,7 +1360,46 @@ gameplay_abilities:
           properties:
             duration: 5.0
           position: [2300, 200]
-        # Step 4: Remove prior form state
+        # === POST-DELAY GUARDS (GAS Audit MED-1 - move guards BEFORE GE ops) ===
+        # Guard 1: Validate FatherRef
+        - id: GetFatherRef_Guard
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2400, 350]
+        - id: IsValid_FatherRef_Guard
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2450, 300]
+        - id: Branch_FatherValid_Guard
+          type: Branch
+          position: [2550, 200]
+        # Guard 2: Check Father.State.Transitioning tag
+        - id: GetFatherASC_Guard
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [2600, 350]
+        - id: HasTransitioningTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2700, 300]
+        - id: MakeLiteralTag_Transitioning_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [2600, 400]
+        - id: Branch_TransitioningTag_Guard
+          type: Branch
+          position: [2850, 200]
+        # Step 4: Remove prior form state (now guarded)
         - id: RemovePriorFormState
           type: CallFunction
           properties:
@@ -1441,7 +1604,12 @@ gameplay_abilities:
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
+        # v4.14: Route through guards after delay (GAS Audit MED-1)
         - from: [TransitionDelay, Completed]
+          to: [Branch_FatherValid_Guard, Exec]
+        - from: [Branch_FatherValid_Guard, True]
+          to: [Branch_TransitioningTag_Guard, Exec]
+        - from: [Branch_TransitioningTag_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyArmorState, Exec]
@@ -1508,6 +1676,21 @@ gameplay_abilities:
           to: [GetFatherMesh, Target]
         - from: [GetFatherMesh, Mesh]
           to: [SpawnTransitionVFX, AttachToComponent]
+        # === GUARD DATA FLOW (GAS Audit MED-1) ===
+        # Guard 1: IsValid(FatherRef)
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [IsValid_FatherRef_Guard, Object]
+        - from: [IsValid_FatherRef_Guard, ReturnValue]
+          to: [Branch_FatherValid_Guard, Condition]
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [GetFatherASC_Guard, Actor]
+        # Guard 2: HasMatchingGameplayTag(Father.State.Transitioning)
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Target]
+        - from: [MakeLiteralTag_Transitioning_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Tag]
+        - from: [HasTransitioningTag_Guard, ReturnValue]
+          to: [Branch_TransitioningTag_Guard, Condition]
         # Data flow - GetOwnerPlayer to IsValid
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [IsValid_Player, Object]
@@ -1728,26 +1911,65 @@ gameplay_abilities:
           properties:
             duration: 5.0
           position: [2000, 200]
-        # Step 4: Remove prior form state
+        # === POST-DELAY GUARDS (GAS Audit MED-2) ===
+        # Guard 1: Validate FatherRef
+        - id: GetFatherRef_Guard
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2050, 350]
+        - id: IsValid_FatherRef_Guard
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2100, 300]
+        - id: Branch_FatherValid_Guard
+          type: Branch
+          position: [2200, 200]
+        # Guard 2: Check Father.State.Transitioning tag
+        - id: GetFatherASC_Guard
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [2250, 350]
+        - id: HasTransitioningTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2350, 300]
+        - id: MakeLiteralTag_Transitioning_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [2250, 400]
+        - id: Branch_TransitioningTag_Guard
+          type: Branch
+          position: [2500, 200]
+        # Step 4: Remove prior form state (now guarded)
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
             target_self: true
-          position: [2200, 200]
+          position: [2700, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [2100, 350]
+          position: [2600, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [1900, 350]
+          position: [2400, 350]
         # Step 5: Apply new form state
         - id: ApplyExoskeletonState
           type: CallFunction
@@ -1954,7 +2176,12 @@ gameplay_abilities:
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
+        # v4.14: Route through guards after delay (GAS Audit MED-2)
         - from: [TransitionDelay, Completed]
+          to: [Branch_FatherValid_Guard, Exec]
+        - from: [Branch_FatherValid_Guard, True]
+          to: [Branch_TransitioningTag_Guard, Exec]
+        - from: [Branch_TransitioningTag_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyExoskeletonState, Exec]
@@ -2019,6 +2246,21 @@ gameplay_abilities:
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
+        # === GUARD DATA FLOW (GAS Audit MED-2) ===
+        # Guard 1: IsValid(FatherRef)
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [IsValid_FatherRef_Guard, Object]
+        - from: [IsValid_FatherRef_Guard, ReturnValue]
+          to: [Branch_FatherValid_Guard, Condition]
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [GetFatherASC_Guard, Actor]
+        # Guard 2: HasMatchingGameplayTag(Father.State.Transitioning)
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Target]
+        - from: [MakeLiteralTag_Transitioning_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Tag]
+        - from: [HasTransitioningTag_Guard, ReturnValue]
+          to: [Branch_TransitioningTag_Guard, Condition]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -2814,26 +3056,65 @@ gameplay_abilities:
           properties:
             duration: 5.0
           position: [2000, 200]
-        # Step 4: Remove prior form state
+        # === POST-DELAY GUARDS (GAS Audit MED-3) ===
+        # Guard 1: Validate FatherRef
+        - id: GetFatherRef_Guard
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2050, 350]
+        - id: IsValid_FatherRef_Guard
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2100, 300]
+        - id: Branch_FatherValid_Guard
+          type: Branch
+          position: [2200, 200]
+        # Guard 2: Check Father.State.Transitioning tag
+        - id: GetFatherASC_Guard
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [2250, 350]
+        - id: HasTransitioningTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2350, 300]
+        - id: MakeLiteralTag_Transitioning_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [2250, 400]
+        - id: Branch_TransitioningTag_Guard
+          type: Branch
+          position: [2500, 200]
+        # Step 4: Remove prior form state (now guarded)
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
             target_self: true
-          position: [2200, 200]
+          position: [2700, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-          position: [2100, 350]
+          position: [2600, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             class: BlueprintGameplayTagLibrary
             literal_value: Effect.Father.FormState
-          position: [1900, 350]
+          position: [2400, 350]
         # Step 5: Apply new form state
         - id: ApplyEngineerState
           type: CallFunction
@@ -2947,7 +3228,12 @@ gameplay_abilities:
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
+        # v4.14: Route through guards after delay (GAS Audit MED-3)
         - from: [TransitionDelay, Completed]
+          to: [Branch_FatherValid_Guard, Exec]
+        - from: [Branch_FatherValid_Guard, True]
+          to: [Branch_TransitioningTag_Guard, Exec]
+        - from: [Branch_TransitioningTag_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyEngineerState, Exec]
@@ -2986,6 +3272,21 @@ gameplay_abilities:
         # Data flow - Form switch path (tag containers)
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
+        # === GUARD DATA FLOW (GAS Audit MED-3) ===
+        # Guard 1: IsValid(FatherRef)
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [IsValid_FatherRef_Guard, Object]
+        - from: [IsValid_FatherRef_Guard, ReturnValue]
+          to: [Branch_FatherValid_Guard, Condition]
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [GetFatherASC_Guard, Actor]
+        # Guard 2: HasMatchingGameplayTag(Father.State.Transitioning)
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Target]
+        - from: [MakeLiteralTag_Transitioning_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Tag]
+        - from: [HasTransitioningTag_Guard, ReturnValue]
+          to: [Branch_TransitioningTag_Guard, Condition]
         # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherASC_Transition, Actor]
@@ -3939,22 +4240,8 @@ gameplay_abilities:
           properties:
             variable_name: PlayerRef
           position: [1200, 0]
-        - id: GetPlayerASC
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-          position: [1500, 0]
-        - id: MakeInvulnSpec
-          type: CallFunction
-          properties:
-            function: MakeOutgoingGameplayEffectSpec
-            target_self: true
-          position: [1800, 0]
-        - id: ApplyInvuln
-          type: CallFunction
-          properties:
-            function: BP_ApplyGameplayEffectSpecToSelf
-          position: [2100, 0]
+        # v4.14: Removed MakeInvulnSpec, ApplyInvuln, GetPlayerASC (dead nodes per GAS Audit CRIT-2)
+        # GE_DashInvulnerability was removed per INV-1 - no invulnerability during dash
         - id: GetForwardVector
           type: CallFunction
           properties:
@@ -4004,11 +4291,8 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
+        # v4.14: Rewired to skip dead invuln nodes (GAS Audit CRIT-2)
         - from: [SetPlayerRef, Exec]
-          to: [MakeInvulnSpec, Exec]
-        - from: [MakeInvulnSpec, Exec]
-          to: [ApplyInvuln, Exec]
-        - from: [ApplyInvuln, Exec]
           to: [LaunchCharacter, Exec]
         - from: [LaunchCharacter, Exec]
           to: [Delay, Exec]
@@ -4023,17 +4307,11 @@ gameplay_abilities:
           to: [GetOwnerPlayer, Target]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
-        - from: [SetPlayerRef, PlayerRef]
-          to: [GetPlayerASC, Actor]
+        # v4.14: Removed GetPlayerASC, MakeInvulnSpec, ApplyInvuln data flow (dead nodes)
         - from: [SetPlayerRef, PlayerRef]
           to: [GetForwardVector, Target]
         - from: [SetPlayerRef, PlayerRef]
           to: [LaunchCharacter, Target]
-        # BP_ApplyGameplayEffectSpecToSelf is called on the player's ASC
-        - from: [GetPlayerASC, ReturnValue]
-          to: [ApplyInvuln, Target]
-        - from: [MakeInvulnSpec, ReturnValue]
-          to: [ApplyInvuln, Spec]
         - from: [GetForwardVector, ReturnValue]
           to: [MultiplyVector, A]
         - from: [GetDistance, DashDistance]
@@ -4294,12 +4572,28 @@ gameplay_abilities:
         - id: Delay
           type: Delay
           position: [2700, 0]
+        # === POST-DELAY GUARDS (GAS Audit MED-4) ===
+        # Guard: Validate PlayerRef still exists after 8s delay
+        - id: GetPlayerRef_Guard
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [2850, 100]
+        - id: IsValid_PlayerRef_Guard
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2900, 50]
+        - id: Branch_PlayerValid_Guard
+          type: Branch
+          position: [3000, 0]
         - id: CommitCooldown
           type: CallFunction
           properties:
             function: K2_CommitAbilityCooldown
             target_self: true
-          position: [3000, 0]
+          position: [3200, 0]
         - id: EndAbility
           type: CallFunction
           properties:
@@ -4348,10 +4642,18 @@ gameplay_abilities:
           to: [SetStealthHandle, Exec]
         - from: [SetStealthHandle, Exec]
           to: [Delay, Exec]
+        # v4.14: Route through guard after delay (GAS Audit MED-4)
         - from: [Delay, then]
+          to: [Branch_PlayerValid_Guard, Exec]
+        - from: [Branch_PlayerValid_Guard, True]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
+        # Guard data flow (GAS Audit MED-4)
+        - from: [GetPlayerRef_Guard, PlayerRef]
+          to: [IsValid_PlayerRef_Guard, Object]
+        - from: [IsValid_PlayerRef_Guard, ReturnValue]
+          to: [Branch_PlayerValid_Guard, Condition]
         # Data flow
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
@@ -4945,24 +5247,227 @@ gameplay_abilities:
           properties:
             variable_name: IsMonitoring
           position: [1800, 0]
+        # === FULL SACRIFICE LOGIC (GAS Audit CRIT-3) ===
+        # Step 1: Apply GE_SacrificeInvulnerability to PLAYER (8 seconds)
+        - id: GetPlayerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [2100, 0]
+        - id: ApplySacrificeInvuln
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToOwner
+            target_self: true
+            gameplay_effect_class: GE_SacrificeInvulnerability
+          position: [2400, 0]
+        # Step 2: Hide Father actor
+        - id: HideFather
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [2700, 0]
+        # Step 3: Disable Father collision
+        - id: DisableCollision
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [3000, 0]
+        # Step 4: Add Father.State.Dormant tag
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [3300, 100]
+        - id: AddDormantTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTags
+            class: AbilitySystemComponent
+          position: [3300, 0]
+        - id: MakeTagContainer_Dormant
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [3200, 150]
+        - id: MakeLiteralTag_Dormant
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Dormant
+          position: [3100, 200]
+        # Step 5: Start dormant timer
+        - id: GetDormantDuration
+          type: VariableGet
+          properties:
+            variable_name: DormantDuration
+          position: [3600, 100]
+        - id: SetDormantTimer
+          type: CallFunction
+          properties:
+            function: K2_SetTimerDelegate
+          position: [3600, 0]
+        - id: SetTimerHandle
+          type: VariableSet
+          properties:
+            variable_name: DormantTimerHandle
+          position: [3900, 0]
+        # === TIMER CALLBACK (with guards) ===
+        - id: CustomEvent_DormantExpired
+          type: CustomEvent
+          properties:
+            event_name: OnDormantTimerExpired
+          position: [0, 600]
+        # Guard 1: Validate FatherRef
+        - id: GetFatherRef_Timer
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [100, 700]
+        - id: IsValid_FatherRef_Timer
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [250, 600]
+        - id: Branch_FatherValid_Timer
+          type: Branch
+          position: [400, 600]
+        # Guard 2: Check Father.State.Dormant tag
+        - id: GetFatherASC_Timer
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [500, 750]
+        - id: HasDormantTag_Timer
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [650, 700]
+        - id: MakeLiteralTag_Dormant_Timer
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Dormant
+          position: [500, 800]
+        - id: Branch_DormantTag_Timer
+          type: Branch
+          position: [800, 600]
+        # Guarded timer callback logic
+        - id: ShowFather_Timer
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [950, 600]
+        - id: EnableCollision_Timer
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [1200, 600]
+        - id: RemoveDormantTag_Timer
+          type: CallFunction
+          properties:
+            function: RemoveLooseGameplayTags
+            class: AbilitySystemComponent
+          position: [1450, 600]
+        - id: MakeTagContainer_RemoveDormant
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1350, 750]
+        - id: MakeLiteralTag_RemoveDormant
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Dormant
+          position: [1250, 800]
+        - id: EndAbility_Timer
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1700, 600]
+        # === EVENT_ENDABILITY ===
         - id: Event_EndAbility
           type: Event
           properties:
             event_name: K2_OnEndAbility
-          position: [0, 400]
+          position: [0, 1000]
+        - id: Branch_WasCancelled
+          type: Branch
+          position: [250, 1000]
+        # Cleanup path (only when cancelled)
         - id: ClearTimer
           type: CallFunction
           properties:
-            function: K2_ClearTimerHandle
-          position: [300, 400]
+            function: K2_ClearAndInvalidateTimerHandle
+            class: KismetSystemLibrary
+          position: [450, 1000]
         - id: GetTimerHandle
           type: VariableGet
           properties:
             variable_name: DormantTimerHandle
-          position: [300, 500]
+          position: [300, 1100]
+        - id: GetFatherRef_End
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [600, 1100]
+        - id: IsValid_Father_End
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [700, 1050]
+        - id: Branch_FatherValid_End
+          type: Branch
+          position: [850, 1000]
+        - id: ShowFather_End
+          type: CallFunction
+          properties:
+            function: SetActorHiddenInGame
+          position: [1000, 1000]
+        - id: EnableCollision_End
+          type: CallFunction
+          properties:
+            function: SetActorEnableCollision
+          position: [1250, 1000]
+        - id: GetFatherASC_End
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [1350, 1150]
+        - id: RemoveDormantTag_End
+          type: CallFunction
+          properties:
+            function: RemoveLooseGameplayTags
+            class: AbilitySystemComponent
+          position: [1500, 1000]
+        - id: MakeTagContainer_End
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1400, 1150]
+        - id: MakeLiteralTag_End
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Dormant
+          position: [1300, 1200]
       connections:
-        # === ACTIVATION FLOW ===
-        # Exec flow (GetAvatarActor is pure - no exec pins)
+        # === ACTIVATION FLOW (GAS Audit CRIT-3 - full sacrifice logic) ===
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
@@ -4971,7 +5476,19 @@ gameplay_abilities:
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
           to: [SetIsMonitoring, Exec]
-        # Data flow
+        - from: [SetIsMonitoring, Exec]
+          to: [ApplySacrificeInvuln, Exec]
+        - from: [ApplySacrificeInvuln, Exec]
+          to: [HideFather, Exec]
+        - from: [HideFather, Exec]
+          to: [DisableCollision, Exec]
+        - from: [DisableCollision, Exec]
+          to: [AddDormantTag, Exec]
+        - from: [AddDormantTag, Exec]
+          to: [SetDormantTimer, Exec]
+        - from: [SetDormantTimer, Exec]
+          to: [SetTimerHandle, Exec]
+        # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         - from: [CastToFather, AsBP_FatherCompanion]
@@ -4980,12 +5497,94 @@ gameplay_abilities:
           to: [GetOwnerPlayer, Target]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
-        # === END ABILITY FLOW ===
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerASC, Actor]
+        - from: [SetFatherRef, FatherRef]
+          to: [HideFather, Target]
+        - from: [SetFatherRef, FatherRef]
+          to: [DisableCollision, Target]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [AddDormantTag, Target]
+        - from: [MakeLiteralTag_Dormant, ReturnValue]
+          to: [MakeTagContainer_Dormant, Tag]
+        - from: [MakeTagContainer_Dormant, ReturnValue]
+          to: [AddDormantTag, GameplayTags]
+        - from: [GetDormantDuration, DormantDuration]
+          to: [SetDormantTimer, Time]
+        - from: [SetDormantTimer, ReturnValue]
+          to: [SetTimerHandle, DormantTimerHandle]
+        # === TIMER CALLBACK FLOW (with guards) ===
+        - from: [CustomEvent_DormantExpired, Then]
+          to: [Branch_FatherValid_Timer, Exec]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [IsValid_FatherRef_Timer, Object]
+        - from: [IsValid_FatherRef_Timer, ReturnValue]
+          to: [Branch_FatherValid_Timer, Condition]
+        - from: [Branch_FatherValid_Timer, True]
+          to: [Branch_DormantTag_Timer, Exec]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [GetFatherASC_Timer, Actor]
+        - from: [GetFatherASC_Timer, ReturnValue]
+          to: [HasDormantTag_Timer, Target]
+        - from: [MakeLiteralTag_Dormant_Timer, ReturnValue]
+          to: [HasDormantTag_Timer, Tag]
+        - from: [HasDormantTag_Timer, ReturnValue]
+          to: [Branch_DormantTag_Timer, Condition]
+        - from: [Branch_DormantTag_Timer, True]
+          to: [ShowFather_Timer, Exec]
+        - from: [ShowFather_Timer, Exec]
+          to: [EnableCollision_Timer, Exec]
+        - from: [EnableCollision_Timer, Exec]
+          to: [RemoveDormantTag_Timer, Exec]
+        - from: [RemoveDormantTag_Timer, Exec]
+          to: [EndAbility_Timer, Exec]
+        # Data flow - Timer callback
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [ShowFather_Timer, Target]
+        - from: [GetFatherRef_Timer, FatherRef]
+          to: [EnableCollision_Timer, Target]
+        - from: [GetFatherASC_Timer, ReturnValue]
+          to: [RemoveDormantTag_Timer, Target]
+        - from: [MakeLiteralTag_RemoveDormant, ReturnValue]
+          to: [MakeTagContainer_RemoveDormant, Tag]
+        - from: [MakeTagContainer_RemoveDormant, ReturnValue]
+          to: [RemoveDormantTag_Timer, GameplayTags]
+        # === EVENT_ENDABILITY FLOW ===
         - from: [Event_EndAbility, Then]
+          to: [Branch_WasCancelled, Exec]
+        - from: [Event_EndAbility, bWasCancelled]
+          to: [Branch_WasCancelled, Condition]
+        - from: [Branch_WasCancelled, True]
           to: [ClearTimer, Exec]
-        # Data flow - End
         - from: [GetTimerHandle, DormantTimerHandle]
           to: [ClearTimer, Handle]
+        - from: [ClearTimer, Exec]
+          to: [Branch_FatherValid_End, Exec]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [IsValid_Father_End, Object]
+        - from: [IsValid_Father_End, ReturnValue]
+          to: [Branch_FatherValid_End, Condition]
+        - from: [Branch_FatherValid_End, True]
+          to: [ShowFather_End, Exec]
+        - from: [ShowFather_End, Exec]
+          to: [EnableCollision_End, Exec]
+        - from: [EnableCollision_End, Exec]
+          to: [RemoveDormantTag_End, Exec]
+        # Data flow - EndAbility cleanup
+        - from: [GetFatherRef_End, FatherRef]
+          to: [ShowFather_End, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [EnableCollision_End, Target]
+        - from: [GetFatherRef_End, FatherRef]
+          to: [GetFatherASC_End, Actor]
+        - from: [GetFatherASC_End, ReturnValue]
+          to: [RemoveDormantTag_End, Target]
+        - from: [MakeLiteralTag_End, ReturnValue]
+          to: [MakeTagContainer_End, Tag]
+        - from: [MakeTagContainer_End, ReturnValue]
+          to: [RemoveDormantTag_End, GameplayTags]
 
   # GA_FatherRifle - Rifle Weapon Form (NPC-owned form ability)
   # v2.7.0: Full Narrative Pro item flow with BreakStruct/GetArrayItem
@@ -5125,16 +5724,26 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [300, 500]
+        # === GUARDS (GAS Audit MED-5) ===
+        - id: IsValid_FatherRef_End
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [400, 450]
+        - id: Branch_Valid_End
+          type: Branch
+          position: [500, 500]
         - id: ShowFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [600, 500]
+          position: [700, 500]
         - id: EnableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [900, 500]
+          position: [1000, 500]
         # Remove weapon from player
         - id: GetWeaponRef_End
           type: VariableGet
@@ -5216,7 +5825,10 @@ gameplay_abilities:
         - from: [SetWeaponRef, WeaponRef]
           to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
+        # v4.14: Route through guard (GAS Audit MED-5)
         - from: [Event_EndAbility, Then]
+          to: [Branch_Valid_End, Exec]
+        - from: [Branch_Valid_End, True]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
@@ -5226,6 +5838,11 @@ gameplay_abilities:
           to: [CastToInventoryEnd, Exec]
         - from: [CastToInventoryEnd, Exec]
           to: [RemoveWeapon, Exec]
+        # Guard data flow (GAS Audit MED-5)
+        - from: [GetFatherRef_End, FatherRef]
+          to: [IsValid_FatherRef_End, Object]
+        - from: [IsValid_FatherRef_End, ReturnValue]
+          to: [Branch_Valid_End, Condition]
         # Data flow - End
         - from: [GetFatherRef_End, FatherRef]
           to: [ShowFather, Target]
@@ -5380,16 +5997,26 @@ gameplay_abilities:
           properties:
             variable_name: FatherRef
           position: [300, 500]
+        # === GUARDS (GAS Audit MED-6) ===
+        - id: IsValid_FatherRef_End
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [400, 450]
+        - id: Branch_Valid_End
+          type: Branch
+          position: [500, 500]
         - id: ShowFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [600, 500]
+          position: [700, 500]
         - id: EnableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [900, 500]
+          position: [1000, 500]
         # Remove weapon from player
         - id: GetWeaponRef_End
           type: VariableGet
@@ -5471,7 +6098,10 @@ gameplay_abilities:
         - from: [SetWeaponRef, WeaponRef]
           to: [WieldWeapon, Target]
         # === END ABILITY FLOW ===
+        # v4.14: Route through guard (GAS Audit MED-6)
         - from: [Event_EndAbility, Then]
+          to: [Branch_Valid_End, Exec]
+        - from: [Branch_Valid_End, True]
           to: [ShowFather, Exec]
         - from: [ShowFather, Exec]
           to: [EnableCollision, Exec]
@@ -5481,6 +6111,11 @@ gameplay_abilities:
           to: [CastToInventoryEnd, Exec]
         - from: [CastToInventoryEnd, Exec]
           to: [RemoveWeapon, Exec]
+        # Guard data flow (GAS Audit MED-6)
+        - from: [GetFatherRef_End, FatherRef]
+          to: [IsValid_FatherRef_End, Object]
+        - from: [IsValid_FatherRef_End, ReturnValue]
+          to: [Branch_Valid_End, Condition]
         # Data flow - End
         - from: [GetFatherRef_End, FatherRef]
           to: [ShowFather, Target]
@@ -7065,16 +7700,43 @@ materials:  # WARDEN SYSTEM
     shading_model: Unlit
 
 gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_System_Implementation_Guide_v1_2.md)
+  # GA_CoreLaser - Warden Core Laser Attack
+  # v4.14: Added minimal event_graph per GAS Audit CRIT-4 (instant ability pattern)
   - name: GA_CoreLaser
     folder: Enemies/Warden/Abilities
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
     net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_CoreLaserCooldown
     tags:
       ability_tags:
         - Ability.Warden.CoreLaser
       activation_blocked_tags:
         - Cooldown.Warden.CoreLaser
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [300, 0]
+        - id: EndAbility
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [600, 0]
+      connections:
+        - from: [Event_Activate, Then]
+          to: [CommitCooldown, Exec]
+        - from: [CommitCooldown, Exec]
+          to: [EndAbility, Exec]
 
 # ============================================================================
 # NPC SYSTEMS - GUARD FORMATION
