@@ -51,6 +51,7 @@ private:
 	static void ParseGameplayAbilities(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseActorBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseWidgetBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseComponentBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.19
 	static void ParseBlackboards(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseBehaviorTrees(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseMaterials(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);

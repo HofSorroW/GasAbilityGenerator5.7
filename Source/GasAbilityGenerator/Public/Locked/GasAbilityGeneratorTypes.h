@@ -1492,6 +1492,150 @@ struct FManifestWidgetBlueprintDefinition
 	}
 };
 
+// ============================================================================
+// v4.19: Component Blueprint Type Definitions
+// ============================================================================
+
+/**
+ * v4.19: Event dispatcher parameter definition
+ */
+struct FManifestDispatcherParam
+{
+	FString Name;   // "CurrentCharge"
+	FString Type;   // "Float", "E_FatherUltimate", "Object"
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v4.19: Event dispatcher definition for component blueprints
+ */
+struct FManifestEventDispatcherDefinition
+{
+	FString Name;                              // "OnChargeChanged"
+	TArray<FManifestDispatcherParam> Parameters;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		for (const auto& Param : Parameters)
+		{
+			Hash ^= Param.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v4.19: Function parameter definition (input or output)
+ */
+struct FManifestFunctionParam
+{
+	FString Name;   // "Amount"
+	FString Type;   // "Float"
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(Type) << 8;
+		return Hash;
+	}
+};
+
+/**
+ * v4.19: Function definition for component blueprints
+ */
+struct FManifestFunctionDefinition
+{
+	FString Name;                              // "AddCharge"
+	TArray<FManifestFunctionParam> InputParams;
+	TArray<FManifestFunctionParam> OutputParams;
+	bool bPure = false;                        // Pure function flag
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= (bPure ? 1ULL : 0ULL) << 4;
+		for (const auto& Param : InputParams)
+		{
+			Hash ^= Param.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Param : OutputParams)
+		{
+			Hash ^= Param.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		return Hash;
+	}
+};
+
+/**
+ * v4.19: Component blueprint definition
+ * Supports ActorComponent-derived blueprints with variables, event dispatchers, functions, and tick config
+ */
+struct FManifestComponentBlueprintDefinition
+{
+	FString Name;
+	FString Folder;
+	FString ParentClass = TEXT("ActorComponent");  // Default parent
+
+	// Variables (reuse existing struct)
+	TArray<FManifestActorVariableDefinition> Variables;
+
+	// Event Dispatchers
+	TArray<FManifestEventDispatcherDefinition> EventDispatchers;
+
+	// Functions
+	TArray<FManifestFunctionDefinition> Functions;
+
+	// Tick configuration
+	bool bCanEverTick = false;
+	bool bStartWithTickEnabled = false;
+	float TickInterval = 0.0f;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		// NOTE: Folder excluded - presentational only
+
+		// Variables
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+
+		// Event Dispatchers
+		for (const auto& Disp : EventDispatchers)
+		{
+			Hash ^= Disp.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		// Functions
+		for (const auto& Func : Functions)
+		{
+			Hash ^= Func.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+
+		// Tick configuration
+		Hash ^= (bCanEverTick ? 1ULL : 0ULL) << 8;
+		Hash ^= (bStartWithTickEnabled ? 1ULL : 0ULL) << 9;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TickInterval * 1000.f)) << 10;
+
+		return Hash;
+	}
+};
+
 /**
  * Blackboard key definition
  * v4.0: Added BaseClass for Object/Class key types
@@ -5173,6 +5317,9 @@ struct FManifestData
 	// v4.9: TriggerSets (event-driven NPC behaviors)
 	TArray<FManifestTriggerSetDefinition> TriggerSets;
 
+	// v4.19: Component Blueprints (ActorComponent-derived)
+	TArray<FManifestComponentBlueprintDefinition> ComponentBlueprints;
+
 	// v4.13: Category C Feature Presets
 	TArray<FManifestFormStateEffectDefinition> FormStateEffects;  // P1.1: Form state effect presets
 
@@ -5232,6 +5379,7 @@ struct FManifestData
 		for (const auto& Def : Quests) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : CharacterAppearances) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TriggerSets) AssetWhitelist.Add(Def.Name);  // v4.9
+		for (const auto& Def : ComponentBlueprints) AssetWhitelist.Add(Def.Name);  // v4.19
 		// v4.13: FormStateEffects expand to GE_*State assets
 		for (const auto& Def : FormStateEffects) AssetWhitelist.Add(FString::Printf(TEXT("GE_%sState"), *Def.Form));
 		// v4.12: Pipeline items
@@ -5324,6 +5472,8 @@ struct FManifestData
 			+ CharacterAppearances.Num()
 			// v4.9: TriggerSets
 			+ TriggerSets.Num()
+			// v4.19: Component Blueprints
+			+ ComponentBlueprints.Num()
 			// v4.12: Pipeline items
 			+ PipelineItems.Num();
 	}
@@ -5382,6 +5532,8 @@ struct FManifestData
 		for (const auto& Def : CharacterAppearances) AddWithDupeCheck(Def.Name);
 		// v4.9: TriggerSets
 		for (const auto& Def : TriggerSets) AddWithDupeCheck(Def.Name);
+		// v4.19: Component Blueprints
+		for (const auto& Def : ComponentBlueprints) AddWithDupeCheck(Def.Name);
 		// v4.12: Pipeline items
 		for (const auto& Def : PipelineItems)
 		{
@@ -5441,6 +5593,8 @@ struct FManifestData
 		Total += CharacterAppearances.Num();
 		// v4.9: TriggerSets
 		Total += TriggerSets.Num();
+		// v4.19: Component Blueprints
+		Total += ComponentBlueprints.Num();
 
 		return Total;
 	}

@@ -1018,6 +1018,26 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		}
 	}
 
+	// v4.19: Component Blueprints
+	for (const auto& Definition : ManifestData.ComponentBlueprints)
+	{
+		FGenerationResult Result = FComponentBlueprintGenerator::Generate(Definition, ManifestData.ProjectRoot);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+		if (Result.Status == EGenerationStatus::Failed)
+		{
+			LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+		}
+		if (Result.Status == EGenerationStatus::New)
+		{
+			GeneratedAssets.Add(Definition.Name);
+		}
+	}
+
 	// Blackboards
 	for (const auto& Definition : ManifestData.Blackboards)
 	{
@@ -1737,6 +1757,16 @@ bool UGasAbilityGeneratorCommandlet::TryGenerateDeferredAsset(const FDeferredAss
 		{
 			OutResult = FWidgetBlueprintGenerator::Generate(
 				ManifestData.WidgetBlueprints[Deferred.DefinitionIndex], &ManifestData);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	// v4.19: ComponentBlueprint retry handling
+	else if (Deferred.AssetType == TEXT("ComponentBlueprint"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.ComponentBlueprints.Num())
+		{
+			OutResult = FComponentBlueprintGenerator::Generate(
+				ManifestData.ComponentBlueprints[Deferred.DefinitionIndex], ManifestData.ProjectRoot);
 			return OutResult.Status == EGenerationStatus::New;
 		}
 	}

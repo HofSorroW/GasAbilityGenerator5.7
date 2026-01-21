@@ -371,6 +371,18 @@ public:
 };
 
 /**
+ * v4.19: Component Blueprint Generator
+ * Generates UActorComponent-derived blueprints with variables, event dispatchers, functions, and tick configuration
+ */
+class GASABILITYGENERATOR_API FComponentBlueprintGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(
+		const FManifestComponentBlueprintDefinition& Definition,
+		const FString& ProjectRoot = TEXT(""));
+};
+
+/**
  * Blackboard Generator
  * v4.14: Added session cache for BT generator to find same-session blackboards
  */

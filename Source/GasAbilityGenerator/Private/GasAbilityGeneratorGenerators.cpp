@@ -4197,6 +4197,415 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 }
 
 // ============================================================================
+// FComponentBlueprintGenerator Implementation
+// v4.19: ActorComponent blueprint generation with event dispatchers, functions, tick config
+// ============================================================================
+
+FGenerationResult FComponentBlueprintGenerator::Generate(
+	const FManifestComponentBlueprintDefinition& Definition,
+	const FString& ProjectRoot)
+{
+	// v4.19: Set global project root for enum lookups
+	GCurrentProjectRoot = ProjectRoot;
+
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Components") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	// Validate against manifest whitelist
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Component Blueprint"), Result))
+	{
+		return Result;
+	}
+
+	// Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Component Blueprint"), Definition.ComputeHash(), Result))
+	{
+		return Result;
+	}
+
+	// Reserved suffixes that cannot be used for function names
+	static const TArray<FString> ReservedSuffixes = { TEXT("_Implementation"), TEXT("_Validate"), TEXT("_C"), TEXT("__") };
+
+	// Native parent class whitelist
+	UClass* ParentClass = nullptr;
+	if (Definition.ParentClass == TEXT("ActorComponent") || Definition.ParentClass.IsEmpty())
+	{
+		ParentClass = UActorComponent::StaticClass();
+	}
+	else if (Definition.ParentClass == TEXT("SceneComponent"))
+	{
+		ParentClass = USceneComponent::StaticClass();
+	}
+	else if (Definition.ParentClass == TEXT("PrimitiveComponent"))
+	{
+		ParentClass = UPrimitiveComponent::StaticClass();
+	}
+	else if (Definition.ParentClass == TEXT("AudioComponent"))
+	{
+		ParentClass = UAudioComponent::StaticClass();
+	}
+	else if (Definition.ParentClass.StartsWith(TEXT("/Script/")) || Definition.ParentClass.StartsWith(TEXT("/Game/")))
+	{
+		// Full path - strict resolve
+		ParentClass = FindParentClass(Definition.ParentClass);
+		if (!ParentClass)
+		{
+			UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH1 CreateAsset FAIL - [E_PARENT_CLASS_RESOLVE] %s"), *Definition.Name, *Definition.ParentClass);
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("[E_PARENT_CLASS_RESOLVE] %s"), *Definition.ParentClass));
+			Result.GeneratorId = TEXT("ComponentBlueprint");
+			Result.DetermineCategory();
+			return Result;
+		}
+	}
+	else
+	{
+		// Short name not in whitelist
+		UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH1 CreateAsset FAIL - [E_PARENT_CLASS_RESOLVE] %s not in whitelist"), *Definition.Name, *Definition.ParentClass);
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("[E_PARENT_CLASS_RESOLVE] %s not in whitelist"), *Definition.ParentClass));
+		Result.GeneratorId = TEXT("ComponentBlueprint");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	// ========== PHASE 1: Create Blueprint with UActorComponent Parent ==========
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = ParentClass;
+
+	FString PackagePath = AssetPath;
+	UPackage* Package = CreatePackage(*PackagePath);
+	if (!Package)
+	{
+		UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH1 CreateAsset FAIL - Package creation failed"), *Definition.Name);
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(),
+		Package,
+		FName(*Definition.Name),
+		RF_Public | RF_Standalone,
+		nullptr,
+		GWarn
+	));
+
+	if (!Blueprint)
+	{
+		UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH1 CreateAsset FAIL - Blueprint creation failed"), *Definition.Name);
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Component Blueprint"));
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH1 CreateAsset OK"), *Definition.Name);
+	LogGeneration(FString::Printf(TEXT("Creating Component Blueprint: %s"), *Definition.Name));
+
+	// ========== PHASE 2: Add Variables ==========
+	TSet<FName> ExistingVarNames;
+	for (const auto& Var : Blueprint->NewVariables) { ExistingVarNames.Add(Var.VarName); }
+
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		// Duplicate guard
+		if (ExistingVarNames.Contains(FName(*VarDef.Name)))
+		{
+			UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH2 Variables FAIL - [E_DUPLICATE_VARIABLE] %s"), *Definition.Name, *VarDef.Name);
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("[E_DUPLICATE_VARIABLE] %s"), *VarDef.Name));
+			Result.GeneratorId = TEXT("ComponentBlueprint");
+			Result.DetermineCategory();
+			return Result;
+		}
+
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+		// Note: AddMemberVariable already calls MarkBlueprintAsStructurallyModified internally
+
+		if (bSuccess)
+		{
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE)
+			{
+				if (VarDef.bInstanceEditable)
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+				if (VarDef.bReplicated)
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Net;
+				if (!VarDef.DefaultValue.IsEmpty())
+					Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+			}
+			ExistingVarNames.Add(FName(*VarDef.Name));
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH2 Variables Added=%d OK"), *Definition.Name, Definition.Variables.Num());
+
+	// ========== PHASE 3: Add Event Dispatchers with Parameters ==========
+	TSet<FName> ExistingDispatcherNames;
+	for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs) { ExistingDispatcherNames.Add(Graph->GetFName()); }
+
+	for (const FManifestEventDispatcherDefinition& DispatcherDef : Definition.EventDispatchers)
+	{
+		// Duplicate guard
+		if (ExistingDispatcherNames.Contains(FName(*DispatcherDef.Name)))
+		{
+			UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH3 Dispatchers FAIL - [E_DUPLICATE_DISPATCHER] %s"), *Definition.Name, *DispatcherDef.Name);
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("[E_DUPLICATE_DISPATCHER] %s"), *DispatcherDef.Name));
+			Result.GeneratorId = TEXT("ComponentBlueprint");
+			Result.DetermineCategory();
+			return Result;
+		}
+
+		// Step 1: Add multicast delegate member variable
+		FEdGraphPinType DelegateType;
+		DelegateType.PinCategory = UEdGraphSchema_K2::PC_MCDelegate;
+		bool bVarCreated = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*DispatcherDef.Name), DelegateType);
+
+		if (bVarCreated)
+		{
+			// Step 2: Create delegate signature graph
+			UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(
+				Blueprint,
+				FName(*DispatcherDef.Name),
+				UEdGraph::StaticClass(),
+				UEdGraphSchema_K2::StaticClass()
+			);
+
+			NewGraph->bEditable = false;
+
+			const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+			K2Schema->CreateDefaultNodesForGraph(*NewGraph);
+			K2Schema->CreateFunctionGraphTerminators(*NewGraph, (UClass*)nullptr);
+			K2Schema->AddExtraFunctionFlags(NewGraph, (FUNC_BlueprintCallable | FUNC_BlueprintEvent | FUNC_Public));
+			K2Schema->MarkFunctionEntryAsEditable(NewGraph, true);  // CRITICAL: enables parameter addition
+
+			// Step 3: Add to DelegateSignatureGraphs array
+			Blueprint->DelegateSignatureGraphs.Add(NewGraph);
+
+			// Step 4: Add parameters to entry node
+			TArray<UK2Node_FunctionEntry*> EntryNodes;
+			NewGraph->GetNodesOfClass<UK2Node_FunctionEntry>(EntryNodes);
+			if (EntryNodes.Num() > 0)
+			{
+				UK2Node_FunctionEntry* EntryNode = EntryNodes[0];
+
+				for (const FManifestDispatcherParam& Param : DispatcherDef.Parameters)
+				{
+					FEdGraphPinType ParamPinType = GetPinTypeFromString(Param.Type);
+					EntryNode->CreateUserDefinedPin(
+						FName(*Param.Name),
+						ParamPinType,
+						EGPD_Output  // Output from entry = input parameter
+					);
+				}
+			}
+
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+			ExistingDispatcherNames.Add(FName(*DispatcherDef.Name));
+			LogGeneration(FString::Printf(TEXT("  Added event dispatcher: %s (%d params)"), *DispatcherDef.Name, DispatcherDef.Parameters.Num()));
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH3 Dispatchers Added=%d OK"), *Definition.Name, Definition.EventDispatchers.Num());
+
+	// ========== PHASE 4: Add Functions with Input/Output Pins ==========
+	TSet<FName> ExistingFuncNames;
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs) { ExistingFuncNames.Add(Graph->GetFName()); }
+
+	for (const FManifestFunctionDefinition& FuncDef : Definition.Functions)
+	{
+		// Duplicate guard
+		if (ExistingFuncNames.Contains(FName(*FuncDef.Name)))
+		{
+			UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH4 Functions FAIL - [E_DUPLICATE_FUNCTION] %s"), *Definition.Name, *FuncDef.Name);
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("[E_DUPLICATE_FUNCTION] %s"), *FuncDef.Name));
+			Result.GeneratorId = TEXT("ComponentBlueprint");
+			Result.DetermineCategory();
+			return Result;
+		}
+
+		// Reserved suffix guard
+		for (const FString& Suffix : ReservedSuffixes)
+		{
+			if (FuncDef.Name.EndsWith(Suffix))
+			{
+				UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH4 Functions FAIL - [E_RESERVED_SUFFIX] %s uses reserved suffix %s"), *Definition.Name, *FuncDef.Name, *Suffix);
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("[E_RESERVED_SUFFIX] %s uses reserved suffix %s"), *FuncDef.Name, *Suffix));
+				Result.GeneratorId = TEXT("ComponentBlueprint");
+				Result.DetermineCategory();
+				return Result;
+			}
+		}
+
+		// Step 1: Create function graph
+		UEdGraph* FuncGraph = FBlueprintEditorUtils::CreateNewGraph(
+			Blueprint,
+			FName(*FuncDef.Name),
+			UEdGraph::StaticClass(),
+			UEdGraphSchema_K2::StaticClass()
+		);
+
+		FBlueprintEditorUtils::AddFunctionGraph(Blueprint, FuncGraph, true, static_cast<UFunction*>(nullptr));
+
+		// Step 2: Get entry node
+		TArray<UK2Node_FunctionEntry*> EntryNodes;
+		FuncGraph->GetNodesOfClass<UK2Node_FunctionEntry>(EntryNodes);
+		if (EntryNodes.Num() > 0)
+		{
+			UK2Node_FunctionEntry* EntryNode = EntryNodes[0];
+
+			// Step 2a: Set pure flag BEFORE creating pins (affects pin layout)
+			if (FuncDef.bPure)
+			{
+				EntryNode->AddExtraFlags(FUNC_BlueprintPure);
+			}
+			else
+			{
+				// Explicitly clear pure flag (deterministic)
+				EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() & ~FUNC_BlueprintPure);
+			}
+
+			// Step 2b: Add input parameters
+			for (const FManifestFunctionParam& Param : FuncDef.InputParams)
+			{
+				FEdGraphPinType ParamPinType = GetPinTypeFromString(Param.Type);
+				EntryNode->CreateUserDefinedPin(
+					FName(*Param.Name),
+					ParamPinType,
+					EGPD_Output  // Output from entry = function input
+				);
+			}
+		}
+
+		// Step 3: Get result node and add output parameters (return values)
+		TArray<UK2Node_FunctionResult*> ResultNodes;
+		FuncGraph->GetNodesOfClass<UK2Node_FunctionResult>(ResultNodes);
+		if (ResultNodes.Num() > 0 && FuncDef.OutputParams.Num() > 0)
+		{
+			UK2Node_FunctionResult* ResultNode = ResultNodes[0];
+
+			for (const FManifestFunctionParam& Param : FuncDef.OutputParams)
+			{
+				FEdGraphPinType ParamPinType = GetPinTypeFromString(Param.Type);
+				ResultNode->CreateUserDefinedPin(
+					FName(*Param.Name),
+					ParamPinType,
+					EGPD_Input  // Input to result = function output
+				);
+			}
+		}
+
+		ExistingFuncNames.Add(FName(*FuncDef.Name));
+		LogGeneration(FString::Printf(TEXT("  Added function: %s (%d inputs, %d outputs, pure=%s)"),
+			*FuncDef.Name, FuncDef.InputParams.Num(), FuncDef.OutputParams.Num(), FuncDef.bPure ? TEXT("true") : TEXT("false")));
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH4 Functions Added=%d OK"), *Definition.Name, Definition.Functions.Num());
+
+	// ========== PHASE 5: Compile (MUST happen before CDO access) ==========
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH5 Compile FAIL Errors=%d -> see CompileLog"), *Definition.Name, CompileLog.NumErrors);
+		LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), CompileLog.NumErrors));
+		for (const FString& Err : ErrorMessages)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+		}
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("ComponentBlueprint");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	if (!Blueprint->GeneratedClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH5 Compile FAIL - no GeneratedClass"), *Definition.Name);
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Compile failed - no GeneratedClass"));
+		Result.GeneratorId = TEXT("ComponentBlueprint");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH5 Compile OK Errors=0 Warnings=%d"), *Definition.Name, CompileLog.NumWarnings);
+
+	// ========== PHASE 6: Configure Tick on CDO (AFTER compile) ==========
+	UActorComponent* ComponentCDO = Cast<UActorComponent>(Blueprint->GeneratedClass->GetDefaultObject());
+	if (!ComponentCDO)
+	{
+		UE_LOG(LogTemp, Error, TEXT("COMP_BP[%s] PH6 CDO FAIL - Failed to get ActorComponent CDO"), *Definition.Name);
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to get ActorComponent CDO"));
+		Result.GeneratorId = TEXT("ComponentBlueprint");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	// Configure tick (must be done on CDO after compile)
+	if (Definition.bCanEverTick)
+	{
+		ComponentCDO->PrimaryComponentTick.bCanEverTick = true;
+		ComponentCDO->PrimaryComponentTick.bStartWithTickEnabled = Definition.bStartWithTickEnabled;
+
+		if (Definition.TickInterval > 0.0f)
+		{
+			ComponentCDO->PrimaryComponentTick.TickInterval = Definition.TickInterval;
+		}
+	}
+	else
+	{
+		ComponentCDO->PrimaryComponentTick.bCanEverTick = false;
+	}
+
+	// Mark dirty
+	ComponentCDO->MarkPackageDirty();
+
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH6 CDO Tick CanEver=%s StartEnabled=%s Interval=%.2f OK"),
+		*Definition.Name,
+		Definition.bCanEverTick ? TEXT("true") : TEXT("false"),
+		Definition.bStartWithTickEnabled ? TEXT("true") : TEXT("false"),
+		Definition.TickInterval);
+
+	// ========== PHASE 7: Save Asset ==========
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH7 Save OK"), *Definition.Name);
+	LogGeneration(FString::Printf(TEXT("Created Component Blueprint: %s (vars=%d, dispatchers=%d, funcs=%d)"),
+		*Definition.Name, Definition.Variables.Num(), Definition.EventDispatchers.Num(), Definition.Functions.Num()));
+
+	// Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("ComponentBlueprint"), Definition.Name, Definition.ComputeHash());
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("ComponentBlueprint");
+	Result.DetermineCategory();
+	return Result;
+}
+
+// ============================================================================
 // FBlackboardGenerator Implementation
 // v4.0: Added parent blackboard inheritance and base class for Object/Class keys
 // ============================================================================

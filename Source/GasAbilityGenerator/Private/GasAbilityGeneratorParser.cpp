@@ -283,10 +283,16 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 			ParseActorBlueprints(Lines, i, OutData);
 		}
 		// Parse widget_blueprints or widgets section
-		else if (IsSectionHeader(TrimmedLine, TEXT("widget_blueprints:")) || 
+		else if (IsSectionHeader(TrimmedLine, TEXT("widget_blueprints:")) ||
 		         IsSectionHeader(TrimmedLine, TEXT("widgets:")))
 		{
 			ParseWidgetBlueprints(Lines, i, OutData);
+		}
+		// v4.19: Parse component_blueprints section
+		else if (IsSectionHeader(TrimmedLine, TEXT("component_blueprints:")) ||
+		         IsSectionHeader(TrimmedLine, TEXT("components:")))
+		{
+			ParseComponentBlueprints(Lines, i, OutData);
 		}
 		// Parse blackboards section
 		else if (IsSectionHeader(TrimmedLine, TEXT("blackboards:")))
@@ -2378,6 +2384,451 @@ void FGasAbilityGeneratorParser::ParseWidgetBlueprints(const TArray<FString>& Li
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("WBP_")))
 	{
 		OutData.WidgetBlueprints.Add(CurrentDef);
+	}
+}
+
+// v4.19: Parse component_blueprints section
+void FGasAbilityGeneratorParser::ParseComponentBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestComponentBlueprintDefinition CurrentDef;
+	bool bInItem = false;
+	int32 ItemIndent = -1;
+
+	// Subsection tracking
+	bool bInVariables = false;
+	bool bInEventDispatchers = false;
+	bool bInFunctions = false;
+	bool bInDispatcherParams = false;
+	bool bInFuncInputParams = false;
+	bool bInFuncOutputParams = false;
+
+	// Current items being parsed
+	FManifestActorVariableDefinition CurrentVar;
+	FManifestEventDispatcherDefinition CurrentDispatcher;
+	FManifestFunctionDefinition CurrentFunc;
+	FManifestDispatcherParam CurrentDispParam;
+	FManifestFunctionParam CurrentFuncParam;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			// Save any pending items
+			if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+			}
+			if (bInDispatcherParams && !CurrentDispParam.Name.IsEmpty())
+			{
+				CurrentDispatcher.Parameters.Add(CurrentDispParam);
+			}
+			if (bInEventDispatchers && !CurrentDispatcher.Name.IsEmpty())
+			{
+				CurrentDef.EventDispatchers.Add(CurrentDispatcher);
+			}
+			if (bInFuncInputParams && !CurrentFuncParam.Name.IsEmpty())
+			{
+				CurrentFunc.InputParams.Add(CurrentFuncParam);
+			}
+			if (bInFuncOutputParams && !CurrentFuncParam.Name.IsEmpty())
+			{
+				CurrentFunc.OutputParams.Add(CurrentFuncParam);
+			}
+			if (bInFunctions && !CurrentFunc.Name.IsEmpty())
+			{
+				CurrentDef.Functions.Add(CurrentFunc);
+			}
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.ComponentBlueprints.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for new component blueprint item
+		bool bIsNewItem = false;
+		if (TrimmedLine.StartsWith(TEXT("- name:")) && ItemIndent >= 0 && CurrentIndent <= ItemIndent)
+		{
+			bIsNewItem = true;
+		}
+
+		if (bIsNewItem)
+		{
+			// Save pending items from previous definition
+			if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+			}
+			if (bInDispatcherParams && !CurrentDispParam.Name.IsEmpty())
+			{
+				CurrentDispatcher.Parameters.Add(CurrentDispParam);
+			}
+			if (bInEventDispatchers && !CurrentDispatcher.Name.IsEmpty())
+			{
+				CurrentDef.EventDispatchers.Add(CurrentDispatcher);
+			}
+			if (bInFuncInputParams && !CurrentFuncParam.Name.IsEmpty())
+			{
+				CurrentFunc.InputParams.Add(CurrentFuncParam);
+			}
+			if (bInFuncOutputParams && !CurrentFuncParam.Name.IsEmpty())
+			{
+				CurrentFunc.OutputParams.Add(CurrentFuncParam);
+			}
+			if (bInFunctions && !CurrentFunc.Name.IsEmpty())
+			{
+				CurrentDef.Functions.Add(CurrentFunc);
+			}
+
+			// Save current component and start new one
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.ComponentBlueprints.Add(CurrentDef);
+			}
+
+			// Reset state
+			CurrentDef = FManifestComponentBlueprintDefinition();
+			CurrentVar = FManifestActorVariableDefinition();
+			CurrentDispatcher = FManifestEventDispatcherDefinition();
+			CurrentFunc = FManifestFunctionDefinition();
+			CurrentDispParam = FManifestDispatcherParam();
+			CurrentFuncParam = FManifestFunctionParam();
+			bInVariables = false;
+			bInEventDispatchers = false;
+			bInFunctions = false;
+			bInDispatcherParams = false;
+			bInFuncInputParams = false;
+			bInFuncOutputParams = false;
+
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+		}
+		// First item - establish indent level
+		else if (TrimmedLine.StartsWith(TEXT("- name:")) && ItemIndent < 0)
+		{
+			ItemIndent = CurrentIndent;
+			CurrentDef = FManifestComponentBlueprintDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+		}
+		else if (bInItem)
+		{
+			// Top-level properties
+			if (TrimmedLine.StartsWith(TEXT("parent_class:")))
+			{
+				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("can_ever_tick:")))
+			{
+				CurrentDef.bCanEverTick = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("start_with_tick_enabled:")))
+			{
+				CurrentDef.bStartWithTickEnabled = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("tick_interval:")))
+			{
+				CurrentDef.TickInterval = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// Variables subsection
+			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				// Save pending dispatcher/function
+				if (bInDispatcherParams && !CurrentDispParam.Name.IsEmpty())
+				{
+					CurrentDispatcher.Parameters.Add(CurrentDispParam);
+					CurrentDispParam = FManifestDispatcherParam();
+				}
+				if (bInEventDispatchers && !CurrentDispatcher.Name.IsEmpty())
+				{
+					CurrentDef.EventDispatchers.Add(CurrentDispatcher);
+					CurrentDispatcher = FManifestEventDispatcherDefinition();
+				}
+				if (bInFuncInputParams && !CurrentFuncParam.Name.IsEmpty())
+				{
+					CurrentFunc.InputParams.Add(CurrentFuncParam);
+					CurrentFuncParam = FManifestFunctionParam();
+				}
+				if (bInFuncOutputParams && !CurrentFuncParam.Name.IsEmpty())
+				{
+					CurrentFunc.OutputParams.Add(CurrentFuncParam);
+					CurrentFuncParam = FManifestFunctionParam();
+				}
+				if (bInFunctions && !CurrentFunc.Name.IsEmpty())
+				{
+					CurrentDef.Functions.Add(CurrentFunc);
+					CurrentFunc = FManifestFunctionDefinition();
+				}
+				bInVariables = true;
+				bInEventDispatchers = false;
+				bInFunctions = false;
+				bInDispatcherParams = false;
+				bInFuncInputParams = false;
+				bInFuncOutputParams = false;
+			}
+			// Event dispatchers subsection
+			else if (TrimmedLine.Equals(TEXT("event_dispatchers:")) || TrimmedLine.StartsWith(TEXT("event_dispatchers:")))
+			{
+				// Save pending variable
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInFuncInputParams && !CurrentFuncParam.Name.IsEmpty())
+				{
+					CurrentFunc.InputParams.Add(CurrentFuncParam);
+					CurrentFuncParam = FManifestFunctionParam();
+				}
+				if (bInFuncOutputParams && !CurrentFuncParam.Name.IsEmpty())
+				{
+					CurrentFunc.OutputParams.Add(CurrentFuncParam);
+					CurrentFuncParam = FManifestFunctionParam();
+				}
+				if (bInFunctions && !CurrentFunc.Name.IsEmpty())
+				{
+					CurrentDef.Functions.Add(CurrentFunc);
+					CurrentFunc = FManifestFunctionDefinition();
+				}
+				bInVariables = false;
+				bInEventDispatchers = true;
+				bInFunctions = false;
+				bInDispatcherParams = false;
+				bInFuncInputParams = false;
+				bInFuncOutputParams = false;
+			}
+			// Functions subsection
+			else if (TrimmedLine.Equals(TEXT("functions:")) || TrimmedLine.StartsWith(TEXT("functions:")))
+			{
+				// Save pending variable/dispatcher
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInDispatcherParams && !CurrentDispParam.Name.IsEmpty())
+				{
+					CurrentDispatcher.Parameters.Add(CurrentDispParam);
+					CurrentDispParam = FManifestDispatcherParam();
+				}
+				if (bInEventDispatchers && !CurrentDispatcher.Name.IsEmpty())
+				{
+					CurrentDef.EventDispatchers.Add(CurrentDispatcher);
+					CurrentDispatcher = FManifestEventDispatcherDefinition();
+				}
+				bInVariables = false;
+				bInEventDispatchers = false;
+				bInFunctions = true;
+				bInDispatcherParams = false;
+				bInFuncInputParams = false;
+				bInFuncOutputParams = false;
+			}
+			// Parse variables
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					if (!CurrentVar.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVar);
+					}
+					CurrentVar = FManifestActorVariableDefinition();
+					CurrentVar.Name = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVar.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					CurrentVar.Class = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+				{
+					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("replicated:")))
+				{
+					CurrentVar.bReplicated = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+				{
+					CurrentVar.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+				}
+			}
+			// Parse event dispatchers
+			else if (bInEventDispatchers)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					// Save previous dispatcher
+					if (bInDispatcherParams && !CurrentDispParam.Name.IsEmpty())
+					{
+						CurrentDispatcher.Parameters.Add(CurrentDispParam);
+						CurrentDispParam = FManifestDispatcherParam();
+					}
+					if (!CurrentDispatcher.Name.IsEmpty())
+					{
+						CurrentDef.EventDispatchers.Add(CurrentDispatcher);
+					}
+					CurrentDispatcher = FManifestEventDispatcherDefinition();
+					CurrentDispatcher.Name = GetLineValue(TrimmedLine.Mid(2));
+					bInDispatcherParams = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("parameters:")) || TrimmedLine.StartsWith(TEXT("parameters:")))
+				{
+					bInDispatcherParams = true;
+				}
+				else if (bInDispatcherParams)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- name:")))
+					{
+						if (!CurrentDispParam.Name.IsEmpty())
+						{
+							CurrentDispatcher.Parameters.Add(CurrentDispParam);
+						}
+						CurrentDispParam = FManifestDispatcherParam();
+						CurrentDispParam.Name = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentDispParam.Type = GetLineValue(TrimmedLine);
+					}
+				}
+			}
+			// Parse functions
+			else if (bInFunctions)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					// Save previous function
+					if (bInFuncInputParams && !CurrentFuncParam.Name.IsEmpty())
+					{
+						CurrentFunc.InputParams.Add(CurrentFuncParam);
+						CurrentFuncParam = FManifestFunctionParam();
+					}
+					if (bInFuncOutputParams && !CurrentFuncParam.Name.IsEmpty())
+					{
+						CurrentFunc.OutputParams.Add(CurrentFuncParam);
+						CurrentFuncParam = FManifestFunctionParam();
+					}
+					if (!CurrentFunc.Name.IsEmpty())
+					{
+						CurrentDef.Functions.Add(CurrentFunc);
+					}
+					CurrentFunc = FManifestFunctionDefinition();
+					CurrentFunc.Name = GetLineValue(TrimmedLine.Mid(2));
+					bInFuncInputParams = false;
+					bInFuncOutputParams = false;
+				}
+				else if (TrimmedLine.StartsWith(TEXT("pure:")))
+				{
+					CurrentFunc.bPure = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.Equals(TEXT("input_params:")) || TrimmedLine.StartsWith(TEXT("input_params:")))
+				{
+					if (bInFuncOutputParams && !CurrentFuncParam.Name.IsEmpty())
+					{
+						CurrentFunc.OutputParams.Add(CurrentFuncParam);
+						CurrentFuncParam = FManifestFunctionParam();
+					}
+					bInFuncInputParams = true;
+					bInFuncOutputParams = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("output_params:")) || TrimmedLine.StartsWith(TEXT("output_params:")))
+				{
+					if (bInFuncInputParams && !CurrentFuncParam.Name.IsEmpty())
+					{
+						CurrentFunc.InputParams.Add(CurrentFuncParam);
+						CurrentFuncParam = FManifestFunctionParam();
+					}
+					bInFuncInputParams = false;
+					bInFuncOutputParams = true;
+				}
+				else if (bInFuncInputParams)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- name:")))
+					{
+						if (!CurrentFuncParam.Name.IsEmpty())
+						{
+							CurrentFunc.InputParams.Add(CurrentFuncParam);
+						}
+						CurrentFuncParam = FManifestFunctionParam();
+						CurrentFuncParam.Name = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentFuncParam.Type = GetLineValue(TrimmedLine);
+					}
+				}
+				else if (bInFuncOutputParams)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- name:")))
+					{
+						if (!CurrentFuncParam.Name.IsEmpty())
+						{
+							CurrentFunc.OutputParams.Add(CurrentFuncParam);
+						}
+						CurrentFuncParam = FManifestFunctionParam();
+						CurrentFuncParam.Name = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentFuncParam.Type = GetLineValue(TrimmedLine);
+					}
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save any remaining items at end of file
+	if (bInVariables && !CurrentVar.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVar);
+	}
+	if (bInDispatcherParams && !CurrentDispParam.Name.IsEmpty())
+	{
+		CurrentDispatcher.Parameters.Add(CurrentDispParam);
+	}
+	if (bInEventDispatchers && !CurrentDispatcher.Name.IsEmpty())
+	{
+		CurrentDef.EventDispatchers.Add(CurrentDispatcher);
+	}
+	if (bInFuncInputParams && !CurrentFuncParam.Name.IsEmpty())
+	{
+		CurrentFunc.InputParams.Add(CurrentFuncParam);
+	}
+	if (bInFuncOutputParams && !CurrentFuncParam.Name.IsEmpty())
+	{
+		CurrentFunc.OutputParams.Add(CurrentFuncParam);
+	}
+	if (bInFunctions && !CurrentFunc.Name.IsEmpty())
+	{
+		CurrentDef.Functions.Add(CurrentFunc);
+	}
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.ComponentBlueprints.Add(CurrentDef);
 	}
 }
 

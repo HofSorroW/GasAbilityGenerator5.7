@@ -1,20 +1,22 @@
-# Implementation Plans - Audit Document v1.0
+# Implementation Plans - Audit Document v1.1
 
 **Created:** 2026-01-21
+**Updated:** 2026-01-21
 **Purpose:** Detailed implementation plans for remaining TODO items, ready for GPT audit
-**Status:** Sections 1, 3 IMPLEMENTED (v4.17, v4.18) - Remaining sections awaiting audit
+**Status:** Sections 1, 3 IMPLEMENTED (v4.17, v4.18); Section 8 (ActorComponent Generator) research complete
 
 ---
 
 ## Table of Contents
 
-1. [P1.2 Transition Validation](#1-p12-transition-validation)
+1. [P1.2 Transition Validation](#1-p12-transition-validation) ✅ IMPLEMENTED
 2. [P1.3 Startup Validation](#2-p13-startup-validation)
-3. [Circular Dependency Detection](#3-circular-dependency-detection)
+3. [Circular Dependency Detection](#3-circular-dependency-detection) ✅ IMPLEMENTED
 4. [FormState Preset Schema](#4-formstate-preset-schema)
 5. [Material Circular Reference Detection](#5-material-circular-reference-detection)
 6. [Delegate Binding Automation](#6-delegate-binding-automation)
 7. [Split Generators.cpp](#7-split-generatorscpp)
+8. [ActorComponentBlueprintGenerator](#8-actorcomponentblueprintgenerator-ultimatechargecomponent) ✅ APPROVED
 
 ---
 
@@ -985,6 +987,592 @@ PrivateDependencyModuleNames.AddRange(new string[] { ... });
 
 ---
 
+## 8. ActorComponentBlueprintGenerator (UltimateChargeComponent)
+
+**Status:** APPROVED - READY FOR IMPLEMENTATION
+**Audit Status:** GPT approved 2026-01-21, Claude counter-audited, final refinements locked
+
+### Overview
+New generator for Blueprint ActorComponents with full support for:
+- Variables (standard types)
+- Event Dispatchers with parameters
+- Functions with input/output pins
+- Tick configuration (bCanEverTick, TickInterval)
+
+**Primary Use Case:** UltimateChargeComponent - complex component with charge tracking, decay, and events.
+
+### Problem Statement
+ActorComponent Blueprints cannot currently be generated. Manual Blueprint work is required for:
+- `UltimateChargeComponent` (charge system)
+- Future companion components
+- Custom gameplay components
+
+### Scope
+- **Files to modify:** `GasAbilityGeneratorTypes.h`, `GasAbilityGeneratorParser.cpp`, `GasAbilityGeneratorGenerators.cpp`
+- **Files to add:** None
+- **Complexity:** HIGH
+- **Risk:** MEDIUM - New generator type, complex Blueprint APIs
+- **Rare edge case:** No - major feature
+
+### Research Validation Summary
+
+| Topic | Status | Source |
+|-------|--------|--------|
+| Event Dispatcher Creation | ✅ VALIDATED | `BlueprintEditor.cpp:9615-9652` |
+| Event Dispatcher Parameters | ✅ VALIDATED | `K2Node_EditablePinBase::CreateUserDefinedPin()` |
+| Function Graph Creation | ✅ VALIDATED | `FBlueprintEditorUtils::AddFunctionGraph<>` |
+| Function Input/Output Pins | ✅ VALIDATED | `UK2Node_FunctionEntry::CreateUserDefinedPin()` |
+| Function Pure Flag | ✅ VALIDATED | `EntryNode->AddExtraFlags(FUNC_BlueprintPure)` - `K2Node_FunctionEntry.h:131` |
+| Headless Compile | ✅ VALIDATED | Plugin uses 18+ compile calls, works with `-nullrhi` |
+| Tick Configuration | ✅ VALIDATED | Set on CDO AFTER compile: `PrimaryComponentTick.bCanEverTick` |
+| CDO Property Access | ✅ VALIDATED | `Blueprint->GeneratedClass->GetDefaultObject()` AFTER compile |
+| AddMemberVariable Marks | ✅ VALIDATED | Already calls `MarkBlueprintAsStructurallyModified` internally - `BlueprintEditorUtils.cpp:4700` |
+
+### Critical Timing Constraint
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CRITICAL: CDO properties set BEFORE compile are LOST                    │
+│ Compile recreates the class and CDO - all pre-compile state is wiped   │
+│                                                                          │
+│ Pattern: Variables → Dispatchers → Functions → COMPILE → CDO props → Save │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Source:** `GasAbilityGeneratorGenerators.cpp:2246-2250` comment:
+> "Compile FIRST to ensure GeneratedClass and CDO exist before setting properties. CDO properties set before compile will be lost when compile recreates the class"
+
+### Implementation Phases
+
+#### Phase 1: Create Blueprint with UActorComponent Parent
+
+```cpp
+// Create ActorComponent Blueprint (parallel to Actor Blueprint pattern)
+UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+Factory->ParentClass = UActorComponent::StaticClass();
+
+UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+    UBlueprint::StaticClass(),
+    Package,
+    FName(*Definition.Name),
+    RF_Public | RF_Standalone,
+    nullptr,
+    GWarn
+));
+```
+
+#### Phase 2: Add Variables
+
+**Note:** `AddMemberVariable` already calls `MarkBlueprintAsStructurallyModified` internally (`BlueprintEditorUtils.cpp:4700`). Do NOT call it again after adding variables. Only call `MarkBlueprintAsModified` if changing defaults/metadata after creation.
+
+```cpp
+// Duplicate guard FIRST
+TSet<FName> ExistingVarNames;
+for (const auto& Var : Blueprint->NewVariables) { ExistingVarNames.Add(Var.VarName); }
+
+for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+{
+    // Check for duplicates (fail fast)
+    if (ExistingVarNames.Contains(FName(*VarDef.Name)))
+    {
+        Result.Errors.Add(FString::Printf(TEXT("[E_DUPLICATE_VARIABLE] %s"), *VarDef.Name));
+        return Result;
+    }
+
+    FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+    bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+    // AddMemberVariable already calls MarkBlueprintAsStructurallyModified - no extra mark needed
+
+    if (bSuccess)
+    {
+        int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+        if (VarIndex != INDEX_NONE)
+        {
+            if (VarDef.bInstanceEditable)
+                Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+            if (VarDef.bReplicated)
+                Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Net;
+            if (!VarDef.DefaultValue.IsEmpty())
+                Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+            // MarkBlueprintAsModified only needed if we change defaults/metadata here
+        }
+        ExistingVarNames.Add(FName(*VarDef.Name));
+    }
+}
+```
+
+#### Phase 3: Add Event Dispatchers with Parameters
+
+**Source:** `BlueprintEditor.cpp:9615-9652`
+
+```cpp
+// Duplicate guard FIRST
+TSet<FName> ExistingDispatcherNames;
+for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs) { ExistingDispatcherNames.Add(Graph->GetFName()); }
+
+for (const FManifestEventDispatcherDefinition& DispatcherDef : Definition.EventDispatchers)
+{
+    // Check for duplicates (fail fast)
+    if (ExistingDispatcherNames.Contains(FName(*DispatcherDef.Name)))
+    {
+        Result.Errors.Add(FString::Printf(TEXT("[E_DUPLICATE_DISPATCHER] %s"), *DispatcherDef.Name));
+        return Result;
+    }
+
+    // Step 1: Add multicast delegate member variable
+    FEdGraphPinType DelegateType;
+    DelegateType.PinCategory = UEdGraphSchema_K2::PC_MCDelegate;
+    bool bVarCreated = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*DispatcherDef.Name), DelegateType);
+
+// Step 2: Create delegate signature graph
+UEdGraph* NewGraph = FBlueprintEditorUtils::CreateNewGraph(
+    Blueprint,
+    FName(*DispatcherName),
+    UEdGraph::StaticClass(),
+    UEdGraphSchema_K2::StaticClass()
+);
+
+NewGraph->bEditable = false;
+
+const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+K2Schema->CreateDefaultNodesForGraph(*NewGraph);
+K2Schema->CreateFunctionGraphTerminators(*NewGraph, (UClass*)nullptr);
+K2Schema->AddExtraFunctionFlags(NewGraph, (FUNC_BlueprintCallable | FUNC_BlueprintEvent | FUNC_Public));
+K2Schema->MarkFunctionEntryAsEditable(NewGraph, true);  // CRITICAL: enables parameter addition
+
+// Step 3: Add to DelegateSignatureGraphs array
+Blueprint->DelegateSignatureGraphs.Add(NewGraph);
+
+// Step 4: Add parameters to entry node
+TArray<UK2Node_FunctionEntry*> EntryNodes;
+NewGraph->GetNodesOfClass<UK2Node_FunctionEntry>(EntryNodes);
+if (EntryNodes.Num() > 0)
+{
+    UK2Node_FunctionEntry* EntryNode = EntryNodes[0];
+
+    for (const FManifestDispatcherParam& Param : DispatcherDef.Parameters)
+    {
+        FEdGraphPinType ParamPinType = GetPinTypeFromString(Param.Type);
+        EntryNode->CreateUserDefinedPin(
+            FName(*Param.Name),
+            ParamPinType,
+            EGPD_Output  // Output from entry = input parameter
+        );
+    }
+}
+
+FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+```
+
+#### Phase 4: Add Functions with Input/Output Pins
+
+**Reserved Suffixes:** Do not allow function names ending with: `_Implementation`, `_Validate`, `_C`, `__`
+
+```cpp
+// Reserved suffix guard
+static const TArray<FString> ReservedSuffixes = { TEXT("_Implementation"), TEXT("_Validate"), TEXT("_C"), TEXT("__") };
+
+// Duplicate guard FIRST
+TSet<FName> ExistingFuncNames;
+for (UEdGraph* Graph : Blueprint->FunctionGraphs) { ExistingFuncNames.Add(Graph->GetFName()); }
+
+for (const FManifestFunctionDefinition& FuncDef : Definition.Functions)
+{
+    // Check for duplicates (fail fast)
+    if (ExistingFuncNames.Contains(FName(*FuncDef.Name)))
+    {
+        Result.Errors.Add(FString::Printf(TEXT("[E_DUPLICATE_FUNCTION] %s"), *FuncDef.Name));
+        return Result;
+    }
+
+    // Check for reserved suffixes
+    for (const FString& Suffix : ReservedSuffixes)
+    {
+        if (FuncDef.Name.EndsWith(Suffix))
+        {
+            Result.Errors.Add(FString::Printf(TEXT("[E_RESERVED_SUFFIX] %s uses reserved suffix %s"), *FuncDef.Name, *Suffix));
+            return Result;
+        }
+    }
+
+    // Step 1: Create function graph
+    UEdGraph* FuncGraph = FBlueprintEditorUtils::CreateNewGraph(
+        Blueprint,
+        FName(*FuncDef.Name),
+        UEdGraph::StaticClass(),
+        UEdGraphSchema_K2::StaticClass()
+    );
+
+    FBlueprintEditorUtils::AddFunctionGraph(Blueprint, FuncGraph, true, nullptr);
+
+    // Step 2: Get entry node
+    TArray<UK2Node_FunctionEntry*> EntryNodes;
+    FuncGraph->GetNodesOfClass<UK2Node_FunctionEntry>(EntryNodes);
+    if (EntryNodes.Num() > 0)
+    {
+        UK2Node_FunctionEntry* EntryNode = EntryNodes[0];
+
+        // Step 2a: Set pure flag BEFORE creating pins (affects pin layout)
+        if (FuncDef.bPure)
+        {
+            EntryNode->AddExtraFlags(FUNC_BlueprintPure);
+        }
+        else
+        {
+            // Explicitly clear pure flag (deterministic)
+            EntryNode->SetExtraFlags(EntryNode->GetExtraFlags() & ~FUNC_BlueprintPure);
+        }
+
+        // Step 2b: Add input parameters
+        for (const FManifestFunctionParam& Param : FuncDef.InputParams)
+        {
+            FEdGraphPinType ParamPinType = GetPinTypeFromString(Param.Type);
+            EntryNode->CreateUserDefinedPin(
+                FName(*Param.Name),
+                ParamPinType,
+                EGPD_Output  // Output from entry = function input
+            );
+        }
+    }
+
+    // Step 3: Get result node and add output parameters (return values)
+    TArray<UK2Node_FunctionResult*> ResultNodes;
+    FuncGraph->GetNodesOfClass<UK2Node_FunctionResult>(ResultNodes);
+    if (ResultNodes.Num() > 0 && FuncDef.OutputParams.Num() > 0)
+    {
+        UK2Node_FunctionResult* ResultNode = ResultNodes[0];
+
+        for (const FManifestFunctionParam& Param : FuncDef.OutputParams)
+        {
+            FEdGraphPinType ParamPinType = GetPinTypeFromString(Param.Type);
+            ResultNode->CreateUserDefinedPin(
+                FName(*Param.Name),
+                ParamPinType,
+                EGPD_Input  // Input to result = function output
+            );
+        }
+    }
+
+    ExistingFuncNames.Add(FName(*FuncDef.Name));
+}
+```
+
+#### Phase 5: Compile (MUST happen before CDO access)
+
+```cpp
+// Compile with validation (existing Contract 10 pattern)
+FCompilerResultsLog CompileLog;
+FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+if (CompileLog.NumErrors > 0)
+{
+    // Extract and report errors...
+    Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, ErrorMessage);
+    return Result;
+}
+
+if (!Blueprint->GeneratedClass)
+{
+    Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Compile failed - no GeneratedClass"));
+    return Result;
+}
+```
+
+#### Phase 6: Configure Tick on CDO (AFTER compile)
+
+```cpp
+// Get CDO - ONLY valid after compile
+UActorComponent* ComponentCDO = Cast<UActorComponent>(Blueprint->GeneratedClass->GetDefaultObject());
+if (!ComponentCDO)
+{
+    Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to get ActorComponent CDO"));
+    return Result;
+}
+
+// Configure tick (must be done on CDO after compile)
+if (Definition.bCanEverTick)
+{
+    ComponentCDO->PrimaryComponentTick.bCanEverTick = true;
+    ComponentCDO->PrimaryComponentTick.bStartWithTickEnabled = Definition.bStartWithTickEnabled;
+
+    if (Definition.TickInterval > 0.0f)
+    {
+        ComponentCDO->PrimaryComponentTick.TickInterval = Definition.TickInterval;
+    }
+}
+else
+{
+    ComponentCDO->PrimaryComponentTick.bCanEverTick = false;
+}
+
+// Mark dirty and save
+ComponentCDO->MarkPackageDirty();
+```
+
+#### Phase 7: Save Asset
+
+```cpp
+// Save package (existing pattern)
+FString PackageFilename = FPackageName::LongPackageNameToFilename(
+    PackagePath, FPackageName::GetAssetPackageExtension());
+FSavePackageArgs SaveArgs;
+SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+UPackage::SavePackage(Package, Blueprint, *PackageFilename, SaveArgs);
+```
+
+### New Type Definitions
+
+```cpp
+// In GasAbilityGeneratorTypes.h
+
+// Event dispatcher parameter
+USTRUCT()
+struct FManifestDispatcherParam
+{
+    FString Name;   // "CurrentCharge"
+    FString Type;   // "Float", "E_FatherUltimate", "Object"
+};
+
+// Event dispatcher definition
+USTRUCT()
+struct FManifestEventDispatcherDefinition
+{
+    FString Name;                              // "OnChargeChanged"
+    TArray<FManifestDispatcherParam> Parameters;
+
+    uint32 ComputeHash() const;
+};
+
+// Function parameter (input or output)
+USTRUCT()
+struct FManifestFunctionParam
+{
+    FString Name;   // "Amount"
+    FString Type;   // "Float"
+};
+
+// Function definition
+USTRUCT()
+struct FManifestFunctionDefinition
+{
+    FString Name;                              // "AddCharge"
+    TArray<FManifestFunctionParam> InputParams;
+    TArray<FManifestFunctionParam> OutputParams;
+    bool bPure = false;                        // Pure function flag
+
+    uint32 ComputeHash() const;
+};
+
+// Component blueprint definition
+USTRUCT()
+struct FManifestComponentBlueprintDefinition
+{
+    FString Name;
+    FString Folder;
+    FString ParentClass = TEXT("ActorComponent");  // Default parent
+
+    // Variables (reuse existing struct)
+    TArray<FManifestActorVariableDefinition> Variables;
+
+    // Event Dispatchers
+    TArray<FManifestEventDispatcherDefinition> EventDispatchers;
+
+    // Functions
+    TArray<FManifestFunctionDefinition> Functions;
+
+    // Tick configuration
+    bool bCanEverTick = false;
+    bool bStartWithTickEnabled = false;
+    float TickInterval = 0.0f;
+
+    uint32 ComputeHash() const;
+};
+```
+
+### Manifest Schema
+
+```yaml
+component_blueprints:
+  - name: UltimateChargeComponent
+    folder: Components
+    parent_class: ActorComponent
+
+    # Tick configuration
+    can_ever_tick: true
+    start_with_tick_enabled: true
+    tick_interval: 0.1  # 10 times per second
+
+    # Variables
+    variables:
+      - name: CurrentCharge
+        type: Float
+        default_value: "0.0"
+      - name: bIsChargeReady
+        type: Bool
+        default_value: "false"
+      - name: ReadyUltimateType
+        type: E_FatherUltimate
+        default_value: "Symbiote"
+      - name: ThresholdCurve
+        type: RuntimeFloatCurve
+        instance_editable: true
+        default:
+          keys:
+            - { time: 1.0, value: 5000.0 }
+            - { time: 10.0, value: 10000.0 }
+            - { time: 50.0, value: 40000.0 }
+          pre_infinity: Constant
+          post_infinity: Linear
+
+    # Event Dispatchers
+    event_dispatchers:
+      - name: OnChargeChanged
+        parameters:
+          - name: NewCharge
+            type: Float
+          - name: PreviousCharge
+            type: Float
+      - name: OnUltimateReady
+        parameters:
+          - name: UltimateType
+            type: E_FatherUltimate
+      - name: OnChargeReset
+        parameters: []  # No parameters
+
+    # Functions
+    functions:
+      - name: AddCharge
+        input_params:
+          - name: Amount
+            type: Float
+        output_params: []  # Void return
+
+      - name: GetThresholdForLevel
+        input_params:
+          - name: Level
+            type: Int
+        output_params:
+          - name: Threshold
+            type: Float
+        pure: true
+
+      - name: ResetCharge
+        input_params: []
+        output_params: []
+```
+
+### Parent Class Resolution Policy
+
+| Input Format | Action |
+|--------------|--------|
+| Starts with `/Script/` or `/Game/` | Strict path resolve; fail with `[E_PARENT_CLASS_RESOLVE]` if not found |
+| Short name in whitelist | Use `::StaticClass()` |
+| Short name NOT in whitelist | Fail with `[E_PARENT_CLASS_RESOLVE]` |
+
+**Native Parent Class Whitelist:**
+- `ActorComponent` → `UActorComponent::StaticClass()`
+- `SceneComponent` → `USceneComponent::StaticClass()`
+- `PrimitiveComponent` → `UPrimitiveComponent::StaticClass()`
+- `AudioComponent` → `UAudioComponent::StaticClass()`
+- `WidgetComponent` → `UWidgetComponent::StaticClass()`
+
+### RuntimeFloatCurve YAML Schema
+
+```yaml
+# FRuntimeFloatCurve struct variable with inline keys
+- name: ThresholdCurve
+  type: RuntimeFloatCurve
+  default:
+    keys:                          # Sorted by time during parse (determinism)
+      - { time: 0.0, value: 0.0 }
+      - { time: 1.0, value: 100.0 }
+    pre_infinity: Constant         # Constant, Linear, Cycle, CycleWithOffset, Oscillate
+    post_infinity: Linear
+```
+
+**Constraints:**
+- Keys sorted by `time` ascending during parse (deterministic)
+- If `default:` omitted → generate empty curve (single key at `{0.0, 0.0}`)
+- Pin type: `PC_Struct` with `FRuntimeFloatCurve::StaticStruct()`
+
+### Breadcrumb Logging (7-Phase)
+
+Stable, greppable format for CI parsing:
+
+```
+COMP_BP[UltimateChargeComponent] PH1 CreateAsset OK
+COMP_BP[UltimateChargeComponent] PH2 Variables Added=4 OK
+COMP_BP[UltimateChargeComponent] PH3 Dispatchers Added=3 OK
+COMP_BP[UltimateChargeComponent] PH4 Functions Added=4 OK
+COMP_BP[UltimateChargeComponent] PH5 Compile OK Errors=0 Warnings=0
+COMP_BP[UltimateChargeComponent] PH6 CDO Tick CanEver=true StartEnabled=true Interval=0.1 OK
+COMP_BP[UltimateChargeComponent] PH7 Save OK
+```
+
+On failure:
+```
+COMP_BP[UltimateChargeComponent] PH5 Compile FAIL Errors=3 -> see CompileLog
+```
+
+**Note:** PH6 (CDO Tick) MUST appear AFTER PH5 (Compile) - this ordering is enforced by the phase structure.
+
+### Test Cases
+
+| # | Test | Expected |
+|---|------|----------|
+| 1 | Generate component with tick disabled | `bCanEverTick = false` on CDO |
+| 2 | Generate component with tick enabled | `bCanEverTick = true`, `bStartWithTickEnabled = true` on CDO |
+| 3 | Generate dispatcher with 0 params | Empty signature, compiles cleanly |
+| 4 | Generate dispatcher with 2 params | Both params visible on Call node, signature graph has pins |
+| 5 | Generate function with return value | Output pin on function node |
+| 6 | Generate pure function | Function marked as pure, no exec pins |
+| 7 | Compile failure on invalid parent | `[E_PARENT_CLASS_RESOLVE]` error, no asset saved |
+| 8 | Duplicate variable name | `[E_DUPLICATE_VARIABLE]` error, fail fast |
+| 9 | Duplicate dispatcher name | `[E_DUPLICATE_DISPATCHER]` error, fail fast |
+| 10 | Duplicate function name | `[E_DUPLICATE_FUNCTION]` error, fail fast |
+| 11 | Function with reserved suffix | `[E_RESERVED_SUFFIX]` error for `_Implementation` etc. |
+| 12 | RuntimeFloatCurve variable | Struct pin created, keys sorted by time |
+| 13 | Breadcrumb logs emitted | All 7 PH lines present in log |
+
+### Dependencies
+
+Requires module additions to `GasAbilityGenerator.Build.cs`:
+- Already present: `BlueprintGraph`, `Kismet`, `KismetCompiler`
+- **No new dependencies required**
+
+### Acceptance Criteria
+
+- [ ] Component blueprints generate with correct parent class
+- [ ] Variables created with correct types and defaults
+- [ ] Event dispatchers have parameters visible in editor
+- [ ] Functions have input/output pins visible in editor
+- [ ] Pure functions have no exec pins
+- [ ] Tick configuration persists on CDO (verified AFTER compile)
+- [ ] Compile gate blocks save on error
+- [ ] Duplicate guards fail fast with correct error codes
+- [ ] Reserved suffix guard active
+- [ ] Parent class whitelist enforced
+- [ ] Breadcrumb logs emitted for all 7 phases
+- [ ] All 13 test cases pass
+
+### Audit Trail
+
+**Initial Plan (Claude):** 7-phase implementation with CDO-after-compile constraint
+**GPT Audit:** Approved with 6 refinements
+**Claude Counter-Audit:** Validated GPT refinements against UE5 source code
+**GPT Final Review:** Accepted with minor adjustments
+
+| Topic | Resolution | Source |
+|-------|------------|--------|
+| Compile gate | **Not needed** - Contract 10 exists (v4.16) | `GasAbilityGeneratorGenerators.cpp:2246` |
+| Tick timing | **CRITICAL** - Must be AFTER compile | `GasAbilityGeneratorGenerators.cpp:2246-2250` |
+| AddMemberVariable marking | Already calls `MarkBlueprintAsStructurallyModified` | `BlueprintEditorUtils.cpp:4700` |
+| Pure flag API | `AddExtraFlags(FUNC_BlueprintPure)` before pins | `K2Node_FunctionEntry.h:131` |
+| Dispatcher params | `CreateUserDefinedPin()` on entry node | `K2Node_EditablePinBase.cpp:162` |
+| Function returns | `CreateUserDefinedPin()` on result node | Same API |
+
+---
+
 ## Summary Matrix
 
 | # | Task | Complexity | Risk | Edge Case | Files Changed |
@@ -996,6 +1584,7 @@ PrivateDependencyModuleNames.AddRange(new string[] { ... });
 | 5 | Material Circular Refs | MEDIUM | LOW | Moderate | 1 |
 | 6 | Delegate Binding | HIGH | MEDIUM | No | 3 |
 | 7 | Split Generators.cpp | HIGH | HIGH | No | ~17 |
+| 8 | ActorComponent Generator | HIGH | MEDIUM | No | 3 |
 
 ---
 
