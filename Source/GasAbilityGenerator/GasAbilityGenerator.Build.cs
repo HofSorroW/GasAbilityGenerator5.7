@@ -41,6 +41,10 @@ public class GasAbilityGenerator : ModuleRules
 			"KismetCompiler",
 			"GraphEditor",
 
+			// v4.15: AbilityTask node generation (Track B GAS Audit)
+			"GameplayAbilitiesEditor",
+			"GameplayTasksEditor",  // Required by K2Node_LatentAbilityCall
+
 			// Widget blueprint generation
 			"UMG",
 			"UMGEditor",

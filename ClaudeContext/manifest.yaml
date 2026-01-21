@@ -767,6 +767,18 @@ gameplay_effects:
     granted_tags:
       - Father.State.Sprinting
 
+  # v4.14: Backstab damage bonus effect per GA_Backstab_Implementation_Guide_v1_6.md
+  # Instant effect that adds +25 to AttackRating for next attack
+  - name: GE_BackstabBonus
+    folder: Effects/Utility
+    duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.AttackRating
+        modifier_op: Add
+        magnitude: 25.0
+    granted_tags:
+      - Effect.Backstab
+
   - name: GE_ElectricTrapRoot
     folder: Effects/Utility
     duration_policy: HasDuration
@@ -909,9 +921,9 @@ gameplay_abilities:
             function: SpawnSystemAttached
             class: NiagaraFunctionLibrary
           position: [1900, 200]
-        # Step 3: Wait 5 seconds for transition animation
+        # Step 3: Wait 5 seconds for transition animation (v4.15: WaitDelay auto-terminates with ability)
         - id: TransitionDelay
-          type: Delay
+          type: AbilityTaskWaitDelay
           properties:
             duration: 5.0
           position: [2100, 200]
@@ -1106,7 +1118,7 @@ gameplay_abilities:
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
         # v4.14: Route through guards after delay (GAS Audit CRIT-4)
-        - from: [TransitionDelay, Completed]
+        - from: [TransitionDelay, OnFinish]
           to: [Branch_FatherValid_Guard, Exec]
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
@@ -1354,9 +1366,9 @@ gameplay_abilities:
             function: SpawnSystemAttached
             class: NiagaraFunctionLibrary
           position: [2100, 200]
-        # Step 3: Wait 5 seconds
+        # Step 3: Wait 5 seconds (v4.15: WaitDelay auto-terminates with ability)
         - id: TransitionDelay
-          type: Delay
+          type: AbilityTaskWaitDelay
           properties:
             duration: 5.0
           position: [2300, 200]
@@ -1605,7 +1617,7 @@ gameplay_abilities:
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
         # v4.14: Route through guards after delay (GAS Audit MED-1)
-        - from: [TransitionDelay, Completed]
+        - from: [TransitionDelay, OnFinish]
           to: [Branch_FatherValid_Guard, Exec]
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
@@ -1905,9 +1917,9 @@ gameplay_abilities:
             function: SpawnSystemAttached
             class: NiagaraFunctionLibrary
           position: [1800, 200]
-        # Step 3: Wait 5 seconds
+        # Step 3: Wait 5 seconds (v4.15: WaitDelay auto-terminates with ability)
         - id: TransitionDelay
-          type: Delay
+          type: AbilityTaskWaitDelay
           properties:
             duration: 5.0
           position: [2000, 200]
@@ -2177,7 +2189,7 @@ gameplay_abilities:
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
         # v4.14: Route through guards after delay (GAS Audit MED-2)
-        - from: [TransitionDelay, Completed]
+        - from: [TransitionDelay, OnFinish]
           to: [Branch_FatherValid_Guard, Exec]
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
@@ -2478,9 +2490,9 @@ gameplay_abilities:
             function: SpawnSystemAttached
             class: NiagaraFunctionLibrary
           position: [1900, 200]
-        # Step 3: Wait 5 seconds
+        # Step 3: Wait 5 seconds (v4.15: WaitDelay auto-terminates with ability)
         - id: TransitionDelay
-          type: Delay
+          type: AbilityTaskWaitDelay
           properties:
             duration: 5.0
           position: [2100, 200]
@@ -2755,7 +2767,7 @@ gameplay_abilities:
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
-        - from: [TransitionDelay, Completed]
+        - from: [TransitionDelay, OnFinish]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplySymbioteState, Exec]
@@ -3050,9 +3062,9 @@ gameplay_abilities:
             function: SpawnSystemAttached
             class: NiagaraFunctionLibrary
           position: [1800, 200]
-        # Step 3: Wait 5 seconds
+        # Step 3: Wait 5 seconds (v4.15: WaitDelay auto-terminates with ability)
         - id: TransitionDelay
-          type: Delay
+          type: AbilityTaskWaitDelay
           properties:
             duration: 5.0
           position: [2000, 200]
@@ -3229,7 +3241,7 @@ gameplay_abilities:
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
         # v4.14: Route through guards after delay (GAS Audit MED-3)
-        - from: [TransitionDelay, Completed]
+        - from: [TransitionDelay, OnFinish]
           to: [Branch_FatherValid_Guard, Exec]
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
@@ -4267,8 +4279,9 @@ gameplay_abilities:
           properties:
             variable_name: DashDuration
           position: [3000, 100]
+        # v4.15: WaitDelay auto-terminates with ability (Track B GAS Audit)
         - id: Delay
-          type: Delay
+          type: AbilityTaskWaitDelay
           position: [3300, 0]
         - id: CommitCooldown
           type: CallFunction
@@ -4296,7 +4309,7 @@ gameplay_abilities:
           to: [LaunchCharacter, Exec]
         - from: [LaunchCharacter, Exec]
           to: [Delay, Exec]
-        - from: [Delay, then]
+        - from: [Delay, OnFinish]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
@@ -4569,8 +4582,9 @@ gameplay_abilities:
           properties:
             variable_name: StealthDuration
           position: [2700, 100]
+        # v4.15: WaitDelay auto-terminates with ability (Track B GAS Audit)
         - id: Delay
-          type: Delay
+          type: AbilityTaskWaitDelay
           position: [2700, 0]
         # === POST-DELAY GUARDS (GAS Audit MED-4) ===
         # Guard: Validate PlayerRef still exists after 8s delay
@@ -4643,7 +4657,7 @@ gameplay_abilities:
         - from: [SetStealthHandle, Exec]
           to: [Delay, Exec]
         # v4.14: Route through guard after delay (GAS Audit MED-4)
-        - from: [Delay, then]
+        - from: [Delay, OnFinish]
           to: [Branch_PlayerValid_Guard, Exec]
         - from: [Branch_PlayerValid_Guard, True]
           to: [CommitCooldown, Exec]
@@ -4821,21 +4835,29 @@ gameplay_abilities:
           # Return the result (connects to auto-created FunctionResult)
           - from: [CheckNegative, ReturnValue]
             to: [FunctionResult, CanBackstab]
-      # ApplyBackstabBonus - Simple placeholder function
-      # In practice, attack abilities would call this to apply bonus damage
+      # ApplyBackstabBonus - Applies GE_BackstabBonus effect to player
+      # GE_BackstabBonus grants +25 AttackRating (instant effect)
+      # Attack abilities call: if CheckBackstabCondition(Enemy) then ApplyBackstabBonus()
+      # v4.14: Generator now supports TSubclassOf pin defaults via param.PinName syntax
       - function_name: ApplyBackstabBonus
         pure: false
         nodes:
-          # Just print a debug message for now - actual implementation would apply GE
-          - id: PrintBonus
-            type: PrintString
+          # BP_ApplyGameplayEffectToOwner applies GE to ability owner (player)
+          # Per guide Section 15.2: Apply Gameplay Effect to Owner -> GE_BackstabBonus
+          - id: ApplyGEToOwner
+            type: CallFunction
             properties:
-              message: "Backstab bonus applied!"
-            position: [0, 0]
+              # BP_ApplyGameplayEffectToOwner is the Blueprint-callable version on UGameplayAbility
+              function: BP_ApplyGameplayEffectToOwner
+              target_self: true
+              # v4.14: Set TSubclassOf<UGameplayEffect> pin default to GE_BackstabBonus
+              param.GameplayEffectClass: GE_BackstabBonus
+              param.GameplayEffectLevel: 1
+            position: [200, 0]
         connections:
-          # Connect FunctionEntry exec to PrintBonus
+          # Exec flow: Entry -> Apply GE to Owner
           - from: [FunctionEntry, Then]
-            to: [PrintBonus, Exec]
+            to: [ApplyGEToOwner, Exec]
 
   # GA_ProximityStrike - Symbiote AOE Damage
   # NOTE: Runs on Player ASC, granted via EI_FatherSymbioteForm - no cross-ASC gates

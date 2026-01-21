@@ -658,6 +658,11 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v4.15: AbilityTaskWaitDelay - auto-terminates when ability ends (Track B GAS Audit)
+	static UK2Node* CreateAbilityTaskWaitDelayNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
 	static UK2Node* CreatePrintStringNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);

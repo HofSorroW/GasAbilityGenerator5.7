@@ -307,6 +307,8 @@
 #include "K2Node_FunctionEntry.h"  // v2.8.3: Function override entry
 #include "K2Node_FunctionResult.h"  // v4.14: Custom function return node
 #include "K2Node_CallParentFunction.h"  // v2.8.3: Call parent function
+#include "K2Node_LatentAbilityCall.h"  // v4.15: AbilityTask node support (Track B GAS Audit)
+#include "Abilities/Tasks/AbilityTask_WaitDelay.h"  // v4.15: WaitDelay AbilityTask class
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -8310,6 +8312,11 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		{
 			CreatedNode = CreateDelayNode(EventGraph, NodeDef);
 		}
+		// v4.15: AbilityTaskWaitDelay - auto-terminates when ability ends (Track B GAS Audit)
+		else if (NodeDef.Type.Equals(TEXT("AbilityTaskWaitDelay"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAbilityTaskWaitDelayNode(EventGraph, NodeDef);
+		}
 		else if (NodeDef.Type.Equals(TEXT("PrintString"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreatePrintStringNode(EventGraph, NodeDef);
@@ -9430,6 +9437,10 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToOwner"), UGameplayAbility::StaticClass());
 		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToTarget"), UGameplayAbility::StaticClass());
 		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToSelf"), UGameplayAbility::StaticClass());
+		// v4.14: K2_ versions of GE application functions
+		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectToOwner"), UGameplayAbility::StaticClass());
+		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectToTarget"), UGameplayAbility::StaticClass());
+		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectToSelf"), UGameplayAbility::StaticClass());
 		WellKnownFunctions.Add(TEXT("BP_RemoveGameplayEffectFromOwnerWithAssetTags"), UGameplayAbility::StaticClass());
 		WellKnownFunctions.Add(TEXT("BP_RemoveGameplayEffectFromOwnerWithGrantedTags"), UGameplayAbility::StaticClass());
 
@@ -9723,6 +9734,105 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 									LogGeneration(FString::Printf(TEXT("    - %s"), *EnumType->GetNameStringByIndex(i)));
 								}
 							}
+						}
+					}
+					// v4.14: Handle TSubclassOf (PC_Class) pin types for class references
+					else if (ParamPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
+					{
+						// This is a TSubclassOf<T> pin - need to resolve the class and set DefaultObject
+						UClass* ResolvedClass = nullptr;
+						FString ClassName = ParamValue;
+
+						// Determine the expected base class from pin SubCategoryObject
+						UClass* ExpectedBaseClass = Cast<UClass>(ParamPin->PinType.PinSubCategoryObject.Get());
+						FString BaseClassName = ExpectedBaseClass ? ExpectedBaseClass->GetName() : TEXT("UObject");
+
+						// First try to find as a Blueprint generated class in common content paths
+						TArray<FString> SearchPaths;
+						FString ProjectName = FApp::GetProjectName();
+						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Effects/%s"), *ProjectName, *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Abilities/%s"), *ProjectName, *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/%s"), *ProjectName, *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/%s"), *ClassName));
+
+						// Check if it's a full path already
+						if (ClassName.StartsWith(TEXT("/Game/")))
+						{
+							SearchPaths.Insert(ClassName, 0);
+						}
+
+						for (const FString& SearchPath : SearchPaths)
+						{
+							// Try loading as Blueprint
+							FString BlueprintPath = SearchPath;
+							if (!BlueprintPath.EndsWith(TEXT("_C")))
+							{
+								BlueprintPath = SearchPath + TEXT(".") + FPaths::GetBaseFilename(SearchPath) + TEXT("_C");
+							}
+
+							ResolvedClass = LoadClass<UObject>(nullptr, *BlueprintPath, nullptr, LOAD_None, nullptr);
+							if (ResolvedClass)
+							{
+								LogGeneration(FString::Printf(TEXT("  Found Blueprint class at: %s"), *BlueprintPath));
+								break;
+							}
+
+							// Also try direct asset path for native classes
+							FString AssetPath = SearchPath + TEXT(".") + FPaths::GetBaseFilename(SearchPath);
+							UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
+							if (BP && BP->GeneratedClass)
+							{
+								ResolvedClass = BP->GeneratedClass;
+								LogGeneration(FString::Printf(TEXT("  Found Blueprint asset at: %s"), *AssetPath));
+								break;
+							}
+						}
+
+						// If not found, try native class lookup (StaticClass pattern)
+						if (!ResolvedClass)
+						{
+							// Remove common prefixes for native lookup
+							FString NativeClassName = ClassName;
+							if (NativeClassName.StartsWith(TEXT("GE_")) || NativeClassName.StartsWith(TEXT("GA_")))
+							{
+								// These are always Blueprint classes, not native
+								LogGeneration(FString::Printf(TEXT("  Note: %s appears to be a Blueprint class (GE_/GA_ prefix)"), *ClassName));
+							}
+							else
+							{
+								// Try to find native class using UE5 pattern (FindFirstObject)
+								ResolvedClass = FindFirstObject<UClass>(*NativeClassName, EFindFirstObjectOptions::ExactClass);
+								if (!ResolvedClass)
+								{
+									// Try with U prefix
+									ResolvedClass = FindFirstObject<UClass>(*(TEXT("U") + NativeClassName), EFindFirstObjectOptions::ExactClass);
+								}
+							}
+						}
+
+						if (ResolvedClass)
+						{
+							// Validate the class inherits from expected base
+							if (ExpectedBaseClass && !ResolvedClass->IsChildOf(ExpectedBaseClass))
+							{
+								LogGeneration(FString::Printf(TEXT("  WARNING: Class '%s' does not inherit from '%s'. Setting anyway."),
+									*ResolvedClass->GetName(), *BaseClassName));
+							}
+
+							ParamPin->DefaultObject = ResolvedClass;
+							LogGeneration(FString::Printf(TEXT("  Set class parameter '%s' = '%s' (TSubclassOf<%s>)"),
+								*ParamName, *ResolvedClass->GetName(), *BaseClassName));
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  WARNING: Could not resolve class '%s' for TSubclassOf<%s> pin '%s'. Searched paths:"),
+								*ClassName, *BaseClassName, *ParamName));
+							for (const FString& Path : SearchPaths)
+							{
+								LogGeneration(FString::Printf(TEXT("    - %s"), *Path));
+							}
+							LogGeneration(TEXT("    Ensure the referenced asset exists and has been generated."));
 						}
 					}
 					else
@@ -10285,6 +10395,64 @@ UK2Node* FEventGraphGenerator::CreateDelayNode(
 	}
 
 	return DelayNode;
+}
+
+// v4.15: AbilityTaskWaitDelay - auto-terminates when ability ends (Track B GAS Audit)
+// Uses UK2Node_LatentAbilityCall which properly handles AbilityTask lifecycle
+UK2Node* FEventGraphGenerator::CreateAbilityTaskWaitDelayNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_LatentAbilityCall* WaitDelayNode = NewObject<UK2Node_LatentAbilityCall>(Graph);
+	Graph->AddNode(WaitDelayNode, false, false);
+
+	// Find the WaitDelay factory function on UAbilityTask_WaitDelay
+	UFunction* WaitDelayFunction = UAbilityTask_WaitDelay::StaticClass()->FindFunctionByName(FName("WaitDelay"));
+	if (!WaitDelayFunction)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to find WaitDelay function on UAbilityTask_WaitDelay"));
+		return WaitDelayNode;
+	}
+
+	// Set the protected base class properties via reflection (UK2Node_BaseAsyncTask members)
+	// These configure which factory function creates the latent task
+	UClass* NodeClass = WaitDelayNode->GetClass();
+
+	// ProxyFactoryFunctionName = "WaitDelay"
+	if (FNameProperty* FactoryFuncNameProp = FindFProperty<FNameProperty>(NodeClass, TEXT("ProxyFactoryFunctionName")))
+	{
+		FactoryFuncNameProp->SetPropertyValue_InContainer(WaitDelayNode, WaitDelayFunction->GetFName());
+	}
+
+	// ProxyFactoryClass = UAbilityTask_WaitDelay::StaticClass()
+	if (FObjectProperty* FactoryClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyFactoryClass")))
+	{
+		FactoryClassProp->SetObjectPropertyValue_InContainer(WaitDelayNode, UAbilityTask_WaitDelay::StaticClass());
+	}
+
+	// ProxyClass = UAbilityTask_WaitDelay::StaticClass() (the return type)
+	if (FObjectProperty* ProxyClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyClass")))
+	{
+		ProxyClassProp->SetObjectPropertyValue_InContainer(WaitDelayNode, UAbilityTask_WaitDelay::StaticClass());
+	}
+
+	WaitDelayNode->CreateNewGuid();
+	WaitDelayNode->PostPlacedNewNode();
+	WaitDelayNode->AllocateDefaultPins();
+
+	// Set duration/Time if specified in properties
+	const FString* DurationPtr = NodeDef.Properties.Find(TEXT("duration"));
+	if (DurationPtr)
+	{
+		// The WaitDelay function has a "Time" parameter
+		UEdGraphPin* TimePin = WaitDelayNode->FindPin(FName("Time"));
+		if (TimePin)
+		{
+			TimePin->DefaultValue = *DurationPtr;
+		}
+	}
+
+	return WaitDelayNode;
 }
 
 UK2Node* FEventGraphGenerator::CreatePrintStringNode(
