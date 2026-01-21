@@ -2,7 +2,7 @@
 
 **Created:** 2026-01-18
 **Updated:** 2026-01-21
-**Plugin Version:** v4.17
+**Plugin Version:** v4.18
 **Status:** Consolidated tracking file for all pending tasks
 
 ---
@@ -242,14 +242,14 @@ gameplay_abilities:
 
 | Task | Description | Complexity | Status |
 |------|-------------|------------|--------|
-| P1.2 Transition Validation | Lint form-transition state machine at parse time | LOW | ⏳ AUDIT APPROVED |
+| P1.2 Transition Validation | Lint form-transition state machine at parse time | LOW | ✅ COMPLETE (v4.18) |
 | P1.3 Startup Effects Validation | Detect missing default form state in ability configurations | LOW | Pending audit |
 
-**P1.2 - GPT Audit Approved (2026-01-21):**
+**P1.2 - COMPLETED (v4.18, commit `8687f88`):**
 - Father-specific scope (intentional per Rule #9)
 - Tag-based form extraction: `Ability.Father.{Form}` → Form name
 - Log-only `[W_TRANSITION_INVALID]` warnings at parse time
-- See `Implementation_Plans_Audit_v1.md` Section 1 for full plan
+- Detected 4 expected warnings for Symbiote's `Symbiote.Charge.Ready` requirement
 
 **P1.3 Validation Rules:**
 1. If `ability_configurations` contains form abilities (GA_Father*), at least one must have `startup_effects` with a GE_*State
@@ -535,3 +535,4 @@ These are intentionally not implemented:
 | 2026-01-21 | **v4.16.1:** Hash collision detection complete - `CheckHashCollision()` and `ClearCollisionMap()` added to metadata registry |
 | 2026-01-21 | **v4.16.1:** Case-duplicate validation warning (Concern B) - `ValidateCaseDuplicates()` warns on case-only name differences |
 | 2026-01-21 | **v4.17:** Circular Dependency Detection complete - Tarjan SCC algorithm detects GA→GE, BT→BB, Any→Parent cycles |
+| 2026-01-21 | **v4.18:** P1.2 Form Transition Validation complete - Tag-based form extraction, `[W_TRANSITION_INVALID]` warnings |
