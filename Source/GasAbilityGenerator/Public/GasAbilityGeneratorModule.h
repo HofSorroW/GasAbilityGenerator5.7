@@ -1,5 +1,9 @@
-// GasAbilityGenerator v4.17
+// GasAbilityGenerator v4.18
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+//
+// v4.18 Features:
+// - P1.2 Form Transition Validation (GPT audit approved)
+// - Lints form-transition state machine at parse time with [W_TRANSITION_INVALID]
 //
 // v4.17 Features:
 // - Circular Dependency Detection (Dependency Contract v1)

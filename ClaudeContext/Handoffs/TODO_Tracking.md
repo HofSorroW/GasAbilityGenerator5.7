@@ -238,26 +238,26 @@ gameplay_abilities:
 
 ### FormState Package Validation (From Roadmap P1)
 
-**Source:** `Generator_Roadmap_CategoryC_v1_0.md` (archived)
+**Source:** `Generator_Roadmap_CategoryC_v1_0.md` (archived), `Implementation_Plans_Audit_v1.md`
 
-| Task | Description | Complexity |
-|------|-------------|------------|
-| P1.2 Transition Prelude Validation | Detect manifest errors where form abilities don't follow Option B pattern | LOW |
-| P1.3 Startup Effects Validation | Detect missing default form state in ability configurations | LOW |
+| Task | Description | Complexity | Status |
+|------|-------------|------------|--------|
+| P1.2 Transition Validation | Lint form-transition state machine at parse time | LOW | ⏳ AUDIT APPROVED |
+| P1.3 Startup Effects Validation | Detect missing default form state in ability configurations | LOW | Pending audit |
 
-**P1.2 Validation Rules:**
-1. Every form ability must have `cancel_abilities_with_tag` for other forms
-2. Every form ability must have `activation_required_tags` including `Father.State.Alive`, `Father.State.Recruited`
-3. Every form ability must have `activation_blocked_tags` including `Father.State.Dormant`, `Father.State.Transitioning`
+**P1.2 - GPT Audit Approved (2026-01-21):**
+- Father-specific scope (intentional per Rule #9)
+- Tag-based form extraction: `Ability.Father.{Form}` → Form name
+- Log-only `[W_TRANSITION_INVALID]` warnings at parse time
+- See `Implementation_Plans_Audit_v1.md` Section 1 for full plan
 
 **P1.3 Validation Rules:**
 1. If `ability_configurations` contains form abilities (GA_Father*), at least one must have `startup_effects` with a GE_*State
 2. Warn if no default form state is configured
 
 **Implementation:**
-- Add post-parse validation pass in `GasAbilityGeneratorParser.cpp`
-- Emit warnings for missing tags (optionally errors in strict mode)
-- Add validation in AbilityConfiguration generator
+- P1.2: Post-parse `ValidateFormTransitions()` in `GasAbilityGeneratorParser.cpp`
+- P1.3: Add validation in AbilityConfiguration generator (pending audit)
 
 ### FormState Preset Schema (From Roadmap P1.1)
 

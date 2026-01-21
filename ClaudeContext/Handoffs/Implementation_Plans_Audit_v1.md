@@ -18,10 +18,14 @@
 
 ---
 
-## 1. P1.2 Transition Validation
+## 1. P1.2 Transition Validation ⏳ AUDIT APPROVED
+
+**Audit Status:** GPT approved with 3 refinements (accepted 2026-01-21)
 
 ### Overview
-Validates that form transition state machine flows are valid before generation.
+Parse-time lint for Father form-transition state machine. Warns early about invalid transitions.
+
+**Mental Model:** "Lint the manifest's form-transition state machine and warn early, not verify the generated asset."
 
 ### Problem Statement
 Currently, the manifest can define invalid form transitions (e.g., Crawler→Symbiote when Symbiote requires Attached state but Crawler doesn't grant it). These errors only surface at runtime.
@@ -30,36 +34,41 @@ Currently, the manifest can define invalid form transitions (e.g., Crawler→Sym
 - **Files to modify:** `GasAbilityGeneratorParser.cpp`
 - **Files to add:** None
 - **Complexity:** LOW
-- **Risk:** NONE - Additive validation only
-- **Rare edge case:** No - affects every form change definition
+- **Risk:** NONE - Additive validation only, log-only warnings
+- **Project-specific:** YES - Father companion forms only (intentional scope per Rule #9)
+
+### GPT Audit Refinements (Accepted)
+
+| Caveat | Resolution |
+|--------|------------|
+| Father-specific scope | Intentional. Treat as scoped validation, not general-purpose. |
+| Weak keying (substring) | Use tag-based extraction: `Ability.Father.{Form}` → Form name |
+| Warning channel | Log-only at parse time. No report integration (architectural mismatch). |
 
 ### Implementation Steps
 
-#### Step 1: Define Transition Rules
+#### Step 1: Extract Form Name from Ability Tags
 ```cpp
 // In GasAbilityGeneratorParser.cpp (static helper)
-struct FFormTransitionRule
+// Extract form name from Ability.Father.{Form} tag
+static FString ExtractFormNameFromTags(const TArray<FString>& AbilityTags)
 {
-    FString FromForm;
-    FString ToForm;
-    TArray<FString> RequiredTags;      // Tags that must exist on source
-    TArray<FString> BlockedTags;       // Tags that block this transition
-};
-
-static TArray<FFormTransitionRule> GetFormTransitionRules()
-{
-    return {
-        // Crawler can transition to any form (base form)
-        {TEXT("Crawler"), TEXT("Armor"), {}, {}},
-        {TEXT("Crawler"), TEXT("Exoskeleton"), {}, {}},
-        {TEXT("Crawler"), TEXT("Symbiote"), {}, {}},
-        {TEXT("Crawler"), TEXT("Engineer"), {}, {}},
-        // Attached forms can only return to Crawler or switch to other attached
-        {TEXT("Armor"), TEXT("Crawler"), {TEXT("Father.State.Attached")}, {}},
-        {TEXT("Exoskeleton"), TEXT("Crawler"), {TEXT("Father.State.Attached")}, {}},
-        {TEXT("Symbiote"), TEXT("Crawler"), {}, {TEXT("Father.State.SymbioteLocked")}},
-        // etc.
-    };
+    for (const FString& Tag : AbilityTags)
+    {
+        if (Tag.StartsWith(TEXT("Ability.Father.")))
+        {
+            // Ability.Father.Crawler -> Crawler
+            FString FormName = Tag.RightChop(15); // len("Ability.Father.")
+            // Only accept known form names
+            if (FormName == TEXT("Crawler") || FormName == TEXT("Armor") ||
+                FormName == TEXT("Exoskeleton") || FormName == TEXT("Symbiote") ||
+                FormName == TEXT("Engineer"))
+            {
+                return FormName;
+            }
+        }
+    }
+    return FString(); // Not a form ability
 }
 ```
 
@@ -68,28 +77,74 @@ static TArray<FFormTransitionRule> GetFormTransitionRules()
 // In GasAbilityGeneratorParser.cpp
 static void ValidateFormTransitions(const FManifestData& Data)
 {
-    // Build form ability map
-    TMap<FString, const FManifestGameplayAbilityDefinition*> FormAbilities;
+    // Build Form -> Ability map using tag-based extraction
+    TMap<FString, const FManifestGameplayAbilityDefinition*> FormToAbility;
+    TMap<FString, FString> AbilityTagToForm; // Ability.Father.X -> Form name
+
     for (const auto& GA : Data.GameplayAbilities)
     {
-        if (GA.Name.StartsWith(TEXT("GA_Father")) &&
-            (GA.Name.Contains(TEXT("Crawler")) || GA.Name.Contains(TEXT("Armor")) ||
-             GA.Name.Contains(TEXT("Exoskeleton")) || GA.Name.Contains(TEXT("Symbiote")) ||
-             GA.Name.Contains(TEXT("Engineer"))))
+        FString FormName = ExtractFormNameFromTags(GA.Tags.AbilityTags);
+        if (!FormName.IsEmpty())
         {
-            FormAbilities.Add(GA.Name, &GA);
+            FormToAbility.Add(FormName, &GA);
+            FString AbilityTag = FString::Printf(TEXT("Ability.Father.%s"), *FormName);
+            AbilityTagToForm.Add(AbilityTag, FormName);
         }
     }
 
-    // Validate cancel_abilities_with_tag creates valid transitions
-    for (const auto& Pair : FormAbilities)
+    // No form abilities found - skip validation
+    if (FormToAbility.Num() == 0)
     {
-        const auto* GA = Pair.Value;
-        for (const FString& CancelTag : GA->Tags.CancelAbilitiesWithTag)
+        return;
+    }
+
+    // Validate each form's cancel_abilities_with_tag
+    for (const auto& Pair : FormToAbility)
+    {
+        const FString& SourceForm = Pair.Key;
+        const auto* SourceGA = Pair.Value;
+
+        for (const FString& CancelTag : SourceGA->Tags.CancelAbilitiesWithTag)
         {
-            // Check if cancelled ability's required tags are satisfiable
-            // after this ability grants its activation_owned_tags
-            // ...
+            // Is this cancelling another form ability?
+            if (FString* TargetFormPtr = AbilityTagToForm.Find(CancelTag))
+            {
+                const FString& TargetForm = *TargetFormPtr;
+                const auto** TargetGAPtr = FormToAbility.Find(TargetForm);
+                if (!TargetGAPtr) continue;
+                const auto* TargetGA = *TargetGAPtr;
+
+                // Check: Does SourceGA grant tags that TargetGA requires?
+                // (When Source cancels Target, Target must be able to reactivate later)
+                for (const FString& RequiredTag : TargetGA->Tags.ActivationRequiredTags)
+                {
+                    // Skip universal tags that are always present
+                    if (RequiredTag == TEXT("Father.State.Alive") ||
+                        RequiredTag == TEXT("Father.State.Recruited"))
+                    {
+                        continue;
+                    }
+
+                    // Check if source grants this tag via ActivationOwnedTags
+                    bool bSourceGrantsTag = SourceGA->Tags.ActivationOwnedTags.Contains(RequiredTag);
+                    if (!bSourceGrantsTag)
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("[W_TRANSITION_INVALID] %s (form %s) cancels %s but target requires '%s' which source doesn't grant"),
+                            *SourceGA->Name, *SourceForm, *CancelTag, *RequiredTag);
+                    }
+                }
+
+                // Check: Does SourceGA have blocked tags that would prevent transition back?
+                for (const FString& BlockedTag : SourceGA->Tags.ActivationBlockedTags)
+                {
+                    // If source grants a tag that blocks target, warn
+                    if (TargetGA->Tags.ActivationOwnedTags.Contains(BlockedTag))
+                    {
+                        UE_LOG(LogTemp, Warning, TEXT("[W_TRANSITION_INVALID] %s (form %s) grants '%s' which blocks reactivation of cancelled form %s"),
+                            *SourceGA->Name, *SourceForm, *BlockedTag, *TargetForm);
+                    }
+                }
+            }
         }
     }
 }
@@ -103,19 +158,23 @@ ValidateFormTransitions(OutData);
 
 ### Output Format
 ```
-[W_TRANSITION_INVALID] GA_FatherSymbiote cancels GA_FatherCrawler but doesn't satisfy required tag 'Father.State.Alive'
+[W_TRANSITION_INVALID] GA_FatherSymbiote (form Symbiote) cancels Ability.Father.Crawler but target requires 'Father.State.Attached' which source doesn't grant
+[W_TRANSITION_INVALID] GA_FatherArmor (form Armor) grants 'Father.State.SymbioteLocked' which blocks reactivation of cancelled form Symbiote
 ```
 
 ### Test Cases
-1. Valid: Crawler→Armor (no special requirements)
-2. Invalid: Direct Symbiote→Engineer (SymbioteLocked blocks)
-3. Edge: Circular cancellation (A cancels B, B cancels A)
+1. **Valid:** Crawler→Armor (no special requirements) - no warning
+2. **Valid:** Current manifest (all transitions properly configured) - no warning
+3. **Edge:** Non-form ability with `Ability.Father.*` tag - ignored (not in known form list)
+4. **Edge:** Form ability without `cancel_abilities_with_tag` - skipped
 
 ### Acceptance Criteria
+- [x] Form names extracted from `Ability.Father.{Form}` tags (not substring matching)
+- [x] Log-only warnings at parse time (no report integration)
+- [x] Machine-parseable `[W_TRANSITION_INVALID]` format
+- [x] Father-specific scope documented
 - [ ] All form abilities validated at parse time
-- [ ] Warning logged for invalid transitions
 - [ ] No false positives on valid manifest
-- [ ] Machine-parseable warning format
 
 ---
 

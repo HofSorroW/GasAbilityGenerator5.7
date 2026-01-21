@@ -1,5 +1,6 @@
-// GasAbilityGenerator v2.8.2
+// GasAbilityGenerator v4.18
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.18: Added P1.2 form transition validation (GPT audit approved)
 // v4.16.1: Added case-duplicate validation warning (Concern B from audit)
 // v2.8.2: Added nested parameters support for CallFunction nodes (parameters: section under properties:)
 // v2.6.14: Prefix validation for all asset types (E_, IA_, IMC_, GE_, GA_, BP_, WBP_, BB_, BT_, M_, MF_, NS_, etc.)
@@ -82,6 +83,112 @@ static void ValidateCaseDuplicates(const FManifestData& Data)
 	for (const auto& Def : Data.GoalItems) { CheckName(Def.Name, TEXT("GoalItem")); }
 	for (const auto& Def : Data.Quests) { CheckName(Def.Name, TEXT("Quest")); }
 	for (const auto& Def : Data.TriggerSets) { CheckName(Def.Name, TEXT("TriggerSet")); }
+}
+
+/**
+ * v4.18 P1.2: Extract form name from Ability.Father.{Form} tags
+ * Father-specific scope (intentional per Rule #9)
+ * Returns empty string if not a known form ability
+ */
+static FString ExtractFormNameFromTags(const TArray<FString>& AbilityTags)
+{
+	for (const FString& Tag : AbilityTags)
+	{
+		if (Tag.StartsWith(TEXT("Ability.Father.")))
+		{
+			// Ability.Father.Crawler -> Crawler
+			FString FormName = Tag.RightChop(15); // len("Ability.Father.")
+			// Only accept known form names
+			if (FormName == TEXT("Crawler") || FormName == TEXT("Armor") ||
+				FormName == TEXT("Exoskeleton") || FormName == TEXT("Symbiote") ||
+				FormName == TEXT("Engineer"))
+			{
+				return FormName;
+			}
+		}
+	}
+	return FString(); // Not a form ability
+}
+
+/**
+ * v4.18 P1.2: Validate form transition state machine at parse time
+ * Lints the manifest for invalid form transitions - log-only warnings
+ * Father-specific scope (intentional per Rule #9)
+ */
+static void ValidateFormTransitions(const FManifestData& Data)
+{
+	// Build Form -> Ability map using tag-based extraction
+	TMap<FString, const FManifestGameplayAbilityDefinition*> FormToAbility;
+	TMap<FString, FString> AbilityTagToForm; // Ability.Father.X -> Form name
+
+	for (const auto& GA : Data.GameplayAbilities)
+	{
+		FString FormName = ExtractFormNameFromTags(GA.Tags.AbilityTags);
+		if (!FormName.IsEmpty())
+		{
+			FormToAbility.Add(FormName, &GA);
+			FString AbilityTag = FString::Printf(TEXT("Ability.Father.%s"), *FormName);
+			AbilityTagToForm.Add(AbilityTag, FormName);
+		}
+	}
+
+	// No form abilities found - skip validation
+	if (FormToAbility.Num() == 0)
+	{
+		return;
+	}
+
+	// Validate each form's cancel_abilities_with_tag
+	for (const auto& Pair : FormToAbility)
+	{
+		const FString& SourceForm = Pair.Key;
+		const auto* SourceGA = Pair.Value;
+
+		for (const FString& CancelTag : SourceGA->Tags.CancelAbilitiesWithTag)
+		{
+			// Is this cancelling another form ability?
+			if (FString* TargetFormPtr = AbilityTagToForm.Find(CancelTag))
+			{
+				const FString& TargetForm = *TargetFormPtr;
+				const auto** TargetGAPtr = FormToAbility.Find(TargetForm);
+				if (!TargetGAPtr) continue;
+				const auto* TargetGA = *TargetGAPtr;
+
+				// Check: Does SourceGA grant tags that TargetGA requires?
+				// (When Source cancels Target, Target must be able to reactivate later)
+				for (const FString& RequiredTag : TargetGA->Tags.ActivationRequiredTags)
+				{
+					// Skip universal tags that are always present
+					if (RequiredTag == TEXT("Father.State.Alive") ||
+						RequiredTag == TEXT("Father.State.Recruited"))
+					{
+						continue;
+					}
+
+					// Check if source grants this tag via ActivationOwnedTags
+					bool bSourceGrantsTag = SourceGA->Tags.ActivationOwnedTags.Contains(RequiredTag);
+					if (!bSourceGrantsTag)
+					{
+						UE_LOG(LogGasAbilityParser, Warning,
+							TEXT("[W_TRANSITION_INVALID] %s (form %s) cancels %s but target requires '%s' which source doesn't grant"),
+							*SourceGA->Name, *SourceForm, *CancelTag, *RequiredTag);
+					}
+				}
+
+				// Check: Does SourceGA have blocked tags that would prevent transition back?
+				for (const FString& BlockedTag : SourceGA->Tags.ActivationBlockedTags)
+				{
+					// If source grants a tag that blocks target, warn
+					if (TargetGA->Tags.ActivationOwnedTags.Contains(BlockedTag))
+					{
+						UE_LOG(LogGasAbilityParser, Warning,
+							TEXT("[W_TRANSITION_INVALID] %s (form %s) grants '%s' which blocks reactivation of cancelled form %s"),
+							*SourceGA->Name, *SourceForm, *BlockedTag, *TargetForm);
+					}
+				}
+			}
+		}
+	}
 }
 
 bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, FManifestData& OutData)
@@ -413,6 +520,9 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 
 	// v4.16.1: Validate for case-only duplicate asset names (Concern B from audit)
 	ValidateCaseDuplicates(OutData);
+
+	// v4.18 P1.2: Validate form transition state machine (Father-specific)
+	ValidateFormTransitions(OutData);
 
 	return true;
 }

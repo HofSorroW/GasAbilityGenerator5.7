@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 4170,
-	"VersionName": "4.17",
+	"Version": 4180,
+	"VersionName": "4.18",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.17: Circular Dependency Detection (Dependency Contract v1).",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.18: P1.2 Form Transition Validation.",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",
