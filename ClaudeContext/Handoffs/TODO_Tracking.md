@@ -2,8 +2,33 @@
 
 **Created:** 2026-01-18
 **Updated:** 2026-01-21
-**Plugin Version:** v4.19
+**Plugin Version:** v4.21
 **Status:** Consolidated tracking file for all pending tasks
+
+---
+
+## ✅ Recently Completed - Delegate Binding Automation (v4.21)
+
+**Source:** `Handoffs/Implementation_Plans_Audit_v1.md` Section 9 (P2.1)
+**Audit:** Claude-GPT dual audit PASSED (2026-01-21)
+
+**Features:**
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Narrative Pro Delegates | OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage | ✅ |
+| Two CreateDelegate Nodes | Separate nodes for Activate and End paths | ✅ |
+| PN_Self Wiring | CreateDelegate→Self, Add/RemoveDelegate→SourceASC | ✅ |
+| Cast to NarrativeASC | Mandatory for OwnerASC/PlayerASC keywords | ✅ |
+| Custom Event Creation | Auto-created with delegate signature parameters | ✅ |
+| Parser Id Field | `id:` field for delegate binding identification | ✅ |
+| Error Codes | E_DELEGATE_NOT_FOUND, E_DELEGATE_SIGNATURE_MISMATCH (FAIL) | ✅ |
+
+**Architecture Decision (Audit-Approved):**
+- Two CreateDelegate nodes per binding (not shared across exec paths)
+- RemoveDelegate unbinds by (Object, FunctionName) tuple match
+- No guards modified - replaced incomplete stub with full implementation
+
+**Commit:** `4fcab76` feat(v4.21): Delegate Binding Automation [LOCKED-CHANGE-APPROVED]
 
 ---
 
