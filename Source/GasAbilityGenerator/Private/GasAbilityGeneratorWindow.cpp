@@ -697,6 +697,12 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 	FMaterialGenerator::ClearGeneratedMaterialsCache();
 	// v4.14: Clear session cache for BT blackboard lookup
 	FBlackboardGenerator::ClearGeneratedBlackboardsCache();
+	// v4.16.1: Clear hash collision map at start of generation session
+	UGeneratorMetadataRegistry* Registry = UGeneratorMetadataRegistry::GetOrCreateRegistry();
+	if (Registry)
+	{
+		Registry->ClearCollisionMap();
+	}
 
 	FGenerationSummary Summary;
 

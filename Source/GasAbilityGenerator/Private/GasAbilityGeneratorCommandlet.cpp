@@ -346,6 +346,13 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 	// Generate assets
 	if (bGenerateAssets)
 	{
+		// v4.16.1: Clear hash collision map at start of generation session
+		UGeneratorMetadataRegistry* Registry = UGeneratorMetadataRegistry::GetOrCreateRegistry();
+		if (Registry)
+		{
+			Registry->ClearCollisionMap();
+		}
+
 		GenerateAssets(ManifestData);
 	}
 

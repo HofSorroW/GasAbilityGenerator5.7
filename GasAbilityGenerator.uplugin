@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 4151,
-	"VersionName": "4.15.1",
+	"Version": 4161,
+	"VersionName": "4.16.1",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.15.1: Track B complete - AbilityTaskWaitDelay support, call-site corrections for GAS Audit.",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v4.16.1: Hash collision detection for metadata integrity, Blueprint Compile Gate (Contract 10).",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",

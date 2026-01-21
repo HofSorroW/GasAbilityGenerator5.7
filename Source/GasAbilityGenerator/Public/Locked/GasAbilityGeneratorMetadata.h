@@ -2,6 +2,7 @@
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 // v3.0: UGeneratorAssetMetadata - Persistent metadata storage for generated assets
 // v3.1: UGeneratorMetadataRegistry - Central registry for assets that don't support AssetUserData
+// v4.16.1: Hash collision detection for metadata integrity
 
 #pragma once
 
@@ -171,8 +172,21 @@ public:
 	static void SaveRegistry();
 	static void ClearRegistryCache();
 
+	/**
+	 * v4.16.1: Hash collision detection for metadata integrity
+	 * Detects when two different assets produce the same InputHash
+	 * This helps identify hash function weaknesses or manifest issues
+	 */
+	void CheckHashCollision(int64 Hash, const FString& AssetPath);
+
+	/** Clear the collision map (call at start of generation session) */
+	void ClearCollisionMap();
+
 private:
 	static TWeakObjectPtr<UGeneratorMetadataRegistry> CachedRegistry;
+
+	/** v4.16.1: Transient map for collision detection (Hash string -> first asset path) */
+	TMap<FString, FString> HashToAssetMap;
 };
 
 /**

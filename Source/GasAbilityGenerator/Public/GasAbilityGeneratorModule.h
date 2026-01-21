@@ -1,5 +1,9 @@
-// GasAbilityGenerator v4.12.4
+// GasAbilityGenerator v4.16.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+//
+// v4.16.1 Features:
+// - Hash collision detection for metadata integrity (Proposal #3)
+// - Blueprint Compile Gate - Contract 10 added to LOCKED_CONTRACTS.md
 //
 // v4.12.4 Features:
 // - Full sync-from-assets for Item abilities (EquipmentAbilities extraction)

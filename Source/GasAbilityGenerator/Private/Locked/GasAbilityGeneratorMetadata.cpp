@@ -1,6 +1,7 @@
 // GasAbilityGenerator v3.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 // v3.1: Added UGeneratorMetadataRegistry for assets that don't support AssetUserData
+// v4.16.1: Hash collision detection for metadata integrity
 
 #include "Locked/GasAbilityGeneratorMetadata.h"
 #include "Engine/Blueprint.h"
@@ -241,6 +242,37 @@ void UGeneratorMetadataRegistry::ClearRegistryCache()
 	CachedRegistry.Reset();
 }
 
+// v4.16.1: Hash collision detection implementation
+void UGeneratorMetadataRegistry::CheckHashCollision(int64 Hash, const FString& AssetPath)
+{
+	// Convert hash to string key for TMap
+	FString HashKey = FString::Printf(TEXT("%lld"), Hash);
+
+	FString* ExistingPath = HashToAssetMap.Find(HashKey);
+	if (ExistingPath)
+	{
+		// Collision detected - different asset has same hash
+		if (*ExistingPath != AssetPath)
+		{
+			UE_LOG(LogGeneratorMetadata, Warning,
+				TEXT("HASH COLLISION DETECTED: Hash %lld used by both '%s' and '%s'"),
+				Hash, **ExistingPath, *AssetPath);
+		}
+		// Same asset path is not a collision (re-generation)
+	}
+	else
+	{
+		// First time seeing this hash, record it
+		HashToAssetMap.Add(HashKey, AssetPath);
+	}
+}
+
+void UGeneratorMetadataRegistry::ClearCollisionMap()
+{
+	HashToAssetMap.Empty();
+	UE_LOG(LogGeneratorMetadata, Verbose, TEXT("Cleared hash collision map for new generation session"));
+}
+
 // ============================================================================
 // Helper Functions
 // v3.1: Updated to use registry fallback for unsupported asset types
@@ -357,6 +389,17 @@ namespace GeneratorMetadataHelpers
 			return;
 		}
 
+		// v4.16.1: Check for hash collisions before storing
+		FString AssetPath = GetAssetPathForRegistry(Asset);
+		if (!AssetPath.IsEmpty() && Metadata.InputHash != 0)
+		{
+			UGeneratorMetadataRegistry* Registry = UGeneratorMetadataRegistry::GetOrCreateRegistry();
+			if (Registry)
+			{
+				Registry->CheckHashCollision(static_cast<int64>(Metadata.InputHash), AssetPath);
+			}
+		}
+
 		// v3.1: Try IInterface_AssetUserData first
 		IInterface_AssetUserData* AssetUserDataInterface = Cast<IInterface_AssetUserData>(Asset);
 		if (AssetUserDataInterface)
@@ -377,7 +420,6 @@ namespace GeneratorMetadataHelpers
 		}
 
 		// v3.1: Fallback to registry for assets that don't support AssetUserData
-		FString AssetPath = GetAssetPathForRegistry(Asset);
 		if (!AssetPath.IsEmpty())
 		{
 			UGeneratorMetadataRegistry* Registry = UGeneratorMetadataRegistry::GetOrCreateRegistry();

@@ -178,15 +178,16 @@ gameplay_abilities:
 
 ### Metadata System
 
-| Task | Description | Complexity |
-|------|-------------|------------|
-| Hash collision detection | Add detection/warning for hash collisions in metadata system | MEDIUM |
+| Task | Description | Complexity | Status |
+|------|-------------|------------|--------|
+| Hash collision detection | Add detection/warning for hash collisions in metadata system | MEDIUM | ✅ COMPLETE (v4.16.1) |
 
-**Details:**
-- Currently hash collisions are undetected
-- Add collision tracking to `UGeneratorMetadataRegistry`
-- Log warning when different inputs produce same hash
-- Location: `Locked/GasAbilityGeneratorMetadata.cpp`
+**Details (COMPLETED v4.16.1):**
+- ✅ Added `CheckHashCollision()` and `ClearCollisionMap()` to `UGeneratorMetadataRegistry`
+- ✅ Collision map cleared at start of each generation session (commandlet and editor window)
+- ✅ Logs `HASH COLLISION DETECTED: Hash N used by both 'path1' and 'path2'` when detected
+- ✅ Location: `Locked/GasAbilityGeneratorMetadata.h`, `Locked/GasAbilityGeneratorMetadata.cpp`
+- ✅ Additive change only - no guards removed or modified (per Rule #6)
 
 ### Material Validation
 
@@ -368,7 +369,7 @@ gameplay_abilities:
 | Area | Status | Notes | Location |
 |------|--------|-------|----------|
 | Material: Circular expression refs | UNDETECTED | See Medium Priority task | `GasAbilityGeneratorGenerators.cpp` |
-| Metadata: Hash collisions | UNDETECTED | See Medium Priority task | `GasAbilityGeneratorMetadata.cpp` |
+| Metadata: Hash collisions | ✅ DETECTED (v4.16.1) | Logs warning when collision found | `Locked/GasAbilityGeneratorMetadata.cpp` |
 
 ### Deferred Asset Resolution
 
@@ -516,3 +517,4 @@ These are intentionally not implemented:
 | 2026-01-21 | **v4.16 Consolidation:** Added code-level findings: Manual Setup Items, Documented Limitations, Edge Cases |
 | 2026-01-21 | **v4.16 Consolidation:** Archived Graph_Validation_Implementation_v4.16.md (work complete) |
 | 2026-01-21 | **v4.16 Consolidation:** Archived Generator_Roadmap_CategoryC_v1_0.md (merged into this file) |
+| 2026-01-21 | **v4.16.1:** Hash collision detection complete - `CheckHashCollision()` and `ClearCollisionMap()` added to metadata registry |
