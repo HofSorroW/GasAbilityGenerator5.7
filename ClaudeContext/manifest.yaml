@@ -4332,7 +4332,7 @@ gameplay_abilities:
         - from: [MultiplyVector, ReturnValue]
           to: [LaunchCharacter, LaunchVelocity]
         - from: [GetDuration, DashDuration]
-          to: [Delay, Duration]
+          to: [Delay, Time]
 
   # GA_FatherExoskeletonSprint - Exoskeleton Sprint Speed Boost
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
@@ -4685,7 +4685,7 @@ gameplay_abilities:
         - from: [ApplyGE, ReturnValue]
           to: [SetStealthHandle, StealthEffectHandle]
         - from: [GetDuration, StealthDuration]
-          to: [Delay, Duration]
+          to: [Delay, Time]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [RemoveGE, Exec]

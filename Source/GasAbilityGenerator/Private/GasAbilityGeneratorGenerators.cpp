@@ -92,6 +92,8 @@
 #include "Factories/BlueprintFactory.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+// v4.16: Compile validation (Contract 10 - Blueprint Compile Gate)
+#include "Kismet2/CompilerResultsLog.h"
 #include "Engine/Blueprint.h"
 #include "Engine/UserDefinedEnum.h"
 #include "GameplayEffect.h"
@@ -2241,9 +2243,33 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Gameplay Effect Blueprint"));
 	}
 
-	// v4.14: Compile FIRST to ensure GeneratedClass and CDO exist before setting properties
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	// Compile FIRST to ensure GeneratedClass and CDO exist before setting properties
 	// CDO properties set before compile will be lost when compile recreates the class
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Gameplay Effect Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("GameplayEffect");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	if (!Blueprint->GeneratedClass)
 	{
@@ -2619,16 +2645,9 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		GraphDef.Nodes = Definition.EventGraphNodes;
 		GraphDef.Connections = Definition.EventGraphConnections;
 
-		if (FEventGraphGenerator::GenerateEventGraph(Blueprint, GraphDef, ProjectRoot))
-		{
-			LogGeneration(FString::Printf(TEXT("  Generated event graph with %d nodes"), Definition.EventGraphNodes.Num()));
-		}
-		else
-		{
-			LogGeneration(TEXT("  Warning: Failed to generate event graph"));
-		}
+		bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, GraphDef, ProjectRoot);
 
-		// v2.6.7: Check for missing dependencies and return Deferred status if any
+		// v2.6.7: Check for missing dependencies FIRST - return Deferred to retry later
 		if (FEventGraphGenerator::HasMissingDependencies())
 		{
 			const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
@@ -2647,6 +2666,23 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 			FEventGraphGenerator::ClearMissingDependencies();
 			return Result;
 		}
+
+		// v4.16: Event graph failure propagation (P2 - Caller Propagation)
+		// If GenerateEventGraph returned false (not deferred), abort generation
+		if (!bEventGraphSuccess)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+			LogGeneration(TEXT("  FAILED: Event graph generation failed - see errors above"));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("Event graph generation failed"));
+			Result.AssetPath = AssetPath;
+			Result.GeneratorId = TEXT("GameplayAbility");
+			Result.DetermineCategory();
+			return Result;
+		}
+
+		LogGeneration(FString::Printf(TEXT("  Generated event graph with %d nodes"), Definition.EventGraphNodes.Num()));
 	}
 
 	// v2.6.2: Configure tags and policies using helper functions
@@ -2660,19 +2696,8 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		}
 	}
 
-	// Mark dirty and register
-	Package->MarkPackageDirty();
-	FAssetRegistryModule::AssetCreated(Blueprint);
-
-	// Save package
-	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
-	FSavePackageArgs SaveArgs;
-	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
-
-	LogGeneration(FString::Printf(TEXT("Created Gameplay Ability: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
-
-	// v4.13: Category C - Generate cue triggers, VFX spawns, delegate bindings (P3.2, P3.1, P2.1)
+	// v4.16: Restructured - Category C nodes BEFORE save (D-009, D-010)
+	// Previously had checkpoint save before Category C, violating single-save invariant
 	if (Definition.CueTriggers.Num() > 0)
 	{
 		int32 CueNodesGenerated = FEventGraphGenerator::GenerateCueTriggerNodes(Blueprint, Definition.CueTriggers);
@@ -2709,19 +2734,51 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d custom functions"), FunctionsGenerated, Definition.CustomFunctions.Num()));
 	}
 
-	// Recompile blueprint after adding Category C nodes or custom functions
-	if (Definition.CueTriggers.Num() > 0 || Definition.VFXSpawns.Num() > 0 || Definition.DelegateBindings.Num() > 0 || Definition.CustomFunctions.Num() > 0)
-	{
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.16: Final compile with validation (Contract 10 - Blueprint Compile Gate)
+	// Single compile after ALL nodes added - replaces checkpoint save pattern
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
 
-		// v4.14: CRITICAL - Save package again after adding custom functions/Category C nodes
-		// The first save (above) happens before these nodes are added, so they would be lost
-		FAssetRegistryModule::AssetCreated(Blueprint);
-		FSavePackageArgs SaveArgsAfterCustom;
-		SaveArgsAfterCustom.TopLevelFlags = RF_Public | RF_Standalone;
-		UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgsAfterCustom);
-		LogGeneration(FString::Printf(TEXT("  Saved blueprint after adding custom functions/Category C nodes")));
+	// v4.16: Check compile result - abort save if errors (P3, P4)
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), CompileLog.NumErrors));
+		for (const FString& Err : ErrorMessages)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+		}
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("GameplayAbility");
+		Result.DetermineCategory();
+		return Result;
 	}
+
+	// Mark dirty and register
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	// v4.16: Single save at end (D-011 invariant) - only reached if compile succeeded
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	LogGeneration(FString::Printf(TEXT("Created Gameplay Ability: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
 
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("GameplayAbility"), Definition.Name, Definition.ComputeHash());
@@ -2986,15 +3043,9 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		GraphDef.Nodes = Definition.EventGraphNodes;
 		GraphDef.Connections = Definition.EventGraphConnections;
 
-		if (FEventGraphGenerator::GenerateEventGraph(Blueprint, GraphDef, ProjectRoot))
-		{
-			LogGeneration(FString::Printf(TEXT("  Generated inline event graph with %d nodes"), Definition.EventGraphNodes.Num()));
-		}
-		else
-		{
-			LogGeneration(TEXT("  Warning: Failed to generate inline event graph"));
-		}
+		bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, GraphDef, ProjectRoot);
 
+		// Check for missing dependencies FIRST - return Deferred to retry later
 		if (FEventGraphGenerator::HasMissingDependencies())
 		{
 			const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
@@ -3012,6 +3063,22 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 			FEventGraphGenerator::ClearMissingDependencies();
 			return Result;
 		}
+
+		// v4.16: Event graph failure propagation (P2 - Caller Propagation)
+		if (!bEventGraphSuccess)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+			LogGeneration(TEXT("  FAILED: Inline event graph generation failed - see errors above"));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("Event graph generation failed"));
+			Result.AssetPath = AssetPath;
+			Result.GeneratorId = TEXT("ActorBlueprint");
+			Result.DetermineCategory();
+			return Result;
+		}
+
+		LogGeneration(FString::Printf(TEXT("  Generated inline event graph with %d nodes"), Definition.EventGraphNodes.Num()));
 	}
 	// v2.2.0: Fall back to referenced event graph lookup
 	else if (!Definition.EventGraphName.IsEmpty() && ManifestData)
@@ -3021,14 +3088,7 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraphName);
 		if (GraphDef)
 		{
-			if (FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, ProjectRoot))
-			{
-				LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraphName));
-			}
-			else
-			{
-				LogGeneration(FString::Printf(TEXT("  Failed to apply event graph: %s"), *Definition.EventGraphName));
-			}
+			bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, ProjectRoot);
 
 			if (FEventGraphGenerator::HasMissingDependencies())
 			{
@@ -3047,6 +3107,22 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 				FEventGraphGenerator::ClearMissingDependencies();
 				return Result;
 			}
+
+			// v4.16: Event graph failure propagation (P2 - Caller Propagation)
+			if (!bEventGraphSuccess)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+				LogGeneration(FString::Printf(TEXT("  FAILED: Event graph '%s' generation failed - see errors above"), *Definition.EventGraphName));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					TEXT("Event graph generation failed"));
+				Result.AssetPath = AssetPath;
+				Result.GeneratorId = TEXT("ActorBlueprint");
+				Result.DetermineCategory();
+				return Result;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraphName));
 		}
 		else
 		{
@@ -3072,14 +3148,44 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		}
 	}
 
-	// Compile blueprint
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.16: Check compile result - abort save if errors (P3, P4)
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), CompileLog.NumErrors));
+		for (const FString& Err : ErrorMessages)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+		}
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("ActorBlueprint");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	// Mark dirty and register
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Blueprint);
 
-	// Save package
+	// Save package (only reached if compile succeeded)
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
@@ -3991,14 +4097,7 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraphName);
 		if (GraphDef)
 		{
-			if (FEventGraphGenerator::GenerateEventGraph(WidgetBP, *GraphDef, TEXT("")))
-			{
-				LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraphName));
-			}
-			else
-			{
-				LogGeneration(FString::Printf(TEXT("  Failed to apply event graph: %s"), *Definition.EventGraphName));
-			}
+			bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(WidgetBP, *GraphDef, TEXT(""));
 
 			// v2.6.7: Check for missing dependencies and return Deferred status if any
 			if (FEventGraphGenerator::HasMissingDependencies())
@@ -4019,6 +4118,22 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 				FEventGraphGenerator::ClearMissingDependencies();
 				return Result;
 			}
+
+			// v4.16: Event graph failure propagation (P2 - Caller Propagation)
+			if (!bEventGraphSuccess)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+				LogGeneration(FString::Printf(TEXT("  FAILED: Event graph '%s' generation failed - see errors above"), *Definition.EventGraphName));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					TEXT("Event graph generation failed"));
+				Result.AssetPath = AssetPath;
+				Result.GeneratorId = TEXT("WidgetBlueprint");
+				Result.DetermineCategory();
+				return Result;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraphName));
 		}
 		else
 		{
@@ -4026,11 +4141,44 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 		}
 	}
 
+	// v4.16: Compile blueprint with validation (D-006, Contract 10)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(WidgetBP, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.16: Check compile result - abort save if errors (P3, P4)
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), CompileLog.NumErrors));
+		for (const FString& Err : ErrorMessages)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+		}
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("WidgetBlueprint");
+		Result.DetermineCategory();
+		return Result;
+	}
+
 	// Mark dirty and register
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(WidgetBP);
 
-	// Save package
+	// Save package (only reached if compile succeeded)
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
@@ -8741,10 +8889,18 @@ bool FEventGraphGenerator::GenerateEventGraph(
 			UnconnectedInputPins));
 	}
 
-	if (NodesFailed > 0 || ConnectionsFailed > 0)
+	// v4.16: Return false if any failures occurred (P1 - GenerateEventGraph gate)
+	// This gates SavePackage - callers must check return value and abort save on false
+	if (NodesFailed > 0 || ConnectionsFailed > 0 || TotalErrors > 0)
 	{
-		LogGeneration(FString::Printf(TEXT("  WARNING: %d node(s) and %d connection(s) failed!"),
-			NodesFailed, ConnectionsFailed));
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] GenerateEventGraph failed for %s: Nodes=%d Connections=%d PostValidation=%d"),
+			*GraphDefinition.Name, NodesFailed, ConnectionsFailed, TotalErrors);
+		LogGeneration(FString::Printf(TEXT("  GENERATION FAILED: %d node(s), %d connection(s), %d validation error(s)"),
+			NodesFailed, ConnectionsFailed, TotalErrors));
+
+		// Mark blueprint as modified even on failure (for debugging)
+		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+		return false;
 	}
 
 	// Mark blueprint as modified and compile
@@ -10789,8 +10945,17 @@ bool FEventGraphGenerator::ConnectPins(
 		}
 		else if (Response.Response == CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE)
 		{
-			// Needs conversion - log as warning but allow
-			LogGeneration(FString::Printf(TEXT("      NOTE: Connection requires conversion: %s"), *Response.Message.ToString()));
+			// v4.16: HARD FAIL - type mismatch requires conversion node (D-001, P5)
+			// UE5 KismetCompiler treats this as compile error; we fail early
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [E_TYPE_MISMATCH] Pin type mismatch: [%s].%s (%s) -> [%s].%s (%s)"),
+				*Connection.From.NodeId, *FromPin->PinName.ToString(), *FromTypeDesc,
+				*Connection.To.NodeId, *ToPin->PinName.ToString(), *ToTypeDesc);
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   Connection requires conversion node (UE response: MAKE_WITH_CONVERSION_NODE)"));
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   Generator does not auto-create conversions. Fix manifest or add explicit conversion node."));
+
+			LogGeneration(FString::Printf(TEXT("      ERROR: Type mismatch - %s -> %s requires conversion"), *FromTypeDesc, *ToTypeDesc));
+			LogGeneration(TEXT("      Fix manifest types or add explicit conversion node in event graph"));
+			return false;
 		}
 		else if (Response.Response == CONNECT_RESPONSE_BREAK_OTHERS_A ||
 		         Response.Response == CONNECT_RESPONSE_BREAK_OTHERS_B ||
@@ -12075,16 +12240,9 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 	{
 		// Generate event graph using existing infrastructure
 		FEventGraphGenerator::ClearMissingDependencies();
-		if (FEventGraphGenerator::GenerateEventGraph(Blueprint, EventGraphDef, GetProjectRoot()))
-		{
-			LogGeneration(FString::Printf(TEXT("  Generated event graph with %d nodes"), EventGraphDef.Nodes.Num()));
-		}
-		else
-		{
-			LogGeneration(TEXT("  Warning: Failed to generate event graph"));
-		}
+		bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, EventGraphDef, GetProjectRoot());
 
-		// Check for missing dependencies
+		// Check for missing dependencies FIRST
 		if (FEventGraphGenerator::HasMissingDependencies())
 		{
 			const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
@@ -12098,6 +12256,22 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 			FEventGraphGenerator::ClearMissingDependencies();
 			return Result;
 		}
+
+		// v4.16: Event graph failure propagation (P2 - Caller Propagation)
+		if (!bEventGraphSuccess)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+			LogGeneration(TEXT("  FAILED: Event graph generation failed - see errors above"));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("Event graph generation failed"));
+			Result.AssetPath = AssetPath;
+			Result.GeneratorId = TEXT("AnimationNotify");
+			Result.DetermineCategory();
+			return Result;
+		}
+
+		LogGeneration(FString::Printf(TEXT("  Generated event graph with %d nodes"), EventGraphDef.Nodes.Num()));
 	}
 	else
 	{
@@ -12123,8 +12297,38 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 		}
 	}
 
-	// Recompile after event graph changes
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.16: Check compile result - abort save if errors (P3, P4)
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), CompileLog.NumErrors));
+		for (const FString& Err : ErrorMessages)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+		}
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("AnimationNotify");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	FAssetRegistryModule::AssetCreated(Blueprint);
 	Package->MarkPackageDirty();
@@ -13066,9 +13270,41 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 		LogGeneration(FString::Printf(TEXT("  Created dialogue tree with %d nodes (root: %s)"),
 			Definition.DialogueTree.Nodes.Num(), *Definition.DialogueTree.RootNodeId));
 
-		// Recompile after adding dialogue nodes
+		// Mark as modified after adding dialogue nodes
 		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	}
+
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.16: Check compile result - abort save if errors (P3, P4)
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), CompileLog.NumErrors));
+		for (const FString& Err : ErrorMessages)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+		}
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("DialogueBlueprint");
+		Result.DetermineCategory();
+		return Result;
 	}
 
 	Package->MarkPackageDirty();
@@ -14667,8 +14903,39 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		}
 	}
 
-	// v4.14: Removed redundant recompile - would wipe all CDO property changes
-	// The initial compile at line 12678 is sufficient; CDO changes persist without recompile
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	// Note: CDO properties were set after initial compile, so final compile ensures GeneratedClass is current
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	// v4.16: Check compile result - abort save if errors (P3, P4)
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), CompileLog.NumErrors));
+		for (const FString& Err : ErrorMessages)
+		{
+			LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+		}
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("EquippableItem");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Blueprint);
@@ -14771,8 +15038,31 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Activity Blueprint"));
 	}
 
-	// Compile blueprint first
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Activity Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("Activity");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	// v2.6.9: Use pre-loaded BehaviorTree from deferred check
 	if (Blueprint->GeneratedClass)
@@ -15393,8 +15683,31 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Narrative Event Blueprint"));
 	}
 
-	// Compile blueprint
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Narrative Event Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("NarrativeEvent");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	// v3.2: Set event configuration properties on CDO
 	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
@@ -15731,10 +16044,33 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		}
 	}
 
-	// Recompile after setting target arrays, properties, and conditions
+	// v4.16: Recompile with validation after setting target arrays, properties, and conditions (Contract 10)
 	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0 || Definition.Properties.Num() > 0 || Definition.Conditions.Num() > 0))
 	{
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+		FCompilerResultsLog FinalCompileLog;
+		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &FinalCompileLog);
+
+		if (FinalCompileLog.NumErrors > 0)
+		{
+			TArray<FString> ErrorMessages;
+			for (const TSharedRef<FTokenizedMessage>& Msg : FinalCompileLog.Messages)
+			{
+				if (Msg->GetSeverity() == EMessageSeverity::Error)
+				{
+					ErrorMessages.Add(Msg->ToText().ToString());
+				}
+			}
+
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Narrative Event final compilation failed with %d errors: %s"),
+				*Definition.Name, FinalCompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Final compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+			Result.AssetPath = AssetPath;
+			Result.GeneratorId = TEXT("NarrativeEvent");
+			Result.DetermineCategory();
+			return Result;
+		}
 	}
 
 	Package->MarkPackageDirty();
@@ -15834,8 +16170,31 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 			TEXT("Failed to create Gameplay Cue Blueprint"));
 	}
 
-	// Compile to create CDO
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Gameplay Cue Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("GameplayCue");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	// Get CDO to set properties
 	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
@@ -18823,8 +19182,31 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 		SetTagContainer(TEXT("RequireTags"), Definition.RequireTags);
 	}
 
-	// Compile and save
-	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Goal Item Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("GoalItem");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	Package->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(Blueprint);
@@ -19452,8 +19834,31 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 		}
 	}
 
-	// Compile
-	FKismetEditorUtilities::CompileBlueprint(QuestBP);
+	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(QuestBP, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Quest Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("Quest");
+		Result.DetermineCategory();
+		return Result;
+	}
 
 	// Save
 	Package->MarkPackageDirty();
