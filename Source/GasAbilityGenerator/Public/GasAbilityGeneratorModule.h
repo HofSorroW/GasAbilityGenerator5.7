@@ -1,5 +1,9 @@
-// GasAbilityGenerator v4.16.1
+// GasAbilityGenerator v4.17
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+//
+// v4.17 Features:
+// - Circular Dependency Detection (Dependency Contract v1)
+// - Detects cycles in GA→GE, BT→BB, Any→Parent references before generation
 //
 // v4.16.1 Features:
 // - Hash collision detection for metadata integrity (Proposal #3)

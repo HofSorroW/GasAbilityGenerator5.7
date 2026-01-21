@@ -29,6 +29,246 @@
 // v3.1: Dedicated log category for filtering
 DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);
 
+// ============================================================================
+// v4.17: Circular Dependency Detection (Dependency Contract v1)
+// ============================================================================
+// Edges: GA→GE (cooldown), BT→BB, Any→Parent (if manifest-defined)
+// Key format: Type:Name (e.g., "GameplayAbility:GA_FatherAttack")
+// Cycle criteria: SCC.Num() > 1 OR (SCC.Num() == 1 && HasSelfEdge)
+
+struct FAssetDependencyNode
+{
+	FString Key;           // Type:Name composite key
+	FString AssetType;
+	FString AssetName;
+	TArray<FString> DependsOn;  // Keys of dependencies
+};
+
+// Build dependency graph per Dependency Contract v1
+static TMap<FString, FAssetDependencyNode> BuildDependencyGraph(const FManifestData& Data)
+{
+	TMap<FString, FAssetDependencyNode> Graph;
+
+	// Collect all manifest-defined asset names for parent class validation
+	TSet<FString> ManifestAssetNames;
+	for (const auto& GA : Data.GameplayAbilities) ManifestAssetNames.Add(GA.Name);
+	for (const auto& GE : Data.GameplayEffects) ManifestAssetNames.Add(GE.Name);
+	for (const auto& BT : Data.BehaviorTrees) ManifestAssetNames.Add(BT.Name);
+	for (const auto& BB : Data.Blackboards) ManifestAssetNames.Add(BB.Name);
+	for (const auto& BP : Data.ActorBlueprints) ManifestAssetNames.Add(BP.Name);
+
+	// GA → GE via CooldownGameplayEffectClass
+	for (const auto& GA : Data.GameplayAbilities)
+	{
+		FString Key = FString::Printf(TEXT("GameplayAbility:%s"), *GA.Name);
+		FAssetDependencyNode Node;
+		Node.Key = Key;
+		Node.AssetType = TEXT("GameplayAbility");
+		Node.AssetName = GA.Name;
+
+		if (!GA.CooldownGameplayEffectClass.IsEmpty())
+		{
+			FString DepKey = FString::Printf(TEXT("GameplayEffect:%s"), *GA.CooldownGameplayEffectClass);
+			Node.DependsOn.Add(DepKey);
+		}
+
+		// Any → Parent (only if manifest-defined)
+		if (!GA.ParentClass.IsEmpty() && ManifestAssetNames.Contains(GA.ParentClass))
+		{
+			FString DepKey = FString::Printf(TEXT("GameplayAbility:%s"), *GA.ParentClass);
+			Node.DependsOn.Add(DepKey);
+		}
+
+		Graph.Add(Key, Node);
+	}
+
+	// GE nodes (for completeness - they can be targets)
+	// Note: GE definitions don't have ParentClass in manifest, so no parent dependencies
+	for (const auto& GE : Data.GameplayEffects)
+	{
+		FString Key = FString::Printf(TEXT("GameplayEffect:%s"), *GE.Name);
+		FAssetDependencyNode Node;
+		Node.Key = Key;
+		Node.AssetType = TEXT("GameplayEffect");
+		Node.AssetName = GE.Name;
+		// No dependencies for GEs in Dependency Contract v1
+		Graph.Add(Key, Node);
+	}
+
+	// BT → BB via BlackboardAsset
+	for (const auto& BT : Data.BehaviorTrees)
+	{
+		FString Key = FString::Printf(TEXT("BehaviorTree:%s"), *BT.Name);
+		FAssetDependencyNode Node;
+		Node.Key = Key;
+		Node.AssetType = TEXT("BehaviorTree");
+		Node.AssetName = BT.Name;
+
+		if (!BT.BlackboardAsset.IsEmpty())
+		{
+			FString DepKey = FString::Printf(TEXT("Blackboard:%s"), *BT.BlackboardAsset);
+			Node.DependsOn.Add(DepKey);
+		}
+
+		Graph.Add(Key, Node);
+	}
+
+	// BB nodes (for completeness - they can be targets)
+	for (const auto& BB : Data.Blackboards)
+	{
+		FString Key = FString::Printf(TEXT("Blackboard:%s"), *BB.Name);
+		FAssetDependencyNode Node;
+		Node.Key = Key;
+		Node.AssetType = TEXT("Blackboard");
+		Node.AssetName = BB.Name;
+		Graph.Add(Key, Node);
+	}
+
+	return Graph;
+}
+
+// Check if a node has a self-edge (A → A)
+static bool HasSelfEdge(const FString& NodeKey, const TMap<FString, FAssetDependencyNode>& Graph)
+{
+	if (const FAssetDependencyNode* Node = Graph.Find(NodeKey))
+	{
+		return Node->DependsOn.Contains(NodeKey);
+	}
+	return false;
+}
+
+// Tarjan's SCC algorithm for cycle detection
+struct FTarjanSCCDetector
+{
+	TMap<FString, int32> Index;
+	TMap<FString, int32> LowLink;
+	TMap<FString, bool> OnStack;
+	TArray<FString> Stack;
+	int32 CurrentIndex = 0;
+	TArray<TArray<FString>> SCCs;
+	const TMap<FString, FAssetDependencyNode>* GraphPtr = nullptr;
+
+	void FindSCCs(const TMap<FString, FAssetDependencyNode>& Graph)
+	{
+		GraphPtr = &Graph;
+		for (const auto& Pair : Graph)
+		{
+			if (!Index.Contains(Pair.Key))
+			{
+				StrongConnect(Pair.Key);
+			}
+		}
+	}
+
+	void StrongConnect(const FString& V)
+	{
+		Index.Add(V, CurrentIndex);
+		LowLink.Add(V, CurrentIndex);
+		CurrentIndex++;
+		Stack.Push(V);
+		OnStack.Add(V, true);
+
+		if (const FAssetDependencyNode* Node = GraphPtr->Find(V))
+		{
+			for (const FString& W : Node->DependsOn)
+			{
+				// Only traverse nodes that exist in graph (external nodes ignored)
+				if (!GraphPtr->Contains(W))
+				{
+					continue;
+				}
+
+				if (!Index.Contains(W))
+				{
+					StrongConnect(W);
+					LowLink[V] = FMath::Min(LowLink[V], LowLink[W]);
+				}
+				else if (OnStack.FindRef(W))
+				{
+					LowLink[V] = FMath::Min(LowLink[V], Index[W]);
+				}
+			}
+		}
+
+		if (LowLink[V] == Index[V])
+		{
+			TArray<FString> SCC;
+			FString W;
+			do
+			{
+				W = Stack.Pop();
+				OnStack[W] = false;
+				SCC.Add(W);
+			} while (W != V);
+
+			SCCs.Add(SCC);
+		}
+	}
+};
+
+// Detect circular dependencies and return set of assets in cycles
+static TSet<FString> DetectCircularDependencies(const FManifestData& Data)
+{
+	TSet<FString> AssetsInCycles;
+
+	auto Graph = BuildDependencyGraph(Data);
+
+	if (Graph.Num() == 0)
+	{
+		return AssetsInCycles;
+	}
+
+	FTarjanSCCDetector Detector;
+	Detector.FindSCCs(Graph);
+
+	for (const TArray<FString>& SCC : Detector.SCCs)
+	{
+		bool bIsCycle = false;
+
+		// Cycle if SCC has multiple nodes
+		if (SCC.Num() > 1)
+		{
+			bIsCycle = true;
+		}
+		// Or single node with self-edge
+		else if (SCC.Num() == 1 && HasSelfEdge(SCC[0], Graph))
+		{
+			bIsCycle = true;
+		}
+
+		if (bIsCycle)
+		{
+			// Build cycle path string
+			TArray<FString> CyclePath;
+			for (const FString& Key : SCC)
+			{
+				CyclePath.Add(Key);
+			}
+			CyclePath.Add(SCC[0]);  // Complete the cycle visually
+
+			FString CycleStr = FString::Join(CyclePath, TEXT(" -> "));
+
+			UE_LOG(LogGasAbilityGenerator, Error,
+				TEXT("[E_CIRCULAR_DEPENDENCY] Cycle detected: %s"), *CycleStr);
+
+			// Mark all assets in this SCC as in-cycle
+			for (const FString& Key : SCC)
+			{
+				AssetsInCycles.Add(Key);
+
+				// Also log per-asset failure
+				if (const FAssetDependencyNode* Node = Graph.Find(Key))
+				{
+					UE_LOG(LogGasAbilityGenerator, Error,
+						TEXT("[FAIL] %s - blocked by circular dependency"), *Node->AssetName);
+				}
+			}
+		}
+	}
+
+	return AssetsInCycles;
+}
+
 UGasAbilityGeneratorCommandlet::UGasAbilityGeneratorCommandlet()
 {
 	IsClient = false;
@@ -334,6 +574,17 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 	{
 		LogMessage(TEXT("WARNING: POI/Spawner placements defined but no -level parameter specified. Level actors will NOT be placed."));
 		LogMessage(TEXT("Use -level=\"/Game/Maps/YourLevel\" to enable level actor placement."));
+		LogMessage(TEXT(""));
+	}
+
+	// v4.17: Circular dependency detection (before generation ordering)
+	TSet<FString> AssetsInCycles = DetectCircularDependencies(ManifestData);
+	int32 CycleFailCount = AssetsInCycles.Num();
+	if (CycleFailCount > 0)
+	{
+		LogMessage(TEXT(""));
+		LogError(FString::Printf(TEXT("[E_CIRCULAR_DEPENDENCY] %d asset(s) blocked by circular dependencies"), CycleFailCount));
+		LogMessage(TEXT("Fix manifest to resolve cycles before generation can proceed for these assets."));
 		LogMessage(TEXT(""));
 	}
 
