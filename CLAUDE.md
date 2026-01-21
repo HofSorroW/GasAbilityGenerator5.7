@@ -327,7 +327,7 @@ The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.15.1)
+## GasAbilityGenerator Plugin (v4.19)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -400,6 +400,7 @@ The plugin includes Excel-like table editors for bulk content authoring:
 | GE_ | Gameplay Effects | `gameplay_effects` | FGameplayEffectGenerator |
 | GA_ | Gameplay Abilities | `gameplay_abilities` | FGameplayAbilityGenerator |
 | BP_ | Actor Blueprints | `actor_blueprints` | FActorBlueprintGenerator |
+| BPC_ | Component Blueprints | `component_blueprints` | FActorComponentBlueprintGenerator |
 | WBP_ | Widget Blueprints | `widget_blueprints` | FWidgetBlueprintGenerator |
 | DBP_ | Dialogue Blueprints | `dialogue_blueprints` | FDialogueBlueprintGenerator |
 | BB_ | Blackboards | `blackboards` | FBlackboardGenerator |
@@ -927,6 +928,47 @@ widget_blueprints:
           properties:
             BarFillType: LeftToRight
             Percent: 0.0
+
+# v4.19: Component Blueprint with variables, event dispatchers, functions, and tick config
+component_blueprints:
+  - name: BPC_HealthComponent
+    folder: Components
+    parent_class: ActorComponent                  # Must derive from UActorComponent
+    variables:
+      - name: MaxHealth
+        type: Float
+        default_value: "100.0"
+      - name: CurrentHealth
+        type: Float
+        default_value: "100.0"
+    event_dispatchers:
+      - name: OnHealthChanged
+        parameters:
+          - name: NewHealth
+            type: Float
+          - name: DeltaHealth
+            type: Float
+      - name: OnDeath
+        parameters: []                            # No parameters
+    functions:
+      - name: TakeDamage
+        pure: false                               # Has side effects
+        inputs:
+          - name: DamageAmount
+            type: Float
+        outputs:
+          - name: RemainingHealth
+            type: Float
+      - name: GetHealthPercent
+        pure: true                                # No side effects, no exec pins
+        inputs: []
+        outputs:
+          - name: Percent
+            type: Float
+    tick:
+      can_ever_tick: true
+      start_with_tick_enabled: false
+      tick_interval: 0.0                          # 0 = every frame when enabled
 ```
 
 ### Event Graph Generation
