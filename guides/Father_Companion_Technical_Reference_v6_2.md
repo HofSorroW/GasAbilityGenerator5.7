@@ -27,11 +27,19 @@
 | Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.1 |
+| Version | 6.2 |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
-| Replaces | Father_Companion_Technical_Reference_v5_14.md |
+| Replaces | Father_Companion_Technical_Reference_v6_1.md |
 
 ---
+
+## VERSION 6.2 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **Locked EndAbility Rules** | Section 11.9 updated with Rules 1-4 from January 2026 Claude-GPT dual-agent audit |
+| **VTF-7 Reference** | Added CommitCooldown requirement from audit findings |
+| **Audit Document Reference** | Points to `ClaudeContext/Handoffs/Father_Companion_GAS_Abilities_Audit.md` |
 
 ## VERSION 6.1 CHANGES
 
@@ -1819,7 +1827,35 @@ Context matters for collision vs trace decision:
 | WRONG | Complex timer systems to start autonomous abilities |
 | CORRECT | Set bActivateAbilityOnGranted = true in Class Defaults |
 
-### 11.9) Form Ability Ending Patterns
+### 11.9) Form Ability Ending Patterns (Locked - January 2026 Audit)
+
+> **LOCKED RULES:** The following EndAbility lifecycle rules were validated during Claude-GPT dual-agent audit (January 2026). See `ClaudeContext/Handoffs/Father_Companion_GAS_Abilities_Audit.md` for full details.
+
+**RULE 1 — Instant Abilities** (GA_FatherAttack, GA_DomeBurst, GA_ProximityStrike, GA_TurretShoot, GA_FatherLaserShot, GA_FatherElectricTrap, GA_Backstab)
+- Call `K2_EndAbility` at end of activation flow
+- `Event_EndAbility` NOT required
+- Pattern: `Event_Activate → Logic → CommitCooldown → K2_EndAbility`
+
+**RULE 2 — Abilities with Delay/Timer** (Form abilities, GA_FatherExoskeletonDash, GA_StealthField)
+- MUST have `Event_EndAbility` with `bWasCancelled` check
+- MUST clean up persistent state (timers, GE handles)
+- MUST prevent post-delay execution after cancellation
+- **Preferred:** Use `AbilityTaskWaitDelay` (auto-cancels on EndAbility)
+- **Fallback:** Explicit 3-layer guards after Delay node
+
+**RULE 3 — Toggle/Persistent Abilities** (GA_ProtectiveDome, GA_FatherExoskeletonSprint, GA_FatherRifle, GA_FatherSword)
+- Do NOT call `K2_EndAbility` on activation
+- MUST have `Event_EndAbility` for cleanup
+- Stay active until cancelled externally
+
+**RULE 4 — First Activation Path** (Form abilities with `bIsFirstActivation`)
+- True path may skip transition-only presentation (VFX, delay)
+- True path MUST merge into same stateful setup chain as False path
+- True path MUST NOT terminate early at separate EndAbility
+
+**VTF-7 — CommitCooldown Requirement**
+- If ability defines `CooldownGameplayEffectClass`, at least one activation path MUST call `CommitAbility()` or `CommitAbilityCooldown()`
+- Otherwise cooldown GE won't be applied and tags for ActivationBlocked won't be granted
 
 RECOMMENDED PATTERN: End Ability After Setup Complete
 

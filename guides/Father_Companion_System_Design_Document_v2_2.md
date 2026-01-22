@@ -47,7 +47,7 @@ Any party with access to this document acknowledges the intellectual property ri
 
 | Field | Value |
 |-------|-------|
-| Version | 2.1 |
+| Version | 2.2 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only |
@@ -873,10 +873,65 @@ Narrative.Input.Father.Ability3      (E)
 
 ---
 
-## 12) DOCUMENT HISTORY
+## 12) LOCKED DECISIONS REFERENCE (January 2026 Audit)
+
+The following decisions were locked during Claude-GPT dual-agent audit (January 2026). These are FINAL and should not be reopened for debate.
+
+### 12.1) Implementation Constraints
+
+| ID | Constraint | Rationale |
+|----|-----------|-----------|
+| LC-1 | No Manual Blueprint Edits | All changes via manifest.yaml + regeneration |
+| LC-2 | No UE Source Modification | Project uses stock engine binaries |
+| LC-3 | No C++ GameplayAbility | Blueprint-only, generated via manifest |
+| LC-4 | Process Lock | Research → Audit → Decide → Implement |
+
+### 12.2) Invulnerability Decision (INV-1)
+
+**REMOVED:** All Father invulnerability (transitions, dash i-frames, GE_Invulnerable)
+
+**KEPT:** GA_FatherSacrifice 8-second PLAYER invulnerability only
+
+**Rationale:** Invulnerability was never intended in Father design - discovered as oversight during audit.
+
+### 12.3) EndAbility Lifecycle Rules
+
+| Rule | Abilities | Pattern |
+|------|-----------|---------|
+| Rule 1: Instant | GA_FatherAttack, GA_DomeBurst, GA_ProximityStrike, GA_TurretShoot, GA_FatherLaserShot, GA_FatherElectricTrap | Event_Activate → Logic → K2_EndAbility |
+| Rule 2: Delay/Timer | Form abilities, GA_FatherExoskeletonDash, GA_StealthField | MUST have Event_EndAbility + guards |
+| Rule 3: Toggle | GA_ProtectiveDome, GA_FatherExoskeletonSprint, GA_FatherRifle, GA_FatherSword | Stay active until cancelled, Event_EndAbility for cleanup |
+| Rule 4: First Activation | Form abilities | True path MUST merge into same setup chain as False path |
+
+### 12.4) Key Technical Findings
+
+| ID | Finding | Impact |
+|----|---------|--------|
+| VTF-1 | Delay node does NOT terminate on EndAbility | Use AbilityTaskWaitDelay instead |
+| VTF-2 | ActivationOwnedTags auto-removed on EndAbility | Can use as guard proxy |
+| VTF-3 | Activation Required Tags NOT continuously checked | Use Cancel Abilities With Tag for cascade |
+| VTF-5 | No IsActive() Blueprint node | Use tag guards instead |
+| VTF-7 | CommitCooldown requires explicit call | Cooldown GE not applied otherwise |
+| VTF-8 | SetByCaller requires matching GE modifier | Ensure GE has modifier reading tag |
+
+### 12.5) Orphan Removals
+
+| Asset | Reason |
+|-------|--------|
+| GE_ArmorBoost | No references in abilities or equipment |
+| GE_SymbioteBoost | No references in abilities or equipment |
+| GE_TransitionInvulnerability | INV-1 removal |
+| GE_DashInvulnerability | INV-1 removal |
+
+**Full Audit Document:** `ClaudeContext/Handoffs/Father_Companion_GAS_Abilities_Audit.md`
+
+---
+
+## 13) DOCUMENT HISTORY
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2 | January 2026 | **Added Section 12: Locked Decisions Reference** - Consolidated all locked decisions from Claude-GPT dual-agent audit (January 2026). Includes LC-1 to LC-4 implementation constraints, INV-1 invulnerability removal, EndAbility lifecycle rules (Rules 1-4), and VTF technical findings. |
 | 2.1 | January 2026 | **GAS Audit INV-1 Compliance:** Removed all unintended invulnerability per dual-agent audit decision. Section 2.3.3: Exoskeleton Dash I-Frames changed from "Yes" to "No (removed per GAS Audit INV-1)". Section 10.6.1: Removed GE_Invulnerable steps (old steps 6, 15), updated to use AddLooseGameplayTag/RemoveLooseGameplayTag for Father.State.Transitioning. Section 10.6.2: Father Invulnerable During Transition changed from "Yes" to "No (removed per GAS Audit INV-1)". **KEPT:** GA_FatherSacrifice 8-second PLAYER invulnerability (intentional design). |
 | 2.0 | January 2026 | Renamed from Spider to Father throughout entire document. All tags, abilities, references updated. |
 | 1.9 | January 2026 | Updated Narrative Pro version from v2.1 to v2.2. Fixed ability names: GA_ExoskeletonDash to GA_FatherExoskeletonDash, GA_ExoskeletonSprint to GA_FatherExoskeletonSprint (matching implementation guides). Fixed tag format: Father.State.* changed to Father.State.* per DefaultGameplayTags_FatherCompanion_v4_0.ini (affected Alive, Dormant, Transitioning, SymbioteLocked tags in Sections 10.6.1, 10.6.3, 10.6.4). |
