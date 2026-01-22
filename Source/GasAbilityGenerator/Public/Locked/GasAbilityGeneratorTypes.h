@@ -544,6 +544,141 @@ struct FPreValidationResult
 	}
 };
 
+// ============================================================================
+// v4.24: Phase 4.1 Pre-Validation System
+// Validates manifest references BEFORE generation starts
+// ============================================================================
+
+/**
+ * Phase 4.1: Pre-validation issue
+ * Represents a single validation issue - severity determines bucket
+ * Named FPreValidationIssue to distinguish from v2.9.1 FValidationIssue
+ */
+struct FPreValidationIssue
+{
+	// R2: Both RuleId AND ErrorCode for disambiguation
+	FString RuleId;             // Spec rule: F1, F2, A1, A2, C1, C2, R1-R5, T1, T2, K1, K2
+	FString ErrorCode;          // Error code: E_PREVAL_CLASS_NOT_FOUND, etc.
+	EValidationSeverity Severity = EValidationSeverity::Error;
+	FString Message;
+
+	// Manifest location (for actionable output)
+	FString ManifestPath;       // File path
+	FString YAMLPath;           // e.g., "gameplay_abilities[0].event_graph.nodes[5]"
+	FString ItemId;             // Asset/node ID: GA_FatherAttack, Node_5, etc.
+
+	// Resolution context
+	FString AttemptedClass;     // Class we tried to find
+	FString AttemptedMember;    // Function/property/asset we tried to find
+
+	FPreValidationIssue() = default;
+
+	FPreValidationIssue(const FString& InRuleId, const FString& InErrorCode, EValidationSeverity InSeverity,
+		const FString& InMessage, const FString& InItemId = TEXT(""), const FString& InYAMLPath = TEXT(""))
+		: RuleId(InRuleId), ErrorCode(InErrorCode), Severity(InSeverity)
+		, Message(InMessage), YAMLPath(InYAMLPath), ItemId(InItemId)
+	{}
+
+	// Format for logging: [ErrorCode] RuleId | ItemId | Message | YAMLPath
+	FString ToString() const
+	{
+		FString Result = FString::Printf(TEXT("[%s] %s | %s | %s"),
+			*ErrorCode, *RuleId, *ItemId, *Message);
+		if (!YAMLPath.IsEmpty())
+		{
+			Result += FString::Printf(TEXT(" | %s"), *YAMLPath);
+		}
+		return Result;
+	}
+};
+
+/**
+ * Phase 4.1: Pre-validation report
+ * Aggregates all validation issues and determines if generation should proceed
+ */
+struct FPreValidationReport
+{
+	TArray<FPreValidationIssue> Errors;    // Severity::Error - blocks generation
+	TArray<FPreValidationIssue> Warnings;  // Severity::Warning - generation proceeds
+	TArray<FPreValidationIssue> Infos;     // Severity::Info - informational
+
+	// Caching stats
+	int32 TotalChecks = 0;
+	int32 CacheHits = 0;
+
+	// Add an issue - routes to correct array by severity
+	void AddIssue(const FPreValidationIssue& Issue)
+	{
+		switch (Issue.Severity)
+		{
+		case EValidationSeverity::Error:
+			Errors.Add(Issue);
+			break;
+		case EValidationSeverity::Warning:
+			Warnings.Add(Issue);
+			break;
+		case EValidationSeverity::Info:
+		default:
+			Infos.Add(Issue);
+			break;
+		}
+	}
+
+	// Helper to create and add an error
+	void AddError(const FString& RuleId, const FString& ErrorCode, const FString& Message,
+		const FString& ItemId = TEXT(""), const FString& YAMLPath = TEXT(""))
+	{
+		AddIssue(FPreValidationIssue(RuleId, ErrorCode, EValidationSeverity::Error, Message, ItemId, YAMLPath));
+	}
+
+	// Helper to create and add a warning
+	void AddWarning(const FString& RuleId, const FString& ErrorCode, const FString& Message,
+		const FString& ItemId = TEXT(""), const FString& YAMLPath = TEXT(""))
+	{
+		AddIssue(FPreValidationIssue(RuleId, ErrorCode, EValidationSeverity::Warning, Message, ItemId, YAMLPath));
+	}
+
+	bool HasBlockingErrors() const { return Errors.Num() > 0; }
+	int32 GetErrorCount() const { return Errors.Num(); }
+	int32 GetWarningCount() const { return Warnings.Num(); }
+	int32 GetInfoCount() const { return Infos.Num(); }
+	int32 GetTotalIssueCount() const { return Errors.Num() + Warnings.Num() + Infos.Num(); }
+
+	FString GetSummary() const
+	{
+		return FString::Printf(TEXT("Pre-Validation: %d errors, %d warnings, %d info (Checks: %d, Cache Hits: %d)"),
+			Errors.Num(), Warnings.Num(), Infos.Num(), TotalChecks, CacheHits);
+	}
+
+	void LogAll() const
+	{
+		// Log errors first
+		for (const auto& Issue : Errors)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[PRE-VAL] %s"), *Issue.ToString());
+		}
+		// Then warnings
+		for (const auto& Issue : Warnings)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[PRE-VAL] %s"), *Issue.ToString());
+		}
+		// Then info (only if verbose)
+		for (const auto& Issue : Infos)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[PRE-VAL] %s"), *Issue.ToString());
+		}
+	}
+
+	void Reset()
+	{
+		Errors.Empty();
+		Warnings.Empty();
+		Infos.Empty();
+		TotalChecks = 0;
+		CacheHits = 0;
+	}
+};
+
 /**
  * Enumeration definition from manifest
  */

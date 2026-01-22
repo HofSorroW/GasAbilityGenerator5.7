@@ -9,6 +9,7 @@
 #include "GasAbilityGeneratorDialogueCSVParser.h"  // v4.0: CSV dialogue parsing
 #include "GasAbilityGeneratorReport.h"  // v4.7: Generation report system
 #include "GasAbilityGeneratorPipeline.h"  // v4.12: Mesh-to-Item Pipeline
+#include "GasAbilityGeneratorPreValidator.h"  // v4.24: Phase 4.1 Pre-Validation
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/App.h"  // v4.11: For FApp::CanEverRender() in headless detection
@@ -527,6 +528,34 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 		LogMessage(FString::Printf(TEXT("Level actors: %d POIs, %d NPC Spawners"),
 			ManifestData.POIPlacements.Num(),
 			ManifestData.NPCSpawnerPlacements.Num()));
+	}
+	LogMessage(TEXT(""));
+
+	// ============================================================================
+	// v4.24: Phase 4.1 Pre-Validation (per Phase4_Spec_Locked.md)
+	// ============================================================================
+	LogMessage(TEXT("--- Pre-Validation ---"));
+	FPreValidationReport PreValReport = FPreValidator::Validate(ManifestData, ManifestPath);
+	PreValReport.LogAll();
+
+	LogMessage(FString::Printf(TEXT("Pre-validation: %d errors, %d warnings, %d checks (cache: %d hits)"),
+		PreValReport.GetErrorCount(),
+		PreValReport.GetWarningCount(),
+		PreValReport.TotalChecks,
+		PreValReport.CacheHits));
+
+	if (PreValReport.HasBlockingErrors())
+	{
+		LogError(TEXT(""));
+		LogError(FString::Printf(TEXT("[PRE-VALIDATION FAILED] %d error(s) block generation"),
+			PreValReport.GetErrorCount()));
+		LogError(TEXT("Fix manifest errors listed above before generation can proceed."));
+
+		// v4.24: Pre-validation failure is a blocking error - return immediately
+		// Cleanup modes before returning
+		FGeneratorBase::SetDryRunMode(false);
+		FGeneratorBase::SetForceMode(false);
+		return 1;
 	}
 	LogMessage(TEXT(""));
 
