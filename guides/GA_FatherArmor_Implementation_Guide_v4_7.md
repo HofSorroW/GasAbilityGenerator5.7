@@ -1,8 +1,8 @@
 # GA_FatherArmor - Armor Form Ability Implementation Guide
-## VERSION 4.6 - GAS Audit Compliant (INV-1)
+## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.6
+**Version:** 4.7
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -1321,6 +1321,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Version | Changes |
 |---------|---------|
+| 4.7 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Decision 2 (GE_ArmorBoost removed - stats via EquippableItem), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.6 | **INV-1 Compliance:** Fixed changelog entry - GE_ArmorState grants only Effect.Father.FormState.Armor (no Narrative.State.Invulnerable). Only GA_FatherSacrifice grants invulnerability (to player for 8s). |
 | 4.4 | **Option B Form State Architecture:** Replaced ActivationOwnedTags form identity with GE-based persistent state (GE_ArmorState). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags, then apply GE_ArmorState. GE_ArmorState grants Effect.Father.FormState.Armor (Infinite duration). Removed ReplicateActivationOwnedTags prerequisite. Added Automation vs Manual table. Updated UE version to 5.7. See Form_State_Architecture_Audit_v1_0.md for architecture rationale. |
 | 4.3 | Blueprint Node Consistency Fixes: Removed incorrect Target pin documentation from Play Montage and Wait (AbilityTask nodes use owning ability avatar automatically). Fixed End Ability terminal node issue - Set bIsFirstActivation now executes BEFORE End Ability since End Ability has no output execution pin. |

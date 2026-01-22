@@ -1,8 +1,8 @@
 # GA_FatherCrawler - Crawler Form Ability Implementation Guide
-## VERSION 4.5 - GAS Audit Compliant (INV-1)
+## VERSION 4.6 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.5
+**Version:** 4.6
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -742,6 +742,8 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 
 | Version | Changes |
 |---------|---------|
+| 4.6 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no transition invulnerability), Rule 2 (Event_EndAbility required for delays), Rule 4 (First Activation path merges into setup chain). Added post-delay guards and Event_EndAbility handler. Updated Technical Reference to v6.2. |
+| 4.5 | **INV-1 Compliance:** Removed invulnerability references. Transition uses AddLooseGameplayTag(Father.State.Transitioning) without damage immunity. |
 | 4.4 | **Option B Form State Architecture:** Complete rewrite from v3.4. Replaced ActivationOwnedTags form identity with GE-based persistent state (GE_CrawlerState). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags, then apply GE_CrawlerState. GE_CrawlerState grants Effect.Father.FormState.Crawler (Infinite duration). Removed Father.Form.Crawler and Father.State.Detached from Activation Owned Tags (orphan tags). Updated UE version to 5.7. Added Automation vs Manual table. Added FatherRef variable for cached reference. Simplified EndAbility (form identity removed by new form's prelude). Added StartupEffects documentation for spawn flow. |
 | 3.4 | Pure function connection fix - exec connections to pure functions handled by bypass. |
 | 3.3 | Renamed from Spider to Father throughout entire document. All tags, abilities, references updated. |

@@ -1,7 +1,7 @@
 # GA_FatherSacrifice Implementation Guide
-## VERSION 2.5 - Simplified Documentation
+## VERSION 2.6 - GAS Audit Compliant (ONLY Ability With Invulnerability)
 ## Emergency Save Passive Ability
-## Unreal Engine 5.6 + Narrative Pro v2.2
+## Unreal Engine 5.7 + Narrative Pro v2.2
 ## Blueprint-Only Implementation
 
 ---
@@ -10,7 +10,7 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 2.5 |
+| Document Version | 2.6 |
 | Ability Name | GA_FatherSacrifice |
 | Ability Type | Passive (Automatic Trigger) |
 | Parent Class | NarrativeGameplayAbility |
@@ -92,6 +92,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.6 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide is the ONLY ability with invulnerability per INV-1 decision. GE_SacrificeInvulnerability (8s to PLAYER) is the only kept invulnerability effect. Updated UE version to 5.7. Updated Technical Reference to v6.2. |
 | 2.5 | January 2026 | Updated Narrative Pro version reference from v2.1 to v2.2. |
 | 2.4 | January 2026 | Simplified documentation: Tag configuration (PHASE 4 Section 10) converted to single Property/Tags table. |
 | 2.3 | January 2026 | Simplified PHASE 1: Replaced 6 detailed subsections with consolidated tag tables. Removed step-by-step Project Settings navigation. Tags now listed in Create Required Tags and Verify Existing Tags tables. Reduced PHASE 1 from 56 lines to 18 lines. |

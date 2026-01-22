@@ -1,8 +1,8 @@
-# GA_Backstab Implementation Guide v1.6
+# GA_Backstab Implementation Guide v1.7
 
 ## Passive Damage Bonus Ability - ViewedCharacter Detection
 
-### Unreal Engine 5.6 + Narrative Pro v2.2
+### Unreal Engine 5.7 + Narrative Pro v2.2
 
 ### Blueprint-Only Implementation
 
@@ -12,7 +12,7 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 1.6 |
+| Document Version | 1.7 |
 | Ability Name | GA_Backstab |
 | Ability Type | Passive (Triggered on Attack Hit) |
 | Parent Class | NarrativeGameplayAbility |
@@ -810,6 +810,7 @@ This section provides an alternative implementation where backstab logic is inte
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with Decision 4 (GA_Backstab is UNIVERSAL player ability, not Exoskeleton-only). Grant Location confirmed as Player Default Abilities array. Updated UE version to 5.7. |
 | 1.6 | January 2026 | Updated Narrative Pro version to v2.2. Updated Related Documents to Design Document v1.8 and Setup Guide v2.3. |
 | 1.5 | January 2026 | Simplified PHASE 1 tag creation - replaced detailed step-by-step instructions with simple tag list table. |
 | 1.4 | December 2025 | Changed Grant Location from InitOwnerReference to Player Default Abilities array. Backstab is now a generic player ability, not father-exclusive. Removed BackstabAbilityHandle variable requirement. Removed Phase 6 grant/cleanup architecture. Removed Phase 7 (renumbered to Alternative section). Simplified Prerequisites. Updated Integration Summary. Updated Related Documents to reference Setup Guide v2.0. |
@@ -820,10 +821,12 @@ This section provides an alternative implementation where backstab logic is inte
 
 ---
 
-**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v1.6**
+**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v1.7**
 
 **Passive Damage Bonus - ViewedCharacter Detection**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
+
+**Locked Decision: Decision 4 - Universal player ability (not Exoskeleton-only)**
 
 **Blueprint-Only Implementation**

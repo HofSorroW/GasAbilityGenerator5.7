@@ -1,8 +1,8 @@
 # GA_FatherExoskeleton Implementation Guide
-## VERSION 4.6 - GAS Audit Compliant (INV-1)
+## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.6
+**Version:** 4.7
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -1189,6 +1189,7 @@ EndAbility performs comprehensive cleanup when another form ability cancels this
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.6 | January 2026 | **INV-1 Compliance:** Removed all invulnerability references per GAS Audit decision INV-1. GE_ExoskeletonState now grants only Effect.Father.FormState.Exoskeleton (no Narrative.State.Invulnerable). Removed GE_Invulnerable steps from Architecture Overview and Node Flow Summary. Only GA_FatherSacrifice grants invulnerability (to player for 8s). |
 | 4.4 | January 2026 | **Option B Form State Architecture:** GE_ExoskeletonState for form identity (grants Effect.Father.FormState.Exoskeleton), transition prelude (RemovePriorFormState + ApplyExoskeletonState). Fixed Activation Owned Tags to `Father.State.Attached` only. Updated to UE 5.7. Added AUTOMATION VS MANUAL table. Added orphan tag notes. Fixed SpeedBoostMultiplier to 1.25 per manifest. |
 | 3.10 | January 2026 | Fixed tag format: State.Father.Alive changed to Father.State.Alive per DefaultGameplayTags. Updated Related Documents to Technical Reference v5.12 and Setup Guide v2.3. Fixed curly quotes to straight ASCII. |

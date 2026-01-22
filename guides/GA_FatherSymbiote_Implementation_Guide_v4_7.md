@@ -1,8 +1,8 @@
 # Father Companion - Symbiote Ultimate Ability Implementation Guide
-## VERSION 4.6 - GAS Audit Compliant (INV-1 Complete)
+## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.6
+**Version:** 4.7
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -972,7 +972,8 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 | GE_FormChangeCooldown_Implementation_Guide_v1_0.md | Form change cooldown effect |
 | GA_ProximityStrike_Implementation_Guide_v2_3.md | Proximity aura ability |
 | Father_Companion_System_Setup_Guide_v2_0.md | Father character setup |
-| Father_Companion_Technical_Reference_v5_4.md | Section 7.4: Net Execution Policy, Section 14.8: Effect Handle Storage, Section 36.12: Two-Step Cleanup, Section 37: Recruited Tag Gating |
+| Father_Companion_Technical_Reference_v6_2.md | Section 7.4: Net Execution Policy, Section 14.8: Effect Handle Storage, Section 36.12: Two-Step Cleanup, Section 37: Recruited Tag Gating |
+| Father_Companion_GAS_Abilities_Audit.md | **LOCKED DECISIONS** - INV-1, VTF-7, Rule 1-4, Design Decisions 1A-4 |
 | DefaultGameplayTags_FatherCompanion_v3_5.ini | All gameplay tags including Father.State.Recruited |
 
 ---
@@ -981,6 +982,8 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md to Related Documents. This guide now references all locked decisions: INV-1 (no invulnerability), VTF-7 (CommitCooldown required), Decision 1A (stats via EI), Decision 1B (StaminaRegenRate via child GE), Decision 3 (GE_SymbioteBoost removed). Updated Technical Reference to v6.2. |
+| 4.6 | January 2026 | Version alignment with manifest v3.0.3. No functional changes. |
 | 4.5 | January 2026 | **GAS Audit Fixes:** (1) REMOVED all invulnerability - Father NOT invulnerable during Symbiote or transitions per INV-1 audit decision. Removed GE_TransitionInvulnerability, Narrative.State.Invulnerable from GE_SymbioteState. (2) Added PHASE 4 timer callback guards (FatherRef validity, CurrentForm check, Symbiote.State.Merged tag proxy) per FIX-2. (3) Added PHASE 5 bWasCancelled check - cleanup only runs when cancelled, not on normal EndSymbiote flow per FIX-1. (4) Added movement speed/jump restoration to EndAbility for cancellation cleanup. (5) Added GA_FatherArmor activation on cancellation. See `Father_Companion_GAS_Audit_Locked_Decisions.md`. |
 | 4.4 | January 2026 | **Option B Form State Architecture:** GE_SymbioteState for form identity (grants Effect.Father.FormState.Symbiote), transition prelude documented. Fixed Activation Owned Tags to `Symbiote.State.Merged` only (per manifest). Added `Symbiote.Charge.Ready` to Activation Required Tags. Updated to UE 5.7. Added AUTOMATION VS MANUAL table. Added orphan tag notes. |
 | 3.5 | January 2026 | EquippableItem stat integration: Removed SymbioteBoostHandle variable and all GE_SymbioteBoost removal code. Stat bonuses (Attack Rating +100, Stamina Regen infinite) now handled by BP_FatherSymbioteForm EquippableItem via GE_EquipmentModifier_FatherSymbiote. Removed Section 17.5 (Remove GE_SymbioteBoost) and Section 18.6 (Remove GE_SymbioteBoost in EndAbility). Renumbered remaining sections. Updated Quick Reference tables. Technical Reference v5.12 Section 58.8 documents this architecture. |
@@ -997,7 +1000,7 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 ---
 
-**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.5**
+**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.7**
 
 **Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
 **Architecture: Option B (GE-Based Form Identity)**

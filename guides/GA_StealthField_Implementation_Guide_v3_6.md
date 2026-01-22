@@ -1,8 +1,8 @@
-# GA_StealthField Implementation Guide v3.6 - Form State Tag Update (INV-1 Compliant)
+# GA_StealthField Implementation Guide v3.6 - GAS Audit Compliant (All Locked Decisions)
 
 ## Exoskeleton Form - Player + Attached Father Invisibility
 
-### Unreal Engine 5.6 + Narrative Pro v2.2
+### Unreal Engine 5.7 + Narrative Pro v2.2
 
 ### Blueprint-Only Implementation
 
@@ -12,7 +12,7 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 3.5 |
+| Document Version | 3.6 |
 | Ability Name | GA_StealthField |
 | Ability Type | Active Player Ability |
 | Parent Class | NarrativeGameplayAbility |
@@ -1004,6 +1004,12 @@
 ---
 
 ## CHANGELOG
+
+### Version 3.6 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| Locked Decisions Reference | Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with Rule 2 (Event_EndAbility required for 8s delay). UE version updated to 5.7. |
 
 ### Version 3.5 - January 2026
 

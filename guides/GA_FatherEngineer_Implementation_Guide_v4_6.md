@@ -1,8 +1,8 @@
 # Father Companion - GA_FatherEngineer Implementation Guide
-## VERSION 4.5 - GAS Audit Compliant (INV-1)
+## VERSION 4.6 - GAS Audit Compliant (All Locked Decisions)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.5
+**Version:** 4.6
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -1180,6 +1180,7 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.6 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no transition invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.5 | January 2026 | **GAS Audit INV-1 Compliance:** REMOVED GE_TransitionInvulnerability - transitions no longer grant invulnerability. Form transitions now use AddLooseGameplayTag(Father.State.Transitioning) directly without damage immunity. Updated Quick Reference and Gameplay Effect Summary. Only GA_FatherSacrifice grants invulnerability in the entire Father system. |
 | 4.4 | January 2026 | **Option B Form State Architecture:** Complete rewrite for GE-based form identity. Added GE_EngineerState (Infinite, grants Effect.Father.FormState.Engineer). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState parent tag), then apply GE_EngineerState. Updated Activation Owned Tags from `Father.Form.Engineer, Father.State.Deployed` to `Father.State.TurretDeployed` (removed orphan tags). ~~Fixed invulnerability removal from tag-based to class-based~~ (SUPERSEDED by INV-1 - invulnerability removed entirely). Updated UE version to 5.7. Added Automation vs Manual table. Added Option B architecture section to Quick Reference. See Form_State_Architecture_Fix_v4.13.2.md for architecture rationale. |
 | 4.3 | January 2026 | Fixed tag format: State.Father.Alive changed to Father.State.Alive per DefaultGameplayTags. Updated Related Documents to Technical Reference v5.12, Design Document v1.8, and Setup Guide v2.3. Fixed curly quotes to straight ASCII. |

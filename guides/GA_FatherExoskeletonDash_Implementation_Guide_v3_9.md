@@ -1,5 +1,5 @@
 # GA_FatherExoskeletonDash Implementation Guide
-## Version 3.8 - INV-1 Compliance (Invulnerability Removed)
+## Version 3.9 - GAS Audit Compliant (All Locked Decisions)
 
 ---
 
@@ -12,7 +12,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Exoskeleton (active only when attached) |
 | Input | Double-press directional keys (W/A/S/D) |
-| Version | 3.8 |
+| Version | 3.9 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 
@@ -742,14 +742,21 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 | Document | Version | Purpose |
 |----------|---------|---------|
-| Father_Companion_Technical_Reference | v4.5 | Cross-actor patterns, validation architecture |
-| Father_Companion_System_Setup_Guide | v1.3 | BP_FatherCompanion setup, variable definitions |
-| GA_FatherExoskeleton_Implementation_Guide | v3.3 | Parent form ability |
-| DefaultGameplayTags_FatherCompanion | v3.5 | Tag definitions and line numbers |
+| Father_Companion_Technical_Reference | v6.2 | Cross-actor patterns, validation architecture |
+| Father_Companion_System_Setup_Guide | v3.2 | BP_FatherCompanion setup, variable definitions |
+| Father_Companion_GAS_Abilities_Audit | v3.0 | **LOCKED DECISIONS** - INV-1 (no dash invulnerability) |
+| GA_FatherExoskeleton_Implementation_Guide | v4.7 | Parent form ability |
+| DefaultGameplayTags_FatherCompanion | v4.0 | Tag definitions and line numbers |
 
 ---
 
 ## CHANGELOG
+
+### Version 3.9 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| Locked Decisions Reference | Added Father_Companion_GAS_Abilities_Audit.md to Related Documents. This guide complies with INV-1 (no dash invulnerability). Updated related doc versions. |
 
 ### Version 3.8 - January 2026
 
@@ -824,4 +831,4 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 ---
 
-**END OF GUIDE**
+**END OF GUIDE v3.9**
