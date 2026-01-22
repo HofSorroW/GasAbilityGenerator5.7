@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.16)
+# LOCKED_CONTRACTS.md (v4.16.2)
 
 ## Purpose
 
@@ -177,27 +177,76 @@ In dry-run mode, the system **MUST NOT** persist changes:
 
 ---
 
+## P1.3 — Startup Effects Validation (v4.16.2 Locked)
+
+### Context
+
+AbilityConfiguration assets with Father form abilities (GA_FatherCrawler, GA_FatherArmor, etc.) require a default form state GE in `startup_effects`. Missing form state causes runtime failures (abilities check `Effect.Father.FormState.*` tags).
+
+### Validation (Implemented at `FAbilityConfigurationGenerator::ValidateStartupEffects`)
+
+**Error Codes:**
+
+| Code | Severity | Meaning |
+|------|----------|---------|
+| `E_AC_MISSING_FORM_STATE` | FAIL | Configuration has form abilities but no `GE_*State` in startup_effects |
+| `E_AC_STARTUP_EFFECT_NOT_FOUND` | FAIL | A startup effect class could not be resolved via `LoadClass<UGameplayEffect>` |
+
+**Message Format (single-line, pipe-delimited):**
+```
+E_AC_MISSING_FORM_STATE | AC_FatherCrawler | Ability configuration with form abilities must have a default GE_*State in startup_effects | Add GE_CrawlerState or equivalent
+```
+
+### Abort Strategy
+
+1. Collect **all** errors for the asset (do not fail-fast on first error)
+2. After validation pass, if any FAIL-severity errors exist:
+   - Skip asset creation entirely
+   - Report all collected errors
+   - Mark overall run as failed (non-zero exit)
+
+### CI Gate
+
+AbilityConfiguration generation with FAIL errors must cause commandlet to return non-zero exit code.
+
+### Reference
+
+- Implementation: `GasAbilityGeneratorGenerators.cpp :: FAbilityConfigurationGenerator::ValidateStartupEffects(...)`
+- Audit: `Implementation_Plans_Audit_v1.md` Section P1.3
+
+---
+
 ## TEMPORARY EXCEPTION 1 — Rule #9 Father Validation in Core (v4.16)
 
 ### Background
 Rule #9 normally forbids project-specific logic in core generator code.
 
-**Exception (temporary, intentional):** The plugin currently contains Father-project-specific validation checks (e.g., `GA_Father*` ability names and `Father.State.*` tags). This is accepted only to preserve critical validation behavior while we prioritize stability and correctness.
+**Exception (temporary, intentional):**
+The plugin currently contains Father-project-specific validation checks (e.g. `GA_Father*` ability names and `Father.State.*` tags).
+This exception exists to preserve **gameplay-critical validation behavior** while stability and correctness are prioritized.
+
+This exception has been **dual-audited and contractually locked**.
 
 ### Applies to these exact code locations (enforcement scope)
-- `Source/GasAbilityGenerator/Private/GasAbilityGeneratorGenerators.cpp:2793–2842` — ValidateFormAbility
-- `Source/GasAbilityGenerator/Private/GasAbilityGeneratorGenerators.cpp:15378–15425` — ValidateStartupEffects
+- `GasAbilityGeneratorGenerators.cpp :: FGameplayAbilityGenerator::ValidateFormAbility(...)`
+- `GasAbilityGeneratorGenerators.cpp :: FAbilityConfigurationGenerator::ValidateStartupEffects(...)`
+
+(Line numbers are intentionally omitted to prevent drift; symbol anchors are authoritative.)
 
 ### Constraints (must follow)
-1. **No new project-specific validations** may be added to core generator/parser code unless Erdem explicitly approves the change.
-2. **Existing Father validations must remain diagnostic-only** (warnings/errors + reporting). They must not introduce new generation behavior beyond already-locked compile/save/graph gates.
-3. **Father-specific identifiers must remain isolated** to the two locations above (no duplication or spreading to other generators/files).
+1. **No new project-specific validations** may be added to core generator or parser code unless Erdem explicitly approves the change.
+2. **Existing Father validations must remain diagnostic-only**:
+   - Structured ERROR / WARNING reporting is permitted
+   - No new generation behavior may be introduced beyond already-locked abort/skip gates
+3. **Father-specific identifiers must remain isolated** to the two symbol-anchored locations above.
+   Duplication or spread to other generators/files is forbidden.
 
-### Grep Guard
-Any new occurrences of `GA_Father` or `Father.State.` outside the approved ranges (2793–2842, 15378–15425) require explicit approval from Erdem.
+### Grep Guard (conceptual)
+Any new occurrences of `GA_Father` or `Father.State.` outside the approved symbol anchors require explicit approval from Erdem.
 
 ### Deferred Generalization
-When scheduled, these validations will be migrated to a manifest-driven opt-in validation profile, and hard-coded Father identifiers will be removed from core.
+When scheduled, these validations will be migrated to a manifest-driven opt-in validation profile.
+All hard-coded Father identifiers will then be removed from core generator code.
 
 ### Status
 **LOCKED** until Erdem changes it.
@@ -225,3 +274,4 @@ Any change that touches a LOCKED implementation must:
 | v4.12.5 | 2026-01-18 | Initial creation after GPT validation session |
 | v4.16 | 2026-01-21 | Added Contract 10 — Blueprint Compile Gate (GPT audit) |
 | v4.16.1 | 2026-01-21 | Added Temporary Exception 1 — Rule #9 Father Validation (dual-agent audit) |
+| v4.16.2 | 2026-01-22 | Locked P1.3 Startup Effects Validation (Claude–GPT dual audit): severity definitions, error codes, abort strategy, CI gate, symbol anchors |

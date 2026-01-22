@@ -327,7 +327,7 @@ The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.21.1)
+## GasAbilityGenerator Plugin (v4.21.2)
 
 Location: `Plugins/GasAbilityGenerator/`
 

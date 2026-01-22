@@ -17630,12 +17630,27 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 	}
 
 	// v4.13: Category C - P1.3 Startup Effects Validation
-	TArray<FString> ValidationWarnings;
-	ValidateStartupEffects(Definition, ValidationWarnings);
-	for (const FString& Warning : ValidationWarnings)
+	// v4.16.2: Upgraded to FAIL severity - errors block asset creation (LOCKED CONTRACT P1.3)
+	TArray<FString> ValidationErrors;
+	ValidateStartupEffects(Definition, ValidationErrors);
+
+	// Log all errors and add to result (stored in Warnings array with E_ prefix for FAIL severity)
+	for (const FString& Error : ValidationErrors)
 	{
-		Result.Warnings.Add(Warning);
-		LogGeneration(FString::Printf(TEXT("  WARNING: %s"), *Warning));
+		Result.Warnings.Add(Error);
+		LogGeneration(FString::Printf(TEXT("  [ERROR] %s"), *Error));
+	}
+
+	// v4.16.2: ABORT STRATEGY - Skip asset creation if any FAIL errors (LOCKED CONTRACT P1.3)
+	if (ValidationErrors.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  [FAIL] Ability Configuration '%s' skipped due to %d validation error(s)"), *Definition.Name, ValidationErrors.Num()));
+		Result.AssetName = Definition.Name;
+		Result.Status = EGenerationStatus::Failed;
+		Result.Message = FString::Printf(TEXT("P1.3 validation failed with %d error(s)"), ValidationErrors.Num());
+		Result.GeneratorId = TEXT("AbilityConfiguration");
+		Result.DetermineCategory();
+		return Result;
 	}
 
 	// v3.0: Use metadata-aware existence check
@@ -17691,13 +17706,21 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 	}
 
 	// v3.1: Resolve StartupEffects (GE_ blueprints -> GameplayEffect subclasses)
+	// v4.16.2: Added FormState and Cooldowns subfolders to search paths
 	int32 ResolvedEffects = 0;
 	for (const FString& EffectName : Definition.StartupEffects)
 	{
 		TArray<FString> SearchPaths;
+		// Standard effect locations
 		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
 		SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		// FormState subfolder (common location for GE_*State effects)
+		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/FormState/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		// Cooldowns subfolder
+		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/Cooldowns/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		// Legacy hardcoded paths
 		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
 
 		UClass* EffectClass = nullptr;
 		for (const FString& Path : SearchPaths)
@@ -17774,7 +17797,8 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 }
 
 // v4.13: Category C - P1.3 Startup Effects Validation
-void FAbilityConfigurationGenerator::ValidateStartupEffects(const FManifestAbilityConfigurationDefinition& Definition, TArray<FString>& OutWarnings)
+// v4.16.2: Upgraded to FAIL severity per Claude-GPT dual audit (LOCKED)
+void FAbilityConfigurationGenerator::ValidateStartupEffects(const FManifestAbilityConfigurationDefinition& Definition, TArray<FString>& OutErrors)
 {
 	// Form abilities that require a default form state
 	static TArray<FString> FormAbilityNames = {
@@ -17796,9 +17820,43 @@ void FAbilityConfigurationGenerator::ValidateStartupEffects(const FManifestAbili
 		}
 	}
 
+	// v4.16.2: Validate all startup effects can be resolved (LOCKED CONTRACT P1.3)
+	// Collect all failures before checking form state requirement
+	for (const FString& EffectName : Definition.StartupEffects)
+	{
+		TArray<FString> SearchPaths;
+		// Standard effect locations
+		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		// FormState subfolder (v4.16.2 - common location for GE_*State effects)
+		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/FormState/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		// Cooldowns subfolder
+		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/Cooldowns/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+		// Legacy hardcoded paths
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
+		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
+
+		UClass* EffectClass = nullptr;
+		for (const FString& Path : SearchPaths)
+		{
+			EffectClass = LoadClass<UGameplayEffect>(nullptr, *Path);
+			if (EffectClass)
+			{
+				break;
+			}
+		}
+
+		if (!EffectClass)
+		{
+			OutErrors.Add(FString::Printf(
+				TEXT("E_AC_STARTUP_EFFECT_NOT_FOUND | %s | Startup effect '%s' could not be resolved via LoadClass<UGameplayEffect> | Verify effect exists and path is correct"),
+				*Definition.Name, *EffectName));
+		}
+	}
+
 	if (!bHasFormAbility)
 	{
-		return;  // No form abilities, skip validation
+		return;  // No form abilities, skip form state validation
 	}
 
 	// Check if startup_effects contains a GE_*State effect
@@ -17813,12 +17871,12 @@ void FAbilityConfigurationGenerator::ValidateStartupEffects(const FManifestAbili
 		}
 	}
 
+	// v4.16.2: FAIL severity - blocks asset creation (LOCKED CONTRACT P1.3)
 	if (!bHasFormState)
 	{
-		FString ContextPath = FString::Printf(TEXT("AbilityConfiguration/%s"), *Definition.Name);
-		OutWarnings.Add(FString::Printf(
-			TEXT("W_AC_MISSING_FORM_STATE | %s | Ability configuration with form abilities should have a default GE_*State in startup_effects | Add 'GE_CrawlerState' or another form state to startup_effects"),
-			*ContextPath));
+		OutErrors.Add(FString::Printf(
+			TEXT("E_AC_MISSING_FORM_STATE | %s | Ability configuration with form abilities must have a default GE_*State in startup_effects | Add GE_CrawlerState or equivalent"),
+			*Definition.Name));
 	}
 }
 

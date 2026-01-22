@@ -363,7 +363,7 @@ VariableGet(ActorVar) → GetAbilitySystemComponent(Actor) → Cast to NASC → 
 | Task | Description | Complexity | Status |
 |------|-------------|------------|--------|
 | P1.2 Transition Validation | Lint form-transition state machine at parse time | LOW | ✅ COMPLETE (v4.18) |
-| P1.3 Startup Effects Validation | Detect missing default form state in ability configurations | LOW | Pending audit |
+| P1.3 Startup Effects Validation | Detect missing default form state in ability configurations | LOW | ✅ COMPLETE (v4.16.2) |
 
 **P1.2 - COMPLETED (v4.18, commit `8687f88`):**
 - Father-specific scope (intentional per Rule #9)
@@ -371,13 +371,16 @@ VariableGet(ActorVar) → GetAbilitySystemComponent(Actor) → Cast to NASC → 
 - Log-only `[W_TRANSITION_INVALID]` warnings at parse time
 - Detected 4 expected warnings for Symbiote's `Symbiote.Charge.Ready` requirement
 
-**P1.3 Validation Rules:**
-1. If `ability_configurations` contains form abilities (GA_Father*), at least one must have `startup_effects` with a GE_*State
-2. Warn if no default form state is configured
+**P1.3 - COMPLETED (v4.16.2, Claude-GPT dual audit 2026-01-22):**
+- Father-specific scope (intentional per Rule #9)
+- Error codes: `E_AC_MISSING_FORM_STATE`, `E_AC_STARTUP_EFFECT_NOT_FOUND` (FAIL severity)
+- Abort strategy: Collect all errors, skip asset creation, fail run
+- Message format: Single-line pipe-delimited
+- Locked in `LOCKED_CONTRACTS.md` as P1.3 contract
 
 **Implementation:**
 - P1.2: Post-parse `ValidateFormTransitions()` in `GasAbilityGeneratorParser.cpp`
-- P1.3: Add validation in AbilityConfiguration generator (pending audit)
+- P1.3: `FAbilityConfigurationGenerator::ValidateStartupEffects()` in `GasAbilityGeneratorGenerators.cpp`
 
 ### FormState Preset Schema (From Roadmap P1.1)
 
@@ -771,3 +774,5 @@ These are intentionally not implemented:
 | 2026-01-22 | **v4.22:** Claude-GPT dual audit approved - `Delegate_Binding_Extensions_Spec_v1_1.md` locked |
 | 2026-01-22 | **v4.21.2:** Delegate binding pin wiring fixes - UK2Node_Self uses PN_Self, CastNode needs NotifyPinConnectionListChanged |
 | 2026-01-22 | **v4.21.2:** All 5 abilities with delegate_bindings now compile (GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField) |
+| 2026-01-22 | **v4.16.2:** P1.3 Startup Effects Validation - Claude-GPT dual audit LOCKED, error codes E_AC_MISSING_FORM_STATE/E_AC_STARTUP_EFFECT_NOT_FOUND |
+| 2026-01-22 | **v4.16.2:** Search path fix - Added `Effects/FormState/` and `Effects/Cooldowns/` to startup effect search paths |
