@@ -426,6 +426,33 @@ If omitted, defaults to `UNarrativeAttributeSetBase`.
 
 **Explicitly Excluded:** Stripping other prefixes (F, E, T, etc.)
 
+### Phase 4.2 Audit Record (2026-01-22)
+
+**Purpose:** Implement topological sort for generation order and cascade skip logic
+
+**Claude-GPT Dual Audit Corrections Applied:**
+
+| Correction | Issue | Resolution |
+|------------|-------|------------|
+| R-C1 | GE→AttributeSet is not a dependency edge | Removed - AttributeSet is pre-validation only (A1/A2) |
+| R-C2 | Any→UClass too broad | Removed - UClass refs are pre-validation only (C1/C2) |
+| R-C3 | New status enum vs existing | Extend existing `EGenerationStatus`, don't create new |
+| R-C4 | Cascade root inheritance | SkippedCascaded carries `RootFailureId` from original FailedRoot |
+| R-C5 | Deterministic Kahn selection | Lexical priority selection (binary search/heap) |
+
+**Tighten-ups Locked:**
+- T1: Deterministic queue without O(n² log n) resorting - use binary search insertion or min-heap
+- T2: Cascade chain capping - store full RootFailureId + depth always, truncate path to 3 hops for display
+
+**Semantic Clarification (Locked):**
+- `Failed` == FailedRoot in Phase 4.2 semantics (counted as failure)
+- `SkippedCascaded` == cascade skip (NOT counted as failure)
+
+**Explicitly Excluded:**
+- External-to-external edges (pre-validation handles)
+- Depth prioritization (topo order is sufficient)
+- JSON output format (deferred)
+
 ### Evidence Base
 
 This specification is derived from:
@@ -449,18 +476,55 @@ This specification is derived from:
 - Add diagnostic logging for failed resolution
 - Eliminates 77 false negative errors
 
-### Phase 4.1.2: U/A Prefix Normalization (v4.24.2)
+### Phase 4.1.2: U/A Prefix Normalization ✓ (v4.24.2)
 - Strip U/A prefix when building /Script module paths
 - UE5 reflection stores classes without prefix in /Script paths
 - Safety constraints: skip if qualified, skip if contains `.`, skip if 1 char
 - Keep original name for "as-is" and LoadClass fallback
 - Fixes 3 remaining A1 AttributeSet false negatives
 
-### Phase 4.2: Dependency Ordering
-- Extend dependency graph with external edges
-- Implement topological sort for generation
-- Implement cascade skip logic
-- Implement cascade reporting
+### Phase 4.2: Dependency Ordering (v4.25) - LOCKED
+
+**Node Identity Rules:**
+1. NodeId = Manifest asset name (e.g., `GA_FatherAttack`)
+2. Graph contains nodes ONLY for to-be-generated assets
+3. External references → pre-validation only (no graph nodes)
+4. Edge created only if BOTH source and target in generated set
+
+**Internal Dependency Edges:**
+| From | To | Edge Type | Condition |
+|------|-----|-----------|-----------|
+| AC (Ability) | GA | abilities array | GA in manifest |
+| AC (Ability) | GE | startup_effects | GE in manifest |
+| GA | GE | cooldown_effect | GE in manifest |
+| GA | Montage | animation_montage | Montage in manifest |
+| BT | BB | blackboard | BB in manifest |
+| DialogueBP | NPCDefinition | speaker_npc | NPCDef in manifest |
+| Quest | NPCDefinition | questgiver_npc | NPCDef in manifest |
+
+**External References (Pre-validation Only):**
+- Montage → Skeleton (R1)
+- GE → AttributeSet (A1/A2)
+- GA → GameplayTag (T1/T2)
+- Any → UClass (C1/C2)
+
+**Topological Sort:**
+- Kahn's algorithm with lexical priority selection
+- Use binary search insertion or min-heap (no repeated full sorts)
+- Same manifest → same generation order (deterministic)
+
+**Cascade Logic:**
+- `Failed` == FailedRoot (direct failure, counted as failure)
+- `SkippedCascaded` == cascade skip (NOT counted as failure)
+- SkippedCascaded carries `RootFailureId` from original FailedRoot
+- Store full RootFailureId + CascadeChainDepth always
+- CascadeChainPath truncated to 3 hops for display only
+
+**Status System Extension:**
+- Add `SkippedCascaded` to existing `EGenerationStatus` enum
+- Add cascade fields to `FGenerationResult`: RootFailureId, RootReasonCode, CascadeChainDepth, CascadeChainPath
+
+**New Error Code:** `E_CASCADE_SKIPPED`
 
 ### Phase 4.3: 8 BUG Investigation (When Triggered)
 - Reproduce BUG failures
@@ -498,6 +562,7 @@ Phase 4 is complete when:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3 | 2026-01-22 | Claude+GPT | Phase 4.2 locked plan: dependency ordering with cascade skip logic |
 | 1.2 | 2026-01-22 | Claude+GPT | Phase 4.1.2 audit findings: U/A prefix normalization scope |
 | 1.1 | 2026-01-22 | Claude+GPT | Phase 4.1.1 audit findings: class resolution fix scope |
 | 1.0 | 2026-01-22 | Claude+GPT | Initial locked specification |

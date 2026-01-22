@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.24.2) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.25) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -327,7 +327,7 @@ The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.24.2)
+## GasAbilityGenerator Plugin (v4.25)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1104,6 +1104,7 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.25 - Phase 4.2 Dependency Ordering System: Claude-GPT dual audit approved. Implements topological sort for deterministic generation order and cascade skip logic. Generated-only nodes (manifest assets only), internal edges only (target must be in manifest). Dependency edges: AC→GA, AC→GE, GA→GE, GA→Montage, BT→BB, DialogueBP→NPCDef, Quest→NPCDef (all conditional on target in manifest). External refs (Skeleton, AttributeSet, GameplayTag, UClass) remain pre-validation only. New `EGenerationStatus::SkippedCascaded` for cascade failures. `FGenerationResult` extended with RootFailureId, RootReasonCode, CascadeChainDepth, CascadeChainPath. Kahn's algorithm with lexical priority selection for determinism. Summary report shows FailedRoot vs SkippedCascaded counts with cascade amplification metric. Error code: E_CASCADE_SKIPPED.
 - v4.24.2 - Phase 4.1.2 U/A Prefix Normalization: Claude-GPT dual audit identified that /Script paths include class names WITHOUT U/A prefix (e.g., `/Script/NarrativeArsenal.NarrativeAttributeSetBase` not `UNarrativeAttributeSetBase`). FindClassByName now strips U/A prefix when building /Script module paths. Safety constraints: skip if already qualified (`/Script/`, `/Game/`), skip if contains `.`, skip if 1 char, only strip U/A (not F/E). Diagnostic logging shows both raw and normalized attempts. Fixes 3 remaining A1 AttributeSet false negatives.
 - v4.24.1 - Phase 4.1.1 Class Resolution Fix: Claude-GPT dual audit identified false negatives in pre-validation. Fixed CoreUObject bug at line 194 (`*CorePath` → `*ClassName`). Added 4 missing /Script module paths for class resolution: GameplayTags (UBlueprintGameplayTagLibrary), Niagara (UNiagaraFunctionLibrary), UMG (UUserWidget), AIModule (UBTService_BlueprintBase). Added diagnostic logging showing attempted paths on failed resolution. Eliminates 77 false negative E_PREVAL_CLASS_NOT_FOUND errors for valid engine classes.
 - v4.24 - Phase 4.1 Pre-Validation System: Implements pre-validation per Phase4_Spec_Locked.md. Validates manifest references BEFORE generation starts using reflection-based semantic checks. Rules: F1/F2 (function validation), A1/A2 (attribute validation), C1/C2 (class validation), R1-R5 (asset references), T1/T2 (tag validation), K1/K2 (token validation). Caching system for expensive reflection lookups. Blocking policy: Errors block generation, Warnings proceed. Output format includes manifest location (file:line:column) and YAML path. New types: FPreValidationCache, FPreValidator, FPreValidationReport. Error codes: E_PREVAL_CLASS_NOT_FOUND, E_PREVAL_FUNCTION_NOT_FOUND, E_PREVAL_ATTRIBUTE_NOT_FOUND, E_PREVAL_ASSET_NOT_FOUND, E_PREVAL_TAG_NOT_REGISTERED (Warning), E_PREVAL_TOKEN_UNSUPPORTED.
