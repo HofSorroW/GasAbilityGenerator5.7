@@ -104,6 +104,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "GameplayTagContainer.h"
 #include "GameplayTagsManager.h"
+#include "BlueprintGameplayTagLibrary.h"  // v4.25.3: GameplayTag Blueprint functions
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -269,6 +270,7 @@
 #include "QuestBlueprint.h"  // v3.9.4: UQuestBlueprint for quest state machine generation
 #include "NiagaraSystem.h"
 #include "NiagaraComponent.h"  // v4.13: Category C P3.1 VFX Spawning
+#include "NiagaraFunctionLibrary.h"  // v4.25.3: SpawnSystemAttached function
 // v3.9: NPC Pipeline includes
 #include "AI/Activities/NPCActivitySchedule.h"
 #include "AI/Activities/NPCGoalItem.h"
@@ -10140,6 +10142,18 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("MakeSpecHandle"), UAbilitySystemBlueprintLibrary::StaticClass());
 		WellKnownFunctions.Add(TEXT("AssignTagSetByCallerMagnitude"), UAbilitySystemBlueprintLibrary::StaticClass());
 
+		// v4.25.3: GameplayTag Blueprint Library functions
+		WellKnownFunctions.Add(TEXT("MakeLiteralGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("MakeGameplayTagContainerFromTag"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("MakeGameplayTagContainerFromArray"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("AddGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("RemoveGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("HasTag"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("HasAnyTags"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("HasAllTags"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("MatchesTag"), UBlueprintGameplayTagLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("GetTagName"), UBlueprintGameplayTagLibrary::StaticClass());
+
 		// Gameplay Ability functions - these are on the ability itself
 		WellKnownFunctions.Add(TEXT("K2_EndAbility"), UGameplayAbility::StaticClass());
 		WellKnownFunctions.Add(TEXT("K2_CommitAbility"), UGameplayAbility::StaticClass());
@@ -10162,7 +10176,7 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("BP_RemoveGameplayEffectFromOwnerWithAssetTags"), UGameplayAbility::StaticClass());
 		WellKnownFunctions.Add(TEXT("BP_RemoveGameplayEffectFromOwnerWithGrantedTags"), UGameplayAbility::StaticClass());
 
-		// Math functions
+		// Math functions - legacy float versions (kept for compatibility)
 		WellKnownFunctions.Add(TEXT("Multiply_FloatFloat"), UKismetMathLibrary::StaticClass());
 		WellKnownFunctions.Add(TEXT("Divide_FloatFloat"), UKismetMathLibrary::StaticClass());
 		WellKnownFunctions.Add(TEXT("Add_FloatFloat"), UKismetMathLibrary::StaticClass());
@@ -10171,6 +10185,18 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("RandomFloatInRange"), UKismetMathLibrary::StaticClass());
 		WellKnownFunctions.Add(TEXT("GetForwardVector"), UKismetMathLibrary::StaticClass());
 		WellKnownFunctions.Add(TEXT("MakeRotator"), UKismetMathLibrary::StaticClass());
+
+		// v4.25.3: Math functions - UE5 double precision versions
+		WellKnownFunctions.Add(TEXT("Multiply_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("Divide_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("Add_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("Subtract_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("Less_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("Greater_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("LessEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("GreaterEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("EqualEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("NotEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
 
 		// System functions
 		WellKnownFunctions.Add(TEXT("Delay"), UKismetSystemLibrary::StaticClass());
@@ -10191,6 +10217,10 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("GetAllActorsOfClass"), UGameplayStatics::StaticClass());
 		WellKnownFunctions.Add(TEXT("GetPlayerCharacter"), UGameplayStatics::StaticClass());
 		WellKnownFunctions.Add(TEXT("GetPlayerPawn"), UGameplayStatics::StaticClass());
+
+		// v4.25.3: Niagara functions
+		WellKnownFunctions.Add(TEXT("SpawnSystemAttached"), UNiagaraFunctionLibrary::StaticClass());
+		WellKnownFunctions.Add(TEXT("SpawnSystemAtLocation"), UNiagaraFunctionLibrary::StaticClass());
 
 		// v2.7.0: Narrative Pro Inventory functions
 		WellKnownFunctions.Add(TEXT("TryAddItemFromClass"), UNarrativeInventoryComponent::StaticClass());
@@ -10223,6 +10253,15 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		DeprecatedFunctionRemapping.Add(TEXT("K2_ClearTimer"), TEXT("K2_ClearAndInvalidateTimerHandle"));
 		DeprecatedFunctionRemapping.Add(TEXT("ClearTimer"), TEXT("K2_ClearAndInvalidateTimerHandle"));
 		DeprecatedFunctionRemapping.Add(TEXT("K2_ClearTimerHandle"), TEXT("K2_ClearAndInvalidateTimerHandle"));
+
+		// v4.25.3: UE5 double precision math function remapping
+		DeprecatedFunctionRemapping.Add(TEXT("Less_FloatFloat"), TEXT("Less_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("Greater_FloatFloat"), TEXT("Greater_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("LessEqual_FloatFloat"), TEXT("LessEqual_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("GreaterEqual_FloatFloat"), TEXT("GreaterEqual_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("EqualEqual_FloatFloat"), TEXT("EqualEqual_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("NotEqual_FloatFloat"), TEXT("NotEqual_DoubleDouble"));
+
 		LogGeneration(TEXT("Initialized deprecated function remapping table"));
 	}
 	// ============================================================
