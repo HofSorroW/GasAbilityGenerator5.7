@@ -2831,6 +2831,30 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	// v4.22: AUDIT LOGGING POINT 5 - Before SavePackage
 	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_5_BeforeSavePackage"));
 
+	// v4.22: Fix override event node positions - ensure NodePosX != 0 for serialization
+	// Root cause: UE skips serializing default values (NodePosX=0), causing positions to not persist
+	// Fix: Clamp override event nodes to minimum X=16 (one grid unit)
+	// Audit: Claude-GPT dual audit 2026-01-22, approved by Erdem
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (!Graph) continue;
+
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node);
+			if (EventNode && EventNode->bOverrideFunction)
+			{
+				// Only clamp if NodePosX is exactly 0 (default value that won't serialize)
+				// Do NOT clamp negative X values - those are valid authored positions from manual nudge
+				if (EventNode->NodePosX == 0)
+				{
+					EventNode->NodePosX = 16;  // One grid unit - ensures serialization
+					LogGeneration(FString::Printf(TEXT("  [POSITION_FIX] Override event '%s' NodePosX clamped from 0 to 16"), *EventNode->GetNodeTitle(ENodeTitleType::ListView).ToString()));
+				}
+			}
+		}
+	}
+
 	// v4.16: Single save at end (D-011 invariant) - only reached if compile succeeded
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
 	FSavePackageArgs SaveArgs;

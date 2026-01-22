@@ -489,9 +489,9 @@ gameplay_abilities:
 
 ---
 
-## 🔧 Known Issues - Node Position Persistence (v4.20.x)
+## ✅ Resolved - Node Position Persistence (v4.20.x → v4.22)
 
-**Status:** ROOT CAUSE IDENTIFIED - FIX APPROVED (2026-01-22)
+**Status:** ✅ FIXED AND VERIFIED (2026-01-22)
 
 **Problem:**
 Event graph nodes in generated Blueprints cluster on the left side (X=0) instead of being spread out horizontally according to the layered graph layout algorithm.
@@ -582,10 +582,15 @@ For each node in EventGraph(s):
 4. **PASS:** Clipboard contains `NodePosX=<non-zero>`
 5. **FAIL:** Clipboard missing `NodePosX` line
 
-**Files to Modify:**
-- `GasAbilityGeneratorGenerators.cpp` - Add post-layout clamp for override events
+**Files Modified:**
+- `GasAbilityGeneratorGenerators.cpp:2834-2852` - Added post-layout clamp for override events
 
-**Implementation Status:** AWAITING APPROVAL
+**Implementation Status:** ✅ IMPLEMENTED AND VERIFIED
+
+**Verification (2026-01-22):**
+- Clipboard test on GA_FatherEngineer: `NodePosX=16` present ✅
+- All 21 generated abilities show `[POSITION_FIX]` log entries ✅
+- Override events now serialize with non-default X position ✅
 
 ---
 
