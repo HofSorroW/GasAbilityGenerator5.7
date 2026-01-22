@@ -36,8 +36,10 @@ TMap<FName, FManifestDialogueBlueprintDefinition> FDialogueTableConverter::Conve
 		{
 			FManifestDialogueSpeakerDefinition SpeakerDef;
 			SpeakerDef.SpeakerID = SpeakerName.ToString();
-			// Note: NPCDefinition would need to be resolved separately
-			// For now, leave it empty - manual setup or Phase 2
+			// v4.23 FAIL-FAST: NPCDefinition not resolvable from table data
+			// Downstream generator (FDialogueBlueprintGenerator) will fail if NPCDefinition is required
+			UE_LOG(LogTemp, Warning, TEXT("[W_SPEAKER_NPCDEFINITION_EMPTY] Dialogue '%s' | Speaker '%s' has no NPCDefinition - requires manual setup"),
+				*Def.Name, *SpeakerDef.SpeakerID);
 			Def.Speakers.Add(SpeakerDef);
 		}
 

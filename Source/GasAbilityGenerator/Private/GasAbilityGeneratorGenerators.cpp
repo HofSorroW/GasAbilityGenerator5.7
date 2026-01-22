@@ -1565,7 +1565,9 @@ void FGeneratorBase::ConfigureGameplayAbilityPolicies(
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  Warning: CooldownGE not found: %s (searched multiple paths)"), *Definition.CooldownGameplayEffectClass));
+			// v4.23 FAIL-FAST: S29 - Manifest references CooldownGE that cannot be resolved
+			// Note: This is a void helper function, so we log the error - caller will see it in generation log
+			LogGeneration(FString::Printf(TEXT("[E_COOLDOWNGE_NOT_FOUND] %s | CooldownGE not found: %s"), *Definition.Name, *Definition.CooldownGameplayEffectClass));
 		}
 	}
 
@@ -1921,11 +1923,11 @@ static FEdGraphPinType GetPinTypeFromString(const FString& TypeString)
 			}
 			else
 			{
-				// v2.4.5: Fallback to AActor if specific class not found (e.g., Blueprint not yet created)
-				UE_LOG(LogTemp, Warning, TEXT("GetPinTypeFromString: Class '%s' not found, using AActor as fallback"), *ClassName);
-				PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
-				PinType.PinSubCategoryObject = AActor::StaticClass();
-				return PinType;
+				// v4.23 FAIL-FAST: S30/F1 - Manifest references class that doesn't exist
+				// Return invalid PinType to cause downstream failure
+				UE_LOG(LogTemp, Error, TEXT("[E_PINTYPE_CLASS_NOT_FOUND] GetPinTypeFromString: Class '%s' not found"), *ClassName);
+				// Return empty pin type - will cause variable/node creation to fail
+				return FEdGraphPinType();
 			}
 		}
 
@@ -2367,12 +2369,18 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 					}
 					else
 					{
-						LogGeneration(FString::Printf(TEXT("  WARNING: Property '%s' not found on class '%s'"), *PropertyName, *ClassName));
+						// v4.23 FAIL-FAST: S31 - Manifest references attribute property that doesn't exist
+						LogGeneration(FString::Printf(TEXT("[E_GE_PROPERTY_NOT_FOUND] %s | Property '%s' not found on class '%s'"), *Definition.Name, *PropertyName, *ClassName));
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("Attribute property '%s' not found on class '%s'"), *PropertyName, *ClassName));
 					}
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  WARNING: Attribute set class '%s' not found"), *ClassName));
+					// v4.23 FAIL-FAST: S32 - Manifest references attribute set class that doesn't exist
+					LogGeneration(FString::Printf(TEXT("[E_GE_ATTRIBUTESET_NOT_FOUND] %s | Attribute set class '%s' not found"), *Definition.Name, *ClassName));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Attribute set class '%s' not found"), *ClassName));
 				}
 			}
 			else
@@ -2408,7 +2416,10 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 					SetByCallerMagnitude.DataTag = FGameplayTag::RequestGameplayTag(FName(*ModDef.SetByCallerTag), false);
 					if (!SetByCallerMagnitude.DataTag.IsValid())
 					{
-						LogGeneration(FString::Printf(TEXT("  WARNING: SetByCaller tag '%s' not found in GameplayTags"), *ModDef.SetByCallerTag));
+						// v4.23 FAIL-FAST: S33 - Manifest references SetByCaller tag that doesn't exist
+						LogGeneration(FString::Printf(TEXT("[E_GE_SETBYCALLER_TAG_NOT_FOUND] %s | SetByCaller tag '%s' not found"), *Definition.Name, *ModDef.SetByCallerTag));
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("SetByCaller tag '%s' not found in GameplayTags"), *ModDef.SetByCallerTag));
 					}
 				}
 				ModInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(SetByCallerMagnitude);
@@ -2445,7 +2456,10 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 			}
 			else
 			{
-				LogGeneration(FString::Printf(TEXT("  WARNING: Tag '%s' not found in GameplayTags"), *TagName));
+				// v4.23 FAIL-FAST: S34 - Manifest references tag that doesn't exist
+				LogGeneration(FString::Printf(TEXT("[E_GE_TAG_NOT_FOUND] %s | Tag '%s' not found in GameplayTags"), *Definition.Name, *TagName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("GrantedTag '%s' not found in GameplayTags"), *TagName));
 			}
 		}
 
@@ -2739,7 +2753,10 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 			}
 			else
 			{
-				LogGeneration(FString::Printf(TEXT("    WARNING: Failed to generate custom function: %s"), *FuncDef.FunctionName));
+				// v4.23 FAIL-FAST: S35 - Manifest references custom function that failed to generate
+				LogGeneration(FString::Printf(TEXT("[E_GA_CUSTOMFUNCTION_FAILED] %s | Failed to generate custom function: %s"), *Definition.Name, *FuncDef.FunctionName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Failed to generate custom function '%s'"), *FuncDef.FunctionName));
 			}
 		}
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d custom functions"), FunctionsGenerated, Definition.CustomFunctions.Num()));
@@ -3111,7 +3128,11 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  Warning: Component class not found: %s"), *CompDef.Type));
+			// v4.23 FAIL-FAST: Manifest references component class that cannot be found
+			LogGeneration(FString::Printf(TEXT("[E_COMPONENT_CLASS_NOT_FOUND] %s | Component class not found: %s"),
+				*Definition.Name, *CompDef.Type));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Component class '%s' not found"), *CompDef.Type));
 		}
 	}
 
@@ -3226,7 +3247,10 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 			}
 			else
 			{
-				LogGeneration(FString::Printf(TEXT("    WARNING: Failed to generate function override: %s"), *OverrideDef.FunctionName));
+				// v4.23 FAIL-FAST: S36 - Manifest references function override that failed to generate
+				LogGeneration(FString::Printf(TEXT("[E_BP_FUNCTIONOVERRIDE_FAILED] %s | Failed to generate function override: %s"), *Definition.Name, *OverrideDef.FunctionName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Failed to generate function override '%s'"), *OverrideDef.FunctionName));
 			}
 		}
 	}
@@ -3327,7 +3351,14 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 	UClass* ParentClass = FindParentClass(Definition.ParentClass);
 	if (!ParentClass)
 	{
-		// Fallback to UUserWidget
+		// v4.23 FAIL-FAST: F2 - Manifest references parent class that doesn't exist
+		if (!Definition.ParentClass.IsEmpty())
+		{
+			LogGeneration(FString::Printf(TEXT("[E_WBP_PARENT_NOT_FOUND] %s | Parent class not found: %s"), *Definition.Name, *Definition.ParentClass));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Widget parent class '%s' not found"), *Definition.ParentClass));
+		}
+		// If ParentClass is empty/unspecified, default to UUserWidget (Type D - allowed)
 		ParentClass = UUserWidget::StaticClass();
 	}
 
@@ -4759,7 +4790,10 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  WARNING: Parent blackboard '%s' not found"), *Definition.Parent));
+			// v4.23 FAIL-FAST: S37 - Manifest references parent blackboard that doesn't exist
+			LogGeneration(FString::Printf(TEXT("[E_BB_PARENT_NOT_FOUND] %s | Parent blackboard '%s' not found"), *Definition.Name, *Definition.Parent));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Parent blackboard '%s' not found"), *Definition.Parent));
 		}
 	}
 
@@ -5020,8 +5054,11 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Blackboard not found: %s - session cache has %d entries"),
-				*Definition.BlackboardAsset, FBlackboardGenerator::GetCacheSize()));
+			// v4.23 FAIL-FAST: S38 - Manifest references blackboard that doesn't exist
+			LogGeneration(FString::Printf(TEXT("[E_BT_BLACKBOARD_NOT_FOUND] %s | Blackboard not found: %s (cache has %d entries)"),
+				*Definition.Name, *Definition.BlackboardAsset, FBlackboardGenerator::GetCacheSize()));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Blackboard '%s' not found"), *Definition.BlackboardAsset));
 		}
 	}
 
@@ -5279,8 +5316,11 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						}
 						else
 						{
-							LogGeneration(FString::Printf(TEXT("  [WARNING] Task class not found: %s, using BTTask_Wait"), *NodeDef.TaskClass));
-							TaskNode = NewObject<UBTTask_Wait>(BT);
+							// v4.23 FAIL-FAST: Manifest references task class that cannot be resolved
+							LogGeneration(FString::Printf(TEXT("[E_BT_TASK_CLASS_NOT_FOUND] %s | Task class not found: %s"),
+								*Definition.Name, *NodeDef.TaskClass));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								FString::Printf(TEXT("BehaviorTree task class '%s' not found - manifest references class but resolution failed"), *NodeDef.TaskClass));
 						}
 					}
 					else
@@ -5465,8 +5505,10 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 				UBTCompositeNode** ParentPtr = CompositeNodeMap.Find(NodeDef.Id);
 				if (!ParentPtr)
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARNING] Parent node '%s' not found or not composite"), *NodeDef.Id));
-					continue;
+					// v4.23 FAIL-FAST: S39 - Manifest references parent node that doesn't exist
+					LogGeneration(FString::Printf(TEXT("[E_BT_PARENT_NOT_FOUND] %s | Parent node '%s' not found or not composite"), *Definition.Name, *NodeDef.Id));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("BT parent node '%s' not found or not composite"), *NodeDef.Id));
 				}
 
 				UBTCompositeNode* ParentNode = *ParentPtr;
@@ -5486,8 +5528,10 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 					}
 					else
 					{
-						LogGeneration(FString::Printf(TEXT("  [WARNING] Child node '%s' not found for parent '%s'"), *ChildId, *NodeDef.Id));
-						continue;
+						// v4.23 FAIL-FAST: S40 - Manifest references child node that doesn't exist
+						LogGeneration(FString::Printf(TEXT("[E_BT_CHILD_NOT_FOUND] %s | Child node '%s' not found for parent '%s'"), *Definition.Name, *ChildId, *NodeDef.Id));
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("BT child node '%s' not found for parent '%s'"), *ChildId, *NodeDef.Id));
 					}
 
 					// Add decorators to child entry
@@ -5584,7 +5628,10 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		}
 		else
 		{
-			LogGeneration(TEXT("  [WARNING] Failed to create UBehaviorTreeGraph"));
+			// v4.23 FAIL-FAST: S41 - Failed to create UBehaviorTreeGraph
+			LogGeneration(FString::Printf(TEXT("[E_BT_GRAPH_CREATION_FAILED] %s | Failed to create UBehaviorTreeGraph"), *Definition.Name));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("Failed to create UBehaviorTreeGraph"));
 		}
 	}
 
@@ -6164,7 +6211,9 @@ UMaterialExpression* FMaterialGenerator::CreateExpression(UMaterial* Material, c
 			}
 			else
 			{
-				LogGeneration(FString::Printf(TEXT("    [WARNING] MaterialFunctionCall '%s' -> function NOT FOUND: '%s'"), *ExprDef.Id, *ExprDef.Function));
+				// v4.23 FAIL-FAST: S42 - Manifest references material function that doesn't exist
+				LogGeneration(FString::Printf(TEXT("[E_MAT_FUNCTION_NOT_FOUND] MaterialFunctionCall '%s' -> function NOT FOUND: '%s'"), *ExprDef.Id, *ExprDef.Function));
+				return nullptr; // Signal failure to caller
 			}
 		}
 		Expression = FuncCall;
@@ -7539,6 +7588,12 @@ FGenerationResult FMaterialGenerator::Generate(const FManifestMaterialDefinition
 			ExpressionMap.Add(ExprDef.Id, Expr);
 			LogGeneration(FString::Printf(TEXT("  Created expression: %s (%s)"), *ExprDef.Id, *ExprDef.Type));
 		}
+		else
+		{
+			// v4.23 FAIL-FAST: Expression creation failed (logged in CreateExpression)
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Failed to create expression '%s' (%s)"), *ExprDef.Id, *ExprDef.Type));
+		}
 	}
 
 	// v4.10: PASS 2 - Connect Switch expression inputs and MaterialFunctionCall inputs
@@ -7923,7 +7978,9 @@ UMaterialExpression* FMaterialFunctionGenerator::CreateExpressionInFunction(UMat
 			}
 			else
 			{
-				LogGeneration(FString::Printf(TEXT("    [WARNING] MaterialFunctionCall '%s' -> function NOT FOUND: '%s'"), *ExprDef.Id, *ExprDef.Function));
+				// v4.23 FAIL-FAST: S42 - Manifest references material function that doesn't exist
+				LogGeneration(FString::Printf(TEXT("[E_MF_FUNCTION_NOT_FOUND] MaterialFunctionCall '%s' -> function NOT FOUND: '%s'"), *ExprDef.Id, *ExprDef.Function));
+				return nullptr; // Signal failure to caller
 			}
 		}
 		Expression = FuncCall;
@@ -8152,13 +8209,17 @@ FGenerationResult FMaterialFunctionGenerator::Generate(const FManifestMaterialFu
 
 		if (!FromExpr)
 		{
-			LogGeneration(FString::Printf(TEXT("  WARNING: MF connection source '%s' not found"), *Conn.FromId));
-			continue;
+			// v4.23 FAIL-FAST: S43 - Manifest references connection source that doesn't exist
+			LogGeneration(FString::Printf(TEXT("[E_MF_CONNECTION_SOURCE_NOT_FOUND] %s | Connection source '%s' not found"), *Definition.Name, *Conn.FromId));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("MF connection source '%s' not found"), *Conn.FromId));
 		}
 		if (!ToExpr)
 		{
-			LogGeneration(FString::Printf(TEXT("  WARNING: MF connection target '%s' not found"), *Conn.ToId));
-			continue;
+			// v4.23 FAIL-FAST: S44 - Manifest references connection target that doesn't exist
+			LogGeneration(FString::Printf(TEXT("[E_MF_CONNECTION_TARGET_NOT_FOUND] %s | Connection target '%s' not found"), *Definition.Name, *Conn.ToId));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("MF connection target '%s' not found"), *Conn.ToId));
 		}
 
 		// Find output index on source expression
@@ -8478,7 +8539,10 @@ FGenerationResult FMaterialInstanceGenerator::Generate(const FManifestMaterialIn
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  WARNING: Texture not found for param %s: %s"), *Param.Name, *Param.TexturePath));
+			// v4.23 FAIL-FAST: S45 - Manifest references texture that doesn't exist
+			LogGeneration(FString::Printf(TEXT("[E_MIC_TEXTURE_NOT_FOUND] %s | Texture not found for param %s: %s"), *Definition.Name, *Param.Name, *Param.TexturePath));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Texture not found for param '%s': %s"), *Param.Name, *Param.TexturePath));
 		}
 	}
 
@@ -10378,12 +10442,15 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 							}
 							else
 							{
-								LogGeneration(FString::Printf(TEXT("  WARNING: Could not find enum value '%s' in %s. Available values:"),
-									*ParamValue, *EnumType->GetName()));
+								// v4.23 FAIL-FAST: Manifest references enum value that doesn't exist
+								LogGeneration(FString::Printf(TEXT("[E_ENUM_VALUE_NOT_FOUND] Node '%s' | Could not find enum value '%s' in %s"),
+									*NodeDef.Id, *ParamValue, *EnumType->GetName()));
+								LogGeneration(TEXT("  Available values:"));
 								for (int32 i = 0; i < EnumType->NumEnums() - 1; i++)
 								{
 									LogGeneration(FString::Printf(TEXT("    - %s"), *EnumType->GetNameStringByIndex(i)));
 								}
+								return nullptr; // Signal failure to caller
 							}
 						}
 					}
@@ -10477,13 +10544,15 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 						}
 						else
 						{
-							LogGeneration(FString::Printf(TEXT("  WARNING: Could not resolve class '%s' for TSubclassOf<%s> pin '%s'. Searched paths:"),
-								*ClassName, *BaseClassName, *ParamName));
+							// v4.23 FAIL-FAST: Manifest references class that cannot be resolved
+							LogGeneration(FString::Printf(TEXT("[E_TSUBCLASSOF_NOT_RESOLVED] Node '%s' | Could not resolve class '%s' for TSubclassOf<%s> pin '%s'"),
+								*NodeDef.Id, *ClassName, *BaseClassName, *ParamName));
+							LogGeneration(TEXT("  Searched paths:"));
 							for (const FString& Path : SearchPaths)
 							{
 								LogGeneration(FString::Printf(TEXT("    - %s"), *Path));
 							}
-							LogGeneration(TEXT("    Ensure the referenced asset exists and has been generated."));
+							return nullptr; // Signal failure to caller
 						}
 					}
 					else
@@ -10495,8 +10564,10 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  WARNING: Could not find input pin '%s' on function '%s'. Available pins:"),
-						*ParamName, *FunctionName.ToString()));
+					// v4.23 FAIL-FAST: Manifest references pin that doesn't exist on function
+					LogGeneration(FString::Printf(TEXT("[E_FUNCTION_PIN_NOT_FOUND] Node '%s' | Could not find input pin '%s' on function '%s'"),
+						*NodeDef.Id, *ParamName, *FunctionName.ToString()));
+					LogGeneration(TEXT("  Available pins:"));
 					for (UEdGraphPin* Pin : CallNode->Pins)
 					{
 						if (Pin && Pin->Direction == EGPD_Input)
@@ -10504,6 +10575,7 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 							LogGeneration(FString::Printf(TEXT("    - %s (%s)"), *Pin->PinName.ToString(), *Pin->PinType.PinCategory.ToString()));
 						}
 					}
+					return nullptr; // Signal failure to caller
 				}
 			}
 		}
@@ -10541,23 +10613,10 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		}
 	}
 
-	// Log warning with suggestions
-	LogGeneration(FString::Printf(TEXT("Could not find a function named '%s' in '%s'."),
-		*FunctionName.ToString(), TEXT("KismetSystemLibrary")));
-	LogGeneration(FString::Printf(TEXT("Make sure '%s' has been compiled for %s"),
-		TEXT("KismetSystemLibrary"), *NodeDef.Id));
-
-	// Still create the node with fallback - it may be a custom function
-	if (!FunctionOwner)
-	{
-		FunctionOwner = UKismetSystemLibrary::StaticClass();
-	}
-	CallNode->FunctionReference.SetExternalMember(FunctionName, FunctionOwner);
-	CallNode->CreateNewGuid();
-	CallNode->PostPlacedNewNode();
-	CallNode->AllocateDefaultPins();
-
-	return CallNode;
+	// v4.23 FAIL-FAST: Manifest references function that cannot be found
+	LogGeneration(FString::Printf(TEXT("[E_FUNCTION_NOT_FOUND] Node '%s' | Could not find function '%s'"),
+		*NodeDef.Id, *FunctionName.ToString()));
+	return nullptr; // Signal failure to caller
 }
 
 UK2Node* FEventGraphGenerator::CreateBranchNode(
@@ -10629,9 +10688,10 @@ UK2Node* FEventGraphGenerator::CreateVariableGetNode(
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("VariableGet '%s': Could not resolve class for target '%s', falling back to self"),
+			// v4.23 FAIL-FAST: Manifest references target class that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_VARIABLEGET_TARGET_NOT_FOUND] Node '%s' | Could not resolve class for target '%s'"),
 				*NodeDef.Id, **TargetObjectPtr));
-			GetNode->VariableReference.SetSelfMember(FName(*(*VarNamePtr)));
+			return nullptr; // Signal failure to caller
 		}
 	}
 	else
@@ -10707,9 +10767,10 @@ UK2Node* FEventGraphGenerator::CreateVariableSetNode(
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("VariableSet '%s': Could not resolve class for target '%s', falling back to self"),
+			// v4.23 FAIL-FAST: Manifest references target class that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_VARIABLESET_TARGET_NOT_FOUND] Node '%s' | Could not resolve class for target '%s'"),
 				*NodeDef.Id, **TargetObjectPtr));
-			SetNode->VariableReference.SetSelfMember(FName(*(*VarNamePtr)));
+			return nullptr; // Signal failure to caller
 		}
 	}
 	else
@@ -10749,7 +10810,8 @@ UK2Node* FEventGraphGenerator::CreatePropertyGetNode(
 	UClass* TargetClass = FindParentClass(*TargetClassPtr);
 	if (!TargetClass)
 	{
-		LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Could not find class '%s'"), *NodeDef.Id, **TargetClassPtr));
+		// v4.23 FAIL-FAST: Manifest references class that cannot be found
+		LogGeneration(FString::Printf(TEXT("[E_PROPERTYGET_CLASS_NOT_FOUND] Node '%s' | Could not find class '%s'"), *NodeDef.Id, **TargetClassPtr));
 		// v2.6.7: Track missing dependency for deferred generation
 		FString DepType = TEXT("ActorBlueprint");
 		if (TargetClassPtr->StartsWith(TEXT("WBP_"))) DepType = TEXT("WidgetBlueprint");
@@ -10812,7 +10874,8 @@ UK2Node* FEventGraphGenerator::CreatePropertySetNode(
 	UClass* TargetClass = FindParentClass(*TargetClassPtr);
 	if (!TargetClass)
 	{
-		LogGeneration(FString::Printf(TEXT("PropertySet node '%s': Could not find class '%s'"), *NodeDef.Id, **TargetClassPtr));
+		// v4.23 FAIL-FAST: Manifest references class that cannot be found
+		LogGeneration(FString::Printf(TEXT("[E_PROPERTYSET_CLASS_NOT_FOUND] Node '%s' | Could not find class '%s'"), *NodeDef.Id, **TargetClassPtr));
 		return nullptr;
 	}
 
@@ -10900,7 +10963,8 @@ UK2Node* FEventGraphGenerator::CreateBreakStructNode(
 
 	if (!Struct)
 	{
-		LogGeneration(FString::Printf(TEXT("BreakStruct node '%s': Could not find struct '%s'"), *NodeDef.Id, **StructTypePtr));
+		// v4.23 FAIL-FAST: Manifest references struct that cannot be found
+		LogGeneration(FString::Printf(TEXT("[E_BREAKSTRUCT_STRUCT_NOT_FOUND] Node '%s' | Could not find struct '%s'"), *NodeDef.Id, **StructTypePtr));
 		return nullptr;
 	}
 
@@ -11171,7 +11235,8 @@ UK2Node* FEventGraphGenerator::CreateDynamicCastNode(
 	}
 	else
 	{
-		LogGeneration(FString::Printf(TEXT("Warning: DynamicCast node '%s' could not find target class '%s'. Cast may not work correctly."),
+		// v4.23 FAIL-FAST: Manifest references class that cannot be found
+		LogGeneration(FString::Printf(TEXT("[E_DYNAMICCAST_CLASS_NOT_FOUND] Node '%s' | Could not find target class '%s'"),
 			*NodeDef.Id, **TargetClassPtr));
 		// v2.6.7: Track missing dependency for deferred generation
 		FString DepType = TEXT("ActorBlueprint");
@@ -11179,7 +11244,7 @@ UK2Node* FEventGraphGenerator::CreateDynamicCastNode(
 		else if (TargetClassPtr->StartsWith(TEXT("WBP_"))) DepType = TEXT("WidgetBlueprint");
 		AddMissingDependency(*TargetClassPtr, DepType,
 			FString::Printf(TEXT("DynamicCast node '%s'"), *NodeDef.Id));
-		// Still create the node, pins will be created but cast won't work until class is found
+		return nullptr; // Signal failure to caller
 	}
 
 	CastNode->CreateNewGuid();
@@ -11228,7 +11293,9 @@ UK2Node* FEventGraphGenerator::CreateForEachLoopNode(
 	}
 	else
 	{
-		LogGeneration(FString::Printf(TEXT("Warning: ForEachLoop macro not found for node '%s'"), *NodeDef.Id));
+		// v4.23 FAIL-FAST: S46 - ForEachLoop macro not found in engine
+		LogGeneration(FString::Printf(TEXT("[E_FOREACHLOOP_MACRO_NOT_FOUND] ForEachLoop macro not found for node '%s'"), *NodeDef.Id));
+		return nullptr; // Signal failure to caller
 	}
 
 	MacroNode->CreateNewGuid();
@@ -11879,7 +11946,8 @@ namespace NodePlacement
 
 		if (PinIndex < 0)
 		{
-			// Pin not found, return middle of node as fallback
+			// v4.23 FAIL-FAST: F7 - Log error but continue with fallback (layout helper - actual failure handled by connection wiring)
+			UE_LOG(LogTemp, Error, TEXT("[E_PIN_POSITION_NOT_FOUND] GetPinYOffset: Pin '%s' not found on node '%s'"), *PinName, *Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
 			return NODE_HEADER_HEIGHT + (DirectionPins.Num() / 2.0f) * PIN_VERTICAL_SPACING;
 		}
 
@@ -14117,7 +14185,9 @@ int32 FEventGraphGenerator::GenerateAttributeBindingNodes(
 		}
 		else
 		{
-			LogGeneration(TEXT("    [W_ATTR_PIN_NOT_FOUND] Could not find Attribute pin on WaitForAttributeChange node"));
+			// v4.23 FAIL-FAST: Pin not found on node - generation error
+			LogGeneration(TEXT("[E_ATTRIBUTE_PIN_NOT_FOUND] Could not find Attribute pin on WaitForAttributeChange node"));
+			return -1; // Signal failure to caller
 		}
 
 		// 5. Set TriggerOnce parameter (default true per spec 11.1.3)
@@ -14169,7 +14239,9 @@ int32 FEventGraphGenerator::GenerateAttributeBindingNodes(
 		}
 		else
 		{
-			LogGeneration(TEXT("    [W_ONCHANGE_NOT_FOUND] Could not find OnChange pin on WaitForAttributeChange node"));
+			// v4.23 FAIL-FAST: Pin not found on node - generation error
+			LogGeneration(TEXT("[E_ONCHANGE_PIN_NOT_FOUND] Could not find OnChange pin on WaitForAttributeChange node"));
+			return -1; // Signal failure to caller
 		}
 
 		TaskNodes.Add(WaitAttrNode);
@@ -14449,8 +14521,11 @@ FGenerationResult FAnimationMontageGenerator::Generate(const FManifestAnimationM
 
 	if (!Skeleton)
 	{
-		LogGeneration(FString::Printf(TEXT("Animation Montage '%s': Could not load skeleton '%s' - creating empty montage"),
+		// v4.23 FAIL-FAST: Manifest references skeleton that cannot be loaded
+		LogGeneration(FString::Printf(TEXT("[E_MONTAGE_SKELETON_NOT_FOUND] %s | Could not load skeleton: %s"),
 			*Definition.Name, *Definition.Skeleton));
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Animation Montage skeleton '%s' not found"), *Definition.Skeleton));
 	}
 
 	// Create package
@@ -14797,7 +14872,8 @@ static UNarrativeEvent* CreateDialogueEventFromDefinition(
 
 	if (!EventClass)
 	{
-		UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find dialogue event class: %s"), *EventDef.Type);
+		// v4.23 FAIL-FAST: Manifest references event class that cannot be found
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_EVENT_CLASS_NOT_FOUND] Could not find dialogue event class: %s"), *EventDef.Type);
 		return nullptr;
 	}
 
@@ -14861,7 +14937,8 @@ static UNarrativeCondition* CreateDialogueConditionFromDefinition(
 
 	if (!CondClass)
 	{
-		UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find dialogue condition class: %s"), *CondDef.Type);
+		// v4.23 FAIL-FAST: Manifest references condition class that cannot be found
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_CONDITION_CLASS_NOT_FOUND] Could not find dialogue condition class: %s"), *CondDef.Type);
 		return nullptr;
 	}
 
@@ -14884,20 +14961,23 @@ static UNarrativeCondition* CreateDialogueConditionFromDefinition(
 }
 
 // v3.7: Helper - Create dialogue tree from manifest definition
-static void CreateDialogueTree(
+// v4.23: Changed to return bool with OutErrorMessage for fail-fast support
+static bool CreateDialogueTree(
 	UDialogueBlueprint* DialogueBP,
-	const FManifestDialogueTreeDefinition& TreeDef)
+	const FManifestDialogueTreeDefinition& TreeDef,
+	const FString& DialogueName,
+	FString& OutErrorMessage)
 {
 	if (TreeDef.Nodes.Num() == 0)
 	{
-		return;  // No tree to create
+		return true;  // No tree to create - not an error
 	}
 
 	UDialogue* Dialogue = DialogueBP->DialogueTemplate;
 	if (!Dialogue)
 	{
 		UE_LOG(LogGasAbilityGenerator, Warning, TEXT("DialogueBlueprint has no DialogueTemplate"));
-		return;
+		return true;  // Not a manifest error - just skip tree creation
 	}
 
 	// Maps for node lookup during connection phase
@@ -15008,7 +15088,11 @@ static void CreateDialogueTree(
 			}
 			else
 			{
-				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load dialogue audio: %s"), *NodeDef.Audio);
+				// v4.23 FAIL-FAST: Manifest references audio that cannot be loaded
+				UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_AUDIO_NOT_FOUND] %s | Could not load dialogue audio: %s"),
+					*DialogueName, *NodeDef.Audio);
+				OutErrorMessage = FString::Printf(TEXT("Dialogue audio '%s' not found"), *NodeDef.Audio);
+				return false;
 			}
 		}
 
@@ -15083,17 +15167,23 @@ static void CreateDialogueTree(
 				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("    [WARN] Could not create NE_BeginQuest for: %s"), *NodeDef.StartQuest);
 			}
 		}
-		// v3.9.11: complete_quest_branch - Quest branches complete via task completion, not direct event
-		// Log info for manual setup via BPT_FinishDialogue task on quest branch
+		// v4.23 FAIL-FAST: complete_quest_branch cannot be auto-generated
+		// Quest branches complete via task completion (BPT_FinishDialogue), not direct event
 		if (!NodeDef.CompleteQuestBranch.IsEmpty())
 		{
-			UE_LOG(LogGasAbilityGenerator, Log, TEXT("    [INFO] complete_quest_branch: %s - Use BPT_FinishDialogue task on quest branch"), *NodeDef.CompleteQuestBranch);
+			UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_COMPLETE_QUEST_BRANCH_NOT_AUTOMATABLE] %s | complete_quest_branch '%s' specified but cannot be auto-generated"),
+				*DialogueName, *NodeDef.CompleteQuestBranch);
+			OutErrorMessage = FString::Printf(TEXT("complete_quest_branch '%s' specified but requires manual BPT_FinishDialogue setup"), *NodeDef.CompleteQuestBranch);
+			return false;
 		}
-		// v3.9.11: fail_quest - No built-in NE_FailQuest in Narrative Pro
-		// Log info for manual setup via Blueprint call to Quest->FailQuest()
+		// v4.23 FAIL-FAST: fail_quest cannot be auto-generated
+		// No built-in NE_FailQuest in Narrative Pro - requires Blueprint call to Quest->FailQuest()
 		if (!NodeDef.FailQuest.IsEmpty())
 		{
-			UE_LOG(LogGasAbilityGenerator, Log, TEXT("    [INFO] fail_quest: %s - Call Quest->FailQuest() from Blueprint event"), *NodeDef.FailQuest);
+			UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_FAIL_QUEST_NOT_AUTOMATABLE] %s | fail_quest '%s' specified but cannot be auto-generated"),
+				*DialogueName, *NodeDef.FailQuest);
+			OutErrorMessage = FString::Printf(TEXT("fail_quest '%s' specified but requires manual Blueprint call to Quest->FailQuest()"), *NodeDef.FailQuest);
+			return false;
 		}
 
 		// Add conditions
@@ -15139,7 +15229,11 @@ static void CreateDialogueTree(
 			}
 			else
 			{
-				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find NPC node for reply: %s"), *ReplyId);
+				// v4.23 FAIL-FAST: Manifest references NPC reply node that doesn't exist
+				UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_NPC_REPLY_NOT_FOUND] %s | Could not find NPC node for reply: %s"),
+					*DialogueName, *ReplyId);
+				OutErrorMessage = FString::Printf(TEXT("Dialogue NPC reply node '%s' not found"), *ReplyId);
+				return false;
 			}
 		}
 
@@ -15152,13 +15246,19 @@ static void CreateDialogueTree(
 			}
 			else
 			{
-				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not find Player node for reply: %s"), *ReplyId);
+				// v4.23 FAIL-FAST: Manifest references Player reply node that doesn't exist
+				UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_PLAYER_REPLY_NOT_FOUND] %s | Could not find Player node for reply: %s"),
+					*DialogueName, *ReplyId);
+				OutErrorMessage = FString::Printf(TEXT("Dialogue Player reply node '%s' not found"), *ReplyId);
+				return false;
 			}
 		}
 	}
 
 	UE_LOG(LogGasAbilityGenerator, Log, TEXT("  Created dialogue tree: %d NPC nodes, %d Player nodes"),
 		NPCNodeMap.Num(), PlayerNodeMap.Num());
+
+	return true;  // v4.23: Success
 }
 
 // v2.3.0: Dialogue Blueprint Generator
@@ -15387,7 +15487,11 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			}
 			else
 			{
-				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load camera shake class: %s"), *Definition.CameraShake);
+				// v4.23 FAIL-FAST: Manifest references camera shake that cannot be loaded
+				UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_CAMERASHAKE_NOT_FOUND] %s | Could not load camera shake class: %s"),
+					*Definition.Name, *Definition.CameraShake);
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Dialogue camera shake '%s' not found"), *Definition.CameraShake));
 			}
 		}
 
@@ -15413,7 +15517,11 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			}
 			else
 			{
-				UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load sound attenuation: %s"), *Definition.DialogueSoundAttenuation);
+				// v4.23 FAIL-FAST: Manifest references sound attenuation that cannot be loaded
+				UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_SOUNDATTENUATION_NOT_FOUND] %s | Could not load sound attenuation: %s"),
+					*Definition.Name, *Definition.DialogueSoundAttenuation);
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Dialogue sound attenuation '%s' not found"), *Definition.DialogueSoundAttenuation));
 			}
 		}
 
@@ -15472,13 +15580,20 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 				}
 				else
 				{
-					UE_LOG(LogGasAbilityGenerator, Warning, TEXT("Could not load dialogue sequence class: %s"), *Definition.DefaultDialogueShot.SequenceClass);
+					// v4.23 FAIL-FAST: Manifest references sequence class that cannot be loaded
+					UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_DIALOGUE_SEQUENCE_NOT_FOUND] %s | Could not load dialogue sequence class: %s"),
+						*Definition.Name, *Definition.DefaultDialogueShot.SequenceClass);
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Dialogue sequence class '%s' not found"), *Definition.DefaultDialogueShot.SequenceClass));
 				}
 			}
 			else if (Definition.DefaultDialogueShot.SequenceAssets.Num() > 0)
 			{
-				// Log that manual setup is needed for complex sequence configurations
-				LogGeneration(TEXT("  NOTE: DefaultDialogueShot with sequence assets requires manual editor configuration"));
+				// v4.23 FAIL-FAST: SequenceAssets cannot be auto-generated
+				LogGeneration(FString::Printf(TEXT("[E_DIALOGUE_SEQUENCEASSETS_NOT_AUTOMATABLE] %s | DefaultDialogueShot.SequenceAssets (%d) specified but cannot be auto-generated"),
+					*Definition.Name, Definition.DefaultDialogueShot.SequenceAssets.Num()));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					TEXT("DefaultDialogueShot SequenceAssets specified but requires manual editor configuration"));
 			}
 		}
 
@@ -15526,7 +15641,11 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 					}
 					else
 					{
-						LogGeneration(FString::Printf(TEXT("  WARNING: Could not find NPCDefinition: %s"), *SpeakerDef.NPCDefinition));
+						// v4.23 FAIL-FAST: Manifest references NPCDefinition that cannot be found
+						LogGeneration(FString::Printf(TEXT("[E_SPEAKER_NPCDEFINITION_NOT_FOUND] %s | Could not find NPCDefinition: %s"),
+							*Definition.Name, *SpeakerDef.NPCDefinition));
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("Speaker NPCDefinition '%s' not found"), *SpeakerDef.NPCDefinition));
 					}
 				}
 
@@ -15622,12 +15741,11 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 				}
 				else
 				{
-					LogGeneration(TEXT("  [INFO] PartySpeakerInfo property not found on UDialogue - logging for manual setup:"));
-					for (const auto& PartySpeakerDef : Definition.PartySpeakerInfo)
-					{
-						LogGeneration(FString::Printf(TEXT("    SpeakerID: %s, NodeColor: %s"),
-							*PartySpeakerDef.SpeakerID, *PartySpeakerDef.NodeColor));
-					}
+					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+					LogGeneration(FString::Printf(TEXT("[E_PARTYSPEAKERINFO_NOT_FOUND] %s | PartySpeakerInfo property not found | CDO Class: %s | Speakers requested: %d"),
+						*Definition.Name, *DialogueTemplate->GetClass()->GetPathName(), Definition.PartySpeakerInfo.Num()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("PartySpeakerInfo property not found - manifest references speakers but property lookup failed"));
 				}
 			}
 
@@ -15661,7 +15779,11 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 	// v3.7: Create dialogue tree if defined
 	if (Definition.DialogueTree.Nodes.Num() > 0)
 	{
-		CreateDialogueTree(DialogueBP, Definition.DialogueTree);
+		FString TreeErrorMessage;
+		if (!CreateDialogueTree(DialogueBP, Definition.DialogueTree, Definition.Name, TreeErrorMessage))
+		{
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TreeErrorMessage);
+		}
 		LogGeneration(FString::Printf(TEXT("  Created dialogue tree with %d nodes (root: %s)"),
 			Definition.DialogueTree.Nodes.Num(), *Definition.DialogueTree.RootNodeId));
 
@@ -15844,8 +15966,15 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		{
 			LogGeneration(FString::Printf(TEXT("Using parent class: %s"), *Definition.ParentClass));
 		}
+		else
+		{
+			// v4.23 FAIL-FAST: F9 - Manifest references parent class that doesn't exist
+			LogGeneration(FString::Printf(TEXT("[E_ITEM_PARENT_NOT_FOUND] %s | Parent class not found: %s"), *Definition.Name, *Definition.ParentClass));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("EquippableItem parent class '%s' not found"), *Definition.ParentClass));
+		}
 	}
-	// Fallback to UEquippableItem if no parent specified or not found
+	// Default to UEquippableItem if no parent specified (Type D - allowed)
 	if (!ParentClass)
 	{
 		ParentClass = UEquippableItem::StaticClass();
@@ -16889,45 +17018,31 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 							}
 						}
 
-						// Note: MeshMaterials (TArray<FCreatorMeshMaterial>) and Morphs (TArray<FCreatorMeshMorph>)
-						// are complex nested arrays - log info for manual setup if specified
+						// v4.23 FAIL-FAST: Complex structs not automated - fail if manifest specifies them
 						if (Definition.ClothingMesh.Materials.Num() > 0)
 						{
-							LogGeneration(FString::Printf(TEXT("    [INFO] MeshMaterials (%d entries) - complex struct, logging for manual setup:"), Definition.ClothingMesh.Materials.Num()));
-							for (int32 i = 0; i < Definition.ClothingMesh.Materials.Num(); i++)
-							{
-								const FManifestClothingMaterial& Mat = Definition.ClothingMesh.Materials[i];
-								LogGeneration(FString::Printf(TEXT("      [%d] Material: %s"), i, *Mat.Material));
-								for (const FManifestMaterialParamBinding& Param : Mat.VectorParams)
-								{
-									LogGeneration(FString::Printf(TEXT("        VectorParam: %s -> %s"), *Param.ParameterName, *Param.TagId));
-								}
-								for (const FManifestMaterialParamBinding& Param : Mat.ScalarParams)
-								{
-									LogGeneration(FString::Printf(TEXT("        ScalarParam: %s -> %s"), *Param.ParameterName, *Param.TagId));
-								}
-							}
+							LogGeneration(FString::Printf(TEXT("[E_MESHMATERIALS_NOT_AUTOMATED] %s | MeshMaterials (%d entries) specified but automation not implemented"),
+								*Definition.Name, Definition.ClothingMesh.Materials.Num()));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								TEXT("MeshMaterials specified in manifest but complex struct automation not implemented"));
 						}
 
 						if (Definition.ClothingMesh.Morphs.Num() > 0)
 						{
-							LogGeneration(FString::Printf(TEXT("    [INFO] Morphs (%d entries) - complex struct, logging for manual setup:"), Definition.ClothingMesh.Morphs.Num()));
-							for (int32 i = 0; i < Definition.ClothingMesh.Morphs.Num(); i++)
-							{
-								const FManifestClothingMorph& Morph = Definition.ClothingMesh.Morphs[i];
-								LogGeneration(FString::Printf(TEXT("      [%d] ScalarTag: %s, MorphNames: %d"), i, *Morph.ScalarTag, Morph.MorphNames.Num()));
-								for (const FString& MorphName : Morph.MorphNames)
-								{
-									LogGeneration(FString::Printf(TEXT("        - %s"), *MorphName));
-								}
-							}
+							LogGeneration(FString::Printf(TEXT("[E_MORPHS_NOT_AUTOMATED] %s | Morphs (%d entries) specified but automation not implemented"),
+								*Definition.Name, Definition.ClothingMesh.Morphs.Num()));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								TEXT("Morphs specified in manifest but complex struct automation not implemented"));
 						}
 					}
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARNING] ClothingMesh specified but ClothingMeshData property not found on class %s"), *CDO->GetClass()->GetName()));
-					LogGeneration(TEXT("  [INFO] Ensure parent_class is set to EquippableItem_Clothing or a child class"));
+					// v4.23 FAIL-FAST: ClothingMesh specified but property not found
+					LogGeneration(FString::Printf(TEXT("[E_CLOTHINGMESHDATA_NOT_FOUND] %s | ClothingMeshData property not found | CDO Class: %s"),
+						*Definition.Name, *CDO->GetClass()->GetPathName()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("ClothingMeshData property not found - ensure parent_class is EquippableItem_Clothing"));
 				}
 			}
 
@@ -16965,12 +17080,11 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 				else
 				{
-					LogGeneration(TEXT("  [WARNING] EquipmentEffectValues property not found on class"));
-					LogGeneration(TEXT("  [INFO] Logging values for manual setup:"));
-					for (const auto& Pair : Definition.EquipmentEffectValues)
-					{
-						LogGeneration(FString::Printf(TEXT("    %s: %.2f"), *Pair.Key, Pair.Value));
-					}
+					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+					LogGeneration(FString::Printf(TEXT("[E_EQUIPMENTEFFECTVALUES_NOT_FOUND] %s | EquipmentEffectValues property not found | CDO Class: %s | Values requested: %d"),
+						*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.EquipmentEffectValues.Num()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("EquipmentEffectValues property not found - manifest references values but property lookup failed"));
 				}
 			}
 
@@ -17016,17 +17130,21 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 						}
 						else
 						{
-							LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve EquipmentAbility class: %s"), *AbilityName));
+							// v4.23 FAIL-FAST: Manifest references ability class that cannot be resolved
+							LogGeneration(FString::Printf(TEXT("[E_EQUIPMENTABILITY_NOT_FOUND] %s | Could not resolve EquipmentAbility class: %s"),
+								*Definition.Name, *AbilityName));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								FString::Printf(TEXT("EquipmentAbility class '%s' not found - manifest references class but resolution failed"), *AbilityName));
 						}
 					}
 				}
 				else
 				{
-					LogGeneration(TEXT("  [INFO] EquipmentAbilities property not found - logging for manual setup:"));
-					for (const FString& AbilityName : Definition.EquipmentAbilities)
-					{
-						LogGeneration(FString::Printf(TEXT("    %s"), *AbilityName));
-					}
+					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+					LogGeneration(FString::Printf(TEXT("[E_EQUIPMENTABILITIES_NOT_FOUND] %s | EquipmentAbilities property not found | CDO Class: %s | Abilities requested: %d"),
+						*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.EquipmentAbilities.Num()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("EquipmentAbilities property not found - manifest references abilities but property lookup failed"));
 				}
 			}
 
@@ -17082,11 +17200,11 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 				else
 				{
-					LogGeneration(TEXT("  [INFO] Stats property not found on UNarrativeItem - logging for manual setup:"));
-					for (const FManifestItemStatDefinition& StatDef : Definition.Stats)
-					{
-						LogGeneration(FString::Printf(TEXT("    %s: %.2f (icon: %s)"), *StatDef.StatName, StatDef.StatValue, *StatDef.StatIcon));
-					}
+					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+					LogGeneration(FString::Printf(TEXT("[E_STATS_NOT_FOUND] %s | Stats property not found on UNarrativeItem | CDO Class: %s | Stats requested: %d"),
+						*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.Stats.Num()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("Stats property not found - manifest references stats but property lookup failed"));
 				}
 			}
 
@@ -17139,17 +17257,21 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 						}
 						else
 						{
-							LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve Activity class: %s"), *ActivityName));
+							// v4.23 FAIL-FAST: Manifest references activity class that cannot be resolved
+							LogGeneration(FString::Printf(TEXT("[E_ACTIVITY_CLASS_NOT_FOUND] %s | Could not resolve Activity class: %s"),
+								*Definition.Name, *ActivityName));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								FString::Printf(TEXT("Activity class '%s' not found"), *ActivityName));
 						}
 					}
 				}
 				else
 				{
-					LogGeneration(TEXT("  [INFO] ActivitiesToGrant property not found - logging for manual setup:"));
-					for (const FString& ActivityName : Definition.ActivitiesToGrant)
-					{
-						LogGeneration(FString::Printf(TEXT("    %s"), *ActivityName));
-					}
+					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+					LogGeneration(FString::Printf(TEXT("[E_ACTIVITIESTOGRANT_NOT_FOUND] %s | ActivitiesToGrant property not found | CDO Class: %s | Activities requested: %d"),
+						*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.ActivitiesToGrant.Num()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("ActivitiesToGrant property not found - manifest references activities but property lookup failed"));
 				}
 			}
 
@@ -17172,7 +17294,11 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 					}
 					else
 					{
-						LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load ItemWidgetOverride class: %s"), *Definition.ItemWidgetOverride));
+						// v4.23 FAIL-FAST: Manifest references widget class that cannot be loaded
+						LogGeneration(FString::Printf(TEXT("[E_ITEMWIDGETOVERRIDE_NOT_FOUND] %s | Could not load ItemWidgetOverride class: %s"),
+							*Definition.Name, *Definition.ItemWidgetOverride));
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("ItemWidgetOverride class '%s' not found"), *Definition.ItemWidgetOverride));
 					}
 				}
 			}
@@ -17242,12 +17368,11 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 				else
 				{
-					LogGeneration(TEXT("  [INFO] PickupMeshData property not found - logging for manual setup:"));
-					LogGeneration(FString::Printf(TEXT("    Mesh: %s"), *Definition.PickupMeshData.PickupMesh));
-					for (const FString& Mat : Definition.PickupMeshData.PickupMeshMaterials)
-					{
-						LogGeneration(FString::Printf(TEXT("    Material: %s"), *Mat));
-					}
+					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+					LogGeneration(FString::Printf(TEXT("[E_PICKUPMESHDATA_NOT_FOUND] %s | PickupMeshData property not found | CDO Class: %s"),
+						*Definition.Name, *CDO->GetClass()->GetPathName()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("PickupMeshData property not found - manifest references mesh data but property lookup failed"));
 				}
 			}
 
@@ -17290,10 +17415,11 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 				else
 				{
-					LogGeneration(TEXT("  [INFO] TraceData property not found on class (not a RangedWeaponItem?) - logging for manual setup:"));
-					LogGeneration(FString::Printf(TEXT("    Distance: %.1f, Radius: %.1f, Multi: %s"),
-						Definition.TraceData.TraceDistance, Definition.TraceData.TraceRadius,
-						Definition.TraceData.bTraceMulti ? TEXT("true") : TEXT("false")));
+					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+					LogGeneration(FString::Printf(TEXT("[E_TRACEDATA_NOT_FOUND] %s | TraceData property not found | CDO Class: %s"),
+						*Definition.Name, *CDO->GetClass()->GetPathName()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("TraceData property not found - manifest references trace data but property lookup failed"));
 				}
 			}
 
@@ -17701,7 +17827,11 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve ability: %s (will need manual assignment)"), *AbilityName));
+			// v4.23 FAIL-FAST: Manifest references ability that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_ABILITYCONFIG_ABILITY_NOT_FOUND] %s | Could not resolve ability: %s"),
+				*Definition.Name, *AbilityName));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("AbilityConfiguration ability '%s' not found"), *AbilityName));
 		}
 	}
 
@@ -17740,7 +17870,11 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve startup effect: %s"), *EffectName));
+			// v4.23 FAIL-FAST: Manifest references startup effect that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_ABILITYCONFIG_STARTUPEFFECT_NOT_FOUND] %s | Could not resolve startup effect: %s"),
+				*Definition.Name, *EffectName));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("AbilityConfiguration startup effect '%s' not found"), *EffectName));
 		}
 	}
 
@@ -17769,7 +17903,11 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve default attributes: %s"), *Definition.DefaultAttributes));
+			// v4.23 FAIL-FAST: Manifest references default attributes that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_ABILITYCONFIG_DEFAULTATTR_NOT_FOUND] %s | Could not resolve default attributes: %s"),
+				*Definition.Name, *Definition.DefaultAttributes));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("AbilityConfiguration default attributes '%s' not found"), *Definition.DefaultAttributes));
 		}
 	}
 
@@ -17944,7 +18082,11 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve activity: %s (will need manual assignment)"), *ActivityName));
+			// v4.23 FAIL-FAST: Manifest references activity that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_ACTIVITY_NOT_FOUND] %s | Could not resolve activity: %s"),
+				*Definition.Name, *ActivityName));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("ActivityConfiguration activity '%s' not found"), *ActivityName));
 		}
 	}
 
@@ -17977,7 +18119,11 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve goal generator: %s"), *GeneratorName));
+			// v4.23 FAIL-FAST: Manifest references goal generator that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_GOALGENERATOR_NOT_FOUND] %s | Could not resolve goal generator: %s"),
+				*Definition.Name, *GeneratorName));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("ActivityConfiguration goal generator '%s' not found"), *GeneratorName));
 		}
 	}
 
@@ -18308,9 +18454,11 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		}
 		else
 		{
-			// Property not found - log for manual setup (fallback to old behavior)
-			LogGeneration(FString::Printf(TEXT("  Event '%s' NPCTargets (%d) - property not found, manual setup required: %s"),
-				*Definition.Name, Definition.NPCTargets.Num(), *FString::Join(Definition.NPCTargets, TEXT(", "))));
+			// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+			LogGeneration(FString::Printf(TEXT("[E_NPCTARGETS_NOT_FOUND] %s | NPCTargets property not found | CDO Class: %s | Targets requested: %d"),
+				*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.NPCTargets.Num()));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("NPCTargets property not found - manifest references targets but property lookup failed"));
 		}
 	}
 
@@ -18359,8 +18507,11 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("  Event '%s' CharacterTargets (%d) - manual setup required: %s"),
-				*Definition.Name, Definition.CharacterTargets.Num(), *FString::Join(Definition.CharacterTargets, TEXT(", "))));
+			// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
+			LogGeneration(FString::Printf(TEXT("[E_CHARACTERTARGETS_NOT_FOUND] %s | CharacterTargets property not found | CDO Class: %s | Targets requested: %d"),
+				*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.CharacterTargets.Num()));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("CharacterTargets property not found - manifest references targets but property lookup failed"));
 		}
 	}
 
@@ -18418,7 +18569,10 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 			}
 			else
 			{
-				LogGeneration(FString::Printf(TEXT("  WARNING: Unsupported property type for '%s'"), *PropertyName));
+				// v4.23 FAIL-FAST: Manifest references property with unsupported type
+				LogGeneration(FString::Printf(TEXT("[E_NE_PROPERTY_UNSUPPORTED] %s | Unsupported property type for '%s'"), *Definition.Name, *PropertyName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Unsupported property type for '%s'"), *PropertyName));
 			}
 		}
 	}
@@ -18490,13 +18644,21 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("    [WARNING] Could not load condition class: %s"), *CondDef.Type));
+					// v4.23 FAIL-FAST: Manifest references condition class that cannot be loaded
+					LogGeneration(FString::Printf(TEXT("[E_EVENT_CONDITION_CLASS_NOT_FOUND] %s | Could not load condition class: %s"),
+						*Definition.Name, *CondDef.Type));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Event condition class '%s' not found"), *CondDef.Type));
 				}
 			}
 		}
 		else
 		{
-			LogGeneration(TEXT("    [WARNING] Could not find Conditions array property"));
+			// v4.23 FAIL-FAST: Conditions specified but array property not found
+			LogGeneration(FString::Printf(TEXT("[E_EVENT_CONDITIONS_PROPERTY_NOT_FOUND] %s | Could not find Conditions array property"),
+				*Definition.Name));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("Event conditions specified but Conditions array property not found on class"));
 		}
 	}
 
@@ -18720,7 +18882,11 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load ParticleSystem: %s"), *Definition.BurstEffects.ParticleSystem));
+					// v4.23 FAIL-FAST: Manifest references particle system that cannot be loaded
+					LogGeneration(FString::Printf(TEXT("[E_GAMEPLAYCUE_PARTICLE_NOT_FOUND] %s | Could not load ParticleSystem: %s"),
+						*Definition.Name, *Definition.BurstEffects.ParticleSystem));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("GameplayCue ParticleSystem '%s' not found"), *Definition.BurstEffects.ParticleSystem));
 				}
 			}
 
@@ -18761,7 +18927,11 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load Sound: %s"), *Definition.BurstEffects.Sound));
+					// v4.23 FAIL-FAST: Manifest references sound that cannot be loaded
+					LogGeneration(FString::Printf(TEXT("[E_GAMEPLAYCUE_SOUND_NOT_FOUND] %s | Could not load Sound: %s"),
+						*Definition.Name, *Definition.BurstEffects.Sound));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("GameplayCue Sound '%s' not found"), *Definition.BurstEffects.Sound));
 				}
 			}
 
@@ -18793,7 +18963,11 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load CameraShake class: %s"), *Definition.BurstEffects.CameraShake));
+					// v4.23 FAIL-FAST: Manifest references camera shake that cannot be loaded
+					LogGeneration(FString::Printf(TEXT("[E_GAMEPLAYCUE_CAMERASHAKE_NOT_FOUND] %s | Could not load CameraShake class: %s"),
+						*Definition.Name, *Definition.BurstEffects.CameraShake));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("GameplayCue CameraShake '%s' not found"), *Definition.BurstEffects.CameraShake));
 				}
 			}
 		}
@@ -19375,7 +19549,11 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 		}
 		else
 		{
-			LogGeneration(TEXT("  [WARNING] ActivitySchedules property not found on UNPCDefinition"));
+			// v4.23 FAIL-FAST: ActivitySchedules specified but property not found
+			LogGeneration(FString::Printf(TEXT("[E_NPCDEFINITION_ACTIVITYSCHEDULES_PROPERTY_NOT_FOUND] %s | ActivitySchedules property not found on UNPCDefinition"),
+				*Definition.Name));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("ActivitySchedules specified but property not found on UNPCDefinition"));
 		}
 	}
 
@@ -19855,7 +20033,11 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 
 		if (!TriggerClass)
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Trigger class not found: %s (searched NarrativePro and project paths)"), *TriggerDef.TriggerClass));
+			// v4.23 FAIL-FAST: Manifest references trigger class that cannot be found
+			LogGeneration(FString::Printf(TEXT("[E_TRIGGER_CLASS_NOT_FOUND] %s | Trigger class not found: %s"),
+				*Definition.Name, *TriggerDef.TriggerClass));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Trigger class '%s' not found"), *TriggerDef.TriggerClass));
 			continue;
 		}
 
@@ -19863,7 +20045,11 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 		UNarrativeTrigger* Trigger = NewObject<UNarrativeTrigger>(TriggerSet, TriggerClass, NAME_None, RF_Public | RF_Transactional);
 		if (!Trigger)
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Failed to create trigger instance: %s"), *TriggerDef.TriggerClass));
+			// v4.23 FAIL-FAST: Trigger class found but instance creation failed
+			LogGeneration(FString::Printf(TEXT("[E_TRIGGER_INSTANCE_CREATION_FAILED] %s | Failed to create trigger instance: %s"),
+				*Definition.Name, *TriggerDef.TriggerClass));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Failed to create trigger instance for '%s'"), *TriggerDef.TriggerClass));
 			continue;
 		}
 
@@ -19921,7 +20107,11 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 
 			if (!EventClass)
 			{
-				LogGeneration(FString::Printf(TEXT("    [WARNING] Event class not found: %s"), *EventDef.EventClass));
+				// v4.23 FAIL-FAST: Manifest references event class that cannot be found
+				LogGeneration(FString::Printf(TEXT("[E_TRIGGEREVENT_CLASS_NOT_FOUND] %s | Event class not found: %s"),
+					*Definition.Name, *EventDef.EventClass));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Trigger event class '%s' not found"), *EventDef.EventClass));
 				continue;
 			}
 
@@ -19929,7 +20119,11 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 			UNarrativeEvent* Event = NewObject<UNarrativeEvent>(Trigger, EventClass, NAME_None, RF_Public | RF_Transactional);
 			if (!Event)
 			{
-				LogGeneration(FString::Printf(TEXT("    [WARNING] Failed to create event instance: %s"), *EventDef.EventClass));
+				// v4.23 FAIL-FAST: Event class found but instance creation failed
+				LogGeneration(FString::Printf(TEXT("[E_TRIGGEREVENT_INSTANCE_CREATION_FAILED] %s | Failed to create event instance: %s"),
+					*Definition.Name, *EventDef.EventClass));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Failed to create event instance for '%s'"), *EventDef.EventClass));
 				continue;
 			}
 
@@ -19953,8 +20147,11 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 				FProperty* Prop = EventClass->FindPropertyByName(*PropPair.Key);
 				if (!Prop)
 				{
-					LogGeneration(FString::Printf(TEXT("    [WARNING] Event property not found: %s.%s"), *EventDef.EventClass, *PropPair.Key));
-					continue;
+					// v4.23 FAIL-FAST: Manifest references event property that doesn't exist
+					LogGeneration(FString::Printf(TEXT("[E_TRIGGEREVENT_PROPERTY_NOT_FOUND] %s | Event property not found: %s.%s"),
+						*Definition.Name, *EventDef.EventClass, *PropPair.Key));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Trigger event property '%s.%s' not found"), *EventDef.EventClass, *PropPair.Key));
 				}
 
 				// Handle different property types
@@ -21448,8 +21645,11 @@ FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivitySc
 
 		if (!GoalClass)
 		{
-			LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve goal class: %s - behavior will need manual setup"), *Behavior.GoalClass));
-			continue;
+			// v4.23 FAIL-FAST: Manifest references goal class that cannot be resolved
+			LogGeneration(FString::Printf(TEXT("[E_SCHEDULE_GOALCLASS_NOT_FOUND] %s | Could not resolve goal class: %s"),
+				*Definition.Name, *Behavior.GoalClass));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("ActivitySchedule goal class '%s' not found"), *Behavior.GoalClass));
 		}
 
 		// Create instanced subobject with Schedule as outer
@@ -21549,8 +21749,11 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 
 	if (!ParentClass)
 	{
-		LogGeneration(FString::Printf(TEXT("  [WARNING] Could not find parent class %s, using UNPCGoalItem"), *ParentClassName));
-		ParentClass = LoadClass<UObject>(nullptr, TEXT("/Script/NarrativeArsenal.NPCGoalItem"));
+		// v4.23 FAIL-FAST: Manifest references parent class that cannot be found
+		LogGeneration(FString::Printf(TEXT("[E_GOALITEM_PARENTCLASS_NOT_FOUND] %s | Could not find parent class: %s"),
+			*Definition.Name, *ParentClassName));
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("GoalItem parent class '%s' not found"), *ParentClassName));
 	}
 
 	if (!ParentClass)
@@ -21795,7 +21998,11 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 			}
 			else
 			{
-				LogGeneration(FString::Printf(TEXT("  [WARNING] Could not resolve dialogue class: %s"), *Definition.Dialogue));
+				// v4.23 FAIL-FAST: Manifest references dialogue class that cannot be resolved
+				LogGeneration(FString::Printf(TEXT("[E_QUEST_DIALOGUE_NOT_FOUND] %s | Could not resolve dialogue class: %s"),
+					*Definition.Name, *Definition.Dialogue));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Quest dialogue class '%s' not found"), *Definition.Dialogue));
 			}
 		}
 	}
@@ -21936,13 +22143,21 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("    [WARNING] Could not load requirement class: %s"), *ReqDef.Type));
+					// v4.23 FAIL-FAST: Manifest references requirement class that cannot be loaded
+					LogGeneration(FString::Printf(TEXT("[E_QUEST_REQUIREMENT_CLASS_NOT_FOUND] %s | Could not load requirement class: %s"),
+						*Definition.Name, *ReqDef.Type));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Quest requirement class '%s' not found"), *ReqDef.Type));
 				}
 			}
 		}
 		else
 		{
-			LogGeneration(TEXT("    [WARNING] Could not find QuestRequirements array property"));
+			// v4.23 FAIL-FAST: Quest requirements specified but array property not found
+			LogGeneration(FString::Printf(TEXT("[E_QUEST_REQUIREMENTS_PROPERTY_NOT_FOUND] %s | Could not find QuestRequirements array property"),
+				*Definition.Name));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				TEXT("Quest requirements specified but QuestRequirements array property not found"));
 		}
 	}
 
@@ -22031,8 +22246,11 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				UClass* TaskClass = ResolveQuestTaskClass(TaskDef.TaskClass);
 				if (!TaskClass)
 				{
-					LogGeneration(FString::Printf(TEXT("    [WARNING] Could not resolve task class: %s"), *TaskDef.TaskClass));
-					continue;
+					// v4.23 FAIL-FAST: Manifest references task class that cannot be resolved
+					LogGeneration(FString::Printf(TEXT("[E_QUEST_TASK_CLASS_NOT_FOUND] %s | Could not resolve task class: %s"),
+						*Definition.Name, *TaskDef.TaskClass));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Quest task class '%s' not found"), *TaskDef.TaskClass));
 				}
 
 				UNarrativeTask* Task = NewObject<UNarrativeTask>(Branch, TaskClass, NAME_None, RF_Public | RF_Transactional);
@@ -22084,7 +22302,10 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("    [WARNING] Destination state not found: %s"), *BranchDef.DestinationState));
+					// v4.23 FAIL-FAST: S47 - Manifest references destination state that doesn't exist
+					LogGeneration(FString::Printf(TEXT("[E_QUEST_DESTSTATE_NOT_FOUND] %s | Destination state not found: %s"), *Definition.Name, *BranchDef.DestinationState));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Quest destination state '%s' not found"), *BranchDef.DestinationState));
 				}
 			}
 
@@ -22117,10 +22338,14 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 		}
 	}
 
-	// v3.9.6: Log questgiver for manual setup
+	// v4.23 FAIL-FAST: Questgiver field specified but UQuest has no Questgiver property
+	// The questgiver pattern in NP is: NPC.dialogue → Dialogue (start_quest event) → Quest begins
 	if (!Definition.Questgiver.IsEmpty())
 	{
-		LogGeneration(FString::Printf(TEXT("  Questgiver (manual setup): %s"), *Definition.Questgiver));
+		LogGeneration(FString::Printf(TEXT("[E_QUESTGIVER_NOT_AUTOMATABLE] %s | Questgiver field specified but UQuest has no property | Questgiver: %s"),
+			*Definition.Name, *Definition.Questgiver));
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Questgiver '%s' specified but UQuest has no Questgiver property - use NPC dialogue with start_quest event instead"), *Definition.Questgiver));
 	}
 
 	// v3.9.6/v3.9.11: Add reward events to success state using Narrative Pro's built-in events
@@ -22184,7 +22409,11 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARN] Could not load NE_GiveXP class - XP reward requires manual setup")));
+					// v4.23 FAIL-FAST: XP reward specified but event class not found
+					LogGeneration(FString::Printf(TEXT("[E_QUEST_XPREWARD_CLASS_NOT_FOUND] %s | Could not load NE_GiveXP class"),
+						*Definition.Name));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("Quest XP reward specified but NE_GiveXP class not found"));
 				}
 			}
 
@@ -22219,7 +22448,11 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARN] Could not load BPE_AddCurrency class - Currency reward requires manual setup")));
+					// v4.23 FAIL-FAST: Currency reward specified but event class not found
+					LogGeneration(FString::Printf(TEXT("[E_QUEST_CURRENCYREWARD_CLASS_NOT_FOUND] %s | Could not load BPE_AddCurrency class"),
+						*Definition.Name));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("Quest currency reward specified but BPE_AddCurrency class not found"));
 				}
 			}
 
@@ -22284,7 +22517,11 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				}
 				else
 				{
-					LogGeneration(FString::Printf(TEXT("  [WARN] Could not load BPE_AddItemToInventory class - Item reward requires manual setup")));
+					// v4.23 FAIL-FAST: Item reward specified but event class not found
+					LogGeneration(FString::Printf(TEXT("[E_QUEST_ITEMREWARD_CLASS_NOT_FOUND] %s | Could not load BPE_AddItemToInventory class | Item: %s"),
+						*Definition.Name, *ItemName));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Quest item reward specified but BPE_AddItemToInventory class not found (item: %s)"), *ItemName));
 				}
 			}
 		}
@@ -22343,7 +22580,10 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 	}
 	else
 	{
-		LogGeneration(TEXT("  [WARN] Quest has no valid start state"));
+		// v4.23 FAIL-FAST: S48 - R3 structural invalidity - quest state machine requires start state
+		LogGeneration(FString::Printf(TEXT("[E_QUEST_NO_START_STATE] %s | Quest has no valid start state"), *Definition.Name));
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("Quest has no valid start state"));
 	}
 
 	// Verify states and collect metrics
@@ -22352,8 +22592,10 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 		// Check for duplicate state IDs
 		if (SeenStateIds.Contains(StateDef.Id))
 		{
-			DuplicateStateIds++;
-			LogGeneration(FString::Printf(TEXT("  [WARN] Duplicate state ID: %s"), *StateDef.Id));
+			// v4.23 FAIL-FAST: S49 - R3 structural invalidity - duplicate state IDs cause nondeterministic behavior
+			LogGeneration(FString::Printf(TEXT("[E_QUEST_DUPLICATE_STATE] %s | Duplicate state ID: %s"), *Definition.Name, *StateDef.Id));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Duplicate state ID '%s'"), *StateDef.Id));
 		}
 		else
 		{
@@ -22370,8 +22612,10 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 			{
 				if (SeenBranchIds.Contains(BranchDef.Id))
 				{
-					DuplicateBranchIds++;
-					LogGeneration(FString::Printf(TEXT("  [WARN] Duplicate branch ID: %s"), *BranchDef.Id));
+					// v4.23 FAIL-FAST: S50 - R3 structural invalidity - duplicate branch IDs cause nondeterministic behavior
+					LogGeneration(FString::Printf(TEXT("[E_QUEST_DUPLICATE_BRANCH] %s | Duplicate branch ID: %s"), *Definition.Name, *BranchDef.Id));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						FString::Printf(TEXT("Duplicate branch ID '%s'"), *BranchDef.Id));
 				}
 				else
 				{
@@ -22508,10 +22752,10 @@ FGenerationResult FPOIPlacementGenerator::Generate(
 	POI->POITag = FGameplayTag::RequestGameplayTag(FName(*Definition.POITag), false);
 	if (!POI->POITag.IsValid())
 	{
-		// Tag doesn't exist yet - log warning but continue
-		LogGeneration(FString::Printf(TEXT("[WARN] POI tag not registered: %s (register via tags: section)"), *Definition.POITag));
-		// Try to set it anyway - it may get registered later
-		POI->POITag = FGameplayTag::RequestGameplayTag(FName(*Definition.POITag), true);
+		// v4.23 FAIL-FAST: S51 - R3 structural invalidity - POI tag must be registered in DefaultGameplayTags.ini
+		LogGeneration(FString::Printf(TEXT("[E_POI_TAG_NOT_REGISTERED] POI tag not registered: %s (must be in tags: section)"), *Definition.POITag));
+		return FGenerationResult(Definition.POITag, EGenerationStatus::Failed,
+			FString::Printf(TEXT("POI tag '%s' not registered in GameplayTags"), *Definition.POITag));
 	}
 
 	POI->POIDisplayName = FText::FromString(Definition.DisplayName);
@@ -22528,7 +22772,11 @@ FGenerationResult FPOIPlacementGenerator::Generate(
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("[WARN] Failed to load POI icon: %s"), *Definition.MapIcon));
+			// v4.23 FAIL-FAST: Manifest references POI icon that cannot be loaded
+			LogGeneration(FString::Printf(TEXT("[E_POI_ICON_NOT_FOUND] %s | Failed to load POI icon: %s"),
+				*Definition.POITag, *Definition.MapIcon));
+			return FGenerationResult(Definition.POITag, EGenerationStatus::Failed,
+				FString::Printf(TEXT("POI icon '%s' not found"), *Definition.MapIcon));
 		}
 	}
 
@@ -22609,7 +22857,14 @@ FGenerationResult FNPCSpawnerPlacementGenerator::Generate(
 	FVector SpawnLocation = Definition.Location;
 	if (!Definition.NearPOI.IsEmpty())
 	{
-		SpawnLocation = ResolvePOILocation(World, Definition.NearPOI, PlacedPOIs) + Definition.POIOffset;
+		FVector POILocation = ResolvePOILocation(World, Definition.NearPOI, PlacedPOIs);
+		// v4.23 FAIL-FAST: Check for error marker from ResolvePOILocation
+		if (POILocation.X == -FLT_MAX && POILocation.Y == -FLT_MAX && POILocation.Z == -FLT_MAX)
+		{
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("NearPOI '%s' not found - NPC spawner location cannot be resolved"), *Definition.NearPOI));
+		}
+		SpawnLocation = POILocation + Definition.POIOffset;
 	}
 
 	// Spawn the NPC spawner
@@ -22668,13 +22923,22 @@ FGenerationResult FNPCSpawnerPlacementGenerator::Generate(
 			SpawnComp->SetRelativeRotation(NPCEntry.RelativeRotation);
 
 			// Configure the component
-			ConfigureSpawnComponent(SpawnComp, NPCEntry);
+			FString ConfigError;
+			if (!ConfigureSpawnComponent(SpawnComp, NPCEntry, ConfigError))
+			{
+				// v4.23 FAIL-FAST: Configuration failed (S27/S28)
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed, ConfigError);
+			}
 
 			LogGeneration(FString::Printf(TEXT("  Added NPC spawn component: %s"), *NPCEntry.NPCDefinition));
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("[WARN] Failed to create NPC spawn component for: %s"), *NPCEntry.NPCDefinition));
+			// v4.23 FAIL-FAST: Failed to create NPC spawn component
+			LogGeneration(FString::Printf(TEXT("[E_NPCSPAWNER_COMPONENT_CREATION_FAILED] %s | Failed to create NPC spawn component for: %s"),
+				*Definition.Name, *NPCEntry.NPCDefinition));
+			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Failed to create NPC spawn component for '%s'"), *NPCEntry.NPCDefinition));
 		}
 	}
 #endif
@@ -22710,8 +22974,10 @@ FVector FNPCSpawnerPlacementGenerator::ResolvePOILocation(
 		return ExistingPOI->GetActorLocation();
 	}
 
-	LogGeneration(FString::Printf(TEXT("[WARN] Could not resolve POI location: %s, using origin"), *POITag));
-	return FVector::ZeroVector;
+	// v4.23 FAIL-FAST: Manifest references POI that doesn't exist
+	// Return special marker FVector(-FLT_MAX,-FLT_MAX,-FLT_MAX) to signal failure to caller
+	LogGeneration(FString::Printf(TEXT("[E_POI_LOCATION_NOT_FOUND] Could not resolve POI location: %s"), *POITag));
+	return FVector(-FLT_MAX, -FLT_MAX, -FLT_MAX); // Error marker
 }
 
 ANPCSpawner* FNPCSpawnerPlacementGenerator::FindExistingSpawner(UWorld* World, const FString& SpawnerName)
@@ -22730,11 +22996,16 @@ ANPCSpawner* FNPCSpawnerPlacementGenerator::FindExistingSpawner(UWorld* World, c
 	return nullptr;
 }
 
-void FNPCSpawnerPlacementGenerator::ConfigureSpawnComponent(
+bool FNPCSpawnerPlacementGenerator::ConfigureSpawnComponent(
 	UNPCSpawnComponent* Component,
-	const FManifestNPCSpawnEntry& Entry)
+	const FManifestNPCSpawnEntry& Entry,
+	FString& OutErrorMessage)
 {
-	if (!Component) return;
+	if (!Component)
+	{
+		OutErrorMessage = TEXT("Component is null");
+		return false;
+	}
 
 	// Load NPC Definition
 	TArray<FString> NPCDefSearchPaths;
@@ -22755,7 +23026,10 @@ void FNPCSpawnerPlacementGenerator::ConfigureSpawnComponent(
 	}
 	else
 	{
-		LogGeneration(FString::Printf(TEXT("[WARN] Could not load NPCDefinition: %s"), *Entry.NPCDefinition));
+		// v4.23 FAIL-FAST: S27 - Manifest references NPCDefinition that cannot be loaded
+		LogGeneration(FString::Printf(TEXT("[E_NPCSPAWNER_NPCDEFINITION_NOT_FOUND] Could not load NPCDefinition: %s"), *Entry.NPCDefinition));
+		OutErrorMessage = FString::Printf(TEXT("NPCDefinition '%s' not found"), *Entry.NPCDefinition);
+		return false;
 	}
 
 	// Set spawn component properties
@@ -22830,7 +23104,12 @@ void FNPCSpawnerPlacementGenerator::ConfigureSpawnComponent(
 		}
 		else
 		{
-			LogGeneration(FString::Printf(TEXT("[WARN] Could not load goal class: %s"), *Entry.OptionalGoal));
+			// v4.23 FAIL-FAST: S28 - Manifest references OptionalGoal that cannot be loaded
+			LogGeneration(FString::Printf(TEXT("[E_NPCSPAWNER_GOAL_NOT_FOUND] Could not load goal class: %s"), *Entry.OptionalGoal));
+			OutErrorMessage = FString::Printf(TEXT("Goal class '%s' not found"), *Entry.OptionalGoal);
+			return false;
 		}
 	}
+
+	return true;
 }

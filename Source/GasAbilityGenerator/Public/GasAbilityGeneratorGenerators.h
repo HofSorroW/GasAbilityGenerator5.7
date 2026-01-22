@@ -1030,5 +1030,5 @@ public:
 private:
 	static FVector ResolvePOILocation(UWorld* World, const FString& POITag, const TMap<FString, class APOIActor*>& PlacedPOIs);
 	static class ANPCSpawner* FindExistingSpawner(UWorld* World, const FString& SpawnerName);
-	static void ConfigureSpawnComponent(class UNPCSpawnComponent* Component, const FManifestNPCSpawnEntry& Entry);
+	static bool ConfigureSpawnComponent(class UNPCSpawnComponent* Component, const FManifestNPCSpawnEntry& Entry, FString& OutErrorMessage);
 };

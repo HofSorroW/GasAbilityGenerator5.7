@@ -1175,8 +1175,9 @@ FString FDialogueTokenRegistry::SerializeEvent(UObject* Event) const
 	const FDialogueTokenSpec* Spec = FindByClass(Event->GetClass());
 	if (!Spec)
 	{
-		// Unknown event - return UNSUPPORTED
-		return FString::Printf(TEXT("UNSUPPORTED(%s)"), *Event->GetClass()->GetName());
+		// v4.23 FAIL-FAST: T1 - Manifest references event class not in token registry
+		UE_LOG(LogTemp, Error, TEXT("[E_TOKEN_EVENT_UNSUPPORTED] SerializeEvent: Event class '%s' not registered in token registry"), *Event->GetClass()->GetName());
+		return FString(); // Return empty to signal failure to caller
 	}
 
 	// Build token string
@@ -1531,7 +1532,8 @@ bool FDialogueTokenRegistry::SetPropertyFromParam(UObject* Object, const FDialog
 		}
 	}
 
-	OutError = FString::Printf(TEXT("Unsupported property type for '%s'"), *ParamDef.UEPropertyName.ToString());
+	// v4.23 FAIL-FAST: T2 - Property type not supported by token registry
+	OutError = FString::Printf(TEXT("[E_TOKEN_PROPERTY_UNSUPPORTED] Unsupported property type for '%s'"), *ParamDef.UEPropertyName.ToString());
 	return false;
 }
 
