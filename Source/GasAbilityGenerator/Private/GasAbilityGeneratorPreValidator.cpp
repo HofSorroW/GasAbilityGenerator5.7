@@ -191,7 +191,7 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 	// 3. Try with /Script/CoreUObject prefix
 	if (!FoundClass)
 	{
-		FString CorePath = FString::Printf(TEXT("/Script/CoreUObject.%s"), *CorePath);
+		FString CorePath = FString::Printf(TEXT("/Script/CoreUObject.%s"), *ClassName);
 		FoundClass = FindObject<UClass>(nullptr, *CorePath);
 	}
 
@@ -209,7 +209,35 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 		FoundClass = FindObject<UClass>(nullptr, *GASPath);
 	}
 
-	// 6. Try with U prefix if not present
+	// 6. Try with /Script/GameplayTags prefix (v4.24.1)
+	if (!FoundClass)
+	{
+		FString TagsPath = FString::Printf(TEXT("/Script/GameplayTags.%s"), *ClassName);
+		FoundClass = FindObject<UClass>(nullptr, *TagsPath);
+	}
+
+	// 7. Try with /Script/Niagara prefix (v4.24.1)
+	if (!FoundClass)
+	{
+		FString NiagaraPath = FString::Printf(TEXT("/Script/Niagara.%s"), *ClassName);
+		FoundClass = FindObject<UClass>(nullptr, *NiagaraPath);
+	}
+
+	// 8. Try with /Script/UMG prefix (v4.24.1)
+	if (!FoundClass)
+	{
+		FString UMGPath = FString::Printf(TEXT("/Script/UMG.%s"), *ClassName);
+		FoundClass = FindObject<UClass>(nullptr, *UMGPath);
+	}
+
+	// 9. Try with /Script/AIModule prefix (v4.24.1)
+	if (!FoundClass)
+	{
+		FString AIPath = FString::Printf(TEXT("/Script/AIModule.%s"), *ClassName);
+		FoundClass = FindObject<UClass>(nullptr, *AIPath);
+	}
+
+	// 10. Try with U prefix if not present
 	if (!FoundClass && !ClassName.StartsWith(TEXT("U")) && !ClassName.StartsWith(TEXT("A")))
 	{
 		FString WithU = FString::Printf(TEXT("U%s"), *ClassName);
@@ -221,10 +249,26 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 		}
 	}
 
-	// 7. Try loading the class
+	// 11. Try loading the class
 	if (!FoundClass)
 	{
 		FoundClass = LoadClass<UObject>(nullptr, *ClassName);
+	}
+
+	// v4.24.1: Diagnostic logging for failed resolution
+	if (!FoundClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PRE-VAL] Class resolution failed for '%s'. Attempted paths:"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - %s (as-is)"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/Engine.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/CoreUObject.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/NarrativeArsenal.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/GameplayAbilities.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/GameplayTags.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/Niagara.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/UMG.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/AIModule.%s"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - LoadClass<%s>"), *ClassName);
 	}
 
 	// Cache result (even if nullptr)
