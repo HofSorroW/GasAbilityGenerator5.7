@@ -291,3 +291,27 @@ CustomEvent (no params) → GetNumericAttribute(ASC, Attribute) → Use value
 ### Dependencies
 - `GameplayAbilitiesEditor` module (already added in v4.15)
 - `UK2Node_LatentAbilityCall` for AbilityTask node creation
+
+### Implementation Lessons Learned (v4.21.2)
+
+Critical implementation details discovered during core delegate binding fixes:
+
+**1. UK2Node_Self Pin Name**
+- `UK2Node_Self` uses `PN_Self` for its output pin, NOT `PN_ReturnValue`
+- Source: `K2Node_Self.cpp:59` — `CreatePin(..., UEdGraphSchema_K2::PN_Self)`
+- Symptom if wrong: `FindPin(PN_ReturnValue)` returns null, Self pin wiring silently skipped
+
+**2. Pin Type Propagation**
+- `MakeLinkTo()` does NOT automatically trigger `NotifyPinConnectionListChanged()`
+- For `UK2Node_DynamicCast`, must call `CastNode->NotifyPinConnectionListChanged(CastSourcePin)` after wiring
+- Without this, compiler validation fails with "Object type undetermined" because Cast node doesn't resolve connected pin types
+
+**3. Exec Reachability for Cast Nodes**
+- Impure nodes (like `UK2Node_DynamicCast`) must be in exec flow or `PruneIsolatedNodes()` removes them
+- For delegate bindings with separate ActivateAbility/EndAbility paths, create SEPARATE Cast node instances
+- Each Cast node must be wired into its respective exec chain before AddDelegate/RemoveDelegate
+
+**4. ASC Resolution Function**
+- For abilities, use `UGameplayAbility::GetAbilitySystemComponentFromActorInfo()` (member function, needs Self pin)
+- NOT `UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor)` (static, needs Actor input)
+- The member function is simpler as it doesn't require resolving an Actor reference first
