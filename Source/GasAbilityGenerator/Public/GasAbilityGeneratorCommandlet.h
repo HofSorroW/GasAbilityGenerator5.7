@@ -1,5 +1,6 @@
 // GasAbilityGeneratorCommandlet.h
 // Commandlet for automated asset generation from command line
+// v4.25: Dependency ordering with cascade skip logic
 
 #pragma once
 
@@ -11,6 +12,7 @@
 struct FManifestData;
 struct FGenerationResult;
 struct FGenerationSummary;
+class FDependencyGraph;
 
 /**
  * v2.6.7: Deferred asset info for retry mechanism
@@ -95,4 +97,15 @@ private:
 	void GenerateLevelActors(const FManifestData& ManifestData, UWorld* TargetWorld);
 	void SaveWorldPackage(UWorld* World);
 	UWorld* LoadedWorld = nullptr;
+
+	// v4.25: Dependency ordering and cascade skip
+	void BuildDependencyGraph(const FManifestData& ManifestData);
+	bool CheckUpstreamFailure(const FString& AssetName, FGenerationResult& OutCascadeResult);
+	void RegisterFailure(const FString& AssetName, const FString& ErrorCode);
+
+	TMap<FString, FString> FailedAssets;     // AssetName -> ErrorCode for cascade lookup
+	TSet<FString> CascadeRoots;              // Unique root failures
+	TMap<FString, TArray<FString>> AssetDependencies;  // AssetName -> list of its dependencies
+	FDependencyGraph* DependencyGraph = nullptr;  // Built per-run, not persisted
+	static constexpr int32 MaxCascadeDepth = 16;  // Cap per T2 tighten-up
 };

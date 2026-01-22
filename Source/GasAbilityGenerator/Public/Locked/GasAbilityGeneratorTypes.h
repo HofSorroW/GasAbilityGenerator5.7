@@ -1,5 +1,6 @@
-// GasAbilityGenerator v4.10
+// GasAbilityGenerator v4.25
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.25: Dependency Ordering with Cascade Skip - EGenerationStatus::SkippedCascaded, cascade tracking fields
 // v4.10: Widget Property Enhancement - dotted properties, struct types, enums, machine-readable warnings
 //        FGenerationResult.Warnings field with pipe-delimited format (CODE | ContextPath | Message | SuggestedFix)
 // v4.7: Machine-readable report system - UGenerationReport, FGenerationReportItem, FGenerationError
@@ -20,10 +21,11 @@
  */
 enum class EGenerationStatus : uint8
 {
-	New,      // Asset created successfully
-	Skipped,  // Asset already exists (not overwritten)
-	Failed,   // Generation error occurred
-	Deferred  // v2.6.7: Deferred due to missing dependency (will retry)
+	New,            // Asset created successfully
+	Skipped,        // Asset already exists (not overwritten)
+	Failed,         // Generation error occurred
+	Deferred,       // v2.6.7: Deferred due to missing dependency (will retry)
+	SkippedCascaded // v4.25: Skipped due to upstream failure (not counted as failure)
 };
 
 /**
@@ -47,6 +49,12 @@ struct FGenerationResult
 
 	// v4.11: Headless policy tracking for RESULT_HEADLESS_SAVED footer
 	bool bHeadlessSaved = false;    // True if saved under headless escape hatch (requires editor verification)
+
+	// v4.25: Cascade skip tracking for dependency ordering
+	FString RootFailureId;          // AssetName of the root failure that caused this cascade
+	FString RootReasonCode;         // Error code from root failure (e.g., "E_CLASS_NOT_FOUND")
+	int32 CascadeChainDepth = 0;    // Distance from root failure (0 = direct dependency)
+	FString CascadeChainPath;       // Full path: "Root→A→B→This" for debugging
 
 	// v4.10: Property warnings/errors emitted during generation (pipe-delimited: CODE | ContextPath | Message | SuggestedFix)
 	TArray<FString> Warnings;
@@ -136,6 +144,8 @@ struct FGenerationSummary
 	int32 FailedCount = 0;
 	int32 DeferredCount = 0;  // v2.6.7: Track deferred assets
 	int32 HeadlessSavedCount = 0;  // v4.11: Track assets saved under headless escape hatch
+	int32 SkippedCascadedCount = 0;  // v4.25: Track cascade-skipped assets
+	int32 CascadeRootFailures = 0;   // v4.25: Number of unique root failures causing cascades
 
 	void AddResult(const FGenerationResult& Result)
 	{
@@ -155,6 +165,9 @@ struct FGenerationSummary
 		case EGenerationStatus::Deferred:
 			DeferredCount++;
 			break;
+		case EGenerationStatus::SkippedCascaded:
+			SkippedCascadedCount++;
+			break;
 		}
 
 		// v4.11: Count headless saves (subset of New that require editor verification)
@@ -164,7 +177,7 @@ struct FGenerationSummary
 		}
 	}
 
-	int32 GetTotal() const { return NewCount + SkippedCount + FailedCount + DeferredCount; }
+	int32 GetTotal() const { return NewCount + SkippedCount + FailedCount + DeferredCount + SkippedCascadedCount; }
 
 	// v2.6.7: Get all deferred results that can be retried
 	TArray<FGenerationResult> GetDeferredResults() const
@@ -5786,4 +5799,163 @@ struct FManifestData
 	{
 		return Tags.Num();
 	}
+};
+
+/**
+ * v4.25: Dependency graph for topological ordering of asset generation
+ * Uses Kahn's algorithm with lexical tie-breaking for deterministic order.
+ * Only manifest-defined assets are nodes; external references handled by pre-validation.
+ */
+class FDependencyGraph
+{
+public:
+	/**
+	 * Add a node to the graph
+	 * @param AssetName Unique identifier for the asset
+	 */
+	void AddNode(const FString& AssetName)
+	{
+		if (!NodeToIndex.Contains(AssetName))
+		{
+			int32 Index = Nodes.Num();
+			Nodes.Add(AssetName);
+			NodeToIndex.Add(AssetName, Index);
+			AdjacencyList.AddDefaulted();
+			InDegree.Add(0);
+		}
+	}
+
+	/**
+	 * Add a directed edge (dependency) from source to target
+	 * @param FromAsset Asset that depends on target (generated after)
+	 * @param ToAsset Asset that is depended upon (generated first)
+	 */
+	void AddEdge(const FString& FromAsset, const FString& ToAsset)
+	{
+		// Only add edge if both nodes exist in graph
+		if (!NodeToIndex.Contains(FromAsset) || !NodeToIndex.Contains(ToAsset))
+		{
+			return;
+		}
+
+		int32 FromIndex = NodeToIndex[FromAsset];
+		int32 ToIndex = NodeToIndex[ToAsset];
+
+		// Edge points from dependency to dependent (ToAsset must be generated before FromAsset)
+		// So we add edge ToIndex -> FromIndex
+		AdjacencyList[ToIndex].AddUnique(FromIndex);
+		InDegree[FromIndex]++;
+	}
+
+	/**
+	 * Perform topological sort using Kahn's algorithm with lexical tie-breaking
+	 * @param OutOrder Resulting generation order (dependencies first)
+	 * @return true if sort succeeded, false if cycle detected (should not happen after Phase 4.1.7)
+	 */
+	bool TopologicalSort(TArray<FString>& OutOrder) const
+	{
+		OutOrder.Reset();
+
+		if (Nodes.Num() == 0)
+		{
+			return true;
+		}
+
+		// Working copy of in-degrees
+		TArray<int32> WorkingInDegree = InDegree;
+
+		// Priority queue: nodes with zero in-degree, sorted lexically
+		TArray<FString> ReadyQueue;
+		for (int32 i = 0; i < Nodes.Num(); i++)
+		{
+			if (WorkingInDegree[i] == 0)
+			{
+				ReadyQueue.Add(Nodes[i]);
+			}
+		}
+
+		// Sort lexically for deterministic selection
+		ReadyQueue.Sort();
+
+		while (ReadyQueue.Num() > 0)
+		{
+			// Pop lexically smallest (deterministic tie-breaking)
+			FString Current = ReadyQueue[0];
+			ReadyQueue.RemoveAt(0);
+			OutOrder.Add(Current);
+
+			int32 CurrentIndex = NodeToIndex[Current];
+
+			// Reduce in-degree of dependents
+			for (int32 NeighborIndex : AdjacencyList[CurrentIndex])
+			{
+				WorkingInDegree[NeighborIndex]--;
+				if (WorkingInDegree[NeighborIndex] == 0)
+				{
+					// Insert maintaining sorted order
+					FString NeighborName = Nodes[NeighborIndex];
+					int32 InsertIndex = 0;
+					while (InsertIndex < ReadyQueue.Num() && ReadyQueue[InsertIndex] < NeighborName)
+					{
+						InsertIndex++;
+					}
+					ReadyQueue.Insert(NeighborName, InsertIndex);
+				}
+			}
+		}
+
+		// If not all nodes processed, cycle exists
+		return OutOrder.Num() == Nodes.Num();
+	}
+
+	/**
+	 * Get all direct dependents of an asset (assets that depend on it)
+	 * @param AssetName The asset to query
+	 * @return Array of asset names that directly depend on this asset
+	 */
+	TArray<FString> GetDependents(const FString& AssetName) const
+	{
+		TArray<FString> Result;
+		if (const int32* IndexPtr = NodeToIndex.Find(AssetName))
+		{
+			for (int32 NeighborIndex : AdjacencyList[*IndexPtr])
+			{
+				Result.Add(Nodes[NeighborIndex]);
+			}
+		}
+		return Result;
+	}
+
+	/**
+	 * Check if the graph contains a node
+	 */
+	bool ContainsNode(const FString& AssetName) const
+	{
+		return NodeToIndex.Contains(AssetName);
+	}
+
+	/**
+	 * Get total node count
+	 */
+	int32 GetNodeCount() const
+	{
+		return Nodes.Num();
+	}
+
+	/**
+	 * Clear the graph
+	 */
+	void Reset()
+	{
+		Nodes.Reset();
+		NodeToIndex.Reset();
+		AdjacencyList.Reset();
+		InDegree.Reset();
+	}
+
+private:
+	TArray<FString> Nodes;                    // Index -> AssetName
+	TMap<FString, int32> NodeToIndex;         // AssetName -> Index
+	TArray<TArray<int32>> AdjacencyList;      // Index -> list of dependent indices
+	TArray<int32> InDegree;                   // Index -> number of dependencies
 };

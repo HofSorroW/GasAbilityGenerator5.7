@@ -835,6 +835,8 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	FMaterialGenerator::ClearGeneratedMaterialsCache();
 	// v4.14: Clear session cache for BT blackboard lookup
 	FBlackboardGenerator::ClearGeneratedBlackboardsCache();
+	// v4.25: Build dependency graph for cascade skip logic
+	BuildDependencyGraph(ManifestData);
 
 	// v2.8.4: Helper lambda to track processed assets with duplicate detection
 	auto TrackProcessedAsset = [this](const FString& AssetName) {
@@ -846,6 +848,28 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		else
 		{
 			ProcessedAssets.Add(AssetName);
+		}
+	};
+
+	// v4.25: Helper lambda for cascade check and logging
+	auto LogResultStatus = [this](const FGenerationResult& Result) {
+		const TCHAR* StatusStr = TEXT("FAIL");
+		switch (Result.Status)
+		{
+		case EGenerationStatus::New: StatusStr = TEXT("NEW"); break;
+		case EGenerationStatus::Skipped: StatusStr = TEXT("SKIP"); break;
+		case EGenerationStatus::Failed: StatusStr = TEXT("FAIL"); break;
+		case EGenerationStatus::Deferred: StatusStr = TEXT("DEFER"); break;
+		case EGenerationStatus::SkippedCascaded: StatusStr = TEXT("CASCADE"); break;
+		}
+		LogMessage(FString::Printf(TEXT("[%s] %s"), StatusStr, *Result.AssetName));
+		if (Result.Status == EGenerationStatus::Failed)
+		{
+			LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+		}
+		else if (Result.Status == EGenerationStatus::SkippedCascaded)
+		{
+			LogMessage(FString::Printf(TEXT("  Chain: %s"), *Result.CascadeChainPath));
 		}
 	};
 
@@ -977,9 +1001,28 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	for (int32 i = 0; i < ManifestData.GameplayAbilities.Num(); ++i)
 	{
 		const auto& Definition = ManifestData.GameplayAbilities[i];
+
+		// v4.25: Check for upstream failure before generation
+		FGenerationResult CascadeResult;
+		if (CheckUpstreamFailure(Definition.Name, CascadeResult))
+		{
+			CascadeResult.GeneratorId = TEXT("GameplayAbility");
+			CascadeResult.DetermineCategory();
+			Summary.AddResult(CascadeResult);
+			TrackProcessedAsset(CascadeResult.AssetName);
+			LogResultStatus(CascadeResult);
+			continue;
+		}
+
 		FGenerationResult Result = FGameplayAbilityGenerator::Generate(Definition, ManifestData.ProjectRoot);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
+
+		// v4.25: Register failure for cascade tracking
+		if (Result.Status == EGenerationStatus::Failed)
+		{
+			RegisterFailure(Definition.Name, TEXT("E_GENERATION_FAILED"));
+		}
 
 		// v2.6.7: Handle deferred assets
 		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
@@ -995,14 +1038,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		}
 		else
 		{
-			LogMessage(FString::Printf(TEXT("[%s] %s"),
-				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-				*Result.AssetName));
-			if (Result.Status == EGenerationStatus::Failed)
-			{
-				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
-			}
+			LogResultStatus(Result);
 			if (Result.Status == EGenerationStatus::New)
 			{
 				GeneratedAssets.Add(Definition.Name);
@@ -1592,8 +1628,11 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 
 	FGeneratorBase::ClearActiveManifest();
 
-	// v2.8.4: Compute actual processed count
-	const int32 ActualCount = Summary.NewCount + Summary.SkippedCount + Summary.FailedCount;
+	// v4.25: Count unique cascade roots
+	Summary.CascadeRootFailures = CascadeRoots.Num();
+
+	// v2.8.4: Compute actual processed count (v4.25: include SkippedCascaded)
+	const int32 ActualCount = Summary.NewCount + Summary.SkippedCount + Summary.FailedCount + Summary.SkippedCascadedCount;
 
 	LogMessage(TEXT(""));
 	LogMessage(TEXT("--- Summary ---"));
@@ -1601,17 +1640,25 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	LogMessage(FString::Printf(TEXT("Skipped: %d"), Summary.SkippedCount));
 	LogMessage(FString::Printf(TEXT("Failed: %d"), Summary.FailedCount));
 	LogMessage(FString::Printf(TEXT("Deferred: %d"), Summary.DeferredCount));
+	// v4.25: Cascade skip stats
+	if (Summary.SkippedCascadedCount > 0)
+	{
+		LogMessage(FString::Printf(TEXT("Cascaded: %d (from %d root failures)"),
+			Summary.SkippedCascadedCount, Summary.CascadeRootFailures));
+	}
 	LogMessage(FString::Printf(TEXT("Total: %d"), ActualCount + Summary.DeferredCount));
 
-	// v4.11: Machine-parseable RESULT footer for wrapper reliability
-	// Schema v1: Keys in fixed order, all always present. Deferred = skipped due to missing prerequisite.
-	// Format: RESULT: New=<N> Skipped=<N> Failed=<N> Deferred=<N> Total=<N> Headless=<true/false>
+	// v4.11/v4.25: Machine-parseable RESULT footer for wrapper reliability
+	// Schema v2: Added Cascaded and CascadeRoots fields
+	// Format: RESULT: New=<N> Skipped=<N> Failed=<N> Deferred=<N> Cascaded=<N> CascadeRoots=<N> Total=<N> Headless=<true/false>
 	const bool bIsHeadless = IsRunningCommandlet() && !FApp::CanEverRender();
-	LogMessage(FString::Printf(TEXT("RESULT: New=%d Skipped=%d Failed=%d Deferred=%d Total=%d Headless=%s"),
+	LogMessage(FString::Printf(TEXT("RESULT: New=%d Skipped=%d Failed=%d Deferred=%d Cascaded=%d CascadeRoots=%d Total=%d Headless=%s"),
 		Summary.NewCount,
 		Summary.SkippedCount,
 		Summary.FailedCount,
 		Summary.DeferredCount,
+		Summary.SkippedCascadedCount,
+		Summary.CascadeRootFailures,
 		ActualCount + Summary.DeferredCount,
 		bIsHeadless ? TEXT("true") : TEXT("false")));
 
@@ -2122,4 +2169,171 @@ void UGasAbilityGeneratorCommandlet::SaveWorldPackage(UWorld* World)
 	{
 		LogError(FString::Printf(TEXT("Failed to resolve package filename for: %s"), *Package->GetName()));
 	}
+}
+
+// ============================================================================
+// v4.25: Dependency Ordering with Cascade Skip Logic
+// ============================================================================
+
+void UGasAbilityGeneratorCommandlet::BuildDependencyGraph(const FManifestData& ManifestData)
+{
+	// Reset state
+	delete DependencyGraph;
+	DependencyGraph = new FDependencyGraph();
+	FailedAssets.Reset();
+	CascadeRoots.Reset();
+	AssetDependencies.Reset();
+
+	// Collect all manifest-defined asset names
+	TSet<FString> ManifestAssets;
+	for (const auto& GA : ManifestData.GameplayAbilities) { DependencyGraph->AddNode(GA.Name); ManifestAssets.Add(GA.Name); }
+	for (const auto& GE : ManifestData.GameplayEffects) { DependencyGraph->AddNode(GE.Name); ManifestAssets.Add(GE.Name); }
+	for (const auto& BP : ManifestData.ActorBlueprints) { DependencyGraph->AddNode(BP.Name); ManifestAssets.Add(BP.Name); }
+	for (const auto& WBP : ManifestData.WidgetBlueprints) { DependencyGraph->AddNode(WBP.Name); ManifestAssets.Add(WBP.Name); }
+	for (const auto& DBP : ManifestData.DialogueBlueprints) { DependencyGraph->AddNode(DBP.Name); ManifestAssets.Add(DBP.Name); }
+	for (const auto& BT : ManifestData.BehaviorTrees) { DependencyGraph->AddNode(BT.Name); ManifestAssets.Add(BT.Name); }
+	for (const auto& BB : ManifestData.Blackboards) { DependencyGraph->AddNode(BB.Name); ManifestAssets.Add(BB.Name); }
+	for (const auto& NPC : ManifestData.NPCDefinitions) { DependencyGraph->AddNode(NPC.Name); ManifestAssets.Add(NPC.Name); }
+	for (const auto& CD : ManifestData.CharacterDefinitions) { DependencyGraph->AddNode(CD.Name); ManifestAssets.Add(CD.Name); }
+	for (const auto& AC : ManifestData.AbilityConfigurations) { DependencyGraph->AddNode(AC.Name); ManifestAssets.Add(AC.Name); }
+	for (const auto& ActC : ManifestData.ActivityConfigurations) { DependencyGraph->AddNode(ActC.Name); ManifestAssets.Add(ActC.Name); }
+	for (const auto& Act : ManifestData.Activities) { DependencyGraph->AddNode(Act.Name); ManifestAssets.Add(Act.Name); }
+	for (const auto& EI : ManifestData.EquippableItems) { DependencyGraph->AddNode(EI.Name); ManifestAssets.Add(EI.Name); }
+	for (const auto& NE : ManifestData.NarrativeEvents) { DependencyGraph->AddNode(NE.Name); ManifestAssets.Add(NE.Name); }
+	for (const auto& E : ManifestData.Enumerations) { DependencyGraph->AddNode(E.Name); ManifestAssets.Add(E.Name); }
+
+	// Helper to add edge and track dependency
+	auto TryAddEdge = [&](const FString& From, const FString& To) {
+		if (From.IsEmpty() || To.IsEmpty()) return;
+		// Only track manifest-defined dependencies
+		if (!ManifestAssets.Contains(From) || !ManifestAssets.Contains(To)) return;
+		// Add to graph (for topological sort)
+		DependencyGraph->AddEdge(From, To);
+		// Track in dependency map (for cascade checking)
+		AssetDependencies.FindOrAdd(From).AddUnique(To);
+	};
+
+	// GA → GE (cooldown_effect)
+	// GA → GA (parent_class if manifest-defined)
+	for (const auto& GA : ManifestData.GameplayAbilities)
+	{
+		TryAddEdge(GA.Name, GA.CooldownGameplayEffectClass);
+		TryAddEdge(GA.Name, GA.ParentClass);
+	}
+
+	// BT → BB (blackboard dependency)
+	for (const auto& BT : ManifestData.BehaviorTrees)
+	{
+		TryAddEdge(BT.Name, BT.BlackboardAsset);
+	}
+
+	// NPC → DBP, NPC → AC, etc.
+	for (const auto& NPC : ManifestData.NPCDefinitions)
+	{
+		TryAddEdge(NPC.Name, NPC.Dialogue);
+		TryAddEdge(NPC.Name, NPC.AbilityConfiguration);
+		TryAddEdge(NPC.Name, NPC.ActivityConfiguration);
+	}
+
+	// Activity → BT (behavior tree dependency)
+	for (const auto& Act : ManifestData.Activities)
+	{
+		TryAddEdge(Act.Name, Act.BehaviorTree);
+	}
+
+	LogMessage(FString::Printf(TEXT("[CASCADE] Dependency graph built: %d nodes"), DependencyGraph->GetNodeCount()));
+}
+
+void UGasAbilityGeneratorCommandlet::RegisterFailure(const FString& AssetName, const FString& ErrorCode)
+{
+	if (!FailedAssets.Contains(AssetName))
+	{
+		FailedAssets.Add(AssetName, ErrorCode);
+		CascadeRoots.Add(AssetName);  // All direct failures are potential roots
+	}
+}
+
+bool UGasAbilityGeneratorCommandlet::CheckUpstreamFailure(const FString& AssetName, FGenerationResult& OutCascadeResult)
+{
+	// BFS through dependencies to find failed upstream asset
+	TArray<FString> Queue;
+	TSet<FString> Visited;
+	TMap<FString, FString> Parent;  // For path reconstruction
+
+	// Start with direct dependencies
+	if (const TArray<FString>* DirectDeps = AssetDependencies.Find(AssetName))
+	{
+		for (const FString& Dep : *DirectDeps)
+		{
+			if (!Visited.Contains(Dep))
+			{
+				Queue.Add(Dep);
+				Visited.Add(Dep);
+				Parent.Add(Dep, AssetName);
+			}
+		}
+	}
+
+	while (Queue.Num() > 0)
+	{
+		FString Current = Queue[0];
+		Queue.RemoveAt(0);
+
+		// Check if current is a failed asset
+		if (const FString* ErrorCode = FailedAssets.Find(Current))
+		{
+			// Found upstream failure - build cascade result
+			OutCascadeResult.AssetName = AssetName;
+			OutCascadeResult.Status = EGenerationStatus::SkippedCascaded;
+			OutCascadeResult.RootFailureId = Current;
+			OutCascadeResult.RootReasonCode = *ErrorCode;
+
+			// Build chain path from root to this asset
+			TArray<FString> Path;
+			Path.Add(AssetName);
+			FString PathNode = AssetName;
+			while (Parent.Contains(PathNode))
+			{
+				PathNode = Parent[PathNode];
+				Path.Add(PathNode);
+			}
+			// Path is now: [AssetName, ..., RootFailure] - reverse it
+			Algo::Reverse(Path);
+
+			OutCascadeResult.CascadeChainDepth = Path.Num() - 1;  // Distance from root
+			OutCascadeResult.CascadeChainPath = FString::Join(Path, TEXT("→"));
+
+			// Check depth cap (T2 tighten-up)
+			if (OutCascadeResult.CascadeChainDepth > MaxCascadeDepth)
+			{
+				OutCascadeResult.Message = FString::Printf(
+					TEXT("Cascade chain truncated at depth %d (max %d): %s failed with %s"),
+					OutCascadeResult.CascadeChainDepth, MaxCascadeDepth, *Current, **ErrorCode);
+			}
+			else
+			{
+				OutCascadeResult.Message = FString::Printf(
+					TEXT("Skipped due to upstream failure: %s (%s)"),
+					*Current, **ErrorCode);
+			}
+
+			return true;
+		}
+
+		// Add this node's dependencies to queue (transitive dependencies)
+		if (const TArray<FString>* TransDeps = AssetDependencies.Find(Current))
+		{
+			for (const FString& Dep : *TransDeps)
+			{
+				if (!Visited.Contains(Dep))
+				{
+					Queue.Add(Dep);
+					Visited.Add(Dep);
+					Parent.Add(Dep, Current);
+				}
+			}
+		}
+	}
+
+	return false;
 }
