@@ -401,6 +401,31 @@ If omitted, defaults to `UNarrativeAttributeSetBase`.
 
 **Explicitly Excluded:** Module pre-loading (not required if /Script paths are correct)
 
+### Phase 4.1.2 Audit Record (2026-01-22)
+
+**Issue Identified:** 3 A1 AttributeSet errors for valid `UNarrativeAttributeSetBase` class
+
+**Root Cause Analysis (Claude-GPT Dual Audit):**
+
+| Finding | Description | Impact |
+|---------|-------------|--------|
+| **U/A prefix in /Script paths** | `/Script/NarrativeArsenal.UNarrativeAttributeSetBase` fails | Should be `NarrativeAttributeSetBase` (no prefix) |
+| **UE5 reflection naming** | C++ uses `UClassName`, /Script paths use `ClassName` | Prefix must be stripped for /Script lookups |
+
+**Proof:** NarrativeAttributeSetBase.h declares `class NARRATIVEARSENAL_API UNarrativeAttributeSetBase` but UE5 stores it at `/Script/NarrativeArsenal.NarrativeAttributeSetBase`.
+
+**Resolution (Locked Scope):**
+1. Strip U/A prefix when building /Script module paths
+2. Keep original name for "as-is" attempt and LoadClass fallback
+3. Safety constraints:
+   - Skip if already `/Script/` or `/Game/` qualified
+   - Skip if contains `.` (already module-qualified)
+   - Skip if name is 1 char long
+   - Only strip U and A prefixes (not F, E, etc.)
+4. Update diagnostic logging to show both raw and normalized attempts
+
+**Explicitly Excluded:** Stripping other prefixes (F, E, T, etc.)
+
 ### Evidence Base
 
 This specification is derived from:
@@ -418,11 +443,18 @@ This specification is derived from:
 - Implement blocking logic
 - Implement report format
 
-### Phase 4.1.1: Class Resolution Fix (v4.24.1)
+### Phase 4.1.1: Class Resolution Fix ✓ (v4.24.1)
 - Fix CoreUObject bug (`*CorePath` → `*ClassName`)
 - Add missing /Script paths (GameplayTags, Niagara, UMG, AIModule)
 - Add diagnostic logging for failed resolution
 - Eliminates 77 false negative errors
+
+### Phase 4.1.2: U/A Prefix Normalization (v4.24.2)
+- Strip U/A prefix when building /Script module paths
+- UE5 reflection stores classes without prefix in /Script paths
+- Safety constraints: skip if qualified, skip if contains `.`, skip if 1 char
+- Keep original name for "as-is" and LoadClass fallback
+- Fixes 3 remaining A1 AttributeSet false negatives
 
 ### Phase 4.2: Dependency Ordering
 - Extend dependency graph with external edges
@@ -466,6 +498,7 @@ Phase 4 is complete when:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2026-01-22 | Claude+GPT | Phase 4.1.2 audit findings: U/A prefix normalization scope |
 | 1.1 | 2026-01-22 | Claude+GPT | Phase 4.1.1 audit findings: class resolution fix scope |
 | 1.0 | 2026-01-22 | Claude+GPT | Initial locked specification |
 

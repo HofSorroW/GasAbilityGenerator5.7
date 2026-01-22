@@ -161,6 +161,43 @@ FPreValidationReport FPreValidator::Validate(const FManifestData& Data, const FS
 // Helper Functions
 // ============================================================================
 
+// v4.24.2: Get script-safe class name by stripping U/A prefix
+// UE5 /Script paths use class names WITHOUT the U/A prefix
+// e.g., UNarrativeAttributeSetBase -> /Script/NarrativeArsenal.NarrativeAttributeSetBase
+// Safety: Only strip if second char is uppercase (UE naming convention)
+// e.g., UUserWidget -> UserWidget (strip U), but UserWidget stays UserWidget (don't strip)
+static FString GetScriptClassName(const FString& ClassName)
+{
+	// Safety: skip if already qualified or contains module separator
+	if (ClassName.StartsWith(TEXT("/Script/")) ||
+		ClassName.StartsWith(TEXT("/Game/")) ||
+		ClassName.Contains(TEXT(".")))
+	{
+		return ClassName;
+	}
+
+	// Safety: skip if too short (need at least 2 chars to check convention)
+	if (ClassName.Len() <= 1)
+	{
+		return ClassName;
+	}
+
+	// Only strip U/A prefix if second char is uppercase (UE class naming convention)
+	// UClassName -> ClassName (strip)
+	// AActorName -> ActorName (strip)
+	// UserWidget -> UserWidget (keep - 's' is lowercase)
+	// Actor -> Actor (keep - 'c' is lowercase)
+	const TCHAR SecondChar = ClassName[1];
+	const bool bSecondCharIsUpper = FChar::IsUpper(SecondChar);
+
+	if (bSecondCharIsUpper && (ClassName.StartsWith(TEXT("U")) || ClassName.StartsWith(TEXT("A"))))
+	{
+		return ClassName.RightChop(1);
+	}
+
+	return ClassName;
+}
+
 UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationCache& Cache)
 {
 	if (ClassName.IsEmpty())
@@ -177,63 +214,66 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 
 	UClass* FoundClass = nullptr;
 
+	// v4.24.2: Get normalized class name for /Script paths (strip U/A prefix)
+	const FString ScriptName = GetScriptClassName(ClassName);
+
 	// Try common patterns for class lookup
 	// 1. Try as-is (might be full path)
 	FoundClass = FindObject<UClass>(nullptr, *ClassName);
 
-	// 2. Try with /Script/Engine prefix
+	// 2. Try with /Script/Engine prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString EnginePath = FString::Printf(TEXT("/Script/Engine.%s"), *ClassName);
+		FString EnginePath = FString::Printf(TEXT("/Script/Engine.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *EnginePath);
 	}
 
-	// 3. Try with /Script/CoreUObject prefix
+	// 3. Try with /Script/CoreUObject prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString CorePath = FString::Printf(TEXT("/Script/CoreUObject.%s"), *ClassName);
+		FString CorePath = FString::Printf(TEXT("/Script/CoreUObject.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *CorePath);
 	}
 
-	// 4. Try with /Script/NarrativeArsenal prefix (NarrativePro)
+	// 4. Try with /Script/NarrativeArsenal prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString NPPath = FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ClassName);
+		FString NPPath = FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *NPPath);
 	}
 
-	// 5. Try with /Script/GameplayAbilities prefix
+	// 5. Try with /Script/GameplayAbilities prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString GASPath = FString::Printf(TEXT("/Script/GameplayAbilities.%s"), *ClassName);
+		FString GASPath = FString::Printf(TEXT("/Script/GameplayAbilities.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *GASPath);
 	}
 
-	// 6. Try with /Script/GameplayTags prefix (v4.24.1)
+	// 6. Try with /Script/GameplayTags prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString TagsPath = FString::Printf(TEXT("/Script/GameplayTags.%s"), *ClassName);
+		FString TagsPath = FString::Printf(TEXT("/Script/GameplayTags.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *TagsPath);
 	}
 
-	// 7. Try with /Script/Niagara prefix (v4.24.1)
+	// 7. Try with /Script/Niagara prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString NiagaraPath = FString::Printf(TEXT("/Script/Niagara.%s"), *ClassName);
+		FString NiagaraPath = FString::Printf(TEXT("/Script/Niagara.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *NiagaraPath);
 	}
 
-	// 8. Try with /Script/UMG prefix (v4.24.1)
+	// 8. Try with /Script/UMG prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString UMGPath = FString::Printf(TEXT("/Script/UMG.%s"), *ClassName);
+		FString UMGPath = FString::Printf(TEXT("/Script/UMG.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *UMGPath);
 	}
 
-	// 9. Try with /Script/AIModule prefix (v4.24.1)
+	// 9. Try with /Script/AIModule prefix (v4.24.2: use normalized name)
 	if (!FoundClass)
 	{
-		FString AIPath = FString::Printf(TEXT("/Script/AIModule.%s"), *ClassName);
+		FString AIPath = FString::Printf(TEXT("/Script/AIModule.%s"), *ScriptName);
 		FoundClass = FindObject<UClass>(nullptr, *AIPath);
 	}
 
@@ -255,20 +295,20 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 		FoundClass = LoadClass<UObject>(nullptr, *ClassName);
 	}
 
-	// v4.24.1: Diagnostic logging for failed resolution
+	// v4.24.2: Diagnostic logging for failed resolution (shows both raw and normalized names)
 	if (!FoundClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[PRE-VAL] Class resolution failed for '%s'. Attempted paths:"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("[PRE-VAL] Class resolution failed for '%s' (script name: '%s'). Attempted paths:"), *ClassName, *ScriptName);
 		UE_LOG(LogTemp, Warning, TEXT("  - %s (as-is)"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/Engine.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/CoreUObject.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/NarrativeArsenal.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/GameplayAbilities.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/GameplayTags.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/Niagara.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/UMG.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - /Script/AIModule.%s"), *ClassName);
-		UE_LOG(LogTemp, Warning, TEXT("  - LoadClass<%s>"), *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/Engine.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/CoreUObject.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/NarrativeArsenal.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/GameplayAbilities.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/GameplayTags.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/Niagara.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/UMG.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /Script/AIModule.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - LoadClass<%s> (raw)"), *ClassName);
 	}
 
 	// Cache result (even if nullptr)
