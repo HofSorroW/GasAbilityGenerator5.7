@@ -30,6 +30,10 @@
 // v3.1: Dedicated log category for filtering
 DEFINE_LOG_CATEGORY_STATIC(LogGasAbilityGenerator, Log, All);
 
+// v4.22: Session cache for Blueprint classes created during generation
+// Defined in GasAbilityGeneratorGenerators.cpp, cleared at start of each session
+extern TMap<FString, UClass*> GSessionBlueprintClassCache;
+
 // ============================================================================
 // v4.17: Circular Dependency Detection (Dependency Contract v1)
 // ============================================================================
@@ -280,6 +284,9 @@ UGasAbilityGeneratorCommandlet::UGasAbilityGeneratorCommandlet()
 
 int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 {
+	// v4.22: Clear session cache at start of each generation run
+	GSessionBlueprintClassCache.Empty();
+
 	LogMessage(TEXT("========================================"));
 	LogMessage(TEXT("GasAbilityGenerator Commandlet v3.0"));
 	LogMessage(TEXT("========================================"));

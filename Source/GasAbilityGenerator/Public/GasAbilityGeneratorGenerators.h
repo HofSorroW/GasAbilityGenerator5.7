@@ -278,6 +278,12 @@ protected:
 	 */
 	static void LogGeneration(const FString& Message);
 
+	/**
+	 * v4.22: Get the active manifest for reference checking
+	 * Used to determine if a referenced asset is defined in the manifest (vs external plugin)
+	 */
+	static const FManifestData* GetActiveManifest() { return ActiveManifest; }
+
 private:
 	static const FManifestData* ActiveManifest;
 

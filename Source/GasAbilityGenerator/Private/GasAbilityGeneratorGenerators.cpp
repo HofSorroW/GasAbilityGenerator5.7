@@ -442,6 +442,12 @@ static void StoreDataAssetMetadata(
 // v2.1.8: Global variable to track project root for enum lookups
 static FString GCurrentProjectRoot = TEXT("");
 
+// v4.22: Session cache for Blueprint classes created during this generation session
+// Maps asset name (e.g., "GE_BackstabBonus") to its compiled UClass*
+// This allows TSubclassOf resolution to find Blueprints created earlier in the same session
+// NOTE: NOT static - needs external linkage for commandlet to clear it between sessions
+TMap<FString, UClass*> GSessionBlueprintClassCache;
+
 // v2.5.0: Helper to get project root - auto-detects from project name if not set
 static FString GetProjectRoot()
 {
@@ -2285,6 +2291,10 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to compile Gameplay Effect Blueprint"));
 	}
 
+	// v4.22: Cache the Blueprint class for same-session TSubclassOf resolution
+	GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+	LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+
 	// Get the CDO to configure properties (AFTER compile)
 	UGameplayEffect* Effect = Cast<UGameplayEffect>(Blueprint->GeneratedClass->GetDefaultObject());
 	if (!Effect)
@@ -2844,6 +2854,13 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		Result.GeneratorId = TEXT("GameplayAbility");
 		Result.DetermineCategory();
 		return Result;
+	}
+
+	// v4.22: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
 	}
 
 	// Mark dirty and register
@@ -8032,6 +8049,25 @@ UMaterialExpression* FMaterialFunctionGenerator::CreateExpressionInFunction(UMat
 	{
 		Expression = NewObject<UMaterialExpressionTemporalSobol>(MaterialFunction);
 	}
+	// ========================================================================
+	// v4.22: Vector Operation Expressions (for Material Functions)
+	// ========================================================================
+	else if (TypeLower == TEXT("distance"))
+	{
+		Expression = NewObject<UMaterialExpressionDistance>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("dotproduct") || TypeLower == TEXT("dot"))
+	{
+		Expression = NewObject<UMaterialExpressionDotProduct>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("crossproduct") || TypeLower == TEXT("cross"))
+	{
+		Expression = NewObject<UMaterialExpressionCrossProduct>(MaterialFunction);
+	}
+	else if (TypeLower == TEXT("normalize"))
+	{
+		Expression = NewObject<UMaterialExpressionNormalize>(MaterialFunction);
+	}
 
 	if (Expression)
 	{
@@ -10507,19 +10543,29 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 						UClass* ExpectedBaseClass = Cast<UClass>(ParamPin->PinType.PinSubCategoryObject.Get());
 						FString BaseClassName = ExpectedBaseClass ? ExpectedBaseClass->GetName() : TEXT("UObject");
 
-						// First try to find as a Blueprint generated class in common content paths
-						TArray<FString> SearchPaths;
-						FString ProjectName = FApp::GetProjectName();
-						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Effects/%s"), *ProjectName, *ClassName));
-						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Abilities/%s"), *ProjectName, *ClassName));
-						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/%s"), *ProjectName, *ClassName));
-						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s"), *ClassName));
-						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/%s"), *ClassName));
-
-						// Check if it's a full path already
-						if (ClassName.StartsWith(TEXT("/Game/")))
+						// v4.22: Check session cache FIRST for assets created in this generation session
+						if (UClass** CachedClass = GSessionBlueprintClassCache.Find(ClassName))
 						{
-							SearchPaths.Insert(ClassName, 0);
+							ResolvedClass = *CachedClass;
+							LogGeneration(FString::Printf(TEXT("  Found Blueprint class in session cache: %s"), *ClassName));
+						}
+
+						// If not in cache, try to find as a Blueprint generated class in common content paths
+						TArray<FString> SearchPaths;
+						if (!ResolvedClass)
+						{
+							FString ProjectName = FApp::GetProjectName();
+							SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Effects/%s"), *ProjectName, *ClassName));
+							SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Abilities/%s"), *ProjectName, *ClassName));
+							SearchPaths.Add(FString::Printf(TEXT("/Game/%s/%s"), *ProjectName, *ClassName));
+							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s"), *ClassName));
+							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/%s"), *ClassName));
+
+							// Check if it's a full path already
+							if (ClassName.StartsWith(TEXT("/Game/")))
+							{
+								SearchPaths.Insert(ClassName, 0);
+							}
 						}
 
 						for (const FString& SearchPath : SearchPaths)
@@ -17601,8 +17647,53 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 		}
 	}
 
-	// Find UNPCActivity class
-	UClass* ParentClass = UNPCActivity::StaticClass();
+	// v4.22: Resolve parent class - check for custom Blueprint parent class first
+	UClass* ParentClass = nullptr;
+	if (!Definition.ParentClass.IsEmpty() && Definition.ParentClass != TEXT("NarrativeActivityBase") && Definition.ParentClass != TEXT("UNPCActivity"))
+	{
+		// Try to find custom Blueprint parent class (e.g., BPA_Attack_Melee)
+		TArray<FString> ParentSearchPaths;
+
+		// Project-local activities
+		ParentSearchPaths.Add(FString::Printf(TEXT("%s/Activities/%s.%s_C"), *GetProjectRoot(), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("%s/AI/Activities/%s.%s_C"), *GetProjectRoot(), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/AI/Activities/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+
+		// Narrative Pro plugin built-in activities
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/MeleeAttack/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootAndStrafe/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootFromCover/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Idle/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Flee/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+
+		for (const FString& Path : ParentSearchPaths)
+		{
+			ParentClass = LoadClass<UNPCActivity>(nullptr, *Path);
+			if (ParentClass)
+			{
+				LogGeneration(FString::Printf(TEXT("  Resolved parent class: %s -> %s"), *Definition.ParentClass, *Path));
+				break;
+			}
+		}
+
+		if (!ParentClass)
+		{
+			LogGeneration(FString::Printf(TEXT("[W_ACTIVITY_PARENT_NOT_FOUND] Parent class '%s' not found, using UNPCActivity"), *Definition.ParentClass));
+		}
+	}
+
+	// Fallback to base UNPCActivity class
+	if (!ParentClass)
+	{
+		ParentClass = UNPCActivity::StaticClass();
+	}
+
 	if (!ParentClass)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("UNPCActivity class not found"));
@@ -17797,6 +17888,13 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 
 	LogGeneration(FString::Printf(TEXT("Created Activity: %s"), *Definition.Name));
 
+	// v4.22: Cache the Activity Blueprint class for same-session resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("Activity"), Definition.Name, Definition.ComputeHash());
 
@@ -17867,20 +17965,32 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 	int32 ResolvedAbilities = 0;
 	for (const FString& AbilityName : Definition.Abilities)
 	{
-		// Try multiple paths for the ability blueprint
-		TArray<FString> SearchPaths;
-		SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
-		SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Crawler/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
-		SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Forms/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
-		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Abilities/%s.%s_C"), *AbilityName, *AbilityName));
-
 		UClass* AbilityClass = nullptr;
-		for (const FString& Path : SearchPaths)
+
+		// v4.22: Check session cache FIRST for abilities created in this generation session
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(AbilityName))
 		{
-			AbilityClass = LoadClass<UNarrativeGameplayAbility>(nullptr, *Path);
-			if (AbilityClass)
+			AbilityClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found ability class in session cache: %s"), *AbilityName));
+		}
+
+		// If not in cache, try multiple paths for the ability blueprint
+		if (!AbilityClass)
+		{
+			TArray<FString> SearchPaths;
+			SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Crawler/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Forms/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Actions/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Abilities/%s.%s_C"), *AbilityName, *AbilityName));
+
+			for (const FString& Path : SearchPaths)
 			{
-				break;
+				AbilityClass = LoadClass<UNarrativeGameplayAbility>(nullptr, *Path);
+				if (AbilityClass)
+				{
+					break;
+				}
 			}
 		}
 
@@ -17892,12 +18002,26 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		}
 		else
 		{
-			// v4.23 FAIL-FAST: Manifest references ability that cannot be resolved
-			// v4.23.1: Phase 3 spec-complete - added Subsystem
-			LogGeneration(FString::Printf(TEXT("[E_ABILITYCONFIG_ABILITY_NOT_FOUND] %s | Subsystem: GAS | Could not resolve ability: %s"),
-				*Definition.Name, *AbilityName));
-			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-				FString::Printf(TEXT("AbilityConfiguration ability '%s' not found"), *AbilityName));
+			// v4.22: Automated external reference detection
+			// If ability is NOT in our manifest, it's an external plugin reference
+			// External references can't be resolved in commandlet mode but work at editor load
+			bool bIsInManifest = GetActiveManifest() && GetActiveManifest()->IsAssetInManifest(AbilityName);
+
+			if (!bIsInManifest)
+			{
+				LogGeneration(FString::Printf(TEXT("[W_ABILITYCONFIG_EXTERNAL_ABILITY] %s | External plugin ability '%s' will be resolved at editor load"),
+					*Definition.Name, *AbilityName));
+				// Continue without adding - will be resolved when editor loads full plugin
+			}
+			else
+			{
+				// v4.23 FAIL-FAST: Manifest-defined ability that cannot be resolved
+				// v4.23.1: Phase 3 spec-complete - added Subsystem
+				LogGeneration(FString::Printf(TEXT("[E_ABILITYCONFIG_ABILITY_NOT_FOUND] %s | Subsystem: GAS | Could not resolve ability: %s"),
+					*Definition.Name, *AbilityName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("AbilityConfiguration ability '%s' not found"), *AbilityName));
+			}
 		}
 	}
 
@@ -18123,20 +18247,45 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 	int32 ResolvedActivities = 0;
 	for (const FString& ActivityName : Definition.Activities)
 	{
-		TArray<FString> SearchPaths;
-		SearchPaths.Add(FString::Printf(TEXT("%s/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName));
-		SearchPaths.Add(FString::Printf(TEXT("%s/AI/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName));
-		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Activities/%s.%s_C"), *ActivityName, *ActivityName));
-		// Also check Narrative Pro plugin for built-in activities
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Activities/%s.%s_C"), *ActivityName, *ActivityName));
-
 		UClass* ActivityClass = nullptr;
-		for (const FString& Path : SearchPaths)
+
+		// v4.22: Check session cache FIRST for activities created in this generation session
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(ActivityName))
 		{
-			ActivityClass = LoadClass<UNPCActivity>(nullptr, *Path);
-			if (ActivityClass)
+			ActivityClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found activity class in session cache: %s"), *ActivityName));
+		}
+
+		// If not in cache, try search paths
+		if (!ActivityClass)
+		{
+			TArray<FString> SearchPaths;
+			SearchPaths.Add(FString::Printf(TEXT("%s/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/AI/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Activities/%s.%s_C"), *ActivityName, *ActivityName));
+			// v4.22: Narrative Pro plugin built-in activities (correct plugin mount point)
+			// Activities are organized in subdirectories by type
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/MeleeAttack/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootAndStrafe/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootFromCover/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Idle/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Flee/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *ActivityName, *ActivityName));
+			// Legacy path (kept for backwards compatibility)
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Activities/%s.%s_C"), *ActivityName, *ActivityName));
+
+			for (const FString& Path : SearchPaths)
 			{
-				break;
+				ActivityClass = LoadClass<UNPCActivity>(nullptr, *Path);
+				if (ActivityClass)
+				{
+					break;
+				}
 			}
 		}
 
@@ -18148,12 +18297,26 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		}
 		else
 		{
-			// v4.23 FAIL-FAST: Manifest references activity that cannot be resolved
-			// v4.23.1: Phase 3 spec-complete - added Subsystem
-			LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_ACTIVITY_NOT_FOUND] %s | Subsystem: GAS | Could not resolve activity: %s"),
-				*Definition.Name, *ActivityName));
-			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-				FString::Printf(TEXT("ActivityConfiguration activity '%s' not found"), *ActivityName));
+			// v4.22: Automated external reference detection
+			// If activity is NOT in our manifest, it's an external plugin reference
+			// External references can't be resolved in commandlet mode but work at editor load
+			bool bIsInManifest = GetActiveManifest() && GetActiveManifest()->IsAssetInManifest(ActivityName);
+
+			if (!bIsInManifest)
+			{
+				LogGeneration(FString::Printf(TEXT("[W_ACTIVITYCONFIG_EXTERNAL_ACTIVITY] %s | External plugin activity '%s' will be resolved at editor load"),
+					*Definition.Name, *ActivityName));
+				// Continue without adding - will be resolved when editor loads full plugin
+			}
+			else
+			{
+				// v4.23 FAIL-FAST: Manifest-defined activity that cannot be resolved
+				// v4.23.1: Phase 3 spec-complete - added Subsystem
+				LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_ACTIVITY_NOT_FOUND] %s | Subsystem: GAS | Could not resolve activity: %s"),
+					*Definition.Name, *ActivityName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("ActivityConfiguration activity '%s' not found"), *ActivityName));
+			}
 		}
 	}
 
@@ -18165,7 +18328,11 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		SearchPaths.Add(FString::Printf(TEXT("%s/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
 		SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
 		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-		// Also check Narrative Pro plugin for built-in generators
+		// v4.22: Narrative Pro plugin built-in goal generators (correct plugin mount point)
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		// Legacy path (kept for backwards compatibility)
 		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
 
 		UClass* GeneratorClass = nullptr;
@@ -18186,11 +18353,25 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		}
 		else
 		{
-			// v4.23 FAIL-FAST: Manifest references goal generator that cannot be resolved
-			LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_GOALGENERATOR_NOT_FOUND] %s | Could not resolve goal generator: %s"),
-				*Definition.Name, *GeneratorName));
-			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-				FString::Printf(TEXT("ActivityConfiguration goal generator '%s' not found"), *GeneratorName));
+			// v4.22: Automated external reference detection
+			// If goal generator is NOT in our manifest, it's an external plugin reference
+			// External references can't be resolved in commandlet mode but work at editor load
+			bool bIsInManifest = GetActiveManifest() && GetActiveManifest()->IsAssetInManifest(GeneratorName);
+
+			if (!bIsInManifest)
+			{
+				LogGeneration(FString::Printf(TEXT("[W_ACTIVITYCONFIG_EXTERNAL_GENERATOR] %s | External plugin goal generator '%s' will be resolved at editor load"),
+					*Definition.Name, *GeneratorName));
+				// Continue without adding - will be resolved when editor loads full plugin
+			}
+			else
+			{
+				// v4.23 FAIL-FAST: Manifest-defined goal generator that cannot be resolved
+				LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_GOALGENERATOR_NOT_FOUND] %s | Could not resolve goal generator: %s"),
+					*Definition.Name, *GeneratorName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("ActivityConfiguration goal generator '%s' not found"), *GeneratorName));
+			}
 		}
 	}
 

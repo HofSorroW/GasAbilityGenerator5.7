@@ -6576,11 +6576,11 @@ activity_configurations:
     default_activity: BPA_FatherFollow
     request_interval: 0.5
     activities:
-      - BPA_Attack_Melee              # Crawler melee combat
-      - BPA_Attack_RangedCrouching_Strafe  # Laser shot (mobile)
-      - BPA_Attack_RangedStand_Stationary  # Turret shoot (stationary)
-      - BPA_FollowCharacter           # Follow player
-      - BPA_Idle                      # Default idle
+      - BPA_Attack_Melee              # Crawler melee combat (Narrative Pro built-in)
+      - BPA_Attack_Ranged_Strafe      # Laser shot - mobile strafing (Narrative Pro built-in)
+      - BPA_Attack_Ranged             # Turret shoot - stationary ranged (Narrative Pro built-in)
+      - BPA_FollowCharacter           # Follow player (Narrative Pro built-in)
+      - BPA_Idle                      # Default idle (Narrative Pro built-in)
       - BPA_FatherFollow              # Custom father follow (Section 55.15)
     goal_generators:
       - GoalGenerator_Attack          # Auto-target hostiles (Section 57.9)
