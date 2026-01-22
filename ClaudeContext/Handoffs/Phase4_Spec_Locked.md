@@ -1,8 +1,8 @@
 # Phase 4 Specification - LOCKED
 
-**Version:** 1.4
+**Version:** 1.5
 **Date:** 2026-01-22
-**Status:** LOCKED + COMPLETE (Phase 4.1, 4.1.1, 4.1.2, 4.2 all implemented)
+**Status:** LOCKED + COMPLETE (Phase 4.1, 4.1.1, 4.1.2, 4.2, 4.2.1 all implemented)
 **Auditors:** Claude (Opus 4.5), GPT
 
 ---
@@ -453,6 +453,32 @@ If omitted, defaults to `UNarrativeAttributeSetBase`.
 - Depth prioritization (topo order is sufficient)
 - JSON output format (deferred)
 
+### Phase 4.2.1 Audit Correction (2026-01-22)
+
+**Issue:** Initial v4.25 implementation diverged from locked edge list.
+
+**Claude-GPT Dual Audit Finding:**
+
+| Implemented | Locked Spec | Verdict |
+|-------------|-------------|---------|
+| GA → GA (parent_class) | Not in spec | ❌ REMOVE |
+| NPC → DBP | DBP → NPC (reversed) | ❌ REMOVE + FIX |
+| NPC → AC | Not in spec | ❌ REMOVE |
+| Activity → BT | Not in spec | ❌ REMOVE |
+| AC → GA | In spec | ✅ ADD (was missing) |
+| AC → GE | In spec | ✅ ADD (was missing) |
+| DBP → NPC | In spec | ✅ ADD (was missing) |
+| Quest → NPC | In spec | ✅ ADD (was missing) |
+
+**Resolution (v4.25.1):** Rolled back to locked edge set.
+
+**GA → Montage edge:** Deferred - no direct montage field in `FManifestGameplayAbilityDefinition`. Would require event graph node analysis.
+
+**Audit Verdicts (all PASS):**
+- ✅ Guard exists: `ManifestAssets.Contains()` check prevents external refs
+- ✅ T2 cascade semantics: Root identity preserved via `FailedAssets` map
+- ✅ T1 determinism: Linear insertion maintains sorted order without re-sort
+
 ### Evidence Base
 
 This specification is derived from:
@@ -562,6 +588,7 @@ Phase 4 is complete when:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.5 | 2026-01-22 | Claude+GPT | Phase 4.2.1 audit correction: edge list rollback to spec |
 | 1.4 | 2026-01-22 | Claude+GPT | Phase 4.2 COMPLETE: dependency ordering with cascade skip logic |
 | 1.3 | 2026-01-22 | Claude+GPT | Phase 4.2 locked plan: dependency ordering with cascade skip logic |
 | 1.2 | 2026-01-22 | Claude+GPT | Phase 4.1.2 audit findings: U/A prefix normalization scope |

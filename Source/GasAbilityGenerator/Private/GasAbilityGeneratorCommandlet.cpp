@@ -2213,12 +2213,12 @@ void UGasAbilityGeneratorCommandlet::BuildDependencyGraph(const FManifestData& M
 		AssetDependencies.FindOrAdd(From).AddUnique(To);
 	};
 
+	// v4.25.1: Locked edge set per Phase 4.2 spec audit
+	//
 	// GA → GE (cooldown_effect)
-	// GA → GA (parent_class if manifest-defined)
 	for (const auto& GA : ManifestData.GameplayAbilities)
 	{
 		TryAddEdge(GA.Name, GA.CooldownGameplayEffectClass);
-		TryAddEdge(GA.Name, GA.ParentClass);
 	}
 
 	// BT → BB (blackboard dependency)
@@ -2227,18 +2227,34 @@ void UGasAbilityGeneratorCommandlet::BuildDependencyGraph(const FManifestData& M
 		TryAddEdge(BT.Name, BT.BlackboardAsset);
 	}
 
-	// NPC → DBP, NPC → AC, etc.
-	for (const auto& NPC : ManifestData.NPCDefinitions)
+	// AC(Ability) → GA (abilities array)
+	// AC(Ability) → GE (startup_effects)
+	for (const auto& AC : ManifestData.AbilityConfigurations)
 	{
-		TryAddEdge(NPC.Name, NPC.Dialogue);
-		TryAddEdge(NPC.Name, NPC.AbilityConfiguration);
-		TryAddEdge(NPC.Name, NPC.ActivityConfiguration);
+		for (const FString& AbilityName : AC.Abilities)
+		{
+			TryAddEdge(AC.Name, AbilityName);
+		}
+		for (const FString& EffectName : AC.StartupEffects)
+		{
+			TryAddEdge(AC.Name, EffectName);
+		}
+		TryAddEdge(AC.Name, AC.DefaultAttributes);
 	}
 
-	// Activity → BT (behavior tree dependency)
-	for (const auto& Act : ManifestData.Activities)
+	// DialogueBP → NPCDefinition (speaker NPCs)
+	for (const auto& DBP : ManifestData.DialogueBlueprints)
 	{
-		TryAddEdge(Act.Name, Act.BehaviorTree);
+		for (const auto& Speaker : DBP.Speakers)
+		{
+			TryAddEdge(DBP.Name, Speaker.NPCDefinition);
+		}
+	}
+
+	// Quest → NPCDefinition (questgiver)
+	for (const auto& Quest : ManifestData.Quests)
+	{
+		TryAddEdge(Quest.Name, Quest.Questgiver);
 	}
 
 	LogMessage(FString::Printf(TEXT("[CASCADE] Dependency graph built: %d nodes"), DependencyGraph->GetNodeCount()));
