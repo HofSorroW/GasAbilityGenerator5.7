@@ -1568,7 +1568,7 @@ gameplay_abilities:
         - id: MultiplySpeed
           type: CallFunction
           properties:
-            function: Multiply_FloatFloat
+            function: Multiply_DoubleDouble
             class: KismetMathLibrary
           position: [2800, -150]
         - id: SetMaxSpeed
@@ -2110,7 +2110,7 @@ gameplay_abilities:
         - id: MultiplySpeed
           type: CallFunction
           properties:
-            function: Multiply_FloatFloat
+            function: Multiply_DoubleDouble
             class: KismetMathLibrary
           position: [2700, 0]
         - id: SetMaxSpeed
@@ -2139,7 +2139,7 @@ gameplay_abilities:
         - id: MultiplyJump
           type: CallFunction
           properties:
-            function: Multiply_FloatFloat
+            function: Multiply_DoubleDouble
             class: KismetMathLibrary
           position: [3400, 0]
         - id: SetJumpVelocity
@@ -4498,7 +4498,7 @@ gameplay_abilities:
         - id: MultiplySpeed
           type: CallFunction
           properties:
-            function: Multiply_FloatFloat
+            function: Multiply_DoubleDouble
             class: KismetMathLibrary
           position: [2400, 0]
         - id: SetMaxSpeed
@@ -5779,7 +5779,8 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetComponentByClass
-            class: NarrativeInventoryComponent
+            class: Actor
+            component_class: NarrativeInventoryComponent
           position: [1500, 150]
         - id: CastToInventory
           type: DynamicCast
@@ -5876,7 +5877,8 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetComponentByClass
-            class: NarrativeInventoryComponent
+            class: Actor
+            component_class: NarrativeInventoryComponent
           position: [900, 650]
         - id: CastToInventoryEnd
           type: DynamicCast
@@ -6052,7 +6054,8 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetComponentByClass
-            class: NarrativeInventoryComponent
+            class: Actor
+            component_class: NarrativeInventoryComponent
           position: [1500, 150]
         - id: CastToInventory
           type: DynamicCast
@@ -6149,7 +6152,8 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GetComponentByClass
-            class: NarrativeInventoryComponent
+            class: Actor
+            component_class: NarrativeInventoryComponent
           position: [900, 650]
         - id: CastToInventoryEnd
           type: DynamicCast
@@ -7671,7 +7675,7 @@ material_instances:
 dialogue_blueprints:
   - name: DBP_FatherCompanion
     folder: Dialogue
-    parent_class: DialogueBlueprint
+    parent_class: Dialogue
 
 # ============================================================================
 # NPC SYSTEMS - WARDEN HUSK (Two-Phase Enemy)

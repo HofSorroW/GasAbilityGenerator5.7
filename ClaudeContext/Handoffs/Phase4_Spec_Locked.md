@@ -1,8 +1,8 @@
 # Phase 4 Specification - LOCKED
 
-**Version:** 1.0
+**Version:** 1.4
 **Date:** 2026-01-22
-**Status:** LOCKED (Claude-GPT Dual Audit Consensus)
+**Status:** LOCKED + COMPLETE (Phase 4.1, 4.1.1, 4.1.2, 4.2 all implemented)
 **Auditors:** Claude (Opus 4.5), GPT
 
 ---
@@ -483,7 +483,7 @@ This specification is derived from:
 - Keep original name for "as-is" and LoadClass fallback
 - Fixes 3 remaining A1 AttributeSet false negatives
 
-### Phase 4.2: Dependency Ordering (v4.25) - LOCKED
+### Phase 4.2: Dependency Ordering ✓ (v4.25)
 
 **Node Identity Rules:**
 1. NodeId = Manifest asset name (e.g., `GA_FatherAttack`)
@@ -562,6 +562,7 @@ Phase 4 is complete when:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.4 | 2026-01-22 | Claude+GPT | Phase 4.2 COMPLETE: dependency ordering with cascade skip logic |
 | 1.3 | 2026-01-22 | Claude+GPT | Phase 4.2 locked plan: dependency ordering with cascade skip logic |
 | 1.2 | 2026-01-22 | Claude+GPT | Phase 4.1.2 audit findings: U/A prefix normalization scope |
 | 1.1 | 2026-01-22 | Claude+GPT | Phase 4.1.1 audit findings: class resolution fix scope |

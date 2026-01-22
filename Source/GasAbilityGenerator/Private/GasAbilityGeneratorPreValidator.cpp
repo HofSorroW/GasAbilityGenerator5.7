@@ -236,10 +236,11 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 	}
 
 	// 4. Try with /Script/NarrativeArsenal prefix (v4.24.2: use normalized name)
+	// v4.25: Use StaticLoadClass for plugin modules that may not be loaded in headless mode
 	if (!FoundClass)
 	{
 		FString NPPath = FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ScriptName);
-		FoundClass = FindObject<UClass>(nullptr, *NPPath);
+		FoundClass = StaticLoadClass(UObject::StaticClass(), nullptr, *NPPath, nullptr, LOAD_None, nullptr);
 	}
 
 	// 5. Try with /Script/GameplayAbilities prefix (v4.24.2: use normalized name)
