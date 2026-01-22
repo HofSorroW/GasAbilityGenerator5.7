@@ -2,8 +2,28 @@
 
 **Created:** 2026-01-18
 **Updated:** 2026-01-22
-**Plugin Version:** v4.22
+**Plugin Version:** v4.22 (includes v4.21.2 fixes)
 **Status:** Consolidated tracking file for all pending tasks
+
+---
+
+## ✅ Recently Completed - Delegate Binding Pin Wiring Fixes (v4.21.2)
+
+**Source:** Engine header audit (K2Node_Self.cpp, K2Node_DynamicCast.cpp)
+**Date:** 2026-01-22
+
+| Fix | Root Cause | Solution |
+|-----|------------|----------|
+| UK2Node_Self pin lookup | Uses `PN_Self`, not `PN_ReturnValue` | Changed `FindPin(PN_ReturnValue)` → `FindPin(PN_Self)` |
+| Cast node type propagation | `MakeLinkTo()` doesn't trigger `NotifyPinConnectionListChanged()` | Added `CastNode->NotifyPinConnectionListChanged(CastInPin)` after wiring |
+
+**Files Modified:**
+- `GasAbilityGeneratorGenerators.cpp` - Pin wiring fixes in `GenerateDelegateBindingNodes()`
+- `Delegate_Binding_Extensions_Spec_v1_1.md` - Added "Implementation Lessons Learned (v4.21.2)" section
+
+**Result:** All 5 abilities with delegate_bindings compile successfully (GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField)
+
+**Commit:** `ba63c40` fix(v4.21.2): Delegate binding pin wiring and type propagation [LOCKED-CHANGE-APPROVED]
 
 ---
 
@@ -744,3 +764,5 @@ These are intentionally not implemented:
 | 2026-01-22 | **v4.22:** Section 10 External ASC Binding - Actor→ASC extraction via `GetAbilitySystemComponent` |
 | 2026-01-22 | **v4.22:** Section 11 Attribute Change Delegates - AbilityTask pattern for `UAbilityTask_WaitAttributeChange` |
 | 2026-01-22 | **v4.22:** Claude-GPT dual audit approved - `Delegate_Binding_Extensions_Spec_v1_1.md` locked |
+| 2026-01-22 | **v4.21.2:** Delegate binding pin wiring fixes - UK2Node_Self uses PN_Self, CastNode needs NotifyPinConnectionListChanged |
+| 2026-01-22 | **v4.21.2:** All 5 abilities with delegate_bindings now compile (GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField) |
