@@ -1339,40 +1339,116 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				bInEventGraph = false;
 				CurrentTagArray = ECurrentTagArray::None;
 			}
+			// v4.22: Fixed section flag reset - must clear all other section flags
 			else if (TrimmedLine.Equals(TEXT("tags:")) || TrimmedLine.StartsWith(TEXT("tags:")))
 			{
-				// Save pending variable before switching sections
+				// Save pending data from other sections before switching
 				if (bInVariables && !CurrentVar.Name.IsEmpty())
 				{
 					CurrentDef.Variables.Add(CurrentVar);
 					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+				{
+					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+				}
+				if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+				{
+					CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+					CurrentAttributeBinding = FManifestAttributeBindingDefinition();
+				}
+				if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+				{
+					CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+				}
+				if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+				{
+					CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
 				}
 				bInTags = true;
 				bInVariables = false;
 				bInEventGraph = false;
+				bInCueTriggers = false;
+				bInVFXSpawns = false;
+				bInDelegateBindings = false;
+				bInAttributeBindings = false;
 				CurrentTagArray = ECurrentTagArray::None;
 				UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Entered tags section"), *CurrentDef.Name);
 			}
 			// v2.4.0: Parse variables subsection
+			// v4.22: Fixed section flag reset - must clear all other section flags
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
+				// Save pending data from other sections before switching
+				if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+				{
+					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+				}
+				if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+				{
+					CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+					CurrentAttributeBinding = FManifestAttributeBindingDefinition();
+				}
+				if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+				{
+					CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+				}
+				if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+				{
+					CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+				}
 				bInVariables = true;
 				bInTags = false;
 				bInEventGraph = false;
+				bInCueTriggers = false;
+				bInVFXSpawns = false;
+				bInDelegateBindings = false;
+				bInAttributeBindings = false;
 				CurrentTagArray = ECurrentTagArray::None;
 			}
 			// v2.4.0: Parse inline event_graph subsection
+			// v4.22: Fixed section flag reset - must clear all other section flags
 			else if (TrimmedLine.Equals(TEXT("event_graph:")) || TrimmedLine.StartsWith(TEXT("event_graph:")))
 			{
-				// Save pending variable before switching sections
+				// Save pending data from other sections before switching
 				if (bInVariables && !CurrentVar.Name.IsEmpty())
 				{
 					CurrentDef.Variables.Add(CurrentVar);
 					CurrentVar = FManifestActorVariableDefinition();
 				}
+				if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+				{
+					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+				}
+				if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+				{
+					CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+					CurrentAttributeBinding = FManifestAttributeBindingDefinition();
+				}
+				if (bInCueTriggers && !CurrentCueTrigger.CueTag.IsEmpty())
+				{
+					CurrentDef.CueTriggers.Add(CurrentCueTrigger);
+					CurrentCueTrigger = FManifestCueTriggerDefinition();
+				}
+				if (bInVFXSpawns && !CurrentVFXSpawn.NiagaraSystem.IsEmpty())
+				{
+					CurrentDef.VFXSpawns.Add(CurrentVFXSpawn);
+					CurrentVFXSpawn = FManifestVFXSpawnDefinition();
+				}
 				bInEventGraph = true;
 				bInVariables = false;
 				bInTags = false;
+				bInCueTriggers = false;
+				bInVFXSpawns = false;
+				bInDelegateBindings = false;
+				bInAttributeBindings = false;
 				CurrentTagArray = ECurrentTagArray::None;
 				CurrentDef.bHasInlineEventGraph = true;
 				CurrentDef.EventGraphName = CurrentDef.Name + TEXT("_EventGraph");

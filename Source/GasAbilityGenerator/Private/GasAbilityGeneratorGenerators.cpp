@@ -1815,7 +1815,7 @@ UEnum* FGeneratorBase::FindUserDefinedEnum(const FString& EnumName, const FStrin
 
 void FGeneratorBase::LogGeneration(const FString& Message)
 {
-	UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] %s"), *Message);
+	UE_LOG(LogGasAbilityGenerator, Display, TEXT("%s"), *Message);
 }
 
 // ============================================================================
@@ -2747,6 +2747,39 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 
 	// v4.22: AUDIT LOGGING POINT 2 - Before final CompileBlueprint
 	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_2_BeforeCompileBlueprint"));
+
+	// v4.22: Verify delegate node connections right before compile
+	{
+		UEdGraph* EventGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint);
+		if (EventGraph)
+		{
+			int32 AddConnected = 0, AddNotConnected = 0, RemoveConnected = 0, RemoveNotConnected = 0;
+			for (UEdGraphNode* Node : EventGraph->Nodes)
+			{
+				if (UK2Node_AddDelegate* AddNode = Cast<UK2Node_AddDelegate>(Node))
+				{
+					UEdGraphPin* TargetPin = AddNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+					if (TargetPin && TargetPin->LinkedTo.Num() > 0)
+						AddConnected++;
+					else
+						AddNotConnected++;
+				}
+				else if (UK2Node_RemoveDelegate* RemoveNode = Cast<UK2Node_RemoveDelegate>(Node))
+				{
+					UEdGraphPin* TargetPin = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+					if (TargetPin && TargetPin->LinkedTo.Num() > 0)
+						RemoveConnected++;
+					else
+						RemoveNotConnected++;
+				}
+			}
+			if (AddConnected > 0 || AddNotConnected > 0 || RemoveConnected > 0 || RemoveNotConnected > 0)
+			{
+				LogGeneration(FString::Printf(TEXT("  [PRE-COMPILE VERIFY] AddDelegate: %d connected, %d not; RemoveDelegate: %d connected, %d not"),
+					AddConnected, AddNotConnected, RemoveConnected, RemoveNotConnected));
+			}
+		}
+	}
 
 	// v4.16: Final compile with validation (Contract 10 - Blueprint Compile Gate)
 	// Single compile after ALL nodes added - replaces checkpoint save pattern
@@ -13076,6 +13109,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	// Track nodes for exec wiring
 	TArray<UK2Node_AddDelegate*> AddDelegateNodes;
 	TArray<UK2Node_RemoveDelegate*> RemoveDelegateNodes;
+	// v4.21.2: Track CastNodes separately for each path (required for exec reachability)
+	TArray<UK2Node_DynamicCast*> CastNodesForAdd;
+	TArray<UK2Node_DynamicCast*> CastNodesForRemove;
 
 	for (const FManifestDelegateBindingDefinition& Binding : DelegateBindings)
 	{
@@ -13140,21 +13176,27 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		SelfNode->AllocateDefaultPins();
 		SelfNode->NodePosX = CurrentPosX + 200.0f;
 		SelfNode->NodePosY = CurrentPosY + 100.0f;
-		UEdGraphPin* SelfOutPin = SelfNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+		// v4.21.2 FIX: UK2Node_Self uses PN_Self for its output, not PN_ReturnValue
+		UEdGraphPin* SelfOutPin = SelfNode->FindPin(UEdGraphSchema_K2::PN_Self);
 
 		// 4. Create source ASC resolution nodes (with cast for OwnerASC/PlayerASC)
-		UEdGraphPin* SourceASCPin = nullptr;
+		// v4.21.2: Create separate CastNodes for Activate and End paths (exec reachability)
+		UEdGraphPin* SourceASCPinForAdd = nullptr;
+		UEdGraphPin* SourceASCPinForRemove = nullptr;
+		UK2Node_DynamicCast* CastNodeA = nullptr;  // For ActivateAbility path
+		UK2Node_DynamicCast* CastNodeB = nullptr;  // For EndAbility path
 		bool bNeedsCast = Binding.Source.Equals(TEXT("OwnerASC"), ESearchCase::IgnoreCase) ||
 		                  Binding.Source.Equals(TEXT("PlayerASC"), ESearchCase::IgnoreCase);
 
 		if (bNeedsCast)
 		{
-			// Create GetAbilitySystemComponentFromActorInfo call
+			// v4.22: Fixed ASC resolution - use GetAbilitySystemComponentFromActorInfo() on UGameplayAbility
+			// NOT GetAbilitySystemComponent(Actor) which requires an Actor input
 			UK2Node_CallFunction* GetASCNode = NewObject<UK2Node_CallFunction>(EventGraph);
 			EventGraph->AddNode(GetASCNode, false, false);
 
-			UFunction* GetASCFunc = UAbilitySystemBlueprintLibrary::StaticClass()->FindFunctionByName(
-				TEXT("GetAbilitySystemComponent"));
+			UFunction* GetASCFunc = UGameplayAbility::StaticClass()->FindFunctionByName(
+				TEXT("GetAbilitySystemComponentFromActorInfo"));
 			if (GetASCFunc)
 			{
 				GetASCNode->SetFromFunction(GetASCFunc);
@@ -13165,33 +13207,166 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 			GetASCNode->NodePosX = CurrentPosX + 200.0f;
 			GetASCNode->NodePosY = CurrentPosY + 200.0f;
 
-			// Wire Self to GetASCNode.Actor pin
-			UEdGraphPin* ActorPin = GetASCNode->FindPin(TEXT("Actor"));
-			if (ActorPin && SelfOutPin)
+			// Wire Self to GetASCNode.Self pin (target_self pattern)
+			// v4.21.2: DIAGNOSTIC - Log all input pins of GetASCNode to detect hidden/missing Self pin
 			{
-				SelfOutPin->MakeLinkTo(ActorPin);
+				LogGeneration(TEXT("    [DIAG-SELF] GetASCNode input pins:"));
+				for (UEdGraphPin* Pin : GetASCNode->Pins)
+				{
+					if (Pin->Direction == EGPD_Input)
+					{
+						LogGeneration(FString::Printf(TEXT("      - Pin: %s, Category=%s, SubCategoryObject=%s"),
+							*Pin->PinName.ToString(),
+							*Pin->PinType.PinCategory.ToString(),
+							Pin->PinType.PinSubCategoryObject.IsValid()
+								? *Pin->PinType.PinSubCategoryObject->GetName()
+								: TEXT("null")));
+					}
+				}
 			}
 
-			// Create Cast to UNarrativeAbilitySystemComponent
-			UK2Node_DynamicCast* CastNode = NewObject<UK2Node_DynamicCast>(EventGraph);
-			CastNode->TargetType = NarrativeASCClass;
-			EventGraph->AddNode(CastNode, false, false);
-			CastNode->CreateNewGuid();
-			CastNode->PostPlacedNewNode();
-			CastNode->AllocateDefaultPins();
-			CastNode->NodePosX = CurrentPosX + 400.0f;
-			CastNode->NodePosY = CurrentPosY + 200.0f;
+			UEdGraphPin* GetASCSelfPin = GetASCNode->FindPin(UEdGraphSchema_K2::PN_Self);
+			if (GetASCSelfPin && SelfOutPin)
+			{
+				// Log pin details before wiring
+				LogGeneration(FString::Printf(TEXT("    [DIAG-SELF] Pre-wire: SelfOutPin.Direction=%s, OwningNode=%s"),
+					SelfOutPin->Direction == EGPD_Output ? TEXT("Output") : TEXT("Input"),
+					*SelfOutPin->GetOwningNode()->GetClass()->GetName()));
+				LogGeneration(FString::Printf(TEXT("    [DIAG-SELF] Pre-wire: GetASCSelfPin.Direction=%s, OwningNode=%s"),
+					GetASCSelfPin->Direction == EGPD_Output ? TEXT("Output") : TEXT("Input"),
+					*GetASCSelfPin->GetOwningNode()->GetClass()->GetName()));
 
-			// Wire GetASC.ReturnValue → Cast.Object
+				SelfOutPin->MakeLinkTo(GetASCSelfPin);
+
+				// Verify bidirectional link after MakeLinkTo
+				bool bForwardLink = GetASCSelfPin->LinkedTo.Contains(SelfOutPin);
+				bool bReverseLink = SelfOutPin->LinkedTo.Contains(GetASCSelfPin);
+				LogGeneration(FString::Printf(TEXT("    [DIAG-SELF] Post-wire: GetASCSelfPin.LinkedTo.Contains(SelfOutPin)=%s"),
+					bForwardLink ? TEXT("YES") : TEXT("NO")));
+				LogGeneration(FString::Printf(TEXT("    [DIAG-SELF] Post-wire: SelfOutPin.LinkedTo.Contains(GetASCSelfPin)=%s"),
+					bReverseLink ? TEXT("YES"): TEXT("NO")));
+				LogGeneration(FString::Printf(TEXT("    [DIAG-SELF] Post-wire: GetASCSelfPin.LinkedTo.Num()=%d, SelfOutPin.LinkedTo.Num()=%d"),
+					GetASCSelfPin->LinkedTo.Num(), SelfOutPin->LinkedTo.Num()));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    [DIAG-SELF] Self pin wire SKIPPED: GetASCSelfPin=%s, SelfOutPin=%s"),
+					GetASCSelfPin ? TEXT("valid") : TEXT("null"),
+					SelfOutPin ? TEXT("valid") : TEXT("null")));
+			}
+
 			UEdGraphPin* ASCOutPin = GetASCNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
-			UEdGraphPin* CastInPin = CastNode->GetCastSourcePin();
-			if (ASCOutPin && CastInPin)
+
+			// v4.21.2: Create CastNodeA for ActivateAbility path
+			CastNodeA = NewObject<UK2Node_DynamicCast>(EventGraph);
+			CastNodeA->TargetType = NarrativeASCClass;
+			EventGraph->AddNode(CastNodeA, false, false);
+			CastNodeA->CreateNewGuid();
+			CastNodeA->PostPlacedNewNode();
+			CastNodeA->AllocateDefaultPins();
+			CastNodeA->NodePosX = CurrentPosX + 400.0f;
+			CastNodeA->NodePosY = CurrentPosY + 100.0f;
+
+			// Wire GetASC.ReturnValue → CastNodeA.Object
+			UEdGraphPin* CastAInPin = CastNodeA->GetCastSourcePin();
+			if (ASCOutPin && CastAInPin)
 			{
-				ASCOutPin->MakeLinkTo(CastInPin);
+				ASCOutPin->MakeLinkTo(CastAInPin);
+				// v4.21.2 FIX: Trigger pin type propagation after connection
+				CastNodeA->NotifyPinConnectionListChanged(CastAInPin);
+				LogGeneration(FString::Printf(TEXT("    [DEBUG] CastNodeA data wired: ASCOutPin=%s, CastAInPin=%s, LinkedTo=%d"),
+					*ASCOutPin->PinName.ToString(),
+					*CastAInPin->PinName.ToString(),
+					CastAInPin->LinkedTo.Num()));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    [ERROR] CastNodeA data wire FAILED: ASCOutPin=%s, CastAInPin=%s"),
+					ASCOutPin ? TEXT("valid") : TEXT("null"),
+					CastAInPin ? TEXT("valid") : TEXT("null")));
+			}
+			SourceASCPinForAdd = CastNodeA->GetCastResultPin();
+
+			// v4.21.2: Create CastNodeB for EndAbility path (separate exec chain)
+			CastNodeB = NewObject<UK2Node_DynamicCast>(EventGraph);
+			CastNodeB->TargetType = NarrativeASCClass;
+			EventGraph->AddNode(CastNodeB, false, false);
+			CastNodeB->CreateNewGuid();
+			CastNodeB->PostPlacedNewNode();
+			CastNodeB->AllocateDefaultPins();
+			CastNodeB->NodePosX = CurrentPosX + 400.0f;
+			CastNodeB->NodePosY = CurrentPosY + 400.0f;
+
+			// Wire GetASC.ReturnValue → CastNodeB.Object (same source, different cast node)
+			UEdGraphPin* CastBInPin = CastNodeB->GetCastSourcePin();
+			if (ASCOutPin && CastBInPin)
+			{
+				ASCOutPin->MakeLinkTo(CastBInPin);
+				// v4.21.2 FIX: Trigger pin type propagation after connection
+				CastNodeB->NotifyPinConnectionListChanged(CastBInPin);
+				LogGeneration(FString::Printf(TEXT("    [DEBUG] CastNodeB data wired: ASCOutPin=%s, CastBInPin=%s, LinkedTo=%d"),
+					*ASCOutPin->PinName.ToString(),
+					*CastBInPin->PinName.ToString(),
+					CastBInPin->LinkedTo.Num()));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("    [ERROR] CastNodeB data wire FAILED: ASCOutPin=%s, CastBInPin=%s"),
+					ASCOutPin ? TEXT("valid") : TEXT("null"),
+					CastBInPin ? TEXT("valid") : TEXT("null")));
+			}
+			SourceASCPinForRemove = CastNodeB->GetCastResultPin();
+
+			// v4.21.2: DIAGNOSTIC - comprehensive pin type and linkage audit
+			{
+				// A) ASCOutPin diagnostics
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] ASCOutPin PinType: Category=%s, SubCategory=%s, SubCategoryObject=%s"),
+					*ASCOutPin->PinType.PinCategory.ToString(),
+					*ASCOutPin->PinType.PinSubCategory.ToString(),
+					ASCOutPin->PinType.PinSubCategoryObject.IsValid()
+						? *ASCOutPin->PinType.PinSubCategoryObject->GetName()
+						: TEXT("null")));
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] ASCOutPin LinkedTo.Num()=%d"), ASCOutPin->LinkedTo.Num()));
+				for (int32 li = 0; li < ASCOutPin->LinkedTo.Num(); ++li)
+				{
+					UEdGraphPin* LinkedPin = ASCOutPin->LinkedTo[li];
+					LogGeneration(FString::Printf(TEXT("    [DIAG-PIN]   LinkedTo[%d]: Node=%s, Pin=%s"),
+						li,
+						LinkedPin ? *LinkedPin->GetOwningNode()->GetClass()->GetName() : TEXT("null"),
+						LinkedPin ? *LinkedPin->PinName.ToString() : TEXT("null")));
+				}
+
+				// B) GetASCNode function binding
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] GetASCNode class=%s"), *GetASCNode->GetClass()->GetName()));
+				UFunction* BoundFunc = GetASCNode->GetTargetFunction();
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] GetASCNode bound function: %s::%s"),
+					BoundFunc && BoundFunc->GetOwnerClass() ? *BoundFunc->GetOwnerClass()->GetName() : TEXT("null"),
+					BoundFunc ? *BoundFunc->GetName() : TEXT("null")));
+				UEdGraphPin* GetASCSelf = GetASCNode->FindPin(UEdGraphSchema_K2::PN_Self);
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] GetASCNode Self pin: %s, LinkedTo=%d"),
+					GetASCSelf ? TEXT("exists") : TEXT("null"),
+					GetASCSelf ? GetASCSelf->LinkedTo.Num() : -1));
+
+				// C) CastNodeA Object pin
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] CastNodeA TargetType=%s"),
+					CastNodeA->TargetType ? *CastNodeA->TargetType->GetName() : TEXT("null")));
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] CastAInPin LinkedTo.Num()=%d, PinType.SubCategoryObject=%s"),
+					CastAInPin->LinkedTo.Num(),
+					CastAInPin->PinType.PinSubCategoryObject.IsValid()
+						? *CastAInPin->PinType.PinSubCategoryObject->GetName()
+						: TEXT("null")));
+
+				// D) CastNodeB Object pin
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] CastNodeB TargetType=%s"),
+					CastNodeB->TargetType ? *CastNodeB->TargetType->GetName() : TEXT("null")));
+				LogGeneration(FString::Printf(TEXT("    [DIAG-PIN] CastBInPin LinkedTo.Num()=%d, PinType.SubCategoryObject=%s"),
+					CastBInPin->LinkedTo.Num(),
+					CastBInPin->PinType.PinSubCategoryObject.IsValid()
+						? *CastBInPin->PinType.PinSubCategoryObject->GetName()
+						: TEXT("null")));
 			}
 
-			SourceASCPin = CastNode->GetCastResultPin();
-			LogGeneration(FString::Printf(TEXT("    Created ASC resolution chain with cast for %s"), *Binding.Source));
+			LogGeneration(FString::Printf(TEXT("    Created dual ASC resolution chains with cast for %s"), *Binding.Source));
 		}
 		else
 		{
@@ -13306,33 +13481,55 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 					}
 
 					// Step 2: If needed, cast to NarrativeASCClass
+					// v4.21.2: Create dual cast nodes for exec reachability (like OwnerASC/PlayerASC case)
 					if (bNeedsVarCast && CurrentSourcePin)
 					{
-						// Create cast node for variable/extracted ASC
-						UK2Node_DynamicCast* VarCastNode = NewObject<UK2Node_DynamicCast>(EventGraph);
-						VarCastNode->TargetType = NarrativeASCClass;
-						EventGraph->AddNode(VarCastNode, false, false);
-						VarCastNode->CreateNewGuid();
-						VarCastNode->PostPlacedNewNode();
-						VarCastNode->AllocateDefaultPins();
-						VarCastNode->NodePosX = CurrentPosX + (bNeedsASCExtraction ? 550.0f : 400.0f);
-						VarCastNode->NodePosY = CurrentPosY + 200.0f;
+						// Create VarCastNodeA for ActivateAbility path
+						UK2Node_DynamicCast* VarCastNodeA = NewObject<UK2Node_DynamicCast>(EventGraph);
+						VarCastNodeA->TargetType = NarrativeASCClass;
+						EventGraph->AddNode(VarCastNodeA, false, false);
+						VarCastNodeA->CreateNewGuid();
+						VarCastNodeA->PostPlacedNewNode();
+						VarCastNodeA->AllocateDefaultPins();
+						VarCastNodeA->NodePosX = CurrentPosX + (bNeedsASCExtraction ? 550.0f : 400.0f);
+						VarCastNodeA->NodePosY = CurrentPosY + 100.0f;
 
-						// Wire CurrentSource → Cast
-						UEdGraphPin* VarCastInPin = VarCastNode->GetCastSourcePin();
-						if (VarCastInPin)
+						// Wire CurrentSource → VarCastNodeA
+						UEdGraphPin* VarCastAInPin = VarCastNodeA->GetCastSourcePin();
+						if (VarCastAInPin)
 						{
-							CurrentSourcePin->MakeLinkTo(VarCastInPin);
+							CurrentSourcePin->MakeLinkTo(VarCastAInPin);
 						}
+						SourceASCPinForAdd = VarCastNodeA->GetCastResultPin();
+						CastNodeA = VarCastNodeA;  // Store for exec wiring
 
-						SourceASCPin = VarCastNode->GetCastResultPin();
-						LogGeneration(FString::Printf(TEXT("    Created variable '%s' with cast to UNarrativeAbilitySystemComponent"), *Binding.Source));
+						// Create VarCastNodeB for EndAbility path
+						UK2Node_DynamicCast* VarCastNodeB = NewObject<UK2Node_DynamicCast>(EventGraph);
+						VarCastNodeB->TargetType = NarrativeASCClass;
+						EventGraph->AddNode(VarCastNodeB, false, false);
+						VarCastNodeB->CreateNewGuid();
+						VarCastNodeB->PostPlacedNewNode();
+						VarCastNodeB->AllocateDefaultPins();
+						VarCastNodeB->NodePosX = CurrentPosX + (bNeedsASCExtraction ? 550.0f : 400.0f);
+						VarCastNodeB->NodePosY = CurrentPosY + 400.0f;
+
+						// Wire CurrentSource → VarCastNodeB (same source, different cast node)
+						UEdGraphPin* VarCastBInPin = VarCastNodeB->GetCastSourcePin();
+						if (VarCastBInPin)
+						{
+							CurrentSourcePin->MakeLinkTo(VarCastBInPin);
+						}
+						SourceASCPinForRemove = VarCastNodeB->GetCastResultPin();
+						CastNodeB = VarCastNodeB;  // Store for exec wiring
+
+						LogGeneration(FString::Printf(TEXT("    Created dual variable casts for '%s' to UNarrativeAbilitySystemComponent"), *Binding.Source));
 					}
 					else if (CurrentSourcePin)
 					{
-						// Variable is already correct type, use directly
-						SourceASCPin = CurrentSourcePin;
-						LogGeneration(FString::Printf(TEXT("    Created variable getter for '%s'"), *Binding.Source));
+						// Variable is already correct type, use directly (pure getter, no exec issues)
+						SourceASCPinForAdd = CurrentSourcePin;
+						SourceASCPinForRemove = CurrentSourcePin;
+						LogGeneration(FString::Printf(TEXT("    Created variable getter for '%s' (no cast needed)"), *Binding.Source));
 					}
 				}
 				else
@@ -13361,6 +13558,8 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		CreateDelegateA->CreateNewGuid();
 		CreateDelegateA->PostPlacedNewNode();
 		CreateDelegateA->AllocateDefaultPins();
+		// v4.21.2: Do NOT call ReconstructNode() on CreateDelegate - it clears SelectedFunctionName
+		// when OutputDelegate pin is not yet wired (proven via diagnostic logging)
 		CreateDelegateA->NodePosX = CurrentPosX + 600.0f;
 		CreateDelegateA->NodePosY = CurrentPosY + 100.0f;
 
@@ -13391,12 +13590,40 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 		// Wire SourceASC → AddDelegate.PN_Self (Target)
 		UEdGraphPin* AddSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
-		if (SourceASCPin && AddSelfPin)
+
+		// v4.22: Debug logging for pin connection - ALWAYS list pins
 		{
-			SourceASCPin->MakeLinkTo(AddSelfPin);
+			FString AvailablePins;
+			for (UEdGraphPin* Pin : AddDelegateNode->Pins)
+			{
+				if (Pin && Pin->Direction == EGPD_Input)
+				{
+					if (!AvailablePins.IsEmpty()) AvailablePins += TEXT(", ");
+					AvailablePins += Pin->PinName.ToString();
+				}
+			}
+			LogGeneration(FString::Printf(TEXT("    [DEBUG] AddDelegate pin check: SourceASCPinForAdd=%s, AddSelfPin=%s"),
+				SourceASCPinForAdd ? TEXT("valid") : TEXT("null"),
+				AddSelfPin ? TEXT("valid") : TEXT("null")));
+			LogGeneration(FString::Printf(TEXT("    [DEBUG] AddDelegate ALL input pins: %s"), *AvailablePins));
 		}
 
+		if (SourceASCPinForAdd && AddSelfPin)
+		{
+			SourceASCPinForAdd->MakeLinkTo(AddSelfPin);
+			// Verify connection was actually made
+			bool bConnectionExists = AddSelfPin->LinkedTo.Contains(SourceASCPinForAdd);
+			LogGeneration(FString::Printf(TEXT("    [DEBUG] AddDelegate Target connection made: verified=%s, LinkedTo.Num=%d"),
+				bConnectionExists ? TEXT("YES") : TEXT("NO"), AddSelfPin->LinkedTo.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [ERROR] AddDelegate Target connection FAILED - pin(s) null"));
+		}
+
+		// v4.21.2: Store CastNode and AddDelegate together for exec wiring
 		AddDelegateNodes.Add(AddDelegateNode);
+		CastNodesForAdd.Add(CastNodeA);  // May be nullptr if no cast needed
 
 		// === END PATH ===
 
@@ -13407,6 +13634,8 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		CreateDelegateB->CreateNewGuid();
 		CreateDelegateB->PostPlacedNewNode();
 		CreateDelegateB->AllocateDefaultPins();
+		// v4.21.2: Do NOT call ReconstructNode() on CreateDelegate - it clears SelectedFunctionName
+		// when OutputDelegate pin is not yet wired (proven via diagnostic logging)
 		CreateDelegateB->NodePosX = CurrentPosX + 600.0f;
 		CreateDelegateB->NodePosY = CurrentPosY + 400.0f;
 
@@ -13435,14 +13664,44 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 			DelegateBOut->MakeLinkTo(RemoveDelegateIn);
 		}
 
-		// Wire SourceASC → RemoveDelegate.PN_Self (Target)
+		// Wire SourceASCPinForRemove → RemoveDelegate.PN_Self (Target)
 		UEdGraphPin* RemoveSelfPin = RemoveDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
-		if (SourceASCPin && RemoveSelfPin)
+
+		// v4.22: Debug logging for RemoveDelegate pin connection
+		LogGeneration(FString::Printf(TEXT("    [DEBUG] RemoveDelegate pin check: SourceASCPinForRemove=%s, RemoveSelfPin=%s"),
+			SourceASCPinForRemove ? TEXT("valid") : TEXT("null"),
+			RemoveSelfPin ? TEXT("valid") : TEXT("null")));
+		if (!RemoveSelfPin)
 		{
-			SourceASCPin->MakeLinkTo(RemoveSelfPin);
+			// Log available pins
+			FString AvailablePins;
+			for (UEdGraphPin* Pin : RemoveDelegateNode->Pins)
+			{
+				if (Pin && Pin->Direction == EGPD_Input)
+				{
+					if (!AvailablePins.IsEmpty()) AvailablePins += TEXT(", ");
+					AvailablePins += Pin->PinName.ToString();
+				}
+			}
+			LogGeneration(FString::Printf(TEXT("    [DEBUG] RemoveDelegate input pins: %s"), *AvailablePins));
 		}
 
+		if (SourceASCPinForRemove && RemoveSelfPin)
+		{
+			SourceASCPinForRemove->MakeLinkTo(RemoveSelfPin);
+			// Verify connection was actually made
+			bool bConnectionExists = RemoveSelfPin->LinkedTo.Contains(SourceASCPinForRemove);
+			LogGeneration(FString::Printf(TEXT("    [DEBUG] RemoveDelegate Target connection made: verified=%s, LinkedTo.Num=%d"),
+				bConnectionExists ? TEXT("YES") : TEXT("NO"), RemoveSelfPin->LinkedTo.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [ERROR] RemoveDelegate Target connection FAILED - pin(s) null"));
+		}
+
+		// v4.21.2: Store CastNode and RemoveDelegate together for exec wiring
 		RemoveDelegateNodes.Add(RemoveDelegateNode);
+		CastNodesForRemove.Add(CastNodeB);  // May be nullptr if no cast needed
 
 		LogGeneration(FString::Printf(TEXT("    Created delegate bind/unbind nodes for %s.%s -> %s"),
 			*Binding.Source, *Binding.Delegate, *Binding.Handler));
@@ -13470,8 +13729,18 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 		if (ActivateEvent)
 		{
+			// DIAG: Log root node confirmation
+			LogGeneration(FString::Printf(TEXT("    [DIAG] ActivateEvent FOUND: Class=%s, Function=%s"),
+				*ActivateEvent->GetClass()->GetName(),
+				*ActivateEvent->GetFunctionName().ToString()));
+
 			// Find the last node in the ActivateAbility chain
 			UEdGraphPin* LastExecPin = ActivateEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+			// DIAG: Log initial exec pin state
+			LogGeneration(FString::Printf(TEXT("    [DIAG] ActivateEvent Then pin: %s, LinkedTo=%d"),
+				LastExecPin ? TEXT("valid") : TEXT("NULL"),
+				LastExecPin ? LastExecPin->LinkedTo.Num() : -1));
 
 			// Follow exec chain to find the end
 			while (LastExecPin && LastExecPin->LinkedTo.Num() > 0)
@@ -13489,17 +13758,59 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 				}
 			}
 
-			// Chain AddDelegate nodes
-			for (UK2Node_AddDelegate* AddNode : AddDelegateNodes)
+			// DIAG: Log chain discovery outcome
+			LogGeneration(FString::Printf(TEXT("    [DIAG] Chain end LastExecPin: %s, Owner=%s"),
+				LastExecPin ? TEXT("valid") : TEXT("NULL"),
+				LastExecPin ? *LastExecPin->GetOwningNode()->GetClass()->GetName() : TEXT("N/A")));
+
+			// Chain AddDelegate nodes (v4.21.2: with CastNode exec wiring)
+			for (int32 i = 0; i < AddDelegateNodes.Num(); ++i)
 			{
+				UK2Node_AddDelegate* AddNode = AddDelegateNodes[i];
+				UK2Node_DynamicCast* CastNode = (i < CastNodesForAdd.Num()) ? CastNodesForAdd[i] : nullptr;
+
 				if (LastExecPin)
 				{
+					// v4.21.2: If CastNode exists, wire it into exec chain first
+					if (CastNode)
+					{
+						UEdGraphPin* CastExecIn = CastNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+						UEdGraphPin* CastExecOut = CastNode->FindPin(UEdGraphSchema_K2::PN_Then);
+
+						if (CastExecIn && CastExecOut)
+						{
+							LastExecPin->MakeLinkTo(CastExecIn);
+							LastExecPin = CastExecOut;
+
+							LogGeneration(FString::Printf(TEXT("    [DIAG] CastNodeA exec wired: PN_Execute.LinkedTo=%d, PN_Then.LinkedTo=%d"),
+								CastExecIn->LinkedTo.Num(),
+								CastExecOut->LinkedTo.Num()));
+						}
+						else
+						{
+							LogGeneration(TEXT("    [DIAG] CastNodeA exec pins NOT FOUND!"));
+						}
+					}
+
 					UEdGraphPin* AddExecIn = AddNode->FindPin(UEdGraphSchema_K2::PN_Execute);
 					if (AddExecIn)
 					{
 						LastExecPin->MakeLinkTo(AddExecIn);
 						LastExecPin = AddNode->FindPin(UEdGraphSchema_K2::PN_Then);
+
+						// DIAG: Verify exec wiring succeeded
+						LogGeneration(FString::Printf(TEXT("    [DIAG] AddDelegate exec wired: PN_Execute.LinkedTo=%d, PN_Then.LinkedTo=%d"),
+							AddExecIn->LinkedTo.Num(),
+							LastExecPin ? LastExecPin->LinkedTo.Num() : -1));
 					}
+					else
+					{
+						LogGeneration(TEXT("    [DIAG] AddDelegate PN_Execute pin NOT FOUND!"));
+					}
+				}
+				else
+				{
+					LogGeneration(TEXT("    [DIAG] AddDelegate SKIPPED - LastExecPin is NULL"));
 				}
 			}
 
@@ -13530,11 +13841,25 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 		if (EndAbilityEvent)
 		{
+			// DIAG: Log root node confirmation
+			LogGeneration(FString::Printf(TEXT("    [DIAG] EndAbilityEvent FOUND: Class=%s, Function=%s"),
+				*EndAbilityEvent->GetClass()->GetName(),
+				*EndAbilityEvent->GetFunctionName().ToString()));
+
 			UEdGraphPin* LastExecPin = EndAbilityEvent->FindPin(UEdGraphSchema_K2::PN_Then);
 
+			// DIAG: Log initial exec pin state
+			LogGeneration(FString::Printf(TEXT("    [DIAG] EndAbilityEvent Then pin: %s, LinkedTo=%d"),
+				LastExecPin ? TEXT("valid") : TEXT("NULL"),
+				LastExecPin ? LastExecPin->LinkedTo.Num() : -1));
+
 			// Chain RemoveDelegate nodes at the START of EndAbility (cleanup first)
-			for (UK2Node_RemoveDelegate* RemoveNode : RemoveDelegateNodes)
+			// v4.21.2: Include CastNode in exec chain for exec reachability
+			for (int32 i = 0; i < RemoveDelegateNodes.Num(); ++i)
 			{
+				UK2Node_RemoveDelegate* RemoveNode = RemoveDelegateNodes[i];
+				UK2Node_DynamicCast* CastNode = (i < CastNodesForRemove.Num()) ? CastNodesForRemove[i] : nullptr;
+
 				if (LastExecPin)
 				{
 					// Save existing connection
@@ -13543,12 +13868,42 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 					// Break existing connections
 					LastExecPin->BreakAllPinLinks();
 
+					// v4.21.2: If CastNode exists, wire it first
+					if (CastNode)
+					{
+						UEdGraphPin* CastExecIn = CastNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+						UEdGraphPin* CastExecOut = CastNode->FindPin(UEdGraphSchema_K2::PN_Then);
+
+						if (CastExecIn && CastExecOut)
+						{
+							LastExecPin->MakeLinkTo(CastExecIn);
+							LastExecPin = CastExecOut;
+
+							LogGeneration(FString::Printf(TEXT("    [DIAG] CastNodeB exec wired: PN_Execute.LinkedTo=%d, PN_Then.LinkedTo=%d"),
+								CastExecIn->LinkedTo.Num(),
+								CastExecOut->LinkedTo.Num()));
+						}
+						else
+						{
+							LogGeneration(TEXT("    [DIAG] CastNodeB exec pins NOT FOUND!"));
+						}
+					}
+
 					// Wire to RemoveDelegate
 					UEdGraphPin* RemoveExecIn = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Execute);
 					if (RemoveExecIn)
 					{
 						LastExecPin->MakeLinkTo(RemoveExecIn);
 						LastExecPin = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Then);
+
+						// DIAG: Verify exec wiring succeeded
+						LogGeneration(FString::Printf(TEXT("    [DIAG] RemoveDelegate exec wired: PN_Execute.LinkedTo=%d, PN_Then.LinkedTo=%d"),
+							RemoveExecIn->LinkedTo.Num(),
+							LastExecPin ? LastExecPin->LinkedTo.Num() : -1));
+					}
+					else
+					{
+						LogGeneration(TEXT("    [DIAG] RemoveDelegate PN_Execute pin NOT FOUND!"));
 					}
 
 					// Restore connections to RemoveDelegate's Then pin
@@ -13559,6 +13914,10 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 							LastExecPin->MakeLinkTo(ExistingPin);
 						}
 					}
+				}
+				else
+				{
+					LogGeneration(TEXT("    [DIAG] RemoveDelegate SKIPPED - LastExecPin is NULL"));
 				}
 			}
 
@@ -13574,6 +13933,39 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	{
 		LogGeneration(FString::Printf(TEXT("  DELEGATE_BIND: Generated %d complete delegate binding chains"), NodesGenerated));
 	}
+
+	// v4.22: Verify Target pin connections before returning
+	int32 AddConnected = 0, AddNotConnected = 0;
+	for (UK2Node_AddDelegate* AddNode : AddDelegateNodes)
+	{
+		UEdGraphPin* TargetPin = AddNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+		if (TargetPin && TargetPin->LinkedTo.Num() > 0)
+		{
+			AddConnected++;
+		}
+		else
+		{
+			AddNotConnected++;
+			LogGeneration(FString::Printf(TEXT("    [VERIFY_FAIL] AddDelegate '%s' Target pin NOT connected"), *AddNode->GetNodeTitle(ENodeTitleType::EditableTitle).ToString()));
+		}
+	}
+
+	int32 RemoveConnected = 0, RemoveNotConnected = 0;
+	for (UK2Node_RemoveDelegate* RemoveNode : RemoveDelegateNodes)
+	{
+		UEdGraphPin* TargetPin = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+		if (TargetPin && TargetPin->LinkedTo.Num() > 0)
+		{
+			RemoveConnected++;
+		}
+		else
+		{
+			RemoveNotConnected++;
+			LogGeneration(FString::Printf(TEXT("    [VERIFY_FAIL] RemoveDelegate '%s' Target pin NOT connected"), *RemoveNode->GetNodeTitle(ENodeTitleType::EditableTitle).ToString()));
+		}
+	}
+	LogGeneration(FString::Printf(TEXT("    [VERIFY] AddDelegate: %d connected, %d not connected"), AddConnected, AddNotConnected));
+	LogGeneration(FString::Printf(TEXT("    [VERIFY] RemoveDelegate: %d connected, %d not connected"), RemoveConnected, RemoveNotConnected));
 
 	return NodesGenerated;
 }

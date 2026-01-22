@@ -469,12 +469,12 @@ gameplay_abilities:
 
 ---
 
-## ❌ Known Issues - Node Position Persistence (v4.20.x)
+## 🔧 Known Issues - Node Position Persistence (v4.20.x)
 
-**Status:** UNRESOLVED - Positions calculated but not persisting when Blueprint opened in editor
+**Status:** ROOT CAUSE IDENTIFIED - FIX APPROVED (2026-01-22)
 
 **Problem:**
-Event graph nodes in generated Blueprints stack at origin (0,0) or in vertical columns instead of being spread out according to the layered graph layout algorithm.
+Event graph nodes in generated Blueprints cluster on the left side (X=0) instead of being spread out horizontally according to the layered graph layout algorithm.
 
 **Attempted Fixes (v4.20 - v4.20.11):**
 
@@ -486,26 +486,86 @@ Event graph nodes in generated Blueprints stack at origin (0,0) or in vertical c
 | v4.20.11 | Added `NotifyGraphChanged()` and `MarkBlueprintAsModified()` | No change |
 | v4.20.11 | Static position storage + `ReapplyNodePositions()` after `CompileBlueprint` | No change |
 
-**Technical Details:**
-- `AutoLayoutNodes()` calculates correct positions (confirmed via debug logs showing varied X,Y values)
-- Positions are set on `UK2Node::NodePosX` and `NodePosY` properties
-- `Modify()` is called on both `UEdGraph` and `UK2Node` before setting positions
-- `ReapplyNodePositions()` re-applies stored positions after compilation
-- Despite all measures, positions reset when Blueprint is opened in editor
+### **Claude-GPT Dual Audit (2026-01-22)**
 
-**Root Cause (Suspected):**
-The Blueprint editor may be auto-arranging nodes on open, or the positions are stored in a different location than `NodePosX`/`NodePosY` that we're not persisting.
+**Phase 1: Diagnostic Logging (5-point pipeline trace)**
 
-**Files Modified:**
-- `GasAbilityGeneratorGenerators.cpp` - `AutoLayoutNodes()`, `ReapplyNodePositions()`, `ClearStoredPositions()`
-- `GasAbilityGeneratorGenerators.h` - Added public function declarations
+| Logging Point | Position Status | Node Ptrs | Graph Ptr |
+|---------------|-----------------|-----------|-----------|
+| POINT_1: AfterAutoLayout | Values set | Stable | Stable |
+| POINT_2: BeforeCompile | Same values | Stable | Stable |
+| POINT_3: AfterCompile | Same values | Stable | Stable |
+| POINT_4: AfterReapply | Same values | Stable | Stable |
+| POINT_5: BeforeSave | Same values | Stable | Stable |
 
-**Impact:** LOW - Nodes are functional, just not visually arranged. Manual arrangement in editor works.
+**Finding:** Positions ARE being set and preserved through save. The generator is not at fault.
 
-**Future Investigation:**
-- Check if Blueprint editor has auto-arrange on open behavior
-- Investigate if `UEdGraphNode::GetNodePosition()` / `SetNodePosition()` should be used instead
-- Research how other tools (e.g., Control Rig) persist node positions
+**Phase 2: Visual Inspection (Editor screenshots)**
+
+| Blueprint | Compile Status | Node Positions |
+|-----------|---------------|----------------|
+| GA_FatherEngineer | ✅ Compiles | Clustered LEFT (X=0 area) |
+| GA_FatherCrawler | ❌ Errors | Clustered LEFT (X=0 area) |
+
+**Finding:** Both clean and failing BPs show left clustering. Issue is NOT related to compile errors.
+
+**Phase 3: Clipboard Export Analysis (Erdem's evidence)**
+
+| Node | Before Nudge | After Nudge |
+|------|--------------|-------------|
+| K2_ActivateAbility | No NodePosX, No NodePosY | NodePosX=-160, NodePosY=16 ✅ |
+| K2_OnEndAbility | NodePosY=336 only, No NodePosX | NodePosX=32, NodePosY=336 ✅ |
+| Branch nodes | NodePosX/Y always present | N/A |
+
+**Finding:** Override event nodes with NodePosX=0 don't serialize the X position (UE default value omission).
+
+### **ROOT CAUSE CONFIRMED**
+
+> **Override event nodes (UK2Node_Event with bOverrideFunction=True) have NodePosX=0, which UE treats as default and omits from serialization.**
+
+- NodePosX=0 is the default value → UE doesn't serialize it → position lost on reload
+- NodePosY works when non-zero (OnEndAbility Y=704 serializes correctly)
+- Manual nudge makes NodePosX non-zero → then it serializes and persists
+- Non-event nodes (Branch, CallFunction, etc.) have non-zero X → serialize correctly
+
+**Evidence Chain:**
+1. Diagnostic logs: Event ActivateAbility at X=0, Y=0
+2. Diagnostic logs: Event OnEndAbility at X=0, Y=704
+3. Clipboard: Untouched events missing NodePosX line
+4. Clipboard: Nudged events have NodePosX line and persist
+
+### **APPROVED FIX SPECIFICATION**
+
+**Location:** Post-layout finalization, after any refresh/reconstruct, before `SavePackage`
+
+**Logic:**
+```cpp
+For each node in EventGraph(s):
+    If node is UK2Node_Event AND bOverrideFunction == true:
+        If NodePosX == 0:
+            NodePosX = 16  // One grid unit, ensures serialization
+        // Do NOT modify NodePosY (works when non-zero)
+        // Do NOT clamp negative NodePosX (valid authored position)
+```
+
+**Constraints:**
+- Do NOT change layout algorithm or spacing rules
+- Do NOT add editor hooks
+- Do NOT touch NodePosY (proven to work)
+- Do NOT clamp negative X values (valid from manual nudge)
+- Fix must be generation-time and deterministic
+
+**Acceptance Test:**
+1. Generate BP via headless commandlet
+2. Open in editor WITHOUT touching nodes
+3. Copy override event nodes (K2_ActivateAbility, K2_OnEndAbility)
+4. **PASS:** Clipboard contains `NodePosX=<non-zero>`
+5. **FAIL:** Clipboard missing `NodePosX` line
+
+**Files to Modify:**
+- `GasAbilityGeneratorGenerators.cpp` - Add post-layout clamp for override events
+
+**Implementation Status:** AWAITING APPROVAL
 
 ---
 
