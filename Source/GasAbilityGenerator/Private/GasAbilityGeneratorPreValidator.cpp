@@ -353,8 +353,17 @@ bool FPreValidator::AttributeExistsOnSet(UClass* AttributeSetClass, const FStrin
 		return false;
 	}
 
+	// Parse attribute name - format is "SetClass.AttributeName" or just "AttributeName"
+	FString ParsedAttributeName = AttributeName;
+	int32 DotIndex;
+	if (AttributeName.FindLastChar('.', DotIndex))
+	{
+		// Extract just the attribute name after the last dot
+		ParsedAttributeName = AttributeName.Mid(DotIndex + 1);
+	}
+
 	// Look for FGameplayAttributeData property with the given name
-	FProperty* Property = AttributeSetClass->FindPropertyByName(*AttributeName);
+	FProperty* Property = AttributeSetClass->FindPropertyByName(*ParsedAttributeName);
 	if (Property)
 	{
 		// Verify it's an FGameplayAttributeData

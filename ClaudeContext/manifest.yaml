@@ -1,11 +1,26 @@
 # Father Companion System - Complete Manifest
-# Version: 3.0.2
+# Version: 3.0.3
 # Engine: Unreal Engine 5.7
 # Plugin: Narrative Pro v2.2
 # Total Tags: 216
 # Total Assets: 166
 # Event Graph Support: ENABLED
 # NPC Systems: Warden Husk, Guard Formation, Possessed Exploder, Support Buffer, Biomechanical Detachment, Gatherer Scout, Stalker Random Aggression
+
+# ============================================================================
+# DISABLED/PLACEHOLDER ENTRIES TRACKER
+# ============================================================================
+# The following entries have placeholders or are disabled pending external dependencies.
+#
+# | Entry Name          | Status      | Issue                         | Fix When                      |
+# |---------------------|-------------|-------------------------------|-------------------------------|
+# | GA_FatherRifle      | PLACEHOLDER | item_class: NarrativeItem     | Change to EI_FatherRifleWeapon after first gen |
+# | GA_FatherSword      | PLACEHOLDER | item_class: NarrativeItem     | Change to EI_FatherSwordWeapon after first gen |
+# | animation_montages  | COMMENTED   | SK_FatherCompanion missing    | Uncomment after skeleton import |
+# | animation_notifies  | COMMENTED   | Depends on AM_FatherAttack    | Uncomment after montages ready  |
+#
+# Search for "TODO:" comments to find all placeholders
+# ============================================================================
 
 project_root: /Game/FatherCompanion
 tags_ini_path: Config/DefaultGameplayTags.ini
@@ -576,10 +591,16 @@ gameplay_effects:
     parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
+  # v4.26: Decision 1B - StaminaRegenRate via direct modifier (no SetByCaller.StaminaRegenRate in Narrative Pro)
   - name: GE_EquipmentModifier_FatherSymbiote
     folder: Effects/Forms
     parent_class: GE_EquipmentModifier
     duration_policy: Infinite
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.StaminaRegenRate
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 10000.0
 
   - name: GE_EquipmentModifier_FatherEngineer
     folder: Effects/Forms
@@ -596,39 +617,14 @@ gameplay_effects:
     parent_class: GE_EquipmentModifier
     duration_policy: Infinite
 
-  # Stat Boost Effects (3)
-  - name: GE_ArmorBoost
-    folder: Effects/Stats
-    duration_policy: Infinite
-    modifiers:
-      - attribute: NarrativeAttributeSetBase.Armor
-        modifier_op: Additive
-        magnitude_type: SetByCaller
-        setbycaller_tag: Data.Father.ArmorBoost
-    asset_tag: Effect.Father.ArmorBoost
-
+  # Stat Boost Effects (1) - v4.26: Removed GE_ArmorBoost (Decision 2 - orphan, stats via EI + CharMov)
   - name: GE_ExoskeletonSpeed
     folder: Effects/Stats
     duration_policy: Infinite
     granted_tags:
       - Father.State.SpeedBoosted
     asset_tag: Effect.Father.SpeedBoost
-
-  - name: GE_SymbioteBoost
-    folder: Effects/Stats
-    duration_policy: Infinite
-    modifiers:
-      - attribute: NarrativeAttributeSetBase.Damage
-        modifier_op: Additive
-        magnitude_type: ScalableFloat
-        magnitude_value: 25.0
-      - attribute: NarrativeAttributeSetBase.AttackSpeed
-        modifier_op: Additive
-        magnitude_type: ScalableFloat
-        magnitude_value: 0.3
-    granted_tags:
-      - Symbiote.State.Merged
-    asset_tag: Effect.Symbiote.StatBoost
+  # v4.26: Removed GE_SymbioteBoost (Decision 3 - orphan, misconfigured, stats via EI + GE_EquipmentModifier_FatherSymbiote)
 
   # Cooldown Effects (8)
   - name: GE_FormChangeCooldown
@@ -1149,7 +1145,8 @@ gameplay_abilities:
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
           to: [Branch_First, Exec]
-        # Branch True path (first activation)
+        # === FIRST ACTIVATION PATH (True branch) - Skip VFX/delay, merge into CommitCooldown ===
+        # v4.26 (Rule 4): True path must merge into stateful setup chain, not early-terminate
         - from: [Branch_First, True]
           to: [SetCurrentForm, Exec]
         - from: [SetCurrentForm, Exec]
@@ -1157,8 +1154,8 @@ gameplay_abilities:
         - from: [SetIsAttached, Exec]
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
-          to: [EndAbility_First, Exec]
-        # Branch False path (form switch) - v4.13.5: NO invulnerability
+          to: [CommitCooldown, Exec]
+        # === FORM SWITCH PATH (False branch) - v4.13.5: NO invulnerability ===
         - from: [Branch_First, False]
           to: [AddTransitioningTag, Exec]
         - from: [AddTransitioningTag, Exec]
@@ -1663,7 +1660,8 @@ gameplay_abilities:
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
           to: [Branch_First, Exec]
-        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        # === FIRST ACTIVATION PATH (True branch) - Skip VFX/delay, merge into setup chain ===
+        # v4.26 (Rule 4): True path must merge into stateful setup chain, not early-terminate
         - from: [Branch_First, True]
           to: [RemovePriorFormState_First, Exec]
         - from: [RemovePriorFormState_First, Exec]
@@ -1671,7 +1669,7 @@ gameplay_abilities:
         - from: [ApplyArmorState_First, Exec]
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
-          to: [EndAbility_First, Exec]
+          to: [Branch_Valid, Exec]
         # === FORM SWITCH PATH (False branch) - v4.13.5: NO invulnerability ===
         - from: [Branch_First, False]
           to: [AddTransitioningTag, Exec]
@@ -2234,7 +2232,8 @@ gameplay_abilities:
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
           to: [Branch_First, Exec]
-        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        # === FIRST ACTIVATION PATH (True branch) - Skip VFX/delay, merge into setup chain ===
+        # v4.26 (Rule 4): True path must merge into stateful setup chain, not early-terminate
         - from: [Branch_First, True]
           to: [RemovePriorFormState_First, Exec]
         - from: [RemovePriorFormState_First, Exec]
@@ -2242,7 +2241,7 @@ gameplay_abilities:
         - from: [ApplyExoskeletonState_First, Exec]
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
-          to: [EndAbility_First, Exec]
+          to: [SetPlayerRef, Exec]
         # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
         # v4.13.5: NO invulnerability - uses AddLooseGameplayTag/RemoveLooseGameplayTag
         - from: [Branch_First, False]
@@ -2668,6 +2667,13 @@ gameplay_abilities:
           properties:
             variable_name: DurationTimerHandle
           position: [3300, 0]
+        # v4.26 (VTF-7): CommitCooldown required when cooldown_gameplay_effect_class defined
+        - id: CommitCooldown
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [3500, 0]
         # === TIMER EXPIRED FLOW (with guards per GAS Audit FIX-2) ===
         - id: CustomEvent_TimerExpired
           type: CustomEvent
@@ -2825,7 +2831,8 @@ gameplay_abilities:
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
           to: [Branch_First, Exec]
-        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        # === FIRST ACTIVATION PATH (True branch) - Skip VFX/delay, merge into setup chain ===
+        # v4.26 (Rule 4): True path must merge into stateful setup chain, not early-terminate
         - from: [Branch_First, True]
           to: [RemovePriorFormState_First, Exec]
         - from: [RemovePriorFormState_First, Exec]
@@ -2833,7 +2840,7 @@ gameplay_abilities:
         - from: [ApplySymbioteState_First, Exec]
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
-          to: [EndAbility_First, Exec]
+          to: [SetPlayerRef, Exec]
         # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
         # v4.13.5: No invulnerability - use AddLooseGameplayTag instead
         - from: [Branch_First, False]
@@ -2862,6 +2869,9 @@ gameplay_abilities:
           to: [SetTimer, Exec]
         - from: [SetTimer, Exec]
           to: [SetTimerHandle, Exec]
+        # v4.26 (VTF-7): CommitCooldown after setup complete
+        - from: [SetTimerHandle, Exec]
+          to: [CommitCooldown, Exec]
         # Data flow - GetAvatarActor to Cast
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
@@ -3298,7 +3308,8 @@ gameplay_abilities:
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
           to: [Branch_First, Exec]
-        # === FIRST ACTIVATION PATH (True branch) - Simple setup, no VFX/delay ===
+        # === FIRST ACTIVATION PATH (True branch) - Skip VFX/delay, merge into setup chain ===
+        # v4.26 (Rule 4): True path must merge into stateful setup chain, not early-terminate
         - from: [Branch_First, True]
           to: [RemovePriorFormState_First, Exec]
         - from: [RemovePriorFormState_First, Exec]
@@ -3306,7 +3317,7 @@ gameplay_abilities:
         - from: [ApplyEngineerState_First, Exec]
           to: [SetFirstFalse, Exec]
         - from: [SetFirstFalse, Exec]
-          to: [EndAbility_First, Exec]
+          to: [GetFatherLocation, Exec]
         # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
         # v4.13.5: NO invulnerability - uses AddLooseGameplayTag/RemoveLooseGameplayTag
         - from: [Branch_First, False]
@@ -4791,8 +4802,9 @@ gameplay_abilities:
         - from: [GetStealthHandle, StealthEffectHandle]
           to: [RemoveGE, Handle]
 
-  # GA_Backstab - Player Default Passive Backstab Damage
-  # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
+  # GA_Backstab - Universal Player Passive Backstab Damage
+  # v4.26 (Decision 4): Universal ability - add to player's Default Abilities array, NOT granted via equipment
+  # NOTE: Runs on Player ASC - no cross-ASC gates needed
   # PASSIVE ABILITY: Contains CheckBackstabCondition and ApplyBackstabBonus FUNCTIONS
   # These functions are CALLED BY attack abilities - GA_Backstab itself does not activate
   # Functions must be created manually in editor (manifest only generates event_graph)
@@ -4806,8 +4818,7 @@ gameplay_abilities:
         - Ability.Father.Backstab
       activation_owned_tags:
         - State.BackstabReady
-      # activation_required_tags removed - Father.Form.Exoskeleton is cross-ASC gate
-      # Equipment granting already ensures this ability is only available in Exoskeleton form
+      # No activation_required_tags - universal ability, internal conditions (sight check, enemy unaware) handle gating
     variables:
       - name: BackstabDamageMultiplier
         type: Float
@@ -5704,6 +5715,7 @@ gameplay_abilities:
 
   # GA_FatherRifle - Rifle Weapon Form (NPC-owned form ability)
   # v2.7.0: Full Narrative Pro item flow with BreakStruct/GetArrayItem
+  # NOTE: Uses placeholder class NarrativeItem until EI_FatherRifleWeapon is generated
   - name: GA_FatherRifle
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -5792,7 +5804,9 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: TryAddItemFromClass
-            class: BP_FatherRifleWeapon
+            class: NarrativeInventoryComponent
+            # TODO: item_class should be EI_FatherRifleWeapon after first generation
+            item_class: NarrativeItem
             quantity: 1
           position: [2100, 150]
         # Break FItemAddResult struct to get Stacks array
@@ -5979,6 +5993,7 @@ gameplay_abilities:
 
   # GA_FatherSword - Sword Weapon Form (NPC-owned form ability)
   # v2.7.0: Full Narrative Pro item flow with BreakStruct/GetArrayItem
+  # NOTE: Uses placeholder class NarrativeItem until EI_FatherSwordWeapon is generated
   - name: GA_FatherSword
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -6067,7 +6082,9 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: TryAddItemFromClass
-            class: BP_FatherSwordWeapon
+            class: NarrativeInventoryComponent
+            # TODO: item_class should be EI_FatherSwordWeapon after first generation
+            item_class: NarrativeItem
             quantity: 1
           position: [2100, 150]
         # Break FItemAddResult struct to get Stacks array
@@ -6282,12 +6299,12 @@ equippable_items:
     folder: Items/Forms
     parent_class: EquippableItem
     equipment_slot: Narrative.Equipment.Slot.FatherForm
+    # v4.26 (Decision 4): Removed GA_Backstab - universal ability, add to player's Default Abilities array
     abilities_to_grant:
       - GA_FatherExoskeleton
       - GA_FatherExoskeletonDash
       - GA_FatherExoskeletonSprint
       - GA_StealthField
-      - GA_Backstab
     equipment_modifier_ge: GE_EquipmentModifier_FatherExoskeleton
     # Per Section 58.5: AttackRating +10 (speed/jump via CharacterMovement)
     equipment_effect_values:
@@ -6626,7 +6643,7 @@ narrative_events:
     event_tag: GameplayEvent.Father.Sacrificed
 
 # ============================================================================
-# ACTOR BLUEPRINTS (4)
+# ACTOR BLUEPRINTS (4) - Characters (1) + Projectiles (2) + Traps (1)
 # ============================================================================
 actor_blueprints:
   - name: BP_FatherCompanion
@@ -7205,37 +7222,38 @@ niagara_systems:
   #     light_radius: 300.0
 
 # ============================================================================
-# ANIMATION ASSETS (7)
+# ANIMATION ASSETS (7) - DISABLED: Blocked by SK_FatherCompanion (R1)
+# Re-enable when skeleton mesh is imported
 # ============================================================================
-animation_montages:
-  - name: AM_FatherAttack
-    folder: Animations
-    skeleton: SK_FatherCompanion
-
-  - name: AM_FatherThrowWeb
-    folder: Animations
-    skeleton: SK_FatherCompanion
-
-  - name: AM_FatherSacrifice
-    folder: Animations
-    skeleton: SK_FatherCompanion
-
-  - name: AM_FatherReactivate
-    folder: Animations
-    skeleton: SK_FatherCompanion
-
-  - name: AM_FatherDetach
-    folder: Animations
-    skeleton: SK_FatherCompanion
-
-  - name: AM_FatherAttach
-    folder: Animations
-    skeleton: SK_FatherCompanion
-
-animation_notifies:
-  - name: NAS_FatherAttack
-    folder: Animations
-    montage: AM_FatherAttack
+# animation_montages:
+#   - name: AM_FatherAttack
+#     folder: Animations
+#     skeleton: SK_FatherCompanion
+#
+#   - name: AM_FatherThrowWeb
+#     folder: Animations
+#     skeleton: SK_FatherCompanion
+#
+#   - name: AM_FatherSacrifice
+#     folder: Animations
+#     skeleton: SK_FatherCompanion
+#
+#   - name: AM_FatherReactivate
+#     folder: Animations
+#     skeleton: SK_FatherCompanion
+#
+#   - name: AM_FatherDetach
+#     folder: Animations
+#     skeleton: SK_FatherCompanion
+#
+#   - name: AM_FatherAttach
+#     folder: Animations
+#     skeleton: SK_FatherCompanion
+#
+# animation_notifies:
+#   - name: NAS_FatherAttack
+#     folder: Animations
+#     montage: AM_FatherAttack
 
 # ============================================================================
 # MATERIALS (4) - v2.6.12 Enhanced with expression graphs
