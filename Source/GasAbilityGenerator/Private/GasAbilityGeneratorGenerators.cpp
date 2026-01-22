@@ -2370,7 +2370,9 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 					else
 					{
 						// v4.23 FAIL-FAST: S31 - Manifest references attribute property that doesn't exist
-						LogGeneration(FString::Printf(TEXT("[E_GE_PROPERTY_NOT_FOUND] %s | Property '%s' not found on class '%s'"), *Definition.Name, *PropertyName, *ClassName));
+						// v4.23.1: Phase 3 spec-complete - added Subsystem, RequestedProperty
+						LogGeneration(FString::Printf(TEXT("[E_GE_PROPERTY_NOT_FOUND] %s | Subsystem: GAS | Property '%s' not found on class '%s' | RequestedProperty: %s"),
+							*Definition.Name, *PropertyName, *ClassName, *PropertyName));
 						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 							FString::Printf(TEXT("Attribute property '%s' not found on class '%s'"), *PropertyName, *ClassName));
 					}
@@ -2378,7 +2380,8 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 				else
 				{
 					// v4.23 FAIL-FAST: S32 - Manifest references attribute set class that doesn't exist
-					LogGeneration(FString::Printf(TEXT("[E_GE_ATTRIBUTESET_NOT_FOUND] %s | Attribute set class '%s' not found"), *Definition.Name, *ClassName));
+					// v4.23.1: Phase 3 spec-complete - added Subsystem
+					LogGeneration(FString::Printf(TEXT("[E_GE_ATTRIBUTESET_NOT_FOUND] %s | Subsystem: GAS | Attribute set class '%s' not found"), *Definition.Name, *ClassName));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						FString::Printf(TEXT("Attribute set class '%s' not found"), *ClassName));
 				}
@@ -14522,7 +14525,8 @@ FGenerationResult FAnimationMontageGenerator::Generate(const FManifestAnimationM
 	if (!Skeleton)
 	{
 		// v4.23 FAIL-FAST: Manifest references skeleton that cannot be loaded
-		LogGeneration(FString::Printf(TEXT("[E_MONTAGE_SKELETON_NOT_FOUND] %s | Could not load skeleton: %s"),
+		// v4.23.1: Phase 3 spec-complete - added Subsystem
+		LogGeneration(FString::Printf(TEXT("[E_MONTAGE_SKELETON_NOT_FOUND] %s | Subsystem: General | Could not load skeleton: %s"),
 			*Definition.Name, *Definition.Skeleton));
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 			FString::Printf(TEXT("Animation Montage skeleton '%s' not found"), *Definition.Skeleton));
@@ -15742,8 +15746,12 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 				else
 				{
 					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-					LogGeneration(FString::Printf(TEXT("[E_PARTYSPEAKERINFO_NOT_FOUND] %s | PartySpeakerInfo property not found | CDO Class: %s | Speakers requested: %d"),
-						*Definition.Name, *DialogueTemplate->GetClass()->GetPathName(), Definition.PartySpeakerInfo.Num()));
+					// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+					UClass* TargetClass = DialogueTemplate->GetClass();
+					LogGeneration(FString::Printf(TEXT("[E_PARTYSPEAKERINFO_NOT_FOUND] %s | Subsystem: Dialogue | PartySpeakerInfo property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: PartySpeakerInfo | Speakers requested: %d"),
+						*Definition.Name, *TargetClass->GetPathName(),
+						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None"),
+						Definition.PartySpeakerInfo.Num()));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						TEXT("PartySpeakerInfo property not found - manifest references speakers but property lookup failed"));
 				}
@@ -17141,8 +17149,12 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				else
 				{
 					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-					LogGeneration(FString::Printf(TEXT("[E_EQUIPMENTABILITIES_NOT_FOUND] %s | EquipmentAbilities property not found | CDO Class: %s | Abilities requested: %d"),
-						*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.EquipmentAbilities.Num()));
+					// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+					UClass* TargetClass = CDO->GetClass();
+					LogGeneration(FString::Printf(TEXT("[E_EQUIPMENTABILITIES_NOT_FOUND] %s | Subsystem: Item | EquipmentAbilities property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: EquipmentAbilities | Abilities requested: %d"),
+						*Definition.Name, *TargetClass->GetPathName(),
+						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None"),
+						Definition.EquipmentAbilities.Num()));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						TEXT("EquipmentAbilities property not found - manifest references abilities but property lookup failed"));
 				}
@@ -17201,8 +17213,12 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				else
 				{
 					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-					LogGeneration(FString::Printf(TEXT("[E_STATS_NOT_FOUND] %s | Stats property not found on UNarrativeItem | CDO Class: %s | Stats requested: %d"),
-						*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.Stats.Num()));
+					// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+					UClass* TargetClass = CDO->GetClass();
+					LogGeneration(FString::Printf(TEXT("[E_STATS_NOT_FOUND] %s | Subsystem: Item | Stats property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: Stats | Stats requested: %d"),
+						*Definition.Name, *TargetClass->GetPathName(),
+						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None"),
+						Definition.Stats.Num()));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						TEXT("Stats property not found - manifest references stats but property lookup failed"));
 				}
@@ -17268,8 +17284,12 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				else
 				{
 					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-					LogGeneration(FString::Printf(TEXT("[E_ACTIVITIESTOGRANT_NOT_FOUND] %s | ActivitiesToGrant property not found | CDO Class: %s | Activities requested: %d"),
-						*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.ActivitiesToGrant.Num()));
+					// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+					UClass* TargetClass = CDO->GetClass();
+					LogGeneration(FString::Printf(TEXT("[E_ACTIVITIESTOGRANT_NOT_FOUND] %s | Subsystem: Item | ActivitiesToGrant property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: ActivitiesToGrant | Activities requested: %d"),
+						*Definition.Name, *TargetClass->GetPathName(),
+						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None"),
+						Definition.ActivitiesToGrant.Num()));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						TEXT("ActivitiesToGrant property not found - manifest references activities but property lookup failed"));
 				}
@@ -17369,8 +17389,11 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				else
 				{
 					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-					LogGeneration(FString::Printf(TEXT("[E_PICKUPMESHDATA_NOT_FOUND] %s | PickupMeshData property not found | CDO Class: %s"),
-						*Definition.Name, *CDO->GetClass()->GetPathName()));
+					// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+					UClass* TargetClass = CDO->GetClass();
+					LogGeneration(FString::Printf(TEXT("[E_PICKUPMESHDATA_NOT_FOUND] %s | Subsystem: Item | PickupMeshData property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: PickupMeshData"),
+						*Definition.Name, *TargetClass->GetPathName(),
+						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None")));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						TEXT("PickupMeshData property not found - manifest references mesh data but property lookup failed"));
 				}
@@ -17416,8 +17439,11 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				else
 				{
 					// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-					LogGeneration(FString::Printf(TEXT("[E_TRACEDATA_NOT_FOUND] %s | TraceData property not found | CDO Class: %s"),
-						*Definition.Name, *CDO->GetClass()->GetPathName()));
+					// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+					UClass* TargetClass = CDO->GetClass();
+					LogGeneration(FString::Printf(TEXT("[E_TRACEDATA_NOT_FOUND] %s | Subsystem: Item | TraceData property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: TraceData"),
+						*Definition.Name, *TargetClass->GetPathName(),
+						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None")));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						TEXT("TraceData property not found - manifest references trace data but property lookup failed"));
 				}
@@ -17828,7 +17854,8 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 		else
 		{
 			// v4.23 FAIL-FAST: Manifest references ability that cannot be resolved
-			LogGeneration(FString::Printf(TEXT("[E_ABILITYCONFIG_ABILITY_NOT_FOUND] %s | Could not resolve ability: %s"),
+			// v4.23.1: Phase 3 spec-complete - added Subsystem
+			LogGeneration(FString::Printf(TEXT("[E_ABILITYCONFIG_ABILITY_NOT_FOUND] %s | Subsystem: GAS | Could not resolve ability: %s"),
 				*Definition.Name, *AbilityName));
 			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 				FString::Printf(TEXT("AbilityConfiguration ability '%s' not found"), *AbilityName));
@@ -18083,7 +18110,8 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		else
 		{
 			// v4.23 FAIL-FAST: Manifest references activity that cannot be resolved
-			LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_ACTIVITY_NOT_FOUND] %s | Could not resolve activity: %s"),
+			// v4.23.1: Phase 3 spec-complete - added Subsystem
+			LogGeneration(FString::Printf(TEXT("[E_ACTIVITYCONFIG_ACTIVITY_NOT_FOUND] %s | Subsystem: GAS | Could not resolve activity: %s"),
 				*Definition.Name, *ActivityName));
 			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 				FString::Printf(TEXT("ActivityConfiguration activity '%s' not found"), *ActivityName));
@@ -18455,8 +18483,12 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		else
 		{
 			// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-			LogGeneration(FString::Printf(TEXT("[E_NPCTARGETS_NOT_FOUND] %s | NPCTargets property not found | CDO Class: %s | Targets requested: %d"),
-				*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.NPCTargets.Num()));
+			// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+			UClass* TargetClass = CDO->GetClass();
+			LogGeneration(FString::Printf(TEXT("[E_NPCTARGETS_NOT_FOUND] %s | Subsystem: NPC | NPCTargets property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: NPCTargets | Targets requested: %d"),
+				*Definition.Name, *TargetClass->GetPathName(),
+				TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None"),
+				Definition.NPCTargets.Num()));
 			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 				TEXT("NPCTargets property not found - manifest references targets but property lookup failed"));
 		}
@@ -18508,8 +18540,12 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		else
 		{
 			// v4.23 FAIL-FAST: Property exists in NP but FindPropertyByName failed (generator bug)
-			LogGeneration(FString::Printf(TEXT("[E_CHARACTERTARGETS_NOT_FOUND] %s | CharacterTargets property not found | CDO Class: %s | Targets requested: %d"),
-				*Definition.Name, *CDO->GetClass()->GetPathName(), Definition.CharacterTargets.Num()));
+			// v4.23.1: Phase 3 spec-complete - added Subsystem, SuperClassPath, RequestedProperty
+			UClass* TargetClass = CDO->GetClass();
+			LogGeneration(FString::Printf(TEXT("[E_CHARACTERTARGETS_NOT_FOUND] %s | Subsystem: NPC | CharacterTargets property not found | ClassPath: %s | SuperClassPath: %s | RequestedProperty: CharacterTargets | Targets requested: %d"),
+				*Definition.Name, *TargetClass->GetPathName(),
+				TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None"),
+				Definition.CharacterTargets.Num()));
 			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 				TEXT("CharacterTargets property not found - manifest references targets but property lookup failed"));
 		}
