@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.21.2) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.24.1) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -327,7 +327,7 @@ The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.21.2)
+## GasAbilityGenerator Plugin (v4.24.1)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1104,6 +1104,11 @@ When looking for classes/enums, the plugin searches:
 
 ### Plugin Version History
 
+- v4.24.1 - Phase 4.1.1 Class Resolution Fix: Claude-GPT dual audit identified false negatives in pre-validation. Fixed CoreUObject bug at line 194 (`*CorePath` → `*ClassName`). Added 4 missing /Script module paths for class resolution: GameplayTags (UBlueprintGameplayTagLibrary), Niagara (UNiagaraFunctionLibrary), UMG (UUserWidget), AIModule (UBTService_BlueprintBase). Added diagnostic logging showing attempted paths on failed resolution. Eliminates 77 false negative E_PREVAL_CLASS_NOT_FOUND errors for valid engine classes.
+- v4.24 - Phase 4.1 Pre-Validation System: Implements pre-validation per Phase4_Spec_Locked.md. Validates manifest references BEFORE generation starts using reflection-based semantic checks. Rules: F1/F2 (function validation), A1/A2 (attribute validation), C1/C2 (class validation), R1-R5 (asset references), T1/T2 (tag validation), K1/K2 (token validation). Caching system for expensive reflection lookups. Blocking policy: Errors block generation, Warnings proceed. Output format includes manifest location (file:line:column) and YAML path. New types: FPreValidationCache, FPreValidator, FPreValidationReport. Error codes: E_PREVAL_CLASS_NOT_FOUND, E_PREVAL_FUNCTION_NOT_FOUND, E_PREVAL_ATTRIBUTE_NOT_FOUND, E_PREVAL_ASSET_NOT_FOUND, E_PREVAL_TAG_NOT_REGISTERED (Warning), E_PREVAL_TOKEN_UNSUPPORTED.
+- v4.23.1 - Phase 3 Spec-Complete: Enhanced diagnostic context for all error codes. Every error now includes ClassPath, SuperClassPath, and RequestedProperty in logs. Provides full context for hypothesis testing (H1-H5) when 8 BUG errors occur. Phase 3 complete per Fail_Fast_Audit_FINAL.md.
+- v4.23 - Fail-Fast Audit Phase 2: Converted Type M items (manifest defects) from warnings to hard fails. Parse-time validation now blocks generation on invalid manifest entries. 97 error codes classified across 3 phases. Dual-agent audit consensus with GPT.
+- v4.22 - NodePosX Serialization Override: Fixed event graph node position serialization where X=0 caused nodes to pile at left edge. Overrides FBlueprintNodeScriptCodeRange::PreSerialize to clamp NodePosX from 0 to minimum 16. Ensures all nodes have valid positive X positions for proper graph layout.
 - v4.21.2 - Delegate Binding Pin Wiring Fixes: Three critical fixes for delegate binding node generation. (1) UK2Node_Self pin name fix - changed FindPin(PN_ReturnValue) to FindPin(PN_Self) since UK2Node_Self uses PN_Self for its output. (2) Cast node type propagation - added NotifyPinConnectionListChanged() after MakeLinkTo() to trigger pin type resolution required by compiler. (3) Dual CastNode architecture - separate CastNodeA (ActivateAbility) and CastNodeB (EndAbility) paths wired into respective exec chains to prevent node pruning. Changed ASC resolution from GetAbilitySystemComponent(Actor) to GetAbilitySystemComponentFromActorInfo() on UGameplayAbility. All 5 abilities with delegate_bindings now compile: GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField.
 - v4.21.1 - Delegate Binding Variable Source: Implements Test Case #5 from locked design - variable source resolution now creates UK2Node_VariableGet nodes. Searches Blueprint.NewVariables for source name, creates getter node, auto-casts to UNarrativeAbilitySystemComponent if variable type is base ASC. Error codes: E_DELEGATE_SOURCE_INVALID (variable not found), E_DELEGATE_VARIABLE_PIN (pin not found). Completes v4.21 acceptance criteria: "Source resolution works for OwnerASC, PlayerASC, and variables".
 - v4.21 - Delegate Binding Automation: Claude-GPT dual audit approved (2026-01-21). Full auto-generation of multicast delegate bind/unbind nodes for GameplayAbilities. Supports Narrative Pro delegates (OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage on UNarrativeAbilitySystemComponent). Architecture: Two CreateDelegate nodes per binding (one for ActivateAbility, one for EndAbility). Proper PN_Self wiring: CreateDelegate→Self (ability), Add/RemoveDelegate→SourceASC. Mandatory cast to UNarrativeAbilitySystemComponent for OwnerASC/PlayerASC keywords. Custom Event auto-created with delegate signature parameters. Error codes: E_DELEGATE_NOT_FOUND, E_DELEGATE_SIGNATURE_MISMATCH (FAIL severity). Parser extended with `id:` field. Implements Implementation_Plans_Audit_v1.md Section 9 (P2.1).

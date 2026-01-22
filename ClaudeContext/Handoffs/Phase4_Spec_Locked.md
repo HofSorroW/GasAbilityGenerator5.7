@@ -374,6 +374,33 @@ If omitted, defaults to `UNarrativeAttributeSetBase`.
 | 5 | Cascade handling | Locked: Separate bucket + E_CASCADE_SKIPPED |
 | 6 | Dependency graph | Locked: Extend existing with external edges |
 
+### Phase 4.1.1 Audit Record (2026-01-22)
+
+**Issue Identified:** 77 pre-validation errors for valid engine classes (false negatives)
+
+**Root Cause Analysis (Claude-GPT Dual Audit):**
+
+| Finding | Description | Impact |
+|---------|-------------|--------|
+| **Bug at line 194** | Copy-paste error: `*CorePath` instead of `*ClassName` | CoreUObject path never resolves correctly |
+| **Missing /Script paths** | GameplayTags, Niagara, UMG, AIModule not tried | Valid engine classes reported as not found |
+
+**Affected Classes:**
+- `UBlueprintGameplayTagLibrary` → `/Script/GameplayTags.BlueprintGameplayTagLibrary`
+- `UNiagaraFunctionLibrary` → `/Script/Niagara.NiagaraFunctionLibrary`
+- `UUserWidget` → `/Script/UMG.UserWidget`
+- `UBTService_BlueprintBase` → `/Script/AIModule.BTService_BlueprintBase`
+
+**Resolution (Locked Scope):**
+1. Fix CoreUObject bug: `*CorePath` → `*ClassName`
+2. Add `/Script/GameplayTags.<ClassName>` path attempt
+3. Add `/Script/Niagara.<ClassName>` path attempt
+4. Add `/Script/UMG.<ClassName>` path attempt
+5. Add `/Script/AIModule.<ClassName>` path attempt
+6. Add diagnostic logging showing attempted paths on failure
+
+**Explicitly Excluded:** Module pre-loading (not required if /Script paths are correct)
+
 ### Evidence Base
 
 This specification is derived from:
@@ -385,11 +412,17 @@ This specification is derived from:
 
 ## 9. Implementation Phases
 
-### Phase 4.1: Pre-Validation System
+### Phase 4.1: Pre-Validation System ✓ (v4.24)
 - Implement reflection-based checks (F1, F2, A1, A2, C1, C2, R1-R5, T1, T2, K1, K2)
 - Implement caching
 - Implement blocking logic
 - Implement report format
+
+### Phase 4.1.1: Class Resolution Fix (v4.24.1)
+- Fix CoreUObject bug (`*CorePath` → `*ClassName`)
+- Add missing /Script paths (GameplayTags, Niagara, UMG, AIModule)
+- Add diagnostic logging for failed resolution
+- Eliminates 77 false negative errors
 
 ### Phase 4.2: Dependency Ordering
 - Extend dependency graph with external edges
@@ -433,6 +466,7 @@ Phase 4 is complete when:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-01-22 | Claude+GPT | Phase 4.1.1 audit findings: class resolution fix scope |
 | 1.0 | 2026-01-22 | Claude+GPT | Initial locked specification |
 
 ---
