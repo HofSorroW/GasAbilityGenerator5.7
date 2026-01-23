@@ -752,20 +752,20 @@ Current pattern:
 
 ## KNOWN LIMITATIONS (v4.27)
 
-### LIM-1: Automatic Dome Burst on Form Exit
-**Status:** NOT AUTOMATABLE
-**Affected:** GA_ProtectiveDome, GA_DomeBurst, EI_FatherArmorForm
-**Added:** 2026-01-23
+### ~~LIM-1: Automatic Dome Burst on Form Exit~~ RESOLVED
+**Status:** ✅ IMPLEMENTED (v4.27)
+**Affected:** GA_ProtectiveDome, GA_DomeBurst
+**Resolved:** 2026-01-23
 
-**Desired Behavior (Decisions 22-24):** When armor form is unequipped and dome is fully charged, automatically trigger GA_DomeBurst for an exit burst.
+**Implementation (Decisions 22-24):** When armor form is unequipped and dome is fully charged, GA_ProtectiveDome's EndAbility automatically triggers GA_DomeBurst.
 
-**Blockers:**
-1. **HandleUnequip override:** `GetEquipmentComponent()` is C++ only (not UFUNCTION), cannot be called from Blueprint
-2. **GA_ProtectiveDome EndAbility:** `TSubclassOf<>` parameters cannot be passed to `TryActivateAbilityByClass` in the manifest system
+**Solution:**
+1. GA_DomeBurst reordered before GA_ProtectiveDome in manifest (TSubclassOf session cache ordering)
+2. GA_ProtectiveDome EndAbility now calls `TryActivateAbilityByClass(GA_DomeBurst)`
+3. GA_DomeBurst has `activation_required_tags: Father.Dome.FullyCharged` - only fires if dome is charged
+4. EndAbility also clears `Father.Dome.FullyCharged` tag and removes dome absorption GE
 
-**Workaround:** Player should manually trigger GA_DomeBurst input before switching forms if dome is charged. GA_DomeBurst has `activation_required_tags: Father.Dome.FullyCharged`, so it will only fire if dome is ready.
-
-**Impact:** Low. Manual dome burst is still available. Automatic trigger on form exit is a convenience feature.
+**Note:** HandleUnequip approach abandoned (GetEquipmentComponent is C++ only). EndAbility on GA_ProtectiveDome achieves the same result.
 
 ---
 

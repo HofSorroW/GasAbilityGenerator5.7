@@ -245,7 +245,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v4.26)
+## GasAbilityGenerator Plugin (v4.27)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1041,7 +1041,7 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
-| **v4.27** | Function overrides for EquippableItems; HandleUnequip for form exit burst |
+| **v4.27** | GA→GA dependency scanning for TSubclassOf; automatic dome burst on form exit (Decisions 22-24) |
 | **v4.26** | Session cache for TSubclassOf resolution; external reference detection; 156/156 assets |
 | **v4.25** | Dependency ordering (topological sort); cascade skip logic |
 | **v4.24** | Pre-validation system; reflection-based semantic checks before generation |
