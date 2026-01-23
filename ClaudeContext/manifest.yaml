@@ -7286,6 +7286,171 @@ niagara_systems:
 #     montage: AM_FatherAttack
 
 # ============================================================================
+# MATERIAL FUNCTIONS (3) - v2.6.12 VFX helper functions
+# NOTE: Moved before Materials section for manifest hygiene (phase order fix requires code change)
+# ============================================================================
+material_functions:
+  # Animated energy pulse effect
+  - name: MF_EnergyPulse
+    folder: Materials/Functions
+    description: Generates animated energy pulse effect
+    expose_to_library: true
+    inputs:
+      - name: Speed
+        type: float
+        default: 1.0
+        sort_priority: 0
+      - name: Amplitude
+        type: float
+        default: 0.5
+        sort_priority: 1
+    outputs:
+      - name: Pulse
+        type: float
+        sort_priority: 0
+    expressions:
+      - id: time
+        type: Time
+        pos_x: -300
+        pos_y: 0
+      - id: speedMul
+        type: Multiply
+        pos_x: -150
+        pos_y: 0
+      - id: sine
+        type: Sine
+        pos_x: 0
+        pos_y: 0
+      - id: ampMul
+        type: Multiply
+        pos_x: 150
+        pos_y: 0
+    connections:
+      - from: time
+        to: speedMul
+        to_input: A
+      - from: Speed
+        to: speedMul
+        to_input: B
+      - from: speedMul
+        to: sine
+        to_input: Input
+      - from: sine
+        to: ampMul
+        to_input: A
+      - from: Amplitude
+        to: ampMul
+        to_input: B
+      - from: ampMul
+        to: Pulse
+        to_input: A
+
+  # Fresnel-based glow effect
+  - name: MF_FresnelGlow
+    folder: Materials/Functions
+    description: Fresnel-based edge glow effect
+    expose_to_library: true
+    inputs:
+      - name: Exponent
+        type: float
+        default: 3.0
+        sort_priority: 0
+      - name: GlowColor
+        type: float3
+        default: 1.0, 0.8, 0.4
+        sort_priority: 1
+    outputs:
+      - name: GlowResult
+        type: float3
+        sort_priority: 0
+    expressions:
+      - id: fresnel
+        type: Fresnel
+        pos_x: -100
+        pos_y: 0
+        properties:
+          exponent: 3.0
+      - id: mul
+        type: Multiply
+        pos_x: 100
+        pos_y: 0
+    connections:
+      - from: Exponent
+        to: fresnel
+        to_input: ExponentIn
+      - from: fresnel
+        to: mul
+        to_input: A
+      - from: GlowColor
+        to: mul
+        to_input: B
+      - from: mul
+        to: GlowResult
+        to_input: A
+
+  # Radial gradient for dome/sphere effects
+  - name: MF_RadialGradient
+    folder: Materials/Functions
+    description: Radial gradient for spherical effects
+    expose_to_library: true
+    inputs:
+      - name: Center
+        type: float2
+        default: 0.5, 0.5
+        sort_priority: 0
+      - name: Falloff
+        type: float
+        default: 1.0
+        sort_priority: 1
+    outputs:
+      - name: Gradient
+        type: float
+        sort_priority: 0
+    expressions:
+      - id: texcoord
+        type: TexCoord
+        pos_x: -300
+        pos_y: 0
+      - id: dist
+        type: Distance
+        pos_x: -100
+        pos_y: 0
+      - id: falloffMul
+        type: Multiply
+        pos_x: 50
+        pos_y: 0
+      - id: invert
+        type: OneMinus
+        pos_x: 200
+        pos_y: 0
+      - id: clampResult
+        type: Clamp
+        pos_x: 350
+        pos_y: 0
+    connections:
+      - from: texcoord
+        to: dist
+        to_input: A
+      - from: Center
+        to: dist
+        to_input: B
+      - from: dist
+        to: falloffMul
+        to_input: A
+      - from: Falloff
+        to: falloffMul
+        to_input: B
+      - from: falloffMul
+        to: invert
+        to_input: Input
+      - from: invert
+        to: clampResult
+        to_input: Input
+      - from: clampResult
+        to: Gradient
+        to_input: A
+
+# ============================================================================
 # MATERIALS (4) - v2.6.12 Enhanced with expression graphs
 # ============================================================================
 materials:
@@ -7493,170 +7658,6 @@ materials:
         from_output: Result
         to: Material
         to_input: EmissiveColor
-
-# ============================================================================
-# MATERIAL FUNCTIONS (3) - v2.6.12 VFX helper functions
-# ============================================================================
-material_functions:
-  # Animated energy pulse effect
-  - name: MF_EnergyPulse
-    folder: Materials/Functions
-    description: Generates animated energy pulse effect
-    expose_to_library: true
-    inputs:
-      - name: Speed
-        type: float
-        default: 1.0
-        sort_priority: 0
-      - name: Amplitude
-        type: float
-        default: 0.5
-        sort_priority: 1
-    outputs:
-      - name: Pulse
-        type: float
-        sort_priority: 0
-    expressions:
-      - id: time
-        type: Time
-        pos_x: -300
-        pos_y: 0
-      - id: speedMul
-        type: Multiply
-        pos_x: -150
-        pos_y: 0
-      - id: sine
-        type: Sine
-        pos_x: 0
-        pos_y: 0
-      - id: ampMul
-        type: Multiply
-        pos_x: 150
-        pos_y: 0
-    connections:
-      - from: time
-        to: speedMul
-        to_input: A
-      - from: Speed
-        to: speedMul
-        to_input: B
-      - from: speedMul
-        to: sine
-        to_input: Input
-      - from: sine
-        to: ampMul
-        to_input: A
-      - from: Amplitude
-        to: ampMul
-        to_input: B
-      - from: ampMul
-        to: Pulse
-        to_input: A
-
-  # Fresnel-based glow effect
-  - name: MF_FresnelGlow
-    folder: Materials/Functions
-    description: Fresnel-based edge glow effect
-    expose_to_library: true
-    inputs:
-      - name: Exponent
-        type: float
-        default: 3.0
-        sort_priority: 0
-      - name: GlowColor
-        type: float3
-        default: 1.0, 0.8, 0.4
-        sort_priority: 1
-    outputs:
-      - name: GlowResult
-        type: float3
-        sort_priority: 0
-    expressions:
-      - id: fresnel
-        type: Fresnel
-        pos_x: -100
-        pos_y: 0
-        properties:
-          exponent: 3.0
-      - id: mul
-        type: Multiply
-        pos_x: 100
-        pos_y: 0
-    connections:
-      - from: Exponent
-        to: fresnel
-        to_input: ExponentIn
-      - from: fresnel
-        to: mul
-        to_input: A
-      - from: GlowColor
-        to: mul
-        to_input: B
-      - from: mul
-        to: GlowResult
-        to_input: A
-
-  # Radial gradient for dome/sphere effects
-  - name: MF_RadialGradient
-    folder: Materials/Functions
-    description: Radial gradient for spherical effects
-    expose_to_library: true
-    inputs:
-      - name: Center
-        type: float2
-        default: 0.5, 0.5
-        sort_priority: 0
-      - name: Falloff
-        type: float
-        default: 1.0
-        sort_priority: 1
-    outputs:
-      - name: Gradient
-        type: float
-        sort_priority: 0
-    expressions:
-      - id: texcoord
-        type: TexCoord
-        pos_x: -300
-        pos_y: 0
-      - id: dist
-        type: Distance
-        pos_x: -100
-        pos_y: 0
-      - id: falloffMul
-        type: Multiply
-        pos_x: 50
-        pos_y: 0
-      - id: invert
-        type: OneMinus
-        pos_x: 200
-        pos_y: 0
-      - id: clampResult
-        type: Clamp
-        pos_x: 350
-        pos_y: 0
-    connections:
-      - from: texcoord
-        to: dist
-        to_input: A
-      - from: Center
-        to: dist
-        to_input: B
-      - from: dist
-        to: falloffMul
-        to_input: A
-      - from: Falloff
-        to: falloffMul
-        to_input: B
-      - from: falloffMul
-        to: invert
-        to_input: Input
-      - from: invert
-        to: clampResult
-        to_input: Input
-      - from: clampResult
-        to: Gradient
-        to_input: A
 
 # ============================================================================
 # MATERIAL INSTANCES (v4.9) - Material Instance Constants for VFX variation
