@@ -1,10 +1,10 @@
 # GA_FatherArmor - Armor Form Ability Implementation Guide
-## VERSION 4.9 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.10 - GAS Audit Compliant (3-Layer Guards Added)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.9
+**Version:** 4.10
 **Date:** January 2026
-**Last Audit:** 2026-01-23 (Claude-GPT dual audit - INC-1 fix)
+**Last Audit:** 2026-01-24 (Claude-GPT dual audit - 3-layer guards)
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
@@ -859,110 +859,205 @@ This section covers the extended logic when switching TO Armor from another form
    - 4.1.3) Select node
    - 4.1.4) Set **Duration**: `5.0`
 
-### **5) Get Owner Player Reference**
+### **5) POST-DELAY 3-LAYER GUARDS (Gold Standard)**
 
-#### 5.1) Get Owner Player
-   - 5.1.1) From **Delay** -> **Completed** pin
-   - 5.1.2) Drag from **As BP Father Companion**
-   - 5.1.3) Search: `Get Owner Player`
-   - 5.1.4) Select node
+> **GAS Audit Compliance:** These guards execute IMMEDIATELY after the Delay callback returns.
+> They validate that the ability context remains valid before any state-modifying operations.
+> Pattern sourced from GA_FatherSymbiote (gold standard) per Father_Companion_GAS_Abilities_Audit.md.
 
-### **6) Store Original Movement Speed**
+#### 5.1) Guard 1: Validate FatherRef
 
-#### 6.1) Get Character Movement Component
-   - 6.1.1) From **Get Owner Player** -> **Return Value**
-   - 6.1.2) Search: `Get Character Movement`
-   - 6.1.3) Select node
+##### 5.1.1) Add Is Valid Node
+   - 5.1.1.1) From **Delay** -> **Completed** execution pin
+   - 5.1.1.2) Drag wire to right and release
+   - 5.1.1.3) Search: `Is Valid`
+   - 5.1.1.4) Select **Utilities > Is Valid** macro node
+   - 5.1.1.5) Position to the right of Delay node
 
-#### 6.2) Get Current Walk Speed
-   - 6.2.1) From **Get Character Movement** -> **Return Value**
-   - 6.2.2) Search: `Get Max Walk Speed`
-   - 6.2.3) Select node
+##### 5.1.2) Connect Input Object
+   - 5.1.2.1) From **As BP Father Companion** (Cast result from Step 3.2)
+   - 5.1.2.2) Drag wire to **Is Valid** -> **Input Object** pin
+   - 5.1.2.3) Release to connect
 
-#### 6.3) Store in Variable
-   - 6.3.1) Drag **OriginalMaxWalkSpeed** variable into graph (SET)
-   - 6.3.2) Connect **Get Max Walk Speed** -> **Return Value** to **OriginalMaxWalkSpeed**
+##### 5.1.3) Handle Invalid Path
+   - 5.1.3.1) From **Is Valid** -> **Is Not Valid** execution pin
+   - 5.1.3.2) Leave unconnected or optionally add **Return Node**
+   - 5.1.3.3) **Purpose:** Father destroyed during transition - abort silently
 
-### **7) Apply Movement Speed Penalty**
+#### 5.2) Guard 2: Check Current Form Is Still Armor
 
-#### 7.1) Calculate Reduced Speed
-   - 7.1.1) Add **Multiply (Float * Float)** node
-   - 7.1.2) Connect **OriginalMaxWalkSpeed** to first input
-   - 7.1.3) Connect **SpeedPenaltyMultiplier** variable to second input (0.85)
+##### 5.2.1) Get Current Form Variable
+   - 5.2.1.1) From **Is Valid** -> **Is Valid** execution pin (valid path)
+   - 5.2.1.2) Drag from **As BP Father Companion**
+   - 5.2.1.3) Search: `Get Current Form`
+   - 5.2.1.4) Select **Get Current Form** pure node
+   - 5.2.1.5) Returns E_FatherForm enum value
 
-#### 7.2) Set New Walk Speed
+##### 5.2.2) Add Enum Equality Check
+   - 5.2.2.1) From **Get Current Form** -> **Return Value** pin
+   - 5.2.2.2) Drag wire to empty space
+   - 5.2.2.3) Search: `Equal (Enum)`
+   - 5.2.2.4) Select **Equal (Enum)** comparison node
+   - 5.2.2.5) First input auto-connected to CurrentForm
+
+##### 5.2.3) Set Expected Form Value
+   - 5.2.3.1) On **Equal (Enum)** node, click second input dropdown
+   - 5.2.3.2) Select **Armor** from E_FatherForm enum values
+   - 5.2.3.3) Node now compares: CurrentForm == Armor
+
+##### 5.2.4) Add Branch Node
+   - 5.2.4.1) From **Is Valid** -> **Is Valid** execution pin
+   - 5.2.4.2) Drag wire to right and release
+   - 5.2.4.3) Search: `Branch`
+   - 5.2.4.4) Select **Branch** node
+   - 5.2.4.5) Connect **Equal (Enum)** -> **Return Value** to **Branch** -> **Condition**
+
+##### 5.2.5) Handle Form Mismatch
+   - 5.2.5.1) From **Branch** -> **False** execution pin
+   - 5.2.5.2) Leave unconnected or optionally add **Return Node**
+   - 5.2.5.3) **Purpose:** Form changed during transition (e.g., another ability cancelled this one) - abort
+
+#### 5.3) Guard 3: Check Ability Still Active via Tag Proxy
+
+##### 5.3.1) Get Father Ability System Component
+   - 5.3.1.1) From **Branch** -> **True** execution pin (form check passed)
+   - 5.3.1.2) Drag from **As BP Father Companion**
+   - 5.3.1.3) Search: `Get Ability System Component`
+   - 5.3.1.4) Select node
+
+##### 5.3.2) Add Has Matching Gameplay Tag Check
+   - 5.3.2.1) From **Get Ability System Component** -> **Return Value**
+   - 5.3.2.2) Drag wire to empty space
+   - 5.3.2.3) Search: `Has Matching Gameplay Tag`
+   - 5.3.2.4) Select **Has Matching Gameplay Tag** function
+
+##### 5.3.3) Configure Tag to Check
+   - 5.3.3.1) On **Has Matching Gameplay Tag** node, find **Tag to Check** parameter
+   - 5.3.3.2) Click dropdown and navigate to: `Father > State > Attached`
+   - 5.3.3.3) Select **Father.State.Attached** tag
+   - 5.3.3.4) **Rationale:** This is the Activation Owned Tag - if present, ability is still active
+
+##### 5.3.4) Add Branch Node
+   - 5.3.4.1) From **Get Ability System Component** execution pin
+   - 5.3.4.2) Drag wire to right and release
+   - 5.3.4.3) Search: `Branch`
+   - 5.3.4.4) Select **Branch** node
+   - 5.3.4.5) Connect **Has Matching Gameplay Tag** -> **Return Value** to **Branch** -> **Condition**
+
+##### 5.3.5) Handle Ability No Longer Active
+   - 5.3.5.1) From **Branch** -> **False** execution pin
+   - 5.3.5.2) Leave unconnected or optionally add **Return Node**
+   - 5.3.5.3) **Purpose:** Ability was cancelled during transition - abort remaining setup
+
+##### 5.3.6) Continue to State Operations
+   - 5.3.6.1) From **Branch** -> **True** execution pin
+   - 5.3.6.2) Continue to Section 6 (Get Owner Player Reference)
+   - 5.3.6.3) **All guards passed - safe to modify state**
+
+### **6) Get Owner Player Reference**
+
+#### 6.1) Get Owner Player
+   - 6.1.1) From **Guard 3 Branch** -> **True** pin (all guards passed)
+   - 6.1.2) Drag from **As BP Father Companion**
+   - 6.1.3) Search: `Get Owner Player`
+   - 6.1.4) Select node
+
+### **7) Store Original Movement Speed**
+
+#### 7.1) Get Character Movement Component
+   - 7.1.1) From **Get Owner Player** -> **Return Value**
+   - 7.1.2) Search: `Get Character Movement`
+   - 7.1.3) Select node
+
+#### 7.2) Get Current Walk Speed
    - 7.2.1) From **Get Character Movement** -> **Return Value**
-   - 7.2.2) Search: `Set Max Walk Speed`
-   - 7.2.3) Connect multiply result to **Max Walk Speed** input
+   - 7.2.2) Search: `Get Max Walk Speed`
+   - 7.2.3) Select node
 
-### **8) Attach Father to Player**
+#### 7.3) Store in Variable
+   - 7.3.1) Drag **OriginalMaxWalkSpeed** variable into graph (SET)
+   - 7.3.2) Connect **Get Max Walk Speed** -> **Return Value** to **OriginalMaxWalkSpeed**
 
-#### 8.1) Add Attach Actor To Component Node
-   - 8.1.1) From **Set Max Walk Speed** execution pin
-   - 8.1.2) Search: `Attach Actor To Component`
-   - 8.1.3) Select node
-   - 8.1.4) Connect **As BP Father Companion** to **Target**
+### **8) Apply Movement Speed Penalty**
 
-#### 8.2) Configure Attachment
-   - 8.2.1) From **Get Owner Player** -> **Return Value** -> **Get Mesh**
-   - 8.2.2) Connect to **Parent** input
-   - 8.2.3) Connect **ChestSocketName** variable to **Socket Name**
-   - 8.2.4) **Location Rule**: `Snap to Target`
-   - 8.2.5) **Rotation Rule**: `Snap to Target`
-   - 8.2.6) **Scale Rule**: `Keep World`
+#### 8.1) Calculate Reduced Speed
+   - 8.1.1) Add **Multiply (Float * Float)** node
+   - 8.1.2) Connect **OriginalMaxWalkSpeed** to first input
+   - 8.1.3) Connect **SpeedPenaltyMultiplier** variable to second input (0.85)
 
-### **9) Set Form Variables**
+#### 8.2) Set New Walk Speed
+   - 8.2.1) From **Get Character Movement** -> **Return Value**
+   - 8.2.2) Search: `Set Max Walk Speed`
+   - 8.2.3) Connect multiply result to **Max Walk Speed** input
 
-#### 9.1) Set Current Form
-   - 9.1.1) Drag from **Attach Actor To Component** execution pin
-   - 9.1.2) Add **Set Current Form** node
-   - 9.1.3) Connect **As BP Father Companion** to **Target**
-   - 9.1.4) Set **Current Form**: `Armor`
+### **9) Attach Father to Player**
 
-#### 9.2) Set Is Attached
-   - 9.2.1) Drag from **Set Current Form** execution pin
-   - 9.2.2) Add **Set Is Attached** node
-   - 9.2.3) Connect **As BP Father Companion** to **Target**
-   - 9.2.4) Set **Is Attached**: `True` (checked)
+#### 9.1) Add Attach Actor To Component Node
+   - 9.1.1) From **Set Max Walk Speed** execution pin
+   - 9.1.2) Search: `Attach Actor To Component`
+   - 9.1.3) Select node
+   - 9.1.4) Connect **As BP Father Companion** to **Target**
 
-### **10) Stat Bonuses (Handled by EquippableItem)**
+#### 9.2) Configure Attachment
+   - 9.2.1) From **Get Owner Player** -> **Return Value** -> **Get Mesh**
+   - 9.2.2) Connect to **Parent** input
+   - 9.2.3) Connect **ChestSocketName** variable to **Socket Name**
+   - 9.2.4) **Location Rule**: `Snap to Target`
+   - 9.2.5) **Rotation Rule**: `Snap to Target`
+   - 9.2.6) **Scale Rule**: `Keep World`
+
+### **10) Set Form Variables**
+
+#### 10.1) Set Current Form
+   - 10.1.1) Drag from **Attach Actor To Component** execution pin
+   - 10.1.2) Add **Set Current Form** node
+   - 10.1.3) Connect **As BP Father Companion** to **Target**
+   - 10.1.4) Set **Current Form**: `Armor`
+
+#### 10.2) Set Is Attached
+   - 10.2.1) Drag from **Set Current Form** execution pin
+   - 10.2.2) Add **Set Is Attached** node
+   - 10.2.3) Connect **As BP Father Companion** to **Target**
+   - 10.2.4) Set **Is Attached**: `True` (checked)
+
+### **11) Stat Bonuses (Handled by EquippableItem)**
 
 Stat bonuses (+50 Armor) are handled automatically by BP_FatherArmorForm EquippableItem via GE_EquipmentModifier_FatherArmor. GA_FatherArmor only handles attachment and movement.
 
-### **11) Remove Transitioning State**
+### **12) Remove Transitioning State**
 
-#### 11.1) Remove Loose Gameplay Tag
-   - 11.1.1) Drag from **Set Is Attached** execution pin
-   - 11.1.2) Search: `Remove Loose Gameplay Tag`
-   - 11.1.3) Select node
-   - 11.1.4) Connect Father ASC to **Target**
-   - 11.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
+#### 12.1) Remove Loose Gameplay Tag
+   - 12.1.1) Drag from **Set Is Attached** execution pin
+   - 12.1.2) Search: `Remove Loose Gameplay Tag`
+   - 12.1.3) Select node
+   - 12.1.4) Connect Father ASC to **Target**
+   - 12.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
 
-### **12) Apply Form Cooldown**
+### **13) Apply Form Cooldown**
 
-> **v4.5 (GAS Audit INV-1):** No GE removal needed - Father.State.Transitioning tag was removed in Step 11 via RemoveLooseGameplayTag.
+> **v4.5 (GAS Audit INV-1):** No GE removal needed - Father.State.Transitioning tag was removed in Step 12 via RemoveLooseGameplayTag.
 
-#### 12.1) Commit Ability Cooldown
-   - 12.1.1) Drag from **Remove Loose Gameplay Tag** execution pin
-   - 12.1.2) Search: `Commit Ability Cooldown`
-   - 12.1.3) Select **Commit Ability Cooldown** node
-   - 12.1.4) No parameters needed - uses CooldownGameplayEffectClass automatically
+#### 13.1) Commit Ability Cooldown
+   - 13.1.1) Drag from **Remove Loose Gameplay Tag** execution pin
+   - 13.1.2) Search: `Commit Ability Cooldown`
+   - 13.1.3) Select **Commit Ability Cooldown** node
+   - 13.1.4) No parameters needed - uses CooldownGameplayEffectClass automatically
 
-### **13) End Ability**
+### **14) End Ability**
 
-#### 13.1) Add End Ability Node
-   - 13.1.1) Drag from **Commit Ability Cooldown** execution pin
-   - 13.1.2) Search: `End Ability`
-   - 13.1.3) Select node
-   - 13.1.4) **Was Cancelled**: `False` (unchecked)
+#### 14.1) Add End Ability Node
+   - 14.1.1) Drag from **Commit Ability Cooldown** execution pin
+   - 14.1.2) Search: `End Ability`
+   - 14.1.3) Select node
+   - 14.1.4) **Was Cancelled**: `False` (unchecked)
 
-### **14) Compile and Save**
+### **15) Compile and Save**
 
-#### 14.1) Compile Blueprint
-   - 14.1.1) Click **Compile** button
+#### 15.1) Compile Blueprint
+   - 15.1.1) Click **Compile** button
 
-#### 14.2) Save Blueprint
-   - 14.2.1) Click **Save** button
+#### 15.2) Save Blueprint
+   - 15.2.1) Click **Save** button
 
 ---
 
@@ -1341,6 +1436,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Version | Changes |
 |---------|---------|
+| 4.10 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 5 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Armor, (3) HasMatchingGameplayTag(Father.State.Attached). Resolves MEDIUM severity audit finding "Guard (Branch_Valid) executes AFTER GE operations". Renumbered subsequent sections 6-15. |
 | 4.9 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.8 | **INC-1 Fix (Claude-GPT Audit):** Removed ReplicateActivationOwnedTags as prerequisite (was removed in v4.4 but body text contradicted changelog). Added Authority Note and Audit Status sections per documentation rules D-1/D-2. Clarified ReplicateActivationOwnedTags is OPTIONAL since form identity uses GE replication. |
 | 4.7 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Decision 2 (GE_ArmorBoost removed - stats via EquippableItem), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |

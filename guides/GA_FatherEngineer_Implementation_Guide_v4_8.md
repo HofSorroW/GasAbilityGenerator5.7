@@ -1,8 +1,8 @@
 # Father Companion - GA_FatherEngineer Implementation Guide
-## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.8 - GAS Audit Compliant (3-Layer Guards Added)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.7
+**Version:** 4.8
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -889,53 +889,148 @@ This phase handles switching TO Engineer form from another form via the T wheel.
       - 5.1.1.2) Add **Delay** node
    - 5.1.2) **Duration**: `5.0`
 
-### **6) Detach Father From Previous Form**
+### **6) POST-DELAY 3-LAYER GUARDS (Gold Standard)**
 
-#### 6.1) Add Detach From Actor
-   - 6.1.1) From Delay **Completed** execution:
-      - 6.1.1.1) Drag outward and search: `Detach From Actor`
-      - 6.1.1.2) Add **Detach From Actor** node
-   - 6.1.2) Connect **FatherRef** to Target
+> **GAS Audit Compliance:** These guards execute IMMEDIATELY after the Delay callback returns.
+> They validate that the ability context remains valid before any state-modifying operations.
+> Pattern sourced from GA_FatherSymbiote (gold standard) per Father_Companion_GAS_Abilities_Audit.md.
 
-#### 6.2) Configure Detach Rules
-   - 6.2.1) **Location Rule**: `Keep World`
-   - 6.2.2) **Rotation Rule**: `Keep World`
-   - 6.2.3) **Scale Rule**: `Keep World`
+#### 6.1) Guard 1: Validate FatherRef
 
-### **7) Execute Deployment Logic**
+##### 6.1.1) Add Is Valid Node
+   - 6.1.1.1) From **Delay** -> **Completed** execution pin
+   - 6.1.1.2) Drag wire to right and release
+   - 6.1.1.3) Search: `Is Valid`
+   - 6.1.1.4) Select **Utilities > Is Valid** macro node
+   - 6.1.1.5) Position to the right of Delay node
 
-#### 7.1) Merge to Main Deployment Flow
-   - 7.1.1) From Detach From Actor execution:
-   - 7.1.2) Connect to same deployment flow as initial spawn (Section 4 onward)
-   - 7.1.3) Calculate deploy position, move father, apply turret mode, etc.
-   - 7.1.4) Deployment logic is identical for both initial spawn and form switch
+##### 6.1.2) Connect Input Object
+   - 6.1.2.1) From **FatherRef** variable (stored in Section 2.5)
+   - 6.1.2.2) Drag wire to **Is Valid** -> **Input Object** pin
+   - 6.1.2.3) Release to connect
 
-### **8) Remove Transitioning State**
+##### 6.1.3) Handle Invalid Path
+   - 6.1.3.1) From **Is Valid** -> **Is Not Valid** execution pin
+   - 6.1.3.2) Leave unconnected or optionally add **Return Node**
+   - 6.1.3.3) **Purpose:** Father destroyed during transition - abort silently
 
-#### 8.1) Remove Loose Gameplay Tag
-   - 8.1.1) After Set Is Deployed execution (before End Ability):
-      - 8.1.1.1) Drag outward and search: `Remove Loose Gameplay Tag`
-      - 8.1.1.2) Add **Remove Loose Gameplay Tag** node
-   - 8.1.2) Connect ASC to Target
-   - 8.1.3) **Gameplay Tag**: `Father.State.Transitioning`
+#### 6.2) Guard 2: Check Current Form Is Still Engineer
 
-### **9) Apply Form Cooldown**
+##### 6.2.1) Get Current Form Variable
+   - 6.2.1.1) From **Is Valid** -> **Is Valid** execution pin (valid path)
+   - 6.2.1.2) Drag from **FatherRef**
+   - 6.2.1.3) Search: `Get Current Form`
+   - 6.2.1.4) Select **Get Current Form** pure node
+   - 6.2.1.5) Returns E_FatherForm enum value
 
-> **v4.5 (GAS Audit INV-1):** No GE removal needed - Father.State.Transitioning tag was removed in Step 8 via RemoveLooseGameplayTag.
+##### 6.2.2) Add Enum Equality Check
+   - 6.2.2.1) From **Get Current Form** -> **Return Value** pin
+   - 6.2.2.2) Drag wire to empty space
+   - 6.2.2.3) Search: `Equal (Enum)`
+   - 6.2.2.4) Select **Equal (Enum)** comparison node
+   - 6.2.2.5) First input auto-connected to CurrentForm
 
-#### 9.1) Commit Ability Cooldown
-   - 9.1.1) From Remove Loose Gameplay Tag execution:
-      - 9.1.1.1) Drag outward and search: `Commit Ability Cooldown`
-      - 9.1.1.2) Select **Commit Ability Cooldown** node
-   - 9.1.2) No parameters needed - uses CooldownGameplayEffectClass automatically
+##### 6.2.3) Set Expected Form Value
+   - 6.2.3.1) On **Equal (Enum)** node, click second input dropdown
+   - 6.2.3.2) Select **Engineer** from E_FatherForm enum values
+   - 6.2.3.3) Node now compares: CurrentForm == Engineer
 
-### **10) End Ability (Form Switch)**
+##### 6.2.4) Add Branch Node
+   - 6.2.4.1) From **Is Valid** -> **Is Valid** execution pin
+   - 6.2.4.2) Drag wire to right and release
+   - 6.2.4.3) Search: `Branch`
+   - 6.2.4.4) Select **Branch** node
+   - 6.2.4.5) Connect **Equal (Enum)** -> **Return Value** to **Branch** -> **Condition**
 
-#### 10.1) Call End Ability
-   - 10.1.1) From Commit Ability Cooldown execution:
-      - 10.1.1.1) Drag outward and search: `End Ability`
-      - 10.1.1.2) Add **End Ability** node
-   - 10.1.2) **Was Cancelled**: Uncheck (false)
+##### 6.2.5) Handle Form Mismatch
+   - 6.2.5.1) From **Branch** -> **False** execution pin
+   - 6.2.5.2) Leave unconnected or optionally add **Return Node**
+   - 6.2.5.3) **Purpose:** Form changed during transition (e.g., another ability cancelled this one) - abort
+
+#### 6.3) Guard 3: Check Ability Still Active via Tag Proxy
+
+##### 6.3.1) Get Father Ability System Component
+   - 6.3.1.1) From **Branch** -> **True** execution pin (form check passed)
+   - 6.3.1.2) Drag from **FatherRef**
+   - 6.3.1.3) Search: `Get Ability System Component`
+   - 6.3.1.4) Select node
+
+##### 6.3.2) Add Has Matching Gameplay Tag Check
+   - 6.3.2.1) From **Get Ability System Component** -> **Return Value**
+   - 6.3.2.2) Drag wire to empty space
+   - 6.3.2.3) Search: `Has Matching Gameplay Tag`
+   - 6.3.2.4) Select **Has Matching Gameplay Tag** function
+
+##### 6.3.3) Configure Tag to Check
+   - 6.3.3.1) On **Has Matching Gameplay Tag** node, find **Tag to Check** parameter
+   - 6.3.3.2) Click dropdown and navigate to: `Father > State > TurretDeployed`
+   - 6.3.3.3) Select **Father.State.TurretDeployed** tag
+   - 6.3.3.4) **Rationale:** This is the Activation Owned Tag - if present, ability is still active
+
+##### 6.3.4) Add Branch Node
+   - 6.3.4.1) From **Get Ability System Component** execution pin
+   - 6.3.4.2) Drag wire to right and release
+   - 6.3.4.3) Search: `Branch`
+   - 6.3.4.4) Select **Branch** node
+   - 6.3.4.5) Connect **Has Matching Gameplay Tag** -> **Return Value** to **Branch** -> **Condition**
+
+##### 6.3.5) Handle Ability No Longer Active
+   - 6.3.5.1) From **Branch** -> **False** execution pin
+   - 6.3.5.2) Leave unconnected or optionally add **Return Node**
+   - 6.3.5.3) **Purpose:** Ability was cancelled during transition - abort remaining setup
+
+##### 6.3.6) Continue to State Operations
+   - 6.3.6.1) From **Branch** -> **True** execution pin
+   - 6.3.6.2) Continue to Section 7 (Detach Father From Previous Form)
+   - 6.3.6.3) **All guards passed - safe to modify state**
+
+### **7) Detach Father From Previous Form**
+
+#### 7.1) Add Detach From Actor
+   - 7.1.1) From **Guard 3 Branch** -> **True** execution (all guards passed):
+      - 7.1.1.1) Drag outward and search: `Detach From Actor`
+      - 7.1.1.2) Add **Detach From Actor** node
+   - 7.1.2) Connect **FatherRef** to Target
+
+#### 7.2) Configure Detach Rules
+   - 7.2.1) **Location Rule**: `Keep World`
+   - 7.2.2) **Rotation Rule**: `Keep World`
+   - 7.2.3) **Scale Rule**: `Keep World`
+
+### **8) Execute Deployment Logic**
+
+#### 8.1) Merge to Main Deployment Flow
+   - 8.1.1) From Detach From Actor execution:
+   - 8.1.2) Connect to same deployment flow as initial spawn (PHASE 4 Section 4 onward)
+   - 8.1.3) Calculate deploy position, move father, apply turret mode, etc.
+   - 8.1.4) Deployment logic is identical for both initial spawn and form switch
+
+### **9) Remove Transitioning State**
+
+#### 9.1) Remove Loose Gameplay Tag
+   - 9.1.1) After Set Is Deployed execution (before End Ability):
+      - 9.1.1.1) Drag outward and search: `Remove Loose Gameplay Tag`
+      - 9.1.1.2) Add **Remove Loose Gameplay Tag** node
+   - 9.1.2) Connect ASC to Target
+   - 9.1.3) **Gameplay Tag**: `Father.State.Transitioning`
+
+### **10) Apply Form Cooldown**
+
+> **v4.5 (GAS Audit INV-1):** No GE removal needed - Father.State.Transitioning tag was removed in Step 9 via RemoveLooseGameplayTag.
+
+#### 10.1) Commit Ability Cooldown
+   - 10.1.1) From Remove Loose Gameplay Tag execution:
+      - 10.1.1.1) Drag outward and search: `Commit Ability Cooldown`
+      - 10.1.1.2) Select **Commit Ability Cooldown** node
+   - 10.1.2) No parameters needed - uses CooldownGameplayEffectClass automatically
+
+### **11) End Ability (Form Switch)**
+
+#### 11.1) Call End Ability
+   - 11.1.1) From Commit Ability Cooldown execution:
+      - 11.1.1.1) Drag outward and search: `End Ability`
+      - 11.1.1.2) Add **End Ability** node
+   - 11.1.2) **Was Cancelled**: Uncheck (false)
 
 ---
 
@@ -1180,6 +1275,7 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.8 | January 2026 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 6 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Engineer, (3) HasMatchingGameplayTag(Father.State.TurretDeployed). Resolves MEDIUM severity audit finding "No post-delay guards". Renumbered subsequent sections 7-11. |
 | 4.7 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.6 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no transition invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.5 | January 2026 | **GAS Audit INV-1 Compliance:** REMOVED GE_TransitionInvulnerability - transitions no longer grant invulnerability. Form transitions now use AddLooseGameplayTag(Father.State.Transitioning) directly without damage immunity. Updated Quick Reference and Gameplay Effect Summary. Only GA_FatherSacrifice grants invulnerability in the entire Father system. |

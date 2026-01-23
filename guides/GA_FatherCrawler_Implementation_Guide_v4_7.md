@@ -1,8 +1,8 @@
 # GA_FatherCrawler - Crawler Form Ability Implementation Guide
-## VERSION 4.6 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.7 - GAS Audit Compliant (3-Layer Guards Added)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.6
+**Version:** 4.7
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -474,89 +474,184 @@ This section covers the extended logic when switching TO Crawler from another fo
    - 5.1.3) Select node
    - 5.1.4) Set **Duration**: `5.0`
 
-### **6) Detach Father From Player**
+### **6) POST-DELAY 3-LAYER GUARDS (Gold Standard)**
 
-#### 6.1) Add Detach From Actor Node
-   - 6.1.1) Drag from **Delay** -> **Completed** pin
-   - 6.1.2) Search: `Detach From Actor`
-   - 6.1.3) Select node
-   - 6.1.4) Connect **FatherRef** to **Target**
+> **GAS Audit Compliance:** These guards execute IMMEDIATELY after the Delay callback returns.
+> They validate that the ability context remains valid before any state-modifying operations.
+> Pattern sourced from GA_FatherSymbiote (gold standard) per Father_Companion_GAS_Abilities_Audit.md.
 
-#### 6.2) Configure Detach Parameters
-   - 6.2.1) **Location Rule**: `Keep World`
-   - 6.2.2) **Rotation Rule**: `Keep World`
-   - 6.2.3) **Scale Rule**: `Keep World`
+#### 6.1) Guard 1: Validate FatherRef
 
-### **7) Move Father Behind Player**
+##### 6.1.1) Add Is Valid Node
+   - 6.1.1.1) From **Delay** -> **Completed** execution pin
+   - 6.1.1.2) Drag wire to right and release
+   - 6.1.1.3) Search: `Is Valid`
+   - 6.1.1.4) Select **Utilities > Is Valid** macro node
+   - 6.1.1.5) Position to the right of Delay node
 
-#### 7.1) Get Owner Player
-   - 7.1.1) From **FatherRef**
-   - 7.1.2) Search: `Get Owner Player`
+##### 6.1.2) Connect Input Object
+   - 6.1.2.1) From **FatherRef** variable (stored in PHASE 5 Section 4)
+   - 6.1.2.2) Drag wire to **Is Valid** -> **Input Object** pin
+   - 6.1.2.3) Release to connect
+
+##### 6.1.3) Handle Invalid Path
+   - 6.1.3.1) From **Is Valid** -> **Is Not Valid** execution pin
+   - 6.1.3.2) Leave unconnected or optionally add **Return Node**
+   - 6.1.3.3) **Purpose:** Father destroyed during transition - abort silently
+
+#### 6.2) Guard 2: Check Current Form Is Still Crawler
+
+##### 6.2.1) Get Current Form Variable
+   - 6.2.1.1) From **Is Valid** -> **Is Valid** execution pin (valid path)
+   - 6.2.1.2) Drag from **FatherRef**
+   - 6.2.1.3) Search: `Get Current Form`
+   - 6.2.1.4) Select **Get Current Form** pure node
+   - 6.2.1.5) Returns E_FatherForm enum value
+
+##### 6.2.2) Add Enum Equality Check
+   - 6.2.2.1) From **Get Current Form** -> **Return Value** pin
+   - 6.2.2.2) Drag wire to empty space
+   - 6.2.2.3) Search: `Equal (Enum)`
+   - 6.2.2.4) Select **Equal (Enum)** comparison node
+   - 6.2.2.5) First input auto-connected to CurrentForm
+
+##### 6.2.3) Set Expected Form Value
+   - 6.2.3.1) On **Equal (Enum)** node, click second input dropdown
+   - 6.2.3.2) Select **Crawler** from E_FatherForm enum values
+   - 6.2.3.3) Node now compares: CurrentForm == Crawler
+
+##### 6.2.4) Add Branch Node
+   - 6.2.4.1) From **Is Valid** -> **Is Valid** execution pin
+   - 6.2.4.2) Drag wire to right and release
+   - 6.2.4.3) Search: `Branch`
+   - 6.2.4.4) Select **Branch** node
+   - 6.2.4.5) Connect **Equal (Enum)** -> **Return Value** to **Branch** -> **Condition**
+
+##### 6.2.5) Handle Form Mismatch
+   - 6.2.5.1) From **Branch** -> **False** execution pin
+   - 6.2.5.2) Leave unconnected or optionally add **Return Node**
+   - 6.2.5.3) **Purpose:** Form changed during transition (e.g., another ability cancelled this one) - abort
+
+#### 6.3) Guard 3: Check Ability Still Active via Tag Proxy
+
+##### 6.3.1) Get Father Ability System Component
+   - 6.3.1.1) From **Branch** -> **True** execution pin (form check passed)
+   - 6.3.1.2) Drag from **FatherRef**
+   - 6.3.1.3) Search: `Get Ability System Component`
+   - 6.3.1.4) Select node
+
+##### 6.3.2) Add Has Matching Gameplay Tag Check
+   - 6.3.2.1) From **Get Ability System Component** -> **Return Value**
+   - 6.3.2.2) Drag wire to empty space
+   - 6.3.2.3) Search: `Has Matching Gameplay Tag`
+   - 6.3.2.4) Select **Has Matching Gameplay Tag** function
+
+##### 6.3.3) Configure Tag to Check
+   - 6.3.3.1) On **Has Matching Gameplay Tag** node, find **Tag to Check** parameter
+   - 6.3.3.2) Click dropdown and navigate to: `Effect > Father > FormState > Crawler`
+   - 6.3.3.3) Select **Effect.Father.FormState.Crawler** tag
+   - 6.3.3.4) **Rationale:** Crawler has no Activation Owned Tag - use form identity GE tag as proxy for ability still active
+
+##### 6.3.4) Add Branch Node
+   - 6.3.4.1) From **Get Ability System Component** execution pin
+   - 6.3.4.2) Drag wire to right and release
+   - 6.3.4.3) Search: `Branch`
+   - 6.3.4.4) Select **Branch** node
+   - 6.3.4.5) Connect **Has Matching Gameplay Tag** -> **Return Value** to **Branch** -> **Condition**
+
+##### 6.3.5) Handle Ability No Longer Active
+   - 6.3.5.1) From **Branch** -> **False** execution pin
+   - 6.3.5.2) Leave unconnected or optionally add **Return Node**
+   - 6.3.5.3) **Purpose:** Ability was cancelled during transition - abort remaining setup
+
+##### 6.3.6) Continue to State Operations
+   - 6.3.6.1) From **Branch** -> **True** execution pin
+   - 6.3.6.2) Continue to Section 7 (Detach Father From Player)
+   - 6.3.6.3) **All guards passed - safe to modify state**
+
+### **7) Detach Father From Player**
+
+#### 7.1) Add Detach From Actor Node
+   - 7.1.1) From **Guard 3 Branch** -> **True** execution (all guards passed)
+   - 7.1.2) Search: `Detach From Actor`
    - 7.1.3) Select node
+   - 7.1.4) Connect **FatherRef** to **Target**
 
-#### 7.2) Calculate Spawn Position
-   - 7.2.1) From **Get Owner Player** -> **Return Value**
-   - 7.2.2) Add **Get Actor Location** node
-   - 7.2.3) Add **Get Actor Forward Vector** node
-   - 7.2.4) Add **Multiply (Vector * Float)** node
-   - 7.2.5) Set Float: `-200.0` (negative for behind player)
-   - 7.2.6) Add **Add (Vector + Vector)** node
-   - 7.2.7) Connect: Location + (Forward * -200)
+#### 7.2) Configure Detach Parameters
+   - 7.2.1) **Location Rule**: `Keep World`
+   - 7.2.2) **Rotation Rule**: `Keep World`
+   - 7.2.3) **Scale Rule**: `Keep World`
 
-#### 7.3) Set Actor Location
-   - 7.3.1) After **Detach From Actor** execution
-   - 7.3.2) Add **Set Actor Location** node
-   - 7.3.3) Connect **FatherRef** to **Target**
-   - 7.3.4) Connect calculated position to **New Location**
+### **8) Move Father Behind Player**
 
-### **8) Set Form Variables**
+#### 8.1) Get Owner Player
+   - 8.1.1) From **FatherRef**
+   - 8.1.2) Search: `Get Owner Player`
+   - 8.1.3) Select node
 
-#### 8.1) Set Current Form
-   - 8.1.1) Drag from **Set Actor Location** execution pin
-   - 8.1.2) Add **Set Current Form** node
-   - 8.1.3) Connect **FatherRef** to **Target**
-   - 8.1.4) Set **Current Form**: `Crawler`
+#### 8.2) Calculate Spawn Position
+   - 8.2.1) From **Get Owner Player** -> **Return Value**
+   - 8.2.2) Add **Get Actor Location** node
+   - 8.2.3) Add **Get Actor Forward Vector** node
+   - 8.2.4) Add **Multiply (Vector * Float)** node
+   - 8.2.5) Set Float: `-200.0` (negative for behind player)
+   - 8.2.6) Add **Add (Vector + Vector)** node
+   - 8.2.7) Connect: Location + (Forward * -200)
 
-#### 8.2) Set Is Attached
-   - 8.2.1) Drag from **Set Current Form** execution pin
-   - 8.2.2) Add **Set Is Attached** node
-   - 8.2.3) Connect **FatherRef** to **Target**
-   - 8.2.4) Set **Is Attached**: `False` (unchecked)
+#### 8.3) Set Actor Location
+   - 8.3.1) After **Detach From Actor** execution
+   - 8.3.2) Add **Set Actor Location** node
+   - 8.3.3) Connect **FatherRef** to **Target**
+   - 8.3.4) Connect calculated position to **New Location**
 
-### **9) Remove Transitioning State**
+### **9) Set Form Variables**
 
-#### 9.1) Remove Loose Gameplay Tag
-   - 9.1.1) Drag from **Set Is Attached** execution pin
-   - 9.1.2) Search: `Remove Loose Gameplay Tag`
-   - 9.1.3) Select node
-   - 9.1.4) Connect Father ASC to **Target**
-   - 9.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
+#### 9.1) Set Current Form
+   - 9.1.1) Drag from **Set Actor Location** execution pin
+   - 9.1.2) Add **Set Current Form** node
+   - 9.1.3) Connect **FatherRef** to **Target**
+   - 9.1.4) Set **Current Form**: `Crawler`
 
-### **10) Apply Form Cooldown**
+#### 9.2) Set Is Attached
+   - 9.2.1) Drag from **Set Current Form** execution pin
+   - 9.2.2) Add **Set Is Attached** node
+   - 9.2.3) Connect **FatherRef** to **Target**
+   - 9.2.4) Set **Is Attached**: `False` (unchecked)
 
-> **v4.5 (GAS Audit INV-1):** No GE removal needed - Father.State.Transitioning tag was removed in Step 9 via RemoveLooseGameplayTag.
+### **10) Remove Transitioning State**
 
-#### 10.1) Commit Ability Cooldown
-   - 10.1.1) Drag from **Remove Loose Gameplay Tag** execution pin
-   - 10.1.2) Search: `Commit Ability Cooldown`
-   - 10.1.3) Select **Commit Ability Cooldown** node
-   - 10.1.4) No parameters needed - uses CooldownGameplayEffectClass automatically
+#### 10.1) Remove Loose Gameplay Tag
+   - 10.1.1) Drag from **Set Is Attached** execution pin
+   - 10.1.2) Search: `Remove Loose Gameplay Tag`
+   - 10.1.3) Select node
+   - 10.1.4) Connect Father ASC to **Target**
+   - 10.1.5) Set **Gameplay Tag**: `Father.State.Transitioning`
 
-### **11) End Ability**
+### **11) Apply Form Cooldown**
 
-#### 11.1) Add End Ability Node
-   - 11.1.1) Drag from **Commit Ability Cooldown** execution pin
-   - 11.1.2) Search: `End Ability`
-   - 11.1.3) Select node
-   - 11.1.4) **Was Cancelled**: `False` (unchecked)
+> **v4.5 (GAS Audit INV-1):** No GE removal needed - Father.State.Transitioning tag was removed in Step 10 via RemoveLooseGameplayTag.
 
-### **12) Compile and Save**
+#### 11.1) Commit Ability Cooldown
+   - 11.1.1) Drag from **Remove Loose Gameplay Tag** execution pin
+   - 11.1.2) Search: `Commit Ability Cooldown`
+   - 11.1.3) Select **Commit Ability Cooldown** node
+   - 11.1.4) No parameters needed - uses CooldownGameplayEffectClass automatically
 
-#### 12.1) Compile Blueprint
-   - 12.1.1) Click **Compile** button
+### **12) End Ability**
 
-#### 12.2) Save Blueprint
-   - 12.2.1) Click **Save** button
+#### 12.1) Add End Ability Node
+   - 12.1.1) Drag from **Commit Ability Cooldown** execution pin
+   - 12.1.2) Search: `End Ability`
+   - 12.1.3) Select node
+   - 12.1.4) **Was Cancelled**: `False` (unchecked)
+
+### **13) Compile and Save**
+
+#### 13.1) Compile Blueprint
+   - 13.1.1) Click **Compile** button
+
+#### 13.2) Save Blueprint
+   - 13.2.1) Click **Save** button
 
 ---
 
@@ -744,6 +839,7 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 
 | Version | Changes |
 |---------|---------|
+| 4.7 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 6 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Crawler, (3) HasMatchingGameplayTag(Effect.Father.FormState.Crawler). Note: Crawler uses form identity GE tag as proxy since it has no Activation Owned Tag. Renumbered subsequent sections 7-13. |
 | 4.6 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no transition invulnerability), Rule 2 (Event_EndAbility required for delays), Rule 4 (First Activation path merges into setup chain). Added post-delay guards and Event_EndAbility handler. Updated Technical Reference to v6.2. |
 | 4.5 | **INV-1 Compliance:** Removed invulnerability references. Transition uses AddLooseGameplayTag(Father.State.Transitioning) without damage immunity. |
 | 4.4 | **Option B Form State Architecture:** Complete rewrite from v3.4. Replaced ActivationOwnedTags form identity with GE-based persistent state (GE_CrawlerState). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags, then apply GE_CrawlerState. GE_CrawlerState grants Effect.Father.FormState.Crawler (Infinite duration). Removed Father.Form.Crawler and Father.State.Detached from Activation Owned Tags (orphan tags). Updated UE version to 5.7. Added Automation vs Manual table. Added FatherRef variable for cached reference. Simplified EndAbility (form identity removed by new form's prelude). Added StartupEffects documentation for spawn flow. |
