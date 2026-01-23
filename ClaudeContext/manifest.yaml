@@ -22,6 +22,23 @@
 # Search for "TODO:" comments to find all placeholders
 # ============================================================================
 
+# ============================================================================
+# TODO: FUTURE AUTOMATION RESEARCH
+# ============================================================================
+# Items documented in guides as manual implementation, pending research for auto-generation:
+#
+# | Feature                    | Status | Documented In                              | Notes                                    |
+# |----------------------------|--------|--------------------------------------------|-----------------------------------------|
+# | 3-Layer Post-Delay Guards  | MANUAL | GA_Father*_Implementation_Guide v4.7+      | Gold standard from GA_FatherSymbiote     |
+# |                            |        |                                            | Guard 1: IsValid(FatherRef)              |
+# |                            |        |                                            | Guard 2: CurrentForm == ExpectedForm     |
+# |                            |        |                                            | Guard 3: HasMatchingGameplayTag(proxy)   |
+# |                            |        |                                            | Research: Timer callback guard pattern   |
+#
+# Claude-GPT Audit (2026-01-24): Guards resolve MEDIUM severity findings in Armor/Engineer/Crawler.
+# Current manifest has partial guards (IsValid + Transitioning tag check) but not full 3-layer pattern.
+# ============================================================================
+
 project_root: /Game/FatherCompanion
 tags_ini_path: Config/DefaultGameplayTags.ini
 
