@@ -7095,6 +7095,37 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					CurrentDef.TraceData.bTraceMulti = GetLineValue(TrimmedLine).ToBool();
 				}
 			}
+			// v4.27: Function overrides section (for BlueprintNativeEvent overrides like HandleUnequip)
+			else if (TrimmedLine.Equals(TEXT("function_overrides:")) || TrimmedLine.StartsWith(TEXT("function_overrides:")))
+			{
+				// Save pending stat if we were in stats section
+				if (bInStats && !CurrentStat.StatName.IsEmpty())
+				{
+					CurrentDef.Stats.Add(CurrentStat);
+					CurrentStat = FManifestItemStatDefinition();
+				}
+				// Reset all section states
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInClothingMesh = false;
+				bInEquipmentEffectValues = false;
+				bInEquipmentAbilities = false;
+				bInStats = false;
+				bInActivitiesToGrant = false;
+				bInPickupMeshData = false;
+				bInTraceData = false;
+
+				// Parse function overrides subsection using existing helper
+				int32 FuncOverridesIndent = GetIndentLevel(Line);
+				LineIndex++;
+				ParseFunctionOverrides(Lines, LineIndex, FuncOverridesIndent, CurrentDef.FunctionOverrides);
+				continue;
+			}
 
 			// v3.9.8: Clothing mesh section
 			else if (TrimmedLine.Equals(TEXT("clothing_mesh:")) || TrimmedLine.StartsWith(TEXT("clothing_mesh:")))

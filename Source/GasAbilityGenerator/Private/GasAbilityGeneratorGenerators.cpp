@@ -17538,6 +17538,27 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		}
 	}
 
+	// v4.27: Generate function overrides if defined (e.g., HandleUnequip for form exit burst)
+	if (Definition.FunctionOverrides.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Generating %d function override(s)"), Definition.FunctionOverrides.Num()));
+
+		for (const FManifestFunctionOverrideDefinition& OverrideDef : Definition.FunctionOverrides)
+		{
+			if (FEventGraphGenerator::GenerateFunctionOverride(Blueprint, OverrideDef, GetProjectRoot()))
+			{
+				LogGeneration(FString::Printf(TEXT("    Generated function override: %s"), *OverrideDef.FunctionName));
+			}
+			else
+			{
+				// v4.27: Fail-fast on function override generation failure
+				LogGeneration(FString::Printf(TEXT("[E_ITEM_FUNCTIONOVERRIDE_FAILED] %s | Failed to generate function override: %s"), *Definition.Name, *OverrideDef.FunctionName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Failed to generate function override '%s'"), *OverrideDef.FunctionName));
+			}
+		}
+	}
+
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
 	// Note: CDO properties were set after initial compile, so final compile ensures GeneratedClass is current
 	FCompilerResultsLog CompileLog;

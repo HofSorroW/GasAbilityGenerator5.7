@@ -3223,6 +3223,9 @@ struct FManifestEquippableItemDefinition
 	// v4.8.2: RangedWeaponItem trace configuration
 	FManifestCombatTraceDataDefinition TraceData;      // FCombatTraceData - how weapon detects hits
 
+	// v4.27: Function overrides for BlueprintNativeEvent functions (e.g., HandleUnequip)
+	TArray<FManifestFunctionOverrideDefinition> FunctionOverrides;
+
 	/** v4.8.2: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -3412,6 +3415,13 @@ struct FManifestEquippableItemDefinition
 		if (!TraceData.IsDefault())
 		{
 			Hash ^= TraceData.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		// v4.27: Hash function overrides
+		for (const auto& Override : FunctionOverrides)
+		{
+			Hash ^= Override.ComputeHash();
 			Hash = (Hash << 5) | (Hash >> 59);
 		}
 
