@@ -750,6 +750,25 @@ Current pattern:
 
 ---
 
+## KNOWN LIMITATIONS (v4.27)
+
+### LIM-1: Automatic Dome Burst on Form Exit
+**Status:** NOT AUTOMATABLE
+**Affected:** GA_ProtectiveDome, GA_DomeBurst, EI_FatherArmorForm
+**Added:** 2026-01-23
+
+**Desired Behavior (Decisions 22-24):** When armor form is unequipped and dome is fully charged, automatically trigger GA_DomeBurst for an exit burst.
+
+**Blockers:**
+1. **HandleUnequip override:** `GetEquipmentComponent()` is C++ only (not UFUNCTION), cannot be called from Blueprint
+2. **GA_ProtectiveDome EndAbility:** `TSubclassOf<>` parameters cannot be passed to `TryActivateAbilityByClass` in the manifest system
+
+**Workaround:** Player should manually trigger GA_DomeBurst input before switching forms if dome is charged. GA_DomeBurst has `activation_required_tags: Father.Dome.FullyCharged`, so it will only fire if dome is ready.
+
+**Impact:** Low. Manual dome burst is still available. Automatic trigger on form exit is a convenience feature.
+
+---
+
 ## CROSS-REFERENCES
 
 | Document | Version | Relevance |
@@ -772,6 +791,7 @@ Current pattern:
 | 3.0 | 2026-01-22 | Merged Abilities_Audit_v1.md. Added Rule 4 (First Activation path). Added VTF-7 (CommitCooldown explicit call). Added VTF-8 (SetByCaller requires matching modifier). Added Design Decisions 1A-4 from abilities audit. Added orphan GE removal decisions (GE_ArmorBoost, GE_SymbioteBoost). Updated severity matrix with Rule 4 violations. Updated Track B status to COMPLETE (v4.15). |
 | 4.0 | 2026-01-23 | **ALL MANIFEST CHANGES COMPLETE.** Verified all 4 critical defects resolved (CRIT-1 to CRIT-4). Verified all First Activation paths fixed (5 form abilities). Verified CommitCooldown added to GA_FatherSymbiote. Verified orphan effects removed. Updated severity matrix to show all resolved. Document now serves as historical reference for audit decisions. |
 | 4.1 | 2026-01-23 | **DUAL-AGENT AUDIT VERIFICATION.** Claude-GPT audit verified all document claims against manifest.yaml. All content correct (line numbers stale but non-blocking). Audit grade: PASS. Options deferred: Hard Freeze, Enforcement Layer, External Snapshot - none currently needed. |
+| 4.2 | 2026-01-23 | Added **KNOWN LIMITATIONS** section (v4.27). Documented LIM-1: Automatic dome burst on form exit cannot be automated due to C++-only functions and TSubclassOf parameter limitations. |
 
 ---
 
