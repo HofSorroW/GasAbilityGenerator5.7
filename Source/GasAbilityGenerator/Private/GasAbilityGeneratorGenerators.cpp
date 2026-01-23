@@ -17641,6 +17641,15 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 								FString::Printf(TEXT("Fragment class '%s' not found"), *FragDef.Class));
 						}
 
+						// E_FRAGMENT_CLASS_ABSTRACT per audit section 2.4
+						if (FragmentClass->HasAnyClassFlags(CLASS_Abstract))
+						{
+							LogGeneration(FString::Printf(TEXT("[E_FRAGMENT_CLASS_ABSTRACT] %s | Fragment class is abstract: %s"),
+								*Definition.Name, *FragDef.Class));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								FString::Printf(TEXT("Fragment class '%s' is abstract and cannot be instantiated"), *FragDef.Class));
+						}
+
 						// Create fragment instance per audit: NewObject<T>(Outer=CDO, Class, NAME_None, RF_Public | RF_Transactional)
 						UObject* FragmentInstance = NewObject<UObject>(CDO, FragmentClass, NAME_None, RF_Public | RF_Transactional);
 						if (!FragmentInstance)

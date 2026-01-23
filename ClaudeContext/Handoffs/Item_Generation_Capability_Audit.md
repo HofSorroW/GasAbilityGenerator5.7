@@ -225,9 +225,29 @@ if (!Definition.WeaponVisualClass.IsEmpty())
 | `bool` | `false` | Only for fields using `if (bField)` pattern |
 | `TArray` | `[]` | Empty array |
 
+**v4.28 Exception - Negative Sentinel for FOV Overrides:**
+
+The following WeaponAttachmentItem float properties use `-1.0f` as sentinel instead of `0.0f`:
+
+| Property | Default | Rationale |
+|----------|---------|-----------|
+| `FOVOverride` | `-1.0f` | Zero FOV is invalid, but explicit small values (e.g., 0.5) are valid |
+| `WeaponRenderFOVOverride` | `-1.0f` | Same reasoning - allows explicit zero or small values |
+| `WeaponAimFStopOverride` | `-1.0f` | FStop of 0.0 may be valid for max bokeh effect |
+
+**Generator Check Pattern:**
+```cpp
+if (Definition.FOVOverride >= 0.0f)  // -1 = unset, 0+ = set
+{
+    // Apply property
+}
+```
+
+This is an intentional improvement over the zero-sentinel rule: negative values are physically invalid for FOV/FStop, making `-1` an unambiguous "unset" marker while preserving the ability to explicitly set zero or near-zero values.
+
 **Documentation Note:**
 
-> **N_ITEM_NUMERIC_SENTINEL_LIMITATION (v1):** Zero values are treated as unset for numeric properties controlled by sentinel checks. Use presets or omit field. If explicit zero becomes required, schema v2 will introduce optionals.
+> **N_ITEM_NUMERIC_SENTINEL_LIMITATION (v1):** Zero values are treated as unset for numeric properties controlled by sentinel checks. Use presets or omit field. If explicit zero becomes required, schema v2 will introduce optionals. **Exception:** FOV override properties use -1.0f sentinel.
 
 **Applicability Interaction:** If a field is "unset" by sentinel rules, it doesn't participate in applicability validation.
 
@@ -269,9 +289,13 @@ if (!Definition.WeaponVisualClass.IsEmpty())
 |------|----------|---------|----------------|
 | `E_FRAGMENT_CLASS_NOT_FOUND` | FAIL | Fragment class doesn't resolve | ItemName, FragmentClass |
 | `E_FRAGMENT_CLASS_ABSTRACT` | FAIL | Fragment class has CLASS_Abstract | ItemName, FragmentClass |
-| `E_FRAGMENT_PROPERTY_TYPE_MISMATCH` | FAIL | Dot notation left-side not a struct | ItemName, FragmentClass, PropertyPath |
-| `E_FRAGMENT_STRUCT_MEMBER_NOT_FOUND` | FAIL | Struct member doesn't exist | ItemName, FragmentClass, PropertyPath |
+| `E_FRAGMENT_INSTANTIATION_FAILED` | FAIL | NewObject returns nullptr | ItemName, FragmentClass |
+| `E_ITEM_PROPERTY_NOT_APPLICABLE` | FAIL | Property/struct member not found on fragment | ItemName, FragmentClass, PropertyPath |
+| `W_FRAGMENT_NOT_IN_ALLOWLIST` | WARN | Fragment class not in hardcoded allowlist | FragmentClass |
 | `W_FRAGMENT_NO_SETTABLE_PROPERTIES` | WARN | Fragment has zero settable props | FragmentClass, UsageCount |
+| `W_FRAGMENT_PROPERTY_TYPE_UNSUPPORTED` | WARN | Property type not handled by reflection | ItemName, FragmentClass, PropertyName |
+
+**Implementation Note:** `E_FRAGMENT_PROPERTY_TYPE_MISMATCH` and `E_FRAGMENT_STRUCT_MEMBER_NOT_FOUND` from initial audit are consolidated into `E_ITEM_PROPERTY_NOT_APPLICABLE` for consistency with existing item property errors.
 
 ### 4.2 Item-Specific Error Codes
 
@@ -280,6 +304,8 @@ if (!Definition.WeaponVisualClass.IsEmpty())
 | `E_ITEM_PROPERTY_NOT_APPLICABLE` | FAIL | Field set on incompatible parent_class | ItemName, ParentClass, PropertyName |
 | `E_ITEM_PARENT_NOT_FOUND` | FAIL | Parent class doesn't resolve | ItemName, ParentClass |
 | `E_ITEM_DEMO_DEPENDENCY_DETECTED` | FAIL | Demo asset referenced | ItemName, Source, DependencyPath |
+| `E_FRAGMENTS_NOT_FOUND` | FAIL | Fragments array not found on item class | ItemName, ClassPath |
+| `E_GE_CLASS_NOT_FOUND` | FAIL | GameplayEffectClass doesn't resolve | ItemName, GameplayEffectClass |
 
 ### 4.3 Error Payload Standardization (Hygiene-1)
 
@@ -441,11 +467,11 @@ LC-F4: Applicability check = reflection on resolved ParentClass; no static map.
 LC-F5: W_FRAGMENT_NO_SETTABLE_PROPERTIES dedup per-session with counts.
 LC-F6: CLOSED - No nested fragment references exist.
 LC-F7: Explicit fragment reference walk is pre-validation only; post-save uses AssetRegistry.
-D3: Sentinel semantics (zero = unset) locked for v1.
+D3: Sentinel semantics (zero = unset) locked for v1. EXCEPTION: FOVOverride fields use -1.0f.
 S2: Dot notation for fragment struct properties (one-hop limit).
 Hygiene-1: Error payloads include ItemName, ParentClass, FragmentClass, PropertyPath.
 Hygiene-2: Fragment class accepts both short name and full path; full path precedence.
-N_ITEM_NUMERIC_SENTINEL_LIMITATION: Documented limitation for v1.
+N_ITEM_NUMERIC_SENTINEL_LIMITATION: Documented limitation for v1 (FOVOverride exception documented).
 C_ITEM_FRAGMENT_PROPERTY_PATHS: Dot notation contract for v1.
 I_ITEM_NO_DEMO_DEPENDENCIES.FRAGMENTS: Fragment traversal sub-rule.
 ```
@@ -456,4 +482,5 @@ I_ITEM_NO_DEMO_DEPENDENCIES.FRAGMENTS: Fragment traversal sub-rule.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.1 | 2026-01-23 | Consistency sync: Added E_FRAGMENT_CLASS_ABSTRACT guard, consolidated error codes (E_ITEM_PROPERTY_NOT_APPLICABLE), documented FOVOverride sentinel exception, added missing error/warning codes to registry |
 | v1.0 | 2026-01-23 | Initial audit complete - GO-READY |
