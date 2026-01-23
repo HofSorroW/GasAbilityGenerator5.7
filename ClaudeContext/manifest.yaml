@@ -3989,6 +3989,11 @@ gameplay_abilities:
           properties:
             variable_name: DomeAbsorptionHandle
           position: [2400, 0]
+        # === END ABILITY - Cleanup (v4.27: Simplified - no auto burst trigger) ===
+        # NOTE: Automatic dome burst on form exit is NOT supported.
+        # Reason: TSubclassOf<> parameters can't be easily passed to TryActivateAbilityByClass in Blueprint.
+        # Player should manually use GA_DomeBurst input before switching forms if dome is charged.
+        # Father.Dome.Active is auto-cleared via activation_owned_tags when ability ends.
         - id: Event_EndAbility
           type: Event
           properties:
@@ -6270,11 +6275,11 @@ equippable_items:
     armor_rating: 50.0
     attack_rating: 0.0
     stealth_rating: 0.0
-    # v4.27 NOTE: Form exit burst (Decisions 22-24) cannot be implemented via HandleUnequip override
-    # because GetEquipmentComponent() is C++ only (not UFUNCTION). Instead, dome burst on form exit
-    # should be handled in GA_ProtectiveDome's EndAbility event - when armor form is unequipped,
-    # the ability is revoked and EndAbility fires, where we can check Father.Dome.FullyCharged
-    # and trigger the burst there. This is actually cleaner as it keeps dome logic in the dome ability.
+    # v4.27 NOTE: Form exit burst (Decisions 22-24) cannot be automated.
+    # - HandleUnequip override: GetEquipmentComponent() is C++ only (not UFUNCTION)
+    # - GA_ProtectiveDome EndAbility: TSubclassOf<> parameters can't be passed to TryActivateAbilityByClass
+    # WORKAROUND: Player should manually trigger GA_DomeBurst input before switching forms if dome is charged.
+    # GA_DomeBurst requires Father.Dome.FullyCharged to activate, so it won't fire unless dome is ready.
 
   - name: EI_FatherExoskeletonForm
     folder: Items/Forms
