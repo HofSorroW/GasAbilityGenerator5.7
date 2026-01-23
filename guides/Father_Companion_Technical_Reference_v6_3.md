@@ -27,11 +27,19 @@
 | Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.2 |
+| Version | 6.3 |
+| Last Audit | 2026-01-23 (Claude-GPT dual audit) |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
-| Replaces | Father_Companion_Technical_Reference_v6_1.md |
+| Replaces | Father_Companion_Technical_Reference_v6_2.md |
 
 ---
+
+## VERSION 6.3 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **INC-4 Fix (Claude-GPT Audit)** | Section 19.7 transition flow updated: "Delay node" → "AbilityTaskWaitDelay per Track B v4.15". Manifest uses AbilityTaskWaitDelay for all form ability delays. |
+| **Authority Note** | This document is explanatory. Runtime behavior and generation are defined by `manifest.yaml`. In case of conflict, the manifest takes precedence. |
 
 ## VERSION 6.2 CHANGES
 
@@ -2724,7 +2732,7 @@ Example: Armor to Exoskeleton
 | 8 | GA_FatherArmor | Restores player speed to stored original |
 | 9 | GA_FatherArmor | Removes GE_ArmorBoost |
 | 10 | GA_FatherExoskeleton | Spawns NS_FatherFormTransition Niagara VFX |
-| 11 | GA_FatherExoskeleton | Waits 5 seconds (Delay node) |
+| 11 | GA_FatherExoskeleton | Waits 5 seconds (AbilityTaskWaitDelay per Track B v4.15) |
 | 12 | GA_FatherExoskeleton | Father repositions (chest to back) |
 | 13 | GA_FatherExoskeleton | Stores current player speed |
 | 14 | GA_FatherExoskeleton | Applies GE_ExoskeletonSpeed (+50% speed, +30% jump, +10 attack) |

@@ -1,5 +1,5 @@
 # GA_FatherExoskeletonDash Implementation Guide
-## Version 3.9 - GAS Audit Compliant (All Locked Decisions)
+## Version 3.10 - GAS Audit Compliant (All Locked Decisions)
 
 ---
 
@@ -12,9 +12,29 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Exoskeleton (active only when attached) |
 | Input | Double-press directional keys (W/A/S/D) |
-| Version | 3.9 |
+| Version | 3.10 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
+| Last Audit | 2026-01-23 (Claude-GPT dual audit) |
+
+---
+
+## **AUTHORITY NOTE**
+
+This document is explanatory. Runtime behavior and generation are defined by `manifest.yaml`. In case of conflict, the manifest takes precedence.
+
+---
+
+## **AUDIT STATUS**
+
+| Field | Value |
+|-------|-------|
+| Status | VERIFIED |
+| Last Audit Date | 2026-01-23 |
+| Audit Scope | Design / Guide / Manifest Consistency |
+| Verified Against | manifest.yaml, GAS Audit Locked Decisions v4.1 |
+| Auditors | Claude-GPT dual audit |
+| Notes | INC-4 resolved (Delay node → AbilityTaskWaitDelay per Track B v4.15) |
 
 ---
 
@@ -507,7 +527,7 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 
 #### 4.13) Wait for Dash Duration
    - 4.13.1) From For Each Loop Completed pin:
-   - 4.13.1.1) Add Delay node
+   - 4.13.1.1) Add AbilityTaskWaitDelay node (auto-terminates with ability per Track B v4.15)
    - 4.13.1.2) Connect DashDuration variable to Duration
 
 #### 4.14) Restore Original Speed
@@ -751,6 +771,12 @@ GA_FatherExoskeletonDash is a high-mobility action ability exclusive to the Exos
 ---
 
 ## CHANGELOG
+
+### Version 3.10 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| Claude-GPT Audit (INC-4) | Changed "Delay node" to "AbilityTaskWaitDelay" per Track B v4.15 decision. Added Authority Note and Audit Status sections per documentation rules D-1/D-2. |
 
 ### Version 3.9 - January 2026
 

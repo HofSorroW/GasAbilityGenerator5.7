@@ -1,14 +1,36 @@
 # Father Companion - Symbiote Ultimate Ability Implementation Guide
-## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.8 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.7
+**Version:** 4.8
 **Date:** January 2026
+**Last Audit:** 2026-01-23 (Claude-GPT dual audit - INC-2, INC-3, INC-4 fixes)
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
 **Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Fix_v4.13.2.md
+
+---
+
+## **AUTHORITY NOTE**
+
+This document is explanatory. Runtime behavior and generation are defined by `manifest.yaml`. In case of conflict, the manifest takes precedence.
+
+---
+
+## **AUDIT STATUS**
+
+| Field | Value |
+|-------|-------|
+| Status | VERIFIED |
+| Last Audit Date | 2026-01-23 |
+| Audit Scope | Design / Guide / Manifest Consistency |
+| Verified Against | manifest.yaml, GAS Audit Locked Decisions v4.1 |
+| Auditors | Claude-GPT dual audit |
+| Notes | INC-2 (version mismatch), INC-3 (cooldown clarity), INC-4 (Delay wording) resolved |
+
+---
 
 **Document Purpose**: Complete step-by-step guide for implementing the ultimate Symbiote ability for the father companion system using Narrative Pro v2.2 and Unreal Engine 5.7. This ability transforms the father into a full-body symbiote covering the player, providing massive stat boosts for 30 seconds after accumulating damage equal to the level-scaled threshold.
 
@@ -27,7 +49,7 @@
 | Input | Z Key (Form Wheel) when charged |
 | Charge Component | UltimateChargeComponent |
 | Threshold Scaling | FC_UltimateThreshold (CurveFloat) |
-| Version | 4.4 |
+| Version | 4.8 |
 | Last Updated | January 2026 |
 | Dependencies | GE_SymbioteState, GE_FormChangeCooldown, GE_SymbioteLock |
 
@@ -95,8 +117,19 @@
 | Effect.Father.FormState.Symbiote | Symbiote form identity tag (granted by GE_SymbioteState) |
 | Symbiote.State.Merged | Father completely merged with player body (Activation Owned Tag) |
 | Symbiote.Charge.Ready | Ultimate charge is full, ability can activate |
-| Cooldown.Father.Symbiote | Cooldown applied after Symbiote ability ends |
+| Cooldown.Father.Symbiote | Reserved for Symbiote-specific cooldown (see Cooldown Model below) |
 | Father.State.SymbioteLocked | Form changes blocked during 30s Symbiote duration |
+
+### **Cooldown Model (INC-3 Clarification)**
+
+Symbiote has a dual-cooldown system:
+
+| Cooldown Type | Mechanism | Duration | Tag |
+|---------------|-----------|----------|-----|
+| Form Change Cooldown | GE_FormChangeCooldown (GAS) | 15s | Cooldown.Father.FormChange |
+| Post-Duration Cooldown | UltimateChargeComponent::StartCooldown() (non-GAS) | 120s | N/A (component-based) |
+
+**Note:** The `Cooldown.Father.Symbiote` tag is reserved but not currently applied by GE_FormChangeCooldown. The 120s cooldown is managed entirely by the UltimateChargeComponent, not the GAS cooldown system. This is intentional - the charge-based ultimate uses component state rather than GAS tags.
 
 ### **Verify Existing Tags**
 
@@ -399,7 +432,7 @@ GA_FatherSymbiote does NOT need to apply stat modifiers. See Father_Companion_Sy
 
 #### 15.3) Wait 5 Seconds for Transition
    - 15.3.1) From Spawn System execution:
-      - 15.3.1.1) Add: Delay node
+      - 15.3.1.1) Add: AbilityTaskWaitDelay node (auto-terminates with ability per Track B v4.15)
       - 15.3.1.2) Duration: 5.0
 
 #### 15.4) Remove Transitioning Tag
@@ -982,6 +1015,7 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.8 | January 2026 | **Claude-GPT Audit Fixes:** (1) INC-2: Fixed DOCUMENT INFORMATION table version from 4.4 to 4.8. (2) INC-3: Added Cooldown Model clarification explaining dual cooldown system (15s GE_FormChangeCooldown vs 120s UltimateChargeComponent). (3) INC-4: Changed "Delay node" to "AbilityTaskWaitDelay" per Track B v4.15. Added Authority Note and Audit Status sections per documentation rules D-1/D-2. |
 | 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md to Related Documents. This guide now references all locked decisions: INV-1 (no invulnerability), VTF-7 (CommitCooldown required), Decision 1A (stats via EI), Decision 1B (StaminaRegenRate via child GE), Decision 3 (GE_SymbioteBoost removed). Updated Technical Reference to v6.2. |
 | 4.6 | January 2026 | Version alignment with manifest v3.0.3. No functional changes. |
 | 4.5 | January 2026 | **GAS Audit Fixes:** (1) REMOVED all invulnerability - Father NOT invulnerable during Symbiote or transitions per INV-1 audit decision. Removed GE_TransitionInvulnerability, Narrative.State.Invulnerable from GE_SymbioteState. (2) Added PHASE 4 timer callback guards (FatherRef validity, CurrentForm check, Symbiote.State.Merged tag proxy) per FIX-2. (3) Added PHASE 5 bWasCancelled check - cleanup only runs when cancelled, not on normal EndSymbiote flow per FIX-1. (4) Added movement speed/jump restoration to EndAbility for cancellation cleanup. (5) Added GA_FatherArmor activation on cancellation. See `Father_Companion_GAS_Audit_Locked_Decisions.md`. |

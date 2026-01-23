@@ -1,14 +1,34 @@
 # GA_FatherArmor - Armor Form Ability Implementation Guide
-## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.8 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.7
+**Version:** 4.8
 **Date:** January 2026
+**Last Audit:** 2026-01-23 (Claude-GPT dual audit - INC-1 fix)
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
 **Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Audit_v1_0.md
+
+---
+
+## **AUTHORITY NOTE**
+
+This document is explanatory. Runtime behavior and generation are defined by `manifest.yaml`. In case of conflict, the manifest takes precedence.
+
+---
+
+## **AUDIT STATUS**
+
+| Field | Value |
+|-------|-------|
+| Status | VERIFIED |
+| Last Audit Date | 2026-01-23 |
+| Audit Scope | Design / Guide / Manifest Consistency |
+| Verified Against | manifest.yaml, GAS Audit Locked Decisions v4.1 |
+| Auditors | Claude-GPT dual audit |
+| Notes | INC-1 resolved (ReplicateActivationOwnedTags no longer prerequisite per v4.4) |
 
 ---
 
@@ -1181,7 +1201,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 |-----------|-------------|
 | Activation Owned Tags | Father.State.Attached (auto-granted on activation, ephemeral) |
 | Form Identity | GE_ArmorState grants Effect.Father.FormState.Armor (persists via infinite GE) |
-| ReplicateActivationOwnedTags | ENABLED in Project Settings (enables multiplayer replication) |
+| ReplicateActivationOwnedTags | OPTIONAL - Only needed if Father.State.Attached must replicate to clients (v4.4: No longer prerequisite since form identity uses GE replication) |
 | Transitioning Tag | AddLooseGameplayTag(Father.State.Transitioning) during 5s transition (**NO invulnerability** per INV-1) |
 | GE_FormChangeCooldown | 15s cooldown after form change |
 | Mutual Exclusivity | Cancel Abilities With Tag cancels other form abilities |
@@ -1220,7 +1240,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 | Instancing Policy | Instanced Per Actor | One instance per ASC |
 | Replication Policy | Replicate Yes | Effects and tags replicate |
 | Net Execution Policy | Server Only | NPC-owned form ability granting to player ASC |
-| ReplicateActivationOwnedTags | ENABLED | Form tags replicate to clients |
+| ReplicateActivationOwnedTags | OPTIONAL | v4.4: No longer required (form identity via GE replication) |
 
 ### **Stat Modifications**
 
@@ -1272,7 +1292,6 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 |-------|---------|
 | GE_FormChangeCooldown_Implementation_Guide_v1_0.md | Form change cooldown effect |
 | BP_FatherCompanion_Setup_Guide_v2_3.md | Father companion blueprint configuration |
-| Project Settings | ReplicateActivationOwnedTags must be ENABLED |
 
 ### **Armor Form Ability Guides**
 
@@ -1293,11 +1312,10 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Step | Guide | Description |
 |------|-------|-------------|
-| 1 | Project Settings | Enable ReplicateActivationOwnedTags |
-| 2 | GE_FormChangeCooldown | Create cooldown effect |
-| 3 | GA_FatherArmor (this guide) | Core armor form attachment and stat bonuses |
-| 4 | Father_Protective_Dome | Dome attributes, absorption effects, GA_ProtectiveDome |
-| 5 | GA_DomeBurst | Burst ability with AOE damage and knockback |
+| 1 | GE_FormChangeCooldown | Create cooldown effect |
+| 2 | GA_FatherArmor (this guide) | Core armor form attachment and stat bonuses |
+| 3 | Father_Protective_Dome | Dome attributes, absorption effects, GA_ProtectiveDome |
+| 4 | GA_DomeBurst | Burst ability with AOE damage and knockback |
 
 ### **Dome System Summary**
 
@@ -1321,6 +1339,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Version | Changes |
 |---------|---------|
+| 4.8 | **INC-1 Fix (Claude-GPT Audit):** Removed ReplicateActivationOwnedTags as prerequisite (was removed in v4.4 but body text contradicted changelog). Added Authority Note and Audit Status sections per documentation rules D-1/D-2. Clarified ReplicateActivationOwnedTags is OPTIONAL since form identity uses GE replication. |
 | 4.7 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Decision 2 (GE_ArmorBoost removed - stats via EquippableItem), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.6 | **INV-1 Compliance:** Fixed changelog entry - GE_ArmorState grants only Effect.Father.FormState.Armor (no Narrative.State.Invulnerable). Only GA_FatherSacrifice grants invulnerability (to player for 8s). |
 | 4.4 | **Option B Form State Architecture:** Replaced ActivationOwnedTags form identity with GE-based persistent state (GE_ArmorState). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags, then apply GE_ArmorState. GE_ArmorState grants Effect.Father.FormState.Armor (Infinite duration). Removed ReplicateActivationOwnedTags prerequisite. Added Automation vs Manual table. Updated UE version to 5.7. See Form_State_Architecture_Audit_v1_0.md for architecture rationale. |
