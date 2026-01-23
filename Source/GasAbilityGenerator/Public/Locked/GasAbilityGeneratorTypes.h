@@ -1,5 +1,6 @@
-// GasAbilityGenerator v4.25
+// GasAbilityGenerator v4.30
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.30: Automation Gap Closure - MeshMaterials/Morphs/SequenceAssets struct automation, deferred resolution
 // v4.25: Dependency Ordering with Cascade Skip - EGenerationStatus::SkippedCascaded, cascade tracking fields
 // v4.10: Widget Property Enhancement - dotted properties, struct types, enums, machine-readable warnings
 //        FGenerationResult.Warnings field with pipe-delimited format (CODE | ContextPath | Message | SuggestedFix)

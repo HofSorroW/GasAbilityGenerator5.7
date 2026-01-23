@@ -1,5 +1,7 @@
-// GasAbilityGenerator v4.13
+// GasAbilityGenerator v4.30
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v4.30: Automation Gap Closure - MeshMaterials/Morphs struct automation, deferred resolution for
+//        EquipmentAbilities/ActivitiesToGrant, DialogueShot SequenceAssets array automation
 // v4.13: Category C Full Automation - P3.2 GameplayCue Auto-Wiring (ExecuteGameplayCue nodes),
 //        P3.1 Niagara Spawning Support (SpawnSystemAttached + cleanup), P2.1 Delegate Binding IR + Codegen
 // v4.10: Widget Property Enhancement - ConfigureWidgetProperties lambda with dotted properties,
@@ -280,6 +282,7 @@
 #include "Tales/QuestTask.h"    // v3.9: UNarrativeTask for quest tasks
 #include "GasScheduledBehaviorHelpers.h"  // v3.9: Concrete helper for UScheduledBehavior_AddNPCGoal
 #include "Camera/CameraShakeBase.h"  // v4.1: UCameraShakeBase for dialogue camera shake
+#include "LevelSequence.h"  // v4.30: Dialogue SequenceAssets automation
 
 // v2.3.0: Component includes for Actor Blueprint generation
 #include "Components/SceneComponent.h"
@@ -15541,11 +15544,134 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 			}
 			else if (Definition.DefaultDialogueShot.SequenceAssets.Num() > 0)
 			{
-				// v4.23 FAIL-FAST: SequenceAssets cannot be auto-generated
-				LogGeneration(FString::Printf(TEXT("[E_DIALOGUE_SEQUENCEASSETS_NOT_AUTOMATABLE] %s | DefaultDialogueShot.SequenceAssets (%d) specified but cannot be auto-generated"),
-					*Definition.Name, Definition.DefaultDialogueShot.SequenceAssets.Num()));
-				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-					TEXT("DefaultDialogueShot SequenceAssets specified but requires manual editor configuration"));
+				// v4.30: SequenceAssets array automation
+				// Find and load UNarrativeDialogueSequence class
+				UClass* DialogueSequenceClass = LoadClass<UObject>(nullptr, TEXT("/Script/NarrativeArsenal.NarrativeDialogueSequence"));
+				if (!DialogueSequenceClass)
+				{
+					// Try FindObject as fallback
+					DialogueSequenceClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.NarrativeDialogueSequence"));
+				}
+
+				if (DialogueSequenceClass)
+				{
+					FObjectProperty* ShotP = CastField<FObjectProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DefaultDialogueShot")));
+					if (ShotP)
+					{
+						// Create instanced UNarrativeDialogueSequence
+						UObject* DialogueShot = NewObject<UObject>(CDO, DialogueSequenceClass, NAME_None, RF_Public | RF_Transactional);
+						if (DialogueShot)
+						{
+							// Populate SequenceAssets array (TArray<ULevelSequence*>)
+							FArrayProperty* SequenceAssetsArrayProp = CastField<FArrayProperty>(
+								DialogueSequenceClass->FindPropertyByName(TEXT("SequenceAssets")));
+							if (SequenceAssetsArrayProp)
+							{
+								FScriptArrayHelper ArrayHelper(SequenceAssetsArrayProp, SequenceAssetsArrayProp->ContainerPtrToValuePtr<void>(DialogueShot));
+								ArrayHelper.EmptyValues();
+
+								int32 LoadedCount = 0;
+								for (const FString& SeqAssetPath : Definition.DefaultDialogueShot.SequenceAssets)
+								{
+									ULevelSequence* Sequence = LoadObject<ULevelSequence>(nullptr, *SeqAssetPath);
+									if (Sequence)
+									{
+										int32 NewIndex = ArrayHelper.AddValue();
+										FObjectProperty* InnerProp = CastField<FObjectProperty>(SequenceAssetsArrayProp->Inner);
+										if (InnerProp)
+										{
+											InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), Sequence);
+											LoadedCount++;
+										}
+									}
+									else
+									{
+										LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load SequenceAsset: %s"), *SeqAssetPath));
+									}
+								}
+
+								// Set additional properties from manifest
+								if (!Definition.DefaultDialogueShot.AnchorOriginRule.IsEmpty())
+								{
+									FEnumProperty* AnchorOriginProp = CastField<FEnumProperty>(
+										DialogueSequenceClass->FindPropertyByName(TEXT("AnchorOriginRule")));
+									if (AnchorOriginProp)
+									{
+										UEnum* EnumType = AnchorOriginProp->GetEnum();
+										if (EnumType)
+										{
+											FString EnumValueName = FString::Printf(TEXT("AOR_%s"), *Definition.DefaultDialogueShot.AnchorOriginRule);
+											int64 EnumValue = EnumType->GetValueByNameString(EnumValueName);
+											if (EnumValue != INDEX_NONE)
+											{
+												AnchorOriginProp->GetUnderlyingProperty()->SetIntPropertyValue(
+													AnchorOriginProp->ContainerPtrToValuePtr<void>(DialogueShot), EnumValue);
+											}
+										}
+									}
+								}
+
+								if (!Definition.DefaultDialogueShot.AnchorRotationRule.IsEmpty())
+								{
+									FEnumProperty* AnchorRotationProp = CastField<FEnumProperty>(
+										DialogueSequenceClass->FindPropertyByName(TEXT("AnchorRotationRule")));
+									if (AnchorRotationProp)
+									{
+										UEnum* EnumType = AnchorRotationProp->GetEnum();
+										if (EnumType)
+										{
+											FString EnumValueName = FString::Printf(TEXT("ARR_%s"), *Definition.DefaultDialogueShot.AnchorRotationRule);
+											int64 EnumValue = EnumType->GetValueByNameString(EnumValueName);
+											if (EnumValue != INDEX_NONE)
+											{
+												AnchorRotationProp->GetUnderlyingProperty()->SetIntPropertyValue(
+													AnchorRotationProp->ContainerPtrToValuePtr<void>(DialogueShot), EnumValue);
+											}
+										}
+									}
+								}
+
+								// Set AnchorOriginNudge vector
+								FStructProperty* NudgeProp = CastField<FStructProperty>(
+									DialogueSequenceClass->FindPropertyByName(TEXT("AnchorOriginNudge")));
+								if (NudgeProp)
+								{
+									FVector* NudgePtr = NudgeProp->ContainerPtrToValuePtr<FVector>(DialogueShot);
+									if (NudgePtr)
+									{
+										*NudgePtr = FVector(
+											Definition.DefaultDialogueShot.AnchorOriginNudgeX,
+											Definition.DefaultDialogueShot.AnchorOriginNudgeY,
+											Definition.DefaultDialogueShot.AnchorOriginNudgeZ);
+									}
+								}
+
+								// Set 180 degree rule properties
+								if (Definition.DefaultDialogueShot.bUse180DegreeRule)
+								{
+									FBoolProperty* Use180Prop = CastField<FBoolProperty>(
+										DialogueSequenceClass->FindPropertyByName(TEXT("bUse180DegreeRule")));
+									if (Use180Prop)
+									{
+										Use180Prop->SetPropertyValue_InContainer(DialogueShot, true);
+									}
+								}
+
+								// Assign the instanced object to the property
+								ShotP->SetObjectPropertyValue_InContainer(CDO, DialogueShot);
+								LogGeneration(FString::Printf(TEXT("  Set DefaultDialogueShot with %d SequenceAssets"), LoadedCount));
+							}
+							else
+							{
+								LogGeneration(FString::Printf(TEXT("  [WARNING] SequenceAssets property not found on UNarrativeDialogueSequence")));
+							}
+						}
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] Could not load UNarrativeDialogueSequence class - SequenceAssets not automated")));
+				}
 			}
 		}
 
@@ -16974,21 +17100,221 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 							}
 						}
 
-						// v4.23 FAIL-FAST: Complex structs not automated - fail if manifest specifies them
+						// v4.30: MeshMaterials struct automation
+						// Maps FManifestClothingMaterial -> FCreatorMeshMaterial
 						if (Definition.ClothingMesh.Materials.Num() > 0)
 						{
-							LogGeneration(FString::Printf(TEXT("[E_MESHMATERIALS_NOT_AUTOMATED] %s | MeshMaterials (%d entries) specified but automation not implemented"),
-								*Definition.Name, Definition.ClothingMesh.Materials.Num()));
-							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-								TEXT("MeshMaterials specified in manifest but complex struct automation not implemented"));
+							FArrayProperty* MaterialsArrayProp = CastField<FArrayProperty>(MeshStruct->FindPropertyByName(TEXT("MeshMaterials")));
+							if (MaterialsArrayProp)
+							{
+								FScriptArrayHelper ArrayHelper(MaterialsArrayProp, MaterialsArrayProp->ContainerPtrToValuePtr<void>(ClothingMeshPtr));
+								ArrayHelper.EmptyValues();
+
+								FStructProperty* MaterialStructProp = CastField<FStructProperty>(MaterialsArrayProp->Inner);
+								if (MaterialStructProp)
+								{
+									for (const FManifestClothingMaterial& MatDef : Definition.ClothingMesh.Materials)
+									{
+										int32 NewIndex = ArrayHelper.AddValue();
+										void* MaterialPtr = ArrayHelper.GetRawPtr(NewIndex);
+
+										// Set Material (TSoftObjectPtr<UMaterialInterface>)
+										if (!MatDef.Material.IsEmpty())
+										{
+											FSoftObjectProperty* MaterialProp = CastField<FSoftObjectProperty>(
+												MaterialStructProp->Struct->FindPropertyByName(TEXT("Material")));
+											if (MaterialProp)
+											{
+												FSoftObjectPtr* SoftPtr = MaterialProp->GetPropertyValuePtr_InContainer(MaterialPtr);
+												if (SoftPtr)
+												{
+													*SoftPtr = FSoftObjectPath(MatDef.Material);
+												}
+											}
+										}
+
+										// Set VectorParams (TArray<FCreatorMeshMaterialParam_Vector>)
+										if (MatDef.VectorParams.Num() > 0)
+										{
+											FArrayProperty* VectorParamsArrayProp = CastField<FArrayProperty>(
+												MaterialStructProp->Struct->FindPropertyByName(TEXT("VectorParams")));
+											if (VectorParamsArrayProp)
+											{
+												FScriptArrayHelper VectorArrayHelper(VectorParamsArrayProp, VectorParamsArrayProp->ContainerPtrToValuePtr<void>(MaterialPtr));
+												VectorArrayHelper.EmptyValues();
+
+												FStructProperty* VectorParamStructProp = CastField<FStructProperty>(VectorParamsArrayProp->Inner);
+												if (VectorParamStructProp)
+												{
+													for (const FManifestMaterialParamBinding& VP : MatDef.VectorParams)
+													{
+														int32 VPIndex = VectorArrayHelper.AddValue();
+														void* VPPtr = VectorArrayHelper.GetRawPtr(VPIndex);
+
+														// Set ParameterNames (TArray<FName>) - single parameter mapped to array
+														FArrayProperty* ParamNamesProp = CastField<FArrayProperty>(
+															VectorParamStructProp->Struct->FindPropertyByName(TEXT("ParameterNames")));
+														if (ParamNamesProp)
+														{
+															FScriptArrayHelper NamesHelper(ParamNamesProp, ParamNamesProp->ContainerPtrToValuePtr<void>(VPPtr));
+															NamesHelper.EmptyValues();
+															int32 NameIdx = NamesHelper.AddValue();
+															FNameProperty* NameProp = CastField<FNameProperty>(ParamNamesProp->Inner);
+															if (NameProp)
+															{
+																*reinterpret_cast<FName*>(NamesHelper.GetRawPtr(NameIdx)) = FName(*VP.ParameterName);
+															}
+														}
+
+														// Set VectorTagID (FGameplayTag)
+														FStructProperty* TagProp = CastField<FStructProperty>(
+															VectorParamStructProp->Struct->FindPropertyByName(TEXT("VectorTagID")));
+														if (TagProp)
+														{
+															FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*VP.TagId), false);
+															if (Tag.IsValid())
+															{
+																FGameplayTag* TagPtr = TagProp->ContainerPtrToValuePtr<FGameplayTag>(VPPtr);
+																if (TagPtr) *TagPtr = Tag;
+															}
+															else
+															{
+																LogGeneration(FString::Printf(TEXT("    [WARNING] Invalid VectorTagID: %s"), *VP.TagId));
+															}
+														}
+													}
+												}
+											}
+										}
+
+										// Set ScalarParams (TArray<FCreatorMeshMaterialParam_Scalar>)
+										if (MatDef.ScalarParams.Num() > 0)
+										{
+											FArrayProperty* ScalarParamsArrayProp = CastField<FArrayProperty>(
+												MaterialStructProp->Struct->FindPropertyByName(TEXT("ScalarParams")));
+											if (ScalarParamsArrayProp)
+											{
+												FScriptArrayHelper ScalarArrayHelper(ScalarParamsArrayProp, ScalarParamsArrayProp->ContainerPtrToValuePtr<void>(MaterialPtr));
+												ScalarArrayHelper.EmptyValues();
+
+												FStructProperty* ScalarParamStructProp = CastField<FStructProperty>(ScalarParamsArrayProp->Inner);
+												if (ScalarParamStructProp)
+												{
+													for (const FManifestMaterialParamBinding& SP : MatDef.ScalarParams)
+													{
+														int32 SPIndex = ScalarArrayHelper.AddValue();
+														void* SPPtr = ScalarArrayHelper.GetRawPtr(SPIndex);
+
+														// Set ParameterNames (TArray<FName>) - single parameter mapped to array
+														FArrayProperty* ParamNamesProp = CastField<FArrayProperty>(
+															ScalarParamStructProp->Struct->FindPropertyByName(TEXT("ParameterNames")));
+														if (ParamNamesProp)
+														{
+															FScriptArrayHelper NamesHelper(ParamNamesProp, ParamNamesProp->ContainerPtrToValuePtr<void>(SPPtr));
+															NamesHelper.EmptyValues();
+															int32 NameIdx = NamesHelper.AddValue();
+															FNameProperty* NameProp = CastField<FNameProperty>(ParamNamesProp->Inner);
+															if (NameProp)
+															{
+																*reinterpret_cast<FName*>(NamesHelper.GetRawPtr(NameIdx)) = FName(*SP.ParameterName);
+															}
+														}
+
+														// Set ScalarTagID (FGameplayTag)
+														FStructProperty* TagProp = CastField<FStructProperty>(
+															ScalarParamStructProp->Struct->FindPropertyByName(TEXT("ScalarTagID")));
+														if (TagProp)
+														{
+															FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*SP.TagId), false);
+															if (Tag.IsValid())
+															{
+																FGameplayTag* TagPtr = TagProp->ContainerPtrToValuePtr<FGameplayTag>(SPPtr);
+																if (TagPtr) *TagPtr = Tag;
+															}
+															else
+															{
+																LogGeneration(FString::Printf(TEXT("    [WARNING] Invalid ScalarTagID: %s"), *SP.TagId));
+															}
+														}
+													}
+												}
+											}
+										}
+
+										LogGeneration(FString::Printf(TEXT("    Added MeshMaterial: %s (VectorParams: %d, ScalarParams: %d)"),
+											*MatDef.Material, MatDef.VectorParams.Num(), MatDef.ScalarParams.Num()));
+									}
+								}
+							}
+							else
+							{
+								LogGeneration(FString::Printf(TEXT("    [WARNING] MeshMaterials property not found on ClothingMeshData struct")));
+							}
 						}
 
+						// v4.30: Morphs struct automation
+						// Maps FManifestClothingMorph -> FCreatorMeshMorph
 						if (Definition.ClothingMesh.Morphs.Num() > 0)
 						{
-							LogGeneration(FString::Printf(TEXT("[E_MORPHS_NOT_AUTOMATED] %s | Morphs (%d entries) specified but automation not implemented"),
-								*Definition.Name, Definition.ClothingMesh.Morphs.Num()));
-							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-								TEXT("Morphs specified in manifest but complex struct automation not implemented"));
+							FArrayProperty* MorphsArrayProp = CastField<FArrayProperty>(MeshStruct->FindPropertyByName(TEXT("Morphs")));
+							if (MorphsArrayProp)
+							{
+								FScriptArrayHelper ArrayHelper(MorphsArrayProp, MorphsArrayProp->ContainerPtrToValuePtr<void>(ClothingMeshPtr));
+								ArrayHelper.EmptyValues();
+
+								FStructProperty* MorphStructProp = CastField<FStructProperty>(MorphsArrayProp->Inner);
+								if (MorphStructProp)
+								{
+									for (const FManifestClothingMorph& MorphDef : Definition.ClothingMesh.Morphs)
+									{
+										int32 NewIndex = ArrayHelper.AddValue();
+										void* MorphPtr = ArrayHelper.GetRawPtr(NewIndex);
+
+										// Set ScalarTag (FGameplayTag)
+										FStructProperty* ScalarTagProp = CastField<FStructProperty>(
+											MorphStructProp->Struct->FindPropertyByName(TEXT("ScalarTag")));
+										if (ScalarTagProp)
+										{
+											FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*MorphDef.ScalarTag), false);
+											if (Tag.IsValid())
+											{
+												FGameplayTag* TagPtr = ScalarTagProp->ContainerPtrToValuePtr<FGameplayTag>(MorphPtr);
+												if (TagPtr) *TagPtr = Tag;
+											}
+											else
+											{
+												LogGeneration(FString::Printf(TEXT("    [WARNING] Invalid morph ScalarTag: %s"), *MorphDef.ScalarTag));
+											}
+										}
+
+										// Set MorphNames (TArray<FName>)
+										FArrayProperty* MorphNamesArrayProp = CastField<FArrayProperty>(
+											MorphStructProp->Struct->FindPropertyByName(TEXT("MorphNames")));
+										if (MorphNamesArrayProp)
+										{
+											FScriptArrayHelper NamesHelper(MorphNamesArrayProp, MorphNamesArrayProp->ContainerPtrToValuePtr<void>(MorphPtr));
+											NamesHelper.EmptyValues();
+
+											for (const FString& MorphName : MorphDef.MorphNames)
+											{
+												int32 NameIdx = NamesHelper.AddValue();
+												FNameProperty* NameProp = CastField<FNameProperty>(MorphNamesArrayProp->Inner);
+												if (NameProp)
+												{
+													*reinterpret_cast<FName*>(NamesHelper.GetRawPtr(NameIdx)) = FName(*MorphName);
+												}
+											}
+										}
+
+										LogGeneration(FString::Printf(TEXT("    Added Morph: ScalarTag=%s, MorphNames=%d"),
+											*MorphDef.ScalarTag, MorphDef.MorphNames.Num()));
+									}
+								}
+							}
+							else
+							{
+								LogGeneration(FString::Printf(TEXT("    [WARNING] Morphs property not found on ClothingMeshData struct")));
+							}
 						}
 					}
 				}
@@ -17045,6 +17371,7 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 			}
 
 			// v4.2: Handle EquipmentAbilities TArray<TSubclassOf<UNarrativeGameplayAbility>>
+			// v4.30: Added session cache lookup for deferred resolution
 			if (Definition.EquipmentAbilities.Num() > 0)
 			{
 				FArrayProperty* AbilitiesArrayProp = CastField<FArrayProperty>(
@@ -17056,8 +17383,14 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 
 					for (const FString& AbilityName : Definition.EquipmentAbilities)
 					{
-						// Resolve ability class
-						UClass* AbilityClass = FindObject<UClass>(nullptr, *AbilityName);
+						// v4.30: Check session cache first (for GA_ generated this session)
+						UClass* AbilityClass = GSessionBlueprintClassCache.FindRef(AbilityName);
+
+						// Resolve ability class via standard lookup
+						if (!AbilityClass)
+						{
+							AbilityClass = FindObject<UClass>(nullptr, *AbilityName);
+						}
 						if (!AbilityClass)
 						{
 							AbilityClass = LoadClass<UGameplayAbility>(nullptr, *AbilityName);
@@ -17073,6 +17406,20 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 							AbilityClass = LoadClass<UGameplayAbility>(nullptr, *FString::Printf(TEXT("/Game/FatherCompanion/Abilities/%s.%s_C"),
 								*AbilityName, *AbilityName));
 						}
+						if (!AbilityClass)
+						{
+							// Try project-relative paths
+							TArray<FString> SearchPaths = {
+								FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName),
+								FString::Printf(TEXT("%s/Abilities/Forms/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName),
+								FString::Printf(TEXT("%s/Abilities/Actions/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName)
+							};
+							for (const FString& SearchPath : SearchPaths)
+							{
+								AbilityClass = LoadObject<UClass>(nullptr, *SearchPath);
+								if (AbilityClass) break;
+							}
+						}
 
 						if (AbilityClass)
 						{
@@ -17086,11 +17433,14 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 						}
 						else
 						{
-							// v4.23 FAIL-FAST: Manifest references ability class that cannot be resolved
-							LogGeneration(FString::Printf(TEXT("[E_EQUIPMENTABILITY_NOT_FOUND] %s | Could not resolve EquipmentAbility class: %s"),
-								*Definition.Name, *AbilityName));
-							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-								FString::Printf(TEXT("EquipmentAbility class '%s' not found - manifest references class but resolution failed"), *AbilityName));
+							// v4.30: Defer instead of fail-fast - ability may be generated later this session
+							LogGeneration(FString::Printf(TEXT("  Deferring: EquipmentAbility '%s' not found yet"), *AbilityName));
+							Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+								FString::Printf(TEXT("Missing dependency: %s"), *AbilityName));
+							Result.MissingDependency = AbilityName;
+							Result.MissingDependencyType = TEXT("GameplayAbility");
+							Result.DetermineCategory();
+							return Result;
 						}
 					}
 				}
@@ -17173,6 +17523,7 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 			}
 
 			// v4.8: Handle ActivitiesToGrant TArray<TSubclassOf<UNPCActivity>>
+			// v4.30: Added session cache lookup for deferred resolution
 			if (Definition.ActivitiesToGrant.Num() > 0)
 			{
 				FArrayProperty* ActivitiesArrayProp = CastField<FArrayProperty>(
@@ -17184,8 +17535,14 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 
 					for (const FString& ActivityName : Definition.ActivitiesToGrant)
 					{
-						// Resolve activity class
-						UClass* ActivityClass = FindObject<UClass>(nullptr, *ActivityName);
+						// v4.30: Check session cache first (for BPA_ generated this session)
+						UClass* ActivityClass = GSessionBlueprintClassCache.FindRef(ActivityName);
+
+						// Resolve activity class via standard lookup
+						if (!ActivityClass)
+						{
+							ActivityClass = FindObject<UClass>(nullptr, *ActivityName);
+						}
 						if (!ActivityClass)
 						{
 							ActivityClass = LoadClass<UObject>(nullptr, *ActivityName);
@@ -17200,6 +17557,7 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 							// Try common paths
 							TArray<FString> SearchPaths = {
 								FString::Printf(TEXT("%s/AI/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName),
+								FString::Printf(TEXT("%s/Activities/%s.%s_C"), *GetProjectRoot(), *ActivityName, *ActivityName),
 								FString::Printf(TEXT("/Game/AI/Activities/%s.%s_C"), *ActivityName, *ActivityName)
 							};
 							for (const FString& SearchPath : SearchPaths)
@@ -17221,11 +17579,14 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 						}
 						else
 						{
-							// v4.23 FAIL-FAST: Manifest references activity class that cannot be resolved
-							LogGeneration(FString::Printf(TEXT("[E_ACTIVITY_CLASS_NOT_FOUND] %s | Could not resolve Activity class: %s"),
-								*Definition.Name, *ActivityName));
-							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-								FString::Printf(TEXT("Activity class '%s' not found"), *ActivityName));
+							// v4.30: Defer instead of fail-fast - activity may be generated later this session
+							LogGeneration(FString::Printf(TEXT("  Deferring: Activity '%s' not found yet"), *ActivityName));
+							Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+								FString::Printf(TEXT("Missing dependency: %s"), *ActivityName));
+							Result.MissingDependency = ActivityName;
+							Result.MissingDependencyType = TEXT("Activity");
+							Result.DetermineCategory();
+							return Result;
 						}
 					}
 				}

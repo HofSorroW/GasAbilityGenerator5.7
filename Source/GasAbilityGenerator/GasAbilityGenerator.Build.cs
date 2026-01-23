@@ -30,7 +30,10 @@ public class GasAbilityGenerator : ModuleRules
 			"EnhancedInput",
 
 			// v2.6.5: Niagara VFX system generation
-			"Niagara"
+			"Niagara",
+
+			// v4.30: LevelSequence for dialogue sequence automation
+			"LevelSequence"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
