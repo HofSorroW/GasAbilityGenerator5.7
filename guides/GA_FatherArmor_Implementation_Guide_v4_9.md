@@ -1,8 +1,8 @@
 # GA_FatherArmor - Armor Form Ability Implementation Guide
-## VERSION 4.8 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.9 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.8
+**Version:** 4.9
 **Date:** January 2026
 **Last Audit:** 2026-01-23 (Claude-GPT dual audit - INC-1 fix)
 **Engine:** Unreal Engine 5.7
@@ -250,7 +250,7 @@ Before implementing GA_FatherArmor, ensure the following are complete:
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Armor |
-| Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Exoskeleton, Ability.Father.Symbiote, Ability.Father.Engineer |
+| Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Exoskeleton, Ability.Father.Engineer |
 | Activation Owned Tags | Father.State.Attached |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
@@ -1189,7 +1189,9 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 | Property | Tags |
 |----------|------|
 | Ability Tags | `Ability.Father.Armor` |
-| Cancel Abilities with Tag | Ability.Father.Crawler, Exoskeleton, Symbiote, Engineer |
+| Cancel Abilities with Tag | Ability.Father.Crawler, Exoskeleton, Engineer |
+
+> **AUDIT NOTE (v4.9 - 2026-01-23):** `Ability.Father.Symbiote` removed from cancel list per C_SYMBIOTE_STRICT_CANCEL contract (LOCKED_CONTRACTS.md Contract 11). Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists.
 | Activation Owned Tags | Father.State.Attached |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
@@ -1339,6 +1341,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Version | Changes |
 |---------|---------|
+| 4.9 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.8 | **INC-1 Fix (Claude-GPT Audit):** Removed ReplicateActivationOwnedTags as prerequisite (was removed in v4.4 but body text contradicted changelog). Added Authority Note and Audit Status sections per documentation rules D-1/D-2. Clarified ReplicateActivationOwnedTags is OPTIONAL since form identity uses GE replication. |
 | 4.7 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Decision 2 (GE_ArmorBoost removed - stats via EquippableItem), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.6 | **INV-1 Compliance:** Fixed changelog entry - GE_ArmorState grants only Effect.Father.FormState.Armor (no Narrative.State.Invulnerable). Only GA_FatherSacrifice grants invulnerability (to player for 8s). |

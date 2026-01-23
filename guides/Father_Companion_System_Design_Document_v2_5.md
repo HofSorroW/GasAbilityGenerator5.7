@@ -47,7 +47,7 @@ Any party with access to this document acknowledges the intellectual property ri
 
 | Field | Value |
 |-------|-------|
-| Version | 2.4 |
+| Version | 2.5 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only |
@@ -839,13 +839,19 @@ Narrative.Input.Father.Ability3      (E)
 
 ### 10.3) Cancel Abilities Configuration
 
+> **AUDIT NOTE (v2.5 - 2026-01-23):** C_SYMBIOTE_STRICT_CANCEL contract implemented. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. `Ability.Father.Symbiote` removed from all cancel lists except GA_FatherSacrifice (emergency override). See LOCKED_CONTRACTS.md Contract 11.
+
 | Form Ability | Cancel Abilities with Tag |
 |--------------|--------------------------|
-| GA_FatherCrawler | Armor, Exoskeleton, Symbiote, Engineer |
-| GA_FatherArmor | Crawler, Exoskeleton, Symbiote, Engineer |
-| GA_FatherExoskeleton | Crawler, Armor, Symbiote, Engineer |
+| GA_FatherCrawler | Armor, Exoskeleton, Engineer |
+| GA_FatherArmor | Crawler, Exoskeleton, Engineer |
+| GA_FatherExoskeleton | Crawler, Armor, Engineer |
 | GA_FatherSymbiote | Crawler, Armor, Exoskeleton, Engineer |
-| GA_FatherEngineer | Crawler, Armor, Exoskeleton, Symbiote |
+| GA_FatherEngineer | Crawler, Armor, Exoskeleton |
+| GA_FatherRifle | Crawler, Armor, Exoskeleton, Engineer, Sword |
+| GA_FatherSword | Crawler, Armor, Exoskeleton, Engineer, Rifle |
+
+**Note:** Symbiote is NOT in cancel lists (except GA_FatherSacrifice). During the 30-second Symbiote duration, `Father.State.SymbioteLocked` blocks activation of all other form/weapon abilities.
 
 ### 10.4) Movement Speed Modifications
 
@@ -905,18 +911,31 @@ Narrative.Input.Father.Ability3      (E)
 | Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked |
 | Cooldown Tags | Cooldown.Father.FormChange |
 
-#### 10.6.4) Symbiote Special Handling
+#### 10.6.4) Symbiote Special Handling (C_SYMBIOTE_STRICT_CANCEL v4.28.2)
+
+> **AUDIT NOTE (v2.5 - 2026-01-23):** GE_SymbioteDuration with SetByCaller pattern implemented at activation START. This grants `Father.State.SymbioteLocked` for 30 seconds, blocking all player-initiated form/weapon abilities. GA_FatherSacrifice is the ONLY ability that can cancel Symbiote (emergency override). See LOCKED_CONTRACTS.md Contract 11.
 
 | Step | Action |
 |------|--------|
-| 1-16 | Same as normal transition |
+| 1-5 | Same as normal transition (validation, cancel old form) |
+| 6 | **Apply GE_SymbioteDuration via SetByCaller** (grants `Father.State.SymbioteLocked` for 30s) |
+| 7-16 | Continue normal transition (VFX, repositioning, stat effects) |
 | 17 | Ability stays active (does NOT end) |
-| 18 | Add Father.State.SymbioteLocked tag |
-| 19 | Start 30 second duration timer |
-| 20 | Timer completes |
-| 21 | Remove Father.State.SymbioteLocked tag |
-| 22 | Auto-activate GA_FatherArmor |
-| 23 | Normal Armor transition begins |
+| 18 | Start 30 second duration timer (synced with GE_SymbioteDuration) |
+| 19 | Timer completes |
+| 20 | GE_SymbioteDuration expires automatically (removes `Father.State.SymbioteLocked`) |
+| 21 | Auto-activate GA_FatherArmor |
+| 22 | Normal Armor transition begins |
+
+**GE_SymbioteDuration SetByCaller Flow:**
+1. `MakeOutgoingGameplayEffectSpec(GE_SymbioteDuration)`
+2. `AssignTagSetByCallerMagnitude(SpecHandle, Data.Symbiote.Duration, 30.0)`
+3. `K2_ApplyGameplayEffectSpecToOwner(SpecHandle)`
+
+**Defense-in-Depth Strategy:**
+- **Layer 1 (Blocking):** `Father.State.SymbioteLocked` in activation_blocked_tags blocks ability activation
+- **Layer 2 (No Cancel):** Symbiote NOT in cancel_abilities_with_tag ensures abilities won't forcibly cancel it
+- **Layer 3 (Duration):** GE_SymbioteDuration auto-expires, removing the lock tag
 
 ---
 
@@ -1000,6 +1019,7 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.5 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED_CONTRACTS.md Contract 11):** Section 10.3 Cancel Abilities Configuration updated - removed `Ability.Father.Symbiote` from all form/weapon cancel lists (exception: GA_FatherSacrifice). Added GA_FatherRifle and GA_FatherSword to cancel table. Section 10.6.4 Symbiote Special Handling rewritten - GE_SymbioteDuration with SetByCaller pattern applied at activation START, grants `Father.State.SymbioteLocked` for 30s. Defense-in-depth strategy documented (3 layers: blocking, no-cancel, duration enforcement). Claude-GPT dual audit 2026-01-23. |
 | 2.3 | January 2026 | **Dome System Locked Decisions (21 items)**: Sections 2.2.5-2.2.9 rewritten with Claude-GPT dual-audit locked decisions. Energy-Only damage model (player takes full damage), energy on Player ASC (AS_DomeAttributes), manual release only at full (500), no auto-burst, no pre-release, flat 75 damage, 12s cooldown, form exit burst behavior, FullyCharged tag semantics, GA_ProtectiveDome reset ownership. Section 2.2.6 Use Cases renumbered to 2.2.10. Cooldown Summary updated: Dome Burst 10s→12s. |
 | 2.2 | January 2026 | **Added Section 12: Locked Decisions Reference** - Consolidated all locked decisions from Claude-GPT dual-agent audit (January 2026). Includes LC-1 to LC-4 implementation constraints, INV-1 invulnerability removal, EndAbility lifecycle rules (Rules 1-4), and VTF technical findings. |
 | 2.1 | January 2026 | **GAS Audit INV-1 Compliance:** Removed all unintended invulnerability per dual-agent audit decision. Section 2.3.3: Exoskeleton Dash I-Frames changed from "Yes" to "No (removed per GAS Audit INV-1)". Section 10.6.1: Removed GE_Invulnerable steps (old steps 6, 15), updated to use AddLooseGameplayTag/RemoveLooseGameplayTag for Father.State.Transitioning. Section 10.6.2: Father Invulnerable During Transition changed from "Yes" to "No (removed per GAS Audit INV-1)". **KEPT:** GA_FatherSacrifice 8-second PLAYER invulnerability (intentional design). |
@@ -1024,11 +1044,13 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 |-------|-------|
 | Audit Date | 2026-01-23 |
 | Audit Type | Claude-GPT Dual Audit |
-| Decisions Locked | 24 (Dome Energy System) |
+| Decisions Locked | 25 (Dome Energy System + C_SYMBIOTE_STRICT_CANCEL) |
 | Key Decisions | D22: Form exit via TryActivateAbilityByClass |
 | | D23: EI_FatherArmorForm.HandleUnequip override |
 | | D24: Father.Dome.FullyCharged activation_required_tag |
+| | **Contract 11: C_SYMBIOTE_STRICT_CANCEL** |
 | Manifest Aligned | Yes |
+| Contract Reference | LOCKED_CONTRACTS.md v4.28.2 |
 
 ---
 

@@ -1,15 +1,16 @@
 # Father Companion - Symbiote Ultimate Ability Implementation Guide
-## VERSION 4.8 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.9 - C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.8
+**Version:** 4.9
 **Date:** January 2026
-**Last Audit:** 2026-01-23 (Claude-GPT dual audit - INC-2, INC-3, INC-4 fixes)
+**Last Audit:** 2026-01-23 (Claude-GPT dual audit - C_SYMBIOTE_STRICT_CANCEL contract)
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
 **Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Fix_v4.13.2.md
+**Contract:** LOCKED_CONTRACTS.md Contract 11 - C_SYMBIOTE_STRICT_CANCEL
 
 ---
 
@@ -201,6 +202,48 @@ GA_FatherSymbiote does NOT need to apply stat modifiers. See Father_Companion_Sy
 | Add Tags -> Add to Inherited [0] | Father.State.SymbioteLocked |
 
 #### 8.3) Compile and Save
+
+---
+
+## **PHASE 2B: GE_SYMBIOTE_DURATION SETBYCALLER EFFECT (C_SYMBIOTE_STRICT_CANCEL)**
+
+> **AUDIT NOTE (v4.9 - 2026-01-23):** This section implements LOCKED_CONTRACTS.md Contract 11 - C_SYMBIOTE_STRICT_CANCEL. GE_SymbioteDuration is applied at activation START using SetByCaller pattern, granting `Father.State.SymbioteLocked` for 30 seconds. This blocks all player-initiated form/weapon abilities during Symbiote.
+
+### **8A) GE_SymbioteDuration Purpose**
+
+GE_SymbioteDuration establishes the 30-second form lock using SetByCaller duration:
+- **Duration Policy:** Has Duration (SetByCaller)
+- **SetByCaller Tag:** `Data.Symbiote.Duration`
+- **Granted Tags:** `Father.State.SymbioteLocked`
+
+### **8B) GE_SymbioteDuration Properties**
+
+| Property | Value |
+|----------|-------|
+| Duration Policy | Has Duration |
+| Duration Magnitude | SetByCaller (Data.Symbiote.Duration) |
+| Granted Tags [0] | Father.State.SymbioteLocked |
+
+### **8C) SetByCaller Application Flow (Event Graph)**
+
+The SetByCaller chain is applied at the START of Event_Activate, BEFORE any other Symbiote logic:
+
+| Step | Node | Purpose |
+|------|------|---------|
+| 1 | MakeOutgoingGameplayEffectSpec | Create spec for GE_SymbioteDuration |
+| 2 | MakeLiteralGameplayTag | Create Data.Symbiote.Duration tag |
+| 3 | AssignTagSetByCallerMagnitude | Set duration to 30.0 seconds |
+| 4 | K2_ApplyGameplayEffectSpecToOwner | Apply spec to self (ability owner) |
+
+### **8D) Defense-in-Depth Strategy**
+
+| Layer | Mechanism | Purpose |
+|-------|-----------|---------|
+| Layer 1 | `Father.State.SymbioteLocked` in activation_blocked_tags | Blocks ability activation |
+| Layer 2 | Symbiote NOT in cancel_abilities_with_tag | Abilities won't forcibly cancel Symbiote |
+| Layer 3 | GE_SymbioteDuration auto-expires | Lock tag automatically removed after 30s |
+
+**Exception:** GA_FatherSacrifice MAY cancel Symbiote (emergency auto-trigger when player HP < 15%).
 
 ---
 
@@ -867,6 +910,8 @@ Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbio
 | Activation Owned Tags | Symbiote.State.Merged |
 | InputTag | Narrative.Input.Father.FormChange |
 
+> **AUDIT NOTE (v4.9 - C_SYMBIOTE_STRICT_CANCEL):** Symbiote is NOT in any other form's cancel_abilities_with_tag. This is intentional - Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Only GA_FatherSacrifice (emergency override) can cancel Symbiote. The `Father.State.SymbioteLocked` tag blocks other abilities from activating during the 30s duration. See LOCKED_CONTRACTS.md Contract 11.
+
 **Note (v4.4):** Form identity (`Effect.Father.FormState.Symbiote`) is NOT in Activation Owned Tags. It persists via `GE_SymbioteState` (Option B architecture). Only ephemeral state tags (`Symbiote.State.Merged`) belong in Activation Owned Tags. `Father.Form.*` tags are **orphan tags**.
 
 ### **Form State Architecture (Option B)**
@@ -1015,6 +1060,7 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.9 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED):** Added PHASE 2B documenting GE_SymbioteDuration SetByCaller pattern - applied at activation START to grant `Father.State.SymbioteLocked` for 30s. Updated Tag Configuration Summary with audit note explaining why Symbiote is NOT in other forms' cancel lists. Added Defense-in-Depth strategy (3 layers: blocking, no-cancel, duration enforcement). Contract reference: LOCKED_CONTRACTS.md Contract 11. Claude-GPT dual audit 2026-01-23. |
 | 4.8 | January 2026 | **Claude-GPT Audit Fixes:** (1) INC-2: Fixed DOCUMENT INFORMATION table version from 4.4 to 4.8. (2) INC-3: Added Cooldown Model clarification explaining dual cooldown system (15s GE_FormChangeCooldown vs 120s UltimateChargeComponent). (3) INC-4: Changed "Delay node" to "AbilityTaskWaitDelay" per Track B v4.15. Added Authority Note and Audit Status sections per documentation rules D-1/D-2. |
 | 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md to Related Documents. This guide now references all locked decisions: INV-1 (no invulnerability), VTF-7 (CommitCooldown required), Decision 1A (stats via EI), Decision 1B (StaminaRegenRate via child GE), Decision 3 (GE_SymbioteBoost removed). Updated Technical Reference to v6.2. |
 | 4.6 | January 2026 | Version alignment with manifest v3.0.3. No functional changes. |
@@ -1034,8 +1080,9 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 ---
 
-**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.7**
+**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.9**
 
 **Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
 **Architecture: Option B (GE-Based Form Identity)**
+**Contract: LOCKED_CONTRACTS.md Contract 11 - C_SYMBIOTE_STRICT_CANCEL**
 **GAS Audit Status: COMPLIANT (January 2026)**

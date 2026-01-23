@@ -1,8 +1,8 @@
 # Father Companion - GA_FatherEngineer Implementation Guide
-## VERSION 4.6 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.6
+**Version:** 4.7
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -384,7 +384,7 @@ This effect grants the Engineer form identity tag. Applied in the transition pre
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Engineer |
-| Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Symbiote |
+| Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Exoskeleton |
 | Activation Owned Tags | Father.State.TurretDeployed |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
@@ -1180,6 +1180,7 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.7 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.6 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no transition invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.5 | January 2026 | **GAS Audit INV-1 Compliance:** REMOVED GE_TransitionInvulnerability - transitions no longer grant invulnerability. Form transitions now use AddLooseGameplayTag(Father.State.Transitioning) directly without damage immunity. Updated Quick Reference and Gameplay Effect Summary. Only GA_FatherSacrifice grants invulnerability in the entire Father system. |
 | 4.4 | January 2026 | **Option B Form State Architecture:** Complete rewrite for GE-based form identity. Added GE_EngineerState (Infinite, grants Effect.Father.FormState.Engineer). Added transition prelude to PHASE 5A: remove prior form state GE via BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState parent tag), then apply GE_EngineerState. Updated Activation Owned Tags from `Father.Form.Engineer, Father.State.Deployed` to `Father.State.TurretDeployed` (removed orphan tags). ~~Fixed invulnerability removal from tag-based to class-based~~ (SUPERSEDED by INV-1 - invulnerability removed entirely). Updated UE version to 5.7. Added Automation vs Manual table. Added Option B architecture section to Quick Reference. See Form_State_Architecture_Fix_v4.13.2.md for architecture rationale. |
@@ -1315,8 +1316,10 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 | Property | Tags |
 |----------|------|
 | Ability Tags | `Ability.Father.Engineer` |
-| Cancel Abilities with Tag | `Ability.Father.Crawler`, `Ability.Father.Armor`, `Ability.Father.Exoskeleton`, `Ability.Father.Symbiote` |
+| Cancel Abilities with Tag | `Ability.Father.Crawler`, `Ability.Father.Armor`, `Ability.Father.Exoskeleton` |
 | Activation Owned Tags | `Father.State.TurretDeployed` |
+
+> **AUDIT NOTE (v4.7 - 2026-01-23):** `Ability.Father.Symbiote` removed from cancel list per C_SYMBIOTE_STRICT_CANCEL contract (LOCKED_CONTRACTS.md Contract 11). Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists.
 | Activation Required | `Father.State.Alive`, `Father.State.Recruited` |
 | Activation Blocked | `Father.State.Dormant`, `Father.State.Transitioning`, `Father.State.SymbioteLocked`, `Cooldown.Father.FormChange` |
 | Cooldown Gameplay Effect Class | `GE_FormChangeCooldown` |

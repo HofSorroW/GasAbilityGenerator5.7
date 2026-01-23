@@ -1,8 +1,8 @@
 # GA_FatherExoskeleton Implementation Guide
-## VERSION 4.7 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.8 - GAS Audit Compliant (All Locked Decisions)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.7
+**Version:** 4.8
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -139,8 +139,9 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Cooldown Gameplay Effect Class | GE_FormChangeCooldown | 15s cooldown (GAS built-in) |
 | Cancel Abilities with Tag | Ability.Father.Crawler | Cancel Crawler form |
 | Cancel Abilities with Tag | Ability.Father.Armor | Cancel Armor form |
-| Cancel Abilities with Tag | Ability.Father.Symbiote | Cancel Symbiote form |
 | Cancel Abilities with Tag | Ability.Father.Engineer | Cancel Engineer form |
+
+> **AUDIT NOTE (v4.8 - 2026-01-23):** `Ability.Father.Symbiote` removed from cancel list per C_SYMBIOTE_STRICT_CANCEL contract (LOCKED_CONTRACTS.md Contract 11). Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes.
 
 **Note (v4.4):** Form identity (`Effect.Father.FormState.Exoskeleton`) is NOT in Activation Owned Tags. It persists via `GE_ExoskeletonState` (Option B architecture). Only ephemeral state tags (`Father.State.Attached`) belong in Activation Owned Tags. `Father.Form.*` tags are **orphan tags** - no persistent GE grants them.
 
@@ -235,7 +236,6 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | Cooldown.Father.FormChange | Shared 15s cooldown between form changes |
 | Ability.Father.Crawler | Cancel Abilities with Tag |
 | Ability.Father.Armor | Cancel Abilities with Tag |
-| Ability.Father.Symbiote | Cancel Abilities with Tag |
 | Ability.Father.Engineer | Cancel Abilities with Tag |
 
 **Note (v4.4):** `Father.Form.*` tags are **orphan tags** - no persistent GE grants them. Form identity uses `Effect.Father.FormState.*` tags granted by infinite-duration GE_*State effects. Do NOT use Father.Form.* for activation gating.
@@ -304,7 +304,7 @@ This Gameplay Effect establishes Exoskeleton form identity using Option B archit
 |----------|------|
 | Ability Tags | Ability.Father.Exoskeleton |
 | Activation Owned Tags | Father.State.Attached |
-| Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Symbiote, Ability.Father.Engineer |
+| Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Engineer |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
 
@@ -1189,6 +1189,7 @@ EndAbility performs comprehensive cleanup when another form ability cancels this
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.8 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.6 | January 2026 | **INV-1 Compliance:** Removed all invulnerability references per GAS Audit decision INV-1. GE_ExoskeletonState now grants only Effect.Father.FormState.Exoskeleton (no Narrative.State.Invulnerable). Removed GE_Invulnerable steps from Architecture Overview and Node Flow Summary. Only GA_FatherSacrifice grants invulnerability (to player for 8s). |
 | 4.4 | January 2026 | **Option B Form State Architecture:** GE_ExoskeletonState for form identity (grants Effect.Father.FormState.Exoskeleton), transition prelude (RemovePriorFormState + ApplyExoskeletonState). Fixed Activation Owned Tags to `Father.State.Attached` only. Updated to UE 5.7. Added AUTOMATION VS MANUAL table. Added orphan tag notes. Fixed SpeedBoostMultiplier to 1.25 per manifest. |

@@ -1,13 +1,14 @@
 # GA_FatherSword - Sword Form Implementation Guide
 ## Father Companion with Gameplay Ability System
-## For Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 1.5 - Form State Tag Update (INV-1 Compliant)
+**Version:** 1.6 - C_SYMBIOTE_STRICT_CANCEL Contract
 **Date:** January 2026
-**Engine:** Unreal Engine 5.6
+**Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** MeleeWeaponItem
+**Contract:** LOCKED_CONTRACTS.md Contract 11
 
 ---
 
@@ -62,6 +63,10 @@ Before implementing the Sword Form, ensure the following are complete:
 | Equippable Slot | Narrative.Equipment.Slot.Weapon_Back |
 | Form State Tag | Effect.Father.FormState.Sword |
 | State Tag | Father.State.Wielded |
+| Activation Blocked Tags | Father.Form.Sword, Father.State.Transitioning, **Father.State.SymbioteLocked** |
+| Cancel Abilities With Tag | Ability.Father.Crawler, Armor, Exoskeleton, Engineer, Rifle |
+
+> **AUDIT NOTE (v1.6 - 2026-01-23):** `Father.State.SymbioteLocked` added to activation_blocked_tags per C_SYMBIOTE_STRICT_CANCEL contract. Sword cannot be activated during 30-second Symbiote duration. `Ability.Father.Symbiote` NOT in cancel list - Symbiote cannot be cancelled by player-initiated abilities. See LOCKED_CONTRACTS.md Contract 11.
 
 ### Multiplayer Settings
 
@@ -772,6 +777,7 @@ Before implementing the Sword Form, ensure the following are complete:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract:** Added `Father.State.SymbioteLocked` to activation_blocked_tags and documented cancel_abilities_with_tag (excludes Symbiote). Updated engine version to 5.7. Added contract reference. Claude-GPT dual audit 2026-01-23. See LOCKED_CONTRACTS.md Contract 11. |
 | 1.4 | January 2026 | Updated Narrative Pro version reference from v2.1 to v2.2. |
 | 1.3 | January 2026 | Simplified documentation: GE configuration (Section 7.3), tag configuration (Section 8.3.2), and variable creation (Section 8.4) converted to markdown tables. |
 | 1.2 | January 2026 | Simplified PHASE 1: Replaced detailed tag navigation with consolidated tag tables. Tags now listed in Create Required Tags and Verify Existing Tags tables. Reduced PHASE 1 from 75 lines to 21 lines. |
@@ -782,6 +788,7 @@ Before implementing the Sword Form, ensure the following are complete:
 
 **END OF IMPLEMENTATION GUIDE**
 
-**GA_FatherSword VERSION 1.4 - Complete**
+**GA_FatherSword VERSION 1.6 - Complete**
 
-**Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.2**
+**Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
+**Contract: LOCKED_CONTRACTS.md Contract 11 - C_SYMBIOTE_STRICT_CANCEL**

@@ -225,7 +225,9 @@ Before implementing GA_FatherCrawler, ensure the following are complete:
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.Crawler |
-| Cancel Abilities with Tag | Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Symbiote, Ability.Father.Engineer |
+| Cancel Abilities with Tag | Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Engineer |
+
+> **AUDIT NOTE (v4.7 - 2026-01-23):** `Ability.Father.Symbiote` removed from cancel list per C_SYMBIOTE_STRICT_CANCEL contract. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Only GA_FatherSacrifice (emergency override) can cancel Symbiote. See LOCKED_CONTRACTS.md Contract 11.
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
 
@@ -644,7 +646,7 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 | Property | Tags |
 |----------|------|
 | Ability Tags | `Ability.Father.Crawler` |
-| Cancel Abilities with Tag | Ability.Father.Armor, Exoskeleton, Symbiote, Engineer |
+| Cancel Abilities with Tag | Ability.Father.Armor, Exoskeleton, Engineer |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Blocked Tags | Father.State.Dormant, Father.State.Transitioning, Father.State.SymbioteLocked, Cooldown.Father.FormChange |
 
