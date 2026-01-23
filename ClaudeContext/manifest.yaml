@@ -358,6 +358,8 @@ tags:
     comment: Turret mode is active
   - tag: Father.State.TurretDeployed
     comment: Father deployed as turret (manifest alias for Deployed)
+  - tag: Father.State.Wielded
+    comment: Father weapon form is being wielded by player
 
   # Dome Tags (4)
   - tag: Father.Dome.Active
