@@ -85,6 +85,7 @@
 // v2.1.6: Fixed variable creation in Actor and Widget Blueprints
 
 #include "GasAbilityGeneratorGenerators.h"
+#include "GasAbilityGeneratorFunctionResolver.h"  // v4.29: Shared function resolver for parity
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -10208,156 +10209,8 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 	const FString* TargetSelfPtr = NodeDef.Properties.Find(TEXT("target_self"));
 	bool bTargetSelf = TargetSelfPtr && TargetSelfPtr->ToBool();
 
-	// v2.4.3: Explicit function lookup table for well-known functions
-	// Maps function names to the classes where they are defined
-	static TMap<FString, UClass*> WellKnownFunctions;
-	if (WellKnownFunctions.Num() == 0)
-	{
-		// Character functions
-		WellKnownFunctions.Add(TEXT("GetCharacterMovement"), ACharacter::StaticClass());
-		WellKnownFunctions.Add(TEXT("PlayAnimMontage"), ACharacter::StaticClass());
-		WellKnownFunctions.Add(TEXT("StopAnimMontage"), ACharacter::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetController"), APawn::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetPlayerController"), UGameplayStatics::StaticClass());
-
-		// Actor functions
-		WellKnownFunctions.Add(TEXT("GetActorLocation"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("SetActorLocation"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetActorRotation"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("SetActorRotation"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetActorForwardVector"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_GetActorLocation"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_SetActorLocation"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_DestroyActor"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_AttachToComponent"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_DetachFromActor"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("SetActorHiddenInGame"), AActor::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetComponentByClass"), AActor::StaticClass());
-
-		// Component functions
-		WellKnownFunctions.Add(TEXT("GetSocketLocation"), USceneComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetSocketRotation"), USceneComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_GetComponentLocation"), USceneComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_SetWorldLocation"), USceneComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("SetVisibility"), USceneComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("SetHiddenInGame"), USceneComponent::StaticClass());
-
-		// GAS functions on AbilitySystemComponent (UE5.7+: BP_ prefix for Blueprint-exposed wrappers)
-		// NOTE: Only register actual UFUNCTION names - base names are C++ only and cause wasted lookups
-		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectSpecToSelf"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectSpecToTarget"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToSelf"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToTarget"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("RemoveActiveGameplayEffect"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("RemoveActiveGameplayEffectBySourceEffect"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetActiveGameplayEffectStackCount"), UAbilitySystemComponent::StaticClass());
-
-		// GAS functions on GameplayAbility (UE5.7+: K2_ prefix for Blueprint-exposed wrappers)
-		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectSpecToOwner"), UGameplayAbility::StaticClass());
-
-		// GAS Blueprint Library functions
-		WellKnownFunctions.Add(TEXT("GetAbilitySystemComponent"), UAbilitySystemBlueprintLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("SendGameplayEventToActor"), UAbilitySystemBlueprintLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("MakeSpecHandle"), UAbilitySystemBlueprintLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("AssignTagSetByCallerMagnitude"), UAbilitySystemBlueprintLibrary::StaticClass());
-
-		// v4.25.3: GameplayTag Blueprint Library functions
-		WellKnownFunctions.Add(TEXT("MakeLiteralGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("MakeGameplayTagContainerFromTag"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("MakeGameplayTagContainerFromArray"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("AddGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("RemoveGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("HasTag"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("HasAnyTags"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("HasAllTags"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("MatchesTag"), UBlueprintGameplayTagLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetTagName"), UBlueprintGameplayTagLibrary::StaticClass());
-
-		// Gameplay Ability functions - these are on the ability itself
-		WellKnownFunctions.Add(TEXT("K2_EndAbility"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_CommitAbility"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_CommitAbilityCooldown"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_CommitAbilityCost"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_ActivateAbility"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_CanActivateAbility"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetAvatarActorFromActorInfo"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetOwningActorFromActorInfo"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetAbilitySystemComponentFromActorInfo"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("MakeOutgoingGameplayEffectSpec"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_MakeOutgoingGameplayEffectSpec"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToOwner"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToTarget"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToSelf"), UGameplayAbility::StaticClass());
-		// v4.14: K2_ versions of GE application functions
-		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectToOwner"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectToTarget"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectToSelf"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_RemoveGameplayEffectFromOwnerWithAssetTags"), UGameplayAbility::StaticClass());
-		WellKnownFunctions.Add(TEXT("BP_RemoveGameplayEffectFromOwnerWithGrantedTags"), UGameplayAbility::StaticClass());
-
-		// Math functions - legacy float versions (kept for compatibility)
-		WellKnownFunctions.Add(TEXT("Multiply_FloatFloat"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Divide_FloatFloat"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Add_FloatFloat"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Subtract_FloatFloat"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("FClamp"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("RandomFloatInRange"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetForwardVector"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("MakeRotator"), UKismetMathLibrary::StaticClass());
-
-		// v4.25.3: Math functions - UE5 double precision versions
-		WellKnownFunctions.Add(TEXT("Multiply_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Divide_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Add_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Subtract_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Less_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("Greater_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("LessEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("GreaterEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("EqualEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("NotEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
-
-		// System functions
-		WellKnownFunctions.Add(TEXT("Delay"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("PrintString"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("IsValid"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("IsValidClass"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_SetTimer"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_ClearTimer"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_SetTimerDelegate"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_ClearAndInvalidateTimerHandle"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("SphereOverlapActors"), UKismetSystemLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("LineTraceSingle"), UKismetSystemLibrary::StaticClass());
-
-		// Gameplay Statics
-		WellKnownFunctions.Add(TEXT("SpawnEmitterAtLocation"), UGameplayStatics::StaticClass());
-		WellKnownFunctions.Add(TEXT("SpawnSoundAtLocation"), UGameplayStatics::StaticClass());
-		WellKnownFunctions.Add(TEXT("ApplyDamage"), UGameplayStatics::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetAllActorsOfClass"), UGameplayStatics::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetPlayerCharacter"), UGameplayStatics::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetPlayerPawn"), UGameplayStatics::StaticClass());
-
-		// v4.25.3: Niagara functions
-		WellKnownFunctions.Add(TEXT("SpawnSystemAttached"), UNiagaraFunctionLibrary::StaticClass());
-		WellKnownFunctions.Add(TEXT("SpawnSystemAtLocation"), UNiagaraFunctionLibrary::StaticClass());
-
-		// v2.7.0: Narrative Pro Inventory functions
-		WellKnownFunctions.Add(TEXT("TryAddItemFromClass"), UNarrativeInventoryComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("RemoveItem"), UNarrativeInventoryComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("ConsumeItem"), UNarrativeInventoryComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("FindItemOfClass"), UNarrativeInventoryComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("GetTotalQuantityOfItem"), UNarrativeInventoryComponent::StaticClass());
-
-		// v2.7.0: Narrative Pro Weapon functions
-		WellKnownFunctions.Add(TEXT("WieldInSlot"), UWeaponItem::StaticClass());
-		WellKnownFunctions.Add(TEXT("IsWielded"), UWeaponItem::StaticClass());
-		WellKnownFunctions.Add(TEXT("IsHolstered"), UWeaponItem::StaticClass());
-
-		// v2.7.0: Narrative Pro Equipment functions
-		WellKnownFunctions.Add(TEXT("EquipItem"), UEquippableItem::StaticClass());
-		WellKnownFunctions.Add(TEXT("UnequipItem"), UEquippableItem::StaticClass());
-		WellKnownFunctions.Add(TEXT("IsEquipped"), UEquippableItem::StaticClass());
-	}
+	// v4.29: Function resolution now uses shared resolver for parity with PreValidator
+	// See: PreValidator_Generator_Parity_Audit_v1.md
 
 	// ============================================================
 	// STABLE SECTION: Deprecated Function Remapping v2.7.5
@@ -10404,137 +10257,64 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		FunctionName = FName(**RemappedName);
 	}
 
-	// v2.4.4: Try multiple name variants (original, K2_, BP_)
-	TArray<FString> FunctionNameVariants;
-	FunctionNameVariants.Add(FunctionNameStr);
-	FunctionNameVariants.Add(TEXT("K2_") + FunctionNameStr);
-	FunctionNameVariants.Add(TEXT("BP_") + FunctionNameStr);
+	// v4.29: Use shared function resolver for parity with PreValidator
+	// See: PreValidator_Generator_Parity_Audit_v1.md
+	FResolvedFunction Resolved = FGasAbilityGeneratorFunctionResolver::ResolveFunction(
+		FunctionNameStr,
+		ClassNamePtr ? *ClassNamePtr : TEXT(""),
+		Blueprint ? Blueprint->ParentClass : nullptr,
+		bTargetSelf
+	);
 
-	// First try well-known table with all variants
-	for (const FString& NameVariant : FunctionNameVariants)
+	Function = Resolved.Function;
+	FunctionOwner = Resolved.OwnerClass;
+
+	if (Resolved.bFound)
 	{
-		if (UClass** FoundClass = WellKnownFunctions.Find(NameVariant))
-		{
-			FunctionOwner = *FoundClass;
-			Function = FunctionOwner->FindFunctionByName(FName(*NameVariant));
-			if (Function)
-			{
-				LogGeneration(FString::Printf(TEXT("Found function '%s' (variant of '%s') in well-known class '%s'"), *NameVariant, *FunctionNameStr, *FunctionOwner->GetName()));
-				FunctionName = FName(*NameVariant);  // Update to the found variant
-				break;
-			}
-		}
+		// Update FunctionName if a variant was found (K2_, BP_)
+		FunctionName = Resolved.Function->GetFName();
+		LogGeneration(FString::Printf(TEXT("Resolved function '%s' via %s"), *FunctionName.ToString(), *Resolved.ResolutionPath));
 	}
-
-	// If not in well-known table, try explicit class specification
-	if (!Function && ClassNamePtr && !ClassNamePtr->IsEmpty())
+	else
 	{
-		FunctionOwner = FindParentClass(*ClassNamePtr);
-		if (FunctionOwner)
+		LogGeneration(FString::Printf(TEXT("Function '%s' not found via shared resolver."), *FunctionNameStr));
+
+		// Check if this might be a property access instead of a function
+		FString FuncStr = FunctionNameStr;
+		bool bMightBePropertyAccess = FuncStr.StartsWith(TEXT("Get")) || FuncStr.StartsWith(TEXT("Set"));
+
+		if (bMightBePropertyAccess)
 		{
-			Function = FunctionOwner->FindFunctionByName(FunctionName);
-			if (Function)
+			// Extract potential property name (e.g., "GetMaxWalkSpeed" -> "MaxWalkSpeed")
+			FString PropertyName = FuncStr.Mid(3); // Remove "Get" or "Set"
+			LogGeneration(FString::Printf(TEXT("'%s' might be a property access for '%s'. Consider using VariableGet/VariableSet node with target."), *FuncStr, *PropertyName));
+
+			// Check if the property exists on CharacterMovementComponent
+			FProperty* Prop = UCharacterMovementComponent::StaticClass()->FindPropertyByName(FName(*PropertyName));
+			if (Prop)
 			{
-				LogGeneration(FString::Printf(TEXT("Found function '%s' in specified class '%s'"), *FunctionNameStr, *FunctionOwner->GetName()));
-			}
-		}
-	}
-
-	// If target_self or no class specified, search Blueprint's parent class hierarchy
-	if (!Function && (bTargetSelf || !ClassNamePtr || ClassNamePtr->IsEmpty()))
-	{
-		if (Blueprint && Blueprint->ParentClass)
-		{
-			// Search up the class hierarchy
-			UClass* SearchClass = Blueprint->ParentClass;
-			while (SearchClass && !Function)
-			{
-				Function = SearchClass->FindFunctionByName(FunctionName);
-				if (Function)
-				{
-					FunctionOwner = SearchClass;
-					LogGeneration(FString::Printf(TEXT("Found function '%s' in parent class '%s'"), *FunctionNameStr, *FunctionOwner->GetName()));
-					break;
-				}
-				SearchClass = SearchClass->GetSuperClass();
-			}
-		}
-	}
-
-	// If still not found, search common library and engine classes
-	if (!Function)
-	{
-		// v2.4.2: Extended classes to search in priority order
-		TArray<UClass*> SearchClasses = {
-			UKismetSystemLibrary::StaticClass(),
-			UKismetMathLibrary::StaticClass(),
-			UGameplayStatics::StaticClass(),
-			UGameplayAbility::StaticClass(),
-			UAbilitySystemBlueprintLibrary::StaticClass(),
-			UAbilitySystemComponent::StaticClass(),
-			ACharacter::StaticClass(),
-			AActor::StaticClass(),
-			APawn::StaticClass(),
-			UCharacterMovementComponent::StaticClass(),
-			USceneComponent::StaticClass(),
-			USkeletalMeshComponent::StaticClass(),
-			UPrimitiveComponent::StaticClass()
-		};
-
-		LogGeneration(FString::Printf(TEXT("Searching for function '%s' across %d library classes..."), *FunctionName.ToString(), SearchClasses.Num()));
-
-		for (UClass* SearchClass : SearchClasses)
-		{
-			Function = SearchClass->FindFunctionByName(FunctionName);
-			if (Function)
-			{
-				FunctionOwner = SearchClass;
-				LogGeneration(FString::Printf(TEXT("Found function '%s' in class '%s'"), *FunctionName.ToString(), *SearchClass->GetName()));
-				break;
+				LogGeneration(FString::Printf(TEXT("Found property '%s' on CharacterMovementComponent. Use VariableGet/VariableSet with component target."), *PropertyName));
 			}
 		}
 
-		if (!Function)
+		// Log relevant functions for debugging
+		LogGeneration(TEXT("Relevant functions in KismetMathLibrary:"));
+		for (TFieldIterator<UFunction> FuncIt(UKismetMathLibrary::StaticClass()); FuncIt; ++FuncIt)
 		{
-			LogGeneration(FString::Printf(TEXT("Function '%s' not found in any library class."), *FunctionName.ToString()));
-
-			// Check if this might be a property access instead of a function
-			FString FuncStr = FunctionName.ToString();
-			bool bMightBePropertyAccess = FuncStr.StartsWith(TEXT("Get")) || FuncStr.StartsWith(TEXT("Set"));
-
-			if (bMightBePropertyAccess)
+			FString FuncName = FuncIt->GetName();
+			if (FuncName.Contains(TEXT("Multiply")) || FuncName.Contains(FuncStr))
 			{
-				// Extract potential property name (e.g., "GetMaxWalkSpeed" -> "MaxWalkSpeed")
-				FString PropertyName = FuncStr.Mid(3); // Remove "Get" or "Set"
-				LogGeneration(FString::Printf(TEXT("'%s' might be a property access for '%s'. Consider using VariableGet/VariableSet node with target."), *FuncStr, *PropertyName));
-
-				// Check if the property exists on CharacterMovementComponent
-				FProperty* Prop = UCharacterMovementComponent::StaticClass()->FindPropertyByName(FName(*PropertyName));
-				if (Prop)
-				{
-					LogGeneration(FString::Printf(TEXT("Found property '%s' on CharacterMovementComponent. Use VariableGet/VariableSet with component target."), *PropertyName));
-				}
+				LogGeneration(FString::Printf(TEXT("  %s"), *FuncName));
 			}
+		}
 
-			// Log relevant functions for debugging
-			LogGeneration(TEXT("Relevant functions in KismetMathLibrary:"));
-			for (TFieldIterator<UFunction> FuncIt(UKismetMathLibrary::StaticClass()); FuncIt; ++FuncIt)
+		LogGeneration(TEXT("Relevant functions in Character:"));
+		for (TFieldIterator<UFunction> FuncIt(ACharacter::StaticClass()); FuncIt; ++FuncIt)
+		{
+			FString FuncName = FuncIt->GetName();
+			if (FuncName.Contains(TEXT("Movement")) || FuncName.Contains(TEXT("Mesh")) || FuncName.Contains(FuncStr))
 			{
-				FString FuncName = FuncIt->GetName();
-				if (FuncName.Contains(TEXT("Multiply")) || FuncName.Contains(FuncStr))
-				{
-					LogGeneration(FString::Printf(TEXT("  %s"), *FuncName));
-				}
-			}
-
-			LogGeneration(TEXT("Relevant functions in Character:"));
-			for (TFieldIterator<UFunction> FuncIt(ACharacter::StaticClass()); FuncIt; ++FuncIt)
-			{
-				FString FuncName = FuncIt->GetName();
-				if (FuncName.Contains(TEXT("Movement")) || FuncName.Contains(TEXT("Mesh")) || FuncName.Contains(FuncStr))
-				{
-					LogGeneration(FString::Printf(TEXT("  %s"), *FuncName));
-				}
+				LogGeneration(FString::Printf(TEXT("  %s"), *FuncName));
 			}
 		}
 	}

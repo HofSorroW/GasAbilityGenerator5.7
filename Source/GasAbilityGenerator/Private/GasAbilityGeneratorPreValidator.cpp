@@ -1,8 +1,9 @@
-// GasAbilityGenerator v4.24 - Phase 4.1 Pre-Validation System
+// GasAbilityGenerator v4.29 - Phase 4.1 Pre-Validation System with Function Resolution Parity
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #include "GasAbilityGeneratorPreValidator.h"
 #include "Locked/GasAbilityGeneratorTypes.h"
+#include "GasAbilityGeneratorFunctionResolver.h"  // v4.29: Shared function resolver for parity
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "GameplayTagsManager.h"
 #include "UObject/UObjectIterator.h"
@@ -345,31 +346,32 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 
 bool FPreValidator::FunctionExistsOnClass(UClass* Class, const FString& FunctionName)
 {
+	// v4.29: Use shared function resolver for parity with Generator
+	// Contract: "PreValidator function resolution behavior must be identical to Generator
+	// function resolution behavior" - PreValidator_Generator_Parity_Audit_v1.md
+	//
+	// Old behavior: Tried variants (K2_, BP_) on ANY class
+	// New behavior: Uses FGasAbilityGeneratorFunctionResolver::FunctionExists()
+	//   which only tries variants in WellKnownFunctions probe
+	//
+	// Note: We pass the explicit class name. The resolver will:
+	//   1. Try WellKnownFunctions with variants (may find elsewhere)
+	//   2. Try explicit class with exact name only
+	//   3. Try library fallback with exact name only
+
 	if (!Class || FunctionName.IsEmpty())
 	{
 		return false;
 	}
 
-	// Try exact name first
-	UFunction* Function = Class->FindFunctionByName(*FunctionName);
-	if (Function)
-	{
-		return true;
-	}
-
-	// Try with K2_ prefix (Blueprint-callable functions)
-	FString K2Name = FString::Printf(TEXT("K2_%s"), *FunctionName);
-	Function = Class->FindFunctionByName(*K2Name);
-	if (Function)
-	{
-		return true;
-	}
-
-	// Try with BP_ prefix
-	FString BPName = FString::Printf(TEXT("BP_%s"), *FunctionName);
-	Function = Class->FindFunctionByName(*BPName);
-
-	return Function != nullptr;
+	// Use shared resolver - pass Class name as explicit class
+	// ParentClass=nullptr and bTargetSelf=false since we're validating explicit class: nodes
+	return FGasAbilityGeneratorFunctionResolver::FunctionExists(
+		FunctionName,
+		Class->GetName(),
+		nullptr,  // No parent class context in current validation flow
+		false     // Not target_self
+	);
 }
 
 bool FPreValidator::AttributeExistsOnSet(UClass* AttributeSetClass, const FString& AttributeName)
