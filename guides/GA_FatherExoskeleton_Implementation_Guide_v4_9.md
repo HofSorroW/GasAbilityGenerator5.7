@@ -1,8 +1,8 @@
 # GA_FatherExoskeleton Implementation Guide
-## VERSION 4.8 - GAS Audit Compliant (All Locked Decisions)
+## VERSION 4.9 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Added)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.8
+**Version:** 4.9
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -694,6 +694,40 @@ This Gameplay Effect establishes Exoskeleton form identity using Option B archit
 7.5.1.4) Select node
 7.5.1.5) Duration: 5.0
 
+### 7.5G) POST-DELAY 3-LAYER GUARDS (NL-GUARD-IDENTITY L1)
+
+> **GAS Audit Compliance (v5.0):** These guards execute IMMEDIATELY after the Delay callback returns.
+> They validate that the ability context remains valid before any state-modifying operations.
+> Pattern locked as NL-GUARD-IDENTITY L1 per Father_Companion_GAS_Abilities_Audit.md v5.0.
+>
+> **CRITICAL:** Tags/effects in ASC are the canonical state (GAS truth source), not external enums.
+
+#### 7.5G.1) Guard 1: Validate FatherRef
+7.5G.1.1) From **Delay** -> **Completed** execution pin
+7.5G.1.2) Drag wire to right and release
+7.5G.1.3) Search: `Is Valid`
+7.5G.1.4) Select **Utilities > Is Valid** macro node
+7.5G.1.5) Connect **FatherRef** variable to **Input Object** pin
+7.5G.1.6) Add **Branch** node, connect **Return Value** to **Condition**
+7.5G.1.7) From **False** path: Leave unconnected (father destroyed - abort silently)
+
+#### 7.5G.2) Guard 2: Check Transitioning Phase Tag
+7.5G.2.1) From **Branch** -> **True** execution pin
+7.5G.2.2) From **FatherRef**, Get Ability System Component
+7.5G.2.3) Add **Has Matching Gameplay Tag** node
+7.5G.2.4) Tag: `Father.State.Transitioning` (phase check)
+7.5G.2.5) Add **Branch** node, connect result to **Condition**
+7.5G.2.6) From **False** path: Transition interrupted - abort
+
+#### 7.5G.3) Guard 3: Check Form Identity Tag
+7.5G.3.1) From **Guard 2 Branch** -> **True** execution pin
+7.5G.3.2) Reuse Father ASC from Guard 2
+7.5G.3.3) Add **Has Matching Gameplay Tag** node
+7.5G.3.4) Tag: `Effect.Father.FormState` (PARENT tag - NL-GUARD-IDENTITY L1)
+7.5G.3.5) Add **Branch** node, connect result to **Condition**
+7.5G.3.6) From **False** path: Form identity removed - abort
+7.5G.3.7) From **True** path: Continue to Section 7.5A (all guards passed)
+
 ### 7.5A) Remove Prior Form State (TRANSITION PRELUDE - Option B)
 
 **Purpose:** Before applying GE_ExoskeletonState, remove any existing form state GE. This ensures the Single Active Form State Invariant - exactly one Effect.Father.FormState.* tag at runtime.
@@ -1189,6 +1223,7 @@ EndAbility performs comprehensive cleanup when another form ability cancels this
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.9 | January 2026 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Added Section 7.5G (POST-DELAY 3-LAYER GUARDS) implementing LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Guards execute immediately after 5s Delay callback before any state-modifying operations. |
 | 4.8 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
 | 4.6 | January 2026 | **INV-1 Compliance:** Removed all invulnerability references per GAS Audit decision INV-1. GE_ExoskeletonState now grants only Effect.Father.FormState.Exoskeleton (no Narrative.State.Invulnerable). Removed GE_Invulnerable steps from Architecture Overview and Node Flow Summary. Only GA_FatherSacrifice grants invulnerability (to player for 8s). |

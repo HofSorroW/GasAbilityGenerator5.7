@@ -1,8 +1,8 @@
 # Father Companion - GA_FatherEngineer Implementation Guide
-## VERSION 4.8 - GAS Audit Compliant (3-Layer Guards Added)
+## VERSION 4.9 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Updated)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.8
+**Version:** 4.9
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -889,11 +889,13 @@ This phase handles switching TO Engineer form from another form via the T wheel.
       - 5.1.1.2) Add **Delay** node
    - 5.1.2) **Duration**: `5.0`
 
-### **6) POST-DELAY 3-LAYER GUARDS (Gold Standard)**
+### **6) POST-DELAY 3-LAYER GUARDS (NL-GUARD-IDENTITY L1)**
 
-> **GAS Audit Compliance:** These guards execute IMMEDIATELY after the Delay callback returns.
+> **GAS Audit Compliance (v5.0):** These guards execute IMMEDIATELY after the Delay callback returns.
 > They validate that the ability context remains valid before any state-modifying operations.
-> Pattern sourced from GA_FatherSymbiote (gold standard) per Father_Companion_GAS_Abilities_Audit.md.
+> Pattern locked as NL-GUARD-IDENTITY L1 per Father_Companion_GAS_Abilities_Audit.md v5.0.
+>
+> **CRITICAL:** Tags/effects in ASC are the canonical state (GAS truth source), not external enums.
 
 #### 6.1) Guard 1: Validate FatherRef
 
@@ -909,57 +911,85 @@ This phase handles switching TO Engineer form from another form via the T wheel.
    - 6.1.2.2) Drag wire to **Is Valid** -> **Input Object** pin
    - 6.1.2.3) Release to connect
 
-##### 6.1.3) Handle Invalid Path
-   - 6.1.3.1) From **Is Valid** -> **Is Not Valid** execution pin
-   - 6.1.3.2) Leave unconnected or optionally add **Return Node**
-   - 6.1.3.3) **Purpose:** Father destroyed during transition - abort silently
+##### 6.1.3) Add Branch Node
+   - 6.1.3.1) Drag from **Is Valid** -> **Return Value** execution pin
+   - 6.1.3.2) Search: `Branch`
+   - 6.1.3.3) Select **Branch** node
+   - 6.1.3.4) Connect **Is Valid** -> **Return Value** to **Branch** -> **Condition**
 
-#### 6.2) Guard 2: Check Current Form Is Still Engineer
+##### 6.1.4) Handle Invalid Path
+   - 6.1.4.1) From **Branch** -> **False** execution pin
+   - 6.1.4.2) Leave unconnected or optionally add **Return Node**
+   - 6.1.4.3) **Purpose:** Father destroyed during transition - abort silently
 
-##### 6.2.1) Get Current Form Variable
-   - 6.2.1.1) From **Is Valid** -> **Is Valid** execution pin (valid path)
+#### 6.2) Guard 2: Check Transitioning Phase Tag (Father.State.Transitioning)
+
+> **Phase Check:** Validates we're still in a valid transition period. This tag was added
+> at the start of the transition and will be removed when transition completes.
+
+##### 6.2.1) Get Father Ability System Component
+   - 6.2.1.1) From **Branch** -> **True** execution pin (valid path)
    - 6.2.1.2) Drag from **FatherRef**
-   - 6.2.1.3) Search: `Get Current Form`
-   - 6.2.1.4) Select **Get Current Form** pure node
-   - 6.2.1.5) Returns E_FatherForm enum value
+   - 6.2.1.3) Search: `Get Ability System Component`
+   - 6.2.1.4) Select node
 
-##### 6.2.2) Add Enum Equality Check
-   - 6.2.2.1) From **Get Current Form** -> **Return Value** pin
+##### 6.2.2) Add Has Matching Gameplay Tag Check
+   - 6.2.2.1) From **Get Ability System Component** -> **Return Value**
    - 6.2.2.2) Drag wire to empty space
-   - 6.2.2.3) Search: `Equal (Enum)`
-   - 6.2.2.4) Select **Equal (Enum)** comparison node
-   - 6.2.2.5) First input auto-connected to CurrentForm
+   - 6.2.2.3) Search: `Has Matching Gameplay Tag`
+   - 6.2.2.4) Select **Has Matching Gameplay Tag** function
 
-##### 6.2.3) Set Expected Form Value
-   - 6.2.3.1) On **Equal (Enum)** node, click second input dropdown
-   - 6.2.3.2) Select **Engineer** from E_FatherForm enum values
-   - 6.2.3.3) Node now compares: CurrentForm == Engineer
+##### 6.2.3) Configure Tag to Check
+   - 6.2.3.1) On **Has Matching Gameplay Tag** node, find **Tag to Check** parameter
+   - 6.2.3.2) Click dropdown and navigate to: `Father > State > Transitioning`
+   - 6.2.3.3) Select **Father.State.Transitioning** tag
+   - 6.2.3.4) **Rationale:** Phase check - if tag missing, transition was interrupted
 
 ##### 6.2.4) Add Branch Node
-   - 6.2.4.1) From **Is Valid** -> **Is Valid** execution pin
-   - 6.2.4.2) Drag wire to right and release
-   - 6.2.4.3) Search: `Branch`
-   - 6.2.4.4) Select **Branch** node
-   - 6.2.4.5) Connect **Equal (Enum)** -> **Return Value** to **Branch** -> **Condition**
+   - 6.2.4.1) Drag wire from execution flow
+   - 6.2.4.2) Search: `Branch`
+   - 6.2.4.3) Select **Branch** node
+   - 6.2.4.4) Connect **Has Matching Gameplay Tag** -> **Return Value** to **Branch** -> **Condition**
 
-##### 6.2.5) Handle Form Mismatch
+##### 6.2.5) Handle Phase Interrupted
    - 6.2.5.1) From **Branch** -> **False** execution pin
    - 6.2.5.2) Leave unconnected or optionally add **Return Node**
-   - 6.2.5.3) **Purpose:** Form changed during transition (e.g., another ability cancelled this one) - abort
+   - 6.2.5.3) **Purpose:** Transition was interrupted (tag removed externally) - abort
 
-#### 6.3) Guard 3: Check Ability Still Active via Tag Proxy
+#### 6.3) Guard 3: Check Form Identity Tag (Effect.Father.FormState)
 
-##### 6.3.1) Get Father Ability System Component
-   - 6.3.1.1) From **Branch** -> **True** execution pin (form check passed)
-   - 6.3.1.2) Drag from **FatherRef**
-   - 6.3.1.3) Search: `Get Ability System Component`
-   - 6.3.1.4) Select node
+> **Identity Check (NL-GUARD-IDENTITY L1):** Validates form identity GE is still active.
+> Uses PARENT tag `Effect.Father.FormState` (not form-specific) per locked decision.
+> Parent tag match confirms ANY form state GE is present - indicates valid ability context.
 
-##### 6.3.2) Add Has Matching Gameplay Tag Check
-   - 6.3.2.1) From **Get Ability System Component** -> **Return Value**
-   - 6.3.2.2) Drag wire to empty space
-   - 6.3.2.3) Search: `Has Matching Gameplay Tag`
-   - 6.3.2.4) Select **Has Matching Gameplay Tag** function
+##### 6.3.1) Add Has Matching Gameplay Tag Check
+   - 6.3.1.1) From **Guard 2 Branch** -> **True** execution pin (phase check passed)
+   - 6.3.1.2) From **Get Ability System Component** -> **Return Value** (reuse from Guard 2)
+   - 6.3.1.3) Drag wire to empty space
+   - 6.3.1.4) Search: `Has Matching Gameplay Tag`
+   - 6.3.1.5) Select **Has Matching Gameplay Tag** function
+
+##### 6.3.2) Configure Tag to Check
+   - 6.3.2.1) On **Has Matching Gameplay Tag** node, find **Tag to Check** parameter
+   - 6.3.2.2) Click dropdown and navigate to: `Effect > Father > FormState`
+   - 6.3.2.3) Select **Effect.Father.FormState** tag (PARENT tag, not form-specific)
+   - 6.3.2.4) **Rationale:** Identity check - parent tag confirms form state GE is active
+
+##### 6.3.3) Add Branch Node
+   - 6.3.3.1) Drag wire from execution flow
+   - 6.3.3.2) Search: `Branch`
+   - 6.3.3.3) Select **Branch** node
+   - 6.3.3.4) Connect **Has Matching Gameplay Tag** -> **Return Value** to **Branch** -> **Condition**
+
+##### 6.3.4) Handle Identity Missing
+   - 6.3.4.1) From **Branch** -> **False** execution pin
+   - 6.3.4.2) Leave unconnected or optionally add **Return Node**
+   - 6.3.4.3) **Purpose:** Form identity GE was removed - ability context invalid, abort
+
+##### 6.3.5) Continue to State Operations
+   - 6.3.5.1) From **Branch** -> **True** execution pin
+   - 6.3.5.2) Continue to Section 7 (Detach Father From Player)
+   - 6.3.5.3) **All guards passed - safe to modify state**
 
 ##### 6.3.3) Configure Tag to Check
    - 6.3.3.1) On **Has Matching Gameplay Tag** node, find **Tag to Check** parameter
@@ -1275,6 +1305,7 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.9 | January 2026 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Updated 3-layer guards to use LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Removed enum-based Guard 2, now uses tag-based phase/identity checks per GAS truth source principle. |
 | 4.8 | January 2026 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 6 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Engineer, (3) HasMatchingGameplayTag(Father.State.TurretDeployed). Resolves MEDIUM severity audit finding "No post-delay guards". Renumbered subsequent sections 7-11. |
 | 4.7 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.6 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no transition invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |

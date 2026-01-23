@@ -1081,6 +1081,23 @@ gameplay_abilities:
         - id: Branch_TransitioningTag_Guard
           type: Branch
           position: [2700, 350]
+        # Guard 3: Check Effect.Father.FormState tag (identity intact) - NL-GUARD-IDENTITY L1
+        - id: HasFormStateTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2850, 400]
+        - id: MakeLiteralTag_FormState_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [2700, 500]
+        - id: Branch_FormState_Guard
+          type: Branch
+          position: [3000, 350]
         # === EVENT_ENDABILITY (GAS Audit CRIT-4 fix) ===
         - id: Event_EndAbility
           type: Event
@@ -1161,6 +1178,9 @@ gameplay_abilities:
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
         - from: [Branch_TransitioningTag_Guard, True]
+          to: [Branch_FormState_Guard, Exec]
+        # v5.0: Guard 3 (NL-GUARD-IDENTITY L1) - identity tag check
+        - from: [Branch_FormState_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyCrawlerState, Exec]
@@ -1234,6 +1254,13 @@ gameplay_abilities:
           to: [HasTransitioningTag_Guard, Tag]
         - from: [HasTransitioningTag_Guard, ReturnValue]
           to: [Branch_TransitioningTag_Guard, Condition]
+        # Guard 3: HasMatchingGameplayTag(Effect.Father.FormState) - NL-GUARD-IDENTITY L1
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Target]
+        - from: [MakeLiteralTag_FormState_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Tag]
+        - from: [HasFormStateTag_Guard, ReturnValue]
+          to: [Branch_FormState_Guard, Condition]
         # === EVENT_ENDABILITY FLOW (GAS Audit CRIT-4) ===
         - from: [Event_EndAbility, Then]
           to: [Branch_WasCancelled, Exec]
@@ -1463,6 +1490,23 @@ gameplay_abilities:
         - id: Branch_TransitioningTag_Guard
           type: Branch
           position: [2850, 200]
+        # Guard 3: Check Effect.Father.FormState tag (identity intact) - NL-GUARD-IDENTITY L1
+        - id: HasFormStateTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [3000, 300]
+        - id: MakeLiteralTag_FormState_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [2850, 450]
+        - id: Branch_FormState_Guard
+          type: Branch
+          position: [3150, 200]
         # Step 4: Remove prior form state (now guarded)
         - id: RemovePriorFormState
           type: CallFunction
@@ -1675,6 +1719,9 @@ gameplay_abilities:
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
         - from: [Branch_TransitioningTag_Guard, True]
+          to: [Branch_FormState_Guard, Exec]
+        # v5.0: Guard 3 (NL-GUARD-IDENTITY L1) - identity tag check
+        - from: [Branch_FormState_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyArmorState, Exec]
@@ -1756,6 +1803,13 @@ gameplay_abilities:
           to: [HasTransitioningTag_Guard, Tag]
         - from: [HasTransitioningTag_Guard, ReturnValue]
           to: [Branch_TransitioningTag_Guard, Condition]
+        # Guard 3: HasMatchingGameplayTag(Effect.Father.FormState) - NL-GUARD-IDENTITY L1
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Target]
+        - from: [MakeLiteralTag_FormState_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Tag]
+        - from: [HasFormStateTag_Guard, ReturnValue]
+          to: [Branch_FormState_Guard, Condition]
         # Data flow - GetOwnerPlayer to IsValid
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [IsValid_Player, Object]
@@ -2014,13 +2068,30 @@ gameplay_abilities:
         - id: Branch_TransitioningTag_Guard
           type: Branch
           position: [2500, 200]
+        # Guard 3: Check Effect.Father.FormState tag (identity intact) - NL-GUARD-IDENTITY L1
+        - id: HasFormStateTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2650, 300]
+        - id: MakeLiteralTag_FormState_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [2500, 450]
+        - id: Branch_FormState_Guard
+          type: Branch
+          position: [2800, 200]
         # Step 4: Remove prior form state (now guarded)
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
             target_self: true
-          position: [2700, 200]
+          position: [2900, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
@@ -2247,6 +2318,9 @@ gameplay_abilities:
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
         - from: [Branch_TransitioningTag_Guard, True]
+          to: [Branch_FormState_Guard, Exec]
+        # v5.0: Guard 3 (NL-GUARD-IDENTITY L1) - identity tag check
+        - from: [Branch_FormState_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyExoskeletonState, Exec]
@@ -2326,6 +2400,13 @@ gameplay_abilities:
           to: [HasTransitioningTag_Guard, Tag]
         - from: [HasTransitioningTag_Guard, ReturnValue]
           to: [Branch_TransitioningTag_Guard, Condition]
+        # Guard 3: HasMatchingGameplayTag(Effect.Father.FormState) - NL-GUARD-IDENTITY L1
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Target]
+        - from: [MakeLiteralTag_FormState_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Tag]
+        - from: [HasFormStateTag_Guard, ReturnValue]
+          to: [Branch_FormState_Guard, Condition]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -2594,13 +2675,69 @@ gameplay_abilities:
           properties:
             duration: 5.0
           position: [2100, 200]
-        # Step 4: Remove prior form state
+        # === POST-DELAY GUARDS (v5.0 NL-GUARD-IDENTITY L1) ===
+        # Guard 1: Validate FatherRef
+        - id: GetFatherRef_Guard
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2200, 350]
+        - id: IsValid_FatherRef_Guard
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2300, 300]
+        - id: Branch_FatherValid_Guard
+          type: Branch
+          position: [2400, 200]
+        # Guard 2: Check Father.State.Transitioning tag
+        - id: GetFatherASC_Guard
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [2450, 350]
+        - id: HasTransitioningTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2550, 300]
+        - id: MakeLiteralTag_Transitioning_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.State.Transitioning
+          position: [2450, 400]
+        - id: Branch_TransitioningTag_Guard
+          type: Branch
+          position: [2700, 200]
+        # Guard 3: Check Effect.Father.FormState tag (identity intact)
+        - id: HasFormStateTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2850, 300]
+        - id: MakeLiteralTag_FormState_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [2700, 450]
+        - id: Branch_FormState_Guard
+          type: Branch
+          position: [3000, 200]
+        # Step 4: Remove prior form state (now guarded)
         - id: RemovePriorFormState
           type: CallFunction
           properties:
             function: BP_RemoveGameplayEffectFromOwnerWithGrantedTags
             target_self: true
-          position: [2300, 200]
+          position: [3200, 200]
         - id: MakeTagContainer_FormState
           type: CallFunction
           properties:
@@ -2890,7 +3027,14 @@ gameplay_abilities:
           to: [SpawnTransitionVFX, Exec]
         - from: [SpawnTransitionVFX, Exec]
           to: [TransitionDelay, Exec]
+        # v5.0: Route through 3-layer guards after delay (NL-GUARD-IDENTITY L1)
         - from: [TransitionDelay, OnFinish]
+          to: [Branch_FatherValid_Guard, Exec]
+        - from: [Branch_FatherValid_Guard, True]
+          to: [Branch_TransitioningTag_Guard, Exec]
+        - from: [Branch_TransitioningTag_Guard, True]
+          to: [Branch_FormState_Guard, Exec]
+        - from: [Branch_FormState_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplySymbioteState, Exec]
@@ -2955,6 +3099,28 @@ gameplay_abilities:
           to: [RemoveTransitioningTag, GameplayTags]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [RemoveTransitioningTag, Actor]
+        # === GUARD DATA FLOW (v5.0 NL-GUARD-IDENTITY L1) ===
+        # Guard 1: IsValid(FatherRef)
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [IsValid_FatherRef_Guard, Object]
+        - from: [IsValid_FatherRef_Guard, ReturnValue]
+          to: [Branch_FatherValid_Guard, Condition]
+        - from: [GetFatherRef_Guard, FatherRef]
+          to: [GetFatherASC_Guard, Actor]
+        # Guard 2: HasMatchingGameplayTag(Father.State.Transitioning)
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Target]
+        - from: [MakeLiteralTag_Transitioning_Guard, ReturnValue]
+          to: [HasTransitioningTag_Guard, Tag]
+        - from: [HasTransitioningTag_Guard, ReturnValue]
+          to: [Branch_TransitioningTag_Guard, Condition]
+        # Guard 3: HasMatchingGameplayTag(Effect.Father.FormState) - NL-GUARD-IDENTITY L1
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Target]
+        - from: [MakeLiteralTag_FormState_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Tag]
+        - from: [HasFormStateTag_Guard, ReturnValue]
+          to: [Branch_FormState_Guard, Condition]
         # Data flow - VFX spawn
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherMesh, Target]
@@ -3232,6 +3398,23 @@ gameplay_abilities:
         - id: Branch_TransitioningTag_Guard
           type: Branch
           position: [2500, 200]
+        # Guard 3: Check Effect.Father.FormState tag (identity intact) - NL-GUARD-IDENTITY L1
+        - id: HasFormStateTag_Guard
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [2650, 300]
+        - id: MakeLiteralTag_FormState_Guard
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Effect.Father.FormState
+          position: [2500, 450]
+        - id: Branch_FormState_Guard
+          type: Branch
+          position: [2800, 200]
         # Step 4: Remove prior form state (now guarded)
         - id: RemovePriorFormState
           type: CallFunction
@@ -3372,6 +3555,9 @@ gameplay_abilities:
         - from: [Branch_FatherValid_Guard, True]
           to: [Branch_TransitioningTag_Guard, Exec]
         - from: [Branch_TransitioningTag_Guard, True]
+          to: [Branch_FormState_Guard, Exec]
+        # v5.0: Guard 3 (NL-GUARD-IDENTITY L1) - identity tag check
+        - from: [Branch_FormState_Guard, True]
           to: [RemovePriorFormState, Exec]
         - from: [RemovePriorFormState, Exec]
           to: [ApplyEngineerState, Exec]
@@ -3425,6 +3611,13 @@ gameplay_abilities:
           to: [HasTransitioningTag_Guard, Tag]
         - from: [HasTransitioningTag_Guard, ReturnValue]
           to: [Branch_TransitioningTag_Guard, Condition]
+        # Guard 3: HasMatchingGameplayTag(Effect.Father.FormState) - NL-GUARD-IDENTITY L1
+        - from: [GetFatherASC_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Target]
+        - from: [MakeLiteralTag_FormState_Guard, ReturnValue]
+          to: [HasFormStateTag_Guard, Tag]
+        - from: [HasFormStateTag_Guard, ReturnValue]
+          to: [Branch_FormState_Guard, Condition]
         # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetFatherASC_Transition, Actor]

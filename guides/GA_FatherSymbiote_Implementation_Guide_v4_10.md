@@ -1,10 +1,10 @@
 # Father Companion - Symbiote Ultimate Ability Implementation Guide
-## VERSION 4.9 - C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED)
+## VERSION 4.10 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Added)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.9
+**Version:** 4.10
 **Date:** January 2026
-**Last Audit:** 2026-01-23 (Claude-GPT dual audit - C_SYMBIOTE_STRICT_CANCEL contract)
+**Last Audit:** 2026-01-24 (Claude-GPT dual audit v5.0 - NL-GUARD-IDENTITY L1)
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
@@ -477,6 +477,40 @@ The SetByCaller chain is applied at the START of Event_Activate, BEFORE any othe
    - 15.3.1) From Spawn System execution:
       - 15.3.1.1) Add: AbilityTaskWaitDelay node (auto-terminates with ability per Track B v4.15)
       - 15.3.1.2) Duration: 5.0
+
+### 15.3G) POST-DELAY 3-LAYER GUARDS (NL-GUARD-IDENTITY L1)
+
+> **GAS Audit Compliance (v5.0):** These guards execute IMMEDIATELY after the Delay callback returns.
+> They validate that the ability context remains valid before any state-modifying operations.
+> Pattern locked as NL-GUARD-IDENTITY L1 per Father_Companion_GAS_Abilities_Audit.md v5.0.
+>
+> **CRITICAL:** Tags/effects in ASC are the canonical state (GAS truth source), not external enums.
+
+#### 15.3G.1) Guard 1: Validate FatherRef
+   - 15.3G.1.1) From **Delay** -> **OnFinish** execution pin
+   - 15.3G.1.2) Drag wire to right and release
+   - 15.3G.1.3) Search: `Is Valid`
+   - 15.3G.1.4) Select **Utilities > Is Valid** macro node
+   - 15.3G.1.5) Connect **FatherRef** variable to **Input Object** pin
+   - 15.3G.1.6) Add **Branch** node, connect **Return Value** to **Condition**
+   - 15.3G.1.7) From **False** path: Leave unconnected (father destroyed - abort silently)
+
+#### 15.3G.2) Guard 2: Check Transitioning Phase Tag (Father.State.Transitioning)
+   - 15.3G.2.1) From **Branch** -> **True** execution pin (valid path)
+   - 15.3G.2.2) From **FatherRef**, Get Ability System Component
+   - 15.3G.2.3) Add **Has Matching Gameplay Tag** node
+   - 15.3G.2.4) Tag: `Father.State.Transitioning` (phase check)
+   - 15.3G.2.5) Add **Branch** node, connect result to **Condition**
+   - 15.3G.2.6) From **False** path: Transition interrupted - abort
+
+#### 15.3G.3) Guard 3: Check Form Identity Tag (Effect.Father.FormState)
+   - 15.3G.3.1) From **Guard 2 Branch** -> **True** execution pin
+   - 15.3G.3.2) Reuse Father ASC from Guard 2
+   - 15.3G.3.3) Add **Has Matching Gameplay Tag** node
+   - 15.3G.3.4) Tag: `Effect.Father.FormState` (PARENT tag - NL-GUARD-IDENTITY L1)
+   - 15.3G.3.5) Add **Branch** node, connect result to **Condition**
+   - 15.3G.3.6) From **False** path: Form identity removed - abort
+   - 15.3G.3.7) From **True** path: Continue to Section 15.4 (all guards passed)
 
 #### 15.4) Remove Transitioning Tag
    - 15.4.1) From Delay Completed:
@@ -1061,6 +1095,8 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 | Version | Date | Changes |
 |---------|------|---------|
 | 4.9 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED):** Added PHASE 2B documenting GE_SymbioteDuration SetByCaller pattern - applied at activation START to grant `Father.State.SymbioteLocked` for 30s. Updated Tag Configuration Summary with audit note explaining why Symbiote is NOT in other forms' cancel lists. Added Defense-in-Depth strategy (3 layers: blocking, no-cancel, duration enforcement). Contract reference: LOCKED_CONTRACTS.md Contract 11. Claude-GPT dual audit 2026-01-23. |
+| 4.10 | January 2026 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Added Section 15.3G (POST-DELAY 3-LAYER GUARDS) implementing LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Guards execute immediately after 5s transition delay before any state-modifying operations. Symbiote now aligns with all other form abilities. |
+| 4.9 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Documented LOCKED contract preventing form change cancellation of Symbiote ultimate. Added Contract reference to header. |
 | 4.8 | January 2026 | **Claude-GPT Audit Fixes:** (1) INC-2: Fixed DOCUMENT INFORMATION table version from 4.4 to 4.8. (2) INC-3: Added Cooldown Model clarification explaining dual cooldown system (15s GE_FormChangeCooldown vs 120s UltimateChargeComponent). (3) INC-4: Changed "Delay node" to "AbilityTaskWaitDelay" per Track B v4.15. Added Authority Note and Audit Status sections per documentation rules D-1/D-2. |
 | 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md to Related Documents. This guide now references all locked decisions: INV-1 (no invulnerability), VTF-7 (CommitCooldown required), Decision 1A (stats via EI), Decision 1B (StaminaRegenRate via child GE), Decision 3 (GE_SymbioteBoost removed). Updated Technical Reference to v6.2. |
 | 4.6 | January 2026 | Version alignment with manifest v3.0.3. No functional changes. |
@@ -1080,7 +1116,7 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 ---
 
-**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.9**
+**END OF GA_FATHERSYMBIOTE IMPLEMENTATION GUIDE VERSION 4.10**
 
 **Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
 **Architecture: Option B (GE-Based Form Identity)**
