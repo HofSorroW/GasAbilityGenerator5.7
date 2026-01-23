@@ -5097,16 +5097,18 @@ gameplay_abilities:
   # PASSIVE ABILITY: Contains CheckBackstabCondition and ApplyBackstabBonus FUNCTIONS
   # These functions are CALLED BY attack abilities - GA_Backstab itself does not activate
   #
-  # AUTOMATION STATUS:
-  # - custom_functions: ✅ AUTOMATED (generator creates Blueprint functions with full node graphs)
-  # - CheckBackstabCondition: Uses dot product math (simplified approximation)
+  # AUTOMATION STATUS (v5.1 - Goal_Attack Query Approach):
+  # - custom_functions: ✅ FULLY AUTOMATED
+  # - CheckBackstabCondition: Queries enemy's Goal_Attack via Narrative Pro's built-in goal system
   # - ApplyBackstabBonus: Uses BP_ApplyGameplayEffectToOwner
   #
-  # MANUAL INTEGRATION REQUIRED (per GA_Backstab_Implementation_Guide_v1_7.md):
-  # - BP_NarrativeNPCController: Add ViewedCharacter variable + Handle Perception Update override
-  # - This enables the CORRECT gameplay: ViewedCharacter != AttackingPlayer (uses AIPerception)
-  # - Generator cannot modify existing Narrative Pro blueprints - only creates new assets
-  # - For full ViewedCharacter detection, follow Phase 3 of the implementation guide
+  # HOW IT WORKS (Goal_Attack Query):
+  # 1. Enemy NPCs use GoalGenerator_Attack which auto-creates Goal_Attack when they detect hostiles
+  # 2. Goal_Attack stores TargetToAttack (the actor the enemy is attacking)
+  # 3. CheckBackstabCondition queries: Does enemy have Goal_Attack targeting the player?
+  # 4. If no Goal_Attack OR target != player → enemy is unaware/distracted → BACKSTAB VALID
+  #
+  # NO MANUAL INTEGRATION REQUIRED - Uses Narrative Pro's existing perception → goal system
   - name: GA_Backstab
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -5117,7 +5119,7 @@ gameplay_abilities:
         - Ability.Father.Backstab
       activation_owned_tags:
         - State.BackstabReady
-      # No activation_required_tags - universal ability, internal conditions (sight check, enemy unaware) handle gating
+      # No activation_required_tags - universal ability, internal conditions handle gating
     variables:
       - name: BackstabDamageMultiplier
         type: Float
@@ -5141,15 +5143,18 @@ gameplay_abilities:
       connections:
         - from: [Event_Activate, Then]
           to: [EndAbility, Exec]
-    # v4.14: Custom functions for backstab detection and bonus application
-    # NOTE: Simplified to use only supported node types. FunctionEntry and FunctionResult
-    # are auto-created by the generator. Greater_FloatFloat B pin defaults to 0.
+    # v5.1: Custom functions using Goal_Attack query approach
+    # Uses Narrative Pro's built-in goal system instead of custom perception binding
     custom_functions:
-      # CheckBackstabCondition - Returns true if enemy is facing away from player
-      # Logic: Get dot product of enemy forward vector and direction to player
-      # Positive dot means enemy is facing toward player (not backstab)
-      # Negative dot means enemy is facing away (valid backstab)
+      # CheckBackstabCondition - v5.1: Goal_Attack Query Approach
+      # Returns true if enemy has no Goal_Attack targeting the attacking player
+      # Flow: Enemy → NPCActivityComponent → GetCurrentActivityGoal → Cast to Goal_Attack → Check target
+      # Backstab valid when:
+      # - Enemy has no NPCActivityComponent (not a goal-based NPC)
+      # - Enemy has no current Goal_Attack (not attacking anyone)
+      # - Enemy's Goal_Attack target is NOT the player (attacking someone else like Father)
       - function_name: CheckBackstabCondition
+        pure: false
         inputs:
           - name: EnemyActor
             type: Actor
@@ -5157,87 +5162,137 @@ gameplay_abilities:
           - name: CanBackstab
             type: Boolean
         nodes:
-          # Get the owning actor (player)
-          - id: GetOwningActor
+          # Step 1: Get player (self) for comparison
+          - id: GetPlayer
             type: CallFunction
             properties:
               function: GetAvatarActorFromActorInfo
               target_self: true
-            position: [0, 0]
-          # Get enemy's forward vector
-          - id: GetEnemyForward
+            position: [0, 100]
+          # Step 2: Get NPCActivityComponent from enemy
+          # NPCActivityComponent handles goal-based AI behavior in Narrative Pro
+          - id: GetActivityComp
             type: CallFunction
             properties:
-              function: GetActorForwardVector
-            position: [200, 100]
-          # Get player location
-          - id: GetPlayerLocation
+              function: GetComponentByClass
+              class: Actor
+              param.ComponentClass: NPCActivityComponent
+            position: [200, 0]
+          # Step 3: Check if component exists
+          - id: IsValidComp
             type: CallFunction
             properties:
-              function: GetActorLocation
-            position: [200, 200]
-          # Get enemy location
-          - id: GetEnemyLocation
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [400, 0]
+          # Step 4: Get current activity goal (if component valid)
+          # This returns the active goal from the NPC's activity system
+          - id: GetCurrentGoal
             type: CallFunction
             properties:
-              function: GetActorLocation
-            position: [200, 300]
-          # Subtract to get direction (player - enemy)
-          - id: SubtractVectors
+              function: GetCurrentActivityGoal
+              class: NPCActivityComponent
+            position: [600, 0]
+          # Step 5: Cast to Goal_Attack to check if enemy is in attack mode
+          - id: CastToGoalAttack
+            type: DynamicCast
+            properties:
+              target_class: Goal_Attack
+            position: [800, 0]
+          # Step 6: Get TargetToAttack property from Goal_Attack
+          # This is the actor the enemy is currently attacking
+          - id: GetAttackTarget
+            type: PropertyGet
+            properties:
+              property_name: TargetToAttack
+              target_class: Goal_Attack
+            position: [1000, 0]
+          # Step 7: Check if target equals player (NotEqual = can backstab)
+          - id: NotEqualPlayer
             type: CallFunction
             properties:
-              function: Subtract_VectorVector
+              function: NotEqual_ObjectObject
               class: KismetMathLibrary
-            position: [400, 250]
-          # Normalize the direction
-          - id: NormalizeDir
+            position: [1200, 0]
+          # Step 8: Handle case where cast failed (no Goal_Attack = can backstab)
+          # Use Select: if cast succeeded, use NotEqual result; else return true
+          - id: SelectResult
             type: CallFunction
             properties:
-              function: Normal
+              function: SelectObject
               class: KismetMathLibrary
-            position: [600, 250]
-          # Dot product - positive means same direction (not backstab)
-          - id: DotProduct
+            position: [1400, 0]
+          # Literal true for when no Goal_Attack exists
+          - id: LiteralTrue
+            type: Literal
+            properties:
+              type: Boolean
+              value: true
+            position: [1200, 200]
+          # Check if cast succeeded (Goal_Attack is valid)
+          - id: IsValidGoal
             type: CallFunction
             properties:
-              function: Dot_VectorVector
-              class: KismetMathLibrary
-            position: [800, 150]
-          # Check if dot < 0 (enemy facing away = backstab)
-          - id: CheckNegative
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [1000, 100]
+          # Final Select: No component OR no goal OR target != player = can backstab
+          - id: OrNoComponent
             type: CallFunction
             properties:
-              function: Less_FloatFloat
+              function: BooleanOR
               class: KismetMathLibrary
-            position: [1000, 150]
+            position: [1600, 0]
+          # NOT IsValidComp (no component = true)
+          - id: NotValidComp
+            type: CallFunction
+            properties:
+              function: Not_PreBool
+              class: KismetMathLibrary
+            position: [500, 100]
         connections:
-          # EnemyActor -> GetEnemyForward target
+          # EnemyActor → GetComponentByClass target
           - from: [FunctionEntry, EnemyActor]
-            to: [GetEnemyForward, Target]
-          # EnemyActor -> GetEnemyLocation target
-          - from: [FunctionEntry, EnemyActor]
-            to: [GetEnemyLocation, Target]
-          # GetOwningActor -> GetPlayerLocation target
-          - from: [GetOwningActor, ReturnValue]
-            to: [GetPlayerLocation, Target]
-          # Player location - Enemy location = direction to player
-          - from: [GetPlayerLocation, ReturnValue]
-            to: [SubtractVectors, A]
-          - from: [GetEnemyLocation, ReturnValue]
-            to: [SubtractVectors, B]
-          # Normalize the direction
-          - from: [SubtractVectors, ReturnValue]
-            to: [NormalizeDir, A]
-          # Dot product of enemy forward and direction to player
-          - from: [GetEnemyForward, ReturnValue]
-            to: [DotProduct, A]
-          - from: [NormalizeDir, ReturnValue]
-            to: [DotProduct, B]
-          # Check if dot < 0 (B defaults to 0)
-          - from: [DotProduct, ReturnValue]
-            to: [CheckNegative, A]
-          # Return the result (connects to auto-created FunctionResult)
-          - from: [CheckNegative, ReturnValue]
+            to: [GetActivityComp, Target]
+          # GetActivityComp → IsValidComp
+          - from: [GetActivityComp, ReturnValue]
+            to: [IsValidComp, Object]
+          # IsValidComp → NotValidComp (invert for OR logic)
+          - from: [IsValidComp, ReturnValue]
+            to: [NotValidComp, A]
+          # GetActivityComp → GetCurrentGoal target
+          - from: [GetActivityComp, ReturnValue]
+            to: [GetCurrentGoal, Target]
+          # GetCurrentGoal → CastToGoalAttack
+          - from: [GetCurrentGoal, ReturnValue]
+            to: [CastToGoalAttack, Object]
+          # CastToGoalAttack result → GetAttackTarget target
+          - from: [CastToGoalAttack, AsGoal_Attack]
+            to: [GetAttackTarget, Target]
+          # CastToGoalAttack result → IsValidGoal
+          - from: [CastToGoalAttack, AsGoal_Attack]
+            to: [IsValidGoal, Object]
+          # GetAttackTarget → NotEqualPlayer A
+          - from: [GetAttackTarget, TargetToAttack]
+            to: [NotEqualPlayer, A]
+          # GetPlayer → NotEqualPlayer B
+          - from: [GetPlayer, ReturnValue]
+            to: [NotEqualPlayer, B]
+          # Select based on valid goal: if valid goal, use NotEqual; else use true
+          # IsValidGoal as condition, NotEqualPlayer if true, LiteralTrue if false
+          - from: [IsValidGoal, ReturnValue]
+            to: [SelectResult, PickA]
+          - from: [NotEqualPlayer, ReturnValue]
+            to: [SelectResult, A]
+          - from: [LiteralTrue, Value]
+            to: [SelectResult, B]
+          # Final OR: no component OR select result
+          - from: [NotValidComp, ReturnValue]
+            to: [OrNoComponent, A]
+          - from: [SelectResult, ReturnValue]
+            to: [OrNoComponent, B]
+          # Return final result
+          - from: [OrNoComponent, ReturnValue]
             to: [FunctionResult, CanBackstab]
       # ApplyBackstabBonus - Applies GE_BackstabBonus effect to player
       # GE_BackstabBonus grants +25 AttackRating (instant effect)
@@ -6945,45 +7000,26 @@ narrative_events:
     event_tag: GameplayEvent.Father.Sacrificed
 
 # ============================================================================
-# NPC CONTROLLERS (1) - Universal controller with ViewedCharacter for backstab
+# NPC CONTROLLERS - REMOVED (v5.1 Goal_Attack Approach)
 # ============================================================================
-# BP_BackstabNPCController - Universal NPC Controller with ViewedCharacter tracking
-# All NPCs using this controller will track which player they're seeing
-# Used by backstab system: Enemy.Controller.ViewedCharacter != AttackingPlayer = Backstab valid
-# Assign via: Set AIControllerClass on NPC character blueprint to BP_BackstabNPCController
+# BP_BackstabNPCController is NO LONGER NEEDED
 #
-# NOTE: Perception binding logic must be completed manually in editor:
-# 1. In BeginPlay: Get AIPerception Component -> Bind Event to OnPerceptionUpdated
-# 2. Create custom event handler with UpdatedActors parameter
-# 3. Implement sight detection logic per GA_Backstab_Implementation_Guide_v1_8.md
-actor_blueprints:
-  - name: BP_BackstabNPCController
-    folder: AI/Controllers
-    parent_class: NarrativeNPCController
-    variables:
-      - name: ViewedCharacter
-        type: Object:NarrativePlayerCharacter
-        category: Perception
-    event_graph:
-      nodes:
-        # BeginPlay placeholder - perception binding done manually
-        - id: Event_BeginPlay
-          type: Event
-          properties:
-            event_name: ReceiveBeginPlay
-          position: [0, 0]
-        - id: PrintReady
-          type: PrintString
-          properties:
-            message: "BP_BackstabNPCController Ready - Bind perception in editor"
-          position: [300, 0]
-      connections:
-        - from: [Event_BeginPlay, Then]
-          to: [PrintReady, Exec]
+# v5.1: Switched to Goal_Attack query approach which uses Narrative Pro's built-in
+# perception → goal system. No custom controller or perception binding required.
+#
+# How it works:
+# 1. GoalGenerator_Attack automatically creates Goal_Attack when NPCs detect hostiles
+# 2. Goal_Attack stores TargetToAttack (who the enemy is attacking)
+# 3. GA_Backstab.CheckBackstabCondition queries this via NPCActivityComponent
+# 4. If no Goal_Attack targeting player → enemy is unaware → backstab valid
+#
+# See GA_Backstab custom_functions for implementation details.
+# ============================================================================
 
 # ============================================================================
 # ACTOR BLUEPRINTS (4) - Characters (1) + Projectiles (2) + Traps (1)
 # ============================================================================
+actor_blueprints:
   - name: BP_FatherCompanion
     folder: Characters
     parent_class: NarrativeNPCCharacter

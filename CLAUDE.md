@@ -245,7 +245,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v4.27)
+## GasAbilityGenerator Plugin (v4.30)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -268,7 +268,7 @@ Mesh Files → Pipeline → Items → Collections → NPC Loadouts
 | `FDialogueCSVParser` | GasAbilityGeneratorDialogueCSVParser.cpp | v4.0 CSV dialogue parsing |
 | `SGasAbilityGeneratorWindow` | GasAbilityGeneratorWindow.cpp | Slate UI for editor |
 | `UGasAbilityGeneratorCommandlet` | GasAbilityGeneratorCommandlet.cpp | Command-line generation |
-| `F*Generator` classes | GasAbilityGeneratorGenerators.cpp | 25+ asset generators |
+| `F*Generator` classes | GasAbilityGeneratorGenerators.cpp | 32+ asset generators |
 | `FPipelineProcessor` | GasAbilityGeneratorPipeline.cpp | v3.9.8 Mesh-to-Item pipeline |
 | `UScheduledBehavior_AddNPCGoalByClass` | GasScheduledBehaviorHelpers.cpp | v3.9.1 Schedule behavior helper |
 | `GasAbilityGeneratorTypes.h` | Public/ | FManifest* structs, validation types |

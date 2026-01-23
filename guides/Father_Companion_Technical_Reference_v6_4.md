@@ -27,12 +27,19 @@
 | Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.3 |
-| Last Audit | 2026-01-23 (Claude-GPT dual audit) |
+| Version | 6.4 |
+| Last Audit | 2026-01-24 (v5.1 Goal_Attack approach) |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
-| Replaces | Father_Companion_Technical_Reference_v6_2.md |
+| Replaces | Father_Companion_Technical_Reference_v6_3.md |
 
 ---
+
+## VERSION 6.4 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **v5.1 Goal_Attack Backstab Detection** | Section 5.3 ViewedCharacter marked as DEPRECATED/LEGACY. Section 5.5 completely rewritten with Goal_Attack Query approach. Uses Narrative Pro's built-in GoalGenerator_Attack → Goal_Attack → TargetToAttack system. No custom perception binding required. BP_BackstabNPCController no longer needed. |
+| **Decoy Tactical Flow Updated** | Section 5.5 includes new decoy flow table showing Father distraction → player backstab via Goal_Attack query. |
 
 ## VERSION 6.3 CHANGES
 
@@ -829,27 +836,16 @@ Father death response pattern:
 | Hearing | AISense_Hearing | Sound detection |
 | Damage | AISense_Damage | Damage events |
 
-### 5.3) ViewedCharacter Variable
+### 5.3) ViewedCharacter Variable (LEGACY - v5.0 and earlier)
+
+> **NOTE (v5.1):** ViewedCharacter approach replaced by Goal_Attack Query. See Section 5.5.
 
 | Property | Value |
 |----------|-------|
 | Type | NarrativePlayerCharacter (NOT Actor) |
 | Location | BP_NarrativeNPCController |
 | Purpose | Stores currently seen PLAYER |
-
-AI Perception System Capability:
-
-| Capability | Status |
-|------------|--------|
-| Detect Players | YES |
-| Detect NPCs (including Father) | YES - AI Perception CAN detect other NPCs |
-| Store NPCs in ViewedCharacter | NO - Variable type restricts to players only |
-
-Limitation Clarification:
-
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| Father not stored in ViewedCharacter | Variable typed as NarrativePlayerCharacter | Change variable type to NarrativeCharacter or Actor to also store NPCs |
+| Status | **DEPRECATED** - Goal_Attack approach preferred |
 
 ### 5.4) StealthRating Usage
 
@@ -859,15 +855,56 @@ Limitation Clarification:
 | 50 | 50% harder to detect |
 | 100 | Fully invisible to AI |
 
-### 5.5) Backstab Detection Logic
+### 5.5) Backstab Detection Logic (v5.1 - Goal_Attack Query)
+
+**v5.1 Update:** Backstab detection now uses Narrative Pro's built-in Goal_Attack system instead of custom ViewedCharacter binding.
+
+#### How Goal_Attack Detection Works
+
+```
+AIPerception detects player → GoalGenerator_Attack.OnPerceptionUpdated →
+Faction check → If HOSTILE → TryAddAttackGoalFromActor →
+Goal_Attack created with TargetToAttack = detected actor
+```
+
+#### CheckBackstabCondition Query Flow
 
 | Step | Action | Result |
 |------|--------|--------|
-| 1 | Father (NarrativeNPCCharacter) detected by enemy | Detection occurs |
-| 2 | Enemy casts to NarrativePlayerCharacter | FAILS |
-| 3 | ViewedCharacter remains NULL | No player registered |
-| 4 | Player attacks from behind | Attack succeeds |
-| 5 | ViewedCharacter != Player | Backstab valid (+25% damage) |
+| 1 | Get enemy's NPCActivityComponent | Activity system handles goals |
+| 2 | Call GetCurrentActivityGoal() | Returns current activity goal |
+| 3 | Cast to Goal_Attack | Check if enemy is attacking |
+| 4 | Get TargetToAttack property | Who enemy is attacking |
+| 5 | Compare: TargetToAttack != Player | Backstab valid if NOT attacking player |
+
+#### Backstab Validity Table
+
+| Enemy State | Goal_Attack | TargetToAttack | Backstab Valid |
+|-------------|-------------|----------------|----------------|
+| Idle/Patrolling | None | N/A | **YES** |
+| Attacking Father | Goal_Attack | Father | **YES** |
+| Attacking other NPC | Goal_Attack | Other NPC | **YES** |
+| Attacking Player | Goal_Attack | Player | **NO** |
+
+#### Decoy Tactical Flow (v5.1)
+
+| Step | Action | Goal_Attack State |
+|------|--------|-------------------|
+| 1 | Player sends Father toward enemy | No Goal_Attack yet |
+| 2 | Enemy AIPerception detects Father | GoalGenerator_Attack fires |
+| 3 | Faction check: Father = Hostile | TryAddAttackGoalFromActor |
+| 4 | Goal_Attack created | TargetToAttack = Father |
+| 5 | Player flanks from behind | Player not detected |
+| 6 | Player attacks enemy | CheckBackstabCondition runs |
+| 7 | Query: Goal_Attack.TargetToAttack | Returns Father |
+| 8 | Compare: Father != Player | TRUE |
+| 9 | **BACKSTAB VALID** | Apply GE_BackstabBonus (+25) |
+
+**Benefits of Goal_Attack Approach:**
+- Uses existing Narrative Pro infrastructure
+- No custom perception binding required
+- No BP_BackstabNPCController modification needed
+- Works automatically with faction system
 
 ---
 

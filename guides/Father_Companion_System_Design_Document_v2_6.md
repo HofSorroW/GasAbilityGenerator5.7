@@ -538,18 +538,29 @@ GA_Backstab is a Player Default Ability, not granted by the father. Backstab is 
 | Aspect | Description |
 |--------|-------------|
 | Type | Passive (always active) |
-| Trigger | Player attacks enemy from behind |
-| Detection | AIPerception ViewedCharacter Query (enemy not viewing player) |
+| Trigger | Player attacks enemy who is not targeting them |
+| Detection | **Goal_Attack Query** (v5.1) - queries enemy's Goal_Attack.TargetToAttack |
 | Grant Location | Player Default Abilities array |
-| Father Relationship | Father can distract enemies, enabling backstab opportunities |
+| Father Relationship | Father can distract enemies (enemy's Goal_Attack targets Father) |
 
-#### 3.1.1) Damage Scaling
+#### 3.1.1) Goal_Attack Detection (v5.1)
+
+Uses Narrative Pro's built-in GoalGenerator_Attack system. No custom perception binding required.
+
+| Enemy State | Goal_Attack | Backstab Valid |
+|-------------|-------------|----------------|
+| Idle/Patrolling | No Goal_Attack | Yes |
+| Attacking Father | Target = Father | Yes |
+| Attacking other NPC | Target = other | Yes |
+| Attacking Player | Target = Player | No |
+
+#### 3.1.2) Damage Scaling
 
 | Condition | AttackRating Bonus |
 |-----------|-------------------|
-| Any form, from behind | +25 AttackRating |
+| Enemy not targeting player | +25 AttackRating |
 | Exoskeleton Stealth active | +50 AttackRating |
-| Stealth + from behind | +75 AttackRating (stacked additively) |
+| Stealth + not targeting | +75 AttackRating (stacked additively) |
 
 ---
 
@@ -1019,6 +1030,7 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.6 | January 2026 | **v5.1 Goal_Attack Backstab Detection:** Section 3.1 GA_Backstab updated - replaced ViewedCharacter detection with Goal_Attack query approach. Uses Narrative Pro's built-in GoalGenerator_Attack system. CheckBackstabCondition now queries NPCActivityComponent → GetCurrentActivityGoal → Cast to Goal_Attack → TargetToAttack. No custom perception binding required. Added Section 3.1.1 Goal_Attack Detection table. BP_BackstabNPCController removed from manifest (no longer needed). |
 | 2.5 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED_CONTRACTS.md Contract 11):** Section 10.3 Cancel Abilities Configuration updated - removed `Ability.Father.Symbiote` from all form/weapon cancel lists (exception: GA_FatherSacrifice). Added GA_FatherRifle and GA_FatherSword to cancel table. Section 10.6.4 Symbiote Special Handling rewritten - GE_SymbioteDuration with SetByCaller pattern applied at activation START, grants `Father.State.SymbioteLocked` for 30s. Defense-in-depth strategy documented (3 layers: blocking, no-cancel, duration enforcement). Claude-GPT dual audit 2026-01-23. |
 | 2.3 | January 2026 | **Dome System Locked Decisions (21 items)**: Sections 2.2.5-2.2.9 rewritten with Claude-GPT dual-audit locked decisions. Energy-Only damage model (player takes full damage), energy on Player ASC (AS_DomeAttributes), manual release only at full (500), no auto-burst, no pre-release, flat 75 damage, 12s cooldown, form exit burst behavior, FullyCharged tag semantics, GA_ProtectiveDome reset ownership. Section 2.2.6 Use Cases renumbered to 2.2.10. Cooldown Summary updated: Dome Burst 10s→12s. |
 | 2.2 | January 2026 | **Added Section 12: Locked Decisions Reference** - Consolidated all locked decisions from Claude-GPT dual-agent audit (January 2026). Includes LC-1 to LC-4 implementation constraints, INV-1 invulnerability removal, EndAbility lifecycle rules (Rules 1-4), and VTF technical findings. |
