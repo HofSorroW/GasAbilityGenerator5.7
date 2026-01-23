@@ -63,11 +63,14 @@ This document is explanatory. Runtime behavior and generation are defined by `ma
 | GE_SymbioteState definition | ✅ Auto-generated | manifest.yaml gameplay_effects section |
 | GA_FatherSymbiote blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
 | Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
-| Transition prelude nodes | ✅ Auto-generated | Remove old state GE, apply new state GE (in manifest) |
-| Merge/Hide logic | ⚠️ Manual | SetActorHiddenInGame, collision disable |
-| VFX spawning | ⚠️ Manual | GameplayCues preferred (Category C roadmap) |
-| Duration timer | ⚠️ Manual | 30s timer with EndSymbiote callback |
-| EndAbility cleanup | ⚠️ Manual | Speed restore, state reset, return to Armor |
+| Transition prelude nodes | ✅ Auto-generated | RemovePriorFormState + ApplySymbioteState in event_graph |
+| Merge/Hide logic | ✅ Auto-generated | SetActorHiddenInGame, SetCollision in event_graph |
+| Speed/Jump boost logic | ✅ Auto-generated | PropertyGet/PropertySet on CharacterMovement |
+| VFX spawning | ✅ Auto-generated | SpawnSystemAttached nodes in event_graph |
+| Duration timer | ✅ Auto-generated | SetTimer + EndSymbiote CustomEvent in event_graph |
+| GA_ProximityStrike grant | ✅ Auto-generated | GiveAbility + TryActivateAbility in event_graph |
+| 3-Layer Guards | ✅ Auto-generated | NL-GUARD-IDENTITY L1 pattern (v5.0) |
+| EndAbility cleanup | ✅ Auto-generated | Event_EndAbility with bWasCancelled check |
 
 ---
 

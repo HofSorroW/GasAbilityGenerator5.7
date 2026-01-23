@@ -19,10 +19,11 @@
 | GE_EngineerState definition | ✅ Auto-generated | manifest.yaml gameplay_effects section |
 | GA_FatherEngineer blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
 | Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
-| Transition prelude nodes | ✅ Auto-generated | Remove old state GE, apply new state GE (in manifest) |
-| Deployment logic | ⚠️ Manual | Line trace, teleport, AI setup |
-| VFX spawning | ⚠️ Manual | GameplayCues preferred (Category C roadmap) |
-| EndAbility cleanup | ⚠️ Manual | State reset, turret mode removal |
+| Transition prelude nodes | ✅ Auto-generated | RemovePriorFormState + ApplyEngineerState in event_graph |
+| Deployment logic | ✅ Auto-generated | LineTrace, SetActorLocation, Run Behavior Tree in event_graph |
+| VFX spawning | ✅ Auto-generated | SpawnSystemAttached nodes in event_graph |
+| 3-Layer Guards | ✅ Auto-generated | NL-GUARD-IDENTITY L1 pattern (v5.0) |
+| EndAbility cleanup | ✅ Auto-generated | Event_EndAbility with bWasCancelled check |
 
 ---
 

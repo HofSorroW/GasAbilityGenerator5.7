@@ -19,10 +19,11 @@
 | GE_CrawlerState definition | ✅ Auto-generated | manifest.yaml gameplay_effects section |
 | GA_FatherCrawler blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
 | Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
-| Transition prelude nodes | ⚠️ Manual | Remove old state GE, apply new state GE |
-| Detach logic | ⚠️ Manual | DetachFromActor nodes |
-| VFX spawning | ⚠️ Manual | GameplayCues preferred (Category C roadmap) |
-| EndAbility cleanup | ⚠️ Manual | State reset, position update |
+| Transition prelude nodes | ✅ Auto-generated | RemovePriorFormState + ApplyNewState in event_graph |
+| Detach logic | ✅ Auto-generated | K2_DetachFromActor, SetActorLocation in event_graph |
+| VFX spawning | ✅ Auto-generated | SpawnSystemAttached nodes in event_graph |
+| 3-Layer Guards | ✅ Auto-generated | NL-GUARD-IDENTITY L1 pattern (v5.0) |
+| EndAbility cleanup | ✅ Auto-generated | Event_EndAbility with bWasCancelled check |
 
 ---
 

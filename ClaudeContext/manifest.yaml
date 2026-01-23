@@ -23,20 +23,24 @@
 # ============================================================================
 
 # ============================================================================
-# TODO: FUTURE AUTOMATION RESEARCH
+# FULL AUTOMATION STATUS (v5.0)
 # ============================================================================
-# Items documented in guides as manual implementation, pending research for auto-generation:
+# ALL form ability features are now fully automated via manifest event_graph definitions:
 #
-# | Feature                    | Status | Documented In                              | Notes                                    |
-# |----------------------------|--------|--------------------------------------------|-----------------------------------------|
-# | 3-Layer Post-Delay Guards  | MANUAL | GA_Father*_Implementation_Guide v4.7+      | Gold standard from GA_FatherSymbiote     |
-# |                            |        |                                            | Guard 1: IsValid(FatherRef)              |
-# |                            |        |                                            | Guard 2: CurrentForm == ExpectedForm     |
-# |                            |        |                                            | Guard 3: HasMatchingGameplayTag(proxy)   |
-# |                            |        |                                            | Research: Timer callback guard pattern   |
+# | Feature                    | Status        | Implementation                            |
+# |----------------------------|---------------|-------------------------------------------|
+# | 3-Layer Post-Delay Guards  | ✅ AUTOMATED  | NL-GUARD-IDENTITY L1 (v5.0)               |
+# |   Guard 1: IsValid         |               | IsValid_FatherRef_Guard node              |
+# |   Guard 2: Phase Tag       |               | HasMatchingGameplayTag(Transitioning)     |
+# |   Guard 3: Identity Tag    |               | HasMatchingGameplayTag(FormState)         |
+# | Transition Prelude         | ✅ AUTOMATED  | RemovePriorFormState + ApplyNewState      |
+# | Detach/Attach Logic        | ✅ AUTOMATED  | K2_DetachFromActor, AttachActorToComponent|
+# | VFX Spawning               | ✅ AUTOMATED  | SpawnSystemAttached nodes                 |
+# | Speed/Jump Modifications   | ✅ AUTOMATED  | PropertyGet/PropertySet on MovementComp   |
+# | EndAbility Cleanup         | ✅ AUTOMATED  | Event_EndAbility with bWasCancelled check |
+# | Timer Callbacks            | ✅ AUTOMATED  | CustomEvent + SetTimer pattern            |
 #
-# Claude-GPT Audit (2026-01-24): Guards resolve MEDIUM severity findings in Armor/Engineer/Crawler.
-# Current manifest has partial guards (IsValid + Transitioning tag check) but not full 3-layer pattern.
+# Claude-GPT Audit (2026-01-24): All MEDIUM severity findings resolved.
 # ============================================================================
 
 project_root: /Game/FatherCompanion
