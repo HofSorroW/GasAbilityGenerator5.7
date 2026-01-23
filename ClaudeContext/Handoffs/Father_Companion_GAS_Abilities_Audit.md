@@ -1,11 +1,13 @@
 # Father Companion GAS & Abilities Audit - Locked Decisions
-## Version 4.0 - January 2026
+## Version 5.0 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from dual-agent audits (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
-**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.26
+**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.29
 
-**v4.0 Updates:** ALL MANIFEST CHANGES COMPLETE. All 4 critical defects resolved. All First Activation paths fixed. All orphan effects removed. Document now serves as historical reference.
+**v5.0 Updates:** Added NOT LOCKED items audit (2026-01-24). Locked NL-GUARD-IDENTITY (L1). Validated bActivateAbilityOnGranted, AbilityTasks, EquippableItem patterns. Updated guard pattern documentation.
+
+**v4.0 Updates:** ALL MANIFEST CHANGES COMPLETE. All 4 critical defects resolved. All First Activation paths fixed. All orphan effects removed.
 
 **v3.0 Updates:** Merged Abilities_Audit_v1.md into this document. Added Rule 4 (First Activation), VTF-7 (CommitCooldown), VTF-8 (SetByCaller). Added Design Decisions section (1A-4). Added orphan GE removals.
 
@@ -17,11 +19,12 @@
 2. [Invulnerability Decision (INV-1)](#invulnerability-decision)
 3. [EndAbility Lifecycle Rules (Rule 1-4)](#endability-lifecycle-rules-canonical)
 4. [Validated Technical Findings (VTF-1 to VTF-8)](#validated-technical-findings)
-5. [Severity Matrix](#severity-matrix-locked)
-6. [Critical Defect Details](#critical-defect-details)
-7. [Design Decisions (Abilities Audit)](#design-decisions-abilities-audit-v10)
-8. [Implementation Strategy](#implementation-strategy-locked)
-9. [Gold Standard Reference](#ga_fathersymbiote--gold-standard-reference)
+5. [NOT LOCKED Items Audit (v5.0)](#not-locked-items-audit-v50)
+6. [Severity Matrix](#severity-matrix-locked)
+7. [Critical Defect Details](#critical-defect-details)
+8. [Design Decisions (Abilities Audit)](#design-decisions-abilities-audit-v10)
+9. [Implementation Strategy](#implementation-strategy-locked)
+10. [Gold Standard Reference](#ga_fathersymbiote--gold-standard-reference)
 
 ---
 
@@ -137,15 +140,24 @@ Event_Activate → Logic → CommitCooldown → K2_EndAbility
 - **Preferred (Track B):** WaitDelay AbilityTask (auto-cancels)
 - **Temporary (Track A):** Explicit guards after Delay node
 
-**Guard Pattern (3-layer):**
+**Guard Pattern (3-layer) - Updated v5.0:**
 ```
 After Delay:
   → IsValid(ActorRef) → Branch
-    True → CurrentForm == ExpectedForm → Branch
-      True → HasMatchingGameplayTag(ExpectedTag) → Branch
+    True → HasMatchingGameplayTag(Father.State.Transitioning) → Branch
+      True → HasMatchingGameplayTag(Effect.Father.FormState) → Branch
         True → [Execute post-delay logic]
-        False → Return (ability already ended)
+        False → Return (identity removed)
 ```
+
+**Guard Semantics (NL-GUARD-IDENTITY L1):**
+| Layer | Check | Detects |
+|-------|-------|---------|
+| 1 | IsValid(FatherRef) | Actor destroyed |
+| 2 | Father.State.Transitioning | Ability cancelled |
+| 3 | Effect.Father.FormState | External identity removal |
+
+**Note:** Previous pattern used `CurrentForm == ExpectedForm` (enum check). This was replaced with GAS tag check per audit finding that tags are the GAS truth source, not external enums.
 
 **Violation = race condition + corrupted state**
 
@@ -344,6 +356,154 @@ void UEquippableItem::ModifyEquipmentEffectSpec(FGameplayEffectSpec* Spec)
 **Implication:** Adding `SetByCaller.StaminaRegenRate` to an item would be useless unless the GE has a modifier that reads that tag.
 
 **Enforcement:** Design doc reference - ensure GE has matching modifier before using SetByCaller
+
+---
+
+## NOT LOCKED ITEMS AUDIT (v5.0)
+
+### Audit Context
+**Date:** 2026-01-24
+**Auditors:** Claude + GPT (dual-agent)
+**Method:** Challenge-based audit with evidence requirements
+
+### NL-AOG-1: bActivateAbilityOnGranted
+**Status:** VALIDATED (Narrative Pro Native)
+**Source:** NarrativeGameplayAbility.h:29, NarrativeGameplayAbility.cpp:19-26
+
+Narrative Pro explicitly supports auto-activation on grant:
+```cpp
+// NarrativeGameplayAbility.h:29
+UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Narrative Ability")
+bool bActivateAbilityOnGranted = false;
+
+// NarrativeGameplayAbility.cpp:19-26
+void UNarrativeGameplayAbility::OnAvatarSet(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec)
+{
+    Super::OnAvatarSet(ActorInfo, Spec);
+    if (bActivateAbilityOnGranted)
+    {
+        ActorInfo->AbilitySystemComponent->TryActivateAbility(Spec.Handle, false);
+    }
+}
+```
+
+**Rule Text:**
+> "Auto-activation-on-grant is permitted only for (a) setup abilities that end without waiting, or (b) abilities that follow the persistent-ability guard/cancel rules."
+
+---
+
+### NL-TASK-1: AbilityTasks for Async Waits
+**Status:** ALREADY IMPLEMENTED
+**Source:** manifest.yaml (all form abilities)
+
+All form abilities use `type: AbilityTaskWaitDelay` instead of raw Delay nodes:
+- GA_FatherCrawler: TransitionDelay (line 962)
+- GA_FatherArmor: TransitionDelay (line 1422)
+- GA_FatherExoskeleton: TransitionDelay (line 1973)
+- GA_FatherSymbiote: TransitionDelay (line 2592)
+- GA_FatherEngineer: TransitionDelay (line 3191)
+
+**Evidence:** Comments in manifest: "v4.15: WaitDelay auto-terminates with ability (Track B GAS Audit)"
+
+---
+
+### NL-EQUIP-1: EquippableItem GE Delivery
+**Status:** VALIDATED (Narrative Pro Native)
+**Source:** EquippableItem.h:107, EquippableItem.cpp:35-41, 73-81
+
+Narrative Pro equipment system uses GE-based stat delivery:
+```cpp
+// EquippableItem.h:107
+TSubclassOf<UGameplayEffect> EquipmentEffect;
+
+// EquippableItem.cpp:73-81
+void UEquippableItem::HandleEquip_Implementation()
+{
+    if (ANarrativeCharacter* CharacterOwner = GetOwningNarrativeCharacter())
+    {
+        AbilityHandles = CharacterOwner->GrantAbilities(EquipmentAbilities, this);
+        ApplyEquipmentAttributes();  // Applies EquipmentEffect GE
+    }
+}
+```
+
+**Rule Text:**
+> "All long-lived stat changes must be delivered via GameplayEffects applied by Narrative inventory/equipment, not by transient ability graph logic."
+
+---
+
+### NL-GUARD-IDENTITY (L1): Post-Delay Identity Guard
+**Status:** LOCKED
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Consensus:** Both auditors agreed
+
+**Rule Text:**
+> "After async wait in form transition completion, validate:
+> (1) actor valid (IsValid check),
+> (2) Father.State.Transitioning present (phase/liveness check),
+> (3) Effect.Father.FormState tag hierarchy present (identity check)."
+
+**Evidence:**
+
+| Guard Layer | Purpose | Failure Mode Detected |
+|-------------|---------|----------------------|
+| IsValid(FatherRef) | Actor exists | Father destroyed during delay |
+| Father.State.Transitioning | Ability not cancelled | EndAbility removed tag |
+| Effect.Father.FormState | Form identity intact | External GE removal |
+
+**Implementation Notes:**
+- Guards execute BEFORE form state swap (old identity still present)
+- Check parent tag `Effect.Father.FormState` (not specific form)
+- All form abilities blocked by `Father.State.Transitioning` in activation_blocked_tags
+
+**Current Manifest Status:**
+- Guards 1 & 2: Implemented (manifest.yaml)
+- Guard 3: TODO for automation research
+
+---
+
+### NL-GUARD-IDENTITY (L2): Prior Form Tag Check
+**Status:** DEFERRED
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Reason:** Architecturally unreachable edge case
+
+**What it would check:** `Effect.Father.FormState.<ExpectedPriorForm>` (specific form, not parent)
+
+**Why deferred:**
+1. Requires capturing prior form identity at activation time
+2. Edge case (external mid-transition form manipulation) is blocked by `Father.State.Transitioning`
+3. Implementation cost exceeds defense value in current architecture
+
+**Future consideration:** If architecture changes to allow external identity mutation mid-transition, revisit L2.
+
+---
+
+### Form State Architecture (Option B) - REVALIDATED
+**Status:** VALIDATED
+**Source:** GasAbilityGeneratorTypes.h:907-919
+
+Form identity delivered via GE_*State effects that grant identity tags:
+```cpp
+// GasAbilityGeneratorTypes.h:913
+GE.GrantedTags.Add(FString::Printf(TEXT("Effect.Father.FormState.%s"), *Form));
+```
+
+**Identity Tags (GAS Truth Source):**
+| Form | GE | Identity Tag |
+|------|-----|--------------|
+| Crawler | GE_CrawlerState | Effect.Father.FormState.Crawler |
+| Armor | GE_ArmorState | Effect.Father.FormState.Armor |
+| Exoskeleton | GE_ExoskeletonState | Effect.Father.FormState.Exoskeleton |
+| Symbiote | GE_SymbioteState | Effect.Father.FormState.Symbiote |
+| Engineer | GE_EngineerState | Effect.Father.FormState.Engineer |
+
+**Transition Flow:**
+1. Add `Father.State.Transitioning` (blocks other form abilities)
+2. Wait 5s (AbilityTaskWaitDelay)
+3. Guards validate state
+4. `BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState)` - removes prior
+5. `BP_ApplyGameplayEffectToOwner(GE_*State)` - applies new
+6. Remove `Father.State.Transitioning`
 
 ---
 
@@ -648,24 +808,26 @@ Enhanced GasAbilityGenerator to support AbilityTask nodes:
 
 ## GA_FatherSymbiote — GOLD STANDARD REFERENCE
 
-### 3-Layer Guard Pattern (lines 2348-2400)
+### 3-Layer Guard Pattern (NL-GUARD-IDENTITY L1)
 
 ```yaml
 # Guard 1: Validate FatherRef
-- id: Branch_FatherValid
+- id: Branch_FatherValid_Guard
   type: Branch
   # Condition: IsValid(FatherRef)
 
-# Guard 2: Check CurrentForm == Symbiote
-- id: Branch_FormCheck
+# Guard 2: Check Father.State.Transitioning (phase/liveness)
+- id: Branch_TransitioningTag_Guard
   type: Branch
-  # Condition: CurrentForm == E_FatherForm::Symbiote
+  # Condition: HasMatchingGameplayTag(Father.State.Transitioning)
 
-# Guard 3: Check Symbiote.State.Merged tag
-- id: Branch_MergedTag
+# Guard 3: Check Effect.Father.FormState (identity) - TODO for automation
+- id: Branch_FormState_Guard
   type: Branch
-  # Condition: HasMatchingGameplayTag(Symbiote.State.Merged)
+  # Condition: HasMatchingGameplayTag(Effect.Father.FormState)
 ```
+
+**Note (v5.0):** Previous pattern used `CurrentForm == Symbiote` enum check. Updated to use GAS tag checks per NL-GUARD-IDENTITY audit finding. Enum checks are outside GAS truth source and can desync.
 
 ### Event_EndAbility Handler (lines 2435-2490)
 
@@ -792,9 +954,10 @@ Current pattern:
 | 4.0 | 2026-01-23 | **ALL MANIFEST CHANGES COMPLETE.** Verified all 4 critical defects resolved (CRIT-1 to CRIT-4). Verified all First Activation paths fixed (5 form abilities). Verified CommitCooldown added to GA_FatherSymbiote. Verified orphan effects removed. Updated severity matrix to show all resolved. Document now serves as historical reference for audit decisions. |
 | 4.1 | 2026-01-23 | **DUAL-AGENT AUDIT VERIFICATION.** Claude-GPT audit verified all document claims against manifest.yaml. All content correct (line numbers stale but non-blocking). Audit grade: PASS. Options deferred: Hard Freeze, Enforcement Layer, External Snapshot - none currently needed. |
 | 4.2 | 2026-01-23 | Added **KNOWN LIMITATIONS** section (v4.27). Documented LIM-1: Automatic dome burst on form exit cannot be automated due to C++-only functions and TSubclassOf parameter limitations. |
+| 5.0 | 2026-01-24 | **NOT LOCKED ITEMS AUDIT.** Claude-GPT dual audit of 4 NOT LOCKED items. Locked NL-GUARD-IDENTITY (L1) - 3-layer guard with GAS tag checks. Validated bActivateAbilityOnGranted (Narrative Pro native). Validated AbilityTasks (already implemented). Validated EquippableItem GE delivery. Deferred NL-GUARD-IDENTITY (L2) - prior form tag check not needed in current architecture. Updated Rule 2 guard pattern to use tag checks instead of enum. Updated gold standard reference. |
 
 ---
 
 **END OF LOCKED DECISIONS DOCUMENT**
 
-**STATUS: VERIFIED** - All audit findings implemented (v4.26) and verified by Claude-GPT dual audit (2026-01-23).
+**STATUS: VERIFIED** - All audit findings implemented (v4.29) and verified by Claude-GPT dual audit (2026-01-24). NL-GUARD-IDENTITY (L1) locked. Guard 3 (identity tag) pending automation research.
