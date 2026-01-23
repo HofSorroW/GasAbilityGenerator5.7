@@ -9,7 +9,7 @@
 This guide follows values defined in **manifest.yaml** (single source of truth). If any discrepancy exists between this guide and manifest.yaml, the manifest takes precedence.
 
 **Key references:**
-- `manifest.yaml` lines 4061-4100: GA_DomeBurst definition
+- `manifest.yaml` lines 3915-3955: GA_DomeBurst definition
 - `manifest.yaml` lines 626-631: GE_DomeBurstCooldown definition
 
 ---
@@ -34,7 +34,7 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 |-------|-------|
 | Last Audit Date | 2026-01-23 |
 | Audit Type | Claude-GPT Dual Audit |
-| Manifest Alignment | Verified |
+| Manifest Alignment | Verified (v4.27: GA_DomeBurst reordered, EndAbility trigger) |
 | INC Items Fixed | INC-A through INC-J (10 items) |
 
 ---
@@ -91,7 +91,7 @@ GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dom
 | 5a | If Energy < 500: Continue Charging |
 | 5b | If Energy = 500: Father.Dome.FullyCharged tag granted |
 | 6 | If Player Presses Q with FullyCharged: Manual Burst |
-| 7 | If Player Switches Form with FullyCharged: Form Exit Burst |
+| 7 | If Player Switches Form with FullyCharged: Form Exit Burst (via GA_ProtectiveDome.EndAbility) |
 
 ### **Technical Specifications**
 
@@ -648,6 +648,26 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
    - 5.1.1) Click Compile button
    - 5.1.2) Click Save button
 
+### **6) Form Exit Burst (via EndAbility)**
+
+Form exit burst is triggered when GA_ProtectiveDome ends (due to form switch). This is implemented in GA_ProtectiveDome's Event OnEndAbility, not in this ability.
+
+**Implementation in GA_ProtectiveDome.EndAbility (v4.27):**
+
+| Step | Action |
+|------|--------|
+| 1 | Event OnEndAbility fires when dome ends |
+| 2 | TryActivateAbilityByClass(GA_DomeBurst) attempts burst |
+| 3 | If Father.Dome.FullyCharged tag present: burst succeeds |
+| 4 | If tag absent: burst fails silently (no energy wasted) |
+| 5 | Clear Father.Dome.FullyCharged tag (MakeGameplayTagContainerFromTag + RemoveLooseGameplayTags) |
+
+**Why EndAbility instead of HandleUnequip:**
+- GA_ProtectiveDome has direct access to Player ASC
+- No need for equipment item Blueprint override
+- Cleaner separation of concerns (ability handles ability logic)
+- Works with both Q key cancel and T wheel form switch
+
 ---
 
 ## **PHASE 6: ABILITY GRANTING VIA EQUIPMENT**
@@ -752,8 +772,8 @@ If creating assets manually without the generator:
 
 | Change Type | Description |
 |-------------|-------------|
-| Decision 22 | Form exit burst via TryActivateAbilityByClass(GA_DomeBurst) in HandleUnequip |
-| Decision 23 | EI_FatherArmorForm.HandleUnequip override triggers form exit burst |
+| Decision 22 | Form exit burst via TryActivateAbilityByClass(GA_DomeBurst) in GA_ProtectiveDome.EndAbility |
+| Decision 23 | GA_ProtectiveDome.EndAbility clears Father.Dome.FullyCharged tag after burst attempt |
 | Decision 24 | Father.Dome.FullyCharged added to activation_required_tags |
 | Manual Burst | Changed from min 50 energy to FULL (500) only |
 | Auto-burst | DISABLED - no automatic threshold burst |
@@ -962,13 +982,13 @@ If creating assets manually without the generator:
 | Mode | Trigger | Energy Required |
 |------|---------|-----------------|
 | Manual | Q Key | 500 (FULL) |
-| Form Exit | T Wheel | 500 (FULL) |
+| Form Exit | T Wheel (via GA_ProtectiveDome.EndAbility) | 500 (FULL) |
 
 ### **Burst Flow Summary**
 
 | Step | Action |
 |------|--------|
-| 1 | Q Key Pressed OR Form Exit Trigger |
+| 1 | Q Key Pressed OR Form Exit (GA_ProtectiveDome.EndAbility calls TryActivateAbilityByClass) |
 | 2 | Validate Dome Active AND FullyCharged tags |
 | 3 | Sphere Overlap (500 radius) |
 | 4 | For Each Enemy with Character.Enemy tag |

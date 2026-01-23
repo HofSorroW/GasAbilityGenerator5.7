@@ -804,8 +804,23 @@
 ##### **25.6.1) Add Event EndAbility**
 25.6.1.1) Right-click -> Event EndAbility
 
+##### **25.6.1A) Try Activate Dome Burst (v4.27 Form Exit Burst)**
+25.6.1A.1) From event execution:
+   - 25.6.1A.1.1) Drag from PlayerASC variable (validate first if needed)
+   - 25.6.1A.1.2) Add: Try Activate Ability By Class node
+   - 25.6.1A.1.3) Ability Class: GA_DomeBurst
+   - 25.6.1A.1.4) Allow Remote Activation: false
+25.6.1A.2) **Note:** GA_DomeBurst has activation_required_tags including Father.Dome.FullyCharged
+25.6.1A.3) **Note:** This will only succeed if dome was fully charged when form ended
+
+##### **25.6.1B) Clear FullyCharged Tag**
+25.6.1B.1) From Try Activate execution:
+   - 25.6.1B.1.1) Drag from PlayerRef variable
+   - 25.6.1B.1.2) Add: Remove Loose Gameplay Tags node
+   - 25.6.1B.1.3) Tag Container: Father.Dome.FullyCharged
+
 ##### **25.6.2) Set Monitoring Flag False**
-25.6.2.1) From event:
+25.6.2.1) From Remove Loose Gameplay Tags:
    - 25.6.2.1.1) Add: Set IsMonitoring node
    - 25.6.2.1.2) Value: Unchecked (false)
 
@@ -1374,17 +1389,19 @@ Dome abilities are granted via EI_FatherArmorForm equipment:
 - Equipment system handles automatic grant/remove on equip/unequip
 - No manual handle tracking in GA_FatherArmor required
 
-### **Form Exit Burst (Decisions 22-24)**
+### **Form Exit Burst (Decisions 22-24) - v4.27 Implementation**
 
 When player switches forms via T wheel with full dome energy:
 1. Player selects new form from T wheel
-2. EI_FatherArmorForm.HandleUnequip override fires
-3. If Father.Dome.FullyCharged AND NOT Cooldown.Father.DomeBurst:
-   - TryActivateAbilityByClass(GA_DomeBurst) triggers burst
-4. Parent HandleUnequip called (removes abilities including GA_DomeBurst)
-5. New form's equipment item is equipped
+2. Equipment system unequips EI_FatherArmorForm
+3. GA_ProtectiveDome ends (ability removed by equipment system)
+4. GA_ProtectiveDome.EndAbility fires:
+   - TryActivateAbilityByClass(GA_DomeBurst) on Player ASC
+   - GA_DomeBurst has activation_required_tags: Father.Dome.FullyCharged
+   - Burst only fires if dome was fully charged (tag still present at EndAbility)
+5. EndAbility continues: clears Father.Dome.FullyCharged tag, removes GE_DomeAbsorption
 
-**Note:** Burst during form exit is blocked if on cooldown. Energy resets to 0 regardless.
+**Note:** HandleUnequip approach was abandoned (GetEquipmentComponent is C++ only). EndAbility on GA_ProtectiveDome achieves the same result with proper GAS lifecycle.
 
 ### **Form Cancellation Chain (Legacy)**
 
