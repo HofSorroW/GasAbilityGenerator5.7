@@ -1,6 +1,16 @@
 # Father Companion - GA_DomeBurst Implementation Guide
-## VERSION 2.8 - Form State Tag Update (INV-1 Compliant)
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## VERSION 2.9 - Multi-Document Audit Corrections
+## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
+
+---
+
+## **AUTHORITY NOTE**
+
+This guide follows values defined in **manifest.yaml** (single source of truth). If any discrepancy exists between this guide and manifest.yaml, the manifest takes precedence.
+
+**Key references:**
+- `manifest.yaml` lines 4061-4100: GA_DomeBurst definition
+- `manifest.yaml` lines 626-631: GE_DomeBurstCooldown definition
 
 ---
 
@@ -13,8 +23,19 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Armor |
 | Input | Q Key (Manual) or Auto (When Dome Full) |
-| Version | 2.8 |
+| Version | 2.9 |
 | Last Updated | January 2026 |
+
+---
+
+## **AUDIT STATUS**
+
+| Field | Value |
+|-------|-------|
+| Last Audit Date | 2026-01-23 |
+| Audit Type | Claude-GPT Dual Audit |
+| Manifest Alignment | Verified |
+| INC Items Fixed | INC-A through INC-J (10 items) |
 
 ---
 
@@ -27,7 +48,7 @@
 5. [PHASE 3: Create GA_DomeBurst Ability](#phase-3-create-ga_domeburst-ability)
 6. [PHASE 4: Implement Manual Burst Logic](#phase-4-implement-manual-burst-logic)
 7. [PHASE 5: Implement Auto-Burst Integration](#phase-5-implement-auto-burst-integration)
-8. [PHASE 6: Grant Ability to Player](#phase-6-grant-ability-to-player)
+8. [PHASE 6: Ability Granting via Equipment](#phase-6-ability-granting-via-equipment)
 9. [PHASE 7: Input Configuration](#phase-7-input-configuration)
 10. [Changelog](#changelog)
 11. [Quick Reference](#quick-reference)
@@ -38,18 +59,18 @@
 
 ### **Ability Overview**
 
-GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dome system. When the father is attached as armor, it absorbs incoming damage and stores it as Dome Energy. GA_DomeBurst triggers in two ways: automatically when the dome reaches maximum energy (500 absorbed), or manually when the player presses Q to release early. The burst deals AOE damage based on current energy and knocks back all nearby enemies.
+GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dome system. When the father is attached as armor, it absorbs incoming damage and stores it as Dome Energy. GA_DomeBurst triggers in two ways: automatically when the dome reaches maximum energy (500 absorbed), or manually when the player presses Q to release early. The burst deals flat AOE damage and knocks back all nearby enemies.
 
 ### **Key Features**
 
 | Feature | Description |
 |---------|-------------|
 | Dual Activation | Manual (Q key) or Automatic (threshold) |
-| Energy-Based Damage | Damage scales with absorbed energy |
+| Flat Damage | 75 damage to all enemies in radius |
 | AOE Explosion | 500 unit radius centered on player |
 | Knockback Effect | Pushes enemies away from player |
-| Cooldown System | 20 seconds after burst before recharge |
-| Form Specific | Only available in Armor form |
+| Cooldown System | 12 seconds after burst before recharge |
+| Form Specific | Only available in Armor form (via equipment granting) |
 | NarrativeDamageExecCalc | Proper damage pipeline with armor/attack rating |
 
 ### **Activation Modes**
@@ -75,22 +96,11 @@ GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dom
 
 | Parameter | Value |
 |-----------|-------|
-| Base Damage | 150 |
-| Damage Scaling | +0.3 per energy (max +150) |
-| Max Damage | 300 (at 500 energy) |
+| Burst Damage | 75 (flat) |
 | Burst Radius | 500 units |
 | Knockback Force | 1000 units |
-| Cooldown | 20 seconds |
+| Cooldown | 12 seconds |
 | Min Energy for Manual | 50 |
-
-### **Damage Formula**
-
-| Energy Level | Calculation | Result |
-|--------------|-------------|--------|
-| 50 Energy | 150 + (50 x 0.3) | 165 damage |
-| 100 Energy | 150 + (100 x 0.3) | 180 damage |
-| 250 Energy | 150 + (250 x 0.3) | 225 damage |
-| 500 Energy | 150 + (500 x 0.3) | 300 damage (max) |
 
 ### **Damage Pipeline**
 
@@ -112,8 +122,8 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | Requirement | Description |
 |-------------|-------------|
 | BP_FatherCompanion | Father with NarrativeNPCCharacter parent |
-| GA_FatherArmor | Armor form activation ability |
-| GA_DomeManager | Dome absorption management ability |
+| EI_FatherArmorForm | Armor form equipment item (grants GA_DomeBurst) |
+| GA_ProtectiveDome | Dome activation ability (grants Father.Dome.Active) |
 | AS_DomeAttributes | Dome attributes (DomeEnergy, MaxDomeEnergy) |
 | Player ASC | Player has NarrativeAbilitySystemComponent |
 
@@ -128,10 +138,9 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 | Tag | Purpose |
 |-----|---------|
-| Effect.Father.FormState.Armor | Form identity tag (granted by GE_ArmorState, used for Activation Required) |
-| Father.Dome.Active | Dome system running |
-| Father.Dome.Charging | Dome absorbing damage |
-| Father.State.Recruited | Father recruited by player |
+| Father.Dome.Active | Dome system running (on Player ASC, granted by GA_ProtectiveDome) |
+
+**Note:** Form identity validation is handled by equipment granting - GA_DomeBurst is only granted when EI_FatherArmorForm is equipped.
 
 ---
 
@@ -143,11 +152,11 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 |----------|---------|
 | Father.Dome.FullyCharged | Dome at maximum energy, ready for auto-burst |
 | Father.Dome.OnCooldown | Dome burst on cooldown, cannot charge |
-| Ability.Father.Armor.DomeBurst | Armor dome AOE explosion ability |
-| Father.State.Bursting | Dome burst ability executing |
+| Ability.Father.DomeBurst | Dome AOE explosion ability |
+| Father.State.Attacking | Burst ability executing (owned tag during activation) |
 | Effect.Father.DomeBurst | Damage from dome burst explosion |
 | Effect.Father.DomeBurstKnockback | Knockback from dome burst |
-| Cooldown.Father.Armor.DomeBurst | Cooldown after dome burst |
+| Cooldown.Father.DomeBurst | Cooldown after dome burst |
 | Data.Damage.DomeBurst | SetByCaller tag for dome burst damage |
 
 ---
@@ -199,9 +208,9 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 |----------|-------|
 | Duration Policy | Has Duration |
 | Duration Magnitude -> Magnitude Calculation Type | Scalable Float |
-| Duration Magnitude -> Scalable Float Magnitude -> Value | 20.0 |
+| Duration Magnitude -> Scalable Float Magnitude -> Value | 12.0 |
 | Components | Grant Tags to Target Actor |
-| Add Tags -> Add to Inherited [0] | Cooldown.Father.Armor.DomeBurst |
+| Add Tags -> Add to Inherited [0] | Cooldown.Father.DomeBurst |
 | Add Tags -> Add to Inherited [1] | Father.Dome.OnCooldown |
 
 #### 3.3) Compile and Save
@@ -259,10 +268,10 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 | Property | Tags |
 |----------|------|
-| Ability Tags | Ability.Father.Armor.DomeBurst |
-| Activation Required Tags | Effect.Father.FormState.Armor, Father.Dome.Active, Father.State.Recruited |
-| Activation Owned Tags | Father.State.Bursting |
-| Activation Blocked Tags | Cooldown.Father.Armor.DomeBurst, Father.State.Bursting |
+| Ability Tags | Ability.Father.DomeBurst |
+| Activation Required Tags | Father.Dome.Active |
+| Activation Owned Tags | Father.State.Attacking |
+| Activation Blocked Tags | Cooldown.Father.DomeBurst |
 
 ### **5) Configure Replication Settings**
 
@@ -307,15 +316,12 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| BaseDamage | Float | 150.0 | Yes |
-| DamageScaling | Float | 0.3 | Yes |
+| BurstDamage | Float | 75.0 | Yes |
 | BurstRadius | Float | 500.0 | Yes |
 | KnockbackForce | Float | 1000.0 | Yes |
 | MinEnergyForManual | Float | 50.0 | Yes |
 | PlayerRef | Actor (Object Reference) | None | No |
 | PlayerASC | NarrativeAbilitySystemComponent (Object Reference) | None | No |
-| CurrentDomeEnergy | Float | 0.0 | No |
-| CalculatedDamage | Float | 0.0 | No |
 
 ### **2) Implement ActivateAbility Event**
 
@@ -391,10 +397,10 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
    - 4.1.2) Configure:
       - 4.1.2.1) Attribute: `AS_DomeAttributes.DomeEnergy`
 
-#### 4.2) Store Energy Value
-   - 4.2.1) From Branch True execution pin:
-      - 4.2.1.1) Add Set CurrentDomeEnergy node
-   - 4.2.2) Connect Get Numeric Attribute Current Value pin to CurrentDomeEnergy value pin
+#### 4.2) Promote to Local Variable
+   - 4.2.1) From Get Numeric Attribute Current Value pin:
+      - 4.2.1.1) Right-click and select Promote to Local Variable
+      - 4.2.1.2) Name: `CurrentDomeEnergy`
 
 ### **5) Validate Minimum Energy (Manual Burst)**
 
@@ -405,241 +411,199 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
       - 5.1.2.2) MinEnergyForManual getter to second input (B)
 
 #### 5.2) Branch on Energy Check
-   - 5.2.1) From Set CurrentDomeEnergy execution pin:
+   - 5.2.1) From Get Numeric Attribute execution pin:
       - 5.2.1.1) Add Branch node
    - 5.2.2) Connect comparison Return Value to Condition pin
    - 5.2.3) From Branch False execution pin:
       - 5.2.3.1) Add End Ability node
       - 5.2.3.2) Was Cancelled: Checked (true)
 
-### **6) Calculate Burst Damage**
+### **6) Find Enemies in Radius**
 
-#### 6.1) Calculate Scaled Damage
-   - 6.1.1) Add Float * Float (Multiply) node
-   - 6.1.2) Connect:
-      - 6.1.2.1) CurrentDomeEnergy getter to first input (A)
-      - 6.1.2.2) DamageScaling getter to second input (B)
+#### 6.1) Get Player Location
+   - 6.1.1) From PlayerRef getter:
+      - 6.1.1.1) Drag outward and search: `Get Actor Location`
+      - 6.1.1.2) Add Get Actor Location node
 
-#### 6.2) Add Base Damage
-   - 6.2.1) Add Float + Float (Add) node
-   - 6.2.2) Connect:
-      - 6.2.2.1) BaseDamage getter to first input (A)
-      - 6.2.2.2) Multiply Return Value to second input (B)
+#### 6.2) Sphere Overlap for Actors
+   - 6.2.1) From Branch True execution pin:
+      - 6.2.1.1) Drag outward and search: `Sphere Overlap Actors`
+      - 6.2.1.2) Add Sphere Overlap Actors node
+   - 6.2.2) Connect execution pin
+   - 6.2.3) Configure:
+      - 6.2.3.1) **World Context Object**: Right-click on pin, select **Get a Reference to Self**
+      - 6.2.3.2) **Sphere Pos**: Connect Get Actor Location Return Value
+      - 6.2.3.3) **Sphere Radius**: Connect BurstRadius getter
+      - 6.2.3.4) **Object Types**: Add `Pawn`
+      - 6.2.3.5) **Actors to Ignore**: Create Make Array with PlayerRef
 
-#### 6.3) Store Calculated Damage
-   - 6.3.1) From Branch True execution pin:
-      - 6.3.1.1) Add Set CalculatedDamage node
-   - 6.3.2) Connect Add Return Value to CalculatedDamage value pin
+### **7) Apply Damage to Each Enemy**
 
-### **7) Find Enemies in Radius**
+#### 7.1) Create ForEach Loop
+   - 7.1.1) From Sphere Overlap Actors execution pin:
+      - 7.1.1.1) Drag outward and search: `For Each Loop`
+      - 7.1.1.2) Add For Each Loop node
+   - 7.1.2) Connect Out Actors pin to ForEach Array pin
 
-#### 7.1) Get Player Location
-   - 7.1.1) From PlayerRef getter:
-      - 7.1.1.1) Drag outward and search: `Get Actor Location`
-      - 7.1.1.2) Add Get Actor Location node
-
-#### 7.2) Sphere Overlap for Actors
-   - 7.2.1) From Set CalculatedDamage execution pin:
-      - 7.2.1.1) Drag outward and search: `Sphere Overlap Actors`
-      - 7.2.1.2) Add Sphere Overlap Actors node
-   - 7.2.2) Connect execution pin
+#### 7.2) Filter Enemies Only
+   - 7.2.1) From ForEach Loop Body execution pin:
+      - 7.2.1.1) From Array Element pin, drag outward
+      - 7.2.1.2) Search: `Get Ability System Component`
+      - 7.2.1.3) Add Get Ability System Component node
+   - 7.2.2) From enemy ASC Return Value:
+      - 7.2.2.1) Drag outward and search: `Has Matching Gameplay Tag`
+      - 7.2.2.2) Add Has Matching Gameplay Tag node
    - 7.2.3) Configure:
-      - 7.2.3.1) **World Context Object**: Right-click on pin, select **Get a Reference to Self**
-      - 7.2.3.2) **Sphere Pos**: Connect Get Actor Location Return Value
-      - 7.2.3.3) **Sphere Radius**: Connect BurstRadius getter
-      - 7.2.3.4) **Object Types**: Add `Pawn`
-      - 7.2.3.5) **Actors to Ignore**: Create Make Array with PlayerRef
+      - 7.2.3.1) Tag to Check: `Character.Enemy`
 
-### **8) Apply Damage to Each Enemy**
+#### 7.3) Branch on Enemy Check
+   - 7.3.1) Add Branch node
+   - 7.3.2) Connect Has Matching Gameplay Tag Return Value to Condition pin
+   - 7.3.3) From Branch False execution pin: Leave unconnected (continues to next iteration)
 
-#### 8.1) Create ForEach Loop
-   - 8.1.1) From Sphere Overlap Actors execution pin:
-      - 8.1.1.1) Drag outward and search: `For Each Loop`
-      - 8.1.1.2) Add For Each Loop node
-   - 8.1.2) Connect Out Actors pin to ForEach Array pin
+#### 7.4) Create Damage Effect Spec
+   - 7.4.1) From Branch True execution pin:
+      - 7.4.1.1) Drag from PlayerASC variable
+      - 7.4.1.2) Search: `Make Outgoing Spec`
+      - 7.4.1.3) Add Make Outgoing Spec node
+   - 7.4.2) Configure:
+      - 7.4.2.1) Gameplay Effect Class: `GE_DomeBurstDamage`
+      - 7.4.2.2) Level: `1.0`
 
-#### 8.2) Filter Enemies Only
-   - 8.2.1) From ForEach Loop Body execution pin:
-      - 8.2.1.1) From Array Element pin, drag outward
-      - 8.2.1.2) Search: `Get Ability System Component`
-      - 8.2.1.3) Add Get Ability System Component node
-   - 8.2.2) From enemy ASC Return Value:
-      - 8.2.2.1) Drag outward and search: `Has Matching Gameplay Tag`
-      - 8.2.2.2) Add Has Matching Gameplay Tag node
-   - 8.2.3) Configure:
-      - 8.2.3.1) Tag to Check: `Character.Enemy`
+#### 7.5) Assign Set By Caller Magnitude
+   - 7.5.1) From Make Outgoing Spec Return Value pin:
+      - 7.5.1.1) Drag outward and search: `Assign Tag Set By Caller Magnitude`
+      - 7.5.1.2) Add Assign Tag Set By Caller Magnitude node
+   - 7.5.2) Configure:
+      - 7.5.2.1) Data Tag: `Data.Damage.DomeBurst`
+      - 7.5.2.2) Magnitude: Connect BurstDamage getter (flat 75)
 
-#### 8.3) Branch on Enemy Check
-   - 8.3.1) Add Branch node
-   - 8.3.2) Connect Has Matching Gameplay Tag Return Value to Condition pin
-   - 8.3.3) From Branch False execution pin: Leave unconnected (continues to next iteration)
+#### 7.6) Apply Effect to Enemy
+   - 7.6.1) From Assign Tag Set By Caller Magnitude execution pin:
+      - 7.6.1.1) Drag outward and search: `Apply Gameplay Effect Spec to Target`
+      - 7.6.1.2) Add Apply Gameplay Effect Spec to Target node
+   - 7.6.2) Connect:
+      - 7.6.2.1) Execution from Assign Tag node
+      - 7.6.2.2) **Target** pin: Connect enemy ASC (from Get Ability System Component in step 7.2.1)
+      - 7.6.2.3) **Spec Handle** pin: Connect Assign Tag Return Value
 
-#### 8.4) Create Damage Effect Spec
-   - 8.4.1) From Branch True execution pin:
-      - 8.4.1.1) Drag from PlayerASC variable
-      - 8.4.1.2) Search: `Make Outgoing Spec`
-      - 8.4.1.3) Add Make Outgoing Spec node
-   - 8.4.2) Configure:
-      - 8.4.2.1) Gameplay Effect Class: `GE_DomeBurstDamage`
-      - 8.4.2.2) Level: `1.0`
+### **8) Apply Knockback**
 
-#### 8.5) Assign Set By Caller Magnitude
-   - 8.5.1) From Make Outgoing Spec Return Value pin:
-      - 8.5.1.1) Drag outward and search: `Assign Tag Set By Caller Magnitude`
-      - 8.5.1.2) Add Assign Tag Set By Caller Magnitude node
-   - 8.5.2) Configure:
-      - 8.5.2.1) Data Tag: `Data.Damage.DomeBurst`
-      - 8.5.2.2) Magnitude: Connect CalculatedDamage getter
+#### 8.1) Calculate Knockback Direction
+   - 8.1.1) From Array Element (enemy):
+      - 8.1.1.1) Drag outward and search: `Get Actor Location`
+      - 8.1.1.2) Add Get Actor Location node
+   - 8.1.2) Add Vector - Vector (Subtract) node
+   - 8.1.3) Connect:
+      - 8.1.3.1) Enemy Location to A pin
+      - 8.1.3.2) Player Location to B pin
 
-#### 8.6) Apply Effect to Enemy
-   - 8.6.1) From Assign Tag Set By Caller Magnitude execution pin:
-      - 8.6.1.1) Drag outward and search: `Apply Gameplay Effect Spec to Target`
-      - 8.6.1.2) Add Apply Gameplay Effect Spec to Target node
-   - 8.6.2) Connect:
-      - 8.6.2.1) Execution from Assign Tag node
-      - 8.6.2.2) **Target** pin: Connect enemy ASC (from Get Ability System Component in step 8.2.1)
-      - 8.6.2.3) **Spec Handle** pin: Connect Assign Tag Return Value
+#### 8.2) Normalize Direction
+   - 8.2.1) From Subtract Return Value:
+      - 8.2.1.1) Drag outward and search: `Normalize`
+      - 8.2.1.2) Add Normalize node
 
-### **9) Apply Knockback**
+#### 8.3) Scale by Knockback Force
+   - 8.3.1) Add Vector * Float (Multiply) node
+   - 8.3.2) Connect:
+      - 8.3.2.1) Normalize Return Value to Vector pin
+      - 8.3.2.2) KnockbackForce getter to Float pin
 
-#### 9.1) Calculate Knockback Direction
-   - 9.1.1) From Array Element (enemy):
-      - 9.1.1.1) Drag outward and search: `Get Actor Location`
-      - 9.1.1.2) Add Get Actor Location node
-   - 9.1.2) Add Vector - Vector (Subtract) node
-   - 9.1.3) Connect:
-      - 9.1.3.1) Enemy Location to A pin
-      - 9.1.3.2) Player Location to B pin
+#### 8.4) Cast to Character (Required)
+   - 8.4.1) From Array Element:
+      - 8.4.1.1) Drag outward and search: `Cast To Character`
+      - 8.4.1.2) Add Cast To Character node
+   - 8.4.2) Array Element is AActor* but Launch Character requires ACharacter*
 
-#### 9.2) Normalize Direction
-   - 9.2.1) From Subtract Return Value:
-      - 9.2.1.1) Drag outward and search: `Normalize`
-      - 9.2.1.2) Add Normalize node
+#### 8.5) Launch Character
+   - 8.5.1) From Apply Gameplay Effect Spec execution pin:
+      - 8.5.1.1) Connect to Cast To Character execution input
+   - 8.5.2) From Cast success execution pin:
+      - 8.5.2.1) From **As Character** pin, drag outward
+      - 8.5.2.2) Search: `Launch Character`
+      - 8.5.2.3) Add Launch Character node
+   - 8.5.3) Configure:
+      - 8.5.3.1) **Target**: Connect **As Character** pin from Cast node
+      - 8.5.3.2) **Launch Velocity**: Connect scaled knockback vector (Multiply Return Value)
+      - 8.5.3.3) **XY Override**: Unchecked
+      - 8.5.3.4) **Z Override**: Unchecked
 
-#### 9.3) Scale by Knockback Force
-   - 9.3.1) Add Vector * Float (Multiply) node
-   - 9.3.2) Connect:
-      - 9.3.2.1) Normalize Return Value to Vector pin
-      - 9.3.2.2) KnockbackForce getter to Float pin
+### **9) Spawn Burst Visual Effect**
 
-#### 9.4) Cast to Character (Required)
-   - 9.4.1) From Array Element:
-      - 9.4.1.1) Drag outward and search: `Cast To Character`
-      - 9.4.1.2) Add Cast To Character node
-   - 9.4.2) Array Element is AActor* but Launch Character requires ACharacter*
+#### 9.1) Spawn Niagara System
+   - 9.1.1) From ForEach Loop Completed execution pin:
+      - 9.1.1.1) Drag outward and search: `Spawn System at Location`
+      - 9.1.1.2) Add Spawn System at Location node
+   - 9.1.2) Connect execution pin
+   - 9.1.3) Configure:
+      - 9.1.3.1) System Template: Select `NS_DomeBurst`
+      - 9.1.3.2) Location: Connect Player Location (Get Actor Location Return Value)
+      - 9.1.3.3) Auto Destroy: Checked
 
-#### 9.5) Launch Character
-   - 9.5.1) From Apply Gameplay Effect Spec execution pin:
-      - 9.5.1.1) Connect to Cast To Character execution input
-   - 9.5.2) From Cast success execution pin:
-      - 9.5.2.1) From **As Character** pin, drag outward
-      - 9.5.2.2) Search: `Launch Character`
-      - 9.5.2.3) Add Launch Character node
-   - 9.5.3) Configure:
-      - 9.5.3.1) **Target**: Connect **As Character** pin from Cast node
-      - 9.5.3.2) **Launch Velocity**: Connect scaled knockback vector (Multiply Return Value)
-      - 9.5.3.3) **XY Override**: Unchecked
-      - 9.5.3.4) **Z Override**: Unchecked
+### **10) Reset Dome Energy**
 
-### **10) Spawn Burst Visual Effect**
-
-#### 10.1) Spawn Niagara System
-   - 10.1.1) From ForEach Loop Completed execution pin:
-      - 10.1.1.1) Drag outward and search: `Spawn System at Location`
-      - 10.1.1.2) Add Spawn System at Location node
+#### 10.1) Apply Energy Reset Effect
+   - 10.1.1) From Spawn System at Location execution pin:
+      - 10.1.1.1) Drag from PlayerASC variable
+      - 10.1.1.2) Search: `Apply Gameplay Effect to Self`
+      - 10.1.1.3) Add Apply Gameplay Effect to Self node
    - 10.1.2) Connect execution pin
    - 10.1.3) Configure:
-      - 10.1.3.1) System Template: Select `NS_DomeBurst`
-      - 10.1.3.2) Location: Connect Player Location (Get Actor Location Return Value)
-      - 10.1.3.3) Auto Destroy: Checked
+      - 10.1.3.1) Gameplay Effect Class: `GE_DomeEnergyReset`
+      - 10.1.3.2) Level: `1.0`
 
-### **11) Reset Dome Energy**
+### **11) Apply Cooldown**
 
-#### 11.1) Apply Energy Reset Effect
-   - 11.1.1) From Spawn System at Location execution pin:
+#### 11.1) Apply Burst Cooldown Effect
+   - 11.1.1) From Apply GE (Reset) execution pin:
       - 11.1.1.1) Drag from PlayerASC variable
       - 11.1.1.2) Search: `Apply Gameplay Effect to Self`
       - 11.1.1.3) Add Apply Gameplay Effect to Self node
    - 11.1.2) Connect execution pin
    - 11.1.3) Configure:
-      - 11.1.3.1) Gameplay Effect Class: `GE_DomeEnergyReset`
+      - 11.1.3.1) Gameplay Effect Class: `GE_DomeBurstCooldown`
       - 11.1.3.2) Level: `1.0`
 
-### **12) Apply Cooldown**
+### **12) End Ability**
 
-#### 12.1) Apply Burst Cooldown Effect
-   - 12.1.1) From Apply GE (Reset) execution pin:
-      - 12.1.1.1) Drag from PlayerASC variable
-      - 12.1.1.2) Search: `Apply Gameplay Effect to Self`
-      - 12.1.1.3) Add Apply Gameplay Effect to Self node
+#### 12.1) Commit Ability
+   - 12.1.1) From Apply GE (Cooldown) execution pin:
+      - 12.1.1.1) Drag outward and search: `Commit Ability`
+      - 12.1.1.2) Add Commit Ability node
    - 12.1.2) Connect execution pin
-   - 12.1.3) Configure:
-      - 12.1.3.1) Gameplay Effect Class: `GE_DomeBurstCooldown`
-      - 12.1.3.2) Level: `1.0`
 
-### **13) End Ability**
+#### 12.2) Clear References
+   - 12.2.1) From Commit Ability execution pin:
+      - 12.2.1.1) Add Set PlayerRef node
+      - 12.2.1.2) Leave value pin disconnected (clears to None)
+   - 12.2.2) From Set PlayerRef execution pin:
+      - 12.2.2.1) Add Set PlayerASC node
+      - 12.2.2.2) Leave value pin disconnected (clears to None)
 
-#### 13.1) Commit Ability
-   - 13.1.1) From Apply GE (Cooldown) execution pin:
-      - 13.1.1.1) Drag outward and search: `Commit Ability`
-      - 13.1.1.2) Add Commit Ability node
-   - 13.1.2) Connect execution pin
+#### 12.3) End Ability
+   - 12.3.1) From Set PlayerASC execution pin:
+      - 12.3.1.1) Drag outward and search: `End Ability`
+      - 12.3.1.2) Add End Ability node
+   - 12.3.2) Connect execution pin
+   - 12.3.3) Was Cancelled: Unchecked (false)
 
-#### 13.2) Clear References
-   - 13.2.1) From Commit Ability execution pin:
-      - 13.2.1.1) Add Set PlayerRef node
-      - 13.2.1.2) Leave value pin disconnected (clears to None)
-   - 13.2.2) From Set PlayerRef execution pin:
-      - 13.2.2.1) Add Set PlayerASC node
-      - 13.2.2.2) Leave value pin disconnected (clears to None)
+### **13) Compile and Save**
 
-#### 13.3) End Ability
-   - 13.3.1) From Set PlayerASC execution pin:
-      - 13.3.1.1) Drag outward and search: `End Ability`
-      - 13.3.1.2) Add End Ability node
-   - 13.3.2) Connect execution pin
-   - 13.3.3) Was Cancelled: Unchecked (false)
+#### 13.1) Save All Changes
+   - 13.1.1) Click Compile button
+   - 13.1.2) Click Save button
 
-### **14) Implement Event OnEndAbility**
-
-#### 14.1) Add Event OnEndAbility
-   - 14.1.1) Right-click in Event Graph (separate area from main logic)
-   - 14.1.2) Search: `Event OnEndAbility`
-   - 14.1.3) Add Event OnEndAbility node
-
-#### 14.2) Validate PlayerASC for Cleanup
-   - 14.2.1) From Event OnEndAbility execution pin:
-      - 14.2.1.1) Drag from PlayerASC variable
-      - 14.2.1.2) Add Is Valid node
-   - 14.2.2) From Is Valid node:
-      - 14.2.2.1) Add Branch node
-      - 14.2.2.2) Connect Is Valid Return Value to Condition pin
-   - 14.2.3) From Branch False execution pin:
-      - 14.2.3.1) Leave unconnected (nothing to clean up)
-
-#### 14.3) Clear References on Early Cancel
-   - 14.3.1) From Branch True execution pin:
-      - 14.3.1.1) Add Set PlayerRef node
-      - 14.3.1.2) Leave value pin disconnected (clears to None)
-   - 14.3.2) From Set PlayerRef execution pin:
-      - 14.3.2.1) Add Set PlayerASC node
-      - 14.3.2.2) Leave value pin disconnected (clears to None)
-
-### **15) Compile and Save**
-
-#### 15.1) Save All Changes
-   - 15.1.1) Click Compile button
-   - 15.1.2) Click Save button
+**Note:** Per GAS Audit Rule 1 (Instant Abilities), Event OnEndAbility is optional for instant abilities. The reference clearing in step 12.2 handles cleanup for the normal execution path. If you want defensive cleanup for edge cases where the ability is externally cancelled, you may optionally add Event OnEndAbility with the same reference-clearing pattern.
 
 ---
 
 ## **PHASE 5: IMPLEMENT AUTO-BURST INTEGRATION**
 
-### **1) Open GA_DomeManager**
+### **1) Open GA_ProtectiveDome or GA_DomeManager**
 
-#### 1.1) Navigate to Dome Manager
+#### 1.1) Navigate to Dome Ability
    - 1.1.1) In Content Browser, navigate to `/Content/FatherCompanion/ProtectiveDome/Abilities/`
-   - 1.1.2) Double-click GA_DomeManager to open
+   - 1.1.2) Double-click GA_ProtectiveDome (or GA_DomeManager) to open
 
 ### **2) Find Energy Monitoring Section**
 
@@ -686,7 +650,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
    - 4.2.2) Connect execution pin
    - 4.2.3) Configure:
       - 4.2.3.1) Create Gameplay Tag Container
-      - 4.2.3.2) Add tag: `Ability.Father.Armor.DomeBurst`
+      - 4.2.3.2) Add tag: `Ability.Father.DomeBurst`
 
 ### **5) Compile and Save**
 
@@ -696,52 +660,47 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 ---
 
-## **PHASE 6: GRANT ABILITY TO PLAYER**
+## **PHASE 6: ABILITY GRANTING VIA EQUIPMENT**
 
-### **1) Open GA_FatherArmor**
+### **Ability Granting Architecture**
 
-#### 1.1) Navigate to Armor Ability
-   - 1.1.1) In Content Browser, navigate to `/Content/FatherCompanion/Armor/Abilities/`
-   - 1.1.2) Double-click GA_FatherArmor to open
+GA_DomeBurst is granted to the player via the equipment system when EI_FatherArmorForm is equipped. This ensures the ability is only available when the Armor form is active.
 
-### **2) Find Armor Activation Section**
+### **1) EI_FatherArmorForm Configuration**
 
-#### 2.1) Locate Attachment Complete Logic
-   - 2.1.1) In Event Graph, find after father attaches to player
-   - 2.1.2) Where armor boost effects are applied
+The EI_FatherArmorForm EquippableItem is configured in manifest.yaml with:
 
-### **3) Grant Dome Burst Ability**
+```yaml
+equippable_items:
+  - name: EI_FatherArmorForm
+    abilities_to_grant:
+      - GA_FatherArmor
+      - GA_ProtectiveDome
+      - GA_DomeBurst      # Granted when Armor form equipped
+```
 
-#### 3.1) Get Player ASC
-   - 3.1.1) From Player reference:
-      - 3.1.1.1) Drag outward and search: `Get Ability System Component`
-      - 3.1.1.2) Add Get Ability System Component node
+### **2) Form Switch Cleanup**
 
-#### 3.2) Give Ability
-   - 3.2.1) After other armor effects applied:
-      - 3.2.1.1) From Player ASC, drag outward
-      - 3.2.1.2) Search: `Give Ability`
-      - 3.2.1.3) Add Give Ability node
-   - 3.2.2) Connect execution pin
-   - 3.2.3) Configure:
-      - 3.2.3.1) Ability Class: `GA_DomeBurst`
-      - 3.2.3.2) Level: `1`
-      - 3.2.3.3) Input ID: `-1`
+When the player switches forms via the T wheel, the equipment system automatically:
+1. Unequips EI_FatherArmorForm
+2. Removes granted abilities (including GA_DomeBurst)
+3. Equips the new form's equipment item
 
-#### 3.3) Store Ability Handle
-   - 3.3.1) From Give Ability Return Value:
-      - 3.3.1.1) Add Set DomeBurstHandle node
-      - 3.3.1.2) Connect Return Value to DomeBurstHandle value pin
+This automatic cleanup replaces the need for manual handle tracking in GA_FatherArmor's EndAbility.
 
-### **4) Compile and Save**
+### **3) Manual Setup (If Not Using Generator)**
 
-#### 4.1) Save All Changes
-   - 4.1.1) Click Compile button
-   - 4.1.2) Click Save button
+If creating assets manually without the generator:
 
-### **5) Ability Cleanup Note**
+#### 3.1) Open EI_FatherArmorForm
+   - 3.1.1) In Content Browser, navigate to `/Content/FatherCompanion/Items/`
+   - 3.1.2) Double-click EI_FatherArmorForm to open
 
-When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Abilities With Tag. GA_FatherArmor's EndAbility uses stored DomeBurstHandle to properly remove GA_DomeBurst before clearing references.
+#### 3.2) Add Ability to Grant
+   - 3.2.1) In Details panel, find Item Properties category
+   - 3.2.2) Find Abilities to Grant array
+   - 3.2.3) Add entry: `GA_DomeBurst`
+   - 3.2.4) Save asset
 
 ---
 
@@ -796,6 +755,28 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 ---
 
 ## **CHANGELOG**
+
+### **VERSION 2.9 - Multi-Document Audit Corrections**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| INC-A | Changed ability tag from `Ability.Father.Armor.DomeBurst` to `Ability.Father.DomeBurst` (manifest alignment) |
+| INC-B | Changed activation owned tag from `Father.State.Bursting` to `Father.State.Attacking` (manifest alignment) |
+| INC-C | Simplified activation required tags to only `Father.Dome.Active` (manifest alignment) |
+| INC-D | Changed cooldown tag from `Cooldown.Father.Armor.DomeBurst` to `Cooldown.Father.DomeBurst` (manifest alignment) |
+| INC-E | Changed damage from 150+scaling to flat 75 (manifest alignment, Erdem decision) |
+| INC-F | Changed cooldown from 20s to 12s (manifest alignment, Erdem decision) |
+| INC-G | Added note about optional Event_OnEndAbility per Rule 1 (instant abilities) |
+| INC-H | Updated engine version from 5.6 to 5.7 |
+| INC-I | Updated version number from 2.8 to 2.9 |
+| INC-J | Updated PHASE 6 to reference EI_FatherArmorForm equipment granting instead of GA_FatherArmor |
+| Authority Note | Added manifest.yaml as authoritative source |
+| Audit Status | Added Claude-GPT dual audit metadata |
+| Variables | Removed BaseDamage, DamageScaling, CurrentDomeEnergy, CalculatedDamage; added flat BurstDamage |
+
+---
 
 ### **VERSION 2.8 - Form State Tag Update (INV-1 Compliant)**
 
@@ -893,6 +874,8 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 | Cooldown Tag | Changed Cooldown.Father.DomeBurst to Cooldown.Father.Armor.DomeBurst |
 | Tag Hierarchy | Enables automatic cancellation when Armor form ends |
 
+**Note:** v2.9 reverts these tags back to flat hierarchy per manifest.yaml alignment.
+
 ### **VERSION 2.0 - Major Update**
 
 **Release Date:** November 2025
@@ -909,32 +892,11 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 | Instance Editable | Added Instance Editable flag to designer-friendly variables |
 | Formatting | Standardized per Father_Companion_Guide_Format_Reference.md |
 
-**Damage Pipeline Benefits (v2.0):**
-
-| Feature | Behavior |
-|---------|----------|
-| AttackRating | Player's AttackRating multiplies burst damage |
-| Armor | Enemy armor reduces damage received |
-| State.Invulnerable | Automatically blocks damage to invulnerable targets |
-| Friendly Fire | Respects NarrativeCombatDeveloperSettings |
-| Damage Notifications | Proper damage dealt/received callbacks |
-
-**Removed from v1.0:**
-
-| Item | Reason |
-|------|--------|
-| DomeBurstHandle variable | Source-based cleanup handles automatically |
-| Cancel Ability Handle node | Not needed with source-based removal |
-| Clear Ability node | Not needed with source-based removal |
-| Health attribute direct modification | Replaced with NarrativeDamageExecCalc |
-
 ---
 
 ### **VERSION 1.0 - Initial Implementation**
 
 **Release Date:** 2025
-
-**Implementation Details:**
 
 | Feature | Value |
 |---------|-------|
@@ -955,42 +917,30 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 
 | Property | Tags |
 |----------|------|
-| Ability Tags | `Ability.Father.Armor.DomeBurst` |
-| Activation Required | `Effect.Father.FormState.Armor`, `Father.Dome.Active`, `Father.State.Recruited` |
-| Activation Owned | `Father.State.Bursting` |
-| Activation Blocked | `Cooldown.Father.Armor.DomeBurst`, `Father.State.Bursting` |
+| Ability Tags | `Ability.Father.DomeBurst` |
+| Activation Required | `Father.Dome.Active` |
+| Activation Owned | `Father.State.Attacking` |
+| Activation Blocked | `Cooldown.Father.DomeBurst` |
 | InputTag | `Narrative.Input.Father.Ability1` |
 
 ### **Variable Summary**
 
-| Variable | Type | Default | Category | Instance Editable | Purpose |
-|----------|------|---------|----------|-------------------|---------|
-| BaseDamage | Float | 150.0 | Burst Config | Yes | Minimum burst damage |
-| DamageScaling | Float | 0.3 | Burst Config | Yes | Damage per energy point |
-| BurstRadius | Float | 500.0 | Burst Config | Yes | AOE explosion radius |
-| KnockbackForce | Float | 1000.0 | Burst Config | Yes | Push force on enemies |
-| MinEnergyForManual | Float | 50.0 | Burst Config | Yes | Min energy for Q press |
-| PlayerRef | Actor Reference | None | Runtime | No | Player reference |
-| PlayerASC | NarrativeAbilitySystemComponent Reference | None | Runtime | No | Player ASC for validation |
-| CurrentDomeEnergy | Float | 0.0 | Runtime | No | Current energy snapshot |
-| CalculatedDamage | Float | 0.0 | Runtime | No | Final damage value |
+| Variable | Type | Default | Instance Editable | Purpose |
+|----------|------|---------|-------------------|---------|
+| BurstDamage | Float | 75.0 | Yes | Flat burst damage |
+| BurstRadius | Float | 500.0 | Yes | AOE explosion radius |
+| KnockbackForce | Float | 1000.0 | Yes | Push force on enemies |
+| MinEnergyForManual | Float | 50.0 | Yes | Min energy for Q press |
+| PlayerRef | Actor Reference | None | No | Player reference |
+| PlayerASC | NarrativeAbilitySystemComponent Reference | None | No | Player ASC for validation |
 
 ### **Gameplay Effect Summary**
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
 | GE_DomeBurstDamage | Instant | Damage via NarrativeDamageExecCalc |
-| GE_DomeBurstCooldown | 20 seconds | Grants cooldown tags |
+| GE_DomeBurstCooldown | 12 seconds | Grants cooldown tags |
 | GE_DomeEnergyReset | Instant | Resets DomeEnergy to 0 |
-
-### **Damage Calculation Table**
-
-| Energy | Base Calculation | After AttackRating/Armor |
-|--------|------------------|--------------------------|
-| 50 | 150 + (50 x 0.3) = 165 | Modified by NarrativeDamageExecCalc |
-| 100 | 150 + (100 x 0.3) = 180 | Modified by NarrativeDamageExecCalc |
-| 250 | 150 + (250 x 0.3) = 225 | Modified by NarrativeDamageExecCalc |
-| 500 | 150 + (500 x 0.3) = 300 | Modified by NarrativeDamageExecCalc |
 
 ### **NarrativeDamageExecCalc Formula**
 
@@ -998,7 +948,7 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 |------|---------|
 | Attack Multiplier | 1.0 + (AttackRating / 100.0) |
 | Defence Multiplier | 1.0 + (Armor / 100.0) |
-| Final Damage | (BaseDamage x AttackMultiplier) / DefenceMultiplier |
+| Final Damage | (BurstDamage x AttackMultiplier) / DefenceMultiplier |
 
 ### **Activation Modes**
 
@@ -1012,27 +962,17 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 | Step | Action |
 |------|--------|
 | 1 | Q Key Pressed OR Auto-Trigger |
-| 2 | Validate Armor Form + Dome Active + Recruited |
+| 2 | Validate Dome Active tag |
 | 3 | Check Minimum Energy (50 for manual) |
-| 4 | Calculate Damage: 150 + (Energy x 0.3) |
-| 5 | Sphere Overlap (500 radius) |
-| 6 | For Each Enemy with Character.Enemy tag |
-| 7 | Apply GE_DomeBurstDamage via NarrativeDamageExecCalc |
-| 8 | Launch Character (1000 unit knockback) |
-| 9 | Spawn NS_DomeBurst VFX |
-| 10 | Apply GE_DomeEnergyReset |
-| 11 | Apply GE_DomeBurstCooldown (20s) |
-| 12 | Clear References (PlayerRef, PlayerASC) |
-| 13 | End Ability |
-
-### **EndAbility Cleanup Flow**
-
-| Step | Action |
-|------|--------|
-| 1 | Event OnEndAbility triggered |
-| 2 | Validate PlayerASC (early exit if invalid) |
-| 3 | Clear PlayerRef (Set to None) |
-| 4 | Clear PlayerASC (Set to None) |
+| 4 | Sphere Overlap (500 radius) |
+| 5 | For Each Enemy with Character.Enemy tag |
+| 6 | Apply GE_DomeBurstDamage (75 flat damage) via NarrativeDamageExecCalc |
+| 7 | Launch Character (1000 unit knockback) |
+| 8 | Spawn NS_DomeBurst VFX |
+| 9 | Apply GE_DomeEnergyReset |
+| 10 | Apply GE_DomeBurstCooldown (12s) |
+| 11 | Clear References (PlayerRef, PlayerASC) |
+| 12 | End Ability |
 
 ### **Replication Settings**
 
@@ -1047,26 +987,25 @@ When player switches forms via T wheel, GA_FatherArmor is cancelled by Cancel Ab
 | Ability | Type | Status |
 |---------|------|--------|
 | GA_FatherArmor | Form | Existing |
-| GA_ProtectiveDome | Passive | Existing (via GA_DomeManager) |
-| GA_DomeManager | Passive | Existing |
+| GA_ProtectiveDome | Passive | Existing |
 | GA_DomeBurst | Active/Auto | Complete |
 
 ### **Related Documents**
 
 | Document | Version | Relevance |
 |----------|---------|-----------|
-| Father_Companion_Technical_Reference | v4.5 | Cross-actor patterns, EndAbility cleanup |
+| manifest.yaml | - | Authoritative source for all values |
+| Father_Companion_Technical_Reference | v6.3 | Cross-actor patterns, EndAbility cleanup |
 | Father_Companion_System_Setup_Guide | v1.3 | BP_FatherCompanion setup |
-| GA_FatherArmor_Implementation_Guide | v3.4 | Handle storage, EndAbility cleanup |
-| Father_Protective_Dome_Implementation_Guide | v1.9 | Dome system integration |
-| DefaultGameplayTags_FatherCompanion | v3.5 | Tag definitions |
+| GA_FatherArmor_Implementation_Guide | v4.8 | Form activation |
+| DefaultGameplayTags_FatherCompanion | v4.0 | Tag definitions |
 
 ---
 
-**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.8**
+**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.9**
 
-**Armor Form - Active/Auto AOE Explosion (INV-1 Compliant)**
+**Armor Form - Active/Auto AOE Explosion**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
 
 **Blueprint-Only Implementation**
