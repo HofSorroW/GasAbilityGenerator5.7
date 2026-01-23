@@ -3111,12 +3111,52 @@ struct FManifestItemStatDefinition
 };
 
 /**
+ * v4.28: Fragment property definition for item fragments
+ * Supports direct property names and S2 dot notation for struct members
+ * Per Item_Generation_Capability_Audit.md Section 5.2
+ */
+struct FManifestFragmentPropertyDefinition
+{
+	FString Key;      // Property name or dot-path (e.g., "AmmoDamageOverride" or "TraceData.TraceDistance")
+	FString Value;    // String representation of value (parsed at generation time)
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Key);
+		Hash ^= GetTypeHash(Value) << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v4.28: Fragment definition for item fragments (instanced subobjects)
+ * Per Item_Generation_Capability_Audit.md Section 2
+ */
+struct FManifestFragmentDefinition
+{
+	FString Class;    // Fragment class - short name (e.g., "AmmoFragment") or full path ("/Script/NarrativeArsenal.AmmoFragment")
+	TArray<FManifestFragmentPropertyDefinition> Properties;  // Optional property map
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Class);
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= Prop.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
  * Equippable item definition
  * v3.3: Enhanced with full NarrativeItem + EquippableItem property support
  * v3.4: Added WeaponItem and RangedWeaponItem property support
  * v3.9.8: Added ClothingMesh for EquippableItem_Clothing support
  * v3.10: Added WeaponAttachmentSlots TMap support
  * v4.8: Added Stats array and ActivitiesToGrant for NarrativeItem
+ * v4.28: Added Fragments array and non-equippable item type properties (Option C backend)
  */
 struct FManifestEquippableItemDefinition
 {
@@ -3225,6 +3265,22 @@ struct FManifestEquippableItemDefinition
 
 	// v4.27: Function overrides for BlueprintNativeEvent functions (e.g., HandleUnequip)
 	TArray<FManifestFunctionOverrideDefinition> FunctionOverrides;
+
+	// v4.28: Item Fragments (instanced subobjects) - per Item_Generation_Capability_Audit.md Section 2
+	TArray<FManifestFragmentDefinition> Fragments;
+
+	// v4.28: GameplayEffectItem properties (parent_class: GameplayEffectItem)
+	// Per Item_Generation_Capability_Audit.md Section 1.2
+	FString GameplayEffectClass;                 // TSubclassOf<UGameplayEffect> - effect applied on use
+	TMap<FString, float> SetByCallerValues;      // TMap<FGameplayTag, float> - SetByCaller tag values
+
+	// v4.28: WeaponAttachmentItem properties (parent_class: WeaponAttachmentItem)
+	// Per Item_Generation_Capability_Audit.md Section 1.2
+	FString WeaponAttachmentSlot;                // FGameplayTag - slot this attachment equips to
+	FString AttachmentMesh;                      // TObjectPtr<UStaticMesh> - mesh to attach
+	float FOVOverride = -1.0f;                   // FOV override for ADS (-1 = no override)
+	float WeaponRenderFOVOverride = -1.0f;       // Weapon render FOV override (-1 = no override)
+	float WeaponAimFStopOverride = -1.0f;        // FStop override when aiming (-1 = no override)
 
 	/** v4.8.2: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -3424,6 +3480,35 @@ struct FManifestEquippableItemDefinition
 			Hash ^= Override.ComputeHash();
 			Hash = (Hash << 5) | (Hash >> 59);
 		}
+
+		// v4.28: Hash fragments
+		for (const auto& Fragment : Fragments)
+		{
+			Hash ^= Fragment.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		// v4.28: Hash GameplayEffectItem properties
+		Hash ^= GetTypeHash(GameplayEffectClass);
+		Hash = (Hash << 5) | (Hash >> 59);
+		for (const auto& Pair : SetByCallerValues)
+		{
+			Hash ^= GetTypeHash(Pair.Key);
+			Hash ^= static_cast<uint64>(FMath::RoundToInt(Pair.Value * 100.f));
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+
+		// v4.28: Hash WeaponAttachmentItem properties
+		Hash ^= GetTypeHash(WeaponAttachmentSlot);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= GetTypeHash(AttachmentMesh);
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(FOVOverride * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(WeaponRenderFOVOverride * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(WeaponAimFStopOverride * 100.f));
+		Hash = (Hash << 5) | (Hash >> 59);
 
 		return Hash;
 	}
@@ -5496,6 +5581,11 @@ struct FManifestData
 	TArray<FManifestAnimationNotifyDefinition> AnimationNotifies;
 	TArray<FManifestDialogueBlueprintDefinition> DialogueBlueprints;
 	TArray<FManifestEquippableItemDefinition> EquippableItems;
+	// v4.28: Option C manifest sections - separate YAML sections using same definition struct (C1 backend)
+	// Per Item_Generation_Capability_Audit.md Section 1.1
+	TArray<FManifestEquippableItemDefinition> ConsumableItems;      // consumable_items: (UGameplayEffectItem)
+	TArray<FManifestEquippableItemDefinition> AmmoItems;            // ammo_items: (UAmmoItem)
+	TArray<FManifestEquippableItemDefinition> WeaponAttachments;    // weapon_attachments: (UWeaponAttachmentItem)
 	TArray<FManifestActivityDefinition> Activities;
 	TArray<FManifestAbilityConfigurationDefinition> AbilityConfigurations;
 	TArray<FManifestActivityConfigurationDefinition> ActivityConfigurations;
@@ -5563,6 +5653,10 @@ struct FManifestData
 		for (const auto& Def : AnimationNotifies) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : DialogueBlueprints) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : EquippableItems) AssetWhitelist.Add(Def.Name);
+		// v4.28: Option C manifest sections
+		for (const auto& Def : ConsumableItems) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : AmmoItems) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : WeaponAttachments) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : Activities) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : AbilityConfigurations) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : ActivityConfigurations) AssetWhitelist.Add(Def.Name);

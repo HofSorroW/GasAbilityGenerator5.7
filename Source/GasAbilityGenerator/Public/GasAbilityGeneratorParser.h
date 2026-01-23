@@ -65,6 +65,10 @@ private:
 	static void ParseAnimationNotifies(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseDialogueBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseEquippableItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	// v4.28: Option C manifest sections - per Item_Generation_Capability_Audit.md
+	static void ParseConsumableItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseAmmoItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseWeaponAttachments(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseActivities(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseAbilityConfigurations(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseActivityConfigurations(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);

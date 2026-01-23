@@ -1769,6 +1769,82 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 	return nullptr;
 }
 
+// v4.28: Find fragment class by name for Item Fragments system
+// Per Item_Generation_Capability_Audit.md: Fragment allowlist is AmmoFragment, PoisonableFragment
+// Class path format: /Script/NarrativeArsenal.<ClassWithoutUPrefix>
+UClass* FGeneratorBase::FindFragmentClass(const FString& FragmentClassName)
+{
+	// Static set for warning deduplication per session
+	static TSet<FString> WarnedFragmentClasses;
+
+	// Normalize class name - remove U prefix if present (per audit: class paths don't use U prefix)
+	FString NormalizedName = FragmentClassName;
+	if (NormalizedName.StartsWith(TEXT("U")))
+	{
+		NormalizedName = NormalizedName.RightChop(1);
+	}
+
+	// Fragment allowlist per audit document
+	static const TArray<FString> AllowedFragments = {
+		TEXT("AmmoFragment"),
+		TEXT("PoisonableFragment")
+	};
+
+	// Check if fragment is in allowlist
+	bool bIsAllowed = false;
+	for (const FString& Allowed : AllowedFragments)
+	{
+		if (NormalizedName.Equals(Allowed, ESearchCase::IgnoreCase))
+		{
+			NormalizedName = Allowed; // Use canonical casing
+			bIsAllowed = true;
+			break;
+		}
+	}
+
+	if (!bIsAllowed)
+	{
+		// Warn only once per class per session
+		if (!WarnedFragmentClasses.Contains(NormalizedName))
+		{
+			WarnedFragmentClasses.Add(NormalizedName);
+			UE_LOG(LogTemp, Warning, TEXT("[W_FRAGMENT_NOT_IN_ALLOWLIST] Fragment class '%s' not in allowlist. Allowed: AmmoFragment, PoisonableFragment"), *FragmentClassName);
+		}
+	}
+
+	// Try /Script/NarrativeArsenal path first (primary location)
+	FString ScriptPath = FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *NormalizedName);
+	UClass* FoundClass = FindObject<UClass>(nullptr, *ScriptPath);
+	if (FoundClass)
+	{
+		return FoundClass;
+	}
+
+	// Try with U prefix in path
+	FString ScriptPathWithU = FString::Printf(TEXT("/Script/NarrativeArsenal.U%s"), *NormalizedName);
+	FoundClass = FindObject<UClass>(nullptr, *ScriptPathWithU);
+	if (FoundClass)
+	{
+		return FoundClass;
+	}
+
+	// Fallback: try direct class name lookup
+	FoundClass = FindObject<UClass>(nullptr, *FragmentClassName);
+	if (FoundClass)
+	{
+		return FoundClass;
+	}
+
+	return nullptr;
+}
+
+// v4.28: Clear fragment warning deduplication set (called at start of generation session)
+void FGeneratorBase::ClearFragmentWarningCache()
+{
+	// The static set in FindFragmentClass is cleared by restarting the commandlet/editor
+	// This function exists for API consistency if explicit clearing is needed
+}
+
 // v2.1.8: Find user-defined enum by name
 UEnum* FGeneratorBase::FindUserDefinedEnum(const FString& EnumName, const FString& ProjectRoot)
 {
@@ -17536,6 +17612,359 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None")));
 					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 						TEXT("TraceData property not found - manifest references trace data but property lookup failed"));
+				}
+			}
+
+			// v4.28: Item Fragments instantiation per Item_Generation_Capability_Audit.md
+			if (Definition.Fragments.Num() > 0)
+			{
+				// Find the Fragments array property on CDO
+				FArrayProperty* FragmentsArrayProp = CastField<FArrayProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("Fragments")));
+				if (FragmentsArrayProp)
+				{
+					FScriptArrayHelper ArrayHelper(FragmentsArrayProp, FragmentsArrayProp->ContainerPtrToValuePtr<void>(CDO));
+
+					// Static set for W_FRAGMENT_NO_SETTABLE_PROPERTIES deduplication
+					static TSet<FString> WarnedNoSettablePropsClasses;
+
+					for (const FManifestFragmentDefinition& FragDef : Definition.Fragments)
+					{
+						// Find fragment class
+						UClass* FragmentClass = FindFragmentClass(FragDef.Class);
+						if (!FragmentClass)
+						{
+							// E_FRAGMENT_CLASS_NOT_FOUND per audit
+							LogGeneration(FString::Printf(TEXT("[E_FRAGMENT_CLASS_NOT_FOUND] %s | Fragment class not found: %s"),
+								*Definition.Name, *FragDef.Class));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								FString::Printf(TEXT("Fragment class '%s' not found"), *FragDef.Class));
+						}
+
+						// Create fragment instance per audit: NewObject<T>(Outer=CDO, Class, NAME_None, RF_Public | RF_Transactional)
+						UObject* FragmentInstance = NewObject<UObject>(CDO, FragmentClass, NAME_None, RF_Public | RF_Transactional);
+						if (!FragmentInstance)
+						{
+							LogGeneration(FString::Printf(TEXT("[E_FRAGMENT_INSTANTIATION_FAILED] %s | Failed to create fragment instance: %s"),
+								*Definition.Name, *FragDef.Class));
+							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+								FString::Printf(TEXT("Failed to instantiate fragment '%s'"), *FragDef.Class));
+						}
+
+						// Set fragment properties
+						int32 PropsSet = 0;
+						for (const FManifestFragmentPropertyDefinition& PropDef : FragDef.Properties)
+						{
+							// S2 dot notation support per audit: one-hop struct member access
+							FString PropertyName = PropDef.Key;
+							FString StructMemberName;
+							bool bIsDotNotation = PropertyName.Split(TEXT("."), &PropertyName, &StructMemberName);
+
+							// Find the property on fragment
+							FProperty* TargetProp = FragmentInstance->GetClass()->FindPropertyByName(*PropertyName);
+							if (!TargetProp)
+							{
+								// E_ITEM_PROPERTY_NOT_APPLICABLE per audit
+								LogGeneration(FString::Printf(TEXT("[E_ITEM_PROPERTY_NOT_APPLICABLE] %s | Fragment '%s' has no property '%s'"),
+									*Definition.Name, *FragDef.Class, *PropertyName));
+								return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+									FString::Printf(TEXT("Fragment '%s' property '%s' not found"), *FragDef.Class, *PropertyName));
+							}
+
+							void* PropertyContainer = FragmentInstance;
+							FProperty* FinalProp = TargetProp;
+
+							// Handle S2 dot notation for struct member access
+							if (bIsDotNotation)
+							{
+								FStructProperty* StructProp = CastField<FStructProperty>(TargetProp);
+								if (!StructProp)
+								{
+									LogGeneration(FString::Printf(TEXT("[E_ITEM_PROPERTY_NOT_APPLICABLE] %s | Fragment '%s' property '%s' is not a struct (dot notation requires struct)"),
+										*Definition.Name, *FragDef.Class, *PropertyName));
+									return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+										FString::Printf(TEXT("Fragment '%s' property '%s' is not a struct"), *FragDef.Class, *PropertyName));
+								}
+
+								// Get pointer to struct and find member
+								PropertyContainer = StructProp->ContainerPtrToValuePtr<void>(FragmentInstance);
+								FinalProp = StructProp->Struct->FindPropertyByName(*StructMemberName);
+								if (!FinalProp)
+								{
+									LogGeneration(FString::Printf(TEXT("[E_ITEM_PROPERTY_NOT_APPLICABLE] %s | Fragment '%s' struct '%s' has no member '%s'"),
+										*Definition.Name, *FragDef.Class, *PropertyName, *StructMemberName));
+									return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+										FString::Printf(TEXT("Fragment '%s.%s' member '%s' not found"), *FragDef.Class, *PropertyName, *StructMemberName));
+								}
+							}
+
+							// Set property value based on type
+							bool bPropSet = false;
+							if (FFloatProperty* FloatProp = CastField<FFloatProperty>(FinalProp))
+							{
+								float Value = FCString::Atof(*PropDef.Value);
+								FloatProp->SetPropertyValue_InContainer(PropertyContainer, Value);
+								bPropSet = true;
+							}
+							else if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(FinalProp))
+							{
+								double Value = FCString::Atod(*PropDef.Value);
+								DoubleProp->SetPropertyValue_InContainer(PropertyContainer, Value);
+								bPropSet = true;
+							}
+							else if (FIntProperty* IntProp = CastField<FIntProperty>(FinalProp))
+							{
+								int32 Value = FCString::Atoi(*PropDef.Value);
+								IntProp->SetPropertyValue_InContainer(PropertyContainer, Value);
+								bPropSet = true;
+							}
+							else if (FBoolProperty* BoolProp = CastField<FBoolProperty>(FinalProp))
+							{
+								bool Value = PropDef.Value.ToBool();
+								BoolProp->SetPropertyValue_InContainer(PropertyContainer, Value);
+								bPropSet = true;
+							}
+							else if (FStrProperty* StrProp = CastField<FStrProperty>(FinalProp))
+							{
+								StrProp->SetPropertyValue_InContainer(PropertyContainer, PropDef.Value);
+								bPropSet = true;
+							}
+							else if (FNameProperty* NameProp = CastField<FNameProperty>(FinalProp))
+							{
+								NameProp->SetPropertyValue_InContainer(PropertyContainer, FName(*PropDef.Value));
+								bPropSet = true;
+							}
+							else if (FTextProperty* TextProp = CastField<FTextProperty>(FinalProp))
+							{
+								TextProp->SetPropertyValue_InContainer(PropertyContainer, FText::FromString(PropDef.Value));
+								bPropSet = true;
+							}
+							else if (FClassProperty* ClassProp = CastField<FClassProperty>(FinalProp))
+							{
+								UClass* ValueClass = FindParentClass(PropDef.Value);
+								if (ValueClass)
+								{
+									ClassProp->SetObjectPropertyValue_InContainer(PropertyContainer, ValueClass);
+									bPropSet = true;
+								}
+								else
+								{
+									LogGeneration(FString::Printf(TEXT("[E_ITEM_PROPERTY_NOT_APPLICABLE] %s | Fragment '%s' class property '%s' references class '%s' not found"),
+										*Definition.Name, *FragDef.Class, *PropDef.Key, *PropDef.Value));
+									return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+										FString::Printf(TEXT("Fragment class property '%s' references unknown class '%s'"), *PropDef.Key, *PropDef.Value));
+								}
+							}
+							else if (FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(FinalProp))
+							{
+								FSoftObjectPath ClassPath(PropDef.Value);
+								void* PropValue = SoftClassProp->ContainerPtrToValuePtr<void>(PropertyContainer);
+								FSoftObjectPtr* SoftPtr = static_cast<FSoftObjectPtr*>(PropValue);
+								if (SoftPtr)
+								{
+									*SoftPtr = FSoftObjectPtr(ClassPath);
+									bPropSet = true;
+								}
+							}
+							else if (FSoftObjectProperty* SoftObjProp = CastField<FSoftObjectProperty>(FinalProp))
+							{
+								FSoftObjectPtr SoftPtr(FSoftObjectPath(PropDef.Value));
+								SoftObjProp->SetPropertyValue_InContainer(PropertyContainer, SoftPtr);
+								bPropSet = true;
+							}
+							else if (FStructProperty* TagProp = CastField<FStructProperty>(FinalProp))
+							{
+								// Handle FGameplayTag
+								if (TagProp->Struct && TagProp->Struct->GetName() == TEXT("GameplayTag"))
+								{
+									FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*PropDef.Value), false);
+									if (Tag.IsValid())
+									{
+										FGameplayTag* TagPtr = TagProp->ContainerPtrToValuePtr<FGameplayTag>(PropertyContainer);
+										if (TagPtr)
+										{
+											*TagPtr = Tag;
+											bPropSet = true;
+										}
+									}
+								}
+							}
+
+							if (bPropSet)
+							{
+								PropsSet++;
+								LogGeneration(FString::Printf(TEXT("    Set fragment %s.%s = %s"), *FragDef.Class, *PropDef.Key, *PropDef.Value));
+							}
+							else
+							{
+								LogGeneration(FString::Printf(TEXT("[W_FRAGMENT_PROPERTY_TYPE_UNSUPPORTED] %s | Fragment '%s' property '%s' has unsupported type"),
+									*Definition.Name, *FragDef.Class, *PropDef.Key));
+							}
+						}
+
+						// W_FRAGMENT_NO_SETTABLE_PROPERTIES per audit - warn if no properties set but properties were provided
+						if (FragDef.Properties.Num() > 0 && PropsSet == 0)
+						{
+							if (!WarnedNoSettablePropsClasses.Contains(FragDef.Class))
+							{
+								WarnedNoSettablePropsClasses.Add(FragDef.Class);
+								LogGeneration(FString::Printf(TEXT("[W_FRAGMENT_NO_SETTABLE_PROPERTIES] %s | Fragment '%s' had %d property definitions but none could be set"),
+									*Definition.Name, *FragDef.Class, FragDef.Properties.Num()));
+							}
+						}
+
+						// Add fragment to Fragments array
+						int32 NewIndex = ArrayHelper.AddValue();
+						FObjectProperty* InnerProp = CastField<FObjectProperty>(FragmentsArrayProp->Inner);
+						if (InnerProp)
+						{
+							InnerProp->SetObjectPropertyValue(ArrayHelper.GetRawPtr(NewIndex), FragmentInstance);
+							LogGeneration(FString::Printf(TEXT("  Added fragment: %s (%d properties set)"), *FragDef.Class, PropsSet));
+						}
+					}
+				}
+				else
+				{
+					// Fragments property not found - fail only if manifest defines fragments
+					UClass* TargetClass = CDO->GetClass();
+					LogGeneration(FString::Printf(TEXT("[E_FRAGMENTS_NOT_FOUND] %s | Subsystem: Item | Fragments property not found | ClassPath: %s | SuperClassPath: %s | Fragments requested: %d"),
+						*Definition.Name, *TargetClass->GetPathName(),
+						TargetClass->GetSuperClass() ? *TargetClass->GetSuperClass()->GetPathName() : TEXT("None"),
+						Definition.Fragments.Num()));
+					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+						TEXT("Fragments property not found - ensure parent_class derives from NarrativeItem"));
+				}
+			}
+
+			// v4.28: GameplayEffectItem properties (per Item_Generation_Capability_Audit.md)
+			if (!Definition.GameplayEffectClass.IsEmpty())
+			{
+				// GameplayEffectClass (TSubclassOf<UGameplayEffect>)
+				FClassProperty* GEClassProp = CastField<FClassProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("GameplayEffectClass")));
+				if (GEClassProp)
+				{
+					UClass* GEClass = FindParentClass(Definition.GameplayEffectClass);
+					if (!GEClass)
+					{
+						// Try Blueprint path
+						FString GEPath = FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *Definition.GameplayEffectClass, *Definition.GameplayEffectClass);
+						GEClass = LoadObject<UClass>(nullptr, *GEPath);
+					}
+					if (GEClass)
+					{
+						GEClassProp->SetObjectPropertyValue_InContainer(CDO, GEClass);
+						LogGeneration(FString::Printf(TEXT("  Set GameplayEffectClass: %s"), *Definition.GameplayEffectClass));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("[E_GE_CLASS_NOT_FOUND] %s | GameplayEffectClass not found: %s"),
+							*Definition.Name, *Definition.GameplayEffectClass));
+						return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+							FString::Printf(TEXT("GameplayEffectClass '%s' not found"), *Definition.GameplayEffectClass));
+					}
+				}
+			}
+
+			// v4.28: SetByCallerValues TMap<FGameplayTag, float>
+			if (Definition.SetByCallerValues.Num() > 0)
+			{
+				FMapProperty* SetByCallerMapProp = CastField<FMapProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("SetByCallerValues")));
+				if (SetByCallerMapProp)
+				{
+					void* MapPtr = SetByCallerMapProp->ContainerPtrToValuePtr<void>(CDO);
+					FScriptMapHelper MapHelper(SetByCallerMapProp, MapPtr);
+					MapHelper.EmptyValues();
+
+					for (const auto& Pair : Definition.SetByCallerValues)
+					{
+						FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*Pair.Key), false);
+						if (Tag.IsValid())
+						{
+							int32 NewIndex = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+							FGameplayTag* KeyPtr = reinterpret_cast<FGameplayTag*>(MapHelper.GetKeyPtr(NewIndex));
+							float* ValuePtr = reinterpret_cast<float*>(MapHelper.GetValuePtr(NewIndex));
+							*KeyPtr = Tag;
+							*ValuePtr = Pair.Value;
+							LogGeneration(FString::Printf(TEXT("  Set SetByCallerValues[%s] = %.2f"), *Pair.Key, Pair.Value));
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("  [WARNING] Invalid GameplayTag for SetByCallerValues key: %s"), *Pair.Key));
+						}
+					}
+					MapHelper.Rehash();
+				}
+			}
+
+			// v4.28: WeaponAttachmentItem properties
+			if (!Definition.WeaponAttachmentSlot.IsEmpty())
+			{
+				// WeaponAttachmentSlot (FGameplayTag)
+				FStructProperty* SlotTagProp = CastField<FStructProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("WeaponAttachmentSlot")));
+				if (SlotTagProp && SlotTagProp->Struct && SlotTagProp->Struct->GetName() == TEXT("GameplayTag"))
+				{
+					FGameplayTag SlotTag = FGameplayTag::RequestGameplayTag(FName(*Definition.WeaponAttachmentSlot), false);
+					if (SlotTag.IsValid())
+					{
+						FGameplayTag* TagPtr = SlotTagProp->ContainerPtrToValuePtr<FGameplayTag>(CDO);
+						if (TagPtr)
+						{
+							*TagPtr = SlotTag;
+							LogGeneration(FString::Printf(TEXT("  Set WeaponAttachmentSlot: %s"), *Definition.WeaponAttachmentSlot));
+						}
+					}
+				}
+			}
+
+			// AttachmentMesh (TSoftObjectPtr<UStaticMesh>)
+			if (!Definition.AttachmentMesh.IsEmpty())
+			{
+				FSoftObjectProperty* MeshProp = CastField<FSoftObjectProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("AttachmentMesh")));
+				if (MeshProp)
+				{
+					FSoftObjectPtr SoftPtr(FSoftObjectPath(Definition.AttachmentMesh));
+					MeshProp->SetPropertyValue_InContainer(CDO, SoftPtr);
+					LogGeneration(FString::Printf(TEXT("  Set AttachmentMesh: %s"), *Definition.AttachmentMesh));
+				}
+			}
+
+			// FOVOverride (float) - sentinel: -1 means unset
+			if (Definition.FOVOverride >= 0.0f)
+			{
+				FFloatProperty* FOVProp = CastField<FFloatProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("FOVOverride")));
+				if (FOVProp)
+				{
+					FOVProp->SetPropertyValue_InContainer(CDO, Definition.FOVOverride);
+					LogGeneration(FString::Printf(TEXT("  Set FOVOverride: %.2f"), Definition.FOVOverride));
+				}
+			}
+
+			// WeaponRenderFOVOverride (float) - sentinel: -1 means unset
+			if (Definition.WeaponRenderFOVOverride >= 0.0f)
+			{
+				FFloatProperty* WRFOVProp = CastField<FFloatProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("WeaponRenderFOVOverride")));
+				if (WRFOVProp)
+				{
+					WRFOVProp->SetPropertyValue_InContainer(CDO, Definition.WeaponRenderFOVOverride);
+					LogGeneration(FString::Printf(TEXT("  Set WeaponRenderFOVOverride: %.2f"), Definition.WeaponRenderFOVOverride));
+				}
+			}
+
+			// WeaponAimFStopOverride (float) - sentinel: -1 means unset
+			if (Definition.WeaponAimFStopOverride >= 0.0f)
+			{
+				FFloatProperty* FStopProp = CastField<FFloatProperty>(
+					CDO->GetClass()->FindPropertyByName(TEXT("WeaponAimFStopOverride")));
+				if (FStopProp)
+				{
+					FStopProp->SetPropertyValue_InContainer(CDO, Definition.WeaponAimFStopOverride);
+					LogGeneration(FString::Printf(TEXT("  Set WeaponAimFStopOverride: %.2f"), Definition.WeaponAimFStopOverride));
 				}
 			}
 

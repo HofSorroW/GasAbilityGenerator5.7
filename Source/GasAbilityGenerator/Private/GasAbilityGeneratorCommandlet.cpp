@@ -1255,6 +1255,114 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		}
 	}
 
+	// v4.28: Consumable Items (Option C - uses EquippableItem generator with superset struct)
+	for (int32 i = 0; i < ManifestData.ConsumableItems.Num(); ++i)
+	{
+		const auto& Definition = ManifestData.ConsumableItems[i];
+		FGenerationResult Result = FEquippableItemGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
+		{
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("ConsumableItem");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
+		}
+	}
+
+	// v4.28: Ammo Items (Option C - uses EquippableItem generator with superset struct)
+	for (int32 i = 0; i < ManifestData.AmmoItems.Num(); ++i)
+	{
+		const auto& Definition = ManifestData.AmmoItems[i];
+		FGenerationResult Result = FEquippableItemGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
+		{
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("AmmoItem");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
+		}
+	}
+
+	// v4.28: Weapon Attachments (Option C - uses EquippableItem generator with superset struct)
+	for (int32 i = 0; i < ManifestData.WeaponAttachments.Num(); ++i)
+	{
+		const auto& Definition = ManifestData.WeaponAttachments[i];
+		FGenerationResult Result = FEquippableItemGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+
+		if (Result.Status == EGenerationStatus::Deferred && Result.CanRetry())
+		{
+			FDeferredAsset Deferred;
+			Deferred.AssetName = Definition.Name;
+			Deferred.AssetType = TEXT("WeaponAttachment");
+			Deferred.MissingDependency = Result.MissingDependency;
+			Deferred.MissingDependencyType = Result.MissingDependencyType;
+			Deferred.DefinitionIndex = i;
+			DeferredAssets.Add(Deferred);
+			LogMessage(FString::Printf(TEXT("[DEFER] %s (waiting for %s)"), *Result.AssetName, *Result.MissingDependency));
+		}
+		else
+		{
+			LogMessage(FString::Printf(TEXT("[%s] %s"),
+				Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+				Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+				*Result.AssetName));
+			if (Result.Status == EGenerationStatus::Failed)
+			{
+				LogError(FString::Printf(TEXT("  Error: %s"), *Result.Message));
+			}
+			if (Result.Status == EGenerationStatus::New)
+			{
+				GeneratedAssets.Add(Definition.Name);
+			}
+		}
+	}
+
 	// v2.6.0: Activities (v2.6.9: with deferred handling)
 	for (int32 i = 0; i < ManifestData.Activities.Num(); ++i)
 	{
@@ -1863,6 +1971,36 @@ bool UGasAbilityGeneratorCommandlet::TryGenerateDeferredAsset(const FDeferredAss
 			return OutResult.Status == EGenerationStatus::New;
 		}
 	}
+	// v4.28: ConsumableItem retry handling (Option C)
+	else if (Deferred.AssetType == TEXT("ConsumableItem"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.ConsumableItems.Num())
+		{
+			OutResult = FEquippableItemGenerator::Generate(
+				ManifestData.ConsumableItems[Deferred.DefinitionIndex]);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	// v4.28: AmmoItem retry handling (Option C)
+	else if (Deferred.AssetType == TEXT("AmmoItem"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.AmmoItems.Num())
+		{
+			OutResult = FEquippableItemGenerator::Generate(
+				ManifestData.AmmoItems[Deferred.DefinitionIndex]);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
+	// v4.28: WeaponAttachment retry handling (Option C)
+	else if (Deferred.AssetType == TEXT("WeaponAttachment"))
+	{
+		if (Deferred.DefinitionIndex >= 0 && Deferred.DefinitionIndex < ManifestData.WeaponAttachments.Num())
+		{
+			OutResult = FEquippableItemGenerator::Generate(
+				ManifestData.WeaponAttachments[Deferred.DefinitionIndex]);
+			return OutResult.Status == EGenerationStatus::New;
+		}
+	}
 	// v2.6.9: Activity retry handling
 	else if (Deferred.AssetType == TEXT("Activity"))
 	{
@@ -2206,6 +2344,10 @@ void UGasAbilityGeneratorCommandlet::BuildDependencyGraph(const FManifestData& M
 	for (const auto& ActC : ManifestData.ActivityConfigurations) { DependencyGraph->AddNode(ActC.Name); ManifestAssets.Add(ActC.Name); }
 	for (const auto& Act : ManifestData.Activities) { DependencyGraph->AddNode(Act.Name); ManifestAssets.Add(Act.Name); }
 	for (const auto& EI : ManifestData.EquippableItems) { DependencyGraph->AddNode(EI.Name); ManifestAssets.Add(EI.Name); }
+	// v4.28: Option C item types (all use EquippableItem generator with superset struct)
+	for (const auto& CI : ManifestData.ConsumableItems) { DependencyGraph->AddNode(CI.Name); ManifestAssets.Add(CI.Name); }
+	for (const auto& AI : ManifestData.AmmoItems) { DependencyGraph->AddNode(AI.Name); ManifestAssets.Add(AI.Name); }
+	for (const auto& WA : ManifestData.WeaponAttachments) { DependencyGraph->AddNode(WA.Name); ManifestAssets.Add(WA.Name); }
 	for (const auto& NE : ManifestData.NarrativeEvents) { DependencyGraph->AddNode(NE.Name); ManifestAssets.Add(NE.Name); }
 	for (const auto& E : ManifestData.Enumerations) { DependencyGraph->AddNode(E.Name); ManifestAssets.Add(E.Name); }
 

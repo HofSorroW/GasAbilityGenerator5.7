@@ -110,6 +110,18 @@ public:
 	static UClass* FindParentClass(const FString& ClassName);
 
 	/**
+	 * v4.28: Find fragment class by name for Item Fragments system
+	 * Per Item_Generation_Capability_Audit.md: Fragment allowlist is AmmoFragment, PoisonableFragment
+	 * Class path format: /Script/NarrativeArsenal.<ClassWithoutUPrefix>
+	 */
+	static UClass* FindFragmentClass(const FString& FragmentClassName);
+
+	/**
+	 * v4.28: Clear fragment warning deduplication cache (called at start of generation session)
+	 */
+	static void ClearFragmentWarningCache();
+
+	/**
 	 * Find a user-defined enum by name, searching project content
 	 */
 	static UEnum* FindUserDefinedEnum(const FString& EnumName, const FString& ProjectRoot);

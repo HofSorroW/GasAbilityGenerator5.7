@@ -345,6 +345,19 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseEquippableItems(Lines, i, OutData);
 		}
+		// v4.28: Option C manifest sections - per Item_Generation_Capability_Audit.md Section 1.1
+		else if (IsSectionHeader(TrimmedLine, TEXT("consumable_items:")))
+		{
+			ParseConsumableItems(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("ammo_items:")))
+		{
+			ParseAmmoItems(Lines, i, OutData);
+		}
+		else if (IsSectionHeader(TrimmedLine, TEXT("weapon_attachments:")))
+		{
+			ParseWeaponAttachments(Lines, i, OutData);
+		}
 		else if (IsSectionHeader(TrimmedLine, TEXT("activities:")))
 		{
 			ParseActivities(Lines, i, OutData);
@@ -6354,6 +6367,12 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInPickupMeshData = false;
 	bool bInPickupMeshMaterials = false;
 	bool bInTraceData = false;
+	// v4.28: Fragment parsing states - per Item_Generation_Capability_Audit.md Section 2
+	bool bInFragments = false;
+	bool bInFragmentProperties = false;
+	FManifestFragmentDefinition CurrentFragment;
+	// v4.28: SetByCallerValues parsing state
+	bool bInSetByCallerValues = false;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -6362,6 +6381,11 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// v4.28: Save pending fragment before adding item
+			if (bInFragments && !CurrentFragment.Class.IsEmpty())
+			{
+				CurrentDef.Fragments.Add(CurrentFragment);
+			}
 			// v2.6.14: Prefix validation - only add if EI_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
 			{
@@ -6379,6 +6403,11 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// v4.28: Save pending fragment before switching to new item
+			if (bInFragments && !CurrentFragment.Class.IsEmpty())
+			{
+				CurrentDef.Fragments.Add(CurrentFragment);
+			}
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
 			{
@@ -6412,6 +6441,11 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInPickupMeshData = false;
 			bInPickupMeshMaterials = false;
 			bInTraceData = false;
+			// v4.28: Reset fragment parsing states
+			bInFragments = false;
+			bInFragmentProperties = false;
+			CurrentFragment = FManifestFragmentDefinition();
+			bInSetByCallerValues = false;
 		}
 		else if (bInItem)
 		{
@@ -7095,6 +7129,112 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					CurrentDef.TraceData.bTraceMulti = GetLineValue(TrimmedLine).ToBool();
 				}
 			}
+			// v4.28: Fragments section - per Item_Generation_Capability_Audit.md Section 5.1
+			else if (TrimmedLine.Equals(TEXT("fragments:")) || TrimmedLine.StartsWith(TEXT("fragments:")))
+			{
+				// Save pending fragment if any
+				if (bInFragments && !CurrentFragment.Class.IsEmpty())
+				{
+					CurrentDef.Fragments.Add(CurrentFragment);
+					CurrentFragment = FManifestFragmentDefinition();
+				}
+				bInFragments = true;
+				bInFragmentProperties = false;
+				// Reset other states
+				bInAbilities = false;
+				bInItemTags = false;
+				bInStats = false;
+				bInActivitiesToGrant = false;
+				bInPickupMeshData = false;
+				bInTraceData = false;
+				bInSetByCallerValues = false;
+			}
+			// v4.28: Fragment array item parsing
+			else if (bInFragments)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- class:")))
+				{
+					// Save previous fragment if any
+					if (!CurrentFragment.Class.IsEmpty())
+					{
+						CurrentDef.Fragments.Add(CurrentFragment);
+					}
+					CurrentFragment = FManifestFragmentDefinition();
+					CurrentFragment.Class = GetLineValue(TrimmedLine.Mid(2));
+					bInFragmentProperties = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+				{
+					bInFragmentProperties = true;
+				}
+				else if (bInFragmentProperties && TrimmedLine.Contains(TEXT(":")))
+				{
+					// Parse property key:value - supports S2 dot notation (e.g., TraceData.TraceDistance)
+					int32 ColonIndex;
+					if (TrimmedLine.FindChar(TEXT(':'), ColonIndex))
+					{
+						FString Key = TrimmedLine.Left(ColonIndex).TrimStartAndEnd();
+						FString Value = StripYamlComment(TrimmedLine.Mid(ColonIndex + 1).TrimStartAndEnd());
+						if (!Key.IsEmpty() && !Value.IsEmpty())
+						{
+							FManifestFragmentPropertyDefinition PropDef;
+							PropDef.Key = Key;
+							PropDef.Value = Value;
+							CurrentFragment.Properties.Add(PropDef);
+						}
+					}
+				}
+			}
+			// v4.28: GameplayEffectItem properties (parent_class: GameplayEffectItem)
+			else if (TrimmedLine.StartsWith(TEXT("gameplay_effect_class:")))
+			{
+				CurrentDef.GameplayEffectClass = GetLineValue(TrimmedLine);
+			}
+			// v4.28: SetByCallerValues section header
+			else if (TrimmedLine.Equals(TEXT("set_by_caller_values:")) || TrimmedLine.StartsWith(TEXT("set_by_caller_values:")))
+			{
+				bInSetByCallerValues = true;
+				// Reset other states
+				bInAbilities = false;
+				bInItemTags = false;
+				bInFragments = false;
+			}
+			// v4.28: SetByCallerValues key:value parsing
+			else if (bInSetByCallerValues && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonIndex;
+				if (TrimmedLine.FindChar(TEXT(':'), ColonIndex))
+				{
+					FString Key = TrimmedLine.Left(ColonIndex).TrimStartAndEnd();
+					FString ValueStr = StripYamlComment(TrimmedLine.Mid(ColonIndex + 1).TrimStartAndEnd());
+					if (!Key.IsEmpty() && !ValueStr.IsEmpty())
+					{
+						float Value = FCString::Atof(*ValueStr);
+						CurrentDef.SetByCallerValues.Add(Key, Value);
+					}
+				}
+			}
+			// v4.28: WeaponAttachmentItem properties (parent_class: WeaponAttachmentItem)
+			else if (TrimmedLine.StartsWith(TEXT("weapon_attachment_slot:")))
+			{
+				CurrentDef.WeaponAttachmentSlot = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("attachment_mesh:")))
+			{
+				CurrentDef.AttachmentMesh = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("fov_override:")))
+			{
+				CurrentDef.FOVOverride = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("weapon_render_fov_override:")))
+			{
+				CurrentDef.WeaponRenderFOVOverride = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("weapon_aim_fstop_override:")))
+			{
+				CurrentDef.WeaponAimFStopOverride = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
 			// v4.27: Function overrides section (for BlueprintNativeEvent overrides like HandleUnequip)
 			else if (TrimmedLine.Equals(TEXT("function_overrides:")) || TrimmedLine.StartsWith(TEXT("function_overrides:")))
 			{
@@ -7103,6 +7243,12 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				{
 					CurrentDef.Stats.Add(CurrentStat);
 					CurrentStat = FManifestItemStatDefinition();
+				}
+				// v4.28: Save pending fragment if we were in fragments section
+				if (bInFragments && !CurrentFragment.Class.IsEmpty())
+				{
+					CurrentDef.Fragments.Add(CurrentFragment);
+					CurrentFragment = FManifestFragmentDefinition();
 				}
 				// Reset all section states
 				bInAbilities = false;
@@ -7119,6 +7265,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInActivitiesToGrant = false;
 				bInPickupMeshData = false;
 				bInTraceData = false;
+				// v4.28: Reset fragment states
+				bInFragments = false;
+				bInFragmentProperties = false;
+				bInSetByCallerValues = false;
 
 				// Parse function overrides subsection using existing helper
 				int32 FuncOverridesIndent = GetIndentLevel(Line);
@@ -7396,10 +7546,278 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 		LineIndex++;
 	}
 
+	// v4.28: Save pending fragment before final item addition
+	if (bInFragments && !CurrentFragment.Class.IsEmpty())
+	{
+		CurrentDef.Fragments.Add(CurrentFragment);
+	}
 	// v2.6.14: Prefix validation - only add if EI_ prefix
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
 	{
 		OutData.EquippableItems.Add(CurrentDef);
+	}
+}
+
+// v4.28: Option C manifest section - consumable_items (UGameplayEffectItem)
+// Per Item_Generation_Capability_Audit.md Section 1.1
+void FGasAbilityGeneratorParser::ParseConsumableItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	// Uses same parsing logic as equippable_items but stores to ConsumableItems array
+	// Consumable items don't require EI_ prefix - they use CI_ or any name
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestEquippableItemDefinition CurrentDef;
+	bool bInItem = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.ConsumableItems.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.ConsumableItems.Add(CurrentDef);
+			}
+			CurrentDef = FManifestEquippableItemDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+		}
+		else if (bInItem)
+		{
+			// Parse common item properties
+			if (TrimmedLine.StartsWith(TEXT("folder:"))) CurrentDef.Folder = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:"))) CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("display_name:"))) CurrentDef.DisplayName = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("description:"))) CurrentDef.Description = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("thumbnail:"))) CurrentDef.Thumbnail = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("weight:"))) CurrentDef.Weight = FCString::Atof(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("base_value:"))) CurrentDef.BaseValue = FCString::Atoi(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("base_score:"))) CurrentDef.BaseScore = FCString::Atof(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("stackable:"))) CurrentDef.bStackable = GetLineValue(TrimmedLine).ToBool();
+			else if (TrimmedLine.StartsWith(TEXT("max_stack_size:"))) CurrentDef.MaxStackSize = FCString::Atoi(*GetLineValue(TrimmedLine));
+			// v4.28: GameplayEffectItem-specific properties
+			else if (TrimmedLine.StartsWith(TEXT("gameplay_effect_class:"))) CurrentDef.GameplayEffectClass = GetLineValue(TrimmedLine);
+		}
+
+		LineIndex++;
+	}
+
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.ConsumableItems.Add(CurrentDef);
+	}
+}
+
+// v4.28: Option C manifest section - ammo_items (UAmmoItem)
+// Per Item_Generation_Capability_Audit.md Section 1.1
+void FGasAbilityGeneratorParser::ParseAmmoItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestEquippableItemDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInFragments = false;
+	bool bInFragmentProperties = false;
+	FManifestFragmentDefinition CurrentFragment;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInFragments && !CurrentFragment.Class.IsEmpty())
+			{
+				CurrentDef.Fragments.Add(CurrentFragment);
+			}
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.AmmoItems.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			if (bInFragments && !CurrentFragment.Class.IsEmpty())
+			{
+				CurrentDef.Fragments.Add(CurrentFragment);
+			}
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.AmmoItems.Add(CurrentDef);
+			}
+			CurrentDef = FManifestEquippableItemDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInFragments = false;
+			bInFragmentProperties = false;
+			CurrentFragment = FManifestFragmentDefinition();
+		}
+		else if (bInItem)
+		{
+			// Parse common item properties
+			if (TrimmedLine.StartsWith(TEXT("folder:"))) CurrentDef.Folder = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:"))) CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("display_name:"))) CurrentDef.DisplayName = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("description:"))) CurrentDef.Description = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("thumbnail:"))) CurrentDef.Thumbnail = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("weight:"))) CurrentDef.Weight = FCString::Atof(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("base_value:"))) CurrentDef.BaseValue = FCString::Atoi(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("stackable:"))) CurrentDef.bStackable = GetLineValue(TrimmedLine).ToBool();
+			else if (TrimmedLine.StartsWith(TEXT("max_stack_size:"))) CurrentDef.MaxStackSize = FCString::Atoi(*GetLineValue(TrimmedLine));
+			// Fragments section
+			else if (TrimmedLine.Equals(TEXT("fragments:")) || TrimmedLine.StartsWith(TEXT("fragments:")))
+			{
+				if (bInFragments && !CurrentFragment.Class.IsEmpty())
+				{
+					CurrentDef.Fragments.Add(CurrentFragment);
+					CurrentFragment = FManifestFragmentDefinition();
+				}
+				bInFragments = true;
+				bInFragmentProperties = false;
+			}
+			else if (bInFragments)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- class:")))
+				{
+					if (!CurrentFragment.Class.IsEmpty())
+					{
+						CurrentDef.Fragments.Add(CurrentFragment);
+					}
+					CurrentFragment = FManifestFragmentDefinition();
+					CurrentFragment.Class = GetLineValue(TrimmedLine.Mid(2));
+					bInFragmentProperties = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+				{
+					bInFragmentProperties = true;
+				}
+				else if (bInFragmentProperties && TrimmedLine.Contains(TEXT(":")))
+				{
+					int32 ColonIndex;
+					if (TrimmedLine.FindChar(TEXT(':'), ColonIndex))
+					{
+						FString Key = TrimmedLine.Left(ColonIndex).TrimStartAndEnd();
+						FString Value = StripYamlComment(TrimmedLine.Mid(ColonIndex + 1).TrimStartAndEnd());
+						if (!Key.IsEmpty() && !Value.IsEmpty())
+						{
+							FManifestFragmentPropertyDefinition PropDef;
+							PropDef.Key = Key;
+							PropDef.Value = Value;
+							CurrentFragment.Properties.Add(PropDef);
+						}
+					}
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	if (bInFragments && !CurrentFragment.Class.IsEmpty())
+	{
+		CurrentDef.Fragments.Add(CurrentFragment);
+	}
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.AmmoItems.Add(CurrentDef);
+	}
+}
+
+// v4.28: Option C manifest section - weapon_attachments (UWeaponAttachmentItem)
+// Per Item_Generation_Capability_Audit.md Section 1.1
+void FGasAbilityGeneratorParser::ParseWeaponAttachments(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestEquippableItemDefinition CurrentDef;
+	bool bInItem = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.WeaponAttachments.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.WeaponAttachments.Add(CurrentDef);
+			}
+			CurrentDef = FManifestEquippableItemDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+		}
+		else if (bInItem)
+		{
+			// Parse common item properties
+			if (TrimmedLine.StartsWith(TEXT("folder:"))) CurrentDef.Folder = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:"))) CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("display_name:"))) CurrentDef.DisplayName = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("description:"))) CurrentDef.Description = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("thumbnail:"))) CurrentDef.Thumbnail = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("weight:"))) CurrentDef.Weight = FCString::Atof(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("base_value:"))) CurrentDef.BaseValue = FCString::Atoi(*GetLineValue(TrimmedLine));
+			// v4.28: WeaponAttachmentItem-specific properties
+			else if (TrimmedLine.StartsWith(TEXT("weapon_attachment_slot:"))) CurrentDef.WeaponAttachmentSlot = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("attachment_mesh:"))) CurrentDef.AttachmentMesh = GetLineValue(TrimmedLine);
+			else if (TrimmedLine.StartsWith(TEXT("fov_override:"))) CurrentDef.FOVOverride = FCString::Atof(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("weapon_render_fov_override:"))) CurrentDef.WeaponRenderFOVOverride = FCString::Atof(*GetLineValue(TrimmedLine));
+			else if (TrimmedLine.StartsWith(TEXT("weapon_aim_fstop_override:"))) CurrentDef.WeaponAimFStopOverride = FCString::Atof(*GetLineValue(TrimmedLine));
+		}
+
+		LineIndex++;
+	}
+
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.WeaponAttachments.Add(CurrentDef);
 	}
 }
 
