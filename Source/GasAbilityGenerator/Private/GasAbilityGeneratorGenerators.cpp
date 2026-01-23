@@ -9682,6 +9682,11 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 		{
 			CreatedNode = CreateSelfNode(FunctionGraph, NodeDef);
 		}
+		// v4.27: DynamicCast support for function overrides
+		else if (NodeDef.Type.Equals(TEXT("DynamicCast"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateDynamicCastNode(FunctionGraph, NodeDef);
+		}
 		else
 		{
 			LogGeneration(FString::Printf(TEXT("  Unknown/unsupported node type '%s' for function override node '%s'"),

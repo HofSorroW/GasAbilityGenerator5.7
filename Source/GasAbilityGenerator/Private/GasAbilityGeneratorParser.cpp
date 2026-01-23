@@ -11920,6 +11920,8 @@ void FGasAbilityGeneratorParser::ParseFormStateEffects(const TArray<FString>& Li
 		// Check for end of section (non-list line at or before section indent)
 		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
 		{
+			// v4.27: Decrement LineIndex so main loop can re-process this section header
+			LineIndex--;
 			break;
 		}
 
