@@ -817,7 +817,6 @@ gameplay_abilities:
       cancel_abilities_with_tag:
         - Ability.Father.Armor
         - Ability.Father.Exoskeleton
-        - Ability.Father.Symbiote
         - Ability.Father.Engineer
       # activation_owned_tags removed - form identity via GE_CrawlerState (Option B)
       activation_required_tags:
@@ -1254,7 +1253,6 @@ gameplay_abilities:
       cancel_abilities_with_tag:
         - Ability.Father.Crawler
         - Ability.Father.Exoskeleton
-        - Ability.Father.Symbiote
         - Ability.Father.Engineer
       activation_owned_tags:
         # Father.Form.Armor removed - form identity via GE_ArmorState (Option B)
@@ -1815,7 +1813,6 @@ gameplay_abilities:
       cancel_abilities_with_tag:
         - Ability.Father.Crawler
         - Ability.Father.Armor
-        - Ability.Father.Symbiote
         - Ability.Father.Engineer
       activation_owned_tags:
         - Father.State.Attached
@@ -2450,6 +2447,39 @@ gameplay_abilities:
           properties:
             event_name: K2_ActivateAbility
           position: [0, 0]
+        # v4.28.2 (C_SYMBIOTE_STRICT_CANCEL): Apply GE_SymbioteDuration with SetByCaller at activation START
+        # This grants Father.State.SymbioteLocked for 30s, blocking other form abilities
+        - id: MakeSpec_SymbioteDuration
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+            gameplay_effect_class: GE_SymbioteDuration
+          position: [50, -100]
+        - id: GetSymbioteDuration_Spec
+          type: VariableGet
+          properties:
+            variable_name: SymbioteDuration
+          position: [50, -50]
+        - id: MakeLiteralTag_DurationData
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Data.Symbiote.Duration
+          position: [100, -50]
+        - id: AssignSetByCaller_Duration
+          type: CallFunction
+          properties:
+            function: AssignTagSetByCallerMagnitude
+            class: AbilitySystemBlueprintLibrary
+          position: [150, -100]
+        - id: ApplySpec_SymbioteDuration
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectSpecToOwner
+            target_self: true
+          position: [200, -100]
         - id: GetAvatarActor
           type: CallFunction
           properties:
@@ -2801,9 +2831,26 @@ gameplay_abilities:
           position: [1200, 900]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (GetAvatarActor is pure - no exec pins)
+        # v4.28.2 (C_SYMBIOTE_STRICT_CANCEL): Apply GE_SymbioteDuration at activation START
+        # Exec flow: Event → MakeSpec → Assign → Apply → Cast → ...
         - from: [Event_Activate, Then]
+          to: [MakeSpec_SymbioteDuration, Exec]
+        - from: [MakeSpec_SymbioteDuration, Exec]
+          to: [AssignSetByCaller_Duration, Exec]
+        - from: [AssignSetByCaller_Duration, Exec]
+          to: [ApplySpec_SymbioteDuration, Exec]
+        - from: [ApplySpec_SymbioteDuration, Exec]
           to: [CastToFather, Exec]
+        # Data flow for SetByCaller chain
+        - from: [MakeSpec_SymbioteDuration, ReturnValue]
+          to: [AssignSetByCaller_Duration, SpecHandle]
+        - from: [GetSymbioteDuration_Spec, SymbioteDuration]
+          to: [AssignSetByCaller_Duration, Magnitude]
+        - from: [MakeLiteralTag_DurationData, ReturnValue]
+          to: [AssignSetByCaller_Duration, DataTag]
+        - from: [AssignSetByCaller_Duration, ReturnValue]
+          to: [ApplySpec_SymbioteDuration, EffectSpecHandle]
+        # Original flow continues
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
         - from: [SetFatherRef, Exec]
@@ -3006,7 +3053,6 @@ gameplay_abilities:
         - Ability.Father.Crawler
         - Ability.Father.Armor
         - Ability.Father.Exoskeleton
-        - Ability.Father.Symbiote
       activation_owned_tags:
         - Father.State.TurretDeployed
       activation_required_tags:
@@ -5757,7 +5803,6 @@ gameplay_abilities:
         - Ability.Father.Crawler
         - Ability.Father.Armor
         - Ability.Father.Exoskeleton
-        - Ability.Father.Symbiote
         - Ability.Father.Engineer
         - Ability.Father.Sword
       activation_owned_tags:
@@ -5768,6 +5813,7 @@ gameplay_abilities:
       activation_blocked_tags:
         - Father.Form.Rifle
         - Father.State.Transitioning
+        - Father.State.SymbioteLocked
     variables:
       - name: FatherRef
         type: Object
@@ -6035,7 +6081,6 @@ gameplay_abilities:
         - Ability.Father.Crawler
         - Ability.Father.Armor
         - Ability.Father.Exoskeleton
-        - Ability.Father.Symbiote
         - Ability.Father.Engineer
         - Ability.Father.Rifle
       activation_owned_tags:
@@ -6046,6 +6091,7 @@ gameplay_abilities:
       activation_blocked_tags:
         - Father.Form.Sword
         - Father.State.Transitioning
+        - Father.State.SymbioteLocked
     variables:
       - name: FatherRef
         type: Object

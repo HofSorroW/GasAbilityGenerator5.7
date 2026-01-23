@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.16.2)
+# LOCKED_CONTRACTS.md (v4.28.2)
 
 ## Purpose
 
@@ -253,6 +253,48 @@ All hard-coded Father identifiers will then be removed from core generator code.
 
 ---
 
+## LOCKED CONTRACT 11 — C_SYMBIOTE_STRICT_CANCEL (v4.28.2)
+
+### Context
+
+Symbiote is an **ultimate ability** with 30-second duration. During Symbiote, the player should NOT be able to cancel it via any player-initiated ability (form changes, weapon forms).
+
+**Exception:** GA_FatherSacrifice is an auto-trigger emergency save ability. It CAN cancel Symbiote when the player would otherwise die.
+
+### Invariant
+
+1. **GE_SymbioteDuration** must be applied at the START of GA_FatherSymbiote activation using SetByCaller pattern with `Data.Symbiote.Duration` tag
+2. **GE_SymbioteDuration** grants `Father.State.SymbioteLocked` tag for the duration
+3. All player-initiated abilities that could cancel Symbiote must have `Father.State.SymbioteLocked` in their `activation_blocked_tags`:
+   - GA_FatherCrawler ✓
+   - GA_FatherArmor ✓
+   - GA_FatherExoskeleton ✓
+   - GA_FatherEngineer ✓
+   - GA_FatherRifle ✓
+   - GA_FatherSword ✓
+4. `Ability.Father.Symbiote` must NOT be in `cancel_abilities_with_tag` for the above abilities
+5. **GA_FatherSacrifice** MAY retain `Ability.Father.Symbiote` in its cancel list (emergency override)
+
+### Defense-in-Depth Strategy
+
+- **Layer 1 (Blocking):** `Father.State.SymbioteLocked` in blocked_tags prevents ability activation
+- **Layer 2 (No Cancel):** Removing Symbiote from cancel lists ensures even if blocking fails, abilities won't forcibly cancel Symbiote
+- **Layer 3 (Duration Enforcement):** GE_SymbioteDuration uses `HasDuration` policy with SetByCaller, ensuring the lock automatically expires
+
+### Forbidden
+
+- Adding `Ability.Father.Symbiote` to any player-initiated ability's cancel_abilities_with_tag (except GA_FatherSacrifice)
+- Removing `Father.State.SymbioteLocked` from any form/weapon ability's activation_blocked_tags
+- Removing GE_SymbioteDuration application from GA_FatherSymbiote activation flow
+
+### Reference
+
+- Manifest: `manifest.yaml` — GA_FatherSymbiote event_graph, GE_SymbioteDuration definition
+- Audit: Claude–GPT dual audit session (2026-01-23)
+- Implementation: v4.28.2
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -275,3 +317,4 @@ Any change that touches a LOCKED implementation must:
 | v4.16 | 2026-01-21 | Added Contract 10 — Blueprint Compile Gate (GPT audit) |
 | v4.16.1 | 2026-01-21 | Added Temporary Exception 1 — Rule #9 Father Validation (dual-agent audit) |
 | v4.16.2 | 2026-01-22 | Locked P1.3 Startup Effects Validation (Claude–GPT dual audit): severity definitions, error codes, abort strategy, CI gate, symbol anchors |
+| v4.28.2 | 2026-01-23 | Added Contract 11 — C_SYMBIOTE_STRICT_CANCEL (Claude–GPT dual audit): Symbiote ultimate cannot be cancelled by player-initiated abilities |

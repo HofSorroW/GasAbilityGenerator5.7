@@ -10242,18 +10242,18 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		WellKnownFunctions.Add(TEXT("SetVisibility"), USceneComponent::StaticClass());
 		WellKnownFunctions.Add(TEXT("SetHiddenInGame"), USceneComponent::StaticClass());
 
-		// GAS functions on AbilitySystemComponent - use K2_ prefixed versions for Blueprint
-		WellKnownFunctions.Add(TEXT("ApplyGameplayEffectSpecToSelf"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectSpecToSelf"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("ApplyGameplayEffectSpecToTarget"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectSpecToTarget"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("ApplyGameplayEffectToSelf"), UAbilitySystemComponent::StaticClass());
+		// GAS functions on AbilitySystemComponent (UE5.7+: BP_ prefix for Blueprint-exposed wrappers)
+		// NOTE: Only register actual UFUNCTION names - base names are C++ only and cause wasted lookups
+		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectSpecToSelf"), UAbilitySystemComponent::StaticClass());
+		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectSpecToTarget"), UAbilitySystemComponent::StaticClass());
 		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToSelf"), UAbilitySystemComponent::StaticClass());
-		WellKnownFunctions.Add(TEXT("ApplyGameplayEffectToTarget"), UAbilitySystemComponent::StaticClass());
 		WellKnownFunctions.Add(TEXT("BP_ApplyGameplayEffectToTarget"), UAbilitySystemComponent::StaticClass());
 		WellKnownFunctions.Add(TEXT("RemoveActiveGameplayEffect"), UAbilitySystemComponent::StaticClass());
 		WellKnownFunctions.Add(TEXT("RemoveActiveGameplayEffectBySourceEffect"), UAbilitySystemComponent::StaticClass());
 		WellKnownFunctions.Add(TEXT("GetActiveGameplayEffectStackCount"), UAbilitySystemComponent::StaticClass());
+
+		// GAS functions on GameplayAbility (UE5.7+: K2_ prefix for Blueprint-exposed wrappers)
+		WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectSpecToOwner"), UGameplayAbility::StaticClass());
 
 		// GAS Blueprint Library functions
 		WellKnownFunctions.Add(TEXT("GetAbilitySystemComponent"), UAbilitySystemBlueprintLibrary::StaticClass());
