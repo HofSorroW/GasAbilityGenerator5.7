@@ -3912,155 +3912,6 @@ gameplay_abilities:
   # ACTION ABILITIES (9)
   # ---------------------------------------------------------------------------
   
-  # GA_ProtectiveDome - Armor Passive Damage Absorption (player-owned toggle)
-  # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
-  - name: GA_ProtectiveDome
-    folder: Abilities/Actions
-    parent_class: NarrativeGameplayAbility
-    instancing_policy: InstancedPerActor
-    net_execution_policy: LocalPredicted
-    tags:
-      ability_tags:
-        - Ability.Father.ProtectiveDome
-      activation_owned_tags:
-        - Father.Dome.Active
-      # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
-      # Equipment granting already ensures this ability is only available in Armor form
-    # v4.21: Delegate bindings - fires when player takes damage while dome is active
-    delegate_bindings:
-      - id: BindDomeDamageAbsorption
-        delegate: OnDamagedBy                    # Fires when owner (player) takes damage
-        source: OwnerASC                         # Player's ASC (ability runs on player)
-        handler: HandleDomeDamageAbsorption      # Custom Event (auto-created with signature)
-        # Handler params: DamagerCauserASC, Damage, Spec - use for dome absorption logic
-    variables:
-      - name: PlayerRef
-        type: Object
-        class: NarrativePlayerCharacter
-      - name: DomeAbsorptionHandle
-        type: ActiveGameplayEffectHandle
-    event_graph:
-      nodes:
-        - id: Event_Activate
-          type: Event
-          properties:
-            event_name: K2_ActivateAbility
-          position: [0, 0]
-        - id: GetOwningActor
-          type: CallFunction
-          properties:
-            function: GetOwningActorFromActorInfo
-            target_self: true
-          position: [300, 0]
-        - id: CastToFather
-          type: DynamicCast
-          properties:
-            target_class: BP_FatherCompanion
-          position: [600, 0]
-        - id: GetOwnerPlayer
-          type: PropertyGet
-          properties:
-            property_name: OwnerPlayer
-            target_class: BP_FatherCompanion
-          position: [900, 0]
-        - id: SetPlayerRef
-          type: VariableSet
-          properties:
-            variable_name: PlayerRef
-          position: [1200, 0]
-        - id: GetPlayerASC
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-          position: [1500, 0]
-        - id: MakeGESpec
-          type: CallFunction
-          properties:
-            function: MakeOutgoingGameplayEffectSpec
-            target_self: true
-          position: [1800, 0]
-        - id: ApplyGE
-          type: CallFunction
-          properties:
-            function: BP_ApplyGameplayEffectSpecToSelf
-          position: [2100, 0]
-        - id: SetDomeHandle
-          type: VariableSet
-          properties:
-            variable_name: DomeAbsorptionHandle
-          position: [2400, 0]
-        # === END ABILITY - Cleanup (v4.27: Simplified - no auto burst trigger) ===
-        # NOTE: Automatic dome burst on form exit is NOT supported.
-        # Reason: TSubclassOf<> parameters can't be easily passed to TryActivateAbilityByClass in Blueprint.
-        # Player should manually use GA_DomeBurst input before switching forms if dome is charged.
-        # Father.Dome.Active is auto-cleared via activation_owned_tags when ability ends.
-        - id: Event_EndAbility
-          type: Event
-          properties:
-            event_name: K2_OnEndAbility
-          position: [0, 400]
-        - id: GetPlayerRef_End
-          type: VariableGet
-          properties:
-            variable_name: PlayerRef
-          position: [300, 400]
-        - id: GetPlayerASC_End
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-          position: [600, 400]
-        - id: GetDomeHandle
-          type: VariableGet
-          properties:
-            variable_name: DomeAbsorptionHandle
-          position: [900, 500]
-        - id: RemoveGE
-          type: CallFunction
-          properties:
-            function: RemoveActiveGameplayEffect
-          position: [900, 400]
-      connections:
-        # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet/CallFunction nodes)
-        - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [CastToFather, Exec]
-        - from: [CastToFather, Exec]
-          to: [SetPlayerRef, Exec]
-        - from: [SetPlayerRef, Exec]
-          to: [MakeGESpec, Exec]
-        - from: [MakeGESpec, Exec]
-          to: [ApplyGE, Exec]
-        - from: [ApplyGE, Exec]
-          to: [SetDomeHandle, Exec]
-        # Data flow
-        - from: [GetOwningActor, ReturnValue]
-          to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetOwnerPlayer, Target]
-        - from: [GetOwnerPlayer, OwnerPlayer]
-          to: [SetPlayerRef, PlayerRef]
-        - from: [SetPlayerRef, PlayerRef]
-          to: [GetPlayerASC, Actor]
-        # BP_ApplyGameplayEffectSpecToSelf is called on the player's ASC
-        - from: [GetPlayerASC, ReturnValue]
-          to: [ApplyGE, Target]
-        - from: [MakeGESpec, ReturnValue]
-          to: [ApplyGE, Spec]
-        - from: [ApplyGE, ReturnValue]
-          to: [SetDomeHandle, DomeAbsorptionHandle]
-        # === END ABILITY FLOW ===
-        - from: [Event_EndAbility, Then]
-          to: [RemoveGE, Exec]
-        # Data flow - End
-        - from: [GetPlayerRef_End, PlayerRef]
-          to: [GetPlayerASC_End, Actor]
-        - from: [GetPlayerASC_End, ReturnValue]
-          to: [RemoveGE, Target]
-        - from: [GetDomeHandle, DomeAbsorptionHandle]
-          to: [RemoveGE, Handle]
-
   # GA_DomeBurst - Armor Active AOE Damage (player-owned instant)
   # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
   - name: GA_DomeBurst
@@ -4266,6 +4117,201 @@ gameplay_abilities:
           to: [SetByCaller, Magnitude]
         - from: [SetByCaller, ReturnValue]
           to: [ApplyGE, Spec]
+
+
+  # GA_ProtectiveDome - Armor Passive Damage Absorption (player-owned toggle)
+  # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
+  - name: GA_ProtectiveDome
+    folder: Abilities/Actions
+    parent_class: NarrativeGameplayAbility
+    instancing_policy: InstancedPerActor
+    net_execution_policy: LocalPredicted
+    tags:
+      ability_tags:
+        - Ability.Father.ProtectiveDome
+      activation_owned_tags:
+        - Father.Dome.Active
+      # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
+      # Equipment granting already ensures this ability is only available in Armor form
+    # v4.21: Delegate bindings - fires when player takes damage while dome is active
+    delegate_bindings:
+      - id: BindDomeDamageAbsorption
+        delegate: OnDamagedBy                    # Fires when owner (player) takes damage
+        source: OwnerASC                         # Player's ASC (ability runs on player)
+        handler: HandleDomeDamageAbsorption      # Custom Event (auto-created with signature)
+        # Handler params: DamagerCauserASC, Damage, Spec - use for dome absorption logic
+    variables:
+      - name: PlayerRef
+        type: Object
+        class: NarrativePlayerCharacter
+      - name: DomeAbsorptionHandle
+        type: ActiveGameplayEffectHandle
+    event_graph:
+      nodes:
+        - id: Event_Activate
+          type: Event
+          properties:
+            event_name: K2_ActivateAbility
+          position: [0, 0]
+        - id: GetOwningActor
+          type: CallFunction
+          properties:
+            function: GetOwningActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [900, 0]
+        - id: SetPlayerRef
+          type: VariableSet
+          properties:
+            variable_name: PlayerRef
+          position: [1200, 0]
+        - id: GetPlayerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1500, 0]
+        - id: MakeGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+          position: [1800, 0]
+        - id: ApplyGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToSelf
+          position: [2100, 0]
+        - id: SetDomeHandle
+          type: VariableSet
+          properties:
+            variable_name: DomeAbsorptionHandle
+          position: [2400, 0]
+        # === END ABILITY - Form exit burst (v4.27: Decisions 22-24) ===
+        # When ability ends (form unequipped), try to activate GA_DomeBurst
+        # GA_DomeBurst requires Father.Dome.FullyCharged tag, so only fires if charged
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 400]
+        - id: GetPlayerRef_End
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [200, 400]
+        - id: GetPlayerASC_End
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [400, 400]
+        # Step 1: Try to activate GA_DomeBurst (will only succeed if dome is charged)
+        - id: TryActivateBurst
+          type: CallFunction
+          properties:
+            function: TryActivateAbilityByClass
+            class: AbilitySystemComponent
+            parameters:
+              InAbilityToActivate: GA_DomeBurst
+              bAllowRemoteActivation: false
+          position: [600, 400]
+        # Step 2: Clear Father.Dome.FullyCharged tag (reset state)
+        - id: MakeLiteralTag_Charged
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.Dome.FullyCharged
+          position: [600, 550]
+        - id: MakeTagContainer_Charged
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [800, 500]
+        - id: ClearChargedTag
+          type: CallFunction
+          properties:
+            function: RemoveLooseGameplayTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1000, 400]
+        # Step 3: Remove dome absorption GE
+        - id: GetDomeHandle
+          type: VariableGet
+          properties:
+            variable_name: DomeAbsorptionHandle
+          position: [1200, 500]
+        - id: RemoveGE
+          type: CallFunction
+          properties:
+            function: RemoveActiveGameplayEffect
+          position: [1200, 400]
+      connections:
+        # === ACTIVATION FLOW ===
+        # Exec flow (impure nodes only - skip pure PropertyGet/CallFunction nodes)
+        - from: [Event_Activate, Then]
+          to: [GetOwningActor, Exec]
+        - from: [GetOwningActor, Exec]
+          to: [CastToFather, Exec]
+        - from: [CastToFather, Exec]
+          to: [SetPlayerRef, Exec]
+        - from: [SetPlayerRef, Exec]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [ApplyGE, Exec]
+        - from: [ApplyGE, Exec]
+          to: [SetDomeHandle, Exec]
+        # Data flow
+        - from: [GetOwningActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerASC, Actor]
+        # BP_ApplyGameplayEffectSpecToSelf is called on the player's ASC
+        - from: [GetPlayerASC, ReturnValue]
+          to: [ApplyGE, Target]
+        - from: [MakeGESpec, ReturnValue]
+          to: [ApplyGE, Spec]
+        - from: [ApplyGE, ReturnValue]
+          to: [SetDomeHandle, DomeAbsorptionHandle]
+        # === END ABILITY FLOW (v4.27: Form exit burst) ===
+        # Exec: EndAbility → TryActivateBurst → ClearChargedTag → RemoveGE
+        - from: [Event_EndAbility, Then]
+          to: [TryActivateBurst, Exec]
+        - from: [TryActivateBurst, Exec]
+          to: [ClearChargedTag, Exec]
+        - from: [ClearChargedTag, Exec]
+          to: [RemoveGE, Exec]
+        # Data: Get player ASC
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetPlayerASC_End, Actor]
+        # Data: TryActivateBurst target
+        - from: [GetPlayerASC_End, ReturnValue]
+          to: [TryActivateBurst, Target]
+        # Data: ClearChargedTag (Actor + TagContainer)
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [ClearChargedTag, Actor]
+        - from: [MakeLiteralTag_Charged, ReturnValue]
+          to: [MakeTagContainer_Charged, Tag]
+        - from: [MakeTagContainer_Charged, ReturnValue]
+          to: [ClearChargedTag, GameplayTags]
+        # Data: RemoveGE
+        - from: [GetPlayerASC_End, ReturnValue]
+          to: [RemoveGE, Target]
+        - from: [GetDomeHandle, DomeAbsorptionHandle]
+          to: [RemoveGE, Handle]
 
   # GA_FatherExoskeletonDash - Exoskeleton Dash with I-Frames
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
@@ -6275,11 +6321,9 @@ equippable_items:
     armor_rating: 50.0
     attack_rating: 0.0
     stealth_rating: 0.0
-    # v4.27 NOTE: Form exit burst (Decisions 22-24) cannot be automated.
-    # - HandleUnequip override: GetEquipmentComponent() is C++ only (not UFUNCTION)
-    # - GA_ProtectiveDome EndAbility: TSubclassOf<> parameters can't be passed to TryActivateAbilityByClass
-    # WORKAROUND: Player should manually trigger GA_DomeBurst input before switching forms if dome is charged.
-    # GA_DomeBurst requires Father.Dome.FullyCharged to activate, so it won't fire unless dome is ready.
+    # v4.27 NOTE: Form exit burst (Decisions 22-24) is implemented in GA_ProtectiveDome's EndAbility event.
+    # When armor form is unequipped, GA_ProtectiveDome ends and tries to activate GA_DomeBurst.
+    # GA_DomeBurst requires Father.Dome.FullyCharged tag, so it only fires if dome was fully charged.
 
   - name: EI_FatherExoskeletonForm
     folder: Items/Forms

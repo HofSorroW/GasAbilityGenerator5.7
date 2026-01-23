@@ -2264,6 +2264,51 @@ void UGasAbilityGeneratorCommandlet::BuildDependencyGraph(const FManifestData& M
 		TryAddEdge(Quest.Name, Quest.Questgiver);
 	}
 
+	// v4.27: GA → GA (TSubclassOf references in event graph nodes)
+	// Scans for TryActivateAbilityByClass calls that reference other manifest abilities
+	for (const auto& GA : ManifestData.GameplayAbilities)
+	{
+		// Check inline event graph nodes
+		for (const auto& Node : GA.EventGraphNodes)
+		{
+			// Check if this is a TryActivateAbilityByClass call
+			const FString* FunctionName = Node.Properties.Find(TEXT("function"));
+			if (FunctionName && FunctionName->Equals(TEXT("TryActivateAbilityByClass"), ESearchCase::IgnoreCase))
+			{
+				// Get the InAbilityToActivate parameter
+				const FString* AbilityParam = Node.Properties.Find(TEXT("param.InAbilityToActivate"));
+				if (AbilityParam && !AbilityParam->IsEmpty())
+				{
+					TryAddEdge(GA.Name, *AbilityParam);
+				}
+			}
+		}
+
+		// Check named event graph reference
+		if (!GA.EventGraphName.IsEmpty())
+		{
+			for (const auto& NamedGraph : ManifestData.EventGraphs)
+			{
+				if (NamedGraph.Name == GA.EventGraphName)
+				{
+					for (const auto& Node : NamedGraph.Nodes)
+					{
+						const FString* FunctionName = Node.Properties.Find(TEXT("function"));
+						if (FunctionName && FunctionName->Equals(TEXT("TryActivateAbilityByClass"), ESearchCase::IgnoreCase))
+						{
+							const FString* AbilityParam = Node.Properties.Find(TEXT("param.InAbilityToActivate"));
+							if (AbilityParam && !AbilityParam->IsEmpty())
+							{
+								TryAddEdge(GA.Name, *AbilityParam);
+							}
+						}
+					}
+					break;
+				}
+			}
+		}
+	}
+
 	LogMessage(FString::Printf(TEXT("[CASCADE] Dependency graph built: %d nodes"), DependencyGraph->GetNodeCount()));
 }
 
