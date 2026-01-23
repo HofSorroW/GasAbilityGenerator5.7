@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.28) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v4.29) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -1041,6 +1041,7 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
+| **v4.29** | PreValidator-Generator Function Resolution Parity: Shared `FGasAbilityGeneratorFunctionResolver` class ensures identical behavior; 17 new ScriptName entries (K2_CancelAbility, etc.); fixes "pass in validator, fail in generator" scenarios |
 | **v4.28** | Option C Item Generation: Fragments system (AmmoFragment, PoisonableFragment), consumable_items/ammo_items/weapon_attachments manifest sections, S2 dot notation for struct properties |
 | **v4.27** | GA→GA dependency scanning for TSubclassOf; automatic dome burst on form exit; dependency sort order audit (Decisions 22-24) |
 | **v4.26** | Session cache for TSubclassOf resolution; external reference detection; 156/156 assets |
