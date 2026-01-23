@@ -1,7 +1,7 @@
 # GasAbilityGenerator TODO Tracking
 
 **Created:** 2026-01-18
-**Updated:** 2026-01-22
+**Updated:** 2026-01-23
 **Plugin Version:** v4.22 (includes v4.21.2 fixes)
 **Status:** Consolidated tracking file for all pending tasks
 
@@ -382,38 +382,42 @@ VariableGet(ActorVar) → GetAbilitySystemComponent(Actor) → Cast to NASC → 
 - P1.2: Post-parse `ValidateFormTransitions()` in `GasAbilityGeneratorParser.cpp`
 - P1.3: `FAbilityConfigurationGenerator::ValidateStartupEffects()` in `GasAbilityGeneratorGenerators.cpp`
 
-### FormState Preset Schema (From Roadmap P1.1)
+### ✅ FormState Preset Schema (P1.1) - COMPLETE
 
 **Source:** `Generator_Roadmap_CategoryC_v1_0.md` (archived)
+**Status:** ✅ IMPLEMENTED (code in v4.13, manifest updated 2026-01-23)
 
 **Goal:** Reduce boilerplate for form state GE definitions
 
-**Proposed Manifest Syntax:**
+**Manifest Syntax (Now in Use):**
 ```yaml
 form_state_effects:
-  - form: Armor
-    invulnerable: true  # Attached form
   - form: Crawler
-    invulnerable: false  # Independent form
+    invulnerable: false
+  - form: Armor
+    invulnerable: false    # v4.14.2: Removed per GAS Audit INV-1
+  - form: Exoskeleton
+    invulnerable: false
+  - form: Symbiote
+    invulnerable: false
+  - form: Engineer
+    invulnerable: false
 ```
 
-**Generator Expansion:**
-```
-form_state_effects[i] → GE_{form}State
-  - folder: Effects/FormState
-  - duration_policy: Infinite
-  - granted_tags: [Effect.Father.FormState.{form}]
-  - asset_tag: Effect.Father.FormState.{form}
-  - if invulnerable: granted_tags.append(State.Invulnerable)
-```
+**Auto-Expansion:**
+Each entry expands to `GE_{Form}State` with:
+- `folder: Effects/FormState`
+- `duration_policy: Infinite`
+- `granted_tags: [Effect.Father.FormState.{Form}]`
+- If `invulnerable: true`: adds `Narrative.State.Invulnerable` tag
 
-**Implementation:**
-1. Add `FManifestFormStateEffectDefinition` struct
-2. Add parser block for `form_state_effects:`
-3. Expand to GE definitions before generation pass
+**Implementation (Already Complete):**
+- ✅ `FManifestFormStateEffectDefinition` struct in `GasAbilityGeneratorTypes.h:890`
+- ✅ `ParseFormStateEffects()` parser in `GasAbilityGeneratorParser.cpp:11869`
+- ✅ Expansion logic in `GasAbilityGeneratorCommandlet.cpp:448` and `GasAbilityGeneratorWindow.cpp:551`
+- ✅ Manifest updated to use compact syntax (5 forms, 35 lines → 12 lines)
 
-**Complexity:** LOW
-**Value:** MEDIUM - Reduces manifest boilerplate
+**Result:** 156/156 assets generated successfully
 
 ---
 
@@ -784,3 +788,4 @@ These are intentionally not implemented:
 | 2026-01-22 | **Fail-Fast Audit:** Created `Fail_Fast_Claude_GPT_Audit_v1.md` - locked decisions and framework |
 | 2026-01-22 | **Fail-Fast Audit v2.1:** Created anchored classification document - 118 items, 111 Type M for Phase 2 |
 | 2026-01-22 | **Fail-Fast Phase 2 START:** Converting 111 Type M Pipeline items to hard fails |
+| 2026-01-23 | **P1.1 FormState Preset Schema:** Manifest updated to use compact `form_state_effects:` syntax (35→12 lines) |

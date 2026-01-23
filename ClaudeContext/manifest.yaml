@@ -526,51 +526,26 @@ float_curves:
         interp_mode: Linear
 
 # ============================================================================
-# GAMEPLAY EFFECTS (35) - +5 GE_*State (Option B Form Identity)
+# FORM STATE EFFECTS (5) - Compact Preset (P1.1)
+# Auto-expands to GE_*State with Effect.Father.FormState.{Form} tag
+# Option B Architecture: Single Active Form State Invariant
+# ============================================================================
+form_state_effects:
+  - form: Crawler
+    invulnerable: false
+  - form: Armor
+    invulnerable: false    # v4.14.2: Removed per GAS Audit INV-1
+  - form: Exoskeleton
+    invulnerable: false
+  - form: Symbiote
+    invulnerable: false
+  - form: Engineer
+    invulnerable: false
+
+# ============================================================================
+# GAMEPLAY EFFECTS (30) - Stat/Damage/Cooldown effects
 # ============================================================================
 gameplay_effects:
-  # ==========================================================================
-  # FORM STATE EFFECTS (5) - Option B Architecture (Form_State_Architecture_Audit_v1_0.md)
-  # GE_*State grants form identity tag + invulnerability (attached forms only)
-  # Applied in NEW form's ActivateAbility after removing prior form state
-  # Single Active Form State Invariant: exactly one Effect.Father.FormState.* at runtime
-  # ==========================================================================
-  - name: GE_CrawlerState
-    folder: Effects/FormState
-    duration_policy: Infinite
-    granted_tags:
-      - Effect.Father.FormState.Crawler
-    asset_tag: Effect.Father.FormState.Crawler
-
-  # v4.13.5: Removed Narrative.State.Invulnerable per GAS Audit INV-1
-  - name: GE_ArmorState
-    folder: Effects/FormState
-    duration_policy: Infinite
-    granted_tags:
-      - Effect.Father.FormState.Armor
-    asset_tag: Effect.Father.FormState.Armor
-
-  - name: GE_ExoskeletonState
-    folder: Effects/FormState
-    duration_policy: Infinite
-    granted_tags:
-      - Effect.Father.FormState.Exoskeleton
-    asset_tag: Effect.Father.FormState.Exoskeleton
-
-  - name: GE_SymbioteState
-    folder: Effects/FormState
-    duration_policy: Infinite
-    granted_tags:
-      - Effect.Father.FormState.Symbiote
-    asset_tag: Effect.Father.FormState.Symbiote
-
-  - name: GE_EngineerState
-    folder: Effects/FormState
-    duration_policy: Infinite
-    granted_tags:
-      - Effect.Father.FormState.Engineer
-    asset_tag: Effect.Father.FormState.Engineer
-
   # ==========================================================================
   # FORM EQUIPMENT MODIFIER EFFECTS (7) - Stats Only (GE Split Rule)
   # Child GEs of GE_EquipmentModifier for stat modifications
