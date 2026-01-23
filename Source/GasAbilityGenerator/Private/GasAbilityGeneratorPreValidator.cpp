@@ -140,6 +140,32 @@ FPreValidationReport FPreValidator::Validate(const FManifestData& Data, const FS
 
 	UE_LOG(LogPreValidator, Log, TEXT("Starting pre-validation for manifest: %s"), *ManifestPath);
 
+	// v4.28.1: Diagnostic - prove/disprove tag loading timing hypothesis
+	// Query GameplayTagsManager for specific tags to determine if they're loaded at pre-validation time
+	{
+		UGameplayTagsManager& TagManager = UGameplayTagsManager::Get();
+
+		// Test tags that fail pre-validation
+		FGameplayTag TagAlive = TagManager.RequestGameplayTag(FName(TEXT("Father.State.Alive")), false);
+		FGameplayTag TagFullyCharged = TagManager.RequestGameplayTag(FName(TEXT("Father.Dome.FullyCharged")), false);
+
+		// Control tags - other Father.* tags from same INI that should work if loading is correct
+		FGameplayTag TagAttached = TagManager.RequestGameplayTag(FName(TEXT("Father.State.Attached")), false);
+		FGameplayTag TagCrawler = TagManager.RequestGameplayTag(FName(TEXT("Father.Form.Crawler")), false);
+		FGameplayTag TagAbility = TagManager.RequestGameplayTag(FName(TEXT("Ability.Father.Attack")), false);
+
+		// Engine tag that definitely exists (control)
+		FGameplayTag TagState = TagManager.RequestGameplayTag(FName(TEXT("State.Invulnerable")), false);
+
+		UE_LOG(LogPreValidator, Warning, TEXT("[DIAG] Tag loading state at pre-validation:"));
+		UE_LOG(LogPreValidator, Warning, TEXT("[DIAG]   Father.State.Alive: %s"), TagAlive.IsValid() ? TEXT("FOUND") : TEXT("NOT FOUND"));
+		UE_LOG(LogPreValidator, Warning, TEXT("[DIAG]   Father.Dome.FullyCharged: %s"), TagFullyCharged.IsValid() ? TEXT("FOUND") : TEXT("NOT FOUND"));
+		UE_LOG(LogPreValidator, Warning, TEXT("[DIAG]   Father.State.Attached (control): %s"), TagAttached.IsValid() ? TEXT("FOUND") : TEXT("NOT FOUND"));
+		UE_LOG(LogPreValidator, Warning, TEXT("[DIAG]   Father.Form.Crawler (control): %s"), TagCrawler.IsValid() ? TEXT("FOUND") : TEXT("NOT FOUND"));
+		UE_LOG(LogPreValidator, Warning, TEXT("[DIAG]   Ability.Father.Attack (control): %s"), TagAbility.IsValid() ? TEXT("FOUND") : TEXT("NOT FOUND"));
+		UE_LOG(LogPreValidator, Warning, TEXT("[DIAG]   State.Invulnerable (engine): %s"), TagState.IsValid() ? TEXT("FOUND") : TEXT("NOT FOUND"));
+	}
+
 	// Run all validation passes
 	ValidateClasses(Data, Report, Cache, ManifestPath);
 	ValidateFunctions(Data, Report, Cache, ManifestPath);

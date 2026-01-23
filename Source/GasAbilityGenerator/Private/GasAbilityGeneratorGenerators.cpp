@@ -8770,7 +8770,9 @@ FGenerationSummary FTagGenerator::GenerateTags(const TArray<FString>& Tags, cons
 		}
 		else
 		{
-			NewTagsContent += FString::Printf(TEXT("+GameplayTags=(Tag=\"%s\")\n"), *Tag);
+			// v4.28.1: Use GameplayTagList format (UE5.6+), not old GameplayTags format
+			// Old format (+GameplayTags=) is NOT loaded by GameplayTagsManager in commandlet mode
+			NewTagsContent += FString::Printf(TEXT("+GameplayTagList=(Tag=\"%s\",DevComment=\"\")\n"), *Tag);
 			Result.Status = EGenerationStatus::New;
 			Result.Message = TEXT("Created successfully");
 			LogGeneration(FString::Printf(TEXT("Created Tag: %s"), *Tag));
