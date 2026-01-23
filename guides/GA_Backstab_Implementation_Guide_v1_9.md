@@ -234,6 +234,34 @@ With Goal_Attack, all of this is handled automatically by Narrative Pro's existi
 
 **Note:** GA_Backstab is auto-generated from manifest.yaml. This section describes the generated Blueprint.
 
+### Manifest Definition (manifest.yaml)
+
+```yaml
+- name: GA_Backstab
+  folder: Abilities/Actions
+  parent_class: NarrativeGameplayAbility
+  instancing_policy: InstancedPerActor
+  net_execution_policy: LocalPredicted
+  tags:
+    ability_tags:
+      - Ability.Father.Backstab
+    activation_owned_tags:
+      - State.BackstabReady
+  custom_functions:
+    - function_name: CheckBackstabCondition
+      pure: false
+      inputs:
+        - name: EnemyActor
+          type: Actor
+      outputs:
+        - name: CanBackstab
+          type: Boolean
+      # Node graph queries Goal_Attack system
+    - function_name: ApplyBackstabBonus
+      pure: false
+      # Applies GE_BackstabBonus to owner
+```
+
 ### CheckBackstabCondition Function (Goal_Attack Query)
 
 The generated function queries the enemy's goal system:
@@ -248,6 +276,28 @@ The generated function queries the enemy's goal system:
 | 6 | GetProperty(TargetToAttack) | Get who enemy is attacking |
 | 7 | NotEqual(Target, Player) | Compare target to player |
 | 8 | OR logic | No component OR no goal OR target != player = CAN BACKSTAB |
+
+### Node Graph Flow
+
+```
+[FunctionEntry: EnemyActor]
+         ↓
+[GetComponentByClass] → NPCActivityComponent
+         ↓
+[IsValid] → [NOT] → ─────────────────────────────┐
+         ↓                                        │
+[GetCurrentActivityGoal]                          │
+         ↓                                        │
+[Cast to Goal_Attack]                             │
+         ↓ (success)        ↓ (fail)              │
+[GetProperty:          [LiteralTrue] ────────────┤
+ TargetToAttack]              ↓                   │
+         ↓              [Select] ←───────────────┤
+[GetAvatarActor]              ↓                   │
+         ↓              [OR] ←────────────────────┘
+[NotEqual] ──────────────────→↓
+                        [FunctionResult: CanBackstab]
+```
 
 ### Return Value Logic
 
@@ -377,10 +427,12 @@ The generated function queries the enemy's goal system:
 
 | Document | Purpose |
 |----------|---------|
-| Father_Companion_Technical_Reference_v6_3.md | Section 7.9: Faction + GoalGenerator Attack Chain |
-| Father_Companion_Technical_Reference_v6_3.md | Section 23: Goal System (Goal_Attack) |
+| Father_Companion_Technical_Reference_v6_4.md | Section 5.5: Backstab Detection Logic (Goal_Attack Query) |
+| Father_Companion_Technical_Reference_v6_4.md | Section 7.9: Faction + GoalGenerator Attack Chain |
+| Father_Companion_Technical_Reference_v6_4.md | Section 23: Goal System (Goal_Attack) |
+| Father_Companion_System_Design_Document_v2_6.md | Section 3.1: GA_Backstab overview |
 | GA_StealthField_Implementation_Guide_v3_2.md | Stealth damage bonus that stacks with backstab |
-| manifest.yaml | GA_Backstab definition with Goal_Attack query |
+| manifest.yaml | GA_Backstab definition with Goal_Attack query nodes |
 
 ---
 
