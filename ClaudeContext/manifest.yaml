@@ -6270,6 +6270,112 @@ equippable_items:
     armor_rating: 50.0
     attack_rating: 0.0
     stealth_rating: 0.0
+    # v4.27: Form exit burst - Decisions 22-24 from Dome System locked decisions
+    # When armor form is unequipped and dome is fully charged, trigger GA_DomeBurst
+    function_overrides:
+      - function: HandleUnequip
+        nodes:
+          # Get player character from equipment component
+          - id: GetEquipComp
+            type: CallFunction
+            properties:
+              function: GetEquipmentComponent
+              target_self: true
+            position: [200, 0]
+          - id: GetOwner
+            type: CallFunction
+            properties:
+              function: GetOwner
+              class: ActorComponent
+            position: [400, 0]
+          - id: CastToChar
+            type: DynamicCast
+            properties:
+              target_class: NarrativeCharacter
+            position: [600, 0]
+          - id: GetASC
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+            position: [800, 0]
+          # Try to activate DomeBurst - will only succeed if Father.Dome.FullyCharged is present
+          # GA_DomeBurst has activation_required_tags: Father.Dome.FullyCharged
+          - id: TryActivateBurst
+            type: CallFunction
+            properties:
+              function: TryActivateAbilityByClass
+              class: AbilitySystemComponent
+              parameters:
+                AbilityClass: GA_DomeBurst
+                bAllowRemoteActivation: false
+            position: [1000, 0]
+          # Clear dome tags regardless of burst success (reset state on form exit)
+          - id: MakeDomeActiveTag
+            type: CallFunction
+            properties:
+              function: MakeGameplayTagContainerFromTag
+              class: BlueprintGameplayTagLibrary
+              parameters:
+                Tag: Father.Dome.Active
+            position: [800, 150]
+          - id: RemoveDomeActive
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTags
+              class: AbilitySystemBlueprintLibrary
+            position: [1200, 0]
+          - id: MakeDomeChargedTag
+            type: CallFunction
+            properties:
+              function: MakeGameplayTagContainerFromTag
+              class: BlueprintGameplayTagLibrary
+              parameters:
+                Tag: Father.Dome.FullyCharged
+            position: [1000, 250]
+          - id: RemoveDomeCharged
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTags
+              class: AbilitySystemBlueprintLibrary
+            position: [1400, 0]
+          # Call parent for standard unequip (removes abilities, etc.)
+          - id: CallParentUnequip
+            type: CallParent
+            position: [1600, 0]
+        connections:
+          # Exec flow
+          - from: [FunctionEntry, Then]
+            to: [GetEquipComp, Exec]
+          - from: [GetEquipComp, Exec]
+            to: [CastToChar, Exec]
+          - from: [CastToChar, Exec]
+            to: [TryActivateBurst, Exec]
+          - from: [TryActivateBurst, Exec]
+            to: [RemoveDomeActive, Exec]
+          - from: [RemoveDomeActive, Exec]
+            to: [RemoveDomeCharged, Exec]
+          - from: [RemoveDomeCharged, Exec]
+            to: [CallParentUnequip, Exec]
+          # Data flow - get player ASC
+          - from: [GetEquipComp, ReturnValue]
+            to: [GetOwner, Target]
+          - from: [GetOwner, ReturnValue]
+            to: [CastToChar, Object]
+          - from: [CastToChar, AsNarrativeCharacter]
+            to: [GetASC, Actor]
+          # Data flow - TryActivateAbilityByClass
+          - from: [GetASC, ReturnValue]
+            to: [TryActivateBurst, Target]
+          # Data flow - RemoveLooseGameplayTags (dome active)
+          - from: [CastToChar, AsNarrativeCharacter]
+            to: [RemoveDomeActive, Actor]
+          - from: [MakeDomeActiveTag, ReturnValue]
+            to: [RemoveDomeActive, GameplayTagContainer]
+          # Data flow - RemoveLooseGameplayTags (dome charged)
+          - from: [CastToChar, AsNarrativeCharacter]
+            to: [RemoveDomeCharged, Actor]
+          - from: [MakeDomeChargedTag, ReturnValue]
+            to: [RemoveDomeCharged, GameplayTagContainer]
 
   - name: EI_FatherExoskeletonForm
     folder: Items/Forms
