@@ -1,5 +1,5 @@
 # Father Companion - GA_DomeBurst Implementation Guide
-## VERSION 2.9 - Multi-Document Audit Corrections
+## VERSION 2.10 - Full-Only Burst Requirement (Decisions 22-24)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -23,7 +23,7 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 | Parent Class | NarrativeGameplayAbility |
 | Form | Armor |
 | Input | Q Key (Manual) or Auto (When Dome Full) |
-| Version | 2.9 |
+| Version | 2.10 |
 | Last Updated | January 2026 |
 
 ---
@@ -77,20 +77,21 @@ GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dom
 
 | Mode | Trigger | Energy Required |
 |------|---------|-----------------|
-| Manual | Q Key Press | Any amount (min 50) |
-| Automatic | Threshold Reached | 500 (maximum) |
+| Manual | Q Key Press | 500 (FULL only) |
+| Form Exit | Form Switch via T Wheel | 500 (FULL only) |
 
 ### **Dome System Flow**
 
 | Step | Description |
 |------|-------------|
-| 1 | Armor Form Active |
-| 2 | GA_DomeManager Running |
-| 3 | Player Takes Damage |
-| 4 | 30% Absorbed -> Dome Energy |
+| 1 | Armor Form Active (EI_FatherArmorForm equipped) |
+| 2 | GA_ProtectiveDome Running |
+| 3 | Player Takes Damage (full damage, no absorption) |
+| 4 | 30% of damage -> Dome Energy (Energy-Only model) |
 | 5a | If Energy < 500: Continue Charging |
-| 5b | If Energy = 500: Auto-Burst (GA_DomeBurst) |
-| 6 | If Player Presses Q with 50+ Energy: Manual Burst |
+| 5b | If Energy = 500: Father.Dome.FullyCharged tag granted |
+| 6 | If Player Presses Q with FullyCharged: Manual Burst |
+| 7 | If Player Switches Form with FullyCharged: Form Exit Burst |
 
 ### **Technical Specifications**
 
@@ -100,7 +101,7 @@ GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dom
 | Burst Radius | 500 units |
 | Knockback Force | 1000 units |
 | Cooldown | 12 seconds |
-| Min Energy for Manual | 50 |
+| Energy Required | 500 (FULL only) |
 
 ### **Damage Pipeline**
 
@@ -269,7 +270,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | Property | Tags |
 |----------|------|
 | Ability Tags | Ability.Father.DomeBurst |
-| Activation Required Tags | Father.Dome.Active |
+| Activation Required Tags | Father.Dome.Active, Father.Dome.FullyCharged |
 | Activation Owned Tags | Father.State.Attacking |
 | Activation Blocked Tags | Cooldown.Father.DomeBurst |
 
@@ -319,9 +320,10 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | BurstDamage | Float | 75.0 | Yes |
 | BurstRadius | Float | 500.0 | Yes |
 | KnockbackForce | Float | 1000.0 | Yes |
-| MinEnergyForManual | Float | 50.0 | Yes |
 | PlayerRef | Actor (Object Reference) | None | No |
 | PlayerASC | NarrativeAbilitySystemComponent (Object Reference) | None | No |
+
+**Note:** MinEnergyForManual removed in v2.10 - burst only available when FULL (Father.Dome.FullyCharged tag gates activation).
 
 ### **2) Implement ActivateAbility Event**
 
@@ -402,21 +404,9 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
       - 4.2.1.1) Right-click and select Promote to Local Variable
       - 4.2.1.2) Name: `CurrentDomeEnergy`
 
-### **5) Validate Minimum Energy (Manual Burst)**
+### **5) Energy Validation (Handled by Tag)**
 
-#### 5.1) Check Minimum Energy
-   - 5.1.1) Add Float >= Float (Greater or Equal) node
-   - 5.1.2) Connect:
-      - 5.1.2.1) CurrentDomeEnergy getter to first input (A)
-      - 5.1.2.2) MinEnergyForManual getter to second input (B)
-
-#### 5.2) Branch on Energy Check
-   - 5.2.1) From Get Numeric Attribute execution pin:
-      - 5.2.1.1) Add Branch node
-   - 5.2.2) Connect comparison Return Value to Condition pin
-   - 5.2.3) From Branch False execution pin:
-      - 5.2.3.1) Add End Ability node
-      - 5.2.3.2) Was Cancelled: Checked (true)
+**Note:** As of v2.10, energy validation is handled at the ability activation level via the `Father.Dome.FullyCharged` tag in activation_required_tags. The ability cannot activate unless the dome is at maximum energy. This eliminates the need for in-graph energy checking.
 
 ### **6) Find Enemies in Radius**
 
@@ -756,6 +746,24 @@ If creating assets manually without the generator:
 
 ## **CHANGELOG**
 
+### **VERSION 2.10 - Full-Only Burst Requirement (Decisions 22-24)**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Decision 22 | Form exit burst via TryActivateAbilityByClass(GA_DomeBurst) in HandleUnequip |
+| Decision 23 | EI_FatherArmorForm.HandleUnequip override triggers form exit burst |
+| Decision 24 | Father.Dome.FullyCharged added to activation_required_tags |
+| Manual Burst | Changed from min 50 energy to FULL (500) only |
+| Auto-burst | DISABLED - no automatic threshold burst |
+| Form Exit | New trigger mode - burst on form switch when full |
+| MinEnergyForManual | Variable removed (tag-based gating replaces code check) |
+| Energy Validation | Moved from in-graph check to activation_required_tags |
+| Dome Flow | Updated to reflect Energy-Only model and FullyCharged tag |
+
+---
+
 ### **VERSION 2.9 - Multi-Document Audit Corrections**
 
 **Release Date:** January 2026
@@ -918,7 +926,7 @@ If creating assets manually without the generator:
 | Property | Tags |
 |----------|------|
 | Ability Tags | `Ability.Father.DomeBurst` |
-| Activation Required | `Father.Dome.Active` |
+| Activation Required | `Father.Dome.Active`, `Father.Dome.FullyCharged` |
 | Activation Owned | `Father.State.Attacking` |
 | Activation Blocked | `Cooldown.Father.DomeBurst` |
 | InputTag | `Narrative.Input.Father.Ability1` |
@@ -930,7 +938,6 @@ If creating assets manually without the generator:
 | BurstDamage | Float | 75.0 | Yes | Flat burst damage |
 | BurstRadius | Float | 500.0 | Yes | AOE explosion radius |
 | KnockbackForce | Float | 1000.0 | Yes | Push force on enemies |
-| MinEnergyForManual | Float | 50.0 | Yes | Min energy for Q press |
 | PlayerRef | Actor Reference | None | No | Player reference |
 | PlayerASC | NarrativeAbilitySystemComponent Reference | None | No | Player ASC for validation |
 
@@ -954,25 +961,24 @@ If creating assets manually without the generator:
 
 | Mode | Trigger | Energy Required |
 |------|---------|-----------------|
-| Manual | Q Key | 50+ |
-| Auto | Threshold | 500 (max) |
+| Manual | Q Key | 500 (FULL) |
+| Form Exit | T Wheel | 500 (FULL) |
 
 ### **Burst Flow Summary**
 
 | Step | Action |
 |------|--------|
-| 1 | Q Key Pressed OR Auto-Trigger |
-| 2 | Validate Dome Active tag |
-| 3 | Check Minimum Energy (50 for manual) |
-| 4 | Sphere Overlap (500 radius) |
-| 5 | For Each Enemy with Character.Enemy tag |
-| 6 | Apply GE_DomeBurstDamage (75 flat damage) via NarrativeDamageExecCalc |
-| 7 | Launch Character (1000 unit knockback) |
-| 8 | Spawn NS_DomeBurst VFX |
-| 9 | Apply GE_DomeEnergyReset |
-| 10 | Apply GE_DomeBurstCooldown (12s) |
-| 11 | Clear References (PlayerRef, PlayerASC) |
-| 12 | End Ability |
+| 1 | Q Key Pressed OR Form Exit Trigger |
+| 2 | Validate Dome Active AND FullyCharged tags |
+| 3 | Sphere Overlap (500 radius) |
+| 4 | For Each Enemy with Character.Enemy tag |
+| 5 | Apply GE_DomeBurstDamage (75 flat damage) via NarrativeDamageExecCalc |
+| 6 | Launch Character (1000 unit knockback) |
+| 7 | Spawn NS_DomeBurst VFX |
+| 8 | Apply GE_DomeEnergyReset |
+| 9 | Apply GE_DomeBurstCooldown (12s) |
+| 10 | Clear References (PlayerRef, PlayerASC) |
+| 11 | End Ability |
 
 ### **Replication Settings**
 
@@ -1002,7 +1008,7 @@ If creating assets manually without the generator:
 
 ---
 
-**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.9**
+**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.10**
 
 **Armor Form - Active/Auto AOE Explosion**
 

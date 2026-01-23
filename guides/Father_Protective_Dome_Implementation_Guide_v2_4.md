@@ -1,9 +1,9 @@
 # Father Companion - Protective Dome Ability Implementation Guide
-## VERSION 2.3 - Form State Tag Update (INV-1 Compliant)
+## VERSION 2.4 - Full-Only Burst Requirement (Decisions 22-24)
 
-**Document Purpose**: Complete step-by-step guide for implementing a damage-absorbing protective dome ability for the father companion in Armor form using proper GAS attributes created via Gameplay Blueprint Attributes plugin.
+**Document Purpose**: Complete step-by-step guide for implementing the Protective Dome ability for the Father companion in Armor form using GAS attributes created via Gameplay Blueprint Attributes plugin.
 
-**System Overview**: When the father is in Armor form, it creates an invisible protective dome around the player that passively absorbs 30% of incoming damage. The absorbed damage is stored as "Dome Energy" (tracked in a GAS attribute). When the dome reaches maximum energy (500 damage absorbed), it explodes outward in a devastating AoE burst that deals up to 300 damage to all enemies within 500 units. The burst can also be triggered manually with Q key (minimum 50 energy required). After the burst, the ability enters a 20-second cooldown before it can charge again.
+**System Overview**: When the father is in Armor form, the player accumulates Dome Energy from incoming damage using an **Energy-Only model** - the player takes full incoming damage (no reduction), while 30% of post-mitigation damage is converted to Dome Energy stored on the Player ASC. When the dome reaches maximum energy (500), the `Father.Dome.FullyCharged` tag is granted, enabling the Q key to trigger a burst dealing 75 flat damage to all enemies within 500 units. The burst can also trigger automatically on form exit (T wheel) when fully charged. After bursting, the ability enters a 12-second cooldown.
 
 ---
 
@@ -15,7 +15,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Armor |
 | Input | Automatic (passive) / Q Key (manual burst) |
-| Version | 2.3 |
+| Version | 2.4 |
 | Last Updated | January 2026 |
 
 ---
@@ -494,7 +494,7 @@
 #### **23.2) Configure Duration**
 23.2.1) Class Defaults button
 23.2.2) Duration Policy: Has Duration
-23.2.3) Duration Magnitude -> Scalable Float -> Value: 20.0
+23.2.3) Duration Magnitude -> Scalable Float -> Value: 12.0
 
 #### **23.3) Add Granted Tags**
 23.3.1) Components -> +
@@ -893,25 +893,23 @@
 
 ##### **26.2.2) Ability Tags**
 26.2.2.1) Ability Tags -> +
-26.2.2.2) Add: Ability.Father.Armor.DomeBurst
+26.2.2.2) Add: Ability.Father.DomeBurst
 
 ##### **26.2.3) Activation Required Tags**
 26.2.3.1) Activation Required Tags -> +
-26.2.3.2) Element [0]: Effect.Father.FormState.Armor
+26.2.3.2) Element [0]: Father.Dome.Active
 26.2.3.3) Click: +
-26.2.3.4) Element [1]: Father.Dome.Active
-26.2.3.5) Click: +
-26.2.3.6) Element [2]: Father.State.Recruited
+26.2.3.4) Element [1]: Father.Dome.FullyCharged
+
+**Note:** Equipment granting (EI_FatherArmorForm) ensures ability only available in Armor form. FullyCharged tag gates activation to FULL energy only.
 
 ##### **26.2.4) Activation Owned Tags**
 26.2.4.1) Activation Owned Tags -> +
-26.2.4.2) Add: Father.State.Bursting
+26.2.4.2) Add: Father.State.Attacking
 
 ##### **26.2.5) Activation Blocked Tags**
 26.2.5.1) Activation Blocked Tags -> +
-26.2.5.2) Add: Father.Dome.OnCooldown
-26.2.5.3) Click: +
-26.2.5.4) Add: Father.State.Bursting
+26.2.5.2) Add: Cooldown.Father.DomeBurst
 
 ##### **26.2.6) Cooldown Effect**
 26.2.6.1) Cooldown Gameplay Effect Class: GE_DomeBurstCooldown
@@ -927,62 +925,40 @@
 
 #### **26.3) Create Ability Variables**
 
-##### **26.3.1) BaseDamage Variable**
+##### **26.3.1) BurstDamage Variable**
 26.3.1.1) Variables -> +
-26.3.1.2) Name: BaseDamage
+26.3.1.2) Name: BurstDamage
 26.3.1.3) Type: Float
-26.3.1.4) Default: 150.0
+26.3.1.4) Default: 75.0
 26.3.1.5) Instance Editable: Checked
 
-##### **26.3.2) DamageScaling Variable**
+**Note:** Damage is flat 75, does not scale with energy. BaseDamage and DamageScaling variables removed in v2.4.
+
+##### **26.3.2) BurstRadius Variable**
 26.3.2.1) Variables -> +
-26.3.2.2) Name: DamageScaling
+26.3.2.2) Name: BurstRadius
 26.3.2.3) Type: Float
-26.3.2.4) Default: 0.3
+26.3.2.4) Default: 500.0
 26.3.2.5) Instance Editable: Checked
 
-##### **26.3.3) BurstRadius Variable**
+##### **26.3.3) KnockbackForce Variable**
 26.3.3.1) Variables -> +
-26.3.3.2) Name: BurstRadius
+26.3.3.2) Name: KnockbackForce
 26.3.3.3) Type: Float
-26.3.3.4) Default: 500.0
+26.3.3.4) Default: 1000.0
 26.3.3.5) Instance Editable: Checked
 
-##### **26.3.4) KnockbackForce Variable**
+**Note:** MinEnergyForManual removed in v2.4 - burst only available when FULL (Father.Dome.FullyCharged tag gates activation).
+
+##### **26.3.4) PlayerRef Variable**
 26.3.4.1) Variables -> +
-26.3.4.2) Name: KnockbackForce
-26.3.4.3) Type: Float
-26.3.4.4) Default: 1500.0
-26.3.4.5) Instance Editable: Checked
+26.3.4.2) Name: PlayerRef
+26.3.4.3) Type: Actor -> Object Reference
 
-##### **26.3.5) MinEnergyForManual Variable**
+##### **26.3.5) PlayerASC Variable**
 26.3.5.1) Variables -> +
-26.3.5.2) Name: MinEnergyForManual
-26.3.5.3) Type: Float
-26.3.5.4) Default: 50.0
-26.3.5.5) Instance Editable: Checked
-
-##### **26.3.6) PlayerRef Variable**
-26.3.6.1) Variables -> +
-26.3.6.2) Name: PlayerRef
-26.3.6.3) Type: Actor -> Object Reference
-
-##### **26.3.7) CurrentDomeEnergy Variable**
-26.3.7.1) Variables -> +
-26.3.7.2) Name: CurrentDomeEnergy
-26.3.7.3) Type: Float
-26.3.7.4) Default: 0.0
-
-##### **26.3.8) CalculatedDamage Variable**
-26.3.8.1) Variables -> +
-26.3.8.2) Name: CalculatedDamage
-26.3.8.3) Type: Float
-26.3.8.4) Default: 0.0
-
-##### **26.3.9) PlayerASC Variable**
-26.3.9.1) Variables -> +
-26.3.9.2) Name: PlayerASC
-26.3.9.3) Type: NarrativeAbilitySystemComponent -> Object Reference
+26.3.5.2) Name: PlayerASC
+26.3.5.3) Type: NarrativeAbilitySystemComponent -> Object Reference
 
 #### **26.4) Implement ActivateAbility Event**
 
@@ -1294,24 +1270,19 @@
 
 | Variable | Type | Default | Instance Editable | Replicated |
 |----------|------|---------|-------------------|------------|
-| BaseDamage | Float | 150.0 | Yes | No |
-| DamageScaling | Float | 0.3 | Yes | No |
+| BurstDamage | Float | 75.0 | Yes | No |
 | BurstRadius | Float | 500.0 | Yes | No |
-| KnockbackForce | Float | 1500.0 | Yes | No |
-| MinEnergyForManual | Float | 50.0 | Yes | No |
+| KnockbackForce | Float | 1000.0 | Yes | No |
 | PlayerRef | Actor Reference | None | No | No |
 | PlayerASC | NarrativeAbilitySystemComponent Reference | None | No | No |
-| CurrentDomeEnergy | Float | 0.0 | No | No |
-| CalculatedDamage | Float | 0.0 | No | No |
 
-### **Damage Calculation Reference**
+### **Damage Reference (v2.4)**
 
-| Energy Level | Calculation | Final Damage |
-|--------------|-------------|--------------|
-| 50 (minimum) | 150 + (50 * 0.3) | 165 |
-| 100 | 150 + (100 * 0.3) | 180 |
-| 250 | 150 + (250 * 0.3) | 225 |
-| 500 (maximum) | 150 + (500 * 0.3) | 300 |
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Damage | 75 (flat) | Does not scale with energy |
+| Trigger | FULL only | Father.Dome.FullyCharged required |
+| Energy Required | 500 | No partial release |
 
 ---
 
@@ -1330,10 +1301,10 @@
 
 | Property | Tags |
 |----------|------|
-| Ability Tags | Ability.Father.Armor.DomeBurst |
-| Activation Required | Effect.Father.FormState.Armor, Father.Dome.Active, Father.State.Recruited |
-| Activation Owned | Father.State.Bursting |
-| Activation Blocked | Cooldown.Father.DomeBurst, Father.State.Bursting |
+| Ability Tags | Ability.Father.DomeBurst |
+| Activation Required | Father.Dome.Active, Father.Dome.FullyCharged |
+| Activation Owned | Father.State.Attacking |
+| Activation Blocked | Cooldown.Father.DomeBurst |
 | InputTag | Narrative.Input.Father.Ability1 |
 
 ---
@@ -1346,7 +1317,7 @@
 | GE_DomeEnergyIncrease | Instant | Adds energy via SetByCaller |
 | GE_DomeInitialize | Instant | Sets initial attribute values |
 | GE_DomeBurstDamage | Instant | Damage via SetByCaller |
-| GE_DomeBurstCooldown | 20 seconds | Grants cooldown tags |
+| GE_DomeBurstCooldown | 12 seconds | Grants cooldown tags |
 | GE_DomeEnergyReset | Instant | Resets DomeEnergy to 0 |
 
 ---
@@ -1381,7 +1352,7 @@
 | Father_Companion_System_Setup_Guide | v1.3 | BP_FatherCompanion setup |
 | DefaultGameplayTags_FatherCompanion | v3.5 | Complete tag list |
 | GA_FatherArmor_Implementation_Guide | v3.4 | Form ability with dome integration |
-| GA_DomeBurst_Implementation_Guide | v2.2 | Separate burst ability guide |
+| GA_DomeBurst_Implementation_Guide | v2.10 | Separate burst ability guide |
 
 ---
 
@@ -1396,22 +1367,33 @@ Form abilities use Cancel Abilities with Tag for mutual exclusion. When a new fo
 - Uses handle-based unbinding for health delegate via HealthChangeDelegateHandle
 - Provides consistent cleanup across all forms (Crawler, Armor, Exoskeleton, Symbiote, Engineer)
 
-### **Ability Granting Pattern**
+### **Ability Granting Pattern (v2.4)**
 
-Dome abilities are granted dynamically when Armor form activates:
-- GA_FatherArmor grants GA_ProtectiveDome and GA_DomeBurst to player ASC
-- Handles stored for proper cleanup (ProtectiveDomeHandle, DomeBurstHandle)
-- Two-step cleanup: Cancel Ability then Set Remove Ability On End
-- Abilities are cleared when GA_FatherArmor ends (via form cancellation)
+Dome abilities are granted via EI_FatherArmorForm equipment:
+- EI_FatherArmorForm.abilities_to_grant includes GA_ProtectiveDome and GA_DomeBurst
+- Equipment system handles automatic grant/remove on equip/unequip
+- No manual handle tracking in GA_FatherArmor required
 
-### **Form Cancellation Chain**
+### **Form Exit Burst (Decisions 22-24)**
 
-When player switches forms via T wheel:
+When player switches forms via T wheel with full dome energy:
+1. Player selects new form from T wheel
+2. EI_FatherArmorForm.HandleUnequip override fires
+3. If Father.Dome.FullyCharged AND NOT Cooldown.Father.DomeBurst:
+   - TryActivateAbilityByClass(GA_DomeBurst) triggers burst
+4. Parent HandleUnequip called (removes abilities including GA_DomeBurst)
+5. New form's equipment item is equipped
+
+**Note:** Burst during form exit is blocked if on cooldown. Energy resets to 0 regardless.
+
+### **Form Cancellation Chain (Legacy)**
+
+Legacy pattern for reference - now handled via equipment system:
 1. New form ability activates (e.g., GA_FatherCrawler)
-2. Cancel Abilities with Tag cancels GA_FatherArmor
-3. GA_FatherArmor EndAbility fires, cleaning up movement speed and effects
-4. GA_ProtectiveDome EndAbility fires, unbinding delegate and clearing references using stored handles
-5. All armor-related effects are removed from player using handle-based removal
+2. Equipment system unequips EI_FatherArmorForm
+3. HandleUnequip fires form exit burst if charged
+4. Abilities removed by equipment system
+5. GA_ProtectiveDome EndAbility fires, cleaning up dome state
 
 ### **Damage Detection Method**
 
@@ -1489,6 +1471,26 @@ The following items require architectural decisions that may affect multiple gui
 ---
 
 ## CHANGELOG
+
+### Version 2.4 - January 2026 (Decisions 22-24)
+
+| Change | Description |
+|--------|-------------|
+| Decision 22 | Form exit burst via TryActivateAbilityByClass(GA_DomeBurst) |
+| Decision 23 | EI_FatherArmorForm.HandleUnequip override triggers form exit burst |
+| Decision 24 | Father.Dome.FullyCharged added to GA_DomeBurst activation_required_tags |
+| Damage Model | Energy-Only model - player takes full damage, 30% converts to energy |
+| Manual Release | FULL (500) only, no minimum 50 partial release |
+| Auto-burst | DISABLED - no automatic threshold burst |
+| Burst Damage | Changed from 150+scaling to flat 75 |
+| Cooldown | Changed from 20s to 12s |
+| Knockback | Changed from 1500 to 1000 units |
+| GA_DomeBurst Tags | Updated to flat hierarchy per manifest.yaml |
+| Variables | Removed BaseDamage, DamageScaling, MinEnergyForManual, CurrentDomeEnergy, CalculatedDamage |
+| Equipment Granting | Abilities now granted via EI_FatherArmorForm, not GA_FatherArmor |
+| Form Exit Burst | New section documenting HandleUnequip burst trigger |
+
+---
 
 ### Version 2.3 - January 2026 (INV-1 Compliant)
 
@@ -1582,8 +1584,8 @@ The following items require architectural decisions that may affect multiple gui
 
 **END OF IMPLEMENTATION GUIDE**
 
-**VERSION 2.3 - Form State Tag Update (INV-1 Compliant)**
+**VERSION 2.4 - Full-Only Burst Requirement (Decisions 22-24)**
 
-**Compatible with Unreal Engine 5.6 + Narrative Pro v2.2**
+**Compatible with Unreal Engine 5.7 + Narrative Pro v2.2**
 
 **Blueprint-Only Implementation - Full Multiplayer Support**

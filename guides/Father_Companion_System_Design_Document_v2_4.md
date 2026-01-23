@@ -47,7 +47,7 @@ Any party with access to this document acknowledges the intellectual property ri
 
 | Field | Value |
 |-------|-------|
-| Version | 2.2 |
+| Version | 2.4 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only |
@@ -195,18 +195,87 @@ The Father Companion is a mechanical/energy hybrid entity that bonds with the pl
 | GA_ProtectiveDome | Passive | Automatic (absorbs damage) |
 | GA_DomeBurst | Active/Auto | Q (Tap) or auto at threshold |
 
-#### 2.2.5) Dome Burst Mechanic
+#### 2.2.5) Dome Energy System (Locked January 2026)
 
-| Parameter | Value |
-|-----------|-------|
-| Trigger (Auto) | Absorbed damage reaches threshold |
-| Trigger (Manual) | Q key press |
-| Damage | Based on absorbed amount |
-| Radius | 500 units |
-| Cooldown | 10 seconds |
-| Effect | Knockback + damage to nearby enemies |
+The Protective Dome uses an Energy-Only damage model. The player takes full incoming damage (no absorption reduction), while 30% of post-mitigation damage is converted to Dome Energy stored in a Player ASC attribute.
 
-#### 2.2.6) Use Cases
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Energy Location | Player ASC (AS_DomeAttributes) | Armor form = player+father merged |
+| Damage Model | Energy-Only | Player takes full damage |
+| Energy Source | OnDamagedBy.Damage | Post-mitigation damage amount |
+| Conversion Ratio | 0.30 (30%) | 30% of damage → energy |
+| MaxDomeEnergy | 500 | Maximum energy capacity |
+| Clamp at Max | Yes | Energy capped at 500 |
+
+#### 2.2.6) Dome Burst Mechanic (Locked January 2026)
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Manual Release | Q key when FULL (500) only | No partial release |
+| Auto-burst | DISABLED | No automatic burst at threshold |
+| Pre-release | DISABLED | Cannot release before full |
+| Damage | 75 (flat) | Does not scale with energy |
+| Radius | 500 units | AOE centered on player |
+| Knockback | 1000 units | Pushes enemies away |
+| Cooldown | 12 seconds | After burst before recharge |
+| Cooldown Blocks Burst | Yes | Both manual AND form exit |
+| Cooldown Blocks Charging | No | Energy accumulates during cooldown |
+| Queue After Cooldown | No | No queued burst |
+| Reset on Burst | Energy → 0 | Full reset after burst |
+| Reset on Death | Energy → 0 (no burst) | Silent reset |
+
+#### 2.2.7) Form Exit Burst (Locked January 2026)
+
+When the player switches forms via T wheel while Dome Energy is full:
+- If charged (500) AND not on cooldown → burst fires automatically
+- If on cooldown → no burst, energy reset to 0
+- Prevents "punishing" accidental form changes
+- Enables tactical option: build charge → switch forms → burst fires
+
+#### 2.2.8) FullyCharged Tag Behavior
+
+| State | Tag Granted | Burst Available |
+|-------|-------------|-----------------|
+| Energy < 500 | No | No |
+| Energy = 500 | Father.Dome.FullyCharged | Yes (if not on cooldown) |
+| On Cooldown | (removed) | No |
+| After Burst | (removed) | No |
+
+#### 2.2.9) Reset Ownership
+
+GA_ProtectiveDome EndAbility handles all dome cleanup:
+- Resets DomeEnergy to 0 (if not already burst)
+- Removes Father.Dome.FullyCharged tag
+- Unbinds OnDamagedBy delegate
+- Removes GE_DomeAbsorption effect
+
+#### 2.2.10) Form Exit Burst Implementation (Decisions 22-24)
+
+When switching forms via T wheel while dome is fully charged:
+
+| Step | Action |
+|------|--------|
+| 1 | Player selects new form from T wheel |
+| 2 | EI_FatherArmorForm.HandleUnequip override fires |
+| 3 | Check: Father.Dome.FullyCharged AND NOT Cooldown.Father.DomeBurst |
+| 4 | If conditions met: TryActivateAbilityByClass(GA_DomeBurst) |
+| 5 | Parent HandleUnequip called (removes abilities) |
+| 6 | New form equipment equipped |
+
+**Implementation Notes:**
+- Decision 22: TryActivateAbilityByClass is BlueprintCallable on UAbilitySystemComponent
+- Decision 23: HandleUnequip is BlueprintNativeEvent, override runs BEFORE parent removes abilities
+- Decision 24: Father.Dome.FullyCharged tag gates GA_DomeBurst activation
+
+**Blocked Cases:**
+- Cooldown active → no burst, energy reset to 0
+- Not fully charged → no burst, energy reset to 0
+
+**Generator Requirement:**
+- FManifestFunctionOverrideDefinition support for EquippableItems (BLOCKED until generator extension)
+
+#### 2.2.11) Use Cases
 
 | Scenario | Effectiveness |
 |----------|---------------|
@@ -743,7 +812,7 @@ Narrative.Input.Father.Ability3      (E)
 |---------|----------|
 | Dash | 3 seconds |
 | Stealth | 15 seconds |
-| Dome Burst (manual) | 10 seconds |
+| Dome Burst | 12 seconds |
 | Electric Trap | 8 seconds |
 | Symbiote (post-form) | 120 seconds |
 | Sacrifice | 150-210 seconds |
@@ -931,12 +1000,14 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.3 | January 2026 | **Dome System Locked Decisions (21 items)**: Sections 2.2.5-2.2.9 rewritten with Claude-GPT dual-audit locked decisions. Energy-Only damage model (player takes full damage), energy on Player ASC (AS_DomeAttributes), manual release only at full (500), no auto-burst, no pre-release, flat 75 damage, 12s cooldown, form exit burst behavior, FullyCharged tag semantics, GA_ProtectiveDome reset ownership. Section 2.2.6 Use Cases renumbered to 2.2.10. Cooldown Summary updated: Dome Burst 10s→12s. |
 | 2.2 | January 2026 | **Added Section 12: Locked Decisions Reference** - Consolidated all locked decisions from Claude-GPT dual-agent audit (January 2026). Includes LC-1 to LC-4 implementation constraints, INV-1 invulnerability removal, EndAbility lifecycle rules (Rules 1-4), and VTF technical findings. |
 | 2.1 | January 2026 | **GAS Audit INV-1 Compliance:** Removed all unintended invulnerability per dual-agent audit decision. Section 2.3.3: Exoskeleton Dash I-Frames changed from "Yes" to "No (removed per GAS Audit INV-1)". Section 10.6.1: Removed GE_Invulnerable steps (old steps 6, 15), updated to use AddLooseGameplayTag/RemoveLooseGameplayTag for Father.State.Transitioning. Section 10.6.2: Father Invulnerable During Transition changed from "Yes" to "No (removed per GAS Audit INV-1)". **KEPT:** GA_FatherSacrifice 8-second PLAYER invulnerability (intentional design). |
 | 2.0 | January 2026 | Renamed from Spider to Father throughout entire document. All tags, abilities, references updated. |
 | 1.9 | January 2026 | Updated Narrative Pro version from v2.1 to v2.2. Fixed ability names: GA_ExoskeletonDash to GA_FatherExoskeletonDash, GA_ExoskeletonSprint to GA_FatherExoskeletonSprint (matching implementation guides). Fixed tag format: Father.State.* changed to Father.State.* per DefaultGameplayTags_FatherCompanion_v4_0.ini (affected Alive, Dormant, Transitioning, SymbioteLocked tags in Sections 10.6.1, 10.6.3, 10.6.4). |
 | 1.8 | January 2026 | Major compaction and corrections. Fixed Armor defense to +50 Armor (was incorrectly showing 30% reduction). Added Father.State.Recruited to Section 7.2 and 10.6.3. Fixed duplicate section numbering 2.1.5 (now 2.1.5 and 2.1.6). Standardized Symbiote post-form cooldown to 120 seconds. Removed Implementation Phases section (work in progress). Removed Future Considerations section. Removed Pending Decisions section. Added Form Change to Cooldown Summary. Simplified Visual Design Language and HUD sections. Added stat boost column to Form Overview table. |
 | 1.7 | December 2025 | Moved GA_Backstab from father ability to Player Default Ability. Backstab is a generic action game mechanic available to all players, not dependent on father recruitment. Updated Section 3.1 with Player Default grant location. Updated Section 8.1 ability table (17 father abilities + 1 player ability). Updated Section 8.2 with "Moved to Player" status. Updated Section 8.3 with "Player Default" category. Father still enables backstab opportunities by distracting enemies. |
+| 2.4 | January 2026 | Dome System Decisions 22-24: Form exit burst via EI_FatherArmorForm.HandleUnequip override calling TryActivateAbilityByClass(GA_DomeBurst). Father.Dome.FullyCharged tag gates burst activation (FULL only, no partial release). Energy-Only damage model documented. Added section 2.2.10 Form Exit Burst Implementation. |
 | 1.6 | December 2025 | Major architecture change: Removed F key detach system entirely. GA_FatherDetach and GA_TurretRecall abilities removed (21->18 abilities). Form switching now direct via T wheel only. Added Form Transition System with 5s Niagara VFX, father invulnerability during transition, 15s shared cooldown. Updated Symbiote duration from 15s to 30s, locked during duration, auto-returns to Armor form. Added new state tags (Alive, Transitioning, SymbioteLocked). |
 | 1.5 | 2025 | Removed Shield +200 from Symbiote form stat boosts. AS_SymbioteAttributes not needed - shield system removed due to Blueprint limitation. Symbiote form now focuses purely on offensive stat boosts. |
 | 1.4 | 2025 | Changed GA_FatherSacrifice from shield-based protection to 8-second invulnerability. Removed shield system due to Blueprint architectural limitations. State.Invulnerable tag now blocks all damage during sacrifice. |
@@ -944,6 +1015,20 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 | 1.2 | 2025 | Removed cancelled Symbiote abilities (GA_TendrilLash, GA_Consume, GA_SymbioteLifesteal). Simplified Symbiote form to 2 abilities. Updated total ability count from 23 to 21. |
 | 1.1 | 2025 | Corrected ability names (kept original names: GA_StealthField, GA_FatherElectricTrap) |
 | 1.0 | 2025 | Initial design document |
+
+---
+
+## AUDIT STAMP
+
+| Field | Value |
+|-------|-------|
+| Audit Date | 2026-01-23 |
+| Audit Type | Claude-GPT Dual Audit |
+| Decisions Locked | 24 (Dome Energy System) |
+| Key Decisions | D22: Form exit via TryActivateAbilityByClass |
+| | D23: EI_FatherArmorForm.HandleUnequip override |
+| | D24: Father.Dome.FullyCharged activation_required_tag |
+| Manifest Aligned | Yes |
 
 ---
 

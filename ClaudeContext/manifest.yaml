@@ -4070,7 +4070,8 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Attacking
       activation_required_tags:
-        - Father.Dome.Active  # On Player ASC (from GA_ProtectiveDome)
+        - Father.Dome.Active           # On Player ASC (from GA_ProtectiveDome)
+        - Father.Dome.FullyCharged     # Only burst when dome is FULL (Decision 24)
         # Father.Form.Armor removed - cross-ASC gate, equipment granting handles this
       activation_blocked_tags:
         - Cooldown.Father.DomeBurst
