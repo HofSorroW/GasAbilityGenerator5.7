@@ -6945,9 +6945,45 @@ narrative_events:
     event_tag: GameplayEvent.Father.Sacrificed
 
 # ============================================================================
+# NPC CONTROLLERS (1) - Universal controller with ViewedCharacter for backstab
+# ============================================================================
+# BP_BackstabNPCController - Universal NPC Controller with ViewedCharacter tracking
+# All NPCs using this controller will track which player they're seeing
+# Used by backstab system: Enemy.Controller.ViewedCharacter != AttackingPlayer = Backstab valid
+# Assign via: Set AIControllerClass on NPC character blueprint to BP_BackstabNPCController
+#
+# NOTE: Perception binding logic must be completed manually in editor:
+# 1. In BeginPlay: Get AIPerception Component -> Bind Event to OnPerceptionUpdated
+# 2. Create custom event handler with UpdatedActors parameter
+# 3. Implement sight detection logic per GA_Backstab_Implementation_Guide_v1_8.md
+actor_blueprints:
+  - name: BP_BackstabNPCController
+    folder: AI/Controllers
+    parent_class: NarrativeNPCController
+    variables:
+      - name: ViewedCharacter
+        type: Object:NarrativePlayerCharacter
+        category: Perception
+    event_graph:
+      nodes:
+        # BeginPlay placeholder - perception binding done manually
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        - id: PrintReady
+          type: PrintString
+          properties:
+            message: "BP_BackstabNPCController Ready - Bind perception in editor"
+          position: [300, 0]
+      connections:
+        - from: [Event_BeginPlay, Then]
+          to: [PrintReady, Exec]
+
+# ============================================================================
 # ACTOR BLUEPRINTS (4) - Characters (1) + Projectiles (2) + Traps (1)
 # ============================================================================
-actor_blueprints:
   - name: BP_FatherCompanion
     folder: Characters
     parent_class: NarrativeNPCCharacter
