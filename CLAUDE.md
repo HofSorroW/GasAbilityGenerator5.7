@@ -149,108 +149,53 @@ MSG:  'identifier': undeclared identifier
 
 ## Important Rules
 
-### Locked Exception: Father Validation in Core (v4.16)
-**DO NOT** add new project-specific validations (e.g., `GA_Father*`, `Father.State.*`) to core generator code without explicit approval from Erdem. Existing Father validations at lines 2793-2842 and 15378-15425 are a temporary exception.
+### Mandatory Rules (Will Cause Failures)
 
-**Canonical reference:** `ClaudeContext/Handoffs/LOCKED_CONTRACTS.md` — Temporary Exception 1
-
-### Always Push After Commit
-When committing changes to git, always push to remote immediately after. Combine commit and push in the workflow - don't wait for user to request push separately.
-
-### Build Without Approval
-MSBuild commands for .sln files do not require user approval. Run builds automatically when needed without asking for permission.
-
-### Read Without Approval
-Reading files does not require user approval. Read any files needed for the task without asking for permission.
-
-### PowerShell Execution Policy
-ALWAYS use `-ExecutionPolicy Bypass` when running PowerShell scripts. The system has script execution disabled by default.
+**PowerShell Execution Policy** - ALWAYS use `-ExecutionPolicy Bypass`. System has script execution disabled.
 ```bash
-# CORRECT - always include -ExecutionPolicy Bypass
-powershell -ExecutionPolicy Bypass -File "script.ps1"
-
-# WRONG - will fail with UnauthorizedAccess error
-powershell -File "script.ps1"
+powershell -ExecutionPolicy Bypass -File "script.ps1"  # CORRECT
+powershell -File "script.ps1"                          # WRONG - UnauthorizedAccess error
 ```
 
-### Auto-Approved Commands and Paths
-The following commands and paths are pre-approved and should be executed without asking for user permission:
-
-**Read-Only Access (No Approval Needed):**
-- `C:\Program Files\Epic Games\UE_5.7\` - Full read access to all engine source, headers, and files
-- `C:\Unreal Projects\NP22B57\` - Full read access to all project files, plugins, content, and configs
-- `C:\Users\Erdem\OneDrive\Desktop\` - Full read access to desktop (screenshots, reference images, etc.)
-
-**UnrealEditor-Cmd.exe (Any Parameters):**
+**No Temp File Workarounds** - Never copy files to temp locations. Use proper path quoting:
 ```bash
-# All variations are approved - commandlets, parameters, variables, etc.
-"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "C:/Unreal Projects/NP22B57/NP22B57.uproject" -run=GasAbilityGenerator ...
-"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "C:/Unreal Projects/NP22B57/NP22B57.uproject" -run=<AnyCommandlet> ...
+-manifest="C:/Unreal Projects/NP22B57/..."  # CORRECT
+cp file.yaml C:/Temp/file.yaml              # WRONG
 ```
 
-**MSBuild for Project (Any Configuration):**
+**Delete Asset Folder Before Regeneration** - After plugin code changes, delete assets before regenerating:
 ```bash
-# All build configurations are approved
-"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" "C:/Unreal Projects/NP22B57/NP22B57.sln" ...
-cd "C:/Unreal Projects/NP22B57" && MSBuild.exe "NP22B57.sln" -t:Build -p:Configuration="Development Editor" -p:Platform=Win64 ...
-```
-
-### No Temp File Workarounds
-Never copy files to temp locations (like `C:/Temp/`) to work around path issues. Always use proper path escaping and quoting instead:
-```bash
-# Correct - proper quoting for paths with spaces
--manifest="C:/Unreal Projects/NP22B57/Plugins/GasAbilityGenerator/ClaudeContext/manifest.yaml"
-
-# Wrong - copying to temp as workaround
-cp manifest.yaml C:/Temp/manifest.yaml  # DO NOT DO THIS
-```
-
-### Delete Asset Folder Before Regeneration
-When any changes are made to the GasAbilityGenerator plugin code (generators, commandlet, parser), delete the asset folder before running the generator again. The Asset Registry caches existing assets and will skip regeneration otherwise.
-```bash
-# Delete before regenerating
 rm -rf "/c/Unreal Projects/NP22B57/Content/FatherCompanion"
-
-# Then run the generator
-UnrealEditor-Cmd.exe ... -run=GasAbilityGenerator ...
 ```
 
-### Save Handoffs to ClaudeContext/Handoffs/
-All implementation guides, research notes, and session handoffs must be saved to `ClaudeContext/Handoffs/`. Never create handoff files in ClaudeContext/ root or other locations.
-
-### Non-Asset Entries Must Be Nested
-Variables, properties, and parameters are NOT standalone assets. They must always be nested inside their parent asset definition:
-
+**Non-Asset Entries Must Be Nested** - Variables, properties, parameters, keys, nodes, connections must be inside parent assets:
 ```yaml
-# CORRECT - variables nested inside asset
-gameplay_abilities:
-  - name: GA_FatherAttack
+# CORRECT                          # WRONG
+gameplay_abilities:                variables:
+  - name: GA_Attack                  - name: Damage
     variables:
       - name: Damage
-        type: Float
-      - name: TargetEnemy
-        type: Object
-    event_graph:
-      nodes:
-        - id: GetDamage
-          properties:
-            variable_name: Damage
-
-# WRONG - standalone non-asset entries
-variables:
-  - name: Damage
-  - name: TargetEnemy
 ```
 
-Non-asset entry types that must be nested:
-- `variables` - Blueprint variables (nested in abilities, blueprints)
-- `properties` - Node properties (nested in event_graph nodes)
-- `parameters` - Material parameters (nested in materials)
-- `keys` - Blackboard keys (nested in blackboards)
-- `nodes` - Event graph nodes (nested in event_graphs)
-- `connections` - Node connections (nested in event_graphs)
+### Workflow Rules
 
-### Pure Function Bypass (v2.5.2+)
+**Always Push After Commit** - Combine commit and push; don't wait for separate push request.
+
+**Save Handoffs to ClaudeContext/Handoffs/** - All implementation guides and session handoffs go here only.
+
+### Auto-Approved Actions (No Permission Needed)
+
+| Action | Scope |
+|--------|-------|
+| Read files | `C:\Program Files\Epic Games\UE_5.7\`, `C:\Unreal Projects\NP22B57\`, `C:\Users\Erdem\OneDrive\Desktop\` |
+| MSBuild | Any configuration for `NP22B57.sln` |
+| UnrealEditor-Cmd.exe | Any commandlet or parameters |
+
+### Generator Behavior
+
+**Locked Exception: Father Validation (v4.16)** - DO NOT add project-specific validations to core generator code without approval. See `ClaudeContext/Handoffs/LOCKED_CONTRACTS.md`.
+
+**Pure Function Bypass (v2.5.2+)**
 
 The generator automatically handles exec connections to pure functions (like `GetAvatarActorFromActorInfo`). Pure functions have **no execution pins** in Blueprint, so exec-to-pure connections in the manifest are non-semantic.
 
@@ -284,33 +229,6 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 **Reference:** `ClaudeContext/Handoffs/Generator_Pure_Node_Bypass_Analysis_v2_0.md`
 
-### Regen Safety Contract (v3.0+)
-
-The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
-
-| Mechanism | Purpose |
-|-----------|---------|
-| **InputHash** | Detects manifest definition changes |
-| **OutputHash** | Detects manual asset edits |
-| **Dry-run** | Preview mode (`-dryrun` flag) |
-| **Conflict gating** | CONFLICT status requires `--force` |
-
-**Generation Status Matrix:**
-
-| Condition | Status | Action |
-|-----------|--------|--------|
-| No asset exists | CREATE | Generate new |
-| Manifest changed, asset unchanged | MODIFY | Safe to regenerate |
-| No changes | SKIP | Do nothing |
-| Both manifest AND asset changed | CONFLICT | Requires `--force` |
-
-**Important:** Undo is not the recovery mechanism. If generation produces unwanted results:
-1. Fix the manifest definition
-2. Use `--force` to regenerate from corrected manifest
-3. Or restore from version control
-
-**Reference:** `Source/GasAbilityGenerator/Public/GasAbilityGeneratorMetadata.h`
-
 ---
 
 ## Troubleshooting
@@ -327,7 +245,7 @@ The generator does **NOT** rely on Unreal's Undo system for safety. Instead:
 
 ---
 
-## GasAbilityGenerator Plugin (v4.25)
+## GasAbilityGenerator Plugin (v4.26)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1102,31 +1020,35 @@ When looking for classes/enums, the plugin searches:
 4. **Symbiote** - Merges with player, stat boosts, proximity damage
 5. **Engineer** - Turret mode, electric traps, auto-targeting
 
-### Plugin Version History
+### Error Code Reference
 
-- v4.26 - Session Cache and External Reference Detection: Fixes 4 generation failures (GA_Backstab, MF_RadialGradient, AC_FatherCompanion, AC_FatherBehavior) to achieve 156/156 assets. (1) GSessionBlueprintClassCache - session-local cache for Blueprint classes created during generation, enables TSubclassOf resolution for same-session dependencies. GE and GA classes cached after compilation, checked before LoadClass. (2) Material Function expressions - added Distance, DotProduct, CrossProduct, Normalize to CreateExpressionInFunction. (3) Automated external reference detection - configuration generators use GetActiveManifest()->IsAssetInManifest() to distinguish manifest-defined vs external plugin references. External refs (not in manifest) logged as warnings, manifest refs that fail resolution remain errors. (4) NarrativePro search paths - added correct plugin mount paths for activities, goal generators, and parent class resolution. Fixed manifest activity names (BPA_Attack_Ranged_Strafe, BPA_Attack_Ranged). Session cache cleared at commandlet start via extern declaration.
-- v4.25 - Phase 4.2 Dependency Ordering System: Claude-GPT dual audit approved. Implements topological sort for deterministic generation order and cascade skip logic. Generated-only nodes (manifest assets only), internal edges only (target must be in manifest). Dependency edges: AC→GA, AC→GE, GA→GE, GA→Montage, BT→BB, DialogueBP→NPCDef, Quest→NPCDef (all conditional on target in manifest). External refs (Skeleton, AttributeSet, GameplayTag, UClass) remain pre-validation only. New `EGenerationStatus::SkippedCascaded` for cascade failures. `FGenerationResult` extended with RootFailureId, RootReasonCode, CascadeChainDepth, CascadeChainPath. Kahn's algorithm with lexical priority selection for determinism. Summary report shows FailedRoot vs SkippedCascaded counts with cascade amplification metric. Error code: E_CASCADE_SKIPPED.
-- v4.24.2 - Phase 4.1.2 U/A Prefix Normalization: Claude-GPT dual audit identified that /Script paths include class names WITHOUT U/A prefix (e.g., `/Script/NarrativeArsenal.NarrativeAttributeSetBase` not `UNarrativeAttributeSetBase`). FindClassByName now strips U/A prefix when building /Script module paths. Safety constraints: skip if already qualified (`/Script/`, `/Game/`), skip if contains `.`, skip if 1 char, only strip U/A (not F/E). Diagnostic logging shows both raw and normalized attempts. Fixes 3 remaining A1 AttributeSet false negatives.
-- v4.24.1 - Phase 4.1.1 Class Resolution Fix: Claude-GPT dual audit identified false negatives in pre-validation. Fixed CoreUObject bug at line 194 (`*CorePath` → `*ClassName`). Added 4 missing /Script module paths for class resolution: GameplayTags (UBlueprintGameplayTagLibrary), Niagara (UNiagaraFunctionLibrary), UMG (UUserWidget), AIModule (UBTService_BlueprintBase). Added diagnostic logging showing attempted paths on failed resolution. Eliminates 77 false negative E_PREVAL_CLASS_NOT_FOUND errors for valid engine classes.
-- v4.24 - Phase 4.1 Pre-Validation System: Implements pre-validation per Phase4_Spec_Locked.md. Validates manifest references BEFORE generation starts using reflection-based semantic checks. Rules: F1/F2 (function validation), A1/A2 (attribute validation), C1/C2 (class validation), R1-R5 (asset references), T1/T2 (tag validation), K1/K2 (token validation). Caching system for expensive reflection lookups. Blocking policy: Errors block generation, Warnings proceed. Output format includes manifest location (file:line:column) and YAML path. New types: FPreValidationCache, FPreValidator, FPreValidationReport. Error codes: E_PREVAL_CLASS_NOT_FOUND, E_PREVAL_FUNCTION_NOT_FOUND, E_PREVAL_ATTRIBUTE_NOT_FOUND, E_PREVAL_ASSET_NOT_FOUND, E_PREVAL_TAG_NOT_REGISTERED (Warning), E_PREVAL_TOKEN_UNSUPPORTED.
-- v4.23.1 - Phase 3 Spec-Complete: Enhanced diagnostic context for all error codes. Every error now includes ClassPath, SuperClassPath, and RequestedProperty in logs. Provides full context for hypothesis testing (H1-H5) when 8 BUG errors occur. Phase 3 complete per Fail_Fast_Audit_FINAL.md.
-- v4.23 - Fail-Fast Audit Phase 2: Converted Type M items (manifest defects) from warnings to hard fails. Parse-time validation now blocks generation on invalid manifest entries. 97 error codes classified across 3 phases. Dual-agent audit consensus with GPT.
-- v4.22 - NodePosX Serialization Override: Fixed event graph node position serialization where X=0 caused nodes to pile at left edge. Overrides FBlueprintNodeScriptCodeRange::PreSerialize to clamp NodePosX from 0 to minimum 16. Ensures all nodes have valid positive X positions for proper graph layout.
-- v4.21.2 - Delegate Binding Pin Wiring Fixes: Three critical fixes for delegate binding node generation. (1) UK2Node_Self pin name fix - changed FindPin(PN_ReturnValue) to FindPin(PN_Self) since UK2Node_Self uses PN_Self for its output. (2) Cast node type propagation - added NotifyPinConnectionListChanged() after MakeLinkTo() to trigger pin type resolution required by compiler. (3) Dual CastNode architecture - separate CastNodeA (ActivateAbility) and CastNodeB (EndAbility) paths wired into respective exec chains to prevent node pruning. Changed ASC resolution from GetAbilitySystemComponent(Actor) to GetAbilitySystemComponentFromActorInfo() on UGameplayAbility. All 5 abilities with delegate_bindings now compile: GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField.
-- v4.21.1 - Delegate Binding Variable Source: Implements Test Case #5 from locked design - variable source resolution now creates UK2Node_VariableGet nodes. Searches Blueprint.NewVariables for source name, creates getter node, auto-casts to UNarrativeAbilitySystemComponent if variable type is base ASC. Error codes: E_DELEGATE_SOURCE_INVALID (variable not found), E_DELEGATE_VARIABLE_PIN (pin not found). Completes v4.21 acceptance criteria: "Source resolution works for OwnerASC, PlayerASC, and variables".
-- v4.21 - Delegate Binding Automation: Claude-GPT dual audit approved (2026-01-21). Full auto-generation of multicast delegate bind/unbind nodes for GameplayAbilities. Supports Narrative Pro delegates (OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage on UNarrativeAbilitySystemComponent). Architecture: Two CreateDelegate nodes per binding (one for ActivateAbility, one for EndAbility). Proper PN_Self wiring: CreateDelegate→Self (ability), Add/RemoveDelegate→SourceASC. Mandatory cast to UNarrativeAbilitySystemComponent for OwnerASC/PlayerASC keywords. Custom Event auto-created with delegate signature parameters. Error codes: E_DELEGATE_NOT_FOUND, E_DELEGATE_SIGNATURE_MISMATCH (FAIL severity). Parser extended with `id:` field. Implements Implementation_Plans_Audit_v1.md Section 9 (P2.1).
-- v4.20 - Event Graph Node Placement System: Layered graph layout algorithm for readable Blueprint event graphs. Fixes root cause at GasAbilityGeneratorGenerators.cpp:9510-9511 where `NodePosY = 0` caused all nodes to overlap vertically. Implements BFS-based layer assignment from entry events, lane separation for multiple event chains, and data node positioning near consumers. Height formulas: Event family (48 + pins×16), Exec Logic family (80 + pins×18). Constants: GRID_SIZE=16, HORIZONTAL_LAYER_SPACING=350, VERTICAL_NODE_GAP=50, LANE_SEPARATION=150. Manifest type → family mapping table covers 18 node types. 6 acceptance tests: determinism, grid alignment, no overlap, exec monotonicity, lane separation, orphan warnings. Full audit trail in `ClaudeContext/Handoffs/EventGraph_Node_Placement_Reference.md`.
-- v4.19 - ActorComponentBlueprintGenerator: New generator for UActorComponent-derived blueprints. Supports variables (reuses FManifestActorVariableDefinition), event dispatchers with custom parameters (PC_MCDelegate + signature graph), functions with input/output pins and pure flag, tick configuration (bCanEverTick, bStartWithTickEnabled, TickInterval). 7-phase implementation: (1) Create Blueprint with parent class whitelist validation, (2) Add Variables with duplicate guard, (3) Add Event Dispatchers, (4) Add Functions with reserved suffix guard (_Implementation, _Validate, _C, __), (5) Compile (Contract 10), (6) Configure Tick on CDO AFTER compile, (7) Save. New types: FManifestDispatcherParam, FManifestEventDispatcherDefinition, FManifestFunctionParam, FManifestFunctionDefinition, FManifestComponentBlueprintDefinition. Breadcrumb logging: COMP_BP[Name] PH1-PH7.
-- v4.18 - P1.2 Form Transition Validation: Parse-time lint for Father form-transition state machine. Validates that source forms grant tags required by target forms when using cancel_abilities_with_tag. Warns on invalid transitions (e.g., Crawler→Symbiote when Symbiote requires Father.State.Attached). Tag-based extraction from Ability.Father.{Form} pattern. Log-only warnings at parse time with machine-parseable [W_TRANSITION_INVALID] format. Father-specific scope (intentional per Rule #9).
-- v4.17 - Circular Dependency Detection: Parse-time validation using Tarjan's algorithm to detect strongly connected components in asset dependency graph. Tracks dependencies: GA→GE (cooldown), BT→BB, etc. Reports cycles with full path: [E_CIRCULAR_DEPENDENCY] Cycle detected: A → B → C → A. Generation blocked on cycle detection (Error, not Warning). Implemented as Dependency Contract v1 in LOCKED_CONTRACTS.md.
-- v4.16.1 - Hash Collision Detection: Added metadata integrity feature per Proposal #3 from dual-agent audit. New `CheckHashCollision()` and `ClearCollisionMap()` methods on `UGeneratorMetadataRegistry`. Collision map cleared at start of each generation session (commandlet and editor window). When two different assets produce identical InputHash, logs `HASH COLLISION DETECTED: Hash N used by both 'path1' and 'path2'`. Blueprint Compile Gate added as Contract 10 in LOCKED_CONTRACTS.md. Additive change only - no guards removed or modified.
-- v4.15.1 - GAS Audit Call-site Correction: Fixed AddLooseGameplayTags/RemoveLooseGameplayTags nodes using wrong UE5 API. Changed `class: AbilitySystemComponent` → `class: AbilitySystemBlueprintLibrary` and `Target` pin → `Actor` pin. These functions are static BlueprintCallable on the library class, not member functions on ASC. Affected 14 node instances across 6 abilities (GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer, GA_FatherSacrifice). Mechanical correctness fix - no guard logic changes.
-- v4.15 - Track B AbilityTaskWaitDelay Support: GAS Audit Track B complete. Added GameplayAbilitiesEditor and GameplayTasksEditor module dependencies. Implemented `CreateAbilityTaskWaitDelayNode()` using UK2Node_LatentAbilityCall with reflection-based property setting (ProxyFactoryFunctionName, ProxyFactoryClass, ProxyClass). Added `type: AbilityTaskWaitDelay` handler in node switch. Converted 7 Delay nodes to AbilityTaskWaitDelay: GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer (5× TransitionDelay 5s), GA_FatherExoskeletonDash (0.5s), GA_StealthField (8s). WaitDelay AbilityTasks auto-terminate when ability ends, providing built-in 3-layer lifecycle protection.
-- v4.14.2 - GAS Audit INV-1 Invulnerability Removal: Complete removal of unintended invulnerability per dual-agent audit decision. Removed `GE_TransitionInvulnerability` and `GE_DashInvulnerability` from manifest. Removed `Narrative.State.Invulnerable` from GE_ArmorState, GE_ExoskeletonState, GE_SymbioteState granted tags. Removed `Effect.Father.TransitionInvulnerability` and `Effect.Father.DashInvulnerability` tags. Form transitions now use `AddLooseGameplayTag(Father.State.Transitioning)` directly instead of GE application. **Kept:** `GE_SacrificeInvulnerability` (intentional 8s player invulnerability in GA_FatherSacrifice). Asset count: 164→162, Effects: 50→48, Tags: 206→204.
-- v4.14.1 - GAS Function Name Corrections: Fixed Blueprint compilation errors in form abilities. `ApplyGameplayEffectToSelf` on `AbilitySystemBlueprintLibrary` doesn't exist - changed to `BP_ApplyGameplayEffectToOwner` with `target_self: true` (function is on UGameplayAbility). `BP_RemoveGameplayEffectFromOwnerByClass` doesn't exist in Blueprint - changed to `BP_RemoveGameplayEffectFromOwnerWithGrantedTags` using granted tag matching. Removed unnecessary `GetFatherASC` nodes since `target_self: true` handles self-targeting. All 5 form abilities updated with correct function calls.
-- v4.14 - Full Transition State Automation: All 5 form abilities include transition state tracking in their event graphs. Pattern: Event_Activate → AddLooseGameplayTag(Father.State.Transitioning) → FormLogic; Event_End → RemoveLooseGameplayTag(Father.State.Transitioning). Standardized across GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer.
+| Code | Severity | Description |
+|------|----------|-------------|
+| `E_PREVAL_CLASS_NOT_FOUND` | Error | Referenced class doesn't exist |
+| `E_PREVAL_FUNCTION_NOT_FOUND` | Error | Referenced function doesn't exist on class |
+| `E_PREVAL_ATTRIBUTE_NOT_FOUND` | Error | Referenced attribute doesn't exist on AttributeSet |
+| `E_PREVAL_ASSET_NOT_FOUND` | Error | Referenced asset path doesn't exist |
+| `E_PREVAL_TAG_NOT_REGISTERED` | Warning | Gameplay tag not in DefaultGameplayTags.ini |
+| `E_PREVAL_TOKEN_UNSUPPORTED` | Error | Token type not supported by generator |
+| `E_CIRCULAR_DEPENDENCY` | Error | Circular reference detected (A→B→C→A) |
+| `E_CASCADE_SKIPPED` | Info | Skipped due to dependency failure |
+| `E_DELEGATE_NOT_FOUND` | Error | Delegate name doesn't exist on class |
+| `E_DELEGATE_SIGNATURE_MISMATCH` | Error | Handler signature doesn't match delegate |
+| `E_DELEGATE_SOURCE_INVALID` | Error | Variable source for delegate not found |
+| `W_TRANSITION_INVALID` | Warning | Form transition missing required tags |
 
-For versions prior to v4.14, see [CHANGELOG.md](CHANGELOG.md).
+### Plugin Version History (Recent)
+
+| Version | Summary |
+|---------|---------|
+| **v4.26** | Session cache for TSubclassOf resolution; external reference detection; 156/156 assets |
+| **v4.25** | Dependency ordering (topological sort); cascade skip logic |
+| **v4.24** | Pre-validation system; reflection-based semantic checks before generation |
+| **v4.23** | Fail-fast audit; manifest defects block generation; 97 error codes |
+| **v4.21** | Delegate binding automation for GAS abilities |
+| **v4.20** | Event graph node placement; layered layout algorithm |
+
+For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
