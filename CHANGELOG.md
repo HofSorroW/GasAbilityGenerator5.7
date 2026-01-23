@@ -4,6 +4,12 @@ Full version history for versions prior to v4.14. For recent versions, see `CLAU
 
 ---
 
+## v4.27 - Dependency Sort Order Audit
+
+- v4.27.1 - Dependency Sort Order Audit: Claude-GPT dual-agent audit of asset generation ordering. **Findings:** (1) TopologicalSort exists but never called - dependency graph informational only, (2) Materials phase (9) runs before MaterialFunctions phase (10) - dormant bug, (3) GA→GA manifest order issue proven (GA_ProtectiveDome → GA_DomeBurst TSubclassOf failure). **Quick-fix applied:** Moved material_functions section before materials in manifest (hygiene). **Backlog:** Consume TopologicalSort result in generation loops, swap M/MF phase order in commandlet. Verification: 156/156 assets. See `ClaudeContext/Handoffs/Dependency_Sort_Order_Audit_v1.md`.
+
+---
+
 ## v4.13.x - v4.7
 
 - v4.13.3 - Quest SM Semantic Verification: Added quest-specific state machine verification after generation. Validates: start state exists and is valid, detects duplicate State/Branch IDs, counts unresolved destination states, counts total tasks. Emits `RESULT QuestSM: states=N branches=M tasks=T unresolved=0 duplicates=0 start_valid=true` summary line per quest (consistent with global RESULT pattern). Warnings logged for each issue found; no hard-fail. Follows GPT recommendation for graph correctness verification while staying consistent with existing plugin patterns.
