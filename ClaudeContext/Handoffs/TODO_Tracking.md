@@ -425,11 +425,17 @@ Each entry expands to `GE_{Form}State` with:
 
 ### Performance
 
-| Task | Description | Complexity |
-|------|-------------|------------|
-| Test large XLSX files | Test XLSX sync with >1000 rows | LOW |
-| Parallelize generators | Parallelize generator execution for performance | HIGH |
-| Batch validation | Add batch validation mode for large manifests | MEDIUM |
+| Task | Description | Complexity | Status |
+|------|-------------|------------|--------|
+| Test large XLSX files | Test XLSX sync with >1000 rows | LOW | |
+| Parallelize generators | Parallelize generator execution for performance | HIGH | |
+| ~~Batch validation~~ | ~~Add batch validation mode for large manifests~~ | ~~MEDIUM~~ | ✅ COMPLETE (v4.24) |
+
+**Batch Validation - Audit Closure (2026-01-23):**
+- **Implementation:** PreValidator system + `-dryrun` flag
+- **Audit:** Claude-GPT dual audit confirmed feature fully implemented
+- **Evidence:** PreValidator validates entire manifest before generation; `-dryrun` provides CI-safe execution with no side effects
+- **Original spec:** "for large manifests" - satisfied by batch error collection and aggregated reporting
 
 ### Save System Integration (From Roadmap P2.2)
 
@@ -789,3 +795,4 @@ These are intentionally not implemented:
 | 2026-01-22 | **Fail-Fast Audit v2.1:** Created anchored classification document - 118 items, 111 Type M for Phase 2 |
 | 2026-01-22 | **Fail-Fast Phase 2 START:** Converting 111 Type M Pipeline items to hard fails |
 | 2026-01-23 | **P1.1 FormState Preset Schema:** Manifest updated to use compact `form_state_effects:` syntax (35→12 lines) |
+| 2026-01-23 | **Batch Validation Audit:** Claude-GPT dual audit confirmed FULLY IMPLEMENTED (v4.24 PreValidator + `-dryrun`) |
