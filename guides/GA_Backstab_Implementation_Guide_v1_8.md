@@ -1,4 +1,4 @@
-# GA_Backstab Implementation Guide v1.7
+# GA_Backstab Implementation Guide v1.8
 
 ## Passive Damage Bonus Ability - ViewedCharacter Detection
 
@@ -12,7 +12,7 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 1.7 |
+| Document Version | 1.8 |
 | Ability Name | GA_Backstab |
 | Ability Type | Passive (Triggered on Attack Hit) |
 | Parent Class | NarrativeGameplayAbility |
@@ -47,6 +47,21 @@
 ---
 
 ## QUICK REFERENCE
+
+### AUTOMATION VS MANUAL (v5.0)
+
+| Feature | Automation Status | Notes |
+|---------|-------------------|-------|
+| GA_Backstab Blueprint | ✅ Auto-generated | manifest.yaml creates ability with tags/properties |
+| GE_BackstabBonus Effect | ✅ Auto-generated | manifest.yaml creates instant +25 AttackRating |
+| CheckBackstabCondition Function | ✅ Auto-generated | Dot product math (simplified approximation) |
+| ApplyBackstabBonus Function | ✅ Auto-generated | BP_ApplyGameplayEffectToOwner node graph |
+| BP_NarrativeNPCController | ⚠️ Manual | Add ViewedCharacter variable (Phase 3, Step 8) |
+| Handle Perception Update | ⚠️ Manual | Override + AIPerception logic (Phase 3, Steps 9-10) |
+| Player Attack Integration | ⚠️ Manual | Add backstab check to hit processing (Phase 5) |
+| Player Default Abilities | ⚠️ Manual | Add GA_Backstab to array (Phase 6) |
+
+**Why ViewedCharacter is Manual:** The generator creates new assets from manifest but cannot modify existing Narrative Pro blueprints (BP_NarrativeNPCController). The ViewedCharacter approach uses AIPerception for correct gameplay (Father distraction, stealth integration).
 
 ### Tag Configuration Summary
 
@@ -810,6 +825,7 @@ This section provides an alternative implementation where backstab logic is inte
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.8 | January 2026 | **AUTOMATION VS MANUAL Table Added:** Clarified what is auto-generated (GA_Backstab, GE_BackstabBonus, custom functions) vs manual (BP_NarrativeNPCController ViewedCharacter, Handle Perception Update). Explained why ViewedCharacter requires manual integration (generator cannot modify existing Narrative Pro blueprints). |
 | 1.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with Decision 4 (GA_Backstab is UNIVERSAL player ability, not Exoskeleton-only). Grant Location confirmed as Player Default Abilities array. Updated UE version to 5.7. |
 | 1.6 | January 2026 | Updated Narrative Pro version to v2.2. Updated Related Documents to Design Document v1.8 and Setup Guide v2.3. |
 | 1.5 | January 2026 | Simplified PHASE 1 tag creation - replaced detailed step-by-step instructions with simple tag list table. |
@@ -821,7 +837,7 @@ This section provides an alternative implementation where backstab logic is inte
 
 ---
 
-**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v1.7**
+**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v1.8**
 
 **Passive Damage Bonus - ViewedCharacter Detection**
 

@@ -10,16 +10,16 @@
 # ============================================================================
 # DISABLED/PLACEHOLDER ENTRIES TRACKER
 # ============================================================================
-# The following entries have placeholders or are disabled pending external dependencies.
+# The following entries are disabled pending external dependencies (art assets).
 #
 # | Entry Name          | Status      | Issue                         | Fix When                      |
 # |---------------------|-------------|-------------------------------|-------------------------------|
-# | GA_FatherRifle      | PLACEHOLDER | item_class: NarrativeItem     | Change to EI_FatherRifleWeapon after first gen |
-# | GA_FatherSword      | PLACEHOLDER | item_class: NarrativeItem     | Change to EI_FatherSwordWeapon after first gen |
+# | GA_FatherRifle      | ✅ FIXED    | item_class now EI_FatherRifleWeapon | v5.0                      |
+# | GA_FatherSword      | ✅ FIXED    | item_class now EI_FatherSwordWeapon | v5.0                      |
 # | animation_montages  | COMMENTED   | SK_FatherCompanion missing    | Uncomment after skeleton import |
 # | animation_notifies  | COMMENTED   | Depends on AM_FatherAttack    | Uncomment after montages ready  |
 #
-# Search for "TODO:" comments to find all placeholders
+# All code/logic items are now fully automated. Only art asset dependencies remain.
 # ============================================================================
 
 # ============================================================================
@@ -5096,7 +5096,17 @@ gameplay_abilities:
   # NOTE: Runs on Player ASC - no cross-ASC gates needed
   # PASSIVE ABILITY: Contains CheckBackstabCondition and ApplyBackstabBonus FUNCTIONS
   # These functions are CALLED BY attack abilities - GA_Backstab itself does not activate
-  # Functions must be created manually in editor (manifest only generates event_graph)
+  #
+  # AUTOMATION STATUS:
+  # - custom_functions: ✅ AUTOMATED (generator creates Blueprint functions with full node graphs)
+  # - CheckBackstabCondition: Uses dot product math (simplified approximation)
+  # - ApplyBackstabBonus: Uses BP_ApplyGameplayEffectToOwner
+  #
+  # MANUAL INTEGRATION REQUIRED (per GA_Backstab_Implementation_Guide_v1_7.md):
+  # - BP_NarrativeNPCController: Add ViewedCharacter variable + Handle Perception Update override
+  # - This enables the CORRECT gameplay: ViewedCharacter != AttackingPlayer (uses AIPerception)
+  # - Generator cannot modify existing Narrative Pro blueprints - only creates new assets
+  # - For full ViewedCharacter detection, follow Phase 3 of the implementation guide
   - name: GA_Backstab
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -6004,7 +6014,7 @@ gameplay_abilities:
 
   # GA_FatherRifle - Rifle Weapon Form (NPC-owned form ability)
   # v2.7.0: Full Narrative Pro item flow with BreakStruct/GetArrayItem
-  # NOTE: Uses placeholder class NarrativeItem until EI_FatherRifleWeapon is generated
+  # v5.0: Uses EI_FatherRifleWeapon (fully automated)
   - name: GA_FatherRifle
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -6094,8 +6104,8 @@ gameplay_abilities:
           properties:
             function: TryAddItemFromClass
             class: NarrativeInventoryComponent
-            # TODO: item_class should be EI_FatherRifleWeapon after first generation
-            item_class: NarrativeItem
+            # v5.0: Fixed - now uses actual weapon item class
+            item_class: EI_FatherRifleWeapon
             quantity: 1
           position: [2100, 150]
         # Break FItemAddResult struct to get Stacks array
@@ -6282,7 +6292,7 @@ gameplay_abilities:
 
   # GA_FatherSword - Sword Weapon Form (NPC-owned form ability)
   # v2.7.0: Full Narrative Pro item flow with BreakStruct/GetArrayItem
-  # NOTE: Uses placeholder class NarrativeItem until EI_FatherSwordWeapon is generated
+  # v5.0: Uses EI_FatherSwordWeapon (fully automated)
   - name: GA_FatherSword
     folder: Abilities/Forms
     parent_class: NarrativeGameplayAbility
@@ -6372,8 +6382,8 @@ gameplay_abilities:
           properties:
             function: TryAddItemFromClass
             class: NarrativeInventoryComponent
-            # TODO: item_class should be EI_FatherSwordWeapon after first generation
-            item_class: NarrativeItem
+            # v5.0: Fixed - now uses actual weapon item class
+            item_class: EI_FatherSwordWeapon
             quantity: 1
           position: [2100, 150]
         # Break FItemAddResult struct to get Stacks array
