@@ -5128,13 +5128,13 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 			BBPaths.Add(FString::Printf(TEXT("/Game/AI/Blackboards/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
 			BBPaths.Add(FString::Printf(TEXT("/Game/AI/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
 			BBPaths.Add(FString::Printf(TEXT("%s/Blackboards/%s.%s"), *GetProjectRoot(), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-			// v4.13.2: NarrativePro standard blackboard paths
-			BBPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-			BBPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-			BBPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Flee/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-			BBPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/GoToLocation/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-			BBPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Idle/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
-			BBPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			// v6.9: NarrativePro standard blackboard paths (use /NarrativePro/ - plugin content mount name)
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Flee/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
+			BBPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s"), *Definition.BlackboardAsset, *Definition.BlackboardAsset));
 
 			for (const FString& BBPath : BBPaths)
 			{
