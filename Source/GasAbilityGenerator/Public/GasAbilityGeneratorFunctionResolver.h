@@ -1,4 +1,4 @@
-// GasAbilityGenerator v4.29 - Function Resolution Parity System
+// GasAbilityGenerator v4.31 - Function Resolution Parity System
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 //
 // Shared function resolver for Generator and PreValidator.
@@ -38,6 +38,10 @@ struct GASABILITYGENERATOR_API FResolvedFunction
  * 2. Explicit class - if class: specified, exact name only
  * 3. Parent chain - if target_self or from parent, exact name only
  * 4. Library fallback - 13 classes in order, exact name only
+ * 5. Blueprint FunctionGraph - search current Blueprint's custom functions (v4.31)
+ *
+ * Note: Step 5 only applies when Blueprint is provided (Generator context).
+ * PreValidator passes nullptr since Blueprint doesn't exist yet.
  *
  * @see PreValidator_Generator_Parity_Audit_v1.md
  */
@@ -45,20 +49,22 @@ class GASABILITYGENERATOR_API FGasAbilityGeneratorFunctionResolver
 {
 public:
 	/**
-	 * Main entry point - resolves a function using the 4-step cascade.
+	 * Main entry point - resolves a function using the 5-step cascade.
 	 * Both Generator and PreValidator must use this method.
 	 *
 	 * @param FunctionName The function name from manifest
 	 * @param ExplicitClassName The class: field from manifest (may be empty)
 	 * @param ParentClass The Blueprint's parent class for parent chain walk
 	 * @param bTargetSelf Whether target_self: true was specified
+	 * @param Blueprint Optional - the Blueprint being generated (for custom function lookup)
 	 * @return FResolvedFunction with Function, OwnerClass, and bFound
 	 */
 	static FResolvedFunction ResolveFunction(
 		const FString& FunctionName,
 		const FString& ExplicitClassName,
 		UClass* ParentClass,
-		bool bTargetSelf
+		bool bTargetSelf,
+		class UBlueprint* Blueprint = nullptr
 	);
 
 	/**
@@ -102,6 +108,9 @@ private:
 
 	/** Step 4: Try library fallback classes with exact name */
 	static FResolvedFunction ResolveViaLibraryFallback(const FString& FunctionName);
+
+	/** Step 5: Search Blueprint's FunctionGraphs for custom functions (v4.31) */
+	static FResolvedFunction ResolveViaBlueprintFunctionGraph(const FString& FunctionName, class UBlueprint* Blueprint);
 
 	/** The WellKnownFunctions table - maps function names to owning classes */
 	static TMap<FString, UClass*> WellKnownFunctions;

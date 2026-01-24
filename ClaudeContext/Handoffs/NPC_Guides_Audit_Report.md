@@ -850,9 +850,93 @@ The following patterns are used across NPC guides but are NOT covered by locked 
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3 | 2026-01-25 | Claude (Opus 4.5) | v4.32.2-4.32.3: GoalGenerator automation with InitializeGoalGenerator override; Parser debug confirms all sections parsed correctly; GA_Backstab/GA_ProtectiveDome still blocked (custom function resolution D5) |
 | 1.2 | 2026-01-25 | Claude (Opus 4.5) | Added Automation Status section (v4.32/v4.32.1); Updated per-guide sections with automation details; Marked resolved issues |
 | 1.1 | 2026-01-24 | Claude (Opus 4.5) | Added Gameplay Overview section with player-facing descriptions of each NPC |
 | 1.0 | 2026-01-24 | Claude (Opus 4.5) | Initial audit of 6 NPC guides |
+
+---
+
+## APPENDIX C: v4.32.2/v4.32.3 GoalGenerator Enhancements
+
+### Parser Debugging Session (2026-01-25 01:30-01:50)
+
+Debug logging was added to ParseActorBlueprints and ParseGoalItems to trace manifest parsing. The logs confirmed:
+
+```
+[PARSER DEBUG] ParseActorBlueprints exiting at line 9865, total blueprints now: 17
+[PARSER DEBUG] ParseGoalItems entered at line 9865: goals:  # GATHERER
+[PARSER DEBUG] ParseGoalItems exiting at line 9869 (next line: actor_blueprints:  # GATHERER GOAL GENERATORS)
+[PARSER DEBUG] ParseActorBlueprints exiting at line 10085, total blueprints now: 19
+[PARSER DEBUG] ParseActorBlueprints exiting at line 10154, total blueprints now: 20
+[PARSER DEBUG] ParseActorBlueprints exiting at line 10460, total blueprints now: 22
+```
+
+**Findings:**
+1. Parser correctly enters and exits ALL actor_blueprints sections including GATHERER GOAL GENERATORS
+2. ParseGoalItems LineIndex fix (v4.32.3) correctly decrements LineIndex before break
+3. Total 22 blueprints are parsed by the parser
+4. BUT commandlet reports only 19 blueprints - **3 blueprints are filtered out somewhere**
+
+### Resolution: Stale Output Log
+
+**Root Cause Found (2026-01-25 01:55):**
+
+The `commandlet_output.log` was stale (modified at 00:29, over 1.5 hours old). The actual UE log (`NP22B57.log`) showed:
+
+```
+Parsed manifest with 204 tags, 3 enumerations, 21 abilities, 47 effects, 20 blueprints, 6 MICs
+```
+
+**Parser Debug Output (verified):**
+```
+[PARSER] Adding blueprint on exit: BP_Reinforcement (total: 17)
+[PARSER] Adding blueprint on exit: GoalGenerator_Alert (total: 18)  ← CONFIRMED
+[PARSER] Adding blueprint on exit: BP_ReturnedStalker (total: 19)
+[PARSER] Adding blueprint on exit: GoalGenerator_RandomAggression (total: 20)
+```
+
+**Final Status:**
+- ✅ GoalGenerator_Alert IS being parsed correctly
+- ✅ 20 blueprints total (was 19 before adding GoalGenerator_Alert)
+- ⚠️ Automation script output log capture needs review
+- ⚠️ Duplicate manifest.yaml in root was deleted
+
+**Note:** Timestamps are UTC in logs (e.g., `2026.01.24-22.54.26` = `2026.01.25-01:54:26` Turkey local time)
+
+### GoalGenerator Automation (v4.32.2)
+
+Added `function_overrides` support for InitializeGoalGenerator:
+
+```yaml
+actor_blueprints:
+  - name: GoalGenerator_Alert
+    parent_class: NPCGoalGenerator
+    function_overrides:
+      - function: InitializeGoalGenerator
+        nodes:
+          - id: ParentInitialize
+            type: CallParent
+          - id: PrintReady
+            type: CallFunction
+            properties:
+              function: PrintString
+              class: KismetSystemLibrary
+              parameters:
+                InString: "GoalGenerator initialized"
+```
+
+### Current Blockers
+
+| Issue | Asset | Status | Reference |
+|-------|-------|--------|-----------|
+| D5 - Custom function resolution | GA_Backstab | BLOCKED | See GA_Backstab_GA_ProtectiveDome_Error_Audit.md |
+| D5 - Custom function resolution | GA_ProtectiveDome | BLOCKED | v4.31 fix applied but still failing |
+
+**Next Steps:**
+1. Review v4.31 custom function resolution code
+2. Check if FunctionGraph is being created for CheckBackstabCondition
+3. Detailed event graph generation logs needed
 
 ---
 

@@ -10087,8 +10087,6 @@ goals:  # GATHERER
     parent_class: NPCGoalItem
 
 actor_blueprints:  # GATHERER GOAL GENERATORS
-  # v4.32.2: Enhanced with InitializeGoalGenerator for alert propagation
-  # NOTE: Alert propagation finds nearby NPCs and gives them alert goals
   - name: GoalGenerator_Alert
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
@@ -10102,31 +10100,205 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
       - name: bAlertBroadcast
         type: Boolean
         default_value: "false"
-      # The goal item to add when alerting
+      # The goal item class to add when alerting (defaults to Goal_Alert)
       - name: AlertGoalClass
         type: Class
         class: NPCGoalItem
         instance_editable: true
     # Override InitializeGoalGenerator - Sets up alert system
-    # NOTE: Actual alert trigger is handled by perception or damage events
     function_overrides:
       - function: InitializeGoalGenerator
         nodes:
-          # Call parent implementation first
           - id: CallParent
             type: CallParent
             position: [200, 0]
-          # Log initialization
           - id: PrintInit
             type: PrintString
             properties:
-              message: "GoalGenerator_Alert: Initialized - alert propagation ready"
+              message: "GoalGenerator_Alert: Initialized - call BroadcastAlert to propagate"
             position: [400, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [CallParent, Exec]
           - from: [CallParent, Exec]
             to: [PrintInit, Exec]
+    # Custom event for alert broadcasting (call from perception/damage events)
+    event_graph:
+      nodes:
+        # BroadcastAlert - Called when NPC detects threat or takes damage
+        - id: Event_BroadcastAlert
+          type: CustomEvent
+          properties:
+            event_name: BroadcastAlert
+          position: [0, 0]
+        # Check if already broadcast (prevent spam)
+        - id: GetBroadcast
+          type: VariableGet
+          properties:
+            variable_name: bAlertBroadcast
+          position: [200, 0]
+        - id: BranchBroadcast
+          type: Branch
+          position: [400, 0]
+        # Skip if already broadcast
+        - id: PrintSkip
+          type: PrintString
+          properties:
+            message: "Alert already broadcast - skipping"
+          position: [600, -100]
+        # Set broadcast flag
+        - id: SetBroadcast
+          type: VariableSet
+          properties:
+            variable_name: bAlertBroadcast
+            value: "true"
+          position: [600, 100]
+        # Get owner controller location for sphere overlap
+        - id: GetController
+          type: VariableGet
+          properties:
+            variable_name: OwnerController
+          position: [800, 100]
+        - id: GetPawn
+          type: CallFunction
+          properties:
+            function: K2_GetPawn
+            class: Controller
+          position: [1000, 100]
+        - id: GetLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+            class: Actor
+          position: [1200, 100]
+        # Get alert radius
+        - id: GetRadius
+          type: VariableGet
+          properties:
+            variable_name: AlertRadius
+          position: [1000, 200]
+        # Sphere overlap to find nearby actors
+        - id: SphereOverlap
+          type: CallFunction
+          properties:
+            function: SphereOverlapActors
+            class: KismetSystemLibrary
+          position: [1400, 100]
+        # Loop through found actors
+        - id: ForEachActor
+          type: ForEachLoop
+          position: [1600, 100]
+        # Cast to NarrativeNPCCharacter
+        - id: CastToNPC
+          type: DynamicCast
+          properties:
+            target_class: NarrativeNPCCharacter
+          position: [1800, 100]
+        # Get their activity component
+        - id: GetActivityComp
+          type: CallFunction
+          properties:
+            function: GetComponentByClass
+            class: Actor
+            param.ComponentClass: NPCActivityComponent
+          position: [2000, 100]
+        # Validity check on component
+        - id: IsValidComp
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2200, 100]
+        - id: BranchValid
+          type: Branch
+          position: [2400, 100]
+        # Get alert goal class
+        - id: GetAlertClass
+          type: VariableGet
+          properties:
+            variable_name: AlertGoalClass
+          position: [2400, 200]
+        # Spawn a new goal instance
+        - id: SpawnGoal
+          type: CallFunction
+          properties:
+            function: SpawnObject
+            class: GameplayStatics
+          position: [2600, 100]
+        # Cast to NPCGoalItem
+        - id: CastToGoal
+          type: DynamicCast
+          properties:
+            target_class: NPCGoalItem
+          position: [2800, 100]
+        # Add goal to their activity component
+        - id: AddGoal
+          type: CallFunction
+          properties:
+            function: AddGoal
+            class: NPCActivityComponent
+            param.bTriggerReselect: true
+          position: [3000, 100]
+        - id: PrintAlerted
+          type: PrintString
+          properties:
+            message: "Alert propagated to nearby NPC"
+          position: [3200, 100]
+      connections:
+        - from: [Event_BroadcastAlert, Then]
+          to: [BranchBroadcast, Exec]
+        - from: [GetBroadcast, Value]
+          to: [BranchBroadcast, Condition]
+        - from: [BranchBroadcast, True]
+          to: [PrintSkip, Exec]
+        - from: [BranchBroadcast, False]
+          to: [SetBroadcast, Exec]
+        - from: [SetBroadcast, Then]
+          to: [SphereOverlap, Exec]
+        - from: [GetController, Value]
+          to: [GetPawn, Target]
+        - from: [GetPawn, ReturnValue]
+          to: [GetLocation, Target]
+        - from: [GetLocation, ReturnValue]
+          to: [SphereOverlap, SpherePos]
+        - from: [GetRadius, Value]
+          to: [SphereOverlap, SphereRadius]
+        - from: [SphereOverlap, OutActors]
+          to: [ForEachActor, Array]
+        - from: [SphereOverlap, Then]
+          to: [ForEachActor, Exec]
+        - from: [ForEachActor, LoopBody]
+          to: [CastToNPC, Exec]
+        - from: [ForEachActor, ArrayElement]
+          to: [CastToNPC, Object]
+        - from: [CastToNPC, Then]
+          to: [GetActivityComp, Exec]
+        - from: [CastToNPC, AsNarrativeNPCCharacter]
+          to: [GetActivityComp, Target]
+        - from: [GetActivityComp, ReturnValue]
+          to: [IsValidComp, Object]
+        - from: [GetActivityComp, Then]
+          to: [BranchValid, Exec]
+        - from: [IsValidComp, ReturnValue]
+          to: [BranchValid, Condition]
+        - from: [BranchValid, True]
+          to: [SpawnGoal, Exec]
+        - from: [GetAlertClass, Value]
+          to: [SpawnGoal, ObjectClass]
+        - from: [GetActivityComp, ReturnValue]
+          to: [SpawnGoal, Outer]
+        - from: [SpawnGoal, ReturnValue]
+          to: [CastToGoal, Object]
+        - from: [SpawnGoal, Then]
+          to: [CastToGoal, Exec]
+        - from: [CastToGoal, AsNPCGoalItem]
+          to: [AddGoal, NewGoal]
+        - from: [GetActivityComp, ReturnValue]
+          to: [AddGoal, Target]
+        - from: [CastToGoal, Then]
+          to: [AddGoal, Exec]
+        - from: [AddGoal, Then]
+          to: [PrintAlerted, Exec]
 
 activities:  # GATHERER
   - name: BPA_Alert
@@ -10203,8 +10375,8 @@ actor_blueprints:  # STALKER
           to: [PrintReady, Exec]
 
 actor_blueprints:  # STALKER GOAL GENERATORS
-  # v4.32.2: Enhanced with InitializeGoalGenerator override for random aggression state machine
-  # NOTE: NPCGoalGenerator is UObject-based, InitializeGoalGenerator is BlueprintNativeEvent
+  # v4.32.3: Full automation with SetTimer + OnAggressionTick callback
+  # Uses timer-based aggression buildup with random multiplier, creates Goal_Attack at threshold
   - name: GoalGenerator_RandomAggression
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
@@ -10232,6 +10404,11 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         type: Float
         default_value: "2.0"
         instance_editable: true
+      # Timer interval (seconds between aggression ticks)
+      - name: TimerInterval
+        type: Float
+        default_value: "1.0"
+        instance_editable: true
       # Timer handle for aggression tick
       - name: AggressionTimerHandle
         type: TimerHandle
@@ -10239,39 +10416,266 @@ actor_blueprints:  # STALKER GOAL GENERATORS
       - name: bIsAggressive
         type: Boolean
         default_value: "false"
+      # Goal class to create when attacking (defaults to GoalGenerator_Attack's goal)
+      - name: AttackGoalClass
+        type: Class
+        class: NPCGoalItem
+        instance_editable: true
     # Override InitializeGoalGenerator to set up the timer-based state machine
     function_overrides:
       - function: InitializeGoalGenerator
         nodes:
-          # Call parent implementation first
           - id: CallParent
             type: CallParent
             position: [200, 0]
           # Set up repeating timer for aggression buildup
-          # NOTE: Timer callback safety per R-TIMER-2 requires validity guards
-          - id: GetWorld
-            type: CallFunction
-            properties:
-              function: GetWorld
-              target_self: true
+          - id: Self
+            type: Self
             position: [400, 0]
-          - id: GetTimerManager
+          - id: GetInterval
+            type: VariableGet
+            properties:
+              variable_name: TimerInterval
+            position: [400, 100]
+          - id: SetTimer
             type: CallFunction
             properties:
-              function: GetTimerManager
-              class: World
+              function: K2_SetTimer
+              class: KismetSystemLibrary
+              param.FunctionName: "OnAggressionTick"
+              param.bLooping: true
             position: [600, 0]
-          # Log initialization
+          # Store timer handle
+          - id: SetTimerHandle
+            type: VariableSet
+            properties:
+              variable_name: AggressionTimerHandle
+            position: [800, 0]
           - id: PrintInit
             type: PrintString
             properties:
-              message: "GoalGenerator_RandomAggression: Initialized - aggression timer active"
-            position: [800, 0]
+              message: "GoalGenerator_RandomAggression: Timer started"
+            position: [1000, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [CallParent, Exec]
           - from: [CallParent, Exec]
+            to: [SetTimer, Exec]
+          - from: [Self, Reference]
+            to: [SetTimer, Object]
+          - from: [GetInterval, Value]
+            to: [SetTimer, Time]
+          - from: [SetTimer, ReturnValue]
+            to: [SetTimerHandle, Value]
+          - from: [SetTimer, Then]
+            to: [SetTimerHandle, Exec]
+          - from: [SetTimerHandle, Then]
             to: [PrintInit, Exec]
+    # Event graph with OnAggressionTick callback
+    event_graph:
+      nodes:
+        # OnAggressionTick - Called by timer every TimerInterval seconds
+        - id: Event_OnAggressionTick
+          type: CustomEvent
+          properties:
+            event_name: OnAggressionTick
+          position: [0, 0]
+        # R-TIMER-2: Validity guard - check if owner is still valid
+        - id: GetController
+          type: VariableGet
+          properties:
+            variable_name: OwnerController
+          position: [200, 0]
+        - id: IsValidController
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [400, 0]
+        - id: BranchValid
+          type: Branch
+          position: [600, 0]
+        # Invalid - clear timer and exit (R-TIMER-2 safety)
+        - id: GetTimerHandle
+          type: VariableGet
+          properties:
+            variable_name: AggressionTimerHandle
+          position: [600, -100]
+        - id: ClearTimer
+          type: CallFunction
+          properties:
+            function: K2_ClearTimerHandle
+            class: KismetSystemLibrary
+          position: [800, -100]
+        # Valid path - calculate aggression increment
+        - id: GetBuildRate
+          type: VariableGet
+          properties:
+            variable_name: AggressionBuildRate
+          position: [800, 50]
+        - id: GetMinMult
+          type: VariableGet
+          properties:
+            variable_name: RandomMultiplierMin
+          position: [800, 100]
+        - id: GetMaxMult
+          type: VariableGet
+          properties:
+            variable_name: RandomMultiplierMax
+          position: [800, 150]
+        - id: RandomFloat
+          type: CallFunction
+          properties:
+            function: RandomFloatInRange
+            class: KismetMathLibrary
+          position: [1000, 100]
+        - id: MultiplyRates
+          type: CallFunction
+          properties:
+            function: Multiply_FloatFloat
+            class: KismetMathLibrary
+          position: [1200, 50]
+        # Get current aggression and add increment
+        - id: GetAggression
+          type: VariableGet
+          properties:
+            variable_name: AggressionLevel
+          position: [1200, 150]
+        - id: AddAggression
+          type: CallFunction
+          properties:
+            function: Add_FloatFloat
+            class: KismetMathLibrary
+          position: [1400, 100]
+        # Store new aggression level
+        - id: SetAggression
+          type: VariableSet
+          properties:
+            variable_name: AggressionLevel
+          position: [1600, 100]
+        # Check threshold
+        - id: GetThreshold
+          type: VariableGet
+          properties:
+            variable_name: AggressionThreshold
+          position: [1600, 200]
+        - id: GreaterEqual
+          type: CallFunction
+          properties:
+            function: GreaterEqual_FloatFloat
+            class: KismetMathLibrary
+          position: [1800, 150]
+        - id: BranchThreshold
+          type: Branch
+          position: [2000, 100]
+        # Below threshold - just log
+        - id: PrintBuilding
+          type: PrintString
+          properties:
+            message: "Aggression building..."
+          position: [2200, 200]
+        # Threshold reached - create attack goal
+        - id: SetAggressive
+          type: VariableSet
+          properties:
+            variable_name: bIsAggressive
+            value: "true"
+          position: [2200, 0]
+        # Reset aggression level
+        - id: ResetAggression
+          type: VariableSet
+          properties:
+            variable_name: AggressionLevel
+            value: "0.0"
+          position: [2400, 0]
+        # Get attack goal class
+        - id: GetAttackClass
+          type: VariableGet
+          properties:
+            variable_name: AttackGoalClass
+          position: [2400, 100]
+        # Spawn attack goal
+        - id: SpawnGoal
+          type: CallFunction
+          properties:
+            function: SpawnObject
+            class: GameplayStatics
+          position: [2600, 0]
+        # Cast to NPCGoalItem
+        - id: CastToGoal
+          type: DynamicCast
+          properties:
+            target_class: NPCGoalItem
+          position: [2800, 0]
+        # Add goal using built-in AddGoalItem
+        - id: AddGoal
+          type: CallFunction
+          properties:
+            function: AddGoalItem
+            class: NPCGoalGenerator
+            target_self: true
+            param.bTriggerReselect: true
+          position: [3000, 0]
+        - id: PrintAttack
+          type: PrintString
+          properties:
+            message: "AGGRESSION THRESHOLD REACHED - Attack goal added!"
+          position: [3200, 0]
+      connections:
+        - from: [Event_OnAggressionTick, Then]
+          to: [BranchValid, Exec]
+        - from: [GetController, Value]
+          to: [IsValidController, Object]
+        - from: [IsValidController, ReturnValue]
+          to: [BranchValid, Condition]
+        - from: [BranchValid, False]
+          to: [ClearTimer, Exec]
+        - from: [GetTimerHandle, Value]
+          to: [ClearTimer, Handle]
+        - from: [BranchValid, True]
+          to: [SetAggression, Exec]
+        - from: [GetMinMult, Value]
+          to: [RandomFloat, Min]
+        - from: [GetMaxMult, Value]
+          to: [RandomFloat, Max]
+        - from: [GetBuildRate, Value]
+          to: [MultiplyRates, A]
+        - from: [RandomFloat, ReturnValue]
+          to: [MultiplyRates, B]
+        - from: [GetAggression, Value]
+          to: [AddAggression, A]
+        - from: [MultiplyRates, ReturnValue]
+          to: [AddAggression, B]
+        - from: [AddAggression, ReturnValue]
+          to: [SetAggression, Value]
+        - from: [SetAggression, Then]
+          to: [BranchThreshold, Exec]
+        - from: [AddAggression, ReturnValue]
+          to: [GreaterEqual, A]
+        - from: [GetThreshold, Value]
+          to: [GreaterEqual, B]
+        - from: [GreaterEqual, ReturnValue]
+          to: [BranchThreshold, Condition]
+        - from: [BranchThreshold, False]
+          to: [PrintBuilding, Exec]
+        - from: [BranchThreshold, True]
+          to: [SetAggressive, Exec]
+        - from: [SetAggressive, Then]
+          to: [ResetAggression, Exec]
+        - from: [ResetAggression, Then]
+          to: [SpawnGoal, Exec]
+        - from: [GetAttackClass, Value]
+          to: [SpawnGoal, ObjectClass]
+        - from: [SpawnGoal, ReturnValue]
+          to: [CastToGoal, Object]
+        - from: [SpawnGoal, Then]
+          to: [CastToGoal, Exec]
+        - from: [CastToGoal, AsNPCGoalItem]
+          to: [AddGoal, Goal]
+        - from: [CastToGoal, Then]
+          to: [AddGoal, Exec]
+        - from: [AddGoal, Then]
+          to: [PrintAttack, Exec]
 
 tagged_dialogue_sets:  # STALKER
   - name: TaggedDialogueSet_Returned

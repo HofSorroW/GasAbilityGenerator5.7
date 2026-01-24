@@ -1,4 +1,4 @@
-// GasAbilityGenerator v4.29 - Function Resolution Parity System
+// GasAbilityGenerator v4.31 - Function Resolution Parity System
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
 
 #include "GasAbilityGeneratorFunctionResolver.h"
@@ -27,6 +27,11 @@
 
 // AI includes for WellKnownFunctions
 #include "AIController.h"
+
+// Blueprint includes for FunctionGraph resolution (v4.31)
+#include "Engine/Blueprint.h"
+#include "EdGraph/EdGraph.h"
+#include "K2Node_FunctionEntry.h"
 
 // Narrative Pro includes for WellKnownFunctions
 #include "Items/InventoryComponent.h"
@@ -340,11 +345,74 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveViaLibraryFallbac
 	return FResolvedFunction();
 }
 
+FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveViaBlueprintFunctionGraph(const FString& FunctionName, UBlueprint* Blueprint)
+{
+	if (!Blueprint)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[FunctionResolver] ResolveViaBlueprintFunctionGraph: Blueprint is null for function '%s'"), *FunctionName);
+		return FResolvedFunction();
+	}
+
+	// v4.31: Debug logging for custom function resolution
+	UE_LOG(LogTemp, Warning, TEXT("[FunctionResolver] Searching Blueprint '%s' FunctionGraphs for '%s' (Count: %d)"),
+		*Blueprint->GetName(), *FunctionName, Blueprint->FunctionGraphs.Num());
+	for (UEdGraph* DbgGraph : Blueprint->FunctionGraphs)
+	{
+		if (DbgGraph)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[FunctionResolver]   - Found FunctionGraph: '%s'"), *DbgGraph->GetFName().ToString());
+		}
+	}
+
+	// Search all FunctionGraphs in the Blueprint for a matching function name
+	// FunctionGraphs are created by custom_functions in the manifest
+	for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+	{
+		if (!Graph)
+		{
+			continue;
+		}
+
+		// Check if the graph name matches the function name
+		if (Graph->GetFName() == FName(*FunctionName))
+		{
+			// Found a FunctionGraph with matching name
+			// The function should exist on the Blueprint's generated class skeleton
+			if (Blueprint->SkeletonGeneratedClass)
+			{
+				UFunction* Function = Blueprint->SkeletonGeneratedClass->FindFunctionByName(*FunctionName);
+				if (Function)
+				{
+					FResolvedFunction Result;
+					Result.Function = Function;
+					Result.OwnerClass = Blueprint->SkeletonGeneratedClass;
+					Result.bFound = true;
+					Result.ResolutionPath = FString::Printf(TEXT("BlueprintFunctionGraph[%s::%s]"), *Blueprint->GetName(), *FunctionName);
+					return Result;
+				}
+			}
+
+			// Fallback: If skeleton doesn't have the function yet (during generation),
+			// return a valid result with nullptr Function but bFound = true
+			// The generator will create the CallFunction node targeting Self
+			FResolvedFunction Result;
+			Result.Function = nullptr;  // Will be resolved at compile time
+			Result.OwnerClass = Blueprint->SkeletonGeneratedClass;
+			Result.bFound = true;
+			Result.ResolutionPath = FString::Printf(TEXT("BlueprintFunctionGraph[%s::%s](pending)"), *Blueprint->GetName(), *FunctionName);
+			return Result;
+		}
+	}
+
+	return FResolvedFunction();
+}
+
 FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 	const FString& FunctionName,
 	const FString& ExplicitClassName,
 	UClass* ParentClass,
-	bool bTargetSelf)
+	bool bTargetSelf,
+	UBlueprint* Blueprint)
 {
 	if (FunctionName.IsEmpty())
 	{
@@ -380,6 +448,18 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 
 	// Step 4: Library fallback (exact name only)
 	Result = ResolveViaLibraryFallback(FunctionName);
+	if (Result.bFound)
+	{
+		return Result;
+	}
+
+	// Step 5: Blueprint FunctionGraph (v4.31) - search custom functions in same Blueprint
+	// Only applies during generation when Blueprint is available
+	if (Blueprint)
+	{
+		Result = ResolveViaBlueprintFunctionGraph(FunctionName, Blueprint);
+	}
+
 	return Result;
 }
 

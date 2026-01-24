@@ -2019,7 +2019,7 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 				 CurrentDef.Name.StartsWith(TEXT("BPA_")) || CurrentDef.Name.StartsWith(TEXT("Goal_")) ||
 				 CurrentDef.Name.StartsWith(TEXT("GoalGenerator_"))))
 			{
-				OutData.ActorBlueprints.Add(CurrentDef);
+								OutData.ActorBlueprints.Add(CurrentDef);
 			}
 			LineIndex--;
 			return;
@@ -2069,7 +2069,7 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 				 CurrentDef.Name.StartsWith(TEXT("BPA_")) || CurrentDef.Name.StartsWith(TEXT("Goal_")) ||
 				 CurrentDef.Name.StartsWith(TEXT("GoalGenerator_"))))
 			{
-				OutData.ActorBlueprints.Add(CurrentDef);
+								OutData.ActorBlueprints.Add(CurrentDef);
 			}
 			CurrentDef = FManifestActorBlueprintDefinition();
 			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
@@ -10952,8 +10952,10 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 		}
 
 		// Check for end of section
+		// v4.32.3 FIX: Decrement LineIndex so main loop can re-process the section header
 		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
 		{
+			LineIndex--;
 			break;
 		}
 

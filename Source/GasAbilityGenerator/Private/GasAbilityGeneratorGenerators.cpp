@@ -2758,6 +2758,37 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	// Compile blueprint first (after variables are added)
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
+	// v4.31: Generate custom functions BEFORE event graph
+	// This allows event graph nodes to call functions defined in custom_functions
+	// DEBUG: Always log custom function count for audit purposes
+	LogGeneration(FString::Printf(TEXT("  [v4.31-DEBUG] %s: CustomFunctions.Num()=%d, bHasInlineEventGraph=%s, EventGraphNodes=%d"),
+		*Definition.Name, Definition.CustomFunctions.Num(),
+		Definition.bHasInlineEventGraph ? TEXT("true") : TEXT("false"),
+		Definition.EventGraphNodes.Num()));
+
+	if (Definition.CustomFunctions.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  [v4.31] Generating %d custom function(s) BEFORE event graph"), Definition.CustomFunctions.Num()));
+		int32 FunctionsGenerated = 0;
+		for (const FManifestCustomFunctionDefinition& FuncDef : Definition.CustomFunctions)
+		{
+			LogGeneration(FString::Printf(TEXT("    [v4.31] About to generate: %s"), *FuncDef.FunctionName));
+			if (FEventGraphGenerator::GenerateCustomFunction(Blueprint, FuncDef, ProjectRoot))
+			{
+				FunctionsGenerated++;
+				LogGeneration(FString::Printf(TEXT("    [v4.31] SUCCESS: %s (FunctionGraphs now: %d)"), *FuncDef.FunctionName, Blueprint->FunctionGraphs.Num()));
+			}
+			else
+			{
+				// v4.23 FAIL-FAST: S35 - Manifest references custom function that failed to generate
+				LogGeneration(FString::Printf(TEXT("[E_GA_CUSTOMFUNCTION_FAILED] %s | Failed to generate custom function: %s"), *Definition.Name, *FuncDef.FunctionName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Failed to generate custom function '%s'"), *FuncDef.FunctionName));
+			}
+		}
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d custom functions"), FunctionsGenerated, Definition.CustomFunctions.Num()));
+	}
+
 	// v2.4.0: Generate inline event graph if defined
 	if (Definition.bHasInlineEventGraph && Definition.EventGraphNodes.Num() > 0)
 	{
@@ -2843,29 +2874,6 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	{
 		int32 AttrNodesGenerated = FEventGraphGenerator::GenerateAttributeBindingNodes(Blueprint, Definition.AttributeBindings);
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d attribute binding tasks"), AttrNodesGenerated, Definition.AttributeBindings.Num()));
-	}
-
-	// v4.14: Generate custom Blueprint functions
-	if (Definition.CustomFunctions.Num() > 0)
-	{
-		LogGeneration(FString::Printf(TEXT("  Generating %d custom function(s)"), Definition.CustomFunctions.Num()));
-		int32 FunctionsGenerated = 0;
-		for (const FManifestCustomFunctionDefinition& FuncDef : Definition.CustomFunctions)
-		{
-			if (FEventGraphGenerator::GenerateCustomFunction(Blueprint, FuncDef, ProjectRoot))
-			{
-				FunctionsGenerated++;
-				LogGeneration(FString::Printf(TEXT("    Generated custom function: %s"), *FuncDef.FunctionName));
-			}
-			else
-			{
-				// v4.23 FAIL-FAST: S35 - Manifest references custom function that failed to generate
-				LogGeneration(FString::Printf(TEXT("[E_GA_CUSTOMFUNCTION_FAILED] %s | Failed to generate custom function: %s"), *Definition.Name, *FuncDef.FunctionName));
-				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-					FString::Printf(TEXT("Failed to generate custom function '%s'"), *FuncDef.FunctionName));
-			}
-		}
-		LogGeneration(FString::Printf(TEXT("  Generated %d/%d custom functions"), FunctionsGenerated, Definition.CustomFunctions.Num()));
 	}
 
 	// v4.22: AUDIT LOGGING POINT 2 - Before final CompileBlueprint
@@ -10305,13 +10313,15 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		FunctionName = FName(**RemappedName);
 	}
 
-	// v4.29: Use shared function resolver for parity with PreValidator
-	// See: PreValidator_Generator_Parity_Audit_v1.md
+	// v4.31: Use shared function resolver for parity with PreValidator
+	// Now includes Blueprint FunctionGraph search for custom functions
+	// See: PreValidator_Generator_Parity_Audit_v1.md, GA_Backstab_GA_ProtectiveDome_Error_Audit.md
 	FResolvedFunction Resolved = FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 		FunctionNameStr,
 		ClassNamePtr ? *ClassNamePtr : TEXT(""),
 		Blueprint ? Blueprint->ParentClass : nullptr,
-		bTargetSelf
+		bTargetSelf,
+		Blueprint  // v4.31: Pass Blueprint for custom function lookup
 	);
 
 	Function = Resolved.Function;
@@ -10320,7 +10330,11 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 	if (Resolved.bFound)
 	{
 		// Update FunctionName if a variant was found (K2_, BP_)
-		FunctionName = Resolved.Function->GetFName();
+		// v4.31: Handle Blueprint FunctionGraph case where Function may be nullptr during generation
+		if (Resolved.Function)
+		{
+			FunctionName = Resolved.Function->GetFName();
+		}
 		LogGeneration(FString::Printf(TEXT("Resolved function '%s' via %s"), *FunctionName.ToString(), *Resolved.ResolutionPath));
 	}
 	else
@@ -10373,255 +10387,269 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		CallNode->CreateNewGuid();
 		CallNode->PostPlacedNewNode();
 		CallNode->AllocateDefaultPins();
+	}
+	// v4.31: Handle Blueprint FunctionGraph case (custom functions in same Blueprint)
+	// When Resolved.bFound is true but Function is nullptr, this is a custom function
+	// defined in custom_functions. Use SetSelfMember to reference it by name.
+	else if (Resolved.bFound && !Function && Blueprint)
+	{
+		CallNode->FunctionReference.SetSelfMember(FunctionName);
+		CallNode->CreateNewGuid();
+		CallNode->PostPlacedNewNode();
+		CallNode->AllocateDefaultPins();
+		LogGeneration(FString::Printf(TEXT("  Created CallFunction for Blueprint custom function '%s'"), *FunctionName.ToString()));
+	}
+	else
+	{
+		// Function not found - check if this is actually a property access
+		FString FuncStr = FunctionName.ToString();
+		bool bIsGetter = FuncStr.StartsWith(TEXT("Get"));
+		bool bIsSetter = FuncStr.StartsWith(TEXT("Set"));
 
-		// v2.8.2: Apply parameter defaults from properties with "param." prefix
-		for (const auto& PropPair : NodeDef.Properties)
+		if (bIsGetter || bIsSetter)
 		{
-			if (PropPair.Key.StartsWith(TEXT("param.")))
+			// Extract property name (e.g., "GetMaxWalkSpeed" -> "MaxWalkSpeed")
+			FString PropertyName = FuncStr.Mid(3);
+
+			// Search for property in relevant classes
+			TArray<UClass*> PropertySearchClasses = {
+				UCharacterMovementComponent::StaticClass(),
+				ACharacter::StaticClass(),
+				AActor::StaticClass(),
+				APawn::StaticClass()
+			};
+
+			for (UClass* SearchClass : PropertySearchClasses)
 			{
-				FString ParamName = PropPair.Key.Mid(6);  // Remove "param." prefix
-				FString ParamValue = PropPair.Value;
-
-				// Find the input pin by name
-				UEdGraphPin* ParamPin = nullptr;
-				for (UEdGraphPin* Pin : CallNode->Pins)
+				FProperty* Prop = SearchClass->FindPropertyByName(FName(*PropertyName));
+				if (Prop && Prop->HasAnyPropertyFlags(CPF_BlueprintVisible))
 				{
-					if (Pin && Pin->Direction == EGPD_Input &&
-						(Pin->PinName.ToString() == ParamName ||
-						 Pin->PinName.ToString().Replace(TEXT(" "), TEXT("")) == ParamName.Replace(TEXT(" "), TEXT(""))))
-					{
-						ParamPin = Pin;
-						break;
-					}
+					LogGeneration(FString::Printf(TEXT("Function '%s' not found, but property '%s' exists on '%s'. Use PropertyGet/PropertySet node type with target_class: %s"),
+						*FuncStr, *PropertyName, *SearchClass->GetName(), *SearchClass->GetName()));
+					break;
 				}
+			}
+		}
 
-				if (ParamPin)
+		// v4.23 FAIL-FAST: Manifest references function that cannot be found
+		LogGeneration(FString::Printf(TEXT("[E_FUNCTION_NOT_FOUND] Node '%s' | Could not find function '%s'"),
+			*NodeDef.Id, *FunctionName.ToString()));
+		return nullptr; // Signal failure to caller
+	}
+
+	// v2.8.2: Apply parameter defaults from properties with "param." prefix
+	// This shared code runs for both UFunction* and Blueprint custom function cases
+	for (const auto& PropPair : NodeDef.Properties)
+	{
+		if (PropPair.Key.StartsWith(TEXT("param.")))
+		{
+			FString ParamName = PropPair.Key.Mid(6);  // Remove "param." prefix
+			FString ParamValue = PropPair.Value;
+
+			// Find the input pin by name
+			UEdGraphPin* ParamPin = nullptr;
+			for (UEdGraphPin* Pin : CallNode->Pins)
+			{
+				if (Pin && Pin->Direction == EGPD_Input &&
+					(Pin->PinName.ToString() == ParamName ||
+					 Pin->PinName.ToString().Replace(TEXT(" "), TEXT("")) == ParamName.Replace(TEXT(" "), TEXT(""))))
 				{
-					// v2.8.2: Handle different pin types
-					FString PinTypeStr = ParamPin->PinType.PinCategory.ToString();
+					ParamPin = Pin;
+					break;
+				}
+			}
 
-					if (ParamPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte &&
-						ParamPin->PinType.PinSubCategoryObject.IsValid())
+			if (ParamPin)
+			{
+				// v2.8.2: Handle different pin types
+				FString PinTypeStr = ParamPin->PinType.PinCategory.ToString();
+
+				if (ParamPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte &&
+					ParamPin->PinType.PinSubCategoryObject.IsValid())
+				{
+					// This is an enum - need to convert value to enum constant
+					UEnum* EnumType = Cast<UEnum>(ParamPin->PinType.PinSubCategoryObject.Get());
+					if (EnumType)
 					{
-						// This is an enum - need to convert value to enum constant
-						UEnum* EnumType = Cast<UEnum>(ParamPin->PinType.PinSubCategoryObject.Get());
-						if (EnumType)
+						// Try to find the enum value - check both raw name and with enum prefix
+						FString EnumValueName = ParamValue;
+						int64 EnumValue = EnumType->GetValueByNameString(EnumValueName);
+
+						// If not found, try with common prefixes
+						if (EnumValue == INDEX_NONE)
 						{
-							// Try to find the enum value - check both raw name and with enum prefix
-							FString EnumValueName = ParamValue;
-							int64 EnumValue = EnumType->GetValueByNameString(EnumValueName);
-
-							// If not found, try with common prefixes
-							if (EnumValue == INDEX_NONE)
-							{
-								// Try MOVE_ prefix for EMovementMode
-								EnumValue = EnumType->GetValueByNameString(TEXT("MOVE_") + EnumValueName);
-							}
-							if (EnumValue == INDEX_NONE)
-							{
-								// Try full qualified name
-								EnumValue = EnumType->GetValueByNameString(EnumType->GetNameStringByIndex(0).Left(EnumType->GetNameStringByIndex(0).Find(TEXT("::")) + 2) + EnumValueName);
-							}
-
-							if (EnumValue != INDEX_NONE)
-							{
-								ParamPin->DefaultValue = EnumType->GetNameStringByValue(EnumValue);
-								LogGeneration(FString::Printf(TEXT("  Set enum parameter '%s' = '%s' (value %lld)"),
-									*ParamName, *ParamPin->DefaultValue, EnumValue));
-							}
-							else
-							{
-								// v4.23 FAIL-FAST: Manifest references enum value that doesn't exist
-								LogGeneration(FString::Printf(TEXT("[E_ENUM_VALUE_NOT_FOUND] Node '%s' | Could not find enum value '%s' in %s"),
-									*NodeDef.Id, *ParamValue, *EnumType->GetName()));
-								LogGeneration(TEXT("  Available values:"));
-								for (int32 i = 0; i < EnumType->NumEnums() - 1; i++)
-								{
-									LogGeneration(FString::Printf(TEXT("    - %s"), *EnumType->GetNameStringByIndex(i)));
-								}
-								return nullptr; // Signal failure to caller
-							}
+							// Try MOVE_ prefix for EMovementMode
+							EnumValue = EnumType->GetValueByNameString(TEXT("MOVE_") + EnumValueName);
 						}
-					}
-					// v4.14: Handle TSubclassOf (PC_Class) pin types for class references
-					else if (ParamPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
-					{
-						// This is a TSubclassOf<T> pin - need to resolve the class and set DefaultObject
-						UClass* ResolvedClass = nullptr;
-						FString ClassName = ParamValue;
-
-						// Determine the expected base class from pin SubCategoryObject
-						UClass* ExpectedBaseClass = Cast<UClass>(ParamPin->PinType.PinSubCategoryObject.Get());
-						FString BaseClassName = ExpectedBaseClass ? ExpectedBaseClass->GetName() : TEXT("UObject");
-
-						// v4.22: Check session cache FIRST for assets created in this generation session
-						if (UClass** CachedClass = GSessionBlueprintClassCache.Find(ClassName))
+						if (EnumValue == INDEX_NONE)
 						{
-							ResolvedClass = *CachedClass;
-							LogGeneration(FString::Printf(TEXT("  Found Blueprint class in session cache: %s"), *ClassName));
+							// Try full qualified name
+							EnumValue = EnumType->GetValueByNameString(EnumType->GetNameStringByIndex(0).Left(EnumType->GetNameStringByIndex(0).Find(TEXT("::")) + 2) + EnumValueName);
 						}
 
-						// If not in cache, try to find as a Blueprint generated class in common content paths
-						TArray<FString> SearchPaths;
-						if (!ResolvedClass)
+						if (EnumValue != INDEX_NONE)
 						{
-							FString ProjectName = FApp::GetProjectName();
-							SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Effects/%s"), *ProjectName, *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Abilities/%s"), *ProjectName, *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/%s/%s"), *ProjectName, *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s"), *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/%s"), *ClassName));
-							// v6.9: Add Effects subfolders for GE_ classes
-							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s"), *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Cooldowns/%s"), *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Damage/%s"), *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Stats/%s"), *ClassName));
-							SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Utility/%s"), *ClassName));
-
-							// Check if it's a full path already
-							if (ClassName.StartsWith(TEXT("/Game/")))
-							{
-								SearchPaths.Insert(ClassName, 0);
-							}
-						}
-
-						for (const FString& SearchPath : SearchPaths)
-						{
-							// Try loading as Blueprint
-							FString BlueprintPath = SearchPath;
-							if (!BlueprintPath.EndsWith(TEXT("_C")))
-							{
-								BlueprintPath = SearchPath + TEXT(".") + FPaths::GetBaseFilename(SearchPath) + TEXT("_C");
-							}
-
-							ResolvedClass = LoadClass<UObject>(nullptr, *BlueprintPath, nullptr, LOAD_None, nullptr);
-							if (ResolvedClass)
-							{
-								LogGeneration(FString::Printf(TEXT("  Found Blueprint class at: %s"), *BlueprintPath));
-								break;
-							}
-
-							// Also try direct asset path for native classes
-							FString AssetPath = SearchPath + TEXT(".") + FPaths::GetBaseFilename(SearchPath);
-							UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
-							if (BP && BP->GeneratedClass)
-							{
-								ResolvedClass = BP->GeneratedClass;
-								LogGeneration(FString::Printf(TEXT("  Found Blueprint asset at: %s"), *AssetPath));
-								break;
-							}
-						}
-
-						// If not found, try native class lookup (StaticClass pattern)
-						if (!ResolvedClass)
-						{
-							// Remove common prefixes for native lookup
-							FString NativeClassName = ClassName;
-							if (NativeClassName.StartsWith(TEXT("GE_")) || NativeClassName.StartsWith(TEXT("GA_")))
-							{
-								// These are always Blueprint classes, not native
-								LogGeneration(FString::Printf(TEXT("  Note: %s appears to be a Blueprint class (GE_/GA_ prefix)"), *ClassName));
-							}
-							else
-							{
-								// Try to find native class using UE5 pattern (FindFirstObject)
-								ResolvedClass = FindFirstObject<UClass>(*NativeClassName, EFindFirstObjectOptions::ExactClass);
-								if (!ResolvedClass)
-								{
-									// Try with U prefix
-									ResolvedClass = FindFirstObject<UClass>(*(TEXT("U") + NativeClassName), EFindFirstObjectOptions::ExactClass);
-								}
-							}
-						}
-
-						if (ResolvedClass)
-						{
-							// Validate the class inherits from expected base
-							if (ExpectedBaseClass && !ResolvedClass->IsChildOf(ExpectedBaseClass))
-							{
-								LogGeneration(FString::Printf(TEXT("  WARNING: Class '%s' does not inherit from '%s'. Setting anyway."),
-									*ResolvedClass->GetName(), *BaseClassName));
-							}
-
-							ParamPin->DefaultObject = ResolvedClass;
-							LogGeneration(FString::Printf(TEXT("  Set class parameter '%s' = '%s' (TSubclassOf<%s>)"),
-								*ParamName, *ResolvedClass->GetName(), *BaseClassName));
+							ParamPin->DefaultValue = EnumType->GetNameStringByValue(EnumValue);
+							LogGeneration(FString::Printf(TEXT("  Set enum parameter '%s' = '%s' (value %lld)"),
+								*ParamName, *ParamPin->DefaultValue, EnumValue));
 						}
 						else
 						{
-							// v4.23 FAIL-FAST: Manifest references class that cannot be resolved
-							LogGeneration(FString::Printf(TEXT("[E_TSUBCLASSOF_NOT_RESOLVED] Node '%s' | Could not resolve class '%s' for TSubclassOf<%s> pin '%s'"),
-								*NodeDef.Id, *ClassName, *BaseClassName, *ParamName));
-							LogGeneration(TEXT("  Searched paths:"));
-							for (const FString& Path : SearchPaths)
+							// v4.23 FAIL-FAST: Manifest references enum value that doesn't exist
+							LogGeneration(FString::Printf(TEXT("[E_ENUM_VALUE_NOT_FOUND] Node '%s' | Could not find enum value '%s' in %s"),
+								*NodeDef.Id, *ParamValue, *EnumType->GetName()));
+							LogGeneration(TEXT("  Available values:"));
+							for (int32 i = 0; i < EnumType->NumEnums() - 1; i++)
 							{
-								LogGeneration(FString::Printf(TEXT("    - %s"), *Path));
+								LogGeneration(FString::Printf(TEXT("    - %s"), *EnumType->GetNameStringByIndex(i)));
 							}
 							return nullptr; // Signal failure to caller
 						}
 					}
+				}
+				// v4.14: Handle TSubclassOf (PC_Class) pin types for class references
+				else if (ParamPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
+				{
+					// This is a TSubclassOf<T> pin - need to resolve the class and set DefaultObject
+					UClass* ResolvedClass = nullptr;
+					FString ClassName = ParamValue;
+
+					// Determine the expected base class from pin SubCategoryObject
+					UClass* ExpectedBaseClass = Cast<UClass>(ParamPin->PinType.PinSubCategoryObject.Get());
+					FString BaseClassName = ExpectedBaseClass ? ExpectedBaseClass->GetName() : TEXT("UObject");
+
+					// v4.22: Check session cache FIRST for assets created in this generation session
+					if (UClass** CachedClass = GSessionBlueprintClassCache.Find(ClassName))
+					{
+						ResolvedClass = *CachedClass;
+						LogGeneration(FString::Printf(TEXT("  Found Blueprint class in session cache: %s"), *ClassName));
+					}
+
+					// If not in cache, try to find as a Blueprint generated class in common content paths
+					TArray<FString> SearchPaths;
+					if (!ResolvedClass)
+					{
+						FString ProjectName = FApp::GetProjectName();
+						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Effects/%s"), *ProjectName, *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/Abilities/%s"), *ProjectName, *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/%s/%s"), *ProjectName, *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/%s"), *ClassName));
+						// v6.9: Add Effects subfolders for GE_ classes
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Cooldowns/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Damage/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Stats/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Utility/%s"), *ClassName));
+
+						// Check if it's a full path already
+						if (ClassName.StartsWith(TEXT("/Game/")))
+						{
+							SearchPaths.Insert(ClassName, 0);
+						}
+					}
+
+					for (const FString& SearchPath : SearchPaths)
+					{
+						// Try loading as Blueprint
+						FString BlueprintPath = SearchPath;
+						if (!BlueprintPath.EndsWith(TEXT("_C")))
+						{
+							BlueprintPath = SearchPath + TEXT(".") + FPaths::GetBaseFilename(SearchPath) + TEXT("_C");
+						}
+
+						ResolvedClass = LoadClass<UObject>(nullptr, *BlueprintPath, nullptr, LOAD_None, nullptr);
+						if (ResolvedClass)
+						{
+							LogGeneration(FString::Printf(TEXT("  Found Blueprint class at: %s"), *BlueprintPath));
+							break;
+						}
+
+						// Also try direct asset path for native classes
+						FString AssetPath = SearchPath + TEXT(".") + FPaths::GetBaseFilename(SearchPath);
+						UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
+						if (BP && BP->GeneratedClass)
+						{
+							ResolvedClass = BP->GeneratedClass;
+							LogGeneration(FString::Printf(TEXT("  Found Blueprint asset at: %s"), *AssetPath));
+							break;
+						}
+					}
+
+					// If not found, try native class lookup (StaticClass pattern)
+					if (!ResolvedClass)
+					{
+						// Remove common prefixes for native lookup
+						FString NativeClassName = ClassName;
+						if (NativeClassName.StartsWith(TEXT("GE_")) || NativeClassName.StartsWith(TEXT("GA_")))
+						{
+							// These are always Blueprint classes, not native
+							LogGeneration(FString::Printf(TEXT("  Note: %s appears to be a Blueprint class (GE_/GA_ prefix)"), *ClassName));
+						}
+						else
+						{
+							// Try to find native class using UE5 pattern (FindFirstObject)
+							ResolvedClass = FindFirstObject<UClass>(*NativeClassName, EFindFirstObjectOptions::ExactClass);
+							if (!ResolvedClass)
+							{
+								// Try with U prefix
+								ResolvedClass = FindFirstObject<UClass>(*(TEXT("U") + NativeClassName), EFindFirstObjectOptions::ExactClass);
+							}
+						}
+					}
+
+					if (ResolvedClass)
+					{
+						// Validate the class inherits from expected base
+						if (ExpectedBaseClass && !ResolvedClass->IsChildOf(ExpectedBaseClass))
+						{
+							LogGeneration(FString::Printf(TEXT("  WARNING: Class '%s' does not inherit from '%s'. Setting anyway."),
+								*ResolvedClass->GetName(), *BaseClassName));
+						}
+
+						ParamPin->DefaultObject = ResolvedClass;
+						LogGeneration(FString::Printf(TEXT("  Set class parameter '%s' = '%s' (TSubclassOf<%s>)"),
+							*ParamName, *ResolvedClass->GetName(), *BaseClassName));
+					}
 					else
 					{
-						// Standard value types - set directly
-						ParamPin->DefaultValue = ParamValue;
-						LogGeneration(FString::Printf(TEXT("  Set parameter '%s' = '%s'"), *ParamName, *ParamValue));
+						// v4.23 FAIL-FAST: Manifest references class that cannot be resolved
+						LogGeneration(FString::Printf(TEXT("[E_TSUBCLASSOF_NOT_RESOLVED] Node '%s' | Could not resolve class '%s' for TSubclassOf<%s> pin '%s'"),
+							*NodeDef.Id, *ClassName, *BaseClassName, *ParamName));
+						LogGeneration(TEXT("  Searched paths:"));
+						for (const FString& Path : SearchPaths)
+						{
+							LogGeneration(FString::Printf(TEXT("    - %s"), *Path));
+						}
+						return nullptr; // Signal failure to caller
 					}
 				}
 				else
 				{
-					// v4.23 FAIL-FAST: Manifest references pin that doesn't exist on function
-					LogGeneration(FString::Printf(TEXT("[E_FUNCTION_PIN_NOT_FOUND] Node '%s' | Could not find input pin '%s' on function '%s'"),
-						*NodeDef.Id, *ParamName, *FunctionName.ToString()));
-					LogGeneration(TEXT("  Available pins:"));
-					for (UEdGraphPin* Pin : CallNode->Pins)
-					{
-						if (Pin && Pin->Direction == EGPD_Input)
-						{
-							LogGeneration(FString::Printf(TEXT("    - %s (%s)"), *Pin->PinName.ToString(), *Pin->PinType.PinCategory.ToString()));
-						}
-					}
-					return nullptr; // Signal failure to caller
+					// Standard value types - set directly
+					ParamPin->DefaultValue = ParamValue;
+					LogGeneration(FString::Printf(TEXT("  Set parameter '%s' = '%s'"), *ParamName, *ParamValue));
 				}
 			}
-		}
-
-		return CallNode;
-	}
-
-	// Function not found - check if this is actually a property access
-	FString FuncStr = FunctionName.ToString();
-	bool bIsGetter = FuncStr.StartsWith(TEXT("Get"));
-	bool bIsSetter = FuncStr.StartsWith(TEXT("Set"));
-
-	if (bIsGetter || bIsSetter)
-	{
-		// Extract property name (e.g., "GetMaxWalkSpeed" -> "MaxWalkSpeed")
-		FString PropertyName = FuncStr.Mid(3);
-
-		// Search for property in relevant classes
-		TArray<UClass*> PropertySearchClasses = {
-			UCharacterMovementComponent::StaticClass(),
-			ACharacter::StaticClass(),
-			AActor::StaticClass(),
-			APawn::StaticClass()
-		};
-
-		for (UClass* SearchClass : PropertySearchClasses)
-		{
-			FProperty* Prop = SearchClass->FindPropertyByName(FName(*PropertyName));
-			if (Prop && Prop->HasAnyPropertyFlags(CPF_BlueprintVisible))
+			else
 			{
-				LogGeneration(FString::Printf(TEXT("Function '%s' not found, but property '%s' exists on '%s'. Use PropertyGet/PropertySet node type with target_class: %s"),
-					*FuncStr, *PropertyName, *SearchClass->GetName(), *SearchClass->GetName()));
-				break;
+				// v4.23 FAIL-FAST: Manifest references pin that doesn't exist on function
+				LogGeneration(FString::Printf(TEXT("[E_FUNCTION_PIN_NOT_FOUND] Node '%s' | Could not find input pin '%s' on function '%s'"),
+					*NodeDef.Id, *ParamName, *FunctionName.ToString()));
+				LogGeneration(TEXT("  Available pins:"));
+				for (UEdGraphPin* Pin : CallNode->Pins)
+				{
+					if (Pin && Pin->Direction == EGPD_Input)
+					{
+						LogGeneration(FString::Printf(TEXT("    - %s (%s)"), *Pin->PinName.ToString(), *Pin->PinType.PinCategory.ToString()));
+					}
+				}
+				return nullptr; // Signal failure to caller
 			}
 		}
 	}
 
-	// v4.23 FAIL-FAST: Manifest references function that cannot be found
-	LogGeneration(FString::Printf(TEXT("[E_FUNCTION_NOT_FOUND] Node '%s' | Could not find function '%s'"),
-		*NodeDef.Id, *FunctionName.ToString()));
-	return nullptr; // Signal failure to caller
+	return CallNode;
 }
 
 UK2Node* FEventGraphGenerator::CreateBranchNode(
