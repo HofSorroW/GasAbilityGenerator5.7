@@ -2982,8 +2982,10 @@ Father abilities are granted via two mechanisms:
 | Form | EquippableItem | Abilities Granted | Owner ASC |
 |------|----------------|-------------------|-----------|
 | Armor | EI_FatherArmorForm | GA_ProtectiveDome, GA_DomeBurst | Player |
-| Exoskeleton | EI_FatherExoskeletonForm | GA_ExoskeletonDash, GA_ExoskeletonSprint, GA_StealthField, GA_Backstab | Player |
+| Exoskeleton | EI_FatherExoskeletonForm | GA_ExoskeletonDash, GA_ExoskeletonSprint, GA_StealthField | Player |
 | Symbiote | EI_FatherSymbioteForm | GA_ProximityStrike | Player |
+
+**Note:** GA_Backstab is a Player Default Ability (granted via Player AbilityConfiguration), not form-granted. See Section 5.5.
 
 **Gate Pattern:** Ability existence IS the gate. If form is equipped, abilities are available. If unequipped, abilities are revoked.
 
