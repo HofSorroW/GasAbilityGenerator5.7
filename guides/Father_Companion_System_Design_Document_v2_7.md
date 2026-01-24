@@ -47,7 +47,7 @@ Any party with access to this document acknowledges the intellectual property ri
 
 | Field | Value |
 |-------|-------|
-| Version | 2.5 |
+| Version | 2.7 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only |
@@ -88,7 +88,7 @@ The Father Companion is a mechanical/energy hybrid entity that bonds with the pl
 |------|-----------|------------|--------------|------------|
 | Crawler | Support | Following | Gunplay | None |
 | Armor | Tank | Chest | Survival | +50 Armor, -15% Speed |
-| Exoskeleton | Assassin | Back/Spine | Mobility | +50% Speed, +30% Jump, +10 Attack |
+| Exoskeleton | Assassin | Back/Spine | Mobility | +25% Speed, +30% Jump, +10 Attack |
 | Symbiote | Berserker | Full Body | Aggression | +50% Speed, +30% Jump, +100 Attack, Infinite Stamina |
 | Engineer | Tactician | Deployed | Positioning | None (turret mode) |
 
@@ -313,8 +313,8 @@ When switching forms via T wheel while dome is fully charged:
 
 | Parameter | Value |
 |-----------|-------|
-| Base Speed Bonus | +50% movement speed |
-| Sprint Speed | +75% movement speed (during sprint) |
+| Base Speed Bonus | +25% movement speed |
+| Sprint Speed | +87.5% movement speed (during sprint) |
 | Base Jump Bonus | +30% jump height |
 | Sprint Jump Bonus | +50% jump height (during sprint) |
 | Attack Rating Bonus | +10 AttackRating |
@@ -1030,6 +1030,7 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.7 | January 2026 | **Exoskeleton Speed Correction (Claude-GPT dual audit):** Section 1.4 Form Overview: Exoskeleton stat changed from +50% Speed to +25% Speed. Section 2.3.3 Stat Parameters: Base Speed Bonus corrected from +50% to +25%, Sprint Speed from +75% to +87.5%. Manifest SpeedBoostMultiplier (1.25) is authoritative. Design Doc had outdated +50% values from original specification. |
 | 2.6 | January 2026 | **v5.1 Goal_Attack Backstab Detection:** Section 3.1 GA_Backstab updated - replaced ViewedCharacter detection with Goal_Attack query approach. Uses Narrative Pro's built-in GoalGenerator_Attack system. CheckBackstabCondition now queries NPCActivityComponent → GetCurrentActivityGoal → Cast to Goal_Attack → TargetToAttack. No custom perception binding required. Added Section 3.1.1 Goal_Attack Detection table. BP_BackstabNPCController removed from manifest (no longer needed). |
 | 2.5 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED_CONTRACTS.md Contract 11):** Section 10.3 Cancel Abilities Configuration updated - removed `Ability.Father.Symbiote` from all form/weapon cancel lists (exception: GA_FatherSacrifice). Added GA_FatherRifle and GA_FatherSword to cancel table. Section 10.6.4 Symbiote Special Handling rewritten - GE_SymbioteDuration with SetByCaller pattern applied at activation START, grants `Father.State.SymbioteLocked` for 30s. Defense-in-depth strategy documented (3 layers: blocking, no-cancel, duration enforcement). Claude-GPT dual audit 2026-01-23. |
 | 2.3 | January 2026 | **Dome System Locked Decisions (21 items)**: Sections 2.2.5-2.2.9 rewritten with Claude-GPT dual-audit locked decisions. Energy-Only damage model (player takes full damage), energy on Player ASC (AS_DomeAttributes), manual release only at full (500), no auto-burst, no pre-release, flat 75 damage, 12s cooldown, form exit burst behavior, FullyCharged tag semantics, GA_ProtectiveDome reset ownership. Section 2.2.6 Use Cases renumbered to 2.2.10. Cooldown Summary updated: Dome Burst 10s→12s. |
@@ -1054,15 +1055,17 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Field | Value |
 |-------|-------|
-| Audit Date | 2026-01-23 |
+| Audit Date | 2026-01-24 |
 | Audit Type | Claude-GPT Dual Audit |
-| Decisions Locked | 25 (Dome Energy System + C_SYMBIOTE_STRICT_CANCEL) |
+| Decisions Locked | 26 (Previous 25 + Speed value correction) |
 | Key Decisions | D22: Form exit via TryActivateAbilityByClass |
 | | D23: EI_FatherArmorForm.HandleUnequip override |
 | | D24: Father.Dome.FullyCharged activation_required_tag |
 | | **Contract 11: C_SYMBIOTE_STRICT_CANCEL** |
+| | **Exoskeleton Speed: +25% base (manifest authoritative)** |
 | Manifest Aligned | Yes |
-| Contract Reference | LOCKED_CONTRACTS.md v4.28.2 |
+| Contract Reference | LOCKED_CONTRACTS.md v4.31 |
+| GAS Audit Reference | Father_Companion_GAS_Abilities_Audit.md v6.4 |
 
 ---
 

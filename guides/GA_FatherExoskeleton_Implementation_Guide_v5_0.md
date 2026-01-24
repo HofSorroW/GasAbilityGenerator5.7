@@ -1,8 +1,8 @@
 # GA_FatherExoskeleton Implementation Guide
-## VERSION 4.9 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Added)
+## VERSION 5.0 - EquippableItem Lifecycle Correction
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.9
+**Version:** 5.0
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -157,14 +157,6 @@ Before implementing GA_FatherExoskeleton, ensure the following are complete:
 | SpeedBoostMultiplier | Float | 1.25 | Yes | Walk speed multiplier (25% increase) |
 | JumpBoostMultiplier | Float | 1.3 | Yes | Jump height multiplier (30% increase) |
 | BackSocketName | Name | FatherBackSocket | Yes | Socket for back attachment |
-
-### **Handle Variables (BP_FatherCompanion)**
-
-| Variable | Type | Purpose |
-|----------|------|---------|
-| DashAbilityHandle | FGameplayAbilitySpecHandle | GA_FatherExoskeletonDash two-step cleanup |
-| SprintAbilityHandle | FGameplayAbilitySpecHandle | GA_FatherExoskeletonSprint two-step cleanup |
-| StealthAbilityHandle | FGameplayAbilitySpecHandle | GA_StealthField two-step cleanup |
 
 ### **Ability Configuration**
 
@@ -355,7 +347,7 @@ This Gameplay Effect establishes Exoskeleton form identity using Option B archit
 | bIsFirstActivation | Boolean | True | No |
 | OriginalMaxWalkSpeed | Float | 0.0 | No |
 | OriginalJumpZVelocity | Float | 0.0 | No |
-| SpeedBoostMultiplier | Float | 1.5 | Yes |
+| SpeedBoostMultiplier | Float | 1.25 | Yes |
 | JumpBoostMultiplier | Float | 1.3 | Yes |
 | BackSocketName | Name | FatherBackSocket | Yes |
 
@@ -571,64 +563,14 @@ This Gameplay Effect establishes Exoskeleton form identity using Option B archit
 6.13.1.4) Select node
 6.13.1.5) bIsFirstActivation: Unchecked (False)
 
-### 6.13A) Grant Form-Specific Abilities to Player
-
-#### 6.13A.1) Get Player Ability System Component
-6.13A.1.1) From SET bIsFirstActivation execution pin
-6.13A.1.2) From Get Owner Player Return Value
-6.13A.1.3) Search: Get Ability System Component
-6.13A.1.4) Select node
-6.13A.1.5) Connect Get Owner Player Return Value to Target pin
-
-#### 6.13A.2) Grant GA_FatherExoskeletonDash
-6.13A.2.1) From SET bIsFirstActivation execution pin
-6.13A.2.2) Drag to right
-6.13A.2.3) Search: Give Ability
-6.13A.2.4) Select node
-6.13A.2.5) Connect Player ASC Return Value to Target pin
-6.13A.2.6) Ability Class: GA_FatherExoskeletonDash
-
-#### 6.13A.3) Store DashAbilityHandle
-6.13A.3.1) From Give Ability execution pin
-6.13A.3.2) Search: Set Dash Ability Handle
-6.13A.3.3) Select node
-6.13A.3.4) Connect Give Ability Return Value to Dash Ability Handle input
-6.13A.3.5) Connect As BP Father Companion to Target pin
-
-#### 6.13A.4) Grant GA_FatherExoskeletonSprint
-6.13A.4.1) From Set Dash Ability Handle execution pin
-6.13A.4.2) Drag to right
-6.13A.4.3) Search: Give Ability
-6.13A.4.4) Select node
-6.13A.4.5) Connect Player ASC Return Value to Target pin
-6.13A.4.6) Ability Class: GA_FatherExoskeletonSprint
-
-#### 6.13A.5) Store SprintAbilityHandle
-6.13A.5.1) From Give Ability execution pin
-6.13A.5.2) Search: Set Sprint Ability Handle
-6.13A.5.3) Select node
-6.13A.5.4) Connect Give Ability Return Value to Sprint Ability Handle input
-6.13A.5.5) Connect As BP Father Companion to Target pin
-
-#### 6.13A.6) Grant GA_StealthField
-6.13A.6.1) From Set Sprint Ability Handle execution pin
-6.13A.6.2) Drag to right
-6.13A.6.3) Search: Give Ability
-6.13A.6.4) Select node
-6.13A.6.5) Connect Player ASC Return Value to Target pin
-6.13A.6.6) Ability Class: GA_StealthField
-
-#### 6.13A.7) Store StealthAbilityHandle
-6.13A.7.1) From Give Ability execution pin
-6.13A.7.2) Search: Set Stealth Ability Handle
-6.13A.7.3) Select node
-6.13A.7.4) Connect Give Ability Return Value to Stealth Ability Handle input
-6.13A.7.5) Connect As BP Father Companion to Target pin
-
 ### 6.14) End Ability
 
+> **v5.0 NOTE:** Form-specific abilities (Dash, Sprint, Stealth) are granted via EI_FatherExoskeletonForm EquippableItem.
+> GA_FatherExoskeleton does NOT grant these abilities directly. EquippableItem handles ability lifecycle automatically.
+> See LOCKED_CONTRACTS.md and Father_Companion_GAS_Abilities_Audit.md for details.
+
 #### 6.14.1) Add End Ability Node
-6.14.1.1) From Set Stealth Ability Handle execution pin
+6.14.1.1) From SET bIsFirstActivation execution pin
 6.14.1.2) Drag to right
 6.14.1.3) Search: End Ability
 6.14.1.4) Select node
@@ -865,64 +807,13 @@ This Gameplay Effect establishes Exoskeleton form identity using Option B archit
 7.13.1.4) Select Commit Ability Cooldown node
 7.13.1.5) No parameters needed - uses CooldownGameplayEffectClass automatically
 
-### 7.14A) Grant Form-Specific Abilities to Player (Form Switch)
-
-#### 7.14A.1) Get Player Ability System Component
-7.14A.1.1) From Commit Ability Cooldown execution pin
-7.14A.1.2) From Get Owner Player Return Value
-7.14A.1.3) Search: Get Ability System Component
-7.14A.1.4) Select node
-7.14A.1.5) Connect Get Owner Player Return Value to Target pin
-
-#### 7.14A.2) Grant GA_FatherExoskeletonDash
-7.14A.2.1) From Commit Ability Cooldown execution pin
-7.14A.2.2) Drag to right
-7.14A.2.3) Search: Give Ability
-7.14A.2.4) Select node
-7.14A.2.5) Connect Player ASC Return Value to Target pin
-7.14A.2.6) Ability Class: GA_FatherExoskeletonDash
-
-#### 7.14A.3) Store DashAbilityHandle
-7.14A.3.1) From Give Ability execution pin
-7.14A.3.2) Search: Set Dash Ability Handle
-7.14A.3.3) Select node
-7.14A.3.4) Connect Give Ability Return Value to Dash Ability Handle input
-7.14A.3.5) Connect As BP Father Companion to Target pin
-
-#### 7.14A.4) Grant GA_FatherExoskeletonSprint
-7.14A.4.1) From Set Dash Ability Handle execution pin
-7.14A.4.2) Drag to right
-7.14A.4.3) Search: Give Ability
-7.14A.4.4) Select node
-7.14A.4.5) Connect Player ASC Return Value to Target pin
-7.14A.4.6) Ability Class: GA_FatherExoskeletonSprint
-
-#### 7.14A.5) Store SprintAbilityHandle
-7.14A.5.1) From Give Ability execution pin
-7.14A.5.2) Search: Set Sprint Ability Handle
-7.14A.5.3) Select node
-7.14A.5.4) Connect Give Ability Return Value to Sprint Ability Handle input
-7.14A.5.5) Connect As BP Father Companion to Target pin
-
-#### 7.14A.6) Grant GA_StealthField
-7.14A.6.1) From Set Sprint Ability Handle execution pin
-7.14A.6.2) Drag to right
-7.14A.6.3) Search: Give Ability
-7.14A.6.4) Select node
-7.14A.6.5) Connect Player ASC Return Value to Target pin
-7.14A.6.6) Ability Class: GA_StealthField
-
-#### 7.14A.7) Store StealthAbilityHandle
-7.14A.7.1) From Give Ability execution pin
-7.14A.7.2) Search: Set Stealth Ability Handle
-7.14A.7.3) Select node
-7.14A.7.4) Connect Give Ability Return Value to Stealth Ability Handle input
-7.14A.7.5) Connect As BP Father Companion to Target pin
-
 ### 7.15) End Ability (Form Switch)
 
+> **v5.0 NOTE:** Form-specific abilities (Dash, Sprint, Stealth) are granted via EI_FatherExoskeletonForm EquippableItem.
+> GA_FatherExoskeleton does NOT grant these abilities directly. EquippableItem handles ability lifecycle automatically.
+
 #### 7.15.1) Add End Ability Node
-7.15.1.1) From Set Stealth Ability Handle execution pin
+7.15.1.1) From Commit Ability Cooldown execution pin
 7.15.1.2) Drag to right
 7.15.1.3) Search: End Ability
 7.15.1.4) Select node
@@ -1018,126 +909,37 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 #### 8.4.1) Automatic Cleanup Note
 8.4.1.1) Form tags (Father.Form.Exoskeleton, Father.State.Attached) auto-removed when ability ends
 8.4.1.2) Activation Owned Tags cleanup handled by GAS lifecycle
-8.4.1.3) Continue to ability cleanup
 
-### 8.5) Two-Step Cleanup for GA_FatherExoskeletonDash
+> **v5.0 NOTE (Ability Lifecycle Responsibility):**
+> Dash, Sprint, and Stealth abilities are granted and removed by EI_FatherExoskeletonForm (EquippableItem) via `abilities_to_grant`.
+> GA_FatherExoskeleton does NOT grant or remove these abilities directly.
+> No manual handle storage or cleanup is required.
+> See Narrative Pro EquippableItem.h (AbilityHandles array) for implementation details.
 
-#### 8.5.1) Get DashAbilityHandle
-8.5.1.1) From SET Jump Z Velocity execution (or via Sequence after Branch merge):
-8.5.1.2) From As BP Father Companion, search: Get Dash Ability Handle
-8.5.1.3) Add getter node
+### 8.5) Reset State Variables
 
-#### 8.5.2) Validate DashAbilityHandle
-8.5.2.1) From Get Dash Ability Handle Return Value
-8.5.2.2) Search: Is Valid
-8.5.2.3) Add Is Valid (Gameplay Ability Spec Handle) node
-
-#### 8.5.3) Add Branch for Handle Validation
-8.5.3.1) Add Branch node
-8.5.3.2) Connect Is Valid Return Value to Condition
-
-#### 8.5.4) Step 1: Cancel Dash Ability
-8.5.4.1) From Branch True execution:
-8.5.4.1.1) From Get Owner Player Return Value, search: Get Ability System Component
-8.5.4.1.2) Add Get Ability System Component node (player ASC)
-8.5.4.2) From Player ASC:
-8.5.4.2.1) Search: Cancel Ability
-8.5.4.2.2) Add Cancel Ability node
-8.5.4.3) Connect Player ASC Return Value to Target
-8.5.4.4) Connect Get Dash Ability Handle Return Value to Ability Handle
-
-#### 8.5.5) Step 2: Set Remove Ability On End
-8.5.5.1) From Cancel Ability execution:
-8.5.5.2) Search: Set Remove Ability On End
-8.5.5.3) Add Set Remove Ability On End node
-8.5.5.4) Connect Player ASC Return Value to Target
-8.5.5.5) Connect Get Dash Ability Handle Return Value to Ability Handle
-
-### 8.6) Two-Step Cleanup for GA_FatherExoskeletonSprint
-
-#### 8.6.1) Get SprintAbilityHandle
-8.6.1.1) From Set Remove Ability On End (Dash) execution (or Branch False):
-8.6.1.2) From As BP Father Companion, search: Get Sprint Ability Handle
-8.6.1.3) Add getter node
-
-#### 8.6.2) Validate SprintAbilityHandle
-8.6.2.1) From Get Sprint Ability Handle Return Value
-8.6.2.2) Search: Is Valid
-8.6.2.3) Add Is Valid (Gameplay Ability Spec Handle) node
-
-#### 8.6.3) Add Branch for Handle Validation
-8.6.3.1) Add Branch node
-8.6.3.2) Connect Is Valid Return Value to Condition
-
-#### 8.6.4) Step 1: Cancel Sprint Ability
-8.6.4.1) From Branch True execution:
-8.6.4.2) Search: Cancel Ability
-8.6.4.3) Add Cancel Ability node
-8.6.4.4) Connect Player ASC Return Value to Target
-8.6.4.5) Connect Get Sprint Ability Handle Return Value to Ability Handle
-
-#### 8.6.5) Step 2: Set Remove Ability On End
-8.6.5.1) From Cancel Ability execution:
-8.6.5.2) Search: Set Remove Ability On End
-8.6.5.3) Add Set Remove Ability On End node
-8.6.5.4) Connect Player ASC Return Value to Target
-8.6.5.5) Connect Get Sprint Ability Handle Return Value to Ability Handle
-
-### 8.7) Two-Step Cleanup for GA_StealthField
-
-#### 8.7.1) Get StealthAbilityHandle
-8.7.1.1) From Set Remove Ability On End (Sprint) execution (or Branch False):
-8.7.1.2) From As BP Father Companion, search: Get Stealth Ability Handle
-8.7.1.3) Add getter node
-
-#### 8.7.2) Validate StealthAbilityHandle
-8.7.2.1) From Get Stealth Ability Handle Return Value
-8.7.2.2) Search: Is Valid
-8.7.2.3) Add Is Valid (Gameplay Ability Spec Handle) node
-
-#### 8.7.3) Add Branch for Handle Validation
-8.7.3.1) Add Branch node
-8.7.3.2) Connect Is Valid Return Value to Condition
-
-#### 8.7.4) Step 1: Cancel Stealth Ability
-8.7.4.1) From Branch True execution:
-8.7.4.2) Search: Cancel Ability
-8.7.4.3) Add Cancel Ability node
-8.7.4.4) Connect Player ASC Return Value to Target
-8.7.4.5) Connect Get Stealth Ability Handle Return Value to Ability Handle
-
-#### 8.7.5) Step 2: Set Remove Ability On End
-8.7.5.1) From Cancel Ability execution:
-8.7.5.2) Search: Set Remove Ability On End
-8.7.5.3) Add Set Remove Ability On End node
-8.7.5.4) Connect Player ASC Return Value to Target
-8.7.5.5) Connect Get Stealth Ability Handle Return Value to Ability Handle
-
-### 8.8) Reset State Variables
-
-#### 8.8.1) Set Is Attached to False
-8.8.1.1) From Set Remove Ability On End (Stealth) execution (or Branch False):
-8.8.1.2) From As BP Father Companion, search: Set Is Attached
+#### 8.5.1) Set Is Attached to False
+8.5.1.1) From SET Jump Z Velocity execution pin:
+8.5.1.2) From As BP Father Companion, search: Set Is Attached
 8.8.1.3) Add Set Is Attached node
 8.8.1.4) Is Attached: Unchecked (false)
 
-### 8.9) Verify EndAbility Cleanup Flow
+### 8.6) Verify EndAbility Cleanup Flow
 
 | Step | Node | Purpose |
 |------|------|---------|
 | 1 | Event EndAbility | Fires when ability ends |
-| 2 | Get Avatar Actor From Actor Info | Get father reference |
-| 3 | Cast to BP_FatherCompanion | Type-safe reference |
-| 4 | Get Owner Player | Get player reference |
-| 5 | Is Valid (Owner) | Validate player exists |
-| 6 | Get Character Movement | Access movement component |
-| 7 | Set Max Walk Speed | Restore original speed |
-| 8 | Set Jump Z Velocity | Restore original jump |
-| 9 | Form Tags Auto-Removed | Activation Owned Tags cleanup (automatic) |
-| 10-12 | Dash cleanup | Cancel then Remove |
-| 13-15 | Sprint cleanup | Cancel then Remove |
-| 16-18 | Stealth cleanup | Cancel then Remove |
-| 19 | Set Is Attached (false) | Reset attachment state |
+| 2 | Branch (bWasCancelled) | Only cleanup when cancelled by form switch |
+| 3 | Get Avatar Actor From Actor Info | Get father reference |
+| 4 | Cast to BP_FatherCompanion | Type-safe reference |
+| 5 | Get Owner Player | Get player reference |
+| 6 | Is Valid (Owner) | Validate player exists |
+| 7 | Get Character Movement | Access movement component |
+| 8 | Set Max Walk Speed | Restore original speed |
+| 9 | Set Jump Z Velocity | Restore original jump |
+| 10 | Set Is Attached (false) | Reset attachment state |
+
+> **v5.0 NOTE:** Dash/Sprint/Stealth ability cleanup removed. EquippableItem handles ability lifecycle automatically when form equipment changes.
 
 ---
 
@@ -1181,28 +983,35 @@ When switching TO Exoskeleton form, the transition prelude executes:
 
 This ensures the Single Active Form State Invariant - exactly one `Effect.Father.FormState.*` tag at runtime.
 
-### Form-Specific Abilities
+### Form-Specific Abilities (v5.0 Corrected)
 
-The following abilities are granted to the player ASC when Exoskeleton form activates (not via EquippableItem):
-- GA_FatherExoskeletonDash (stored in DashAbilityHandle)
-- GA_FatherExoskeletonSprint (stored in SprintAbilityHandle)
-- GA_StealthField (stored in StealthAbilityHandle)
+The following abilities are granted via EI_FatherExoskeletonForm EquippableItem:
+- GA_FatherExoskeletonDash
+- GA_FatherExoskeletonSprint
+- GA_StealthField
 
-All three abilities use two-step cleanup in EndAbility: Cancel Ability then Set Remove Ability On End.
+**Ability Lifecycle (EquippableItem-Driven):**
+- EquippableItem grants abilities when form equipment is equipped
+- EquippableItem removes abilities when form equipment is unequipped
+- Narrative Pro EquippableItem.h stores handles internally (`AbilityHandles` array)
+- No manual handle storage or cleanup required in GA_FatherExoskeleton
+
+**R-CLEANUP-1 Note:** The locked rule R-CLEANUP-1 applies when a GameplayAbility grants abilities directly (e.g., GA_FatherSymbiote → GA_ProximityStrike). It does NOT apply here because EI_FatherExoskeletonForm handles the grant/remove lifecycle.
 
 ### Stat Bonuses
 
 Stat bonuses are handled by BP_FatherExoskeletonForm EquippableItem via GE_EquipmentModifier_FatherExoskeleton:
 - Attack Rating: +10
 
-### Speed Restoration and Cleanup
+### Speed Restoration and Cleanup (v5.0 Updated)
 
-EndAbility performs comprehensive cleanup when another form ability cancels this ability:
+EndAbility performs cleanup when another form ability cancels this ability:
 1. CharacterMovement values restored to original values stored in ability variables
 2. State tag (`Father.State.Attached`) auto-removed by Activation Owned Tags
 3. Form identity tag (`Effect.Father.FormState.Exoskeleton`) persists via GE_ExoskeletonState until next form's transition prelude removes it
-4. All three granted abilities (Dash, Sprint, Stealth) cleaned up via two-step process
-5. Is Attached variable reset to false
+4. Is Attached variable reset to false
+
+**Form-Specific Ability Cleanup:** Handled automatically by EquippableItem system - no manual cleanup in GA_FatherExoskeleton required.
 
 ---
 
@@ -1224,6 +1033,7 @@ EndAbility performs comprehensive cleanup when another form ability cancels this
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 5.0 | January 2026 | **EquippableItem Lifecycle Correction (Claude-GPT Audit - 2026-01-24):** Removed outdated handle-based cleanup for Dash/Sprint/Stealth (Phases 6.13A, 7.14A, 8.5-8.7). Ability lifecycle is managed by EI_FatherExoskeletonForm per current architecture. R-CLEANUP-1 does not apply when abilities are granted via EquippableItem. Fixed SpeedBoostMultiplier in variable table: 1.5 → 1.25 (manifest authoritative). Updated Integration Notes to reflect correct EquippableItem-driven pattern. |
 | 4.9 | January 2026 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Added Section 7.5G (POST-DELAY 3-LAYER GUARDS) implementing LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Guards execute immediately after 5s Delay callback before any state-modifying operations. |
 | 4.8 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
 | 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no invulnerability), Rule 4 (First Activation path merges into setup chain). Updated Technical Reference to v6.2. |
@@ -1243,7 +1053,7 @@ EndAbility performs comprehensive cleanup when another form ability cancels this
 
 ---
 
-**END OF GA_FATHEREXOSKELETON IMPLEMENTATION GUIDE v4.6**
+**END OF GA_FATHEREXOSKELETON IMPLEMENTATION GUIDE v5.0**
 
 **Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2**
 **Architecture: Option B (GE-Based Form Identity)**

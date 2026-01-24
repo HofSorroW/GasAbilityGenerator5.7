@@ -3,9 +3,9 @@
 
 ---
 
-> **⚠️ GAS AUDIT v6.3 COMPLIANCE (January 2026)**
+> **⚠️ GAS AUDIT v6.4 COMPLIANCE (January 2026)**
 >
-> Per GAS Audit v6.3 (Claude-GPT dual audit 2026-01-24), the following rules apply:
+> Per GAS Audit v6.4 (Claude-GPT dual audit 2026-01-24), the following rules apply:
 >
 > **LOCKED Rules (Must Follow):**
 >
@@ -46,12 +46,19 @@
 | Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.7 |
-| Last Audit | 2026-01-24 (GAS Audit v6.3 - INV-GESPEC-1) |
+| Version | 6.8 |
+| Last Audit | 2026-01-24 (GAS Audit v6.4 - R-CLEANUP-1 scope clarification) |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
-| Replaces | Father_Companion_Technical_Reference_v6_6.md |
+| Replaces | Father_Companion_Technical_Reference_v6_7.md |
 
 ---
+
+## VERSION 6.8 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **Exoskeleton Speed Correction** | Fixed incorrect +50% speed references to +25% (manifest authoritative). Sections 14.4, 19.6.2, D.1, and Completion Matrix updated. Sprint total is +87.5% (1.25 × 1.5). |
+| **R-CLEANUP-1 Scope** | Clarified in GAS Audit v6.4: GA_FatherExoskeleton does NOT grant abilities directly. Dash/Sprint/Stealth granted via EI_FatherExoskeletonForm (EquippableItem automatic lifecycle). |
 
 ## VERSION 6.7 CHANGES
 
@@ -2333,7 +2340,7 @@ Example: Armor (slow) to Exoskeleton (fast)
 | 4 | GA_FatherArmor EndAbility | Fires (bWasCancelled = true) |
 | 5 | GA_FatherArmor | Lerp restores speed to stored original |
 | 6 | GA_FatherExoskeleton | Stores current speed (now base) |
-| 7 | GA_FatherExoskeleton | Applies +50% speed boost |
+| 7 | GA_FatherExoskeleton | Applies +25% speed boost |
 | 8 | Result | Smooth transition from slow to fast |
 
 ### 14.5) Handle-Based Removal (Duration Abilities)
@@ -2813,7 +2820,7 @@ Example: Armor to Exoskeleton
 | 11 | GA_FatherExoskeleton | Waits 5 seconds (AbilityTaskWaitDelay per Track B v4.15) |
 | 12 | GA_FatherExoskeleton | Father repositions (chest to back) |
 | 13 | GA_FatherExoskeleton | Stores current player speed |
-| 14 | GA_FatherExoskeleton | Applies GE_ExoskeletonSpeed (+50% speed, +30% jump, +10 attack) |
+| 14 | GA_FatherExoskeleton | Applies GE_ExoskeletonSpeed (+25% speed, +30% jump, +10 attack) |
 | 15 | GA_FatherExoskeleton | Sets CurrentForm = Exoskeleton |
 | 16 | GA_FatherExoskeleton | Removes Father.State.Transitioning tag |
 | 17 | GA_FatherExoskeleton | Calls CommitAbilityCooldown (applies GE_FormChangeCooldown 15s) |
@@ -8194,7 +8201,7 @@ Father can alert player about enemies using Report Noise Event:
 |------|----------------------|------------|-------------|
 | Crawler | Father.Form.Crawler | Father.State.Detached | None |
 | Armor | Father.Form.Armor | Father.State.Attached | GE_ArmorBoost (+50 Armor, -15% Speed) |
-| Exoskeleton | Father.Form.Exoskeleton | Father.State.Attached | GE_ExoskeletonSpeed (+50% Speed, +30% Jump, +10 Attack) |
+| Exoskeleton | Father.Form.Exoskeleton | Father.State.Attached | GE_ExoskeletonSpeed (+25% Speed, +30% Jump, +10 Attack) |
 | Symbiote | Father.Form.Symbiote | Father.State.Attached | GE_SymbioteBoost (+50% Speed, +30% Jump, +100 Attack, Infinite Stamina) |
 | Engineer | Father.Form.Engineer | Father.State.Deployed | None (turret mode) |
 
@@ -8409,7 +8416,7 @@ Fragment Access:
 | F Key Detach Removal | COMPLETED | Direct form-to-form via T key wheel only (v4.0) |
 | Form Cooldown | COMPLETED | 15s shared cooldown (Cooldown.Father.FormChange) |
 | Symbiote Duration | COMPLETED | 30 seconds fixed timer |
-| Exoskeleton Stats | COMPLETED | +50% Speed, +30% Jump, +10 AttackRating |
+| Exoskeleton Stats | COMPLETED | +25% Speed, +30% Jump, +10 AttackRating |
 | EndAbility Cleanup Pattern | COMPLETED | Each form ability restores state on end |
 | AI Following Architecture | COMPLETED | Goal Follow Character via dialogue (v4.3) |
 | OwnerPlayer Scope | COMPLETED | Direct reference for abilities only (v4.3) |

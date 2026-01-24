@@ -1,9 +1,11 @@
 # Father Companion GAS & Abilities Audit - Locked Decisions
-## Version 6.3 - January 2026
+## Version 6.4 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from dual-agent audits (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
-**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.30
+**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.31
+
+**v6.4 Updates:** Clarified R-CLEANUP-1 scope - GA_FatherExoskeleton does NOT grant abilities directly; Dash/Sprint/Stealth are granted via EI_FatherExoskeletonForm (EquippableItem handles lifecycle automatically). Corrected Affected Abilities list.
 
 **v6.3 Updates:** Added VTF-9 (MakeOutgoingGameplayEffectSpec param.GameplayEffectClass requirement). 16 manifest abilities fixed. Silent runtime failure discovered and corrected.
 
@@ -678,8 +680,9 @@ bool UNPCActivity::RunActivity()
 - [Epic's Using Gameplay Abilities](https://dev.epicgames.com/documentation/en-us/unreal-engine/using-gameplay-abilities-in-unreal-engine): "SetRemoveAbilityOnEnd removes the specified Ability when that ability is finished executing. If the Ability is not executing, it will be removed immediately."
 
 **Affected Abilities:**
-- GA_FatherExoskeleton (grants Dash, Sprint, Stealth) - ✅ Uses two-step cleanup
 - GA_FatherSymbiote (grants ProximityStrike) - ✅ Uses two-step cleanup
+
+> **v6.4 Clarification:** GA_FatherExoskeleton does NOT grant Dash/Sprint/Stealth directly. These abilities are granted via EI_FatherExoskeletonForm (EquippableItem). Narrative Pro's EquippableItem handles ability lifecycle automatically via the `AbilityHandles` array—no R-CLEANUP-1 pattern required. See `NarrativeArsenal/EquippableItem.h`.
 
 ---
 
