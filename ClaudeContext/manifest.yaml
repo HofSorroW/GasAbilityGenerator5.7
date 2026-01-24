@@ -8867,32 +8867,30 @@ gameplay_effects:  # WARDEN SYSTEM
     duration_policy: Instant
 
 actor_blueprints:  # WARDEN SYSTEM
+  # v4.32: Enhanced with actual SpawnActor for phase transition
   - name: BP_WardenHusk
     folder: Enemies/Warden
     parent_class: NarrativeNPCCharacter
+    variables:
+      # TSubclassOf<ANarrativeNPCCharacter> for spawning WardenCore on death
+      - name: PhaseSpawnClass
+        type: Class
+        class: NarrativeNPCCharacter
+        instance_editable: true
     event_graph:
       nodes:
-        # BeginPlay - Log spawn (HandleDeath override needed for Core spawn)
+        # BeginPlay - Initialize for phase transition
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintReady
-          type: CallFunction
-          properties:
-            function: PrintString
-            class: KismetSystemLibrary
-            parameters:
-              InString: "WardenHusk Active - HandleDeath spawns Core"
-          position: [300, 0]
-      connections:
-        - from: [Event_BeginPlay, Then]
-          to: [PrintReady, Exec]
-    # v2.8.3: Function override for death spawning
+      connections: []
+    # v2.8.3/v4.32: Function override with actual SpawnActor for phase transition
     function_overrides:
       - function: HandleDeath
         nodes:
+          # Authority check - only server spawns the Core
           - id: HasAuth
             type: CallFunction
             properties:
@@ -8903,22 +8901,43 @@ actor_blueprints:  # WARDEN SYSTEM
           - id: AuthBranch
             type: Branch
             position: [400, 0]
-          - id: PrintSpawning
-            type: PrintString
+          # Get transform at death location
+          - id: GetActorTransform
+            type: CallFunction
             properties:
-              message: "WardenHusk HandleDeath: Spawning BP_WardenCore"
+              function: K2_GetActorTransform
+              class: Actor
+              target_self: true
             position: [600, 0]
+          # Get the class to spawn (set in editor to BP_WardenCore)
+          - id: GetSpawnClass
+            type: VariableGet
+            properties:
+              variable_name: PhaseSpawnClass
+            position: [600, 100]
+          # Spawn the WardenCore at death location
+          - id: SpawnCore
+            type: SpawnActor
+            properties:
+              actor_class_variable: PhaseSpawnClass
+            position: [800, 0]
           - id: CallParentDeath
             type: CallParent
-            position: [800, 0]
+            position: [1000, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [HasAuth, Exec]
           - from: [HasAuth, ReturnValue]
             to: [AuthBranch, Condition]
           - from: [AuthBranch, True]
-            to: [PrintSpawning, Exec]
-          - from: [PrintSpawning, Then]
+            to: [GetActorTransform, Exec]
+          - from: [GetActorTransform, Exec]
+            to: [SpawnCore, Exec]
+          - from: [GetSpawnClass, PhaseSpawnClass]
+            to: [SpawnCore, Class]
+          - from: [GetActorTransform, ReturnValue]
+            to: [SpawnCore, SpawnTransform]
+          - from: [SpawnCore, Then]
             to: [CallParentDeath, Exec]
           - from: [AuthBranch, False]
             to: [CallParentDeath, Exec]
@@ -9077,13 +9096,228 @@ activities:  # GUARD FORMATION
     parent_class: BPA_Attack_Melee
 
 actor_blueprints:  # GUARD FORMATION BT SERVICES
+  # v4.32: Enhanced with ReceiveTickAI event graph
+  # NOTE: FormationIndex variable must be set by the spawner or activity
   - name: BTS_CalculateFormationPosition
     folder: AI/Services
     parent_class: BTService_BlueprintBase
+    variables:
+      # Formation offset index (0 = directly behind, 1-3 = diagonal positions)
+      - name: FormationIndex
+        type: Integer
+        default_value: "0"
+        instance_editable: true
+      # Offset distance from leader
+      - name: FormationDistance
+        type: Float
+        default_value: "200.0"
+        instance_editable: true
+    event_graph:
+      nodes:
+        # ReceiveTickAI - Called by BT Service on tick
+        # OwnerController: AAIController, ControlledPawn: APawn, DeltaSeconds: float
+        - id: Event_ReceiveTickAI
+          type: Event
+          properties:
+            event_name: ReceiveTickAI
+          position: [0, 0]
+        # Get the blackboard from the AI controller
+        - id: GetBlackboard
+          type: CallFunction
+          properties:
+            function: GetBlackboardComponent
+            class: AIController
+          position: [300, 0]
+        # Get TargetCharacter key value (the leader to follow)
+        - id: GetTargetCharacter
+          type: CallFunction
+          properties:
+            function: GetValueAsObject
+            class: BlackboardComponent
+            parameters:
+              KeyName: TargetCharacter
+          position: [600, 0]
+        # Cast to Actor for location access
+        - id: CastToActor
+          type: DynamicCast
+          properties:
+            target_class: Actor
+          position: [900, 0]
+        # Get leader's location
+        - id: GetLeaderLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+            class: Actor
+          position: [1200, 0]
+        # Get leader's forward vector for offset calculation
+        - id: GetLeaderForward
+          type: CallFunction
+          properties:
+            function: GetActorForwardVector
+            class: Actor
+          position: [1200, 100]
+        # Calculate offset position (behind leader)
+        # NOTE: Full formula requires GetActorRightVector * FormationIndex for spread
+        # This simplified version places guard directly behind leader
+        - id: MultiplyOffset
+          type: CallFunction
+          properties:
+            function: Multiply_VectorFloat
+            class: KismetMathLibrary
+          position: [1500, 0]
+        - id: SubtractOffset
+          type: CallFunction
+          properties:
+            function: Subtract_VectorVector
+            class: KismetMathLibrary
+          position: [1800, 0]
+        # Set TargetLocation blackboard key
+        - id: SetTargetLocation
+          type: CallFunction
+          properties:
+            function: SetValueAsVector
+            class: BlackboardComponent
+            parameters:
+              KeyName: TargetLocation
+          position: [2100, 0]
+      connections:
+        - from: [Event_ReceiveTickAI, Then]
+          to: [GetBlackboard, Exec]
+        - from: [Event_ReceiveTickAI, OwnerController]
+          to: [GetBlackboard, Target]
+        - from: [GetBlackboard, ReturnValue]
+          to: [GetTargetCharacter, Target]
+        - from: [GetBlackboard, Exec]
+          to: [GetTargetCharacter, Exec]
+        - from: [GetTargetCharacter, ReturnValue]
+          to: [CastToActor, Object]
+        - from: [GetTargetCharacter, Exec]
+          to: [CastToActor, Exec]
+        - from: [CastToActor, AsActor]
+          to: [GetLeaderLocation, Target]
+        - from: [CastToActor, AsActor]
+          to: [GetLeaderForward, Target]
+        - from: [CastToActor, Exec]
+          to: [SetTargetLocation, Exec]
+        - from: [GetLeaderForward, ReturnValue]
+          to: [MultiplyOffset, A]
+        - from: [GetLeaderLocation, ReturnValue]
+          to: [SubtractOffset, A]
+        - from: [MultiplyOffset, ReturnValue]
+          to: [SubtractOffset, B]
+        - from: [SubtractOffset, ReturnValue]
+          to: [SetTargetLocation, Value]
+        - from: [GetBlackboard, ReturnValue]
+          to: [SetTargetLocation, Target]
 
+  # v4.32: Enhanced with ReceiveTickAI event graph
   - name: BTS_AdjustFormationSpeed
     folder: AI/Services
     parent_class: BTService_BlueprintBase
+    variables:
+      # Base walk speed for this guard
+      - name: BaseWalkSpeed
+        type: Float
+        default_value: "400.0"
+        instance_editable: true
+    event_graph:
+      nodes:
+        # ReceiveTickAI - Adjust speed to match leader
+        - id: Event_ReceiveTickAI
+          type: Event
+          properties:
+            event_name: ReceiveTickAI
+          position: [0, 0]
+        # Get controlled pawn's movement component
+        - id: GetMovementComp
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [300, 0]
+        # Cast controlled pawn to character
+        - id: CastToCharacter
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [150, 100]
+        # Get blackboard for leader info
+        - id: GetBlackboard
+          type: CallFunction
+          properties:
+            function: GetBlackboardComponent
+            class: AIController
+          position: [300, 200]
+        # Get TargetCharacter (leader)
+        - id: GetLeader
+          type: CallFunction
+          properties:
+            function: GetValueAsObject
+            class: BlackboardComponent
+            parameters:
+              KeyName: TargetCharacter
+          position: [600, 200]
+        # Get leader's velocity magnitude
+        - id: GetLeaderVelocity
+          type: CallFunction
+          properties:
+            function: GetVelocity
+            class: Actor
+          position: [900, 200]
+        - id: VectorLength
+          type: CallFunction
+          properties:
+            function: VSize
+            class: KismetMathLibrary
+          position: [1200, 200]
+        # Set max walk speed to match (with minimum of BaseWalkSpeed)
+        - id: ClampSpeed
+          type: CallFunction
+          properties:
+            function: FMax
+            class: KismetMathLibrary
+          position: [1500, 200]
+        - id: GetBaseSpeed
+          type: VariableGet
+          properties:
+            variable_name: BaseWalkSpeed
+          position: [1350, 300]
+        - id: SetMaxWalkSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [1800, 0]
+      connections:
+        - from: [Event_ReceiveTickAI, Then]
+          to: [CastToCharacter, Exec]
+        - from: [Event_ReceiveTickAI, ControlledPawn]
+          to: [CastToCharacter, Object]
+        - from: [CastToCharacter, AsCharacter]
+          to: [GetMovementComp, Target]
+        - from: [Event_ReceiveTickAI, OwnerController]
+          to: [GetBlackboard, Target]
+        - from: [CastToCharacter, Exec]
+          to: [GetBlackboard, Exec]
+        - from: [GetBlackboard, ReturnValue]
+          to: [GetLeader, Target]
+        - from: [GetBlackboard, Exec]
+          to: [GetLeader, Exec]
+        - from: [GetLeader, ReturnValue]
+          to: [GetLeaderVelocity, Target]
+        - from: [GetLeaderVelocity, ReturnValue]
+          to: [VectorLength, A]
+        - from: [VectorLength, ReturnValue]
+          to: [ClampSpeed, A]
+        - from: [GetBaseSpeed, BaseWalkSpeed]
+          to: [ClampSpeed, B]
+        - from: [ClampSpeed, ReturnValue]
+          to: [SetMaxWalkSpeed, MaxWalkSpeed]
+        - from: [GetMovementComp, CharacterMovement]
+          to: [SetMaxWalkSpeed, Target]
+        - from: [GetLeader, Exec]
+          to: [SetMaxWalkSpeed, Exec]
 
 goals:  # GUARD FORMATION
   - name: Goal_FormationFollow
@@ -9154,9 +9388,142 @@ actor_blueprints:  # POSSESSED EXPLODER
           to: [SetMovementMode, Target]
 
 actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
+  # v4.32: Enhanced with ReceiveTickAI event graph for explosion proximity check
   - name: BTS_CheckExplosionProximity
     folder: AI/Services
     parent_class: BTService_BlueprintBase
+    variables:
+      # Distance threshold to trigger explosion
+      - name: ExplosionRadius
+        type: Float
+        default_value: "150.0"
+        instance_editable: true
+      # Track if already exploding to prevent double-trigger
+      - name: bHasExploded
+        type: Boolean
+        default_value: "false"
+    event_graph:
+      nodes:
+        # ReceiveTickAI - Check distance to target
+        - id: Event_ReceiveTickAI
+          type: Event
+          properties:
+            event_name: ReceiveTickAI
+          position: [0, 0]
+        # Check if already exploded
+        - id: GetHasExploded
+          type: VariableGet
+          properties:
+            variable_name: bHasExploded
+          position: [200, 100]
+        - id: AlreadyExplodedBranch
+          type: Branch
+          position: [400, 0]
+        # Get blackboard for AttackTarget
+        - id: GetBlackboard
+          type: CallFunction
+          properties:
+            function: GetBlackboardComponent
+            class: AIController
+          position: [600, 0]
+        - id: GetAttackTarget
+          type: CallFunction
+          properties:
+            function: GetValueAsObject
+            class: BlackboardComponent
+            parameters:
+              KeyName: AttackTarget
+          position: [900, 0]
+        # Cast to Actor
+        - id: CastToActor
+          type: DynamicCast
+          properties:
+            target_class: Actor
+          position: [1200, 0]
+        # Get distance between pawn and target
+        - id: GetPawnLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+            class: Actor
+          position: [1500, 0]
+        - id: GetTargetLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+            class: Actor
+          position: [1500, 100]
+        - id: GetDistance
+          type: CallFunction
+          properties:
+            function: Vector_Distance
+            class: KismetMathLibrary
+          position: [1800, 50]
+        # Check if within explosion radius
+        - id: GetExplosionRadius
+          type: VariableGet
+          properties:
+            variable_name: ExplosionRadius
+          position: [1800, 150]
+        - id: LessOrEqual
+          type: CallFunction
+          properties:
+            function: LessEqual_FloatFloat
+            class: KismetMathLibrary
+          position: [2100, 50]
+        - id: ProximityBranch
+          type: Branch
+          position: [2300, 0]
+        # Set exploded flag
+        - id: SetExploded
+          type: VariableSet
+          properties:
+            variable_name: bHasExploded
+          position: [2500, 0]
+        # Log explosion triggered (actual damage would be via GA_Explode ability)
+        - id: PrintExplosion
+          type: PrintString
+          properties:
+            message: "Exploder: Proximity reached - triggering explosion"
+          position: [2700, 0]
+      connections:
+        - from: [Event_ReceiveTickAI, Then]
+          to: [AlreadyExplodedBranch, Exec]
+        - from: [GetHasExploded, bHasExploded]
+          to: [AlreadyExplodedBranch, Condition]
+        # If NOT exploded, check proximity
+        - from: [AlreadyExplodedBranch, False]
+          to: [GetBlackboard, Exec]
+        - from: [Event_ReceiveTickAI, OwnerController]
+          to: [GetBlackboard, Target]
+        - from: [GetBlackboard, ReturnValue]
+          to: [GetAttackTarget, Target]
+        - from: [GetBlackboard, Exec]
+          to: [GetAttackTarget, Exec]
+        - from: [GetAttackTarget, ReturnValue]
+          to: [CastToActor, Object]
+        - from: [GetAttackTarget, Exec]
+          to: [CastToActor, Exec]
+        - from: [Event_ReceiveTickAI, ControlledPawn]
+          to: [GetPawnLocation, Target]
+        - from: [CastToActor, AsActor]
+          to: [GetTargetLocation, Target]
+        - from: [GetPawnLocation, ReturnValue]
+          to: [GetDistance, V1]
+        - from: [GetTargetLocation, ReturnValue]
+          to: [GetDistance, V2]
+        - from: [GetDistance, ReturnValue]
+          to: [LessOrEqual, A]
+        - from: [GetExplosionRadius, ExplosionRadius]
+          to: [LessOrEqual, B]
+        - from: [LessOrEqual, ReturnValue]
+          to: [ProximityBranch, Condition]
+        - from: [CastToActor, Exec]
+          to: [ProximityBranch, Exec]
+        - from: [ProximityBranch, True]
+          to: [SetExploded, Exec]
+        - from: [SetExploded, Exec]
+          to: [PrintExplosion, Exec]
 
 behavior_trees:  # POSSESSED EXPLODER
 # NOTE: Uses NarrativePro's BB_Attack at /NarrativePro/Pro/Core/AI/Activities/Attacks/
@@ -9252,9 +9619,133 @@ actor_blueprints:  # SUPPORT BUFFER
           to: [PrintReady, Exec]
 
 actor_blueprints:  # SUPPORT BUFFER BT SERVICES
+  # v4.32: Enhanced with ReceiveTickAI event graph for healing
+  # NOTE: Full healing implementation requires SphereOverlapActors and faction checks
+  # This provides the event structure; complex logic should use Narrative Pro's built-in heal systems
   - name: BTS_HealNearbyAllies
     folder: AI/Services
     parent_class: BTService_BlueprintBase
+    variables:
+      # Heal radius for finding allies
+      - name: HealRadius
+        type: Float
+        default_value: "500.0"
+        instance_editable: true
+      # Time since last heal (throttle healing)
+      - name: TimeSinceLastHeal
+        type: Float
+        default_value: "0.0"
+      # Heal cooldown
+      - name: HealCooldown
+        type: Float
+        default_value: "2.0"
+        instance_editable: true
+    event_graph:
+      nodes:
+        # ReceiveTickAI - Accumulate time and heal when ready
+        - id: Event_ReceiveTickAI
+          type: Event
+          properties:
+            event_name: ReceiveTickAI
+          position: [0, 0]
+        # Accumulate delta time
+        - id: GetTimeSinceHeal
+          type: VariableGet
+          properties:
+            variable_name: TimeSinceLastHeal
+          position: [200, 100]
+        - id: AddDelta
+          type: CallFunction
+          properties:
+            function: Add_FloatFloat
+            class: KismetMathLibrary
+          position: [400, 50]
+        - id: SetTimeSinceHeal
+          type: VariableSet
+          properties:
+            variable_name: TimeSinceLastHeal
+          position: [600, 0]
+        # Check if cooldown elapsed
+        - id: GetCooldown
+          type: VariableGet
+          properties:
+            variable_name: HealCooldown
+          position: [600, 150]
+        - id: GreaterOrEqual
+          type: CallFunction
+          properties:
+            function: GreaterEqual_FloatFloat
+            class: KismetMathLibrary
+          position: [800, 100]
+        - id: CooldownBranch
+          type: Branch
+          position: [1000, 0]
+        # Reset timer
+        - id: ResetTimer
+          type: VariableSet
+          properties:
+            variable_name: TimeSinceLastHeal
+          position: [1200, 0]
+        # Get TargetCharacter from blackboard (the character we're following/supporting)
+        - id: GetBlackboard
+          type: CallFunction
+          properties:
+            function: GetBlackboardComponent
+            class: AIController
+          position: [1400, 0]
+        - id: GetTargetCharacter
+          type: CallFunction
+          properties:
+            function: GetValueAsObject
+            class: BlackboardComponent
+            parameters:
+              KeyName: TargetCharacter
+          position: [1700, 0]
+        # Cast to NarrativeCharacter for heal capability
+        - id: CastToNarrativeChar
+          type: DynamicCast
+          properties:
+            target_class: NarrativeCharacter
+          position: [2000, 0]
+        # Log healing (actual GE application would need ASC access)
+        - id: PrintHealing
+          type: PrintString
+          properties:
+            message: "SupportBuffer: Healing target"
+          position: [2300, 0]
+      connections:
+        - from: [Event_ReceiveTickAI, Then]
+          to: [SetTimeSinceHeal, Exec]
+        - from: [GetTimeSinceHeal, TimeSinceLastHeal]
+          to: [AddDelta, A]
+        - from: [Event_ReceiveTickAI, DeltaSeconds]
+          to: [AddDelta, B]
+        - from: [AddDelta, ReturnValue]
+          to: [SetTimeSinceHeal, TimeSinceLastHeal]
+        - from: [SetTimeSinceHeal, TimeSinceLastHeal]
+          to: [GreaterOrEqual, A]
+        - from: [GetCooldown, HealCooldown]
+          to: [GreaterOrEqual, B]
+        - from: [GreaterOrEqual, ReturnValue]
+          to: [CooldownBranch, Condition]
+        - from: [SetTimeSinceHeal, Exec]
+          to: [CooldownBranch, Exec]
+        - from: [CooldownBranch, True]
+          to: [ResetTimer, Exec]
+        - from: [ResetTimer, Exec]
+          to: [GetBlackboard, Exec]
+        - from: [Event_ReceiveTickAI, OwnerController]
+          to: [GetBlackboard, Target]
+        - from: [GetBlackboard, ReturnValue]
+          to: [GetTargetCharacter, Target]
+        - from: [GetBlackboard, Exec]
+          to: [GetTargetCharacter, Exec]
+        - from: [GetTargetCharacter, ReturnValue]
+          to: [CastToNarrativeChar, Object]
+        - from: [GetTargetCharacter, Exec]
+          to: [CastToNarrativeChar, Exec]
+        - from: [CastToNarrativeChar, Exec]
+          to: [PrintHealing, Exec]
 
 behavior_trees:  # SUPPORT BUFFER
 # NOTE: Uses NarrativePro's BB_FollowCharacter at /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/
@@ -9317,32 +9808,30 @@ gameplay_effects:  # BIOMECH
     duration_policy: Instant
 
 actor_blueprints:  # BIOMECH
+  # v4.32: Enhanced with actual SpawnActor for phase transition
   - name: BP_BiomechHost
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
+    variables:
+      # TSubclassOf<ANarrativeNPCCharacter> for spawning BiomechCreature on death
+      - name: PhaseSpawnClass
+        type: Class
+        class: NarrativeNPCCharacter
+        instance_editable: true
     event_graph:
       nodes:
-        # BeginPlay - Log spawn (HandleDeath override needed for Creature spawn)
+        # BeginPlay - Initialize for phase transition
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintReady
-          type: CallFunction
-          properties:
-            function: PrintString
-            class: KismetSystemLibrary
-            parameters:
-              InString: "BiomechHost Active - HandleDeath spawns Creature"
-          position: [300, 0]
-      connections:
-        - from: [Event_BeginPlay, Then]
-          to: [PrintReady, Exec]
-    # v2.8.3: Function override for death spawning
+      connections: []
+    # v2.8.3/v4.32: Function override with actual SpawnActor for phase transition
     function_overrides:
       - function: HandleDeath
         nodes:
+          # Authority check - only server spawns the Creature
           - id: HasAuth
             type: CallFunction
             properties:
@@ -9353,22 +9842,43 @@ actor_blueprints:  # BIOMECH
           - id: AuthBranch
             type: Branch
             position: [400, 0]
-          - id: PrintSpawning
-            type: PrintString
+          # Get transform at death location
+          - id: GetActorTransform
+            type: CallFunction
             properties:
-              message: "BiomechHost HandleDeath: Spawning BP_BiomechCreature"
+              function: K2_GetActorTransform
+              class: Actor
+              target_self: true
             position: [600, 0]
+          # Get the class to spawn (set in editor to BP_BiomechCreature)
+          - id: GetSpawnClass
+            type: VariableGet
+            properties:
+              variable_name: PhaseSpawnClass
+            position: [600, 100]
+          # Spawn the BiomechCreature at death location
+          - id: SpawnCreature
+            type: SpawnActor
+            properties:
+              actor_class_variable: PhaseSpawnClass
+            position: [800, 0]
           - id: CallParentDeath
             type: CallParent
-            position: [800, 0]
+            position: [1000, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [HasAuth, Exec]
           - from: [HasAuth, ReturnValue]
             to: [AuthBranch, Condition]
           - from: [AuthBranch, True]
-            to: [PrintSpawning, Exec]
-          - from: [PrintSpawning, Then]
+            to: [GetActorTransform, Exec]
+          - from: [GetActorTransform, Exec]
+            to: [SpawnCreature, Exec]
+          - from: [GetSpawnClass, PhaseSpawnClass]
+            to: [SpawnCreature, Class]
+          - from: [GetActorTransform, ReturnValue]
+            to: [SpawnCreature, SpawnTransform]
+          - from: [SpawnCreature, Then]
             to: [CallParentDeath, Exec]
           - from: [AuthBranch, False]
             to: [CallParentDeath, Exec]
