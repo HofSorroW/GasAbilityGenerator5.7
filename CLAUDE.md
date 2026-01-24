@@ -51,28 +51,14 @@ Generate assets from command line without launching the editor UI:
 "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "C:\Unreal Projects\NP22B57\NP22B57.uproject" -run=GasAbilityGenerator -manifest="C:\Unreal Projects\NP22B57\Plugins\GasAbilityGenerator\ClaudeContext\manifest.yaml"
 ```
 
-### v3.0 Commandlet Flags
+### Commandlet Flags
 
-| Flag | Description |
-|------|-------------|
-| `-dryrun` | Preview what would be created/modified/skipped without making changes |
-| `-force` | Regenerate all assets even if they were manually edited (override conflicts) |
-| `-level="/Game/..."` | (v3.9.9) Load a World Partition level for POI/NPC Spawner placement |
-| `-dialoguecsv="..."` | (v4.0) Parse dialogue CSV file for batch dialogue generation |
-
-```bash
-# Preview changes without generating
-... -run=GasAbilityGenerator -manifest="..." -dryrun
-
-# Force regeneration of all assets
-... -run=GasAbilityGenerator -manifest="..." -force
-
-# Generate assets AND place level actors (POIs, NPC Spawners)
-... -run=GasAbilityGenerator -manifest="..." -level="/Game/Maps/MainWorld"
-
-# Generate dialogues from CSV (v4.0 Quest Pipeline)
-... -run=GasAbilityGenerator -manifest="..." -dialoguecsv="ClaudeContext/DialogueData.csv"
-```
+| Flag | Description | Example |
+|------|-------------|---------|
+| `-dryrun` | Preview changes without generating | `-manifest="..." -dryrun` |
+| `-force` | Override conflicts (regenerate manually edited assets) | `-manifest="..." -force` |
+| `-level="/Game/..."` | Load World Partition level for POI/NPC Spawner placement | `-level="/Game/Maps/MainWorld"` |
+| `-dialoguecsv="..."` | Parse dialogue CSV for batch generation | `-dialoguecsv="ClaudeContext/DialogueData.csv"` |
 
 ### v3.0/3.1 Regen/Diff Safety System
 
@@ -1037,20 +1023,15 @@ When looking for classes/enums, the plugin searches:
 | `E_DELEGATE_SOURCE_INVALID` | Error | Variable source for delegate not found |
 | `W_TRANSITION_INVALID` | Warning | Form transition missing required tags |
 
-### Plugin Version History (Recent)
+### Plugin Version History (Last 5)
 
 | Version | Summary |
 |---------|---------|
 | **v4.30** | Automation Gap Closure: MeshMaterials/Morphs struct automation for clothing items; deferred resolution for EquipmentAbilities/ActivitiesToGrant; DialogueShot SequenceAssets array automation |
-| **v4.29** | PreValidator-Generator Function Resolution Parity: Shared `FGasAbilityGeneratorFunctionResolver` class ensures identical behavior; 17 new ScriptName entries (K2_CancelAbility, etc.); fixes "pass in validator, fail in generator" scenarios |
+| **v4.29** | PreValidator-Generator Function Resolution Parity: Shared `FGasAbilityGeneratorFunctionResolver` class ensures identical behavior; 17 new ScriptName entries (K2_CancelAbility, etc.) |
 | **v4.28** | Option C Item Generation: Fragments system (AmmoFragment, PoisonableFragment), consumable_items/ammo_items/weapon_attachments manifest sections, S2 dot notation for struct properties |
 | **v4.27** | GA→GA dependency scanning for TSubclassOf; automatic dome burst on form exit; dependency sort order audit (Decisions 22-24) |
 | **v4.26** | Session cache for TSubclassOf resolution; external reference detection; 156/156 assets |
-| **v4.25** | Dependency ordering (topological sort); cascade skip logic |
-| **v4.24** | Pre-validation system; reflection-based semantic checks before generation |
-| **v4.23** | Fail-fast audit; manifest defects block generation; 97 error codes |
-| **v4.21** | Delegate binding automation for GAS abilities |
-| **v4.20** | Event graph node placement; layered layout algorithm |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
