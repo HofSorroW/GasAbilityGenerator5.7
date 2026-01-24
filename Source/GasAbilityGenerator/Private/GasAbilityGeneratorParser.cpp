@@ -4509,6 +4509,7 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 	bool bInParameters = false;  // v2.8.2: Track nested parameters section
 	int32 NodeIndent = -1;
 	int32 PropertiesIndent = -1;  // v2.8.2: Track properties indentation
+	int32 CurrentParamIndex = -1;  // v4.32: Track parameter array index for CustomEvent parameters
 
 	while (LineIndex < Lines.Num())
 	{
@@ -4556,6 +4557,7 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 			bInProperties = false;
 			bInParameters = false;
 			PropertiesIndent = -1;
+			CurrentParamIndex = -1;  // v4.32: Reset parameter index
 		}
 		else if (TrimmedLine.StartsWith(TEXT("- id:")) && NodeIndent < 0)
 		{
@@ -4567,6 +4569,7 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 			bInProperties = false;
 			bInParameters = false;
 			PropertiesIndent = -1;
+			CurrentParamIndex = -1;  // v4.32: Reset parameter index
 		}
 		else if (bInNode)
 		{
@@ -4598,6 +4601,23 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 				bInParameters = false;
 				PropertiesIndent = CurrentIndent;
 			}
+			// v4.32: Handle array items in parameters section (- name: ParamName format)
+			else if (bInProperties && bInParameters && TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				// New parameter array item - increment index
+				CurrentParamIndex++;
+				FString ParamName = TrimmedLine.Mid(7).TrimStartAndEnd();  // Skip "- name:"
+				// Remove quotes if present
+				if (ParamName.Len() >= 2)
+				{
+					if ((ParamName.StartsWith(TEXT("\"")) && ParamName.EndsWith(TEXT("\""))) ||
+						(ParamName.StartsWith(TEXT("'")) && ParamName.EndsWith(TEXT("'"))))
+					{
+						ParamName = ParamName.Mid(1, ParamName.Len() - 2);
+					}
+				}
+				CurrentNode.Properties.Add(FString::Printf(TEXT("param.%d.name"), CurrentParamIndex), ParamName);
+			}
 			else if (bInProperties && !TrimmedLine.StartsWith(TEXT("-")))
 			{
 				// Parse property key: value
@@ -4611,11 +4631,13 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 					if (Key == TEXT("parameters") && Value.IsEmpty())
 					{
 						bInParameters = true;
+						CurrentParamIndex = -1;  // v4.32: Reset parameter index
 						// Don't add "parameters" as a property - we'll add individual params with "param." prefix
 					}
 					else if (bInParameters && CurrentIndent > PropertiesIndent + 2)
 					{
-						// v2.8.2: We're inside nested parameters - prefix with "param."
+						// v4.32: Handle array-of-objects format for CustomEvent parameters
+						// Format: - name: ParamName / type: ParamType
 						// Remove quotes from value
 						if (Value.Len() >= 2)
 						{
@@ -4625,7 +4647,16 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 								Value = Value.Mid(1, Value.Len() - 2);
 							}
 						}
-						CurrentNode.Properties.Add(TEXT("param.") + Key, Value);
+						// v4.32: Store as param.N.key format for array parameters
+						if (CurrentParamIndex >= 0)
+						{
+							CurrentNode.Properties.Add(FString::Printf(TEXT("param.%d.%s"), CurrentParamIndex, *Key), Value);
+						}
+						else
+						{
+							// v2.8.2: Original key-value format (param.key = value)
+							CurrentNode.Properties.Add(TEXT("param.") + Key, Value);
+						}
 					}
 					else
 					{

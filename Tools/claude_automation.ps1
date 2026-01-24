@@ -14,6 +14,7 @@ $ProjectFile = "$ProjectRoot\NP22B57.uproject"
 $UERoot = "C:\Program Files\Epic Games\UE_5.7"
 $UBT = "$UERoot\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe"
 $Editor = "$UERoot\Engine\Binaries\Win64\UnrealEditor.exe"
+$EditorCmd = "$UERoot\Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
 $PluginRoot = "$ProjectRoot\Plugins\GasAbilityGenerator"
 $LogDir = "$PluginRoot\Tools\Logs"
 $UELogPath = "$env:LOCALAPPDATA\UnrealEngine\5.7\Saved\Logs\NP22B57.log"
@@ -205,10 +206,10 @@ switch ($Action) {
             "-nullrhi"
         )
 
-        Write-Host "Running: $Editor $($args -join ' ')"
+        Write-Host "Running: $EditorCmd $($args -join ' ')"
 
-        # Run commandlet and capture output
-        $process = Start-Process -FilePath $Editor -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogDir\commandlet_stdout.log" -RedirectStandardError "$LogDir\commandlet_stderr.log"
+        # Run commandlet and capture output (use EditorCmd for headless operation)
+        $process = Start-Process -FilePath $EditorCmd -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogDir\commandlet_stdout.log" -RedirectStandardError "$LogDir\commandlet_stderr.log"
         $exitCode = $process.ExitCode
 
         # Display stdout if captured
@@ -277,8 +278,8 @@ switch ($Action) {
             "-nullrhi"
         )
 
-        # Run commandlet and capture output
-        $process = Start-Process -FilePath $Editor -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogDir\commandlet_stdout.log" -RedirectStandardError "$LogDir\commandlet_stderr.log"
+        # Run commandlet and capture output (use EditorCmd for headless operation)
+        $process = Start-Process -FilePath $EditorCmd -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogDir\commandlet_stdout.log" -RedirectStandardError "$LogDir\commandlet_stderr.log"
         $exitCode = $process.ExitCode
 
         # Save stdout to full log

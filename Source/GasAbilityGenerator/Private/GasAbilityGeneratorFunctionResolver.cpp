@@ -58,6 +58,7 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 
 	// v6.8: AI Controller functions
 	WellKnownFunctions.Add(TEXT("RunBehaviorTree"), AAIController::StaticClass());
+	WellKnownFunctions.Add(TEXT("GetBlackboardComponent"), AAIController::StaticClass());
 
 	// Actor functions
 	WellKnownFunctions.Add(TEXT("GetActorLocation"), AActor::StaticClass());
@@ -72,6 +73,8 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("K2_DetachFromActor"), AActor::StaticClass());
 	WellKnownFunctions.Add(TEXT("SetActorHiddenInGame"), AActor::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetComponentByClass"), AActor::StaticClass());
+	WellKnownFunctions.Add(TEXT("K2_GetActorTransform"), AActor::StaticClass());
+	WellKnownFunctions.Add(TEXT("GetActorTransform"), AActor::StaticClass());
 
 	// SceneComponent functions
 	WellKnownFunctions.Add(TEXT("GetSocketLocation"), USceneComponent::StaticClass());

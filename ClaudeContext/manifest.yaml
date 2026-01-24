@@ -948,13 +948,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1600, 300]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [1500, 350]
         # Step 2: Spawn transition VFX
@@ -987,13 +987,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2200, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2000, 350]
         # Step 5: Apply new form state
@@ -1015,13 +1015,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2600, 300]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2500, 350]
         # Continue form switch flow after transition
@@ -1087,7 +1087,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2400, 500]
         - id: Branch_TransitioningTag_Guard
@@ -1104,7 +1104,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2700, 500]
         - id: Branch_FormState_Guard
@@ -1150,13 +1150,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [800, 750]
         - id: MakeLiteralTag_End
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [700, 800]
       connections:
@@ -1435,13 +1435,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1800, 300]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [1700, 350]
         # Step 2: Spawn transition VFX
@@ -1496,7 +1496,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2600, 400]
         - id: Branch_TransitioningTag_Guard
@@ -1513,7 +1513,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2850, 450]
         - id: Branch_FormState_Guard
@@ -1530,13 +1530,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2400, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2200, 350]
         # Step 5: Apply new form state
@@ -1558,13 +1558,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2800, 300]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2700, 350]
         # Pure nodes - below main exec flow
@@ -1614,7 +1614,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: Multiply_DoubleDouble
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [2800, -150]
         - id: SetMaxSpeed
           type: PropertySet
@@ -2013,13 +2013,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1500, 250]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [1400, 300]
         # Step 2: Spawn transition VFX
@@ -2074,7 +2074,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2250, 400]
         - id: Branch_TransitioningTag_Guard
@@ -2091,7 +2091,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2500, 450]
         - id: Branch_FormState_Guard
@@ -2108,13 +2108,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2600, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2400, 350]
         # Step 5: Apply new form state
@@ -2136,13 +2136,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2550, 300]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2500, 350]
         # Continue form switch flow after transition
@@ -2183,7 +2183,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: Multiply_DoubleDouble
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [2700, 0]
         - id: SetMaxSpeed
           type: PropertySet
@@ -2212,7 +2212,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: Multiply_DoubleDouble
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [3400, 0]
         - id: SetJumpVelocity
           type: PropertySet
@@ -2575,7 +2575,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Data.Symbiote.Duration
           position: [100, -50]
         - id: AssignSetByCaller_Duration
@@ -2659,13 +2659,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1600, 300]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [1500, 350]
         # Step 2: Spawn transition VFX
@@ -2720,7 +2720,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2450, 400]
         - id: Branch_TransitioningTag_Guard
@@ -2737,7 +2737,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2700, 450]
         - id: Branch_FormState_Guard
@@ -2754,13 +2754,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2200, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2000, 350]
         # Step 5: Apply new form state
@@ -2782,13 +2782,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2600, 300]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2500, 350]
         # Continue form switch flow after transition
@@ -2900,7 +2900,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Symbiote.State.Merged
           position: [800, 650]
         - id: Branch_MergedTag
@@ -3344,13 +3344,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1500, 250]
         - id: MakeLiteralTag_AddTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [1400, 300]
         # Step 2: Spawn transition VFX
@@ -3405,7 +3405,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2250, 400]
         - id: Branch_TransitioningTag_Guard
@@ -3422,7 +3422,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2500, 450]
         - id: Branch_FormState_Guard
@@ -3439,13 +3439,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2600, 350]
         - id: MakeLiteralTag_FormState
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Effect.Father.FormState
           position: [2400, 350]
         # Step 5: Apply new form state
@@ -3467,13 +3467,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2550, 300]
         - id: MakeLiteralTag_RemoveTransitioning
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Transitioning
           position: [2500, 350]
         # Continue form switch flow after transition
@@ -4582,14 +4582,14 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.Dome.FullyCharged
           position: [600, 550]
         - id: MakeTagContainer_Charged
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [800, 500]
         - id: ClearChargedTag
           type: CallFunction
@@ -4649,7 +4649,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: Multiply_DoubleDouble
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1100, 850]
         # Step 3: Get current DomeEnergy and add absorbed
         - id: GetCurrentEnergy
@@ -4662,7 +4662,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: Add_DoubleDouble
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1500, 850]
         # Step 4: Clamp to MaxDomeEnergy
         - id: GetMaxEnergy
@@ -4675,7 +4675,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: FClamp
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1900, 850]
         - id: MakeZero
           type: CallFunction
@@ -4696,7 +4696,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: GreaterEqual_DoubleDouble
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [2300, 900]
         - id: Branch_FullyCharged
           type: Branch
@@ -4711,14 +4711,14 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.Dome.FullyCharged
           position: [2700, 950]
         - id: MakeTagContainer_FullyCharged
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2900, 900]
         - id: AddFullyChargedTag
           type: CallFunction
@@ -4778,14 +4778,14 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.Dome.FullyCharged
           position: [1300, 1400]
         - id: MakeTagContainer_Charged_Death
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1500, 1350]
         - id: ClearChargedTag_Death
           type: CallFunction
@@ -5163,7 +5163,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: Multiply_DoubleDouble
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [2400, 0]
         - id: SetMaxSpeed
           type: PropertySet
@@ -5542,7 +5542,7 @@ gameplay_abilities:
         - id: ApplyGEToSelf
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectSpecToOwner
+            function: K2_ApplyGameplayEffectSpecToOwner
             target_self: true
           position: [1400, 0]
         - id: EndAbility_Success
@@ -5665,7 +5665,7 @@ gameplay_abilities:
             type: CallFunction
             properties:
               function: NotEqual_ObjectObject
-              class: KismetMathLibrary
+              # class: KismetMathLibrary  # Commented out - let resolver find
             position: [1200, 0]
           # Step 8: Check if cast succeeded (Goal_Attack is valid)
           - id: IsValidGoal
@@ -5679,28 +5679,28 @@ gameplay_abilities:
             type: CallFunction
             properties:
               function: Not_PreBool
-              class: KismetMathLibrary
+              # class: KismetMathLibrary  # Commented out - let resolver find
             position: [1200, 100]
           # Step 9: OR(NoGoal, TargetNotPlayer) - true if no goal OR attacking someone else
           - id: OrGoalCheck
             type: CallFunction
             properties:
               function: BooleanOR
-              class: KismetMathLibrary
+              # class: KismetMathLibrary  # Commented out - let resolver find
             position: [1400, 0]
           # Step 10: Final OR: NoComponent OR GoalCheck = can backstab
           - id: OrNoComponent
             type: CallFunction
             properties:
               function: BooleanOR
-              class: KismetMathLibrary
+              # class: KismetMathLibrary  # Commented out - let resolver find
             position: [1600, 0]
           # NOT IsValidComp (no component = can backstab)
           - id: NotValidComp
             type: CallFunction
             properties:
               function: Not_PreBool
-              class: KismetMathLibrary
+              # class: KismetMathLibrary  # Commented out - let resolver find
             position: [500, 100]
         connections:
           # EnemyActor → GetComponentByClass target
@@ -6231,13 +6231,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [3200, 150]
         - id: MakeLiteralTag_Dormant
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
           position: [3100, 200]
         # Step 5: Start dormant timer
@@ -6294,7 +6294,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
           position: [500, 800]
         - id: Branch_DormantTag_Timer
@@ -6321,13 +6321,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1350, 750]
         - id: MakeLiteralTag_RemoveDormant
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
           position: [1250, 800]
         - id: EndAbility_Timer
@@ -6397,13 +6397,13 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1400, 1150]
         - id: MakeLiteralTag_End
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
           position: [1300, 1200]
       connections:
@@ -9126,7 +9126,7 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           type: CallFunction
           properties:
             function: GetBlackboardComponent
-            class: AIController
+            target_self: true
           position: [300, 0]
         # Get TargetCharacter key value (the leader to follow)
         - id: GetTargetCharacter
@@ -9164,13 +9164,13 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           type: CallFunction
           properties:
             function: Multiply_VectorFloat
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1500, 0]
         - id: SubtractOffset
           type: CallFunction
           properties:
             function: Subtract_VectorVector
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1800, 0]
         # Set TargetLocation blackboard key
         - id: SetTargetLocation
@@ -9247,7 +9247,7 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           type: CallFunction
           properties:
             function: GetBlackboardComponent
-            class: AIController
+            target_self: true
           position: [300, 200]
         # Get TargetCharacter (leader)
         - id: GetLeader
@@ -9269,14 +9269,14 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           type: CallFunction
           properties:
             function: VSize
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1200, 200]
         # Set max walk speed to match (with minimum of BaseWalkSpeed)
         - id: ClampSpeed
           type: CallFunction
           properties:
             function: FMax
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1500, 200]
         - id: GetBaseSpeed
           type: VariableGet
@@ -9424,7 +9424,7 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           type: CallFunction
           properties:
             function: GetBlackboardComponent
-            class: AIController
+            target_self: true
           position: [600, 0]
         - id: GetAttackTarget
           type: CallFunction
@@ -9457,7 +9457,7 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           type: CallFunction
           properties:
             function: Vector_Distance
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1800, 50]
         # Check if within explosion radius
         - id: GetExplosionRadius
@@ -9469,7 +9469,7 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           type: CallFunction
           properties:
             function: LessEqual_FloatFloat
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [2100, 50]
         - id: ProximityBranch
           type: Branch
@@ -9695,7 +9695,7 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           type: CallFunction
           properties:
             function: Add_FloatFloat
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [400, 50]
         - id: SetTimeSinceHeal
           type: VariableSet
@@ -9712,7 +9712,7 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           type: CallFunction
           properties:
             function: GreaterEqual_FloatFloat
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [800, 100]
         - id: CooldownBranch
           type: Branch
@@ -9765,14 +9765,14 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           type: CallFunction
           properties:
             function: ActorHasMatchingGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [2400, 0]
         # Make tag for friendly faction check
         - id: MakeFriendlyTag
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            class: BlueprintGameplayTagLibrary
+            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             parameters:
               Value: Narrative.Factions.Friendly
           position: [2400, 100]
@@ -10527,13 +10527,13 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           type: CallFunction
           properties:
             function: RandomFloatInRange
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1000, 100]
         - id: MultiplyRates
           type: CallFunction
           properties:
             function: Multiply_FloatFloat
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1200, 50]
         # Get current aggression and add increment
         - id: GetAggression
@@ -10545,7 +10545,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           type: CallFunction
           properties:
             function: Add_FloatFloat
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1400, 100]
         # Store new aggression level
         - id: SetAggression
@@ -10563,7 +10563,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           type: CallFunction
           properties:
             function: GreaterEqual_FloatFloat
-            class: KismetMathLibrary
+            # class: KismetMathLibrary  # Commented out - let resolver find
           position: [1800, 150]
         - id: BranchThreshold
           type: Branch

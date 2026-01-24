@@ -2760,8 +2760,8 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 
 	// v4.31: Generate custom functions BEFORE event graph
 	// This allows event graph nodes to call functions defined in custom_functions
-	// DEBUG: Always log custom function count for audit purposes
-	LogGeneration(FString::Printf(TEXT("  [v4.31-DEBUG] %s: CustomFunctions.Num()=%d, bHasInlineEventGraph=%s, EventGraphNodes=%d"),
+	// v4.31-AUDIT: Log custom function count for audit purposes
+	LogGeneration(FString::Printf(TEXT("[v4.31-AUDIT] %s: CustomFunctions=%d, InlineEventGraph=%s, EventGraphNodes=%d"),
 		*Definition.Name, Definition.CustomFunctions.Num(),
 		Definition.bHasInlineEventGraph ? TEXT("true") : TEXT("false"),
 		Definition.EventGraphNodes.Num()));
@@ -10240,6 +10240,115 @@ UK2Node* FEventGraphGenerator::CreateCustomEventNode(
 	CustomEventNode->PostPlacedNewNode();
 	CustomEventNode->AllocateDefaultPins();
 
+	// v4.32: Add user-defined output pins from parameters
+	// Parameters are stored as param.N.name and param.N.type in Properties
+	for (int32 ParamIndex = 0; ParamIndex < 10; ++ParamIndex)  // Support up to 10 parameters
+	{
+		FString ParamNameKey = FString::Printf(TEXT("param.%d.name"), ParamIndex);
+		FString ParamTypeKey = FString::Printf(TEXT("param.%d.type"), ParamIndex);
+
+		const FString* ParamName = NodeDef.Properties.Find(ParamNameKey);
+		const FString* ParamType = NodeDef.Properties.Find(ParamTypeKey);
+
+		if (!ParamName || !ParamType)
+		{
+			break;  // No more parameters
+		}
+
+		// Determine pin type from type string
+		FEdGraphPinType PinType;
+		if (ParamType->Equals(TEXT("Float"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+			PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+		}
+		else if (ParamType->Equals(TEXT("Double"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+			PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
+		}
+		else if (ParamType->Equals(TEXT("Int"), ESearchCase::IgnoreCase) || ParamType->Equals(TEXT("Integer"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+		}
+		else if (ParamType->Equals(TEXT("Bool"), ESearchCase::IgnoreCase) || ParamType->Equals(TEXT("Boolean"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+		}
+		else if (ParamType->Equals(TEXT("String"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_String;
+		}
+		else if (ParamType->Equals(TEXT("Name"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+		}
+		else if (ParamType->Equals(TEXT("Vector"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
+		}
+		else if (ParamType->Equals(TEXT("Rotator"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = TBaseStructure<FRotator>::Get();
+		}
+		else if (ParamType->Equals(TEXT("Transform"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = TBaseStructure<FTransform>::Get();
+		}
+		else if (ParamType->Equals(TEXT("GameplayEffectSpec"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = FGameplayEffectSpec::StaticStruct();
+		}
+		else if (ParamType->Equals(TEXT("GameplayTag"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = FGameplayTag::StaticStruct();
+		}
+		else if (ParamType->Equals(TEXT("GameplayTagContainer"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = FGameplayTagContainer::StaticStruct();
+		}
+		else
+		{
+			// Try to find as a class (for Object types like AbilitySystemComponent)
+			UClass* ParamClass = FGasAbilityGeneratorFunctionResolver::FindClassByName(*ParamType);
+			if (ParamClass)
+			{
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+				PinType.PinSubCategoryObject = ParamClass;
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("CustomEvent '%s' parameter '%s': Unknown type '%s', using wildcard"),
+					*NodeDef.Id, **ParamName, **ParamType));
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+			}
+		}
+
+		// Create the user-defined pin
+		FName PinName(**ParamName);
+		TSharedPtr<FUserPinInfo> PinInfo = MakeShared<FUserPinInfo>();
+		PinInfo->PinName = PinName;
+		PinInfo->PinType = PinType;
+		PinInfo->DesiredPinDirection = EGPD_Output;
+
+		CustomEventNode->UserDefinedPins.Add(PinInfo);
+
+		LogGeneration(FString::Printf(TEXT("  CustomEvent '%s': Added parameter pin '%s' (%s)"),
+			*NodeDef.Id, **ParamName, **ParamType));
+	}
+
+	// Reconstruct node to create the actual pins from UserDefinedPins
+	if (CustomEventNode->UserDefinedPins.Num() > 0)
+	{
+		CustomEventNode->ReconstructNode();
+	}
+
 	return CustomEventNode;
 }
 
@@ -10397,7 +10506,9 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		CallNode->CreateNewGuid();
 		CallNode->PostPlacedNewNode();
 		CallNode->AllocateDefaultPins();
-		LogGeneration(FString::Printf(TEXT("  Created CallFunction for Blueprint custom function '%s'"), *FunctionName.ToString()));
+		// v4.31-AUDIT: Log to verify SetSelfMember fallback produces valid pins
+		LogGeneration(FString::Printf(TEXT("[v4.31-AUDIT] SetSelfMember fallback: '%s' | Pins=%d | Path=%s"),
+			*FunctionName.ToString(), CallNode->Pins.Num(), *Resolved.ResolutionPath));
 	}
 	else
 	{
@@ -10432,6 +10543,12 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		}
 
 		// v4.23 FAIL-FAST: Manifest references function that cannot be found
+		// v4.31-AUDIT: Log to see if resolver failed completely
+		LogGeneration(FString::Printf(TEXT("[v4.31-AUDIT] Function NOT FOUND: '%s' | bFound=%s | BP=%s | FunctionGraphs=%d"),
+			*FunctionName.ToString(),
+			Resolved.bFound ? TEXT("true") : TEXT("false"),
+			Blueprint ? *Blueprint->GetName() : TEXT("null"),
+			Blueprint ? Blueprint->FunctionGraphs.Num() : -1));
 		LogGeneration(FString::Printf(TEXT("[E_FUNCTION_NOT_FOUND] Node '%s' | Could not find function '%s'"),
 			*NodeDef.Id, *FunctionName.ToString()));
 		return nullptr; // Signal failure to caller
