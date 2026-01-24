@@ -9480,12 +9480,35 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           properties:
             variable_name: bHasExploded
           position: [2500, 0]
-        # Log explosion triggered (actual damage would be via GA_Explode ability)
-        - id: PrintExplosion
-          type: PrintString
+        # v4.32: Get target's ASC for damage application
+        - id: GetTargetASC
+          type: CallFunction
           properties:
-            message: "Exploder: Proximity reached - triggering explosion"
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
           position: [2700, 0]
+        # Apply GE_ExplosionDamage to target
+        - id: ApplyExplosionDamage
+          type: CallFunction
+          properties:
+            function: ApplyGameplayEffectToTarget
+            class: AbilitySystemComponent
+            param.GameplayEffectClass: GE_ExplosionDamage
+            param.Level: 1
+          position: [2900, 0]
+        # Cast controlled pawn to NarrativeNPCCharacter for HandleDeath
+        - id: CastToNPC
+          type: DynamicCast
+          properties:
+            target_class: NarrativeNPCCharacter
+          position: [3100, 0]
+        # Kill the exploder (suicide explosion)
+        - id: CallHandleDeath
+          type: CallFunction
+          properties:
+            function: HandleDeath
+            class: NarrativeCharacter
+          position: [3300, 0]
       connections:
         - from: [Event_ReceiveTickAI, Then]
           to: [AlreadyExplodedBranch, Exec]
@@ -9523,7 +9546,23 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
         - from: [ProximityBranch, True]
           to: [SetExploded, Exec]
         - from: [SetExploded, Exec]
-          to: [PrintExplosion, Exec]
+          to: [GetTargetASC, Exec]
+        # Connect target actor to ASC getter
+        - from: [CastToActor, AsActor]
+          to: [GetTargetASC, Actor]
+        - from: [GetTargetASC, ReturnValue]
+          to: [ApplyExplosionDamage, Target]
+        - from: [GetTargetASC, Exec]
+          to: [ApplyExplosionDamage, Exec]
+        # Cast pawn and call HandleDeath
+        - from: [ApplyExplosionDamage, Exec]
+          to: [CastToNPC, Exec]
+        - from: [Event_ReceiveTickAI, ControlledPawn]
+          to: [CastToNPC, Object]
+        - from: [CastToNPC, AsNarrativeNPCCharacter]
+          to: [CallHandleDeath, Target]
+        - from: [CastToNPC, Exec]
+          to: [CallHandleDeath, Exec]
 
 behavior_trees:  # POSSESSED EXPLODER
 # NOTE: Uses NarrativePro's BB_Attack at /NarrativePro/Pro/Core/AI/Activities/Attacks/
@@ -9619,9 +9658,7 @@ actor_blueprints:  # SUPPORT BUFFER
           to: [PrintReady, Exec]
 
 actor_blueprints:  # SUPPORT BUFFER BT SERVICES
-  # v4.32: Enhanced with ReceiveTickAI event graph for healing
-  # NOTE: Full healing implementation requires SphereOverlapActors and faction checks
-  # This provides the event structure; complex logic should use Narrative Pro's built-in heal systems
+  # v4.32: Enhanced with ReceiveTickAI + SphereOverlap + faction check + GE_SupportHeal
   - name: BTS_HealNearbyAllies
     folder: AI/Services
     parent_class: BTService_BlueprintBase
@@ -9686,33 +9723,78 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           properties:
             variable_name: TimeSinceLastHeal
           position: [1200, 0]
-        # Get TargetCharacter from blackboard (the character we're following/supporting)
-        - id: GetBlackboard
+        # Get pawn location for sphere overlap center
+        - id: GetPawnLocation
           type: CallFunction
           properties:
-            function: GetBlackboardComponent
-            class: AIController
+            function: K2_GetActorLocation
+            class: Actor
           position: [1400, 0]
-        - id: GetTargetCharacter
+        # Get heal radius variable
+        - id: GetRadius
+          type: VariableGet
+          properties:
+            variable_name: HealRadius
+          position: [1400, 100]
+        # Make object types array for Pawn detection
+        - id: MakeObjectTypes
+          type: MakeArray
+          properties:
+            element_type: ObjectTypeQuery
+            num_elements: 1
+          position: [1600, 200]
+        # Make actors to ignore array (ignore self)
+        - id: MakeActorsToIgnore
+          type: MakeArray
+          properties:
+            element_type: Actor
+            num_elements: 1
+          position: [1600, 300]
+        # SphereOverlapActors to find nearby characters
+        - id: SphereOverlap
           type: CallFunction
           properties:
-            function: GetValueAsObject
-            class: BlackboardComponent
+            function: SphereOverlapActors
+          position: [1800, 0]
+        # ForEach loop to process each found actor
+        - id: ForEachActor
+          type: ForEachLoop
+          position: [2100, 0]
+        # Check if actor has friendly faction tag
+        - id: HasFriendlyTag
+          type: CallFunction
+          properties:
+            function: ActorHasMatchingGameplayTag
+            class: BlueprintGameplayTagLibrary
+          position: [2400, 0]
+        # Make tag for friendly faction check
+        - id: MakeFriendlyTag
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
             parameters:
-              KeyName: TargetCharacter
-          position: [1700, 0]
-        # Cast to NarrativeCharacter for heal capability
-        - id: CastToNarrativeChar
-          type: DynamicCast
+              Value: Narrative.Factions.Friendly
+          position: [2400, 100]
+        - id: FriendlyBranch
+          type: Branch
+          position: [2700, 0]
+        # Get target's ASC
+        - id: GetTargetASC
+          type: CallFunction
           properties:
-            target_class: NarrativeCharacter
-          position: [2000, 0]
-        # Log healing (actual GE application would need ASC access)
-        - id: PrintHealing
-          type: PrintString
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [2900, 0]
+        # Apply GE_SupportHeal to friendly target
+        - id: ApplyHeal
+          type: CallFunction
           properties:
-            message: "SupportBuffer: Healing target"
-          position: [2300, 0]
+            function: ApplyGameplayEffectToTarget
+            class: AbilitySystemComponent
+            param.GameplayEffectClass: GE_SupportHeal
+            param.Level: 1
+          position: [3100, 0]
       connections:
         - from: [Event_ReceiveTickAI, Then]
           to: [SetTimeSinceHeal, Exec]
@@ -9733,11 +9815,44 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         - from: [CooldownBranch, True]
           to: [ResetTimer, Exec]
         - from: [ResetTimer, Exec]
-          to: [GetBlackboard, Exec]
-        - from: [Event_ReceiveTickAI, OwnerController]
-          to: [GetBlackboard, Target]
-        - from: [GetBlackboard, ReturnValue]
-          to: [GetTargetCharacter, Target]
+          to: [SphereOverlap, Exec]
+        # Sphere overlap inputs
+        - from: [Event_ReceiveTickAI, ControlledPawn]
+          to: [GetPawnLocation, Target]
+        - from: [Event_ReceiveTickAI, ControlledPawn]
+          to: [MakeActorsToIgnore, [0]]
+        - from: [GetPawnLocation, ReturnValue]
+          to: [SphereOverlap, SpherePos]
+        - from: [GetRadius, HealRadius]
+          to: [SphereOverlap, SphereRadius]
+        - from: [MakeObjectTypes, Array]
+          to: [SphereOverlap, ObjectTypes]
+        - from: [MakeActorsToIgnore, Array]
+          to: [SphereOverlap, ActorsToIgnore]
+        # ForEach and faction filtering
+        - from: [SphereOverlap, Exec]
+          to: [ForEachActor, Exec]
+        - from: [SphereOverlap, OutActors]
+          to: [ForEachActor, Array]
+        - from: [ForEachActor, LoopBody]
+          to: [HasFriendlyTag, Exec]
+        - from: [ForEachActor, ArrayElement]
+          to: [HasFriendlyTag, Actor]
+        - from: [MakeFriendlyTag, ReturnValue]
+          to: [HasFriendlyTag, Tag]
+        - from: [HasFriendlyTag, ReturnValue]
+          to: [FriendlyBranch, Condition]
+        - from: [HasFriendlyTag, Exec]
+          to: [FriendlyBranch, Exec]
+        # Apply heal to friendly targets
+        - from: [FriendlyBranch, True]
+          to: [GetTargetASC, Exec]
+        - from: [ForEachActor, ArrayElement]
+          to: [GetTargetASC, Actor]
+        - from: [GetTargetASC, ReturnValue]
+          to: [ApplyHeal, Target]
+        - from: [GetTargetASC, Exec]
+          to: [ApplyHeal, Exec]
         - from: [GetBlackboard, Exec]
           to: [GetTargetCharacter, Exec]
         - from: [GetTargetCharacter, ReturnValue]
