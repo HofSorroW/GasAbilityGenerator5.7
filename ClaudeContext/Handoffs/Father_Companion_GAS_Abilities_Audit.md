@@ -1,9 +1,11 @@
 # Father Companion GAS & Abilities Audit - Locked Decisions
-## Version 6.0 - January 2026
+## Version 6.1 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from dual-agent audits (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
 **Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.30
+
+**v6.1 Updates:** Deep research on 6 unresearched patterns (Montage Lifecycle, Socket Attachment, Line Trace Authority, Movement Restore, Effect Handle Storage, MEDIUM items). All verified as already compliant or covered. All MEDIUM severity items confirmed RESOLVED (v4.14/v4.15). No new rules needed.
 
 **v6.0 Updates:** Added R-TIMER-1 (Timer Callback Safety), R-ENUM-1 (GE-First Causality), R-AI-1 (Activity System Compatibility), R-CLEANUP-1 (Granted Ability Cleanup). GA_FatherEngineer R-AI-1 violation identified and fixed.
 
@@ -647,16 +649,18 @@ GE.GrantedTags.Add(FString::Printf(TEXT("Effect.Father.FormState.%s"), *Form));
 | GA_FatherSymbiote | First Activation terminates early (Rule 4) + Missing CommitCooldown (VTF-7) | ✅ Fixed | Lines 2834-2843, 2872-2874 |
 | GA_FatherEngineer | First Activation terminates early (Rule 4) | ✅ Fixed | Lines 3311-3320 |
 
-### MEDIUM — Race Conditions
+### MEDIUM — Race Conditions (✅ ALL RESOLVED v6.1)
 
-| Ability | Issue | Notes |
-|---------|-------|-------|
-| GA_FatherArmor | Guard (Branch_Valid) executes AFTER GE operations | Ineffective placement |
-| GA_FatherExoskeleton | No post-delay guards | Has Event_EndAbility |
-| GA_FatherEngineer | No post-delay guards | Has Event_EndAbility |
-| GA_StealthField | Has Delay (8s), no guards | Miscategorized as toggle |
-| GA_FatherRifle | No guards in Event_EndAbility | Persistent ability |
-| GA_FatherSword | No guards in Event_EndAbility | Persistent ability |
+| Ability | Original Issue | Status | Resolution |
+|---------|---------------|--------|------------|
+| GA_FatherArmor | Guard executes AFTER GE operations | ✅ Fixed | Guard reordered (v4.14) |
+| GA_FatherExoskeleton | No post-delay guards | ✅ Fixed | Guards added (v4.14) |
+| GA_FatherEngineer | No post-delay guards | ✅ Fixed | Guards added (v4.14) |
+| GA_StealthField | Has Delay (8s), no guards | ✅ Fixed | Uses AbilityTaskWaitDelay + IsValid guard (v4.15) |
+| GA_FatherRifle | No guards in Event_EndAbility | ✅ Fixed | Has IsValid guard + cleanup (v4.14 MED-5) |
+| GA_FatherSword | No guards in Event_EndAbility | ✅ Fixed | Has IsValid guard + cleanup (v4.14 MED-6) |
+
+**Verification:** Claude-GPT dual audit (v6.1) confirmed all items resolved via manifest inspection. See `GAS_Patterns_Research_Assessment_v1.md`.
 
 ### CORRECT — Gold Standard
 
@@ -1081,9 +1085,10 @@ Current pattern:
 | 4.2 | 2026-01-23 | Added **KNOWN LIMITATIONS** section (v4.27). Documented LIM-1: Automatic dome burst on form exit cannot be automated due to C++-only functions and TSubclassOf parameter limitations. |
 | 5.0 | 2026-01-24 | **NOT LOCKED ITEMS AUDIT.** Claude-GPT dual audit of 4 NOT LOCKED items. Locked NL-GUARD-IDENTITY (L1) - 3-layer guard with GAS tag checks. Validated bActivateAbilityOnGranted (Narrative Pro native). Validated AbilityTasks (already implemented). Validated EquippableItem GE delivery. Deferred NL-GUARD-IDENTITY (L2) - prior form tag check not needed in current architecture. Updated Rule 2 guard pattern to use tag checks instead of enum. Updated gold standard reference. |
 | 6.0 | 2026-01-24 | **EXTENDED PATTERNS AUDIT.** Claude-GPT dual audit of 12 undocumented patterns. Locked 4 new rules: R-TIMER-1 (Timer Callback Safety - HIGH), R-ENUM-1 (GE-First Causality - MEDIUM), R-AI-1 (Activity System Compatibility - HIGH), R-CLEANUP-1 (Granted Ability Cleanup - MEDIUM, scoped). Identified and fixed GA_FatherEngineer R-AI-1 violation (direct RunBehaviorTree bypassing Activity system). Updated manifest to call StopCurrentActivity before RunBehaviorTree in Engineer. |
+| 6.1 | 2026-01-24 | **PATTERN COMPLETENESS AUDIT.** Claude-GPT dual audit of 6 unresearched patterns: Montage Task Lifecycle, Socket Attachment/Detachment, Line Trace Authority, Movement Restore, Effect Handle Storage, MEDIUM severity items. All patterns verified as already compliant or covered by existing rules. All 6 MEDIUM severity items confirmed RESOLVED (implemented v4.14/v4.15). No new LOCKED rules required. Audit completeness achieved. Reference: `GAS_Patterns_Research_Assessment_v1.md`. |
 
 ---
 
 **END OF LOCKED DECISIONS DOCUMENT**
 
-**STATUS: FULLY AUTOMATED** - All audit findings implemented and verified. NL-GUARD-IDENTITY (L1) locked and fully automated in manifest.yaml v5.0. All 5 form abilities have complete 3-layer guard patterns. All manual implementation items converted to ✅ Auto-generated. R-TIMER-1, R-ENUM-1, R-AI-1, R-CLEANUP-1 locked (v6.0).
+**STATUS: AUDIT COMPLETE (v6.1)** - All findings implemented and verified. All CRITICAL and MEDIUM severity items RESOLVED. All 6 unresearched patterns validated (no new rules needed). NL-GUARD-IDENTITY (L1) + R-TIMER-1, R-ENUM-1, R-AI-1, R-CLEANUP-1 locked. Pattern completeness achieved - no remaining gaps in GAS implementation audit.

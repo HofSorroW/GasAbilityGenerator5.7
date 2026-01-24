@@ -2,13 +2,18 @@
 ## Father Companion with Gameplay Ability System
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 1.6 - C_SYMBIOTE_STRICT_CANCEL Contract
+**Version:** 1.7 - GAS Audit v6.1 Compliant
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** MeleeWeaponItem
-**Contract:** LOCKED_CONTRACTS.md Contract 11
+
+**Contracts:**
+- LOCKED_CONTRACTS.md Contract 11 - C_SYMBIOTE_STRICT_CANCEL
+- Father_Companion_GAS_Abilities_Audit.md v6.1 - MEDIUM MED-6 RESOLVED
+
+> **GAS Audit v6.1 Compliance:** EndAbility has IsValid guard + cleanup flow (verified v4.14)
 
 ---
 

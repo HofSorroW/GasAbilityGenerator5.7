@@ -1,4 +1,4 @@
-# GA_StealthField Implementation Guide v3.6 - GAS Audit Compliant (All Locked Decisions)
+# GA_StealthField Implementation Guide v3.7 - GAS Audit v6.1 Compliant
 
 ## Exoskeleton Form - Player + Attached Father Invisibility
 
@@ -6,13 +6,18 @@
 
 ### Blueprint-Only Implementation
 
+**Contracts:**
+- Father_Companion_GAS_Abilities_Audit.md v6.1 - MEDIUM MED-4 RESOLVED
+
+> **GAS Audit v6.1 Compliance:** Uses AbilityTaskWaitDelay + IsValid guard (verified v4.15)
+
 ---
 
 ## DOCUMENT INFORMATION
 
 | Property | Value |
 |----------|-------|
-| Document Version | 3.6 |
+| Document Version | 3.7 |
 | Ability Name | GA_StealthField |
 | Ability Type | Active Player Ability |
 | Parent Class | NarrativeGameplayAbility |
