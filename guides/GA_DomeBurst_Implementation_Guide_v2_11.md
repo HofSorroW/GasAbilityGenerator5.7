@@ -1,5 +1,5 @@
 # Father Companion - GA_DomeBurst Implementation Guide
-## VERSION 2.10 - Full-Only Burst Requirement (Decisions 22-24)
+## VERSION 2.11 - Auto-Burst Removed, Input Tag Added (Claude-GPT Audit)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -19,11 +19,11 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 | Field | Value |
 |-------|-------|
 | Ability Name | GA_DomeBurst |
-| Ability Type | Active (Q Key) / Auto (Threshold) |
+| Ability Type | Active (Q Key / Form Exit) |
 | Parent Class | NarrativeGameplayAbility |
 | Form | Armor |
-| Input | Q Key (Manual) or Auto (When Dome Full) |
-| Version | 2.10 |
+| Input | Q Key (Manual) or Form Exit (T Wheel) |
+| Version | 2.11 |
 | Last Updated | January 2026 |
 
 ---
@@ -32,10 +32,11 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 
 | Field | Value |
 |-------|-------|
-| Last Audit Date | 2026-01-23 |
+| Last Audit Date | 2026-01-24 |
 | Audit Type | Claude-GPT Dual Audit |
-| Manifest Alignment | Verified (v4.27: GA_DomeBurst reordered, EndAbility trigger) |
-| INC Items Fixed | INC-A through INC-J (10 items) |
+| Manifest Alignment | Verified (v6.5: input_tag added, SetByCaller tag fixed) |
+| Auto-burst | REMOVED - Design Doc v2.7 Section 2.2.6 locks as DISABLED |
+| Input System | Narrative Pro input_tag system (Narrative.Input.Father.Ability1) |
 
 ---
 
@@ -47,7 +48,7 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 4. [PHASE 2: Create Gameplay Effects](#phase-2-create-gameplay-effects)
 5. [PHASE 3: Create GA_DomeBurst Ability](#phase-3-create-ga_domeburst-ability)
 6. [PHASE 4: Implement Manual Burst Logic](#phase-4-implement-manual-burst-logic)
-7. [PHASE 5: Implement Auto-Burst Integration](#phase-5-implement-auto-burst-integration)
+7. [PHASE 5: Form Exit Burst Reference](#phase-5-form-exit-burst-reference)
 8. [PHASE 6: Ability Granting via Equipment](#phase-6-ability-granting-via-equipment)
 9. [PHASE 7: Input Configuration](#phase-7-input-configuration)
 10. [Changelog](#changelog)
@@ -59,13 +60,13 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 
 ### **Ability Overview**
 
-GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dome system. When the father is attached as armor, it absorbs incoming damage and stores it as Dome Energy. GA_DomeBurst triggers in two ways: automatically when the dome reaches maximum energy (500 absorbed), or manually when the player presses Q to release early. The burst deals flat AOE damage and knocks back all nearby enemies.
+GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dome system. When the father is attached as armor, it absorbs incoming damage and stores it as Dome Energy. GA_DomeBurst triggers in two ways: manually when the player presses Q (only when dome is FULL at 500 energy), or via form exit when the player switches forms via T wheel while dome is full. The burst deals flat AOE damage and knocks back all nearby enemies.
 
 ### **Key Features**
 
 | Feature | Description |
 |---------|-------------|
-| Dual Activation | Manual (Q key) or Automatic (threshold) |
+| Dual Activation | Manual (Q key) or Form Exit (T wheel) |
 | Flat Damage | 75 damage to all enemies in radius |
 | AOE Explosion | 500 unit radius centered on player |
 | Knockback Effect | Pushes enemies away from player |
@@ -151,14 +152,14 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 | Tag Name | Purpose |
 |----------|---------|
-| Father.Dome.FullyCharged | Dome at maximum energy, ready for auto-burst |
+| Father.Dome.FullyCharged | Dome at maximum energy, ready for burst |
 | Father.Dome.OnCooldown | Dome burst on cooldown, cannot charge |
 | Ability.Father.DomeBurst | Dome AOE explosion ability |
 | Father.State.Attacking | Burst ability executing (owned tag during activation) |
 | Effect.Father.DomeBurst | Damage from dome burst explosion |
 | Effect.Father.DomeBurstKnockback | Knockback from dome burst |
 | Cooldown.Father.DomeBurst | Cooldown after dome burst |
-| Data.Damage.DomeBurst | SetByCaller tag for dome burst damage |
+| Data.Dome.Damage | SetByCaller tag for dome burst damage |
 
 ---
 
@@ -190,7 +191,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | - Backing Capture Definition -> Attribute Source | Source |
 | - Modifier Op | Override |
 | - Modifier Magnitude -> Magnitude Calculation Type | Set By Caller |
-| - Set By Caller Magnitude -> Data Tag | Data.Damage.DomeBurst |
+| - Set By Caller Magnitude -> Data Tag | Data.Dome.Damage |
 | Asset Tags -> Add to Inherited [0] | Effect.Father.DomeBurst |
 
 #### 2.3) Compile and Save
@@ -465,7 +466,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
       - 7.5.1.1) Drag outward and search: `Assign Tag Set By Caller Magnitude`
       - 7.5.1.2) Add Assign Tag Set By Caller Magnitude node
    - 7.5.2) Configure:
-      - 7.5.2.1) Data Tag: `Data.Damage.DomeBurst`
+      - 7.5.2.1) Data Tag: `Data.Dome.Damage`
       - 7.5.2.2) Magnitude: Connect BurstDamage getter (flat 75)
 
 #### 7.6) Apply Effect to Enemy
@@ -587,68 +588,11 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 ---
 
-## **PHASE 5: IMPLEMENT AUTO-BURST INTEGRATION**
+## **PHASE 5: FORM EXIT BURST REFERENCE**
 
-### **1) Open GA_ProtectiveDome or GA_DomeManager**
+> **NOTE:** Auto-burst (automatic triggering at threshold) is **DISABLED** per Design Doc v2.7 Section 2.2.6. This phase documents the form exit burst mechanism only.
 
-#### 1.1) Navigate to Dome Ability
-   - 1.1.1) In Content Browser, navigate to `/Content/FatherCompanion/ProtectiveDome/Abilities/`
-   - 1.1.2) Double-click GA_ProtectiveDome (or GA_DomeManager) to open
-
-### **2) Find Energy Monitoring Section**
-
-#### 2.1) Locate Energy Update Logic
-   - 2.1.1) In Event Graph, find where DomeEnergy is updated
-   - 2.1.2) This should be after damage absorption calculation
-
-### **3) Add Auto-Burst Check**
-
-#### 3.1) Get Max Dome Energy
-   - 3.1.1) From Player ASC:
-      - 3.1.1.1) Drag outward and search: `Get Numeric Attribute`
-      - 3.1.1.2) Add Get Numeric Attribute node
-   - 3.1.2) Configure:
-      - 3.1.2.1) Attribute: `AS_DomeAttributes.MaxDomeEnergy`
-
-#### 3.2) Compare Current to Max
-   - 3.2.1) Add Float >= Float (Greater or Equal) node
-   - 3.2.2) Connect:
-      - 3.2.2.1) Current DomeEnergy to first input (A)
-      - 3.2.2.2) MaxDomeEnergy Return Value to second input (B)
-
-#### 3.3) Branch on Full Energy
-   - 3.3.1) After energy update execution:
-      - 3.3.1.1) Add Branch node
-   - 3.3.2) Connect comparison Return Value to Condition pin
-   - 3.3.3) From Branch False execution pin: Continue normal operation
-
-### **4) Trigger Auto-Burst**
-
-#### 4.1) Grant FullyCharged Tag
-   - 4.1.1) From Branch True execution pin:
-      - 4.1.1.1) From Player ASC, drag outward
-      - 4.1.1.2) Search: `Add Loose Gameplay Tag`
-      - 4.1.1.3) Add Add Loose Gameplay Tag node
-   - 4.1.2) Configure:
-      - 4.1.2.1) Gameplay Tag: `Father.Dome.FullyCharged`
-
-#### 4.2) Try Activate Dome Burst
-   - 4.2.1) From Add Loose Gameplay Tag execution pin:
-      - 4.2.1.1) From Player ASC, drag outward
-      - 4.2.1.2) Search: `Try Activate Ability by Tag`
-      - 4.2.1.3) Add Try Activate Ability by Tag node
-   - 4.2.2) Connect execution pin
-   - 4.2.3) Configure:
-      - 4.2.3.1) Create Gameplay Tag Container
-      - 4.2.3.2) Add tag: `Ability.Father.DomeBurst`
-
-### **5) Compile and Save**
-
-#### 5.1) Save All Changes
-   - 5.1.1) Click Compile button
-   - 5.1.2) Click Save button
-
-### **6) Form Exit Burst (via EndAbility)**
+### **1) Form Exit Burst (via EndAbility)**
 
 Form exit burst is triggered when GA_ProtectiveDome ends (due to form switch). This is implemented in GA_ProtectiveDome's Event OnEndAbility, not in this ability.
 
@@ -765,6 +709,23 @@ If creating assets manually without the generator:
 ---
 
 ## **CHANGELOG**
+
+### **VERSION 2.11 - Auto-Burst Removed, Input Tag Added (Claude-GPT Audit)**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Auto-burst Content | Removed Phase 5 auto-burst implementation sections (auto-burst DISABLED per Design Doc) |
+| Phase 5 | Renamed to "Form Exit Burst Reference" - now contains only form exit documentation |
+| Input Tag | Added `Narrative.Input.Father.Ability1` to Quick Reference and manifest |
+| SetByCaller Tag | Fixed from `Data.Damage.DomeBurst` to `Data.Dome.Damage` (manifest alignment) |
+| Introduction | Removed auto-burst language, clarified manual + form exit triggers |
+| Key Features | Changed "Automatic (threshold)" to "Form Exit (T wheel)" |
+| Document Header | Updated ability type from "Auto (Threshold)" to "Form Exit" |
+| Audit | Claude-GPT dual audit verified all changes against Design Doc v2.7 locked decisions |
+
+---
 
 ### **VERSION 2.10 - Full-Only Burst Requirement (Decisions 22-24)**
 
@@ -929,7 +890,7 @@ If creating assets manually without the generator:
 | Feature | Value |
 |---------|-------|
 | Dome burst AOE explosion | Created |
-| Dual activation | Manual (Q) and Auto (threshold) |
+| Dual activation | Manual (Q) and Form Exit (T wheel) |
 | Energy-based damage | 150 base + 0.3 per energy |
 | Maximum damage | 300 at full 500 energy |
 | Burst radius | 500 units |

@@ -47,7 +47,7 @@ Any party with access to this document acknowledges the intellectual property ri
 
 | Field | Value |
 |-------|-------|
-| Version | 2.7 |
+| Version | 2.8 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only |
@@ -193,7 +193,7 @@ The Father Companion is a mechanical/energy hybrid entity that bonds with the pl
 |---------|------|-------|
 | GA_FatherArmor | Form Activation | T (Wheel) |
 | GA_ProtectiveDome | Passive | Automatic (absorbs damage) |
-| GA_DomeBurst | Active/Auto | Q (Tap) or auto at threshold |
+| GA_DomeBurst | Active | Q (Tap) or Form Exit (T wheel) |
 
 #### 2.2.5) Dome Energy System (Locked January 2026)
 
@@ -1030,6 +1030,7 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.8 | January 2026 | **GA_DomeBurst Input/Auto-burst Alignment (Claude-GPT dual audit):** Section 2.2.4 Abilities table: Changed GA_DomeBurst from "Active/Auto, Q (Tap) or auto at threshold" to "Active, Q (Tap) or Form Exit (T wheel)". Aligns with Section 2.2.6 locked decision (Auto-burst: DISABLED). Added input_tag to manifest. |
 | 2.7 | January 2026 | **Exoskeleton Speed Correction (Claude-GPT dual audit):** Section 1.4 Form Overview: Exoskeleton stat changed from +50% Speed to +25% Speed. Section 2.3.3 Stat Parameters: Base Speed Bonus corrected from +50% to +25%, Sprint Speed from +75% to +87.5%. Manifest SpeedBoostMultiplier (1.25) is authoritative. Design Doc had outdated +50% values from original specification. |
 | 2.6 | January 2026 | **v5.1 Goal_Attack Backstab Detection:** Section 3.1 GA_Backstab updated - replaced ViewedCharacter detection with Goal_Attack query approach. Uses Narrative Pro's built-in GoalGenerator_Attack system. CheckBackstabCondition now queries NPCActivityComponent → GetCurrentActivityGoal → Cast to Goal_Attack → TargetToAttack. No custom perception binding required. Added Section 3.1.1 Goal_Attack Detection table. BP_BackstabNPCController removed from manifest (no longer needed). |
 | 2.5 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED_CONTRACTS.md Contract 11):** Section 10.3 Cancel Abilities Configuration updated - removed `Ability.Father.Symbiote` from all form/weapon cancel lists (exception: GA_FatherSacrifice). Added GA_FatherRifle and GA_FatherSword to cancel table. Section 10.6.4 Symbiote Special Handling rewritten - GE_SymbioteDuration with SetByCaller pattern applied at activation START, grants `Father.State.SymbioteLocked` for 30s. Defense-in-depth strategy documented (3 layers: blocking, no-cancel, duration enforcement). Claude-GPT dual audit 2026-01-23. |

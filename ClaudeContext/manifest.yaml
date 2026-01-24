@@ -469,6 +469,16 @@ input_actions:
 # ============================================================================
 # INPUT MAPPING CONTEXT (1)
 # ============================================================================
+# NOTE: DA_FatherInputMapping (NarrativeAbilityInputMapping DataAsset) must be
+# created manually in-editor. It maps Input Actions to Gameplay Tags:
+#   - IA_FatherFormWheel → Narrative.Input.Father.FormChange
+#   - IA_FatherDomeBurst → Narrative.Input.Father.Ability1 (Q Tap)
+#   - IA_FatherStealth → Narrative.Input.Father.Ability1 (E - Exoskeleton)
+#   - IA_FatherSprint → Narrative.Input.Father.Ability2 (Q Hold)
+#   - IA_FatherProximityStrike → Narrative.Input.Father.Ability1 (Q - Symbiote)
+#   - IA_FatherElectricTrap → Narrative.Input.Father.Ability1 (Q - Engineer)
+# Generator does not yet support NarrativeAbilityInputMapping asset type.
+# ============================================================================
 input_mapping_contexts:
   - name: IMC_FatherCompanion
     folder: Input
@@ -4240,9 +4250,11 @@ gameplay_abilities:
   
   # GA_DomeBurst - Armor Active AOE Damage (player-owned instant)
   # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
+  # v6.5: Added input_tag for Q-key manual activation (Narrative Pro input system)
   - name: GA_DomeBurst
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
+    input_tag: Narrative.Input.Father.Ability1
     instancing_policy: InstancedPerActor
     net_execution_policy: LocalPredicted
     cooldown_gameplay_effect_class: GE_DomeBurstCooldown
