@@ -355,7 +355,7 @@ NPCs using Narrative Pro's Activity system (via `activity_configuration` in NPCD
 ### Invariant
 
 1. All `MakeOutgoingGameplayEffectSpec` nodes in manifest **MUST** use `param.GameplayEffectClass: GE_*` syntax
-2. The generator **ONLY** processes properties with `param.` prefix for pin value assignment
+2. For class pin default assignment in this generator path, `param.*` keys drive the assignment; non-`param.*` keys like `gameplay_effect_class:` are ignored by design
 3. Using `gameplay_effect_class:` (without `param.` prefix) results in the property being ignored
 
 ### Technical Evidence
