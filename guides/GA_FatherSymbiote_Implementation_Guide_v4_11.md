@@ -1,16 +1,19 @@
 # Father Companion - Symbiote Ultimate Ability Implementation Guide
-## VERSION 4.10 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Added)
+## VERSION 4.11 - R-TIMER-1 & R-CLEANUP-1 Compliant (GAS Audit v6.0)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.10
+**Version:** 4.11
 **Date:** January 2026
-**Last Audit:** 2026-01-24 (Claude-GPT dual audit v5.0 - NL-GUARD-IDENTITY L1)
+**Last Audit:** 2026-01-24 (Claude-GPT dual audit v6.0 - R-TIMER-1, R-CLEANUP-1)
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
 **Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Fix_v4.13.2.md
-**Contract:** LOCKED_CONTRACTS.md Contract 11 - C_SYMBIOTE_STRICT_CANCEL
+**Contracts:**
+- LOCKED_CONTRACTS.md Contract 11 - C_SYMBIOTE_STRICT_CANCEL
+- Father_Companion_GAS_Abilities_Audit.md R-TIMER-1 - Timer Callback Safety
+- Father_Companion_GAS_Abilities_Audit.md R-CLEANUP-1 - Granted Ability Cleanup
 
 ---
 
@@ -25,11 +28,11 @@ This document is explanatory. Runtime behavior and generation are defined by `ma
 | Field | Value |
 |-------|-------|
 | Status | VERIFIED |
-| Last Audit Date | 2026-01-23 |
+| Last Audit Date | 2026-01-24 |
 | Audit Scope | Design / Guide / Manifest Consistency |
-| Verified Against | manifest.yaml, GAS Audit Locked Decisions v4.1 |
+| Verified Against | manifest.yaml, GAS Audit v6.0 |
 | Auditors | Claude-GPT dual audit |
-| Notes | INC-2 (version mismatch), INC-3 (cooldown clarity), INC-4 (Delay wording) resolved |
+| Notes | R-TIMER-1 compliant (Section 17.2), R-CLEANUP-1 compliant (Section 17.5) |
 
 ---
 
@@ -631,14 +634,18 @@ GA_ProximityStrike is handled automatically by BP_FatherSymbioteForm EquippableI
    - 17.1.1) My Blueprint -> Functions: Click +
    - 17.1.2) Rename: EndSymbiote
 
-#### 17.2) CRITICAL: Timer Callback Guards (v4.5)
+#### 17.2) CRITICAL: Timer Callback Guards (R-TIMER-1 Compliant)
 
+> **R-TIMER-1 LOCKED RULE (GAS Audit v6.0):** If a GameplayAbility uses engine timers (SetTimer) instead of AbilityTasks,
+> the timer callback MUST guard against invalid state. Timers continue ticking even after ability ends.
+>
 > **Why Guards Are Needed:** The timer callback (EndSymbiote) can fire AFTER the ability has already ended due to:
 > - Player death
 > - Force-cancellation by another ability
 > - Game state changes
 >
 > Without guards, the callback would execute invalid cleanup logic on a non-existent ability state.
+> See: `Father_Companion_GAS_Abilities_Audit.md` Rule R-TIMER-1.
 
 ##### 17.2.1) Guard 1: Validate FatherRef
    - 17.2.1.1) From function entry:
@@ -688,7 +695,14 @@ GA_ProximityStrike is handled automatically by BP_FatherSymbioteForm EquippableI
 
 Note: Stat bonuses (Attack Rating, Stamina Regen) are handled by BP_FatherSymbioteForm EquippableItem via GE_EquipmentModifier_FatherSymbiote. No manual GE removal needed.
 
-#### 17.5) Cleanup GA_ProximityStrike with Two-Step Pattern
+#### 17.5) Cleanup GA_ProximityStrike with Two-Step Pattern (R-CLEANUP-1 Compliant)
+
+> **R-CLEANUP-1 LOCKED RULE (GAS Audit v6.0):** Abilities granted at runtime for temporary behaviors
+> MUST define a deterministic removal strategy. The Two-Step Pattern ensures clean removal:
+> 1. CancelAbility (stop execution)
+> 2. SetRemoveAbilityOnEnd (schedule removal when ability ends)
+> See: `Father_Companion_GAS_Abilities_Audit.md` Rule R-CLEANUP-1.
+
    - 17.5.1) From SET Jump Z Velocity execution:
       - 17.5.1.1) Validate ProximityAbilityHandle:
       - 17.5.1.2) Drag ProximityAbilityHandle variable (GET)
@@ -1097,9 +1111,9 @@ Note: Stat bonuses (Attack Rating, Stamina) are removed automatically by Equippa
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 4.9 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (LOCKED):** Added PHASE 2B documenting GE_SymbioteDuration SetByCaller pattern - applied at activation START to grant `Father.State.SymbioteLocked` for 30s. Updated Tag Configuration Summary with audit note explaining why Symbiote is NOT in other forms' cancel lists. Added Defense-in-Depth strategy (3 layers: blocking, no-cancel, duration enforcement). Contract reference: LOCKED_CONTRACTS.md Contract 11. Claude-GPT dual audit 2026-01-23. |
+| 4.11 | January 2026 | **R-TIMER-1 & R-CLEANUP-1 Compliance (Claude-GPT Audit v6.0 - 2026-01-24):** Documented compliance with new locked rules. Section 17.2 (Timer Callback Guards) implements R-TIMER-1. Section 17.5 (Two-Step Pattern) implements R-CLEANUP-1. Added rule references to header Contracts section. Updated Audit Status to reference GAS Audit v6.0. |
 | 4.10 | January 2026 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Added Section 15.3G (POST-DELAY 3-LAYER GUARDS) implementing LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Guards execute immediately after 5s transition delay before any state-modifying operations. Symbiote now aligns with all other form abilities. |
-| 4.9 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Documented LOCKED contract preventing form change cancellation of Symbiote ultimate. Added Contract reference to header. |
+| 4.9 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Documented LOCKED contract preventing form change cancellation of Symbiote ultimate. Added Contract reference to header. Added PHASE 2B documenting GE_SymbioteDuration SetByCaller pattern. Defense-in-Depth strategy (3 layers). |
 | 4.8 | January 2026 | **Claude-GPT Audit Fixes:** (1) INC-2: Fixed DOCUMENT INFORMATION table version from 4.4 to 4.8. (2) INC-3: Added Cooldown Model clarification explaining dual cooldown system (15s GE_FormChangeCooldown vs 120s UltimateChargeComponent). (3) INC-4: Changed "Delay node" to "AbilityTaskWaitDelay" per Track B v4.15. Added Authority Note and Audit Status sections per documentation rules D-1/D-2. |
 | 4.7 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md to Related Documents. This guide now references all locked decisions: INV-1 (no invulnerability), VTF-7 (CommitCooldown required), Decision 1A (stats via EI), Decision 1B (StaminaRegenRate via child GE), Decision 3 (GE_SymbioteBoost removed). Updated Technical Reference to v6.2. |
 | 4.6 | January 2026 | Version alignment with manifest v3.0.3. No functional changes. |

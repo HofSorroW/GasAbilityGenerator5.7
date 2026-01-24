@@ -3,19 +3,23 @@
 
 ---
 
-> **⚠️ INV-1 COMPLIANCE WARNING (January 2026)**
+> **⚠️ GAS AUDIT v6.0 COMPLIANCE (January 2026)**
 >
-> Per GAS Audit decision INV-1, ALL invulnerability has been REMOVED from the Father companion system EXCEPT GA_FatherSacrifice (8-second player invulnerability).
+> Per GAS Audit v6.0 (Claude-GPT dual audit 2026-01-24), the following locked rules apply:
 >
-> **The following sections contain OUTDATED invulnerability references that no longer apply:**
-> - Form State Law: GE_*State NO LONGER grants Narrative.State.Invulnerable
-> - Section 19.13: Attached Form Invulnerability - REMOVED
-> - Section 26.4: GE_Invulnerable Configuration - For reference only, not used by Father
-> - Section 38: Father Death and Invulnerability - Forms are NO LONGER invulnerable
+> | Rule | Status | Summary |
+> |------|--------|---------|
+> | **INV-1** | LOCKED | NO invulnerability except GA_FatherSacrifice |
+> | **R-TIMER-1** | LOCKED | SetTimer callbacks MUST guard against invalid state |
+> | **R-ENUM-1** | LOCKED | Enum is derived view; GE is truth source |
+> | **R-AI-1** | LOCKED | NPCs with Activities must coordinate BT calls |
+> | **R-CLEANUP-1** | LOCKED | Runtime-granted abilities need removal strategy |
 >
-> **Current state:** Only GA_FatherSacrifice grants invulnerability (to the player, for 8 seconds). Form transitions use Father.State.Transitioning tag only (no damage immunity).
+> **INV-1 Details:** ALL invulnerability has been REMOVED from the Father companion system EXCEPT GA_FatherSacrifice (8-second player invulnerability).
 >
-> See `ClaudeContext/Handoffs/Father_Companion_GAS_Audit_Locked_Decisions.md` for full details.
+> **R-AI-1 Details:** GA_FatherEngineer calls StopCurrentActivity() before RunBehaviorTree() per LOCKED CONTRACT 12.
+>
+> See `ClaudeContext/Handoffs/Father_Companion_GAS_Abilities_Audit.md` and `ClaudeContext/Handoffs/LOCKED_CONTRACTS.md` for full details.
 
 ---
 
@@ -27,7 +31,7 @@
 | Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.4 |
+| Version | 6.5 |
 | Last Audit | 2026-01-24 (v5.1 Goal_Attack approach) |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
 | Replaces | Father_Companion_Technical_Reference_v6_3.md |
