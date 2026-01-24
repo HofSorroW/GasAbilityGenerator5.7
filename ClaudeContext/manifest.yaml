@@ -4483,6 +4483,9 @@ gameplay_abilities:
       - name: PlayerRef
         type: Object
         class: NarrativePlayerCharacter
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
       - name: DomeAbsorptionHandle
         type: ActiveGameplayEffectHandle
     event_graph:
@@ -4514,6 +4517,11 @@ gameplay_abilities:
           properties:
             variable_name: PlayerRef
           position: [1200, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [1350, 0]
         - id: GetPlayerASC
           type: CallFunction
           properties:
@@ -4595,6 +4603,124 @@ gameplay_abilities:
           properties:
             function: RemoveActiveGameplayEffect
           position: [1200, 400]
+        # === DAMAGE ABSORPTION HANDLER (v3.0: Variable-based architecture) ===
+        # Called when player takes damage via OnDamagedBy delegate binding
+        # Calculates 30% of damage, adds to Father's DomeEnergy, grants FullyCharged tag at 500
+        - id: Event_HandleDomeDamageAbsorption
+          type: CustomEvent
+          properties:
+            event_name: HandleDomeDamageAbsorption
+            parameters:
+              - name: DamageCauserASC
+                type: AbilitySystemComponent
+              - name: Damage
+                type: Float
+              - name: Spec
+                type: GameplayEffectSpec
+          position: [0, 800]
+        # Step 1: Get Father reference
+        - id: GetFatherRef_Absorb
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [300, 800]
+        - id: IsValid_Father_Absorb
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [500, 850]
+        - id: Branch_Valid_Father
+          type: Branch
+          position: [700, 800]
+        # Step 2: Calculate absorbed damage (Damage * 0.3)
+        - id: GetAbsorptionPct
+          type: PropertyGet
+          properties:
+            property_name: AbsorptionPercentage
+            target_class: BP_FatherCompanion
+          position: [900, 900]
+        - id: MultiplyDamage
+          type: CallFunction
+          properties:
+            function: Multiply_FloatFloat
+            class: KismetMathLibrary
+          position: [1100, 850]
+        # Step 3: Get current DomeEnergy and add absorbed
+        - id: GetCurrentEnergy
+          type: PropertyGet
+          properties:
+            property_name: DomeEnergy
+            target_class: BP_FatherCompanion
+          position: [1300, 900]
+        - id: AddEnergy
+          type: CallFunction
+          properties:
+            function: Add_FloatFloat
+            class: KismetMathLibrary
+          position: [1500, 850]
+        # Step 4: Clamp to MaxDomeEnergy
+        - id: GetMaxEnergy
+          type: PropertyGet
+          properties:
+            property_name: MaxDomeEnergy
+            target_class: BP_FatherCompanion
+          position: [1700, 950]
+        - id: ClampEnergy
+          type: CallFunction
+          properties:
+            function: FClamp
+            class: KismetMathLibrary
+          position: [1900, 850]
+        - id: MakeZero
+          type: CallFunction
+          properties:
+            function: MakeLiteralFloat
+            class: KismetSystemLibrary
+            literal_value: 0.0
+          position: [1700, 900]
+        # Step 5: Set new DomeEnergy on Father
+        - id: SetDomeEnergy
+          type: PropertySet
+          properties:
+            property_name: DomeEnergy
+            target_class: BP_FatherCompanion
+          position: [2100, 800]
+        # Step 6: Check if fully charged (NewEnergy >= MaxEnergy)
+        - id: CompareEnergy
+          type: CallFunction
+          properties:
+            function: GreaterEqual_FloatFloat
+            class: KismetMathLibrary
+          position: [2300, 900]
+        - id: Branch_FullyCharged
+          type: Branch
+          position: [2500, 800]
+        # Step 7: Add Father.Dome.FullyCharged tag if full
+        - id: GetPlayerRef_Absorb
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [2700, 850]
+        - id: MakeLiteralTag_FullyCharged
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.Dome.FullyCharged
+          position: [2700, 950]
+        - id: MakeTagContainer_FullyCharged
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [2900, 900]
+        - id: AddFullyChargedTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTags
+            class: AbilitySystemBlueprintLibrary
+          position: [3100, 800]
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (impure nodes only - skip pure PropertyGet/CallFunction nodes)
@@ -4605,6 +4731,8 @@ gameplay_abilities:
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
           to: [MakeGESpec, Exec]
         - from: [MakeGESpec, Exec]
           to: [ApplyGE, Exec]
@@ -4615,6 +4743,8 @@ gameplay_abilities:
           to: [CastToFather, Object]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetOwnerPlayer, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
@@ -4652,6 +4782,63 @@ gameplay_abilities:
           to: [RemoveGE, Target]
         - from: [GetDomeHandle, DomeAbsorptionHandle]
           to: [RemoveGE, Handle]
+        # === DAMAGE ABSORPTION HANDLER FLOW (v3.0: Variable-based architecture) ===
+        # Exec: Event → Branch_Valid_Father → SetDomeEnergy → Branch_FullyCharged → AddTag
+        - from: [Event_HandleDomeDamageAbsorption, Then]
+          to: [Branch_Valid_Father, Exec]
+        - from: [Branch_Valid_Father, True]
+          to: [SetDomeEnergy, Exec]
+        - from: [SetDomeEnergy, Exec]
+          to: [Branch_FullyCharged, Exec]
+        - from: [Branch_FullyCharged, True]
+          to: [AddFullyChargedTag, Exec]
+        # Data: Father validation
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [IsValid_Father_Absorb, Object]
+        - from: [IsValid_Father_Absorb, ReturnValue]
+          to: [Branch_Valid_Father, Condition]
+        # Data: Calculate absorbed damage (Damage * AbsorptionPercentage)
+        - from: [Event_HandleDomeDamageAbsorption, Damage]
+          to: [MultiplyDamage, A]
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [GetAbsorptionPct, Target]
+        - from: [GetAbsorptionPct, AbsorptionPercentage]
+          to: [MultiplyDamage, B]
+        # Data: Add to current energy
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [GetCurrentEnergy, Target]
+        - from: [GetCurrentEnergy, DomeEnergy]
+          to: [AddEnergy, A]
+        - from: [MultiplyDamage, ReturnValue]
+          to: [AddEnergy, B]
+        # Data: Clamp to MaxDomeEnergy
+        - from: [AddEnergy, ReturnValue]
+          to: [ClampEnergy, Value]
+        - from: [MakeZero, ReturnValue]
+          to: [ClampEnergy, Min]
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [GetMaxEnergy, Target]
+        - from: [GetMaxEnergy, MaxDomeEnergy]
+          to: [ClampEnergy, Max]
+        # Data: Set new energy
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [SetDomeEnergy, Target]
+        - from: [ClampEnergy, ReturnValue]
+          to: [SetDomeEnergy, DomeEnergy]
+        # Data: Check if fully charged
+        - from: [ClampEnergy, ReturnValue]
+          to: [CompareEnergy, A]
+        - from: [GetMaxEnergy, MaxDomeEnergy]
+          to: [CompareEnergy, B]
+        - from: [CompareEnergy, ReturnValue]
+          to: [Branch_FullyCharged, Condition]
+        # Data: Add FullyCharged tag to player
+        - from: [GetPlayerRef_Absorb, PlayerRef]
+          to: [AddFullyChargedTag, Actor]
+        - from: [MakeLiteralTag_FullyCharged, ReturnValue]
+          to: [MakeTagContainer_FullyCharged, Tag]
+        - from: [MakeTagContainer_FullyCharged, ReturnValue]
+          to: [AddFullyChargedTag, GameplayTags]
 
   # GA_FatherExoskeletonDash - Exoskeleton Dash with I-Frames
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
@@ -7142,6 +7329,14 @@ actor_blueprints:
         type: Float
         default: 0.0
         replicated: true
+      - name: MaxDomeEnergy
+        type: Float
+        default: 500.0
+        replicated: false
+      - name: AbsorptionPercentage
+        type: Float
+        default: 0.3
+        replicated: false
       - name: SymbioteCharge
         type: Float
         default: 0.0
