@@ -1,208 +1,206 @@
 # GA_Backstab & GA_ProtectiveDome Error Audit
 
-**Date:** 2026-01-24
-**Status:** Research Complete - No Code Changes Made
+**Date:** 2026-01-24 (Original) | 2026-01-25 (Audit Session Update)
+**Status:** AUDIT COMPLETE - Claims Validated Against Code & Logs
 **Context:** Debug analysis of event graph generation failures
 
 ---
 
 ## Executive Summary
 
-Two abilities (GA_ProtectiveDome, GA_Backstab) fail event graph generation due to manifest syntax issues that don't match the generator's implemented capabilities. This report identifies root causes using the locked specifications and existing documentation.
+**ORIGINAL CLAIM:** Two abilities (GA_ProtectiveDome, GA_Backstab) fail event graph generation due to manifest syntax issues.
 
-**Generation Status:** 154/156 assets succeed. Only these 2 abilities fail.
+**AUDIT RESULT:** After validation with code and logs, **4 of 6 original claims were INCORRECT**. The generator already handles most cases correctly.
 
----
+| Issue | Original Claim | Audit Verdict | Evidence |
+|-------|----------------|---------------|----------|
+| 1. `parameters:` block | NOT supported | ✅ **WORKS** | Parser v2.8.2 lines 4611-4628 |
+| 2. Pin `Spec` | Not found | ✅ **WORKS** | Log: `Connected: MakeGESpec.ReturnValue -> ApplyGE.Spec` |
+| 3. Pin `Tag` | Not found | ✅ **WORKS** | 22+ successful uses in manifest |
+| 4. Typed CustomEvent | NOT supported | ⚠️ **PARTIAL** | Delegate-bound: WORKS. Standalone: NOT PARSED |
+| 5. Custom function call | Resolution fails | ⏳ **STALE DATA** | Logs from outdated manifest |
+| 6. Cascade | Depends on #5 | ⏳ **STALE DATA** | Consequence of #5 |
 
-## GA_ProtectiveDome Failures
-
-### Failure 1: `parameters:` Block Syntax Not Supported
-
-**Manifest (line 4571-4573):**
-```yaml
-- id: TryActivateBurst
-  type: CallFunction
-  properties:
-    function: TryActivateAbilityByClass
-    class: AbilitySystemComponent
-    parameters:                          # ← WRONG SYNTAX
-      InAbilityToActivate: GA_DomeBurst
-      bAllowRemoteActivation: false
-```
-
-**Root Cause:** Per `GasAbilityGeneratorGenerators.cpp:10343`, the generator only supports the `param.` prefix pattern, not nested `parameters:` blocks.
-
-**Correct Syntax (per LOCKED CONTRACT 13 - INV-GESPEC-1):**
-```yaml
-properties:
-  function: TryActivateAbilityByClass
-  class: AbilitySystemComponent
-  param.InAbilityToActivate: GA_DomeBurst
-  param.bAllowRemoteActivation: false
-```
+**ACTION REQUIRED:** Fresh generation run needed to verify current state. Logs are from 2026-01-22/24, manifest updated 2026-01-25.
 
 ---
 
-### Failure 2: Pin Name `Spec` Not Found on `ApplyGameplayEffectSpecToSelf`
+## Validated Findings
 
-**Manifest (line 4458):**
-```yaml
-- from: [SetByCaller, ReturnValue]
-  to: [ApplyGE, Spec]                    # ← Wrong pin name
+### Issue 1: `parameters:` Block - ✅ WORKS
+
+**Original Claim:** Nested `parameters:` blocks are unsupported; must use `param.` prefix.
+
+**Validation:** Parser v2.8.2 (GasAbilityGeneratorParser.cpp lines 4611-4628) **ALREADY** converts `parameters:` blocks to `param.*` prefix:
+
+```cpp
+// Line 4611-4614
+if (Key == TEXT("parameters") && Value.IsEmpty())
+{
+    bInParameters = true;
+    // Don't add "parameters" as a property - we'll add individual params with "param." prefix
+}
+// Line 4616-4628
+else if (bInParameters && CurrentIndent > PropertiesIndent + 2)
+{
+    CurrentNode.Properties.Add(TEXT("param.") + Key, Value);
+}
 ```
 
-**Root Cause:** The `FindPinByName` function (lines 11522+) has no alias for `Spec`. The actual UE5 pin name for `BP_ApplyGameplayEffectSpecToSelf` is `SpecHandle`.
-
-**Fix Required:** Change `Spec` → `SpecHandle` in connections.
+**Verdict:** No manifest or generator fix needed. Both syntaxes work.
 
 ---
 
-### Failure 3: Pin Name `Tag` Not Found on `MakeGameplayTagContainerFromTag`
+### Issue 2: Pin `Spec` vs `SpecHandle` - ✅ WORKS
 
-**Manifest (line 4588):**
-```yaml
-- id: MakeTagContainer_Charged
-  type: CallFunction
-  properties:
-    function: MakeGameplayTagContainerFromTag
-    class: BlueprintGameplayTagLibrary
+**Original Claim:** `FindPinByName` has no alias for `Spec`; should be `SpecHandle`.
+
+**Validation:** Logs prove partial matching succeeds:
+```
+Connecting: MakeGESpec.ReturnValue [struct] -> ApplyGE.SpecHandle [struct&]
+Connected: MakeGESpec.ReturnValue -> ApplyGE.Spec
 ```
 
-**Root Cause:** The connections reference pin `Tag` but `BlueprintGameplayTagLibrary::MakeGameplayTagContainerFromTag` uses pin name `InTag`.
+The `E_PIN_POSITION_NOT_FOUND` error for `Spec` is a **LAYOUT WARNING ONLY** (from `GetPinYOffset`), not a connection failure. Per fail_fast_report.txt: "E_PIN_POSITION_NOT_FOUND is a LAYOUT HELPER warning only. Actual connections still work."
 
-**Fix Required:** Add pin alias `Tag` → `InTag` OR change manifest connections to use `InTag`.
+**Verdict:** No manifest or generator fix needed. Partial matching handles this.
 
 ---
 
-### Failure 4: CustomEvent with Typed Parameters
+### Issue 3: Pin `Tag` vs `InTag` - ✅ WORKS
 
-**Manifest (lines 4609-4619):**
-```yaml
-- id: Event_HandleDomeDamageAbsorption
-  type: CustomEvent
-  properties:
-    event_name: HandleDomeDamageAbsorption
-    parameters:                          # ← Typed parameters
-      - name: DamageCauserASC
-        type: AbilitySystemComponent
-      - name: Damage
-        type: Float
-      - name: Spec
-        type: GameplayEffectSpec
-```
+**Original Claim:** `MakeGameplayTagContainerFromTag` uses `InTag` but manifest uses `Tag`.
 
-**Relevant Spec:** Delegate_Binding_Extensions_Spec_v1_1.md, Section 11.4.1:
-> "The generated CustomEvent MUST have **no parameters**."
+**Validation:** 22+ occurrences of `Tag` pin in manifest for `MakeGameplayTagContainerFromTag`:
+- GA_FatherCrawler (lines 1233, 1239, 1251, 1294)
+- GA_FatherArmor (lines 1779, 1787, 1793)
+- GA_FatherExoskeleton (lines 2379, 2391, 2397)
+- GA_FatherSymbiote (lines 3095, 3103, 3109)
+- GA_FatherEngineer (lines 3670, 3704, 3710)
+- GA_FatherSacrifice (lines 6451, 6491, 6525)
 
-**Root Cause Analysis:** This spec applies specifically to **attribute change delegate** handlers (Section 11). The `OnDamagedBy` delegate is a different delegate type with its own signature (`FOnDamagedByEvent`).
+These abilities generate successfully, proving partial matching works for `Tag` → `InTag`.
 
-The actual issue is that **CustomEvent typed parameters generation is not implemented** in the generator. The generator creates zero-param CustomEvents only.
+**Verdict:** No manifest or generator fix needed.
 
 ---
 
-## GA_Backstab Failures
+### Issue 4: Typed CustomEvent Parameters - ⚠️ PARTIAL
 
-### Failure 1: Custom Function Call Not Resolved
+**Original Claim:** Generator creates zero-param CustomEvents only.
 
-**Manifest (lines 5427-5431):**
-```yaml
-- id: CallCheckBackstab
-  type: CallFunction
-  properties:
-    function: CheckBackstabCondition
-    target_self: true
+**Validation:** Two cases exist:
+
+#### Case A: Delegate-Bound CustomEvents - ✅ WORKS
+Log evidence:
+```
+Created handler event: HandleDomeDamageAbsorption with signature from OnDamagedBy__DelegateSignature
+Created delegate bind/unbind nodes for OwnerASC.OnDamagedBy -> HandleDomeDamageAbsorption
 ```
 
-**Custom Function Definition (lines 5505-5512):**
-```yaml
-custom_functions:
-  - function_name: CheckBackstabCondition
-    pure: false
-    inputs:
-      - name: EnemyActor
-        type: Actor
-    outputs:
-      - name: CanBackstab
-        type: Boolean
+The delegate binding system extracts typed parameters from the delegate signature. GA_ProtectiveDome uses this path.
+
+#### Case B: Standalone CustomEvents - ❌ NOT PARSED
+Parser line 4601 skips lines starting with `-`:
+```cpp
+else if (bInProperties && !TrimmedLine.StartsWith(TEXT("-")))
 ```
 
-**Root Cause:** The event_graph tries to call `CheckBackstabCondition` defined in `custom_functions:`. Per the Father_Companion_GAS_Abilities_Audit.md, custom_functions ARE implemented, but:
+The array format `parameters: [ - name: X, type: Y ]` is NOT parsed for standalone CustomEvents.
 
-1. **Order of operations issue:** Custom functions must be created BEFORE the event graph can call them
-2. **Function resolution:** The generator's `FindFunction` logic may not check the same Blueprint's custom functions during event graph generation
-
-The generator creates custom functions via `AddFunctionGraph()` but the event graph generator uses `FindField<UFunction>()` which looks for C++/native functions or already-compiled BP functions.
+**Verdict:**
+- GA_ProtectiveDome: No fix needed (uses delegate binding)
+- Standalone typed CustomEvents: Generator enhancement needed IF required in future
 
 ---
 
-### Failure 2: `ApplyGEToSelf` Node Not Created
+### Issue 5: Custom Function Call Resolution - ⏳ STALE DATA
 
-**Manifest (lines 5445-5449):**
-```yaml
-- id: ApplyGEToSelf
-  type: CallFunction
-  properties:
-    function: BP_ApplyGameplayEffectSpecToOwner
-    target_self: true
-```
+**Original Claim:** Event graph can't call functions defined in same Blueprint's `custom_functions`.
 
-**Root Cause:** This failure is a **cascade effect**. When `CallCheckBackstab` fails to generate, subsequent nodes in the exec chain also fail to connect properly, causing the entire subgraph to be invalid.
+**Validation:** The logs referenced are OUTDATED:
+- fail_fast_report.txt (2026-01-22): Claimed `Less_FloatFloat` not found
+- pin_test2.log (2026-01-24): Showed `SelectResult` type mismatch
 
-The function `BP_ApplyGameplayEffectSpecToOwner` exists and should resolve correctly - the issue is earlier in the chain.
+**Current Manifest (2026-01-25):**
+- No `Less_FloatFloat` or deprecated function names
+- No `SelectResult` node in `CheckBackstabCondition`
+- Manifest commits show fixes applied:
+  - `72bd1b7 fix(v6.9): GA_Backstab + GA_FatherEngineer generation failures`
+  - `b5bbd74 fix(manifest): GA_Backstab and GA_FatherEngineer generation errors`
 
----
-
-## Summary of Root Causes
-
-| Issue | Ability | Root Cause | Type |
-|-------|---------|------------|------|
-| `parameters:` block | GA_ProtectiveDome | Syntax not supported - use `param.` prefix | Manifest Syntax |
-| Pin `Spec` | GA_ProtectiveDome | Should be `SpecHandle` | Pin Name |
-| Pin `Tag` | GA_ProtectiveDome | Should be `InTag` | Pin Name |
-| Typed CustomEvent | GA_ProtectiveDome | Generator creates zero-param events only | Unsupported Feature |
-| Custom function call | GA_Backstab | Event graph can't call functions defined in same BP | Order/Resolution Issue |
-| ApplyGEToSelf | GA_Backstab | Cascade from CallCheckBackstab failure | Cascade |
+**Verdict:** Cannot validate until fresh generation run. The underlying concern about same-BP function resolution may still be valid but is not testable with stale logs.
 
 ---
 
-## Recommendations (No Code Changes Made)
+### Issue 6: Cascade Failure - ⏳ STALE DATA
 
-### GA_ProtectiveDome
+**Original Claim:** `ApplyGEToSelf` fails as cascade from `CallCheckBackstab` failure.
 
-Requires manifest corrections:
-1. Change `parameters:` block to `param.` prefix syntax
-2. Change pin name `Spec` → `SpecHandle`
-3. Change pin name `Tag` → `InTag`
-4. Typed CustomEvent parameters require generator enhancement (not currently supported)
+**Verdict:** Consequence of Issue 5. Will be resolved if Issue 5 passes, or will manifest with new error details if Issue 5 still fails.
 
-### GA_Backstab
+---
 
-The custom function architecture works for creating functions, but calling them from event_graph requires the function to exist before the event graph generates. Options:
-1. **Two-pass generation** - Generate functions first, compile, then generate event graph
-2. **Inline logic** - Restructure event graph to use inline nodes instead of calling a custom function
-3. **Generator enhancement** - Add same-Blueprint function resolution during event graph generation
+## Locked Decisions (Audit Session 2026-01-25)
+
+| Decision ID | Topic | Status | Action |
+|-------------|-------|--------|--------|
+| D1 | `parameters:` block | ✅ NO FIX | Parser already converts |
+| D2 | Pin `Spec` | ✅ NO FIX | Partial matching works |
+| D3 | Pin `Tag` | ✅ NO FIX | Partial matching works |
+| D4a | Typed CustomEvent (delegate) | ✅ NO FIX | Binder extracts signature |
+| D4b | Typed CustomEvent (standalone) | ⏳ OPTIONAL | Enhancement if needed |
+| D5 | Custom function call | ⏳ PENDING | Fresh generation required |
+| D6 | Cascade | ⏳ PENDING | Depends on D5 |
+
+---
+
+## Next Steps
+
+1. **Wait for build to complete**
+2. **Run fresh generation** with `-force` flag on GA_Backstab and GA_ProtectiveDome
+3. **Analyze NEW logs** to determine actual current state
+4. **Update this document** with fresh findings
+
+---
+
+## Audit Participants
+
+- **Claude (Opus 4.5):** Code validation, log analysis
+- **GPT:** Cross-validation, challenge assumptions
+- **Erdem:** Approval authority
 
 ---
 
 ## Reference Documents
 
-- `LOCKED_CONTRACTS.md` - Contract 13 (INV-GESPEC-1) defines `param.` prefix syntax
-- `Delegate_Binding_Extensions_Spec_v1_1.md` - Section 11.4.1 on CustomEvent signatures
-- `Father_Companion_GAS_Abilities_Audit.md` - Documents custom_functions implementation status
-- `GasAbilityGeneratorGenerators.cpp:10343` - `param.` prefix handling
-- `GasAbilityGeneratorGenerators.cpp:11522` - `FindPinByName` with aliases
+- `LOCKED_CONTRACTS.md` - Contract 13 (INV-GESPEC-1)
+- `GasAbilityGeneratorParser.cpp:4611-4628` - `parameters:` block conversion
+- `GasAbilityGeneratorGenerators.cpp:11529-11699` - `FindPinByName` partial matching
+- `GasAbilityGeneratorFunctionResolver.cpp` - Function resolution logic
 
 ---
 
-## Appendix: Pre-Validation Fixes Already Applied
+## Appendix: Log Evidence
 
-The following math function name errors were fixed prior to this audit:
+### Spec Pin Connection Success
+```
+[commandlet_output_v2.log:1140]
+Connecting: MakeGESpec.ReturnValue [struct] -> ApplyGE.SpecHandle [struct&]
+Connected: MakeGESpec.ReturnValue -> ApplyGE.Spec
+```
 
-| Wrong | Correct |
-|-------|---------|
-| `Multiply_FloatFloat` | `Multiply_DoubleDouble` |
-| `Add_FloatFloat` | `Add_DoubleDouble` |
-| `GreaterEqual_FloatFloat` | `GreaterEqual_DoubleDouble` |
-| `MakeLiteralFloat` | `MakeLiteralDouble` |
+### Delegate Binding Signature Extraction
+```
+[pin_test2.log:14255]
+Created handler event: HandleDomeDamageAbsorption with signature from OnDamagedBy__DelegateSignature
+[pin_test2.log:14282]
+Created delegate bind/unbind nodes for OwnerASC.OnDamagedBy -> HandleDomeDamageAbsorption
+```
 
-These fixes are in the current manifest and pre-validation now passes.
+### Layout Warning (Not Connection Failure)
+```
+[fail_fast_report.txt:106-107]
+E_PIN_POSITION_NOT_FOUND (30 errors) is a LAYOUT HELPER warning only.
+Actual connections still work.
+```

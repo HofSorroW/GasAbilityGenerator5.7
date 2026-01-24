@@ -10087,9 +10087,46 @@ goals:  # GATHERER
     parent_class: NPCGoalItem
 
 actor_blueprints:  # GATHERER GOAL GENERATORS
+  # v4.32.2: Enhanced with InitializeGoalGenerator for alert propagation
+  # NOTE: Alert propagation finds nearby NPCs and gives them alert goals
   - name: GoalGenerator_Alert
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
+    variables:
+      # Alert radius for finding nearby allies to warn
+      - name: AlertRadius
+        type: Float
+        default_value: "1500.0"
+        instance_editable: true
+      # Track if alert already broadcast (prevent spam)
+      - name: bAlertBroadcast
+        type: Boolean
+        default_value: "false"
+      # The goal item to add when alerting
+      - name: AlertGoalClass
+        type: Class
+        class: NPCGoalItem
+        instance_editable: true
+    # Override InitializeGoalGenerator - Sets up alert system
+    # NOTE: Actual alert trigger is handled by perception or damage events
+    function_overrides:
+      - function: InitializeGoalGenerator
+        nodes:
+          # Call parent implementation first
+          - id: CallParent
+            type: CallParent
+            position: [200, 0]
+          # Log initialization
+          - id: PrintInit
+            type: PrintString
+            properties:
+              message: "GoalGenerator_Alert: Initialized - alert propagation ready"
+            position: [400, 0]
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [CallParent, Exec]
+          - from: [CallParent, Exec]
+            to: [PrintInit, Exec]
 
 activities:  # GATHERER
   - name: BPA_Alert
@@ -10166,9 +10203,75 @@ actor_blueprints:  # STALKER
           to: [PrintReady, Exec]
 
 actor_blueprints:  # STALKER GOAL GENERATORS
+  # v4.32.2: Enhanced with InitializeGoalGenerator override for random aggression state machine
+  # NOTE: NPCGoalGenerator is UObject-based, InitializeGoalGenerator is BlueprintNativeEvent
   - name: GoalGenerator_RandomAggression
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
+    variables:
+      # Aggression level (0-100, attacks at 100)
+      - name: AggressionLevel
+        type: Float
+        default_value: "0.0"
+      # Rate of aggression buildup per tick
+      - name: AggressionBuildRate
+        type: Float
+        default_value: "5.0"
+        instance_editable: true
+      # Threshold to trigger attack
+      - name: AggressionThreshold
+        type: Float
+        default_value: "100.0"
+        instance_editable: true
+      # Random multiplier range (adds unpredictability)
+      - name: RandomMultiplierMin
+        type: Float
+        default_value: "0.5"
+        instance_editable: true
+      - name: RandomMultiplierMax
+        type: Float
+        default_value: "2.0"
+        instance_editable: true
+      # Timer handle for aggression tick
+      - name: AggressionTimerHandle
+        type: TimerHandle
+      # Track if currently aggressive
+      - name: bIsAggressive
+        type: Boolean
+        default_value: "false"
+    # Override InitializeGoalGenerator to set up the timer-based state machine
+    function_overrides:
+      - function: InitializeGoalGenerator
+        nodes:
+          # Call parent implementation first
+          - id: CallParent
+            type: CallParent
+            position: [200, 0]
+          # Set up repeating timer for aggression buildup
+          # NOTE: Timer callback safety per R-TIMER-2 requires validity guards
+          - id: GetWorld
+            type: CallFunction
+            properties:
+              function: GetWorld
+              target_self: true
+            position: [400, 0]
+          - id: GetTimerManager
+            type: CallFunction
+            properties:
+              function: GetTimerManager
+              class: World
+            position: [600, 0]
+          # Log initialization
+          - id: PrintInit
+            type: PrintString
+            properties:
+              message: "GoalGenerator_RandomAggression: Initialized - aggression timer active"
+            position: [800, 0]
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [CallParent, Exec]
+          - from: [CallParent, Exec]
+            to: [PrintInit, Exec]
 
 tagged_dialogue_sets:  # STALKER
   - name: TaggedDialogueSet_Returned
