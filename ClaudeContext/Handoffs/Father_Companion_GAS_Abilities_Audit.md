@@ -1,9 +1,11 @@
 # Father Companion GAS & Abilities Audit - Locked Decisions
-## Version 6.1 - January 2026
+## Version 6.2 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from dual-agent audits (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
 **Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.30
+
+**v6.2 Updates:** Added DOC-ONLY PATTERNS section consolidating Research Assessment findings. Archived GAS_Patterns_Research_Assessment_v1.md. Audit closure confirmed after Claude-GPT challenge session.
 
 **v6.1 Updates:** Deep research on 6 unresearched patterns (Montage Lifecycle, Socket Attachment, Line Trace Authority, Movement Restore, Effect Handle Storage, MEDIUM items). All verified as already compliant or covered. All MEDIUM severity items confirmed RESOLVED (v4.14/v4.15). No new rules needed.
 
@@ -1060,6 +1062,104 @@ Current pattern:
 
 ---
 
+## DOC-ONLY PATTERNS (v6.2 Consolidation)
+
+These patterns were researched during v6.1 audit and confirmed as correctly implemented. They do NOT require LOCKED rules but are documented here for reference.
+
+**Source:** `GAS_Patterns_Research_Assessment_v1.md` (now archived - findings consolidated below)
+
+### P-MOVE-1: Movement Speed Restore Pattern
+**Classification:** DOC-ONLY
+**Status:** Already implemented correctly
+
+**Pattern:**
+```
+1. On activate: Store OriginalMaxWalkSpeed = CharacterMovement.MaxWalkSpeed
+2. Apply boost: MaxWalkSpeed = Original * Multiplier
+3. On end: Restore MaxWalkSpeed = OriginalMaxWalkSpeed
+```
+
+**Why not LOCKED:**
+- Failure mode is visual/feel bug, not catastrophic
+- Already documented in this audit (see SPEED/JUMP RESTORATION PATTERN section)
+- No CI, data safety, or gameplay-breaking implications
+
+**Edge Case (Accepted):** If other speed modifier active during activation, original captures modified value. Low priority - works for normal gameplay.
+
+**Affected:** GA_FatherSymbiote (SpeedMultiplier=1.3), GA_FatherArmor (SpeedPenaltyMultiplier=0.85)
+
+---
+
+### P-ATTACH-1: Socket Attachment/Detachment
+**Classification:** NOT NEEDED (covered by architecture)
+**Status:** Already implemented correctly
+
+**Why not LOCKED:**
+- ServerOnly execution policy guarantees server authority
+- `AttachActorToComponent` and `DetachFromActor` replicate automatically
+- No additional rule provides safety beyond existing architecture
+
+**Pattern:**
+- Form abilities use `net_execution_policy: ServerOnly`
+- Server calls `AttachActorToComponent` / `DetachFromActor`
+- UE replication handles client sync
+
+---
+
+### P-EFFECT-1: Effect Removal Strategy
+**Classification:** DOC-ONLY
+**Status:** Both approaches valid by design
+
+**Two Valid Approaches:**
+
+| Approach | Use Case | Example |
+|----------|----------|---------|
+| **Tag-based removal** | Remove all effects matching parent tag | `BP_RemoveGameplayEffectFromOwnerWithGrantedTags(Effect.Father.FormState)` |
+| **Handle-based removal** | Remove specific effect instance | Store `FActiveGameplayEffectHandle`, call `RemoveActiveGameplayEffect(Handle)` |
+
+**Father Pattern:** Uses tag-based removal for form state cleanup (more robust for batch operations).
+
+**Why not LOCKED:** Both are correct. Tag-based is preferred for Father's multi-effect cleanup, but handle-based is valid for single-effect scenarios.
+
+---
+
+### P-MONTAGE-1: Montage Task Lifecycle
+**Classification:** DOC-ONLY
+**Status:** Standard GAS knowledge
+
+**Callback Semantics:**
+
+| Callback | When Fired | Action |
+|----------|-----------|--------|
+| **OnCompleted** | Montage fully finished | Normal EndAbility |
+| **OnInterrupted** | Another montage overwrites | Cancel cleanup, EndAbility |
+| **OnCancelled** | Ability/task cancelled | Cancel cleanup, EndAbility |
+| **OnBlendOut** | Montage starts blending (before complete) | Early cleanup prep, NOT EndAbility |
+
+**Key Rule:** OnBlendOut should NOT call EndAbility (montage still running).
+
+**Why not LOCKED:** Standard GAS knowledge from Epic documentation. Not Father-specific.
+
+---
+
+### P-TARGET-1: Targeting/Tracing
+**Classification:** DOC-ONLY
+**Status:** Narrative Pro uses own system
+
+**Narrative Pro Pattern:**
+- `GenerateTargetDataUsingTrace` in NarrativeCombatAbility
+- Auto sphere sweep hit detection
+- NOT standard GAS `WaitTargetData` patterns
+
+**Father Pattern:**
+- GA_FatherEngineer uses simple `LineTraceByChannel` for deployment
+- Turret uses direct cone detection
+- No need for complex GAS targeting primitives
+
+**Why not LOCKED:** Narrative Pro's system is authoritative. Father abilities correctly use simplified tracing.
+
+---
+
 ## CROSS-REFERENCES
 
 | Document | Version | Relevance |
@@ -1086,9 +1186,10 @@ Current pattern:
 | 5.0 | 2026-01-24 | **NOT LOCKED ITEMS AUDIT.** Claude-GPT dual audit of 4 NOT LOCKED items. Locked NL-GUARD-IDENTITY (L1) - 3-layer guard with GAS tag checks. Validated bActivateAbilityOnGranted (Narrative Pro native). Validated AbilityTasks (already implemented). Validated EquippableItem GE delivery. Deferred NL-GUARD-IDENTITY (L2) - prior form tag check not needed in current architecture. Updated Rule 2 guard pattern to use tag checks instead of enum. Updated gold standard reference. |
 | 6.0 | 2026-01-24 | **EXTENDED PATTERNS AUDIT.** Claude-GPT dual audit of 12 undocumented patterns. Locked 4 new rules: R-TIMER-1 (Timer Callback Safety - HIGH), R-ENUM-1 (GE-First Causality - MEDIUM), R-AI-1 (Activity System Compatibility - HIGH), R-CLEANUP-1 (Granted Ability Cleanup - MEDIUM, scoped). Identified and fixed GA_FatherEngineer R-AI-1 violation (direct RunBehaviorTree bypassing Activity system). Updated manifest to call StopCurrentActivity before RunBehaviorTree in Engineer. |
 | 6.1 | 2026-01-24 | **PATTERN COMPLETENESS AUDIT.** Claude-GPT dual audit of 6 unresearched patterns: Montage Task Lifecycle, Socket Attachment/Detachment, Line Trace Authority, Movement Restore, Effect Handle Storage, MEDIUM severity items. All patterns verified as already compliant or covered by existing rules. All 6 MEDIUM severity items confirmed RESOLVED (implemented v4.14/v4.15). No new LOCKED rules required. Audit completeness achieved. Reference: `GAS_Patterns_Research_Assessment_v1.md`. |
+| 6.2 | 2026-01-24 | **AUDIT CLOSURE & CONSOLIDATION.** Claude-GPT challenge session verified Research Assessment conclusions. Added DOC-ONLY PATTERNS section (P-MOVE-1, P-ATTACH-1, P-EFFECT-1, P-MONTAGE-1, P-TARGET-1). Consolidated `GAS_Patterns_Research_Assessment_v1.md` findings into this document. Archived Research Assessment. Final audit status confirmed: No new LOCKED rules required. |
 
 ---
 
 **END OF LOCKED DECISIONS DOCUMENT**
 
-**STATUS: AUDIT COMPLETE (v6.1)** - All findings implemented and verified. All CRITICAL and MEDIUM severity items RESOLVED. All 6 unresearched patterns validated (no new rules needed). NL-GUARD-IDENTITY (L1) + R-TIMER-1, R-ENUM-1, R-AI-1, R-CLEANUP-1 locked. Pattern completeness achieved - no remaining gaps in GAS implementation audit.
+**STATUS: AUDIT CLOSED (v6.2)** - All findings implemented and verified. All CRITICAL and MEDIUM severity items RESOLVED. All unresearched patterns validated and documented (DOC-ONLY). 5 LOCKED rules: NL-GUARD-IDENTITY (L1), R-TIMER-1, R-ENUM-1, R-AI-1, R-CLEANUP-1. 5 DOC-ONLY patterns: P-MOVE-1, P-ATTACH-1, P-EFFECT-1, P-MONTAGE-1, P-TARGET-1. Audit chain complete and internally consistent.

@@ -3,9 +3,11 @@
 
 ---
 
-> **⚠️ GAS AUDIT v6.0 COMPLIANCE (January 2026)**
+> **⚠️ GAS AUDIT v6.2 COMPLIANCE (January 2026)**
 >
-> Per GAS Audit v6.0 (Claude-GPT dual audit 2026-01-24), the following locked rules apply:
+> Per GAS Audit v6.2 (Claude-GPT dual audit 2026-01-24), the following rules apply:
+>
+> **LOCKED Rules (Must Follow):**
 >
 > | Rule | Status | Summary |
 > |------|--------|---------|
@@ -14,6 +16,16 @@
 > | **R-ENUM-1** | LOCKED | Enum is derived view; GE is truth source |
 > | **R-AI-1** | LOCKED | NPCs with Activities must coordinate BT calls |
 > | **R-CLEANUP-1** | LOCKED | Runtime-granted abilities need removal strategy |
+>
+> **DOC-ONLY Patterns (Best Practices):**
+>
+> | Pattern | Summary |
+> |---------|---------|
+> | **P-MOVE-1** | Store/Restore MaxWalkSpeed via CharacterMovement |
+> | **P-ATTACH-1** | ServerOnly execution handles attachment authority |
+> | **P-EFFECT-1** | Tag-based OR handle-based GE removal both valid |
+> | **P-MONTAGE-1** | OnCompleted/Interrupted/Cancelled → EndAbility; OnBlendOut ≠ EndAbility |
+> | **P-TARGET-1** | Use Narrative Pro's GenerateTargetDataUsingTrace or simple LineTrace |
 >
 > **INV-1 Details:** ALL invulnerability has been REMOVED from the Father companion system EXCEPT GA_FatherSacrifice (8-second player invulnerability).
 >
@@ -31,12 +43,26 @@
 | Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.5 |
-| Last Audit | 2026-01-24 (v5.1 Goal_Attack approach) |
+| Version | 6.6 |
+| Last Audit | 2026-01-24 (GAS Audit v6.2 closure) |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
-| Replaces | Father_Companion_Technical_Reference_v6_3.md |
+| Replaces | Father_Companion_Technical_Reference_v6_5.md |
 
 ---
+
+## VERSION 6.6 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **GAS Audit v6.2 Compliance** | Updated compliance box to reflect v6.2 audit closure. Added DOC-ONLY patterns table (P-MOVE-1, P-ATTACH-1, P-EFFECT-1, P-MONTAGE-1, P-TARGET-1). |
+| **Audit Closure** | Claude-GPT dual audit concluded: 5 LOCKED rules, 5 DOC-ONLY patterns. No new LOCKED rules required. All patterns validated. |
+| **Research Assessment Archived** | `GAS_Patterns_Research_Assessment_v1.md` consolidated into GAS Audit and archived. |
+
+## VERSION 6.5 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **Maintenance update** | Minor formatting and reference updates. |
 
 ## VERSION 6.4 CHANGES
 
