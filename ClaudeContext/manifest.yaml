@@ -7382,8 +7382,91 @@ ability_configurations:
     startup_effects:
       - GE_CrawlerState  # Default form state at spawn (Option B)
 
+  # ============================================================================
+  # GATHERER SCOUT SYSTEM
+  # ============================================================================
+  - name: AC_GathererScout
+    folder: Configs
+    abilities: []  # Non-combatant
+
+  - name: AC_Reinforcement
+    folder: Configs
+    abilities:
+      - GA_Death
+
+  # ============================================================================
+  # RETURNED STALKER SYSTEM
+  # ============================================================================
+  - name: AC_ReturnedStalker
+    folder: Configs
+    abilities:
+      - GA_Death
+
+  # ============================================================================
+  # SUPPORT BUFFER SYSTEM
+  # ============================================================================
+  - name: AC_SupportBuffer
+    folder: Configs
+    abilities:
+      - GA_Death
+    startup_effects:
+      - GE_SupporterAttributes
+
+  # ============================================================================
+  # GUARD FORMATION SYSTEM
+  # ============================================================================
+  - name: AC_FormationGuard
+    folder: Configs
+    abilities:
+      - GA_Death
+
+  # ============================================================================
+  # POSSESSED EXPLODER SYSTEM
+  # ============================================================================
+  - name: AC_PossessedExploder
+    folder: Configs
+    abilities:
+      - GA_Death
+    startup_effects:
+      - GE_ExploderAttributes
+
+  # ============================================================================
+  # WARDEN HUSK SYSTEM (Two-Phase Boss)
+  # ============================================================================
+  - name: AC_WardenHusk
+    folder: Configs
+    abilities:
+      - GA_Death
+    startup_effects:
+      - GE_WardenHuskAttributes
+
+  - name: AC_WardenCore
+    folder: Configs
+    abilities:
+      - GA_CoreLaser
+      - GA_Death
+    startup_effects:
+      - GE_WardenCoreAttributes
+
+  # ============================================================================
+  # BIOMECHANICAL DETACHMENT SYSTEM
+  # ============================================================================
+  - name: AC_BiomechHost
+    folder: Configs
+    abilities:
+      - GA_Death
+    startup_effects:
+      - GE_BiomechHostAttributes
+
+  - name: AC_BiomechCreature
+    folder: Configs
+    abilities:
+      - GA_Death
+    startup_effects:
+      - GE_BiomechCreatureAttributes
+
 # ============================================================================
-# ACTIVITY CONFIGURATIONS (1)
+# ACTIVITY CONFIGURATIONS (11)
 # ============================================================================
 activity_configurations:
   # Per Tech Doc Section 57.8: AC_FatherBehavior pattern (matches AC_RunAndGun)
@@ -7401,8 +7484,92 @@ activity_configurations:
     goal_generators:
       - GoalGenerator_Attack          # Auto-target hostiles (Section 57.9)
 
+  # ============================================================================
+  # GATHERER SCOUT SYSTEM
+  # ============================================================================
+  - name: AC_GathererScoutBehavior
+    folder: Configs
+    activities:
+      - BPA_Alert
+      - BPA_Flee
+      - BPA_Gather
+      - BPA_Wander
+    goal_generators:
+      - GoalGenerator_Alert
+
+  - name: AC_ReinforcementBehavior
+    folder: Configs
+    activities:
+      - BPA_MoveToDestination
+      - BPA_Attack_Melee
+
+  # ============================================================================
+  # RETURNED STALKER SYSTEM
+  # ============================================================================
+  - name: AC_ReturnedStalkerBehavior
+    folder: Configs
+    activities:
+      - BPA_Patrol
+      - BPA_FollowCharacter
+      - BPA_Attack_Melee
+    goal_generators:
+      - GoalGenerator_RandomAggression
+      - GoalGenerator_Attack
+
+  # ============================================================================
+  # SUPPORT BUFFER SYSTEM
+  # ============================================================================
+  - name: AC_SupportBufferBehavior
+    folder: Configs
+    activities:
+      - BPA_SupportFollow
+      - BPA_Idle
+
+  # ============================================================================
+  # GUARD FORMATION SYSTEM
+  # ============================================================================
+  - name: AC_FormationGuardBehavior
+    folder: Configs
+    activities:
+      - BPA_FormationFollow
+      - BPA_Attack_Formation
+
+  # ============================================================================
+  # POSSESSED EXPLODER SYSTEM
+  # ============================================================================
+  - name: AC_PossessedExploderBehavior
+    folder: Configs
+    activities:
+      - BPA_Explode
+
+  # ============================================================================
+  # WARDEN HUSK SYSTEM (Two-Phase Boss)
+  # ============================================================================
+  - name: AC_WardenHuskBehavior
+    folder: Configs
+    activities:
+      - BPA_Attack_Melee
+
+  - name: AC_WardenCoreBehavior
+    folder: Configs
+    activities:
+      - BPA_Attack_Ranged
+
+  # ============================================================================
+  # BIOMECHANICAL DETACHMENT SYSTEM
+  # ============================================================================
+  - name: AC_BiomechHostBehavior
+    folder: Configs
+    activities:
+      - BPA_Attack_Melee
+
+  - name: AC_BiomechCreatureBehavior
+    folder: Configs
+    activities:
+      - BPA_Attack_Melee
+
 # ============================================================================
-# NPC DEFINITIONS (1)
+# NPC DEFINITIONS (11)
 # ============================================================================
 npc_definitions:
   - name: NPC_FatherCompanion
@@ -7414,6 +7581,117 @@ npc_definitions:
     default_factions:
       - Narrative.Factions.FatherCompanion
       - Narrative.Factions.Player
+
+  # ============================================================================
+  # GATHERER SCOUT SYSTEM
+  # ============================================================================
+  - name: NPC_GathererScout
+    folder: Enemies/Gatherer
+    npc_name: Gatherer Scout
+    npc_blueprint: BP_GathererScout
+    ability_configuration: AC_GathererScout
+    activity_configuration: AC_GathererScoutBehavior
+    default_factions:
+      - Narrative.Factions.Enemy
+
+  - name: NPC_Reinforcement
+    folder: Enemies/Gatherer
+    npc_name: Gatherer Reinforcement
+    npc_blueprint: BP_Reinforcement
+    ability_configuration: AC_Reinforcement
+    activity_configuration: AC_ReinforcementBehavior
+    default_factions:
+      - Narrative.Factions.Enemy
+
+  # ============================================================================
+  # RETURNED STALKER SYSTEM
+  # ============================================================================
+  - name: NPC_ReturnedStalker
+    folder: NPCs/Returned
+    npc_name: Returned Stalker
+    npc_blueprint: BP_ReturnedStalker
+    ability_configuration: AC_ReturnedStalker
+    activity_configuration: AC_ReturnedStalkerBehavior
+    default_factions:
+      - Narrative.Factions.Hostile
+
+  # ============================================================================
+  # SUPPORT BUFFER SYSTEM
+  # ============================================================================
+  - name: NPC_SupportBuffer
+    folder: NPCs/Support
+    npc_name: Support Buffer
+    npc_blueprint: BP_SupportBuffer
+    ability_configuration: AC_SupportBuffer
+    activity_configuration: AC_SupportBufferBehavior
+    default_factions:
+      - Narrative.Factions.Friendly
+
+  # ============================================================================
+  # GUARD FORMATION SYSTEM
+  # ============================================================================
+  - name: NPC_FormationGuard
+    folder: NPCs/Formation
+    npc_name: Formation Guard
+    npc_blueprint: BP_FormationGuard
+    ability_configuration: AC_FormationGuard
+    activity_configuration: AC_FormationGuardBehavior
+    default_factions:
+      - Narrative.Factions.Friendly
+
+  # ============================================================================
+  # POSSESSED EXPLODER SYSTEM
+  # ============================================================================
+  - name: NPC_PossessedExploder
+    folder: Enemies/Possessed
+    npc_name: Possessed Exploder
+    npc_blueprint: BP_PossessedExploder
+    ability_configuration: AC_PossessedExploder
+    activity_configuration: AC_PossessedExploderBehavior
+    default_factions:
+      - Narrative.Factions.Enemy
+
+  # ============================================================================
+  # WARDEN HUSK SYSTEM (Two-Phase Boss)
+  # ============================================================================
+  - name: NPC_WardenHusk
+    folder: Enemies/Warden
+    npc_name: Warden Husk
+    npc_blueprint: BP_WardenHusk
+    ability_configuration: AC_WardenHusk
+    activity_configuration: AC_WardenHuskBehavior
+    default_factions:
+      - Narrative.Factions.Enemy
+
+  - name: NPC_WardenCore
+    folder: Enemies/Warden
+    npc_name: Warden Core
+    npc_blueprint: BP_WardenCore
+    ability_configuration: AC_WardenCore
+    activity_configuration: AC_WardenCoreBehavior
+    default_factions:
+      - Narrative.Factions.Enemy
+
+  # ============================================================================
+  # BIOMECHANICAL DETACHMENT SYSTEM
+  # ============================================================================
+  - name: NPC_BiomechHost
+    folder: Enemies/Biomech
+    npc_name: Biomech Host
+    npc_blueprint: BP_BiomechHost
+    ability_configuration: AC_BiomechHost
+    activity_configuration: AC_BiomechHostBehavior
+    default_factions:
+      - Narrative.Factions.Enemy
+
+  - name: NPC_BiomechCreature
+    folder: Enemies/Biomech
+    npc_name: Biomech Creature
+    npc_blueprint: BP_BiomechCreature
+    ability_configuration: AC_BiomechCreature
+    activity_configuration: AC_BiomechCreatureBehavior
+    default_factions:
+      - Narrative.Factions.Enemy
 
 # ============================================================================
 # CHARACTER DEFINITIONS (1)

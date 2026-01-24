@@ -1540,7 +1540,15 @@ void FGeneratorBase::ConfigureGameplayAbilityPolicies(
 		UClass* EffectClass = nullptr;
 		FString EffectPath = Definition.CooldownGameplayEffectClass;
 
-		if (!EffectPath.Contains(TEXT("/")))
+		// v4.31: Check session cache FIRST for effects created in this generation session
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(Definition.CooldownGameplayEffectClass))
+		{
+			EffectClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found CooldownGE in session cache: %s"), *Definition.CooldownGameplayEffectClass));
+		}
+
+		// If not in cache, try LoadClass with multiple search paths
+		if (!EffectClass && !EffectPath.Contains(TEXT("/")))
 		{
 			// v2.6.3: Search multiple common paths for cooldown effects
 			TArray<FString> SearchPaths = {
@@ -1560,7 +1568,7 @@ void FGeneratorBase::ConfigureGameplayAbilityPolicies(
 				}
 			}
 		}
-		else
+		else if (!EffectClass)
 		{
 			EffectClass = LoadClass<UGameplayEffect>(nullptr, *EffectPath);
 		}
@@ -3418,6 +3426,14 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("ActorBlueprint"), Definition.Name, Definition.ComputeHash());
 
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	// This enables ActivityConfigurations to resolve GoalGenerators created in the same session
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("ActorBlueprint");
@@ -4421,6 +4437,13 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(WidgetBP, TEXT("WidgetBlueprint"), Definition.Name, Definition.ComputeHash());
 
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (WidgetBP->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, WidgetBP->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("WidgetBlueprint");
@@ -4829,6 +4852,13 @@ FGenerationResult FComponentBlueprintGenerator::Generate(
 
 	// Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("ComponentBlueprint"), Definition.Name, Definition.ComputeHash());
+
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.AssetPath = AssetPath;
@@ -15354,6 +15384,13 @@ FGenerationResult FAnimationNotifyGenerator::Generate(const FManifestAnimationNo
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("AnimationNotify"), Definition.Name, Definition.ComputeHash());
 
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
 		FString::Printf(TEXT("Created at %s"), *AssetPath));
 	Result.AssetPath = AssetPath;
@@ -16507,6 +16544,13 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("DialogueBlueprint"), Definition.Name, Definition.ComputeHash());
+
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
@@ -18778,6 +18822,13 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("EquippableItem"), Definition.Name, Definition.ComputeHash());
 
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("EquippableItem");
@@ -19220,28 +19271,41 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 
 	// v3.1: Resolve StartupEffects (GE_ blueprints -> GameplayEffect subclasses)
 	// v4.16.2: Added FormState and Cooldowns subfolders to search paths
+	// v4.31: Added session cache check for GE_ effects created in same generation session
 	int32 ResolvedEffects = 0;
 	for (const FString& EffectName : Definition.StartupEffects)
 	{
-		TArray<FString> SearchPaths;
-		// Standard effect locations
-		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		// FormState subfolder (common location for GE_*State effects)
-		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/FormState/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		// Cooldowns subfolder
-		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/Cooldowns/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		// Legacy hardcoded paths
-		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
-		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
-
 		UClass* EffectClass = nullptr;
-		for (const FString& Path : SearchPaths)
+
+		// v4.31: Check session cache FIRST for effects created in this generation session
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(EffectName))
 		{
-			EffectClass = LoadClass<UGameplayEffect>(nullptr, *Path);
-			if (EffectClass)
+			EffectClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found startup effect in session cache: %s"), *EffectName));
+		}
+
+		// If not in cache, try LoadClass with multiple search paths
+		if (!EffectClass)
+		{
+			TArray<FString> SearchPaths;
+			// Standard effect locations
+			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// FormState subfolder (common location for GE_*State effects)
+			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/FormState/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// Cooldowns subfolder
+			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/Cooldowns/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// Legacy hardcoded paths
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
+
+			for (const FString& Path : SearchPaths)
 			{
-				break;
+				EffectClass = LoadClass<UGameplayEffect>(nullptr, *Path);
+				if (EffectClass)
+				{
+					break;
+				}
 			}
 		}
 
@@ -19342,28 +19406,41 @@ void FAbilityConfigurationGenerator::ValidateStartupEffects(const FManifestAbili
 	}
 
 	// v4.16.2: Validate all startup effects can be resolved (LOCKED CONTRACT P1.3)
+	// v4.31: Added session cache check for GE_ effects created in same generation session
 	// Collect all failures before checking form state requirement
 	for (const FString& EffectName : Definition.StartupEffects)
 	{
-		TArray<FString> SearchPaths;
-		// Standard effect locations
-		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		// FormState subfolder (v4.16.2 - common location for GE_*State effects)
-		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/FormState/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		// Cooldowns subfolder
-		SearchPaths.Add(FString::Printf(TEXT("%s/Effects/Cooldowns/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
-		// Legacy hardcoded paths
-		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
-		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
-
 		UClass* EffectClass = nullptr;
-		for (const FString& Path : SearchPaths)
+
+		// v4.31: Check session cache FIRST for effects created in this generation session
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(EffectName))
 		{
-			EffectClass = LoadClass<UGameplayEffect>(nullptr, *Path);
-			if (EffectClass)
+			EffectClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found startup effect in session cache: %s"), *EffectName));
+		}
+
+		// If not in cache, try LoadClass with multiple search paths
+		if (!EffectClass)
+		{
+			TArray<FString> SearchPaths;
+			// Standard effect locations
+			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// FormState subfolder (v4.16.2 - common location for GE_*State effects)
+			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/FormState/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// Cooldowns subfolder
+			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/Cooldowns/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// Legacy hardcoded paths
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
+
+			for (const FString& Path : SearchPaths)
 			{
-				break;
+				EffectClass = LoadClass<UGameplayEffect>(nullptr, *Path);
+				if (EffectClass)
+				{
+					break;
+				}
 			}
 		}
 
@@ -19514,27 +19591,40 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 	}
 
 	// v3.1: Resolve GoalGenerators (GoalGenerator_ blueprints -> UNPCGoalGenerator subclasses)
+	// v4.31: Added session cache check for GoalGenerators created in same generation session
 	int32 ResolvedGenerators = 0;
 	for (const FString& GeneratorName : Definition.GoalGenerators)
 	{
-		TArray<FString> SearchPaths;
-		SearchPaths.Add(FString::Printf(TEXT("%s/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
-		SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
-		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-		// v4.22: Narrative Pro plugin built-in goal generators (correct plugin mount point)
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-		// Legacy path (kept for backwards compatibility)
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-
 		UClass* GeneratorClass = nullptr;
-		for (const FString& Path : SearchPaths)
+
+		// v4.31: Check session cache FIRST for generators created in this generation session
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(GeneratorName))
 		{
-			GeneratorClass = LoadClass<UNPCGoalGenerator>(nullptr, *Path);
-			if (GeneratorClass)
+			GeneratorClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found goal generator in session cache: %s"), *GeneratorName));
+		}
+
+		// If not in cache, try LoadClass with multiple search paths
+		if (!GeneratorClass)
+		{
+			TArray<FString> SearchPaths;
+			SearchPaths.Add(FString::Printf(TEXT("%s/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+			// v4.22: Narrative Pro plugin built-in goal generators (correct plugin mount point)
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+			// Legacy path (kept for backwards compatibility)
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+
+			for (const FString& Path : SearchPaths)
 			{
-				break;
+				GeneratorClass = LoadClass<UNPCGoalGenerator>(nullptr, *Path);
+				if (GeneratorClass)
+				{
+					break;
+				}
 			}
 		}
 
@@ -20151,6 +20241,13 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	// v3.0: Store metadata after successful generation
 	StoreBlueprintMetadata(Blueprint, TEXT("NE"), Definition.Name, InputHash);
 
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
 	LogGeneration(FString::Printf(TEXT("Created Narrative Event: %s"), *Definition.Name));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
@@ -20453,6 +20550,13 @@ FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefi
 
 	// v3.0: Store metadata for regeneration tracking
 	StoreBlueprintMetadata(Blueprint, TEXT("GC"), Definition.Name, InputHash);
+
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
 		FString::Printf(TEXT("Created at %s"), *AssetPath));
@@ -23327,6 +23431,13 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 	// v3.0: Store metadata
 	StoreBlueprintMetadata(Blueprint, TEXT("Goal"), Definition.Name, InputHash);
 
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
 	LogGeneration(FString::Printf(TEXT("Created Goal Item: %s (DefaultScore: %.1f)"), *Definition.Name, Definition.DefaultScore));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
@@ -24095,6 +24206,13 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 
 	// v3.0: Store metadata
 	StoreBlueprintMetadata(QuestBP, TEXT("Quest Blueprint"), Definition.Name, InputHash);
+
+	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
+	if (QuestBP->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, QuestBP->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
 
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
