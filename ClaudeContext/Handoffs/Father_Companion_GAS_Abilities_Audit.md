@@ -1,9 +1,11 @@
 # Father Companion GAS & Abilities Audit - Locked Decisions
-## Version 5.0 - January 2026
+## Version 6.0 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from dual-agent audits (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
-**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.29
+**Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.30
+
+**v6.0 Updates:** Added R-TIMER-1 (Timer Callback Safety), R-ENUM-1 (GE-First Causality), R-AI-1 (Activity System Compatibility), R-CLEANUP-1 (Granted Ability Cleanup). GA_FatherEngineer R-AI-1 violation identified and fixed.
 
 **v5.0 Updates:** Added NOT LOCKED items audit (2026-01-24). Locked NL-GUARD-IDENTITY (L1). Validated bActivateAbilityOnGranted, AbilityTasks, EquippableItem patterns. Updated guard pattern documentation.
 
@@ -475,6 +477,129 @@ void UEquippableItem::HandleEquip_Implementation()
 3. Implementation cost exceeds defense value in current architecture
 
 **Future consideration:** If architecture changes to allow external identity mutation mid-transition, revisit L2.
+
+---
+
+## NEW LOCKED RULES (v6.0 Claude-GPT Audit)
+
+### R-TIMER-1: Timer Callback Safety
+**Status:** LOCKED (HIGH)
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Consensus:** Both auditors agreed
+
+**Rule Text:**
+> "If a GameplayAbility uses engine timers (SetTimer) instead of AbilityTasks, the timer callback MUST guard against invalid state (actor validity + ability/phase/state checks) before executing logic. EndAbility MUST call ClearAndInvalidateTimerByHandle."
+
+**Evidence:**
+- [Epic's Gameplay Timers Documentation](https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-timers-in-unreal-engine): "Timers will be canceled automatically if the Object that they are going to be called on, such as an Actor, is destroyed before the time is up."
+- [Epic's Ability Tasks Documentation](https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-ability-tasks-in-unreal-engine): "UAbilityTask is a GameplayTask class that will be automatically ended on UGameplayAbility::EndAbility"
+
+**Comparison:**
+| Method | Auto-Cleanup on EndAbility | Risk |
+|--------|---------------------------|------|
+| AbilityTask WaitDelay | YES (automatic) | LOW |
+| SetTimer by Function Name | NO (requires ClearTimer or object destruction) | HIGH without guards |
+
+**Preferred:** Use `AbilityTaskWaitDelay` for simple delays (auto-cleanup integrated with ability lifecycle).
+
+**Acceptable:** Use `SetTimer` for complex callbacks with:
+1. Callback validity guards (`IsValid(this)` + state checks)
+2. `ClearAndInvalidateTimerByHandle` in EndAbility
+
+**Affected Abilities:**
+- GA_FatherSymbiote (30s duration timer) - ✅ Correctly guarded (Section 17.2, 18.3)
+
+---
+
+### R-ENUM-1: GE-First Causality
+**Status:** LOCKED (MEDIUM)
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Consensus:** Both auditors agreed
+
+**Rule Text:**
+> "Any replicated or local form enum is a derived view and MUST be set only AFTER the authoritative GE_*State is applied. Gameplay Tags / Effects are the single source of truth."
+
+**Evidence:**
+- GAS architecture uses tags/effects as state truth source
+- Enum desync occurs if set before GE (UI/animation reads stale value)
+- Client replication race conditions possible with wrong order
+
+**Correct Order:**
+1. Apply GE_*State (authoritative identity)
+2. Set CurrentForm enum (derived view for VFX/animation)
+3. OnRep_CurrentForm triggers client visual updates
+
+**Incorrect Order (causes desync):**
+1. ❌ Set CurrentForm enum first
+2. ❌ Apply GE_*State after
+
+**Affected Abilities:** All form abilities - ✅ All correctly ordered (GE applied before enum set)
+
+---
+
+### R-AI-1: Activity System Compatibility
+**Status:** LOCKED (HIGH)
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Consensus:** Both auditors agreed
+
+**Rule Text:**
+> "If an NPC is configured to use Narrative Pro Activities (ActivityConfiguration / NPCActivityComponent), a GameplayAbility must not start a competing Behavior Tree without coordinating with the Activity system.
+> Acceptable strategies:
+> A) request/enter a dedicated Activity for the mode, or
+> B) explicitly stop/suspend current activity before BT start and restore/reselect activity on end."
+
+**Evidence:**
+- Father has `activity_configuration: AC_FatherBehavior` in manifest
+- AC_FatherBehavior includes: BPA_FatherFollow, BPA_Attack_Melee, BPA_Attack_Ranged, etc.
+- NPCActivityComponent manages BT lifecycle through Activities
+- Direct `RunBehaviorTree` call bypasses Activity system, causing:
+  - Two BT drivers competing
+  - Activity system state desync
+  - No automatic activity restoration on ability end
+
+**Narrative Pro Source Evidence:**
+```cpp
+// NPCActivity.cpp:112-117
+bool UNPCActivity::RunActivity()
+{
+    if (OwnerController && BehaviourTree)
+    {
+        if (OwnerController->RunBehaviorTree(BehaviourTree)) { ... }
+    }
+}
+```
+
+**Implementation Options:**
+- **Option A (Proper):** Create `BPA_FatherEngineer` activity, request via ActivityComponent
+- **Option B (Workaround):** Call `StopCurrentActivity()` before `RunBehaviorTree`, trigger activity reselection on end
+
+**Affected Abilities:**
+- GA_FatherEngineer - ✅ FIXED (v6.0) - Now calls StopCurrentActivity before RunBehaviorTree
+
+---
+
+### R-CLEANUP-1: Granted Ability Cleanup (Scoped)
+**Status:** LOCKED (MEDIUM)
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Consensus:** Both auditors agreed
+
+**Rule Text:**
+> "Abilities granted at runtime for temporary behaviors MUST define a deterministic removal strategy (e.g., CancelAbilitiesWithTag and/or SetRemoveAbilityOnEnd). Permanent or passive abilities are excluded."
+
+**Scope:** This rule applies ONLY to runtime-granted temporary abilities, NOT to:
+- Permanent abilities granted at spawn
+- Passive abilities that should persist
+
+**Two-Step Cleanup Pattern:**
+1. `CancelAbilitiesWithTag` - Stops any currently executing granted ability
+2. `SetRemoveAbilityOnEnd` - Schedules removal after execution completes
+
+**Evidence:**
+- [Epic's Using Gameplay Abilities](https://dev.epicgames.com/documentation/en-us/unreal-engine/using-gameplay-abilities-in-unreal-engine): "SetRemoveAbilityOnEnd removes the specified Ability when that ability is finished executing. If the Ability is not executing, it will be removed immediately."
+
+**Affected Abilities:**
+- GA_FatherExoskeleton (grants Dash, Sprint, Stealth) - ✅ Uses two-step cleanup
+- GA_FatherSymbiote (grants ProximityStrike) - ✅ Uses two-step cleanup
 
 ---
 
@@ -955,9 +1080,10 @@ Current pattern:
 | 4.1 | 2026-01-23 | **DUAL-AGENT AUDIT VERIFICATION.** Claude-GPT audit verified all document claims against manifest.yaml. All content correct (line numbers stale but non-blocking). Audit grade: PASS. Options deferred: Hard Freeze, Enforcement Layer, External Snapshot - none currently needed. |
 | 4.2 | 2026-01-23 | Added **KNOWN LIMITATIONS** section (v4.27). Documented LIM-1: Automatic dome burst on form exit cannot be automated due to C++-only functions and TSubclassOf parameter limitations. |
 | 5.0 | 2026-01-24 | **NOT LOCKED ITEMS AUDIT.** Claude-GPT dual audit of 4 NOT LOCKED items. Locked NL-GUARD-IDENTITY (L1) - 3-layer guard with GAS tag checks. Validated bActivateAbilityOnGranted (Narrative Pro native). Validated AbilityTasks (already implemented). Validated EquippableItem GE delivery. Deferred NL-GUARD-IDENTITY (L2) - prior form tag check not needed in current architecture. Updated Rule 2 guard pattern to use tag checks instead of enum. Updated gold standard reference. |
+| 6.0 | 2026-01-24 | **EXTENDED PATTERNS AUDIT.** Claude-GPT dual audit of 12 undocumented patterns. Locked 4 new rules: R-TIMER-1 (Timer Callback Safety - HIGH), R-ENUM-1 (GE-First Causality - MEDIUM), R-AI-1 (Activity System Compatibility - HIGH), R-CLEANUP-1 (Granted Ability Cleanup - MEDIUM, scoped). Identified and fixed GA_FatherEngineer R-AI-1 violation (direct RunBehaviorTree bypassing Activity system). Updated manifest to call StopCurrentActivity before RunBehaviorTree in Engineer. |
 
 ---
 
 **END OF LOCKED DECISIONS DOCUMENT**
 
-**STATUS: FULLY AUTOMATED** - All audit findings implemented and verified. NL-GUARD-IDENTITY (L1) locked and fully automated in manifest.yaml v5.0. All 5 form abilities have complete 3-layer guard patterns. All manual implementation items converted to ✅ Auto-generated.
+**STATUS: FULLY AUTOMATED** - All audit findings implemented and verified. NL-GUARD-IDENTITY (L1) locked and fully automated in manifest.yaml v5.0. All 5 form abilities have complete 3-layer guard patterns. All manual implementation items converted to ✅ Auto-generated. R-TIMER-1, R-ENUM-1, R-AI-1, R-CLEANUP-1 locked (v6.0).

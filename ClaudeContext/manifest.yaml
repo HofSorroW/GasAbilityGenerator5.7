@@ -3226,6 +3226,7 @@ gameplay_abilities:
           to: [TryActivateArmor_End, Target]
 
   # GA_FatherEngineer - Deploy as Turret (Option B Form Identity)
+  # v4.30: R-AI-1 Activity System Compatibility - StopCurrentActivity before RunBehaviorTree
   # v4.13.5: GAS Audit compliant - NO invulnerability per INV-1
   - name: GA_FatherEngineer
     folder: Abilities/Forms
@@ -3496,6 +3497,40 @@ gameplay_abilities:
             function: K2_CommitAbilityCooldown
             target_self: true
           position: [2400, 0]
+        # === TURRET AI INITIALIZATION (v4.30 R-AI-1 Compliant) ===
+        # Per LOCKED CONTRACT 12: NPCs with ActivityConfiguration must coordinate BT calls
+        # Option B: StopCurrentActivity() before RunBehaviorTree
+        - id: GetFatherController
+          type: CallFunction
+          properties:
+            function: GetController
+            class: Pawn
+          position: [2700, 0]
+        - id: CastToAIController
+          type: DynamicCast
+          properties:
+            target_class: AIController
+          position: [3000, 0]
+        - id: GetActivityComponent
+          type: CallFunction
+          properties:
+            function: GetComponentByClass
+            class: Actor
+            component_class: NPCActivityComponent
+          position: [2700, 100]
+        - id: StopCurrentActivity
+          type: CallFunction
+          properties:
+            function: StopCurrentActivity
+            class: NPCActivityComponent
+          position: [3000, 100]
+        - id: RunBehaviorTree
+          type: CallFunction
+          properties:
+            function: RunBehaviorTree
+            class: AIController
+            behavior_tree: BT_FatherEngineer
+          position: [3300, 0]
         # === END ABILITY FLOW ===
         - id: Event_EndAbility
           type: Event
@@ -3577,6 +3612,15 @@ gameplay_abilities:
           to: [SetIsAttached, Exec]
         - from: [SetIsAttached, Exec]
           to: [CommitCooldown, Exec]
+        # === v4.30 R-AI-1: Turret AI flow (after CommitCooldown) ===
+        - from: [CommitCooldown, Exec]
+          to: [GetFatherController, Exec]
+        - from: [GetFatherController, Exec]
+          to: [CastToAIController, Exec]
+        - from: [CastToAIController, Exec]
+          to: [StopCurrentActivity, Exec]
+        - from: [StopCurrentActivity, Exec]
+          to: [RunBehaviorTree, Exec]
         # Data flow - GetAvatarActor to Cast
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
@@ -3589,6 +3633,17 @@ gameplay_abilities:
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [SetIsAttached, Target]
+        # Data flow - R-AI-1 turret AI (v4.30)
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherController, Target]
+        - from: [GetFatherController, ReturnValue]
+          to: [CastToAIController, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetActivityComponent, Target]
+        - from: [GetActivityComponent, ReturnValue]
+          to: [StopCurrentActivity, Target]
+        - from: [CastToAIController, AsAIController]
+          to: [RunBehaviorTree, Target]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
           to: [Branch_First, Condition]

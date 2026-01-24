@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.28.2)
+# LOCKED_CONTRACTS.md (v4.30)
 
 ## Purpose
 
@@ -295,6 +295,57 @@ Symbiote is an **ultimate ability** with 30-second duration. During Symbiote, th
 
 ---
 
+## LOCKED CONTRACT 12 — R-AI-1 Activity System Compatibility (v4.30)
+
+### Context
+
+NPCs using Narrative Pro's Activity system (via `activity_configuration` in NPCDefinition) have their Behavior Trees managed by `NPCActivityComponent`. A GameplayAbility that directly calls `RunBehaviorTree` on the AIController bypasses this system, causing state conflicts.
+
+**Father Companion Case:** `NPC_FatherCompanion` has `activity_configuration: AC_FatherBehavior`, meaning Father uses the Activity system for normal AI behaviors (follow, attack, etc.).
+
+### Invariant
+
+1. If an NPC has `activity_configuration` set, GameplayAbilities on that NPC **MUST NOT** call `RunBehaviorTree` directly without coordinating with the Activity system
+2. Acceptable coordination strategies:
+   - **Option A:** Create a dedicated Activity (e.g., `BPA_FatherEngineer`) and request it via `NPCActivityComponent`
+   - **Option B:** Call `StopCurrentActivity()` before `RunBehaviorTree`, and trigger activity reselection on EndAbility
+3. GA_FatherEngineer specifically uses **Option B** (implemented v4.30)
+
+### Forbidden
+
+- Calling `RunBehaviorTree` directly on AIController without stopping current activity first
+- Leaving the Activity system in a desync state when ability ends
+- Creating competing BT drivers (activity BT + ability BT running simultaneously)
+
+### Implementation (GA_FatherEngineer)
+
+```yaml
+# Before RunBehaviorTree:
+- id: GetActivityComponent
+  type: CallFunction
+  properties:
+    function: GetComponentByClass
+    class: Actor
+  # Returns NPCActivityComponent
+
+- id: StopCurrentActivity
+  type: CallFunction
+  properties:
+    function: StopCurrentActivity
+    class: NPCActivityComponent
+
+# Then RunBehaviorTree as before
+```
+
+### Reference
+
+- Manifest: `manifest.yaml` — GA_FatherEngineer event_graph, NPC_FatherCompanion definition
+- Narrative Pro: `NPCActivityComponent.h:131` — `StopCurrentActivity()` is BlueprintCallable
+- Audit: Claude–GPT dual audit session (2026-01-24)
+- Implementation: v4.30
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -318,3 +369,4 @@ Any change that touches a LOCKED implementation must:
 | v4.16.1 | 2026-01-21 | Added Temporary Exception 1 — Rule #9 Father Validation (dual-agent audit) |
 | v4.16.2 | 2026-01-22 | Locked P1.3 Startup Effects Validation (Claude–GPT dual audit): severity definitions, error codes, abort strategy, CI gate, symbol anchors |
 | v4.28.2 | 2026-01-23 | Added Contract 11 — C_SYMBIOTE_STRICT_CANCEL (Claude–GPT dual audit): Symbiote ultimate cannot be cancelled by player-initiated abilities |
+| v4.30 | 2026-01-24 | Added Contract 12 — R-AI-1 Activity System Compatibility (Claude–GPT dual audit): NPCs with ActivityConfiguration must coordinate BT calls with Activity system. GA_FatherEngineer fixed to call StopCurrentActivity before RunBehaviorTree. |

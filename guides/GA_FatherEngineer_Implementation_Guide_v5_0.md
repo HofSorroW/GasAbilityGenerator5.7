@@ -1,14 +1,15 @@
 # Father Companion - GA_FatherEngineer Implementation Guide
-## VERSION 4.9 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Updated)
+## VERSION 5.0 - R-AI-1 Activity System Compatibility (v4.30)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.9
+**Version:** 5.0
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
 **Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Fix_v4.13.2.md
+**R-AI-1 Compliance:** LOCKED CONTRACT 12 - Activity System Compatibility
 
 ---
 
@@ -20,7 +21,8 @@
 | GA_FatherEngineer blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
 | Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
 | Transition prelude nodes | ✅ Auto-generated | RemovePriorFormState + ApplyEngineerState in event_graph |
-| Deployment logic | ✅ Auto-generated | LineTrace, SetActorLocation, Run Behavior Tree in event_graph |
+| Deployment logic | ✅ Auto-generated | LineTrace, SetActorLocation in event_graph |
+| R-AI-1 AI coordination | ✅ Auto-generated | StopCurrentActivity + RunBehaviorTree (v5.0) |
 | VFX spawning | ✅ Auto-generated | SpawnSystemAttached nodes in event_graph |
 | 3-Layer Guards | ✅ Auto-generated | NL-GUARD-IDENTITY L1 pattern (v5.0) |
 | EndAbility cleanup | ✅ Auto-generated | Event_EndAbility with bWasCancelled check |
@@ -758,21 +760,39 @@ This effect grants the Engineer form identity tag. Applied in the transition pre
    - 6.3.3) Connect Apply GE **Return Value** to TurretModeEffectHandle value
    - 6.3.4) Handle stored in BP_FatherCompanion for EndAbility cleanup when form changes
 
-### **7) Initialize Turret AI**
+### **7) Initialize Turret AI (R-AI-1 Compliant)**
 
-#### 7.1) Run Behavior Tree
-   - 7.1.1) From Set TurretModeEffectHandle execution:
+> **LOCKED CONTRACT 12 (R-AI-1):** NPC_FatherCompanion uses `activity_configuration: AC_FatherBehavior`.
+> Calling RunBehaviorTree directly creates a competing BT driver. Per R-AI-1, we MUST call
+> `StopCurrentActivity()` before `RunBehaviorTree()` to coordinate with the Activity system.
+> See `LOCKED_CONTRACTS.md` Contract 12 for full specification.
+
+#### 7.1) Get AI Controller
+   - 7.1.1) From Set TurretModeEffectHandle execution (or CommitCooldown):
       - 7.1.1.1) From FatherRef, drag outward
       - 7.1.1.2) Search: `Get Controller`
       - 7.1.1.3) Add **Get Controller** node
    - 7.1.2) From Get Controller Return Value:
       - 7.1.2.1) Drag outward and search: `Cast To AIController`
       - 7.1.2.2) Add **Cast To AIController** node
-   - 7.1.3) From Cast success:
-      - 7.1.3.1) Drag outward and search: `Run Behavior Tree`
-      - 7.1.3.2) Add **Run Behavior Tree** node
-   - 7.1.4) Configure:
-      - 7.1.4.1) **BTAsset**: Select `BT_FatherEngineer` (created in GA_TurretShoot guide)
+
+#### 7.2) Stop Current Activity (R-AI-1 REQUIRED)
+   - 7.2.1) From FatherRef, drag outward:
+      - 7.2.1.1) Search: `Get Component by Class`
+      - 7.2.1.2) Add **Get Component by Class** node
+      - 7.2.1.3) Set **Component Class**: `NPCActivityComponent`
+   - 7.2.2) From Get Component by Class Return Value:
+      - 7.2.2.1) Drag outward and search: `Stop Current Activity`
+      - 7.2.2.2) Add **Stop Current Activity** node
+   - 7.2.3) Connect execution from Cast To AIController success to Stop Current Activity
+
+#### 7.3) Run Behavior Tree
+   - 7.3.1) From Stop Current Activity execution:
+      - 7.3.1.1) Drag outward and search: `Run Behavior Tree`
+      - 7.3.1.2) Add **Run Behavior Tree** node
+   - 7.3.2) Connect AIController cast output to Run Behavior Tree Target
+   - 7.3.3) Configure:
+      - 7.3.3.1) **BTAsset**: Select `BT_FatherEngineer` (created in GA_TurretShoot guide)
 
 ### **8) Set State Variables**
 
@@ -1306,6 +1326,7 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 5.0 | January 2026 | **R-AI-1 Activity System Compatibility (Claude-GPT Audit v6.0 - 2026-01-24):** Added LOCKED CONTRACT 12 compliance. PHASE 5 Section 7 now includes `StopCurrentActivity()` call before `RunBehaviorTree()`. NPC_FatherCompanion uses ActivityConfiguration, so direct BT calls must coordinate with Activity system. Option B: Stop activity, run turret BT, activity resumes naturally when ability ends. See `LOCKED_CONTRACTS.md` Contract 12. |
 | 4.9 | January 2026 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Updated 3-layer guards to use LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Removed enum-based Guard 2, now uses tag-based phase/identity checks per GAS truth source principle. |
 | 4.8 | January 2026 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 6 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Engineer, (3) HasMatchingGameplayTag(Father.State.TurretDeployed). Resolves MEDIUM severity audit finding "No post-delay guards". Renumbered subsequent sections 7-11. |
 | 4.7 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
