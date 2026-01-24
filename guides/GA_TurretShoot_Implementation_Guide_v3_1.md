@@ -1,5 +1,5 @@
 # Father Companion - GA_TurretShoot Implementation Guide
-## VERSION 3.0 - Form State Tag Update (INV-1 Compliant)
+## VERSION 3.1 - Manifest Alignment
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -15,7 +15,7 @@
 | Spawn Task | AbilityTask_SpawnProjectile |
 | Form | Engineer (Stationary Turret) |
 | Input | None (AI Autonomous) |
-| Version | 2.9 |
+| Version | 3.1 |
 | Last Updated | January 2026 |
 
 ---
@@ -70,7 +70,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 
 | Parameter | Value |
 |-----------|-------|
-| Damage Per Shot | 25 |
+| Damage Per Shot | 15 |
 | Fire Rate | 2 shots per second |
 | Projectile Speed | 3000 units/second |
 | Min Engage Range | 500 units |
@@ -128,7 +128,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
 | ProjectileClass | Class Ref (NarrativeProjectile) | BP_TurretProjectile | Projectile to spawn |
-| DamagePerShot | Float | 25.0 | Damage per projectile |
+| DamagePerShot | Float | 15.0 | Damage per projectile |
 | ProjectileSpeed | Float | 3000.0 | Projectile velocity |
 | MuzzleSocketName | Name | MuzzleSocket | Socket for projectile spawn |
 | FatherRef | Actor Ref | None | Father reference |
@@ -139,7 +139,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
-| GE_TurretProjectileDamage | Instant | 25 damage per hit via NarrativeDamageExecCalc |
+| GE_TurretProjectileDamage | Instant | 15 damage per hit via NarrativeDamageExecCalc |
 | GE_TurretShootCooldown | 0.5 seconds | Fire rate limiter |
 
 ### Projectile Parameters
@@ -147,7 +147,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Parameter | Value |
 |-----------|-------|
 | Parent Class | NarrativeProjectile |
-| Damage | 25 |
+| Damage | 15 |
 | Speed | 3000 units/second |
 | Gravity | 0 (no drop) |
 | Collision Radius | 15 units |
@@ -491,7 +491,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
 | ProjectileClass | Class Reference (NarrativeProjectile) | BP_TurretProjectile | Yes |
-| DamagePerShot | Float | 25.0 | Yes |
+| DamagePerShot | Float | 15.0 | Yes |
 | ProjectileSpeed | Float | 3000.0 | Yes |
 | MuzzleSocketName | Name | MuzzleSocket | Yes |
 | FatherRef | BP_FatherCompanion (Object Reference) | None | No |
@@ -901,7 +901,7 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 
 ## CHANGELOG
 
-### VERSION 3.0 - Form State Tag Update (INV-1 Compliant)
+### VERSION 3.1 - Manifest Alignment
 
 **Release Date:** January 2026
 

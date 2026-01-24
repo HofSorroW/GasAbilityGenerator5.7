@@ -1,6 +1,6 @@
 # Father Companion - GA_FatherAttack Implementation Guide
 
-## VERSION 3.5 - Form State Tag Update (INV-1 Compliant)
+## VERSION 3.6 - Manifest Alignment (INV-INPUT-ASC-1 Compliant)
 
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
@@ -12,16 +12,16 @@
 |----------|-------|
 | Ability Name | GA_FatherAttack |
 | Ability Type | AI Combat - Melee (Multi-Hit) |
-| Parent Class | GA_Melee_Unarmed |
+| Parent Class | NarrativeGameplayAbility |
 | Form | Crawler (Active only in Crawler form) |
-| Input | Narrative.Input.Father.Attack |
-| Version | 3.5 |
+| Input | None (AI-controlled via BTTask) |
+| Version | 3.6 |
 | Last Updated | December 2025 |
 | Engine | Unreal Engine 5.6 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only (Child Blueprint + Override) |
 | Multiplayer | Compatible (Server Only) |
-| Dependencies | BP_FatherCompanion, GA_Melee_Unarmed, GE_WeaponDamage |
+| Dependencies | BP_FatherCompanion, GE_WeaponDamage |
 
 ---
 
@@ -74,7 +74,7 @@ Version 3.3 adds multi-hit support using Narrative Pro v2.2's CachedHitActors pa
 | Method | Trigger | Use Case |
 |--------|---------|----------|
 | AI Behavior Tree | BTTask_TryActivateAbilityByClass | Autonomous attacking (primary) |
-| Input Tag | Narrative.Input.Father.Attack | Manual player control (optional) |
+| Input Tag | None | Father ASC - no player input (INV-INPUT-ASC-1) |
 
 ### **Form Restriction**
 

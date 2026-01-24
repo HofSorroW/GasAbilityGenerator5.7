@@ -1,8 +1,8 @@
 # GA_FatherExoskeletonSprint Implementation Guide
-## VERSION 2.8 - Form State Tag Update (INV-1 Compliant)
+## VERSION 2.9 - Manifest Alignment (INV-INPUT-1 Compliant)
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
-**Version:** 2.6
+**Version:** 2.9
 **Date:** January 2026
 **Form:** Exoskeleton
 **Parent Class:** NarrativeGameplayAbility
@@ -16,7 +16,7 @@ This guide provides step-by-step instructions for implementing GA_FatherExoskele
 **Key Features:**
 - Exoskeleton form only (requires Effect.Father.FormState.Exoskeleton tag)
 - Continuous sprint while key held (ends on release)
-- Movement speed boost: 75% increase
+- Movement speed boost: 50% increase (1.5x multiplier)
 - Jump height boost: 50% increase (stacks with Exoskeleton base boost)
 - Enemy push mechanic: Radial knockback every 0.3 seconds
 - Faction-based hostile detection via ArsenalStatics::GetAttitude

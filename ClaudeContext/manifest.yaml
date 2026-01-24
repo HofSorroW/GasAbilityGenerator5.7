@@ -5817,8 +5817,8 @@ gameplay_abilities:
         - Ability.Father.Mark
       activation_owned_tags:
         - Father.State.Marking
-      activation_required_tags:
-        - Effect.Father.FormState.Crawler  # Uses GE-granted tag (Option B)
+      # activation_required_tags removed - Mark works in both Crawler and Engineer forms
+      # Called internally by attack abilities (GA_FatherAttack, GA_FatherLaserShot, GA_TurretShoot, GA_FatherElectricTrap)
       activation_blocked_tags:
         - Father.State.Transitioning
     variables:
@@ -5827,11 +5827,11 @@ gameplay_abilities:
         class: Actor
       - name: MarkDuration
         type: Float
-        default_value: 10.0
+        default_value: 5.0  # 5 seconds per guide
         instance_editable: true
-      - name: MarkDamageBonus
+      - name: MarkArmorReduction
         type: Float
-        default_value: 1.5
+        default_value: -10.0  # -10 Armor = ~10% more damage per guide
         instance_editable: true
     event_graph:
       nodes:

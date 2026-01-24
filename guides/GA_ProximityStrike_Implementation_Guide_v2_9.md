@@ -1,5 +1,5 @@
 # Father Companion - GA_ProximityStrike Implementation Guide
-## VERSION 2.8 - Form State Tag Update (INV-1 Compliant)
+## VERSION 2.9 - Manifest Alignment (INV-INPUT-1 Compliant)
 ## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
 
 ---
@@ -12,10 +12,10 @@
 | Ability Type | Passive AOE Damage |
 | Parent Class | NarrativeGameplayAbility |
 | Form | Symbiote (Full Body Merge) |
-| Input | None (Automatic - activated by GA_FatherSymbiote) |
-| Version | 2.7 |
+| Input | Q Key (Narrative.Input.Ability1) - Symbiote-gated |
+| Version | 2.9 |
 | Granting Method | EquippableItem (BP_FatherSymbioteForm) |
-| Activation Method | Explicit activation by GA_FatherSymbiote |
+| Activation Method | Player Q input (INV-INPUT-1 compliant) |
 
 ---
 
@@ -44,7 +44,7 @@ GA_ProximityStrike is a passive AOE damage ability that automatically damages al
 ### **Key Features**
 
 - Passive Activation: Explicitly activated by GA_FatherSymbiote after form tags applied
-- AOE Damage: Damages all enemies within 350 unit radius
+- AOE Damage: Damages all enemies within 400 unit radius
 - Rapid Ticks: Deals damage every 0.5 seconds
 - Unlimited Targets: No cap on simultaneous targets
 - Knockback: Small push effect on each tick
@@ -65,9 +65,9 @@ In Symbiote form, the father fully merges with the player body, creating a berse
 
 | Parameter | Value |
 |-----------|-------|
-| Damage Per Tick | 40 (base, before scaling) |
+| Damage Per Tick | 50 (base, before scaling) |
 | Tick Rate | 0.5 seconds |
-| Damage Radius | 350 units |
+| Damage Radius | 400 units |
 | Max Targets | Unlimited |
 | Knockback Force | 200 units |
 | Form Required | Symbiote |
@@ -962,7 +962,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | Passive Activation | Enabled |
 | AOE Damage | Every 0.5 seconds |
 | Damage Per Tick | 40 (base) |
-| Damage Radius | 350 units |
+| Damage Radius | 400 units |
 | Max Targets | Unlimited |
 | Knockback Effect | On each tick |
 
