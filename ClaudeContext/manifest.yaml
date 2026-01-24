@@ -320,21 +320,12 @@ tags:
   - tag: Father.Form.Symbiote
     comment: Father is in symbiote form (merged)
 
-  # Input Tags - Father (8) - follows Narrative.Input.* convention
-  - tag: Narrative.Input.Father.DomeBurst
-    comment: Input for dome burst ability
-  - tag: Narrative.Input.Father.ElectricTrap
-    comment: Input for electric trap ability
-  - tag: Narrative.Input.Father.FormWheel
-    comment: Input for form selection wheel
-  - tag: Narrative.Input.Father.ProximityStrike
-    comment: Input for proximity strike ability
-  - tag: Narrative.Input.Father.Sprint
-    comment: Input for exoskeleton sprint
-  - tag: Narrative.Input.Father.Stealth
-    comment: Input for stealth field ability
-  - tag: Narrative.Input.Father.TurretShoot
-    comment: Input for turret shoot ability
+  # Input Tags - DEPRECATED (v6.5)
+  # Per INV-INPUT-1: Father abilities now use Narrative Pro default input tags:
+  # - Narrative.Input.Ability1 (Q) - shared by form-gated abilities
+  # - Narrative.Input.Ability2 (E) - shared by form-gated abilities
+  # - Narrative.Input.Ability3 (F) - reserved
+  # Custom Narrative.Input.Father.* tags removed - caused HasTagExact mismatch
   - tag: Narrative.Input.Move
     comment: Generic move input tag
 
@@ -469,15 +460,22 @@ input_actions:
 # ============================================================================
 # INPUT MAPPING CONTEXT (1)
 # ============================================================================
-# NOTE: DA_FatherInputMapping (NarrativeAbilityInputMapping DataAsset) must be
-# created manually in-editor. It maps Input Actions to Gameplay Tags:
-#   - IA_FatherFormWheel → Narrative.Input.Father.FormChange
-#   - IA_FatherDomeBurst → Narrative.Input.Father.Ability1 (Q Tap)
-#   - IA_FatherStealth → Narrative.Input.Father.Ability1 (E - Exoskeleton)
-#   - IA_FatherSprint → Narrative.Input.Father.Ability2 (Q Hold)
-#   - IA_FatherProximityStrike → Narrative.Input.Father.Ability1 (Q - Symbiote)
-#   - IA_FatherElectricTrap → Narrative.Input.Father.Ability1 (Q - Engineer)
-# Generator does not yet support NarrativeAbilityInputMapping asset type.
+# v6.5 UPDATE (INV-INPUT-1): Father abilities now use Narrative Pro's default
+# input system. NO custom DA_FatherInputMapping needed.
+#
+# Input Architecture:
+#   - DA_DefaultAbilityInputs (Narrative Pro) maps IA_Ability1/2/3 to InputTags
+#   - IMC_Default (Narrative Pro) maps Q/E/F keys to IA_Ability1/2/3
+#   - Father abilities use input_tag: Narrative.Input.Ability{1|2|3}
+#   - Per-form behavior gated via activation_required_tags
+#
+# Current Assignments:
+#   - Q (Ability1): GA_DomeBurst (Armor), GA_ProximityStrike (Symbiote),
+#                   GA_FatherExoskeletonSprint (Exoskeleton)
+#   - E (Ability2): GA_StealthField (Exoskeleton)
+#   - Father ASC abilities (GA_FatherElectricTrap, etc.): No input_tag, relay only
+#
+# NOTE: IMC_FatherCompanion below is for FormWheel (T key) only.
 # ============================================================================
 input_mapping_contexts:
   - name: IMC_FatherCompanion
@@ -4255,7 +4253,8 @@ gameplay_abilities:
   - name: GA_DomeBurst
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
-    input_tag: Narrative.Input.Father.Ability1
+    # v6.5: Use Narrative Pro default input tag (INV-INPUT-1)
+    input_tag: Narrative.Input.Ability1
     instancing_policy: InstancedPerActor
     net_execution_policy: LocalPredicted
     cooldown_gameplay_effect_class: GE_DomeBurstCooldown
@@ -4800,6 +4799,8 @@ gameplay_abilities:
   - name: GA_FatherExoskeletonSprint
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
+    # v6.5: Use Narrative Pro default input tag (INV-INPUT-1) - Q key, Exoskeleton-gated
+    input_tag: Narrative.Input.Ability1
     instancing_policy: InstancedPerActor
     net_execution_policy: LocalPredicted
     tags:
@@ -4966,6 +4967,8 @@ gameplay_abilities:
   - name: GA_StealthField
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
+    # v6.5: Use Narrative Pro default input tag (INV-INPUT-1) - E key, Exoskeleton-gated
+    input_tag: Narrative.Input.Ability2
     instancing_policy: InstancedPerActor
     net_execution_policy: LocalPredicted
     cooldown_gameplay_effect_class: GE_StealthCooldown
@@ -5412,6 +5415,8 @@ gameplay_abilities:
   - name: GA_ProximityStrike
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
+    # v6.5: Use Narrative Pro default input tag (INV-INPUT-1) - Q key, Symbiote-gated
+    input_tag: Narrative.Input.Ability1
     instancing_policy: InstancedPerActor
     net_execution_policy: ServerOnly
     cooldown_gameplay_effect_class: GE_ProximityStrikeCooldown

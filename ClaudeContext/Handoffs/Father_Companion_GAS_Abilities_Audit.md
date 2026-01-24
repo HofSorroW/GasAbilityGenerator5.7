@@ -1,9 +1,11 @@
 # Father Companion GAS & Abilities Audit - Locked Decisions
-## Version 6.4 - January 2026
+## Version 6.5 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from dual-agent audits (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
 **Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.31
+
+**v6.5 Updates:** Added VTF-10 (Input System Architecture). Discovered `Narrative.Input.Father.*` namespace mismatch with Narrative Pro's `HasTagExact` check. Player ASC abilities must use built-in `Narrative.Input.Ability1/2/3` tags. Father ASC abilities cannot use input_tag (require relay). Pending Erdem review for final input mappings.
 
 **v6.4 Updates:** Clarified R-CLEANUP-1 scope - GA_FatherExoskeleton does NOT grant abilities directly; Dash/Sprint/Stealth are granted via EI_FatherExoskeletonForm (EquippableItem handles lifecycle automatically). Corrected Affected Abilities list.
 
@@ -28,7 +30,7 @@
 1. [Locked Constraints (LC-1 to LC-4)](#locked-constraints-implementation-boundaries)
 2. [Invulnerability Decision (INV-1)](#invulnerability-decision)
 3. [EndAbility Lifecycle Rules (Rule 1-4)](#endability-lifecycle-rules-canonical)
-4. [Validated Technical Findings (VTF-1 to VTF-8)](#validated-technical-findings)
+4. [Validated Technical Findings (VTF-1 to VTF-10)](#validated-technical-findings)
 5. [NOT LOCKED Items Audit (v5.0)](#not-locked-items-audit-v50)
 6. [Severity Matrix](#severity-matrix-locked)
 7. [Critical Defect Details](#critical-defect-details)
@@ -440,6 +442,84 @@ FGameplayEffectSpecHandle MakeOutgoingGameplayEffectSpec(
 - GA_DomeBurst, GA_ProtectiveDome, GA_StealthField, GA_ProximityStrike, GA_FatherMark
 
 **Enforcement:** Pre-validator should flag MakeOutgoingGameplayEffectSpec nodes missing `param.GameplayEffectClass`
+
+---
+
+### VTF-10: Input System Architecture (NEW v6.5)
+**Status:** LOCKED
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Severity:** Error (Silent Runtime Failure)
+
+Player input-triggered abilities must use Narrative Pro's built-in InputTag system correctly. Custom InputTag namespaces cause silent activation failure due to `HasTagExact` mismatch.
+
+**Narrative Pro Input Flow:**
+
+1. **Grant Time** (`NarrativeCharacter.cpp:791`):
+   ```cpp
+   AbilitySpec.GetDynamicSpecSourceTags().AddTag(InputTag);
+   ```
+
+2. **Input Press** (`NarrativeAbilitySystemComponent.cpp:285`):
+   ```cpp
+   if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+   {
+       TryActivateAbility(Spec.Handle);
+   }
+   ```
+
+3. **Default Mapping** (`DA_DefaultAbilityInputs`):
+   - Q → `Narrative.Input.Ability1`
+   - E → `Narrative.Input.Ability2`
+   - F → `Narrative.Input.Ability3`
+
+**Critical Discovery:**
+
+| Issue | Value |
+|-------|-------|
+| Manifest used | `Narrative.Input.Father.Ability1` |
+| Narrative Pro broadcasts | `Narrative.Input.Ability1` |
+| Result | `HasTagExact` fails → ability never activates |
+
+**Invariants (LOCKED):**
+
+**INV-INPUT-ASC-1:**
+> `input_tag` is valid only for abilities on the **Player ASC**. Father ASC abilities must use relay activation.
+
+**INV-INPUT-1:**
+> All Player-input-triggered abilities MUST:
+> 1. Be owned by Player ASC
+> 2. Use `Narrative.Input.Ability{1|2|3}` (built-in tags)
+> 3. Be gated via `activation_required_tags` (NOT custom namespaces)
+
+**Correct Pattern:**
+```yaml
+# Multiple Q abilities share Narrative.Input.Ability1
+- name: GA_DomeBurst
+  input_tag: Narrative.Input.Ability1
+  activation_required_tags:
+    - Father.Dome.Active
+    - Father.Dome.FullyCharged
+
+- name: GA_ProximityStrike
+  input_tag: Narrative.Input.Ability1
+  activation_required_tags:
+    - Effect.Father.FormState.Symbiote
+```
+
+**Validated Corrections (IMPLEMENTED v6.5):**
+
+| Ability | Owner ASC | input_tag | Status |
+|---------|-----------|-----------|--------|
+| GA_DomeBurst | Player | `Narrative.Input.Ability1` | ✅ Q, Armor-gated |
+| GA_StealthField | Player | `Narrative.Input.Ability2` | ✅ E, Exoskeleton-gated |
+| GA_FatherExoskeletonSprint | Player | `Narrative.Input.Ability1` | ✅ Q, Exoskeleton-gated |
+| GA_ProximityStrike | Player | `Narrative.Input.Ability1` | ✅ Q, Symbiote-gated |
+| GA_FatherElectricTrap | Father | **None** | ✅ Father ASC - requires relay |
+
+**⚠️ FUTURE ABILITIES NOTE (Erdem):**
+> If new player-input-driven abilities are added, they MUST follow INV-INPUT-1 (use `Narrative.Input.Ability{1|2|3}` + `activation_required_tags` gating). Review input mapping strategy before extension.
+
+**Enforcement:** See LOCKED_CONTRACTS.md Contract 14 (INV-INPUT-1)
 
 ---
 
@@ -1266,9 +1346,12 @@ These patterns were researched during v6.1 audit and confirmed as correctly impl
 | 6.0 | 2026-01-24 | **EXTENDED PATTERNS AUDIT.** Claude-GPT dual audit of 12 undocumented patterns. Locked 4 new rules: R-TIMER-1 (Timer Callback Safety - HIGH), R-ENUM-1 (GE-First Causality - MEDIUM), R-AI-1 (Activity System Compatibility - HIGH), R-CLEANUP-1 (Granted Ability Cleanup - MEDIUM, scoped). Identified and fixed GA_FatherEngineer R-AI-1 violation (direct RunBehaviorTree bypassing Activity system). Updated manifest to call StopCurrentActivity before RunBehaviorTree in Engineer. |
 | 6.1 | 2026-01-24 | **PATTERN COMPLETENESS AUDIT.** Claude-GPT dual audit of 6 unresearched patterns: Montage Task Lifecycle, Socket Attachment/Detachment, Line Trace Authority, Movement Restore, Effect Handle Storage, MEDIUM severity items. All patterns verified as already compliant or covered by existing rules. All 6 MEDIUM severity items confirmed RESOLVED (implemented v4.14/v4.15). No new LOCKED rules required. Audit completeness achieved. Reference: `GAS_Patterns_Research_Assessment_v1.md`. |
 | 6.2 | 2026-01-24 | **AUDIT CLOSURE & CONSOLIDATION.** Claude-GPT challenge session verified Research Assessment conclusions. Added DOC-ONLY PATTERNS section (P-MOVE-1, P-ATTACH-1, P-EFFECT-1, P-MONTAGE-1, P-TARGET-1). Consolidated `GAS_Patterns_Research_Assessment_v1.md` findings into this document. Archived Research Assessment. Final audit status confirmed: No new LOCKED rules required. |
+| 6.3 | 2026-01-24 | Added VTF-9 (MakeOutgoingGameplayEffectSpec param.GameplayEffectClass requirement). 16 manifest abilities fixed. Silent runtime failure discovered and corrected. |
+| 6.4 | 2026-01-24 | Clarified R-CLEANUP-1 scope - GA_FatherExoskeleton does NOT grant abilities directly; EquippableItem handles lifecycle. |
+| 6.5 | 2026-01-24 | **INPUT SYSTEM ARCHITECTURE AUDIT.** Added VTF-10 (Input System Architecture). Discovered `Narrative.Input.Father.*` namespace mismatch with Narrative Pro's `HasTagExact` check. Player ASC abilities must use built-in `Narrative.Input.Ability1/2/3` tags. Father ASC abilities cannot use input_tag (require relay). Added INV-INPUT-ASC-1 and INV-INPUT-1 invariants. LOCKED in LOCKED_CONTRACTS.md Contract 14. **IMPLEMENTED:** GA_DomeBurst, GA_StealthField, GA_FatherExoskeletonSprint, GA_ProximityStrike now have correct input_tag in manifest. |
 
 ---
 
 **END OF LOCKED DECISIONS DOCUMENT**
 
-**STATUS: AUDIT CLOSED (v6.2)** - All findings implemented and verified. All CRITICAL and MEDIUM severity items RESOLVED. All unresearched patterns validated and documented (DOC-ONLY). 5 LOCKED rules: NL-GUARD-IDENTITY (L1), R-TIMER-1, R-ENUM-1, R-AI-1, R-CLEANUP-1. 5 DOC-ONLY patterns: P-MOVE-1, P-ATTACH-1, P-EFFECT-1, P-MONTAGE-1, P-TARGET-1. Audit chain complete and internally consistent.
+**STATUS: AUDIT COMPLETE (v6.5)** - Input system architecture finding added and implemented. All CRITICAL and MEDIUM severity items RESOLVED. 6 LOCKED rules: NL-GUARD-IDENTITY (L1), R-TIMER-1, R-ENUM-1, R-AI-1, R-CLEANUP-1, VTF-10 (INV-INPUT-1). 5 DOC-ONLY patterns: P-MOVE-1, P-ATTACH-1, P-EFFECT-1, P-MONTAGE-1, P-TARGET-1. All current abilities have correct input_tag assignments. Future abilities must follow INV-INPUT-1.

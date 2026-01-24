@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.31)
+# LOCKED_CONTRACTS.md (v4.32)
 
 ## Purpose
 
@@ -413,6 +413,84 @@ Silent runtime failure: Null GameplayEffectClass → Invalid FGameplayEffectSpec
 
 ---
 
+## LOCKED CONTRACT 14 — INV-INPUT-1 Input Architecture Invariants (v4.32)
+
+### Context
+
+Narrative Pro uses a tag-based input system where:
+1. `UNarrativeAbilityInputMapping` (DataAsset) maps InputAction → InputTag
+2. `NarrativePlayerController` binds InputActions to `AbilityInputTagPressed(InputTag)`
+3. `NarrativeAbilitySystemComponent` uses `HasTagExact(InputTag)` to find matching abilities
+4. Only abilities on the **Player ASC** receive input (no automatic cross-ASC routing)
+
+**Critical Discovery (Claude-GPT dual audit 2026-01-24):** Manifest used `Narrative.Input.Father.Ability1` but Narrative Pro's default mapping broadcasts `Narrative.Input.Ability1`. The `HasTagExact` check caused silent activation failure.
+
+### Invariant INV-INPUT-ASC-1
+
+> `input_tag` is valid **only** for abilities owned by the **Player ASC**.
+
+**Reason:** Player input flows through `NarrativePlayerController` → Player ASC. Father's ASC never receives direct input events.
+
+**Abilities on Father ASC** (e.g., `GA_FatherElectricTrap`) must use alternative activation:
+- Relay from Player ability (`TryActivateAbilityByClass` on Father ASC)
+- AI/Goal-driven activation
+- Event-driven activation
+
+### Invariant INV-INPUT-1
+
+> All Player-input-triggered abilities MUST:
+> 1. Be owned by Player ASC
+> 2. Use Narrative Pro's built-in InputTags: `Narrative.Input.Ability1`, `Narrative.Input.Ability2`, `Narrative.Input.Ability3`
+> 3. Be gated exclusively via `activation_required_tags` (NOT custom InputTag namespaces)
+
+**Reason:** Narrative Pro ships with `DA_DefaultAbilityInputs` mapping Q→Ability1, E→Ability2, F→Ability3. Using custom namespaces (e.g., `Narrative.Input.Father.*`) creates tag mismatch with `HasTagExact`.
+
+### Correct Pattern (Multiple Q Abilities)
+
+```yaml
+# All Q abilities share Narrative.Input.Ability1, differentiated by form tags
+- name: GA_DomeBurst
+  input_tag: Narrative.Input.Ability1
+  activation_required_tags:
+    - Father.Dome.Active
+    - Father.Dome.FullyCharged
+
+- name: GA_ProximityStrike
+  input_tag: Narrative.Input.Ability1
+  activation_required_tags:
+    - Effect.Father.FormState.Symbiote
+```
+
+### Forbidden
+
+- Using custom InputTag namespaces (e.g., `Narrative.Input.Father.*`) without custom `UNarrativeAbilityInputMapping`
+- Setting `input_tag` on abilities owned by non-Player ASCs (e.g., Father ASC)
+- Creating custom InputActions (e.g., `IA_FatherDomeBurst`) without adding them to the active InputMapping
+
+### Validated Corrections (IMPLEMENTED v4.32)
+
+| Ability | Owner ASC | input_tag | Status |
+|---------|-----------|-----------|--------|
+| GA_DomeBurst | Player | `Narrative.Input.Ability1` | ✅ Q, Armor-gated |
+| GA_StealthField | Player | `Narrative.Input.Ability2` | ✅ E, Exoskeleton-gated |
+| GA_FatherExoskeletonSprint | Player | `Narrative.Input.Ability1` | ✅ Q, Exoskeleton-gated |
+| GA_ProximityStrike | Player | `Narrative.Input.Ability1` | ✅ Q, Symbiote-gated |
+| GA_FatherElectricTrap | Father | **None** | ✅ Father ASC - requires relay |
+
+### ⚠️ FUTURE ABILITIES NOTE (Erdem)
+
+> **NOTE:** If new player-input-driven abilities are added in the future, they MUST follow INV-INPUT-1 (use `Narrative.Input.Ability{1|2|3}` + `activation_required_tags` gating). Review input mapping strategy before extension.
+
+### Reference
+
+- Narrative Pro: `NarrativePlayerController.cpp:39` (default mapping load), `NarrativePlayerController.cpp:160-165` (input binding loop)
+- Narrative Pro: `NarrativeAbilitySystemComponent.cpp:285` (`HasTagExact` check)
+- Narrative Pro: `NarrativeCharacter.cpp:791` (InputTag added to DynamicSpecSourceTags at grant)
+- Audit: Claude-GPT dual audit session (2026-01-24)
+- Implementation: v4.32
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -438,3 +516,4 @@ Any change that touches a LOCKED implementation must:
 | v4.28.2 | 2026-01-23 | Added Contract 11 — C_SYMBIOTE_STRICT_CANCEL (Claude–GPT dual audit): Symbiote ultimate cannot be cancelled by player-initiated abilities |
 | v4.30 | 2026-01-24 | Added Contract 12 — R-AI-1 Activity System Compatibility (Claude–GPT dual audit): NPCs with ActivityConfiguration must coordinate BT calls with Activity system. GA_FatherEngineer fixed to call StopCurrentActivity before RunBehaviorTree. |
 | v4.31 | 2026-01-24 | Added Contract 13 — INV-GESPEC-1 MakeOutgoingGameplayEffectSpec Parameter (Claude–GPT dual audit): All MakeOutgoingGameplayEffectSpec nodes MUST use `param.GameplayEffectClass:` syntax. 16 abilities fixed for silent runtime failure. |
+| v4.32 | 2026-01-24 | Added Contract 14 — INV-INPUT-1 Input Architecture Invariants (Claude–GPT dual audit): input_tag valid only for Player ASC abilities; must use Narrative Pro built-in tags (Narrative.Input.Ability1/2/3); custom namespaces cause HasTagExact mismatch. Pending Erdem review for final ability-to-input mapping. |
