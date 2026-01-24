@@ -186,22 +186,50 @@ switch ($Action) {
         }
 
         $OutputLog = "$LogDir\commandlet_output.log"
+        # Convert to forward slashes for UE compatibility and quote properly
+        $ManifestPathUE = $ManifestPath -replace '\\', '/'
+        $OutputLogUE = $OutputLog -replace '\\', '/'
 
-        Write-Host "Manifest: $ManifestPath"
-        Write-Host "Output: $OutputLog"
+        Write-Host "Manifest: $ManifestPathUE"
+        Write-Host "Output: $OutputLogUE"
         Write-Host ""
 
-        # Run commandlet
-        $output = & $Editor "$ProjectFile" -run=GasAbilityGenerator "-manifest=$ManifestPath" "-output=$OutputLog" -unattended -nosplash -nullrhi 2>&1
-        $exitCode = $LASTEXITCODE
+        # Build argument list with proper quoting
+        $args = @(
+            "`"$ProjectFile`"",
+            "-run=GasAbilityGenerator",
+            "-manifest=`"$ManifestPathUE`"",
+            "-output=`"$OutputLogUE`"",
+            "-unattended",
+            "-nosplash",
+            "-nullrhi"
+        )
 
-        # Display output
-        Write-Host $output
+        Write-Host "Running: $Editor $($args -join ' ')"
+
+        # Run commandlet and capture output
+        $process = Start-Process -FilePath $Editor -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogDir\commandlet_stdout.log" -RedirectStandardError "$LogDir\commandlet_stderr.log"
+        $exitCode = $process.ExitCode
+
+        # Display stdout if captured
+        if (Test-Path "$LogDir\commandlet_stdout.log") {
+            $stdout = Get-Content "$LogDir\commandlet_stdout.log" -Raw
+            if ($stdout) { Write-Host $stdout }
+        }
 
         if (Test-Path $OutputLog) {
             Write-Host ""
             Write-Host "=== GENERATION LOG ==="
             Get-Content $OutputLog
+        } else {
+            Write-Host "[WARN] Output log not created at: $OutputLog"
+            # Fallback: extract from UE log
+            if (Test-Path $UELogPath) {
+                Write-Host "Extracting from UE log..."
+                $ueContent = Get-Content $UELogPath -Tail 500 | Where-Object { $_ -match "GasAbilityGenerator" }
+                $ueContent | Out-File $OutputLog -Encoding UTF8
+                Get-Content $OutputLog
+            }
         }
 
         if ($exitCode -eq 0) {
@@ -230,17 +258,50 @@ switch ($Action) {
         }
 
         $OutputLog = "$LogDir\commandlet_output.log"
+        # Convert to forward slashes for UE compatibility
+        $ManifestPathUE = $ManifestPath -replace '\\', '/'
+        $OutputLogUE = $OutputLog -replace '\\', '/'
 
         Write-Host "Running asset generation commandlet..."
-        $output = & $Editor "$ProjectFile" -run=GasAbilityGenerator "-manifest=$ManifestPath" "-output=$OutputLog" -unattended -nosplash -nullrhi 2>&1
+        Write-Host "Manifest: $ManifestPathUE"
+        Write-Host "Output: $OutputLogUE"
 
-        $output | Out-File "$LogDir\commandlet_full.log" -Encoding UTF8
+        # Build argument list with proper quoting
+        $args = @(
+            "`"$ProjectFile`"",
+            "-run=GasAbilityGenerator",
+            "-manifest=`"$ManifestPathUE`"",
+            "-output=`"$OutputLogUE`"",
+            "-unattended",
+            "-nosplash",
+            "-nullrhi"
+        )
+
+        # Run commandlet and capture output
+        $process = Start-Process -FilePath $Editor -ArgumentList $args -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogDir\commandlet_stdout.log" -RedirectStandardError "$LogDir\commandlet_stderr.log"
+        $exitCode = $process.ExitCode
+
+        # Save stdout to full log
+        if (Test-Path "$LogDir\commandlet_stdout.log") {
+            Copy-Item "$LogDir\commandlet_stdout.log" "$LogDir\commandlet_full.log" -Force
+        }
 
         # Display relevant output
         if (Test-Path $OutputLog) {
             Write-Host ""
             Write-Host "=== GENERATION RESULTS ==="
             Get-Content $OutputLog | Where-Object { $_ -match "\[NEW\]|\[FAIL\]|ERROR|Summary|---" }
+        } else {
+            Write-Host "[WARN] Output log not created at: $OutputLog"
+            # Fallback: extract from UE log
+            if (Test-Path $UELogPath) {
+                Write-Host "Extracting from UE log..."
+                $ueContent = Get-Content $UELogPath -Tail 500 | Where-Object { $_ -match "GasAbilityGenerator" }
+                $ueContent | Out-File $OutputLog -Encoding UTF8
+                if (Test-Path $OutputLog) {
+                    Get-Content $OutputLog | Where-Object { $_ -match "\[NEW\]|\[FAIL\]|ERROR|Summary|---" }
+                }
+            }
         }
 
         # Step 3: Show any errors

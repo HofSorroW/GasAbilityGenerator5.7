@@ -4,7 +4,7 @@
 **Auditor:** Claude (Opus 4.5)
 **Date:** 2026-01-25
 **Scope:** 6 NPC Implementation Guides
-**Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.32+
+**Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.33
 
 ---
 
@@ -850,6 +850,7 @@ The following patterns are used across NPC guides but are NOT covered by locked 
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.4 | 2026-01-25 | Claude (Opus 4.5) | v4.33: Custom function resolution (Step 5 - Blueprint->FunctionGraphs); ParseGoalItems LineIndex fix; Fixed automation script log capture; Deleted duplicate manifest.yaml |
 | 1.3 | 2026-01-25 | Claude (Opus 4.5) | v4.32.2-4.32.3: GoalGenerator automation with InitializeGoalGenerator override; Parser debug confirms all sections parsed correctly; GA_Backstab/GA_ProtectiveDome still blocked (custom function resolution D5) |
 | 1.2 | 2026-01-25 | Claude (Opus 4.5) | Added Automation Status section (v4.32/v4.32.1); Updated per-guide sections with automation details; Marked resolved issues |
 | 1.1 | 2026-01-24 | Claude (Opus 4.5) | Added Gameplay Overview section with player-facing descriptions of each NPC |
@@ -937,6 +938,39 @@ actor_blueprints:
 1. Review v4.31 custom function resolution code
 2. Check if FunctionGraph is being created for CheckBackstabCondition
 3. Detailed event graph generation logs needed
+
+### v4.33 Changes (2026-01-25)
+
+**1. Custom Function Resolution (Step 5):**
+
+Added `ResolveViaBlueprintFunctionGraph()` to FGasAbilityGeneratorFunctionResolver:
+- Searches `Blueprint->FunctionGraphs` for custom functions
+- Handles uncompiled functions via `SetSelfMember()` reference
+- Generation order changed: custom_functions now generated BEFORE event_graph
+
+**2. ParseGoalItems LineIndex Fix:**
+
+Fixed section boundary detection in `ParseGoalItems`:
+```cpp
+// v4.32.3 FIX: Decrement LineIndex before break so main loop re-processes section headers
+if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+{
+    LineIndex--;  // <-- Added this line
+    break;
+}
+```
+
+**3. Automation Script Log Capture Fix:**
+
+Fixed `claude_automation.ps1` output log not updating:
+- Root cause: PowerShell path escaping issues with UE commandlet
+- Fix: Use `Start-Process` with proper argument quoting
+- Added fallback: Extract from UE log if commandlet output missing
+- Added diagnostic output: shows command being run
+
+**4. Duplicate Manifest Cleanup:**
+
+Deleted stale `manifest.yaml` from plugin root (was from Jan 17, v2.0.3). Only `ClaudeContext/manifest.yaml` should exist.
 
 ---
 

@@ -1027,11 +1027,11 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
+| **v4.33** | Delegate bindings for actor blueprints; custom function resolution via Blueprint->FunctionGraphs (Step 5); ParseGoalItems LineIndex fix for section boundary detection |
+| **v4.32** | NPC automation enhancement: GoalGenerator automation with InitializeGoalGenerator override; BT Service actual behavior implementation; phase transition blueprints |
 | **v4.30** | Automation Gap Closure: MeshMaterials/Morphs struct automation for clothing items; deferred resolution for EquipmentAbilities/ActivitiesToGrant; DialogueShot SequenceAssets array automation |
 | **v4.29** | PreValidator-Generator Function Resolution Parity: Shared `FGasAbilityGeneratorFunctionResolver` class ensures identical behavior; 17 new ScriptName entries (K2_CancelAbility, etc.) |
 | **v4.28** | Option C Item Generation: Fragments system (AmmoFragment, PoisonableFragment), consumable_items/ammo_items/weapon_attachments manifest sections, S2 dot notation for struct properties |
-| **v4.27** | GA→GA dependency scanning for TSubclassOf; automatic dome burst on form exit; dependency sort order audit (Decisions 22-24) |
-| **v4.26** | Session cache for TSubclassOf resolution; external reference detection; 156/156 assets |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
