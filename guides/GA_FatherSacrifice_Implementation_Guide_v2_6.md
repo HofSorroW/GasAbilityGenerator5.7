@@ -44,7 +44,7 @@
 | Parameter | Value |
 |-----------|-------|
 | Trigger Condition | Player Health drops below 15% of MaxHealth |
-| Protection | 8 seconds of complete invulnerability |
+| Protection | 10 seconds of complete invulnerability |
 | Dormant Duration | 150-210 seconds (random, hidden from player) |
 | Recovery Form | Armor |
 | Cooldown | Duration of dormant state |
@@ -57,7 +57,7 @@
 | Aspect | Implementation |
 |--------|----------------|
 | Protection Method | State.Invulnerable tag via GE_SacrificeInvulnerability |
-| Duration | 8 seconds (Has Duration effect) |
+| Duration | 10 seconds (Has Duration effect) |
 | Damage Blocking | NarrativeDamageExecCalc checks for State.Invulnerable tag |
 | No Absorption Math | All damage blocked completely - no heal-back needed |
 | Blueprint Compatible | Tag-based system works entirely in Blueprint |
@@ -260,7 +260,7 @@
    - 11.5.3) Set **Variable Type**: `Float`
    - 11.5.4) Click **Compile**
    - 11.5.5) Set **Instance Editable**: Checked
-   - 11.5.6) Set **Default Value**: `8.0` (8 seconds)
+   - 11.5.6) Set **Default Value**: `10.0` (10 seconds)
    - 11.5.7) Set **Category**: `Configuration`
 
 #### 11.6) Create MinDormantTime Variable
@@ -324,7 +324,7 @@
 | FatherRef | BP_FatherCompanion Ref | Unchecked | None | Runtime |
 | PlayerASC | NarrativeAbilitySystemComponent Ref | Unchecked | None | Runtime |
 | HealthThreshold | Float | Checked | 0.15 | Configuration |
-| InvulnerabilityDuration | Float | Checked | 8.0 | Configuration |
+| InvulnerabilityDuration | Float | Checked | 10.0 | Configuration |
 | MinDormantTime | Float | Checked | 150.0 | Configuration |
 | MaxDormantTime | Float | Checked | 210.0 | Configuration |
 | OfflineEffectHandle | Active GE Handle | Unchecked | None | Runtime |
@@ -681,7 +681,7 @@
 | Effect Name | GE_SacrificeInvulnerability |
 | Target | Player ASC |
 | Duration Policy | Has Duration |
-| Duration | 8 seconds (InvulnerabilityDuration) |
+| Duration | 10 seconds (InvulnerabilityDuration) |
 | Tag Granted | State.Invulnerable |
 | Damage Blocking | NarrativeDamageExecCalc checks for State.Invulnerable tag |
 
@@ -843,7 +843,7 @@
    - 46.2.2) Set to: `Has Duration`
    - 46.2.3) Find **Duration Magnitude** section
    - 46.2.4) Expand **Scalable Float Magnitude**
-   - 46.2.5) Set **Value**: `8.0` (8 seconds)
+   - 46.2.5) Set **Value**: `10.0` (10 seconds)
 
 #### 46.3) Add Grant Tags Component
    - 46.3.1) Find **Components** section in Details panel
@@ -940,7 +940,7 @@
 | FatherRef | BP_FatherCompanion Ref | Unchecked | None | Runtime |
 | PlayerASC | NarrativeASC Ref | Unchecked | None | Runtime |
 | HealthThreshold | Float | Checked | 0.15 | Configuration |
-| InvulnerabilityDuration | Float | Checked | 8.0 | Configuration |
+| InvulnerabilityDuration | Float | Checked | 10.0 | Configuration |
 | MinDormantTime | Float | Checked | 150.0 | Configuration |
 | MaxDormantTime | Float | Checked | 210.0 | Configuration |
 | OfflineEffectHandle | Active GE Handle | Unchecked | None | Runtime |
@@ -972,7 +972,7 @@
 
 | Effect | Target | Duration | Purpose |
 |--------|--------|----------|---------|
-| GE_SacrificeInvulnerability | Player | 8 seconds | Grants State.Invulnerable for damage immunity |
+| GE_SacrificeInvulnerability | Player | 10 seconds | Grants State.Invulnerable for damage immunity |
 | GE_FatherOffline | Father | Infinite | Grants Father.State.Offline and Cooldown tags |
 
 ### Required Assets Summary

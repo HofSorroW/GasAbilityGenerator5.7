@@ -578,7 +578,7 @@ Uses Narrative Pro's built-in GoalGenerator_Attack system. No custom perception 
 | Phase | Description |
 |-------|-------------|
 | **PHASE 1: TRIGGER** | Triggered when player HP drops below 15%. Current form breaks immediately, father moves to chest (Armor position), energy surge begins. |
-| **PHASE 2: SACRIFICE** | Father channels all remaining energy to grant player 8 seconds of invulnerability. State.Invulnerable tag blocks all damage. Father enters DORMANT state. Attack tokens increase from 3 to 6. |
+| **PHASE 2: SACRIFICE** | Father channels all remaining energy to grant player 10 seconds of invulnerability. State.Invulnerable tag blocks all damage. Father enters DORMANT state. Attack tokens increase from 3 to 6. |
 | **PHASE 3: DORMANT STATE** | Father remains attached to chest appearing dark and lifeless. All lights OFF, energy lines DARK, eyes UNLIT. HUD completely HIDDEN. Duration: 150-210 seconds (variable). Player fights alone without father abilities. |
 | **PHASE 4: REACTIVATION** | Subtle eye flicker signals reactivation. Energy lines power up with wave effect, eyes illuminate. Full Armor form activates, HUD reappears. Attack tokens normalize from 6 back to 3. Reactivation sound effect plays. |
 
@@ -586,7 +586,7 @@ Uses Narrative Pro's built-in GoalGenerator_Attack system. No custom perception 
 
 | Parameter | Value |
 |-----------|-------|
-| Invulnerability Duration | 8 seconds |
+| Invulnerability Duration | 10 seconds |
 | Dormant Duration | 150-210 seconds (random) |
 | Countdown Visible | No (hidden from player) |
 | HUD Visible | No (completely removed) |

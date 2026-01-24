@@ -4473,12 +4473,17 @@ gameplay_abilities:
       # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
       # Equipment granting already ensures this ability is only available in Armor form
     # v4.21: Delegate bindings - fires when player takes damage while dome is active
+    # v4.33: Added PlayerDeath binding for D-DEATH-RESET-1 (silent reset on player death)
     delegate_bindings:
       - id: BindDomeDamageAbsorption
         delegate: OnDamagedBy                    # Fires when owner (player) takes damage
         source: OwnerASC                         # Player's ASC (ability runs on player)
         handler: HandleDomeDamageAbsorption      # Custom Event (auto-created with signature)
         # Handler params: DamagerCauserASC, Damage, Spec - use for dome absorption logic
+      - id: BindPlayerDeath
+        delegate: OnDied                         # Fires when player actually dies (HP=0)
+        source: OwnerASC                         # Player's ASC
+        handler: HandlePlayerDeathReset          # D-DEATH-RESET-2: Silent reset (no burst, no VFX)
     variables:
       - name: PlayerRef
         type: Object
@@ -4643,7 +4648,7 @@ gameplay_abilities:
         - id: MultiplyDamage
           type: CallFunction
           properties:
-            function: Multiply_FloatFloat
+            function: Multiply_DoubleDouble
             class: KismetMathLibrary
           position: [1100, 850]
         # Step 3: Get current DomeEnergy and add absorbed
@@ -4656,7 +4661,7 @@ gameplay_abilities:
         - id: AddEnergy
           type: CallFunction
           properties:
-            function: Add_FloatFloat
+            function: Add_DoubleDouble
             class: KismetMathLibrary
           position: [1500, 850]
         # Step 4: Clamp to MaxDomeEnergy
@@ -4675,7 +4680,7 @@ gameplay_abilities:
         - id: MakeZero
           type: CallFunction
           properties:
-            function: MakeLiteralFloat
+            function: MakeLiteralDouble
             class: KismetSystemLibrary
             literal_value: 0.0
           position: [1700, 900]
@@ -4690,7 +4695,7 @@ gameplay_abilities:
         - id: CompareEnergy
           type: CallFunction
           properties:
-            function: GreaterEqual_FloatFloat
+            function: GreaterEqual_DoubleDouble
             class: KismetMathLibrary
           position: [2300, 900]
         - id: Branch_FullyCharged
@@ -4721,6 +4726,73 @@ gameplay_abilities:
             function: AddLooseGameplayTags
             class: AbilitySystemBlueprintLibrary
           position: [3100, 800]
+        # === PLAYER DEATH RESET HANDLER (v4.33: D-DEATH-RESET-1/2) ===
+        # Called when player dies via OnDied delegate binding
+        # Per D-DEATH-RESET-2: Silent reset - DomeEnergy=0, remove FullyCharged, no burst/VFX
+        - id: Event_HandlePlayerDeathReset
+          type: CustomEvent
+          properties:
+            event_name: HandlePlayerDeathReset
+            parameters:
+              - name: KilledActor
+                type: Actor
+              - name: KillerASC
+                type: AbilitySystemComponent
+          position: [0, 1200]
+        # Step 1: Get Father reference and validate
+        - id: GetFatherRef_Death
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [300, 1200]
+        - id: IsValid_Father_Death
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [500, 1250]
+        - id: Branch_Valid_Father_Death
+          type: Branch
+          position: [700, 1200]
+        # Step 2: Set DomeEnergy = 0 on Father (silent reset)
+        - id: MakeZero_Death
+          type: CallFunction
+          properties:
+            function: MakeLiteralDouble
+            class: KismetSystemLibrary
+            literal_value: 0.0
+          position: [900, 1300]
+        - id: SetDomeEnergy_Death
+          type: PropertySet
+          properties:
+            property_name: DomeEnergy
+            target_class: BP_FatherCompanion
+          position: [1100, 1200]
+        # Step 3: Remove Father.Dome.FullyCharged tag from Player (if present)
+        - id: GetPlayerRef_Death
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [1300, 1300]
+        - id: MakeLiteralTag_Charged_Death
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            class: BlueprintGameplayTagLibrary
+            literal_value: Father.Dome.FullyCharged
+          position: [1300, 1400]
+        - id: MakeTagContainer_Charged_Death
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [1500, 1350]
+        - id: ClearChargedTag_Death
+          type: CallFunction
+          properties:
+            function: RemoveLooseGameplayTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1700, 1200]
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (impure nodes only - skip pure PropertyGet/CallFunction nodes)
@@ -4839,6 +4911,31 @@ gameplay_abilities:
           to: [MakeTagContainer_FullyCharged, Tag]
         - from: [MakeTagContainer_FullyCharged, ReturnValue]
           to: [AddFullyChargedTag, GameplayTags]
+        # === PLAYER DEATH RESET HANDLER FLOW (v4.33: D-DEATH-RESET-1/2) ===
+        # Exec: Event → Branch_Valid → SetDomeEnergy_Death → ClearChargedTag_Death
+        - from: [Event_HandlePlayerDeathReset, Then]
+          to: [Branch_Valid_Father_Death, Exec]
+        - from: [Branch_Valid_Father_Death, True]
+          to: [SetDomeEnergy_Death, Exec]
+        - from: [SetDomeEnergy_Death, Exec]
+          to: [ClearChargedTag_Death, Exec]
+        # Data: Father validation
+        - from: [GetFatherRef_Death, FatherRef]
+          to: [IsValid_Father_Death, Object]
+        - from: [IsValid_Father_Death, ReturnValue]
+          to: [Branch_Valid_Father_Death, Condition]
+        # Data: Set DomeEnergy = 0
+        - from: [GetFatherRef_Death, FatherRef]
+          to: [SetDomeEnergy_Death, Target]
+        - from: [MakeZero_Death, ReturnValue]
+          to: [SetDomeEnergy_Death, DomeEnergy]
+        # Data: Clear FullyCharged tag
+        - from: [GetPlayerRef_Death, PlayerRef]
+          to: [ClearChargedTag_Death, Actor]
+        - from: [MakeLiteralTag_Charged_Death, ReturnValue]
+          to: [MakeTagContainer_Charged_Death, Tag]
+        - from: [MakeTagContainer_Charged_Death, ReturnValue]
+          to: [ClearChargedTag_Death, GameplayTags]
 
   # GA_FatherExoskeletonDash - Exoskeleton Dash with I-Frames
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
@@ -7424,6 +7521,13 @@ actor_blueprints:
         type: Bool
         default: false
         replicated: true
+    # v4.33: Delegate bindings for player death reset (D-DEATH-RESET-2)
+    # External ASC Binding: OwnerPlayer → GetAbilitySystemComponent → Cast to NASC → Bind OnDied
+    delegate_bindings:
+      - id: BindPlayerDeath
+        delegate: OnDied                         # Fires when OwnerPlayer dies (HP=0)
+        source: OwnerPlayer                      # Actor variable → External ASC Binding pattern
+        handler: HandlePlayerDeathReset          # Resets SymbioteCharge to 0
     event_graph:
       nodes:
         # BeginPlay - Spawn companion VFX
@@ -7459,6 +7563,11 @@ actor_blueprints:
             function: PrintString
             class: KismetSystemLibrary
           position: [300, 400]
+        # === PLAYER DEATH RESET HANDLER (v4.33: D-DEATH-RESET-2) ===
+        # Per D-DEATH-RESET-2: Silent reset - SymbioteCharge=0 (no VFX)
+        # The delegate_bindings section creates HandlePlayerDeathReset CustomEvent with correct OnDied signature
+        # TODO: Add handler logic (SymbioteCharge=0) manually in editor after generation
+        # Future enhancement: Extend delegate_bindings to support inline handler_nodes/handler_connections
       connections:
         # BeginPlay flow - Self -> GetMesh -> SpawnVFX
         - from: [Event_BeginPlay, Then]

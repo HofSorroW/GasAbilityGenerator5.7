@@ -3360,6 +3360,13 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		}
 	}
 
+	// v4.33: Generate delegate bindings for actor blueprints (External ASC Binding pattern)
+	if (Definition.DelegateBindings.Num() > 0)
+	{
+		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateActorDelegateBindingNodes(Blueprint, Definition.DelegateBindings, Definition.Variables);
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d actor delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
+	}
+
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
 	FCompilerResultsLog CompileLog;
 	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
@@ -14058,6 +14065,539 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	}
 	LogGeneration(FString::Printf(TEXT("    [VERIFY] AddDelegate: %d connected, %d not connected"), AddConnected, AddNotConnected));
 	LogGeneration(FString::Printf(TEXT("    [VERIFY] RemoveDelegate: %d connected, %d not connected"), RemoveConnected, RemoveNotConnected));
+
+	return NodesGenerated;
+}
+
+// ============================================================================
+// v4.33: Actor Blueprint Delegate Binding (External ASC Binding Pattern)
+// Per Section 10 of Delegate_Binding_Extensions_Spec_v1_1.md
+// For actor blueprints: Actor variable → GetAbilitySystemComponent → Cast → Bind
+// Uses BeginPlay/EndPlay instead of ActivateAbility/EndAbility
+// ============================================================================
+
+int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
+	UBlueprint* Blueprint,
+	const TArray<FManifestDelegateBindingDefinition>& DelegateBindings,
+	const TArray<FManifestActorVariableDefinition>& Variables)
+{
+	if (!Blueprint || DelegateBindings.Num() == 0)
+	{
+		return 0;
+	}
+
+	// Find the event graph
+	UEdGraph* EventGraph = nullptr;
+	for (UEdGraph* Graph : Blueprint->UbergraphPages)
+	{
+		if (Graph)
+		{
+			EventGraph = Graph;
+			break;
+		}
+	}
+
+	if (!EventGraph)
+	{
+		LogGeneration(TEXT("  [E_ACTOR_DELEGATE_NO_GRAPH] GenerateActorDelegateBindingNodes: No event graph found"));
+		return 0;
+	}
+
+	// Get the schema for connection validation
+	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+
+	// Source class for delegate lookup (Narrative Pro delegates)
+	UClass* NarrativeASCClass = UNarrativeAbilitySystemComponent::StaticClass();
+
+	int32 NodesGenerated = 0;
+	float CurrentPosX = 2500.0f;  // Position after typical BeginPlay content
+	float CurrentPosY = 0.0f;
+
+	// Track nodes for exec wiring
+	TArray<UK2Node_AddDelegate*> AddDelegateNodes;
+	TArray<UK2Node_RemoveDelegate*> RemoveDelegateNodes;
+	TArray<UK2Node_DynamicCast*> CastNodesForAdd;
+	TArray<UK2Node_DynamicCast*> CastNodesForRemove;
+	TArray<UK2Node_CallFunction*> GetASCNodesForAdd;
+	TArray<UK2Node_CallFunction*> GetASCNodesForRemove;
+
+	for (const FManifestDelegateBindingDefinition& Binding : DelegateBindings)
+	{
+		FString BindingId = Binding.Id.IsEmpty() ? Binding.Handler : Binding.Id;
+		LogGeneration(FString::Printf(TEXT("  Processing actor delegate binding: %s"), *BindingId));
+
+		// v4.33: Validate source is an Actor variable (External ASC Binding pattern)
+		bool bSourceIsActorVariable = false;
+		FString SourceVarType;
+		for (const FManifestActorVariableDefinition& Var : Variables)
+		{
+			if (Var.Name.Equals(Binding.Source, ESearchCase::IgnoreCase))
+			{
+				SourceVarType = Var.Type;
+				// Check if type is an Actor class (contains "Character", "Actor", "Pawn", etc.)
+				bSourceIsActorVariable = Var.Type.Contains(TEXT("Character")) ||
+				                         Var.Type.Contains(TEXT("Actor")) ||
+				                         Var.Type.Contains(TEXT("Pawn"));
+				break;
+			}
+		}
+
+		if (!bSourceIsActorVariable)
+		{
+			LogGeneration(FString::Printf(TEXT("    [E_ACTOR_DELEGATE_SOURCE_NOT_ACTOR] Source '%s' is not an Actor variable (type: %s)"),
+				*Binding.Source, *SourceVarType));
+			continue;
+		}
+
+		// 1. Find delegate property and get signature
+		FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(
+			NarrativeASCClass, FName(*Binding.Delegate));
+
+		if (!DelegateProp)
+		{
+			LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_NOT_FOUND] Delegate '%s' not found on UNarrativeAbilitySystemComponent"),
+				*Binding.Delegate));
+			continue;
+		}
+
+		UFunction* DelegateSignature = DelegateProp->SignatureFunction;
+		if (!DelegateSignature)
+		{
+			LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_NO_SIGNATURE] No signature function for delegate '%s'"),
+				*Binding.Delegate));
+			continue;
+		}
+
+		// 2. Find or create Custom Event with delegate signature parameters
+		// v4.33: Check if a CustomEvent with this handler name already exists (from manifest event_graph)
+		UK2Node_CustomEvent* HandlerEvent = nullptr;
+		FName HandlerEventName(*Binding.Handler);
+
+		for (UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			if (UK2Node_CustomEvent* ExistingEvent = Cast<UK2Node_CustomEvent>(Node))
+			{
+				if (ExistingEvent->CustomFunctionName == HandlerEventName)
+				{
+					HandlerEvent = ExistingEvent;
+					LogGeneration(FString::Printf(TEXT("    Found existing handler event: %s (reusing)"), *Binding.Handler));
+					break;
+				}
+			}
+		}
+
+		// Only create new CustomEvent if one doesn't already exist
+		if (!HandlerEvent)
+		{
+			HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
+			EventGraph->AddNode(HandlerEvent, false, false);
+			HandlerEvent->CustomFunctionName = HandlerEventName;
+			HandlerEvent->bIsEditable = true;
+			HandlerEvent->CreateNewGuid();
+			HandlerEvent->PostPlacedNewNode();
+			HandlerEvent->AllocateDefaultPins();
+			HandlerEvent->NodePosX = CurrentPosX;
+			HandlerEvent->NodePosY = CurrentPosY;
+
+			// Add parameters from delegate signature
+			for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+			{
+				FProperty* Param = *PropIt;
+				if (Param->HasAnyPropertyFlags(CPF_Parm) && !Param->HasAnyPropertyFlags(CPF_ReturnParm))
+				{
+					FEdGraphPinType PinType;
+					Schema->ConvertPropertyToPinType(Param, PinType);
+
+					HandlerEvent->CreateUserDefinedPin(
+						Param->GetFName(),
+						PinType,
+						EGPD_Output
+					);
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
+				*Binding.Handler, *DelegateSignature->GetName()));
+		}
+
+		// 3. Create Self node for actor reference
+		UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);
+		EventGraph->AddNode(SelfNode, false, false);
+		SelfNode->CreateNewGuid();
+		SelfNode->PostPlacedNewNode();
+		SelfNode->AllocateDefaultPins();
+		SelfNode->NodePosX = CurrentPosX + 200.0f;
+		SelfNode->NodePosY = CurrentPosY + 100.0f;
+
+		// 4. Create VariableGet node for source Actor variable
+		UK2Node_VariableGet* VarGetNodeA = NewObject<UK2Node_VariableGet>(EventGraph);
+		VarGetNodeA->VariableReference.SetSelfMember(FName(*Binding.Source));
+		EventGraph->AddNode(VarGetNodeA, false, false);
+		VarGetNodeA->CreateNewGuid();
+		VarGetNodeA->PostPlacedNewNode();
+		VarGetNodeA->AllocateDefaultPins();
+		VarGetNodeA->NodePosX = CurrentPosX + 200.0f;
+		VarGetNodeA->NodePosY = CurrentPosY + 200.0f;
+
+		// 5. Create GetAbilitySystemComponent(Actor) node for Add path
+		// Uses UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent (static function)
+		UK2Node_CallFunction* GetASCNodeA = NewObject<UK2Node_CallFunction>(EventGraph);
+		EventGraph->AddNode(GetASCNodeA, false, false);
+
+		UFunction* GetASCFunc = UAbilitySystemBlueprintLibrary::StaticClass()->FindFunctionByName(
+			TEXT("GetAbilitySystemComponent"));
+		if (GetASCFunc)
+		{
+			GetASCNodeA->SetFromFunction(GetASCFunc);
+		}
+		GetASCNodeA->CreateNewGuid();
+		GetASCNodeA->PostPlacedNewNode();
+		GetASCNodeA->AllocateDefaultPins();
+		GetASCNodeA->NodePosX = CurrentPosX + 400.0f;
+		GetASCNodeA->NodePosY = CurrentPosY + 200.0f;
+
+		// Wire VarGetNodeA → GetASCNodeA.Actor pin
+		UEdGraphPin* VarOutPinA = VarGetNodeA->GetValuePin();
+		UEdGraphPin* GetASCActorPin = GetASCNodeA->FindPin(TEXT("Actor"));
+		if (VarOutPinA && GetASCActorPin)
+		{
+			VarOutPinA->MakeLinkTo(GetASCActorPin);
+			LogGeneration(FString::Printf(TEXT("    Wired %s → GetAbilitySystemComponent.Actor"), *Binding.Source));
+		}
+
+		UEdGraphPin* ASCOutPinA = GetASCNodeA->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+
+		// 6. Create Cast to NarrativeAbilitySystemComponent for Add path
+		UK2Node_DynamicCast* CastNodeA = NewObject<UK2Node_DynamicCast>(EventGraph);
+		CastNodeA->TargetType = NarrativeASCClass;
+		EventGraph->AddNode(CastNodeA, false, false);
+		CastNodeA->CreateNewGuid();
+		CastNodeA->PostPlacedNewNode();
+		CastNodeA->AllocateDefaultPins();
+		CastNodeA->NodePosX = CurrentPosX + 600.0f;
+		CastNodeA->NodePosY = CurrentPosY + 100.0f;
+
+		// Wire GetASCNodeA.ReturnValue → CastNodeA.Object
+		UEdGraphPin* CastAInPin = CastNodeA->GetCastSourcePin();
+		if (ASCOutPinA && CastAInPin)
+		{
+			ASCOutPinA->MakeLinkTo(CastAInPin);
+			CastNodeA->NotifyPinConnectionListChanged(CastAInPin);
+		}
+		UEdGraphPin* SourceASCPinForAdd = CastNodeA->GetCastResultPin();
+
+		// 7. Build FMemberReference for delegate
+		FMemberReference DelegateRef;
+		DelegateRef.SetFromField<FMulticastDelegateProperty>(DelegateProp, false);
+
+		// 8. CreateDelegate node for Add path
+		UK2Node_CreateDelegate* CreateDelegateA = NewObject<UK2Node_CreateDelegate>(EventGraph);
+		EventGraph->AddNode(CreateDelegateA, false, false);
+		CreateDelegateA->CreateNewGuid();
+		CreateDelegateA->PostPlacedNewNode();
+		CreateDelegateA->AllocateDefaultPins();
+		CreateDelegateA->SetFunction(FName(*Binding.Handler));
+		CreateDelegateA->NodePosX = CurrentPosX + 600.0f;
+		CreateDelegateA->NodePosY = CurrentPosY + 300.0f;
+
+		// Wire Self → CreateDelegateA.PN_Self
+		UEdGraphPin* SelfOutPin = SelfNode->FindPin(UEdGraphSchema_K2::PN_Self);
+		UEdGraphPin* CreateDelegateSelfPinA = CreateDelegateA->FindPin(UEdGraphSchema_K2::PN_Self);
+		if (SelfOutPin && CreateDelegateSelfPinA)
+		{
+			SelfOutPin->MakeLinkTo(CreateDelegateSelfPinA);
+		}
+
+		// 9. AddDelegate node
+		UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
+		AddDelegateNode->DelegateReference = DelegateRef;
+		EventGraph->AddNode(AddDelegateNode, false, false);
+		AddDelegateNode->CreateNewGuid();
+		AddDelegateNode->PostPlacedNewNode();
+		AddDelegateNode->AllocateDefaultPins();
+		AddDelegateNode->NodePosX = CurrentPosX + 800.0f;
+		AddDelegateNode->NodePosY = CurrentPosY + 100.0f;
+
+		// Wire CreateDelegateA.OutputDelegate → AddDelegate.Delegate
+		UEdGraphPin* DelegateAOut = CreateDelegateA->GetDelegateOutPin();
+		UEdGraphPin* AddDelegateIn = AddDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
+		if (DelegateAOut && AddDelegateIn)
+		{
+			DelegateAOut->MakeLinkTo(AddDelegateIn);
+		}
+
+		// Wire SourceASCPinForAdd → AddDelegate.PN_Self (Target)
+		UEdGraphPin* AddSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+		if (SourceASCPinForAdd && AddSelfPin)
+		{
+			SourceASCPinForAdd->MakeLinkTo(AddSelfPin);
+		}
+
+		// Track for exec wiring
+		AddDelegateNodes.Add(AddDelegateNode);
+		CastNodesForAdd.Add(CastNodeA);
+		GetASCNodesForAdd.Add(GetASCNodeA);
+
+		// 10. Create RemoveDelegate path if unbind_on_end is true
+		if (Binding.bUnbindOnEnd)
+		{
+			// Create separate VariableGet for EndPlay path
+			UK2Node_VariableGet* VarGetNodeB = NewObject<UK2Node_VariableGet>(EventGraph);
+			VarGetNodeB->VariableReference.SetSelfMember(FName(*Binding.Source));
+			EventGraph->AddNode(VarGetNodeB, false, false);
+			VarGetNodeB->CreateNewGuid();
+			VarGetNodeB->PostPlacedNewNode();
+			VarGetNodeB->AllocateDefaultPins();
+			VarGetNodeB->NodePosX = CurrentPosX + 200.0f;
+			VarGetNodeB->NodePosY = CurrentPosY + 500.0f;
+
+			// Create GetAbilitySystemComponent for Remove path
+			UK2Node_CallFunction* GetASCNodeB = NewObject<UK2Node_CallFunction>(EventGraph);
+			EventGraph->AddNode(GetASCNodeB, false, false);
+			if (GetASCFunc)
+			{
+				GetASCNodeB->SetFromFunction(GetASCFunc);
+			}
+			GetASCNodeB->CreateNewGuid();
+			GetASCNodeB->PostPlacedNewNode();
+			GetASCNodeB->AllocateDefaultPins();
+			GetASCNodeB->NodePosX = CurrentPosX + 400.0f;
+			GetASCNodeB->NodePosY = CurrentPosY + 500.0f;
+
+			// Wire VarGetNodeB → GetASCNodeB.Actor
+			UEdGraphPin* VarOutPinB = VarGetNodeB->GetValuePin();
+			UEdGraphPin* GetASCActorPinB = GetASCNodeB->FindPin(TEXT("Actor"));
+			if (VarOutPinB && GetASCActorPinB)
+			{
+				VarOutPinB->MakeLinkTo(GetASCActorPinB);
+			}
+
+			UEdGraphPin* ASCOutPinB = GetASCNodeB->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+
+			// Cast to NASC for Remove path
+			UK2Node_DynamicCast* CastNodeB = NewObject<UK2Node_DynamicCast>(EventGraph);
+			CastNodeB->TargetType = NarrativeASCClass;
+			EventGraph->AddNode(CastNodeB, false, false);
+			CastNodeB->CreateNewGuid();
+			CastNodeB->PostPlacedNewNode();
+			CastNodeB->AllocateDefaultPins();
+			CastNodeB->NodePosX = CurrentPosX + 600.0f;
+			CastNodeB->NodePosY = CurrentPosY + 500.0f;
+
+			UEdGraphPin* CastBInPin = CastNodeB->GetCastSourcePin();
+			if (ASCOutPinB && CastBInPin)
+			{
+				ASCOutPinB->MakeLinkTo(CastBInPin);
+				CastNodeB->NotifyPinConnectionListChanged(CastBInPin);
+			}
+			UEdGraphPin* SourceASCPinForRemove = CastNodeB->GetCastResultPin();
+
+			// CreateDelegate for Remove path
+			UK2Node_CreateDelegate* CreateDelegateB = NewObject<UK2Node_CreateDelegate>(EventGraph);
+			EventGraph->AddNode(CreateDelegateB, false, false);
+			CreateDelegateB->CreateNewGuid();
+			CreateDelegateB->PostPlacedNewNode();
+			CreateDelegateB->AllocateDefaultPins();
+			CreateDelegateB->SetFunction(FName(*Binding.Handler));
+			CreateDelegateB->NodePosX = CurrentPosX + 600.0f;
+			CreateDelegateB->NodePosY = CurrentPosY + 600.0f;
+
+			UEdGraphPin* CreateDelegateSelfPinB = CreateDelegateB->FindPin(UEdGraphSchema_K2::PN_Self);
+			if (SelfOutPin && CreateDelegateSelfPinB)
+			{
+				SelfOutPin->MakeLinkTo(CreateDelegateSelfPinB);
+			}
+
+			// RemoveDelegate node
+			UK2Node_RemoveDelegate* RemoveDelegateNode = NewObject<UK2Node_RemoveDelegate>(EventGraph);
+			RemoveDelegateNode->DelegateReference = DelegateRef;
+			EventGraph->AddNode(RemoveDelegateNode, false, false);
+			RemoveDelegateNode->CreateNewGuid();
+			RemoveDelegateNode->PostPlacedNewNode();
+			RemoveDelegateNode->AllocateDefaultPins();
+			RemoveDelegateNode->NodePosX = CurrentPosX + 800.0f;
+			RemoveDelegateNode->NodePosY = CurrentPosY + 500.0f;
+
+			// Wire CreateDelegateB → RemoveDelegate.Delegate
+			UEdGraphPin* DelegateBOut = CreateDelegateB->GetDelegateOutPin();
+			UEdGraphPin* RemoveDelegateIn = RemoveDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
+			if (DelegateBOut && RemoveDelegateIn)
+			{
+				DelegateBOut->MakeLinkTo(RemoveDelegateIn);
+			}
+
+			// Wire SourceASCPinForRemove → RemoveDelegate.PN_Self
+			UEdGraphPin* RemoveSelfPin = RemoveDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+			if (SourceASCPinForRemove && RemoveSelfPin)
+			{
+				SourceASCPinForRemove->MakeLinkTo(RemoveSelfPin);
+			}
+
+			RemoveDelegateNodes.Add(RemoveDelegateNode);
+			CastNodesForRemove.Add(CastNodeB);
+			GetASCNodesForRemove.Add(GetASCNodeB);
+		}
+
+		LogGeneration(FString::Printf(TEXT("    Created actor delegate bind/unbind nodes for %s.%s -> %s"),
+			*Binding.Source, *Binding.Delegate, *Binding.Handler));
+
+		CurrentPosY += 800.0f;
+		NodesGenerated++;
+	}
+
+	// 11. Wire AddDelegate nodes into BeginPlay exec flow
+	if (AddDelegateNodes.Num() > 0)
+	{
+		UK2Node_Event* BeginPlayEvent = nullptr;
+		for (UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+			{
+				FString EventName = EventNode->GetFunctionName().ToString();
+				if (EventName.Contains(TEXT("BeginPlay")) || EventName.Contains(TEXT("ReceiveBeginPlay")))
+				{
+					BeginPlayEvent = EventNode;
+					break;
+				}
+			}
+		}
+
+		if (BeginPlayEvent)
+		{
+			LogGeneration(FString::Printf(TEXT("    BeginPlay event found, wiring %d AddDelegate nodes"), AddDelegateNodes.Num()));
+
+			// Find the last node in the BeginPlay chain
+			UEdGraphPin* LastExecPin = BeginPlayEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+			while (LastExecPin && LastExecPin->LinkedTo.Num() > 0)
+			{
+				UEdGraphNode* NextNode = LastExecPin->LinkedTo[0]->GetOwningNode();
+				UEdGraphPin* NextExecOut = NextNode->FindPin(UEdGraphSchema_K2::PN_Then);
+				if (NextExecOut && NextExecOut->LinkedTo.Num() > 0)
+				{
+					LastExecPin = NextExecOut;
+				}
+				else
+				{
+					LastExecPin = NextExecOut;
+					break;
+				}
+			}
+
+			// Chain GetASC -> Cast -> AddDelegate nodes
+			for (int32 i = 0; i < AddDelegateNodes.Num(); ++i)
+			{
+				UK2Node_AddDelegate* AddNode = AddDelegateNodes[i];
+				UK2Node_DynamicCast* CastNode = (i < CastNodesForAdd.Num()) ? CastNodesForAdd[i] : nullptr;
+				UK2Node_CallFunction* GetASCNode = (i < GetASCNodesForAdd.Num()) ? GetASCNodesForAdd[i] : nullptr;
+
+				if (LastExecPin)
+				{
+					// Wire GetASC exec (if it has one - it's pure so may not)
+					// Wire Cast node into exec chain
+					if (CastNode)
+					{
+						UEdGraphPin* CastExecIn = CastNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+						UEdGraphPin* CastExecOut = CastNode->FindPin(UEdGraphSchema_K2::PN_Then);
+
+						if (CastExecIn && CastExecOut)
+						{
+							LastExecPin->MakeLinkTo(CastExecIn);
+							LastExecPin = CastExecOut;
+						}
+					}
+
+					// Wire AddDelegate into exec chain
+					UEdGraphPin* AddExecIn = AddNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+					if (AddExecIn)
+					{
+						LastExecPin->MakeLinkTo(AddExecIn);
+						LastExecPin = AddNode->FindPin(UEdGraphSchema_K2::PN_Then);
+					}
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Wired %d AddDelegate nodes into BeginPlay chain"), AddDelegateNodes.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [W_ACTOR_DELEGATE_NO_BEGINPLAY] BeginPlay event not found - manual exec wiring required"));
+		}
+	}
+
+	// 12. Wire RemoveDelegate nodes into EndPlay exec flow
+	if (RemoveDelegateNodes.Num() > 0)
+	{
+		UK2Node_Event* EndPlayEvent = nullptr;
+		for (UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+			{
+				FString EventName = EventNode->GetFunctionName().ToString();
+				if (EventName.Contains(TEXT("EndPlay")) || EventName.Contains(TEXT("ReceiveEndPlay")))
+				{
+					EndPlayEvent = EventNode;
+					break;
+				}
+			}
+		}
+
+		if (EndPlayEvent)
+		{
+			LogGeneration(FString::Printf(TEXT("    EndPlay event found, wiring %d RemoveDelegate nodes"), RemoveDelegateNodes.Num()));
+
+			UEdGraphPin* LastExecPin = EndPlayEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+
+			while (LastExecPin && LastExecPin->LinkedTo.Num() > 0)
+			{
+				UEdGraphNode* NextNode = LastExecPin->LinkedTo[0]->GetOwningNode();
+				UEdGraphPin* NextExecOut = NextNode->FindPin(UEdGraphSchema_K2::PN_Then);
+				if (NextExecOut && NextExecOut->LinkedTo.Num() > 0)
+				{
+					LastExecPin = NextExecOut;
+				}
+				else
+				{
+					LastExecPin = NextExecOut;
+					break;
+				}
+			}
+
+			for (int32 i = 0; i < RemoveDelegateNodes.Num(); ++i)
+			{
+				UK2Node_RemoveDelegate* RemoveNode = RemoveDelegateNodes[i];
+				UK2Node_DynamicCast* CastNode = (i < CastNodesForRemove.Num()) ? CastNodesForRemove[i] : nullptr;
+
+				if (LastExecPin)
+				{
+					if (CastNode)
+					{
+						UEdGraphPin* CastExecIn = CastNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+						UEdGraphPin* CastExecOut = CastNode->FindPin(UEdGraphSchema_K2::PN_Then);
+
+						if (CastExecIn && CastExecOut)
+						{
+							LastExecPin->MakeLinkTo(CastExecIn);
+							LastExecPin = CastExecOut;
+						}
+					}
+
+					UEdGraphPin* RemoveExecIn = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Execute);
+					if (RemoveExecIn)
+					{
+						LastExecPin->MakeLinkTo(RemoveExecIn);
+						LastExecPin = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Then);
+					}
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Wired %d RemoveDelegate nodes into EndPlay chain"), RemoveDelegateNodes.Num()));
+		}
+		else
+		{
+			LogGeneration(TEXT("    [W_ACTOR_DELEGATE_NO_ENDPLAY] EndPlay event not found - delegate unbinding will not occur"));
+		}
+	}
 
 	return NodesGenerated;
 }

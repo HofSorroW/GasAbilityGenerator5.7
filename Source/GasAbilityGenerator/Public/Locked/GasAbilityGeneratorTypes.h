@@ -1458,6 +1458,10 @@ struct FManifestActorBlueprintDefinition
 	// v2.8.3: Function overrides for parent class functions
 	TArray<FManifestFunctionOverrideDefinition> FunctionOverrides;
 
+	// v4.33: Delegate bindings for actor blueprints (External ASC Binding pattern)
+	// Binds to delegates on external actors' ASCs (e.g., OwnerPlayer's OnDied)
+	TArray<FManifestDelegateBindingDefinition> DelegateBindings;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -1499,6 +1503,13 @@ struct FManifestActorBlueprintDefinition
 		{
 			Hash ^= Override.ComputeHash();
 			Hash = (Hash << 13) | (Hash >> 51);
+		}
+
+		// v4.33: Delegate bindings
+		for (const auto& Del : DelegateBindings)
+		{
+			Hash ^= Del.ComputeHash();
+			Hash = (Hash << 15) | (Hash >> 49);
 		}
 
 		return Hash;

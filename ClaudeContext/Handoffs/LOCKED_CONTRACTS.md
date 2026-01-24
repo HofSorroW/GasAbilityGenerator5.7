@@ -413,6 +413,69 @@ Silent runtime failure: Null GameplayEffectClass → Invalid FGameplayEffectSpec
 
 ---
 
+## LOCKED CONTRACT 15 — D-DEATH-RESET Player Death Reset System (v4.33)
+
+### Context
+
+Design Doc Sections 2.2.6 and 2.4.4 require that DomeEnergy and SymbioteCharge reset to 0 on player death. The manifest only bound FatherASC.OnDied, not PlayerASC.OnDied, leaving a gap where player death wouldn't trigger Father system resets.
+
+### Invariants
+
+#### D-DEATH-RESET-1: Reset Location
+> Bind resets to **PlayerASC.OnDied** in Father abilities (GA_ProtectiveDome, GA_FatherSymbiote).
+
+**Evidence:** NarrativeAbilitySystemComponent.cpp:639-645 — OnDied.Broadcast() fires on actual death.
+
+#### D-DEATH-RESET-2: Silent Reset Behavior
+> On player death, perform silent reset:
+> - `BP_FatherCompanion.DomeEnergy = 0`
+> - `BP_FatherCompanion.SymbioteCharge = 0`
+> - Remove `Father.Dome.FullyCharged` tag (if present)
+> - No burst, no VFX/SFX
+
+**Evidence:** Design Doc Sections 2.2.6, 2.4.4.
+
+#### D-DEATH-RESET-3: GA_Death Unchanged
+> Father death reset logic belongs in the **OnDied delegate**, not in GA_Death. GA_Death is a Narrative Pro built-in ability responsible for death signaling (e.g., InformKiller). Per Technical Reference Section 56.8, all Father-specific logic must be implemented via the OnDied delegate.
+
+**Evidence:** Tech Ref 56.8 explicit guidance: "Father-specific logic → Put in BP_FatherCompanion OnDied delegate."
+
+#### D-DEATH-RESET-4: OnDied is Correct Signal
+> OnDied is the correct signal for actual player death. It fires only when Health reaches 0 and death pipeline completes.
+
+**Evidence:** NarrativeAttributeSetBase.cpp:188-195 — `if (GetHealth() <= 0.f)` triggers OnOutOfHealth.Broadcast(), which leads to OnDied.
+
+### D-SACRIFICE-1: One-Shot Bypass (Related)
+> On lethal one-shot damage, Sacrifice triggers (0 < 15% threshold) and applies invulnerability, but cannot prevent death because Health is already 0 and Sacrifice does not restore Health. This is by design.
+
+**Evidence:**
+- manifest.yaml:760-765 — GE_SacrificeInvulnerability has no modifiers (no healing)
+- UE5.7 GameplayEffect.cpp:3912-3919 — Attribute delegate fires synchronously within SetHealth()
+
+### Forbidden
+
+- Putting Father-specific reset logic in GA_Death
+- Binding only to FatherASC.OnDied for player death resets
+- Adding burst/VFX on death reset (silent reset required)
+- Modifying GA_Death (Narrative Pro built-in)
+
+### Implementation
+
+GA_ProtectiveDome and GA_FatherSymbiote must bind to PlayerASC.OnDied with handler that:
+1. Sets DomeEnergy/SymbioteCharge to 0 on Father
+2. Removes Father.Dome.FullyCharged tag from Player ASC
+3. Does NOT trigger burst ability
+
+### Reference
+
+- Design Doc: Sections 2.2.6, 2.4.4
+- Tech Ref: Section 56.8
+- Narrative Pro: NarrativeAbilitySystemComponent.cpp:639-645, NarrativeAttributeSetBase.cpp:188-195
+- Audit: Claude–GPT dual audit session (2026-01-24)
+- Implementation: v4.33
+
+---
+
 ## LOCKED CONTRACT 14 — INV-INPUT-1 Input Architecture Invariants (v4.32)
 
 ### Context
@@ -517,3 +580,4 @@ Any change that touches a LOCKED implementation must:
 | v4.30 | 2026-01-24 | Added Contract 12 — R-AI-1 Activity System Compatibility (Claude–GPT dual audit): NPCs with ActivityConfiguration must coordinate BT calls with Activity system. GA_FatherEngineer fixed to call StopCurrentActivity before RunBehaviorTree. |
 | v4.31 | 2026-01-24 | Added Contract 13 — INV-GESPEC-1 MakeOutgoingGameplayEffectSpec Parameter (Claude–GPT dual audit): All MakeOutgoingGameplayEffectSpec nodes MUST use `param.GameplayEffectClass:` syntax. 16 abilities fixed for silent runtime failure. |
 | v4.32 | 2026-01-24 | Added Contract 14 — INV-INPUT-1 Input Architecture Invariants (Claude–GPT dual audit): input_tag valid only for Player ASC abilities; must use Narrative Pro built-in tags (Narrative.Input.Ability1/2/3); custom namespaces cause HasTagExact mismatch. Pending Erdem review for final ability-to-input mapping. |
+| v4.33 | 2026-01-24 | Added Contract 15 — D-DEATH-RESET Player Death Reset System (Claude–GPT dual audit): PlayerASC.OnDied bindings for DomeEnergy/SymbioteCharge reset; silent reset (no burst/VFX); GA_Death unchanged (OnDied delegate for custom logic); D-SACRIFICE-1 one-shot bypass documented. |

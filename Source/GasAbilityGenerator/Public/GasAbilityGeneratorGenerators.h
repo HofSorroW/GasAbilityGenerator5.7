@@ -632,6 +632,20 @@ public:
 		const TArray<FManifestDelegateBindingDefinition>& DelegateBindings);
 
 	/**
+	 * v4.33: Actor Blueprint Delegate Binding (External ASC Binding pattern)
+	 * Generates delegate binding nodes for actor blueprints using BeginPlay/EndPlay.
+	 * Implements Section 10 (External ASC Binding): Actor variable → GetAbilitySystemComponent → Cast to NASC → Bind.
+	 * @param Blueprint The actor blueprint to modify
+	 * @param DelegateBindings Array of delegate binding definitions
+	 * @param Variables Array of actor variables (for resolving Actor-type sources)
+	 * @return Number of delegate binding nodes successfully generated
+	 */
+	static int32 GenerateActorDelegateBindingNodes(
+		UBlueprint* Blueprint,
+		const TArray<FManifestDelegateBindingDefinition>& DelegateBindings,
+		const TArray<FManifestActorVariableDefinition>& Variables);
+
+	/**
 	 * v4.22: Section 11 - Attribute Change Delegate Binding via AbilityTask
 	 * Generates AbilityTask_WaitAttributeChange nodes with handler custom events.
 	 * @param Blueprint The ability blueprint to modify

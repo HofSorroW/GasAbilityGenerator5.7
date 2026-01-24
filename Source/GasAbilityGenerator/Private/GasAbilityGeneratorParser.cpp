@@ -1984,11 +1984,13 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 	bool bInVariables = false;
 	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
 	bool bInComponents = false;
+	bool bInDelegateBindings = false;  // v4.33: For delegate_bindings parsing
 	int32 ItemIndent = -1;      // v2.1.7: Track blueprint item indent level
 	int32 VariablesIndent = 0;
 	int32 ComponentsIndent = 0;
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestActorComponentDefinition CurrentComp;
+	FManifestDelegateBindingDefinition CurrentDelegateBinding;  // v4.33: Current delegate binding
 	
 	while (LineIndex < Lines.Num())
 	{
@@ -2005,6 +2007,11 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 			if (bInComponents && !CurrentComp.Name.IsEmpty())
 			{
 				CurrentDef.Components.Add(CurrentComp);
+			}
+			// v4.33: Save pending delegate binding
+			if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+			{
+				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 			}
 			// v2.6.14: Prefix validation - valid prefixes: BP_, BTS_, BPA_, Goal_, GoalGenerator_
 			if (bInItem && !CurrentDef.Name.IsEmpty() &&
@@ -2046,8 +2053,15 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 				CurrentDef.Components.Add(CurrentComp);
 				CurrentComp = FManifestActorComponentDefinition();
 			}
+			// v4.33: Save pending delegate binding
+			if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+			{
+				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+				CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+			}
 			bInVariables = false;
 			bInComponents = false;
+			bInDelegateBindings = false;
 
 			// Save current blueprint and start new one - v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() &&
@@ -2169,9 +2183,80 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 					CurrentDef.Variables.Add(CurrentVar);
 					CurrentVar = FManifestActorVariableDefinition();
 				}
+				// v4.33: Save pending delegate binding
+				if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+				{
+					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+				}
 				bInComponents = true;
 				bInVariables = false;
+				bInDelegateBindings = false;
 				ComponentsIndent = CurrentIndent;
+			}
+			// v4.33: Parse delegate_bindings section for actor blueprints (External ASC Binding)
+			else if (TrimmedLine.Equals(TEXT("delegate_bindings:")) || TrimmedLine.StartsWith(TEXT("delegate_bindings:")))
+			{
+				bInEventGraph = false;
+				// Save pending variable/component before switching to delegate_bindings
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInComponents && !CurrentComp.Name.IsEmpty())
+				{
+					CurrentDef.Components.Add(CurrentComp);
+					CurrentComp = FManifestActorComponentDefinition();
+				}
+				bInDelegateBindings = true;
+				bInVariables = false;
+				bInComponents = false;
+			}
+			else if (bInDelegateBindings)
+			{
+				// v4.33: Parse delegate binding items (same format as gameplay_abilities)
+				if (TrimmedLine.StartsWith(TEXT("- id:")) || TrimmedLine.StartsWith(TEXT("- delegate:")) || TrimmedLine.StartsWith(TEXT("- handler:")))
+				{
+					// Save previous binding
+					if (!CurrentDelegateBinding.Delegate.IsEmpty() || !CurrentDelegateBinding.Id.IsEmpty())
+					{
+						CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					}
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+					if (TrimmedLine.StartsWith(TEXT("- id:")))
+					{
+						CurrentDelegateBinding.Id = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- delegate:")))
+					{
+						CurrentDelegateBinding.Delegate = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else
+					{
+						CurrentDelegateBinding.Handler = GetLineValue(TrimmedLine.Mid(2));
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("id:")))
+				{
+					CurrentDelegateBinding.Id = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("delegate:")))
+				{
+					CurrentDelegateBinding.Delegate = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("source:")))
+				{
+					CurrentDelegateBinding.Source = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("handler:")))
+				{
+					CurrentDelegateBinding.Handler = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("unbind_on_end:")))
+				{
+					CurrentDelegateBinding.bUnbindOnEnd = GetLineValue(TrimmedLine).ToBool();
+				}
 			}
 			else if (bInVariables)
 			{
@@ -2231,6 +2316,11 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 	if (bInComponents && !CurrentComp.Name.IsEmpty())
 	{
 		CurrentDef.Components.Add(CurrentComp);
+	}
+	// v4.33: Save pending delegate binding
+	if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+	{
+		CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 	}
 	// v2.6.14: Prefix validation - valid prefixes: BP_, BTS_, BPA_, Goal_, GoalGenerator_
 	if (bInItem && !CurrentDef.Name.IsEmpty() &&
@@ -4480,7 +4570,9 @@ void FGasAbilityGeneratorParser::ParseGraphNodes(const TArray<FString>& Lines, i
 		}
 		else if (bInNode)
 		{
-			if (TrimmedLine.StartsWith(TEXT("type:")))
+			// v4.33: Only set node type if NOT inside properties section
+			// This prevents parameter type (e.g., "type: Object") from overwriting node type (e.g., "CustomEvent")
+			if (TrimmedLine.StartsWith(TEXT("type:")) && !bInProperties)
 			{
 				CurrentNode.Type = GetLineValue(TrimmedLine);
 				bInParameters = false;  // v2.8.2: Exit parameters when hitting new property
