@@ -1,4 +1,4 @@
-# GA_StealthField Implementation Guide v3.7 - GAS Audit v6.1 Compliant
+# GA_StealthField Implementation Guide v3.8 - GAS Audit v6.5 Compliant
 
 ## Exoskeleton Form - Player + Attached Father Invisibility
 
@@ -7,9 +7,10 @@
 ### Blueprint-Only Implementation
 
 **Contracts:**
-- Father_Companion_GAS_Abilities_Audit.md v6.1 - MEDIUM MED-4 RESOLVED
+- Father_Companion_GAS_Abilities_Audit.md v6.5 - MEDIUM MED-4 RESOLVED
+- LOCKED_CONTRACTS.md v4.32 - Contract 14 (INV-INPUT-1) COMPLIANT
 
-> **GAS Audit v6.1 Compliance:** Uses AbilityTaskWaitDelay + IsValid guard (verified v4.15)
+> **GAS Audit v6.5 Compliance:** Uses AbilityTaskWaitDelay + IsValid guard (verified v4.15). Input tag uses `Narrative.Input.Ability2` per INV-INPUT-1 (v3.8).
 
 ---
 
@@ -17,12 +18,12 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 3.7 |
+| Document Version | 3.8 |
 | Ability Name | GA_StealthField |
 | Ability Type | Active Player Ability |
 | Parent Class | NarrativeGameplayAbility |
 | Form | Exoskeleton (Father Attached to Back) |
-| Input | E Key (Narrative.Input.Father.Ability3) |
+| Input | Ability2 (Narrative.Input.Ability2) |
 
 ---
 
@@ -76,7 +77,7 @@
 
 | Parameter | Value |
 |-----------|-------|
-| Duration | 10 seconds |
+| Duration | 8 seconds |
 | Movement Speed Reduction | -20% (0.8x multiplier) |
 | Cooldown | 15 seconds |
 | Break on Attack | Yes |
@@ -157,7 +158,7 @@
    - 8.2.3) Set: `Has Duration`
    - 8.2.4) Find: **Duration Magnitude** section
    - 8.2.5) Expand: **Duration Magnitude**
-   - 8.2.6) Set **Scalable Float Magnitude** value: `10.0`
+   - 8.2.6) Set **Scalable Float Magnitude** value: `8.0`
 
 #### 8.3) Add Grant Tags Component (UE 5.6)
 
@@ -213,7 +214,7 @@
 #### 9.2) Configure Duration Policy
    - 9.2.1) In Details panel, find: **Duration Policy**
    - 9.2.2) Set: `Has Duration`
-   - 9.2.3) Set **Duration Magnitude** value: `10.0`
+   - 9.2.3) Set **Duration Magnitude** value: `8.0`
 
 #### 9.3) Add Attack Rating Modifier
 
@@ -322,7 +323,7 @@
 
 #### 12.5) Configure Input Tag
    - 12.5.1) Find: **InputTag** property
-   - 12.5.2) Set: `Narrative.Input.Father.Ability3`
+   - 12.5.2) Set: `Narrative.Input.Ability2`
 
 ### 13) Create Variables
 
@@ -335,7 +336,7 @@
 | FatherInvisibilityHandle | Active Gameplay Effect Handle (Structure) | None | No |
 | DamageBonusHandle | Active Gameplay Effect Handle (Structure) | None | No |
 | OriginalWalkSpeed | Float | 0.0 | No |
-| StealthDuration | Float | 10.0 | Yes |
+| StealthDuration | Float | 8.0 | Yes |
 | SpeedReductionMultiplier | Float | 0.8 | Yes |
 
 ### 14) Compile Variables
@@ -875,10 +876,10 @@
 
 #### 45.1) Check Gameplay Tags
    - 45.1.1) Open: Project Settings -> Gameplay Tags
-   - 45.1.2) Verify tag exists: `Narrative.Input.Father.Ability3`
+   - 45.1.2) Verify tag exists: `Narrative.Input.Ability2`
    - 45.1.3) If missing, create it:
-      - 45.1.3.1) **Tag Name**: `Narrative.Input.Father.Ability3`
-      - 45.1.3.2) **Comment**: `Father E key ability input`
+      - 45.1.3.1) **Tag Name**: `Narrative.Input.Ability2`
+      - 45.1.3.2) **Comment**: `Father Ability2 input binding`
 
 ### 46) Configure Narrative Input Settings
 
@@ -890,12 +891,12 @@
    - 46.2.1) Locate: **Ability Input Mappings** array
 
 #### 46.3) Add or Verify Mapping
-   - 46.3.1) Find entry for E key input action
-   - 46.3.2) Verify **Input Tag**: `Narrative.Input.Father.Ability3`
+   - 46.3.1) Find entry for Ability2 input action
+   - 46.3.2) Verify **Input Tag**: `Narrative.Input.Ability2`
    - 46.3.3) If missing, add new mapping:
       - 46.3.3.1) Click: **+** to add element
-      - 46.3.3.2) **Input Action**: Your E key action
-      - 46.3.3.3) **Input Tag**: `Narrative.Input.Father.Ability3`
+      - 46.3.3.2) **Input Action**: Your Ability2 action
+      - 46.3.3.3) **Input Tag**: `Narrative.Input.Ability2`
 
 ### 47) Save Input Configuration
 
@@ -919,14 +920,14 @@
 | Activation Blocked | Father.State.Stealthed | Cannot activate while already stealthed |
 | Activation Owned | Father.State.Stealthed | Granted while ability active |
 | Cancel Tag | State.Attacking | Cancels attack abilities |
-| Input Tag | Narrative.Input.Father.Ability3 | E key binding |
+| Input Tag | Narrative.Input.Ability2 | Ability2 input binding |
 
 ### Gameplay Effect Summary
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
-| GE_StealthInvisibility | 10 seconds | Grants invisibility tags + StealthRating 100 |
-| GE_StealthDamageBonus | 10 seconds | +50 AttackRating |
+| GE_StealthInvisibility | 8 seconds | Grants invisibility tags + StealthRating 100 |
+| GE_StealthDamageBonus | 8 seconds | +50 AttackRating |
 | GE_StealthFieldCooldown | 15 seconds | Prevents reactivation |
 
 ### Variable Summary
@@ -940,7 +941,7 @@
 | FatherInvisibilityHandle | Active GE Handle | None | No |
 | DamageBonusHandle | Active GE Handle | None | No |
 | OriginalWalkSpeed | Float | 0.0 | No |
-| StealthDuration | Float | 10.0 | Yes |
+| StealthDuration | Float | 8.0 | Yes |
 | SpeedReductionMultiplier | Float | 0.8 | Yes |
 
 ### Multiplayer Configuration
@@ -963,7 +964,7 @@
 | 6 | Apply GE_StealthInvisibility | Father ASC |
 | 7 | Apply GE_StealthDamageBonus | Player ASC |
 | 8 | Clear ViewedCharacter | All NPC Controllers |
-| 9 | Start duration timer | 10 seconds |
+| 9 | Start duration timer | 8 seconds |
 
 ### Stealth End Flow
 
@@ -1009,6 +1010,15 @@
 ---
 
 ## CHANGELOG
+
+### Version 3.8 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| Duration Alignment | Changed StealthDuration from 10s to 8s to match manifest.yaml |
+| Input Tag Alignment | Changed input_tag from Narrative.Input.Father.Ability3 to Narrative.Input.Ability2 per INV-INPUT-1 compliance |
+| GE Duration Update | GE_StealthInvisibility and GE_StealthDamageBonus durations updated to 8s |
+| GAS Audit | Updated reference from v6.1 to v6.5 |
 
 ### Version 3.6 - January 2026
 
