@@ -5382,6 +5382,8 @@ gameplay_abilities:
   - name: GA_Backstab
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
+    # TODO: input_tag TBD - GA_Backstab is input-triggered, not auto-trigger
+    # Will use Narrative.Input.Ability{1|2|3} or custom mapping per INV-INPUT-1
     instancing_policy: InstancedPerActor
     net_execution_policy: LocalPredicted
     tags:
@@ -5395,24 +5397,101 @@ gameplay_abilities:
         type: Float
         default_value: 2.0
         instance_editable: true
+      - name: TargetEnemy
+        type: Object
+        class: Actor
+        instance_editable: true
     event_graph:
-      # Minimal event_graph - passive ability immediately ends on activation
-      # Actual logic is in CheckBackstabCondition/ApplyBackstabBonus custom functions
+      # Option 1: Input triggers condition check → applies 2x damage bonus to next attack
+      # Flow: Activate → CheckBackstabCondition → Branch → Apply GE_BackstabBonus → EndAbility
       nodes:
         - id: Event_Activate
           type: Event
           properties:
             event_name: K2_ActivateAbility
           position: [0, 0]
-        - id: EndAbility
+        - id: GetTarget
+          type: VariableGet
+          properties:
+            variable_name: TargetEnemy
+          position: [200, 0]
+        - id: IsValidTarget
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [400, 0]
+        - id: Branch_ValidTarget
+          type: Branch
+          position: [600, 0]
+        - id: CallCheckBackstab
+          type: CallFunction
+          properties:
+            function: CheckBackstabCondition
+            target_self: true
+          position: [800, 0]
+        - id: Branch_CanBackstab
+          type: Branch
+          position: [1000, 0]
+        # Apply GE_BackstabBonus to self (player) for next attack
+        - id: MakeGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            class: UGameplayAbility
+            target_self: true
+            param.GameplayEffectClass: GE_BackstabBonus
+          position: [1200, 0]
+        - id: ApplyGEToSelf
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToOwner
+            target_self: true
+          position: [1400, 0]
+        - id: EndAbility_Success
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [300, 0]
+          position: [1600, 0]
+        - id: EndAbility_Fail
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1000, 200]
       connections:
         - from: [Event_Activate, Then]
-          to: [EndAbility, Exec]
+          to: [IsValidTarget, Exec]
+        - from: [GetTarget, TargetEnemy]
+          to: [IsValidTarget, Object]
+        - from: [IsValidTarget, Exec]
+          to: [Branch_ValidTarget, Exec]
+        - from: [IsValidTarget, ReturnValue]
+          to: [Branch_ValidTarget, Condition]
+        # Valid target path
+        - from: [Branch_ValidTarget, True]
+          to: [CallCheckBackstab, Exec]
+        - from: [GetTarget, TargetEnemy]
+          to: [CallCheckBackstab, EnemyActor]
+        - from: [CallCheckBackstab, Exec]
+          to: [Branch_CanBackstab, Exec]
+        - from: [CallCheckBackstab, CanBackstab]
+          to: [Branch_CanBackstab, Condition]
+        # Can backstab path - apply bonus
+        - from: [Branch_CanBackstab, True]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [ApplyGEToSelf, Exec]
+        - from: [MakeGESpec, ReturnValue]
+          to: [ApplyGEToSelf, SpecHandle]
+        - from: [ApplyGEToSelf, Exec]
+          to: [EndAbility_Success, Exec]
+        # Cannot backstab or invalid target - just end
+        - from: [Branch_CanBackstab, False]
+          to: [EndAbility_Fail, Exec]
+        - from: [Branch_ValidTarget, False]
+          to: [EndAbility_Fail, Exec]
     # v5.1: Custom functions using Goal_Attack query approach
     # Uses Narrative Pro's built-in goal system instead of custom perception binding
     custom_functions:

@@ -1144,7 +1144,7 @@ Father Companion Ability Recommendations:
 | GA_FatherAttack | Father (NPC) | Autonomous combat | Server Only | AI-triggered |
 | GA_ProximityStrike | Father (NPC) | Passive AOE | Server Only | NPC passive |
 | GA_FatherMark | Father (NPC) | Passive detection | Server Only | NPC passive |
-| GA_Backstab | Player | Passive damage bonus | Local Predicted | Player Default Ability |
+| GA_Backstab | Player | Active damage bonus (input TBD) | Local Predicted | Player Default Ability |
 | GA_FatherCrawler | Father (NPC) | Form (follow mode) | Server Only | NPC form ability |
 | GA_FatherArmor | Father (NPC) | Form (grants dome, applies GE) | Server Only | Cross-actor operations |
 | GA_FatherExoskeleton | Father (NPC) | Form (grants dash/sprint/stealth) | Server Only | Grants to player ASC |

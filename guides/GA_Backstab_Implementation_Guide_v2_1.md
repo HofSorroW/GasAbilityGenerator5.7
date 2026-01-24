@@ -1,6 +1,8 @@
-# GA_Backstab Implementation Guide v2.0
+# GA_Backstab Implementation Guide v2.1
 
-## Passive Damage Bonus Ability - Goal_Attack Query Approach
+## Active Damage Bonus Ability - Input-Triggered with Goal_Attack Query
+
+**Option 1 Implementation:** Player presses input → checks if behind enemy → applies 2x damage bonus to next attack
 
 ### Unreal Engine 5.7 + Narrative Pro v2.2
 
@@ -12,16 +14,26 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 2.0 |
+| Document Version | 2.1 |
 | Ability Name | GA_Backstab |
-| Ability Type | Passive (Triggered on Attack Hit) |
+| Ability Type | Active (Input-Triggered) |
 | Parent Class | NarrativeGameplayAbility |
 | Form Availability | All Forms (Crawler, Armor, Exoskeleton, Symbiote, Engineer) |
-| Input Required | None (Auto-Trigger) |
+| Input Required | Yes (Input Tag TBD) |
 | Grant Location | Player Default Abilities array |
 | Detection Method | **Goal_Attack Query** (v5.1) |
 
 ---
+
+## VERSION 2.1 CHANGES (Input-Triggered)
+
+| Change | Details |
+|--------|---------|
+| **Ability Type** | Changed from Passive to Active (Input-Triggered) |
+| **Input Tag** | TBD - will use Narrative.Input.* per INV-INPUT-1 |
+| **Damage Bonus** | Changed from +25 AttackRating to 2.0x multiplier |
+| **Event Graph** | Now calls CheckBackstabCondition → Apply GE_BackstabBonus |
+| **TargetEnemy Variable** | Added - must be set before activation |
 
 ## VERSION 1.9 CHANGES (Goal_Attack Approach)
 
@@ -106,8 +118,8 @@ If NO Goal_Attack OR target != player → BACKSTAB VALID
 | Ability Tags | Ability.Father.Backstab |
 | Effect Tag | Effect.Backstab |
 | Event Tag | Event.Combat.Backstab |
-| Activation Required | None (passive, triggered by attack) |
-| InputTag | None (auto-trigger) |
+| Activation Required | Backstab conditions (Goal_Attack query) |
+| InputTag | TBD (will use Narrative.Input.* per INV-INPUT-1) |
 
 ### Gameplay Effect Summary
 
