@@ -1650,7 +1650,7 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 		// v6.8: Scan NarrativePro22B57 plugin content paths to ensure Blueprint parent classes are discoverable
 		TArray<FString> NarrativeProPaths;
-		NarrativeProPaths.Add(TEXT("/NarrativePro22B57/"));
+		NarrativeProPaths.Add(TEXT("/NarrativePro/"));
 		AssetRegistryModule.Get().ScanPathsSynchronous(NarrativeProPaths, true);
 		bNarrativeProScanned = true;
 		UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] Scanned NarrativePro22B57 content paths for parent class resolution"));
@@ -1691,13 +1691,13 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/Actors/%s.%s"), *Root, *ClassName, *ClassName));
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("/Game/%s.%s"), *ClassName, *ClassName));
 		// v6.8: Add NarrativePro22B57 paths for parent class lookup
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/%s.%s"), *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Abilities/GameplayAbilities/%s.%s"), *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Abilities/%s.%s"), *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/%s.%s"), *ClassName, *ClassName));
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *ClassName, *ClassName));
 		// v6.6: Add Narrative Pro Goals paths for Goal_Attack and other attack goals
-		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s"), *ClassName, *ClassName));
 
 		for (const FString& Path : BlueprintSearchPaths)
 		{
@@ -5351,7 +5351,7 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 							TArray<FString> SvcPaths;
 							SvcPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *ServiceDef.Class));
 							SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
-							SvcPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
+							SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
 
 							for (const FString& Path : SvcPaths)
 							{
@@ -5405,7 +5405,7 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						TArray<FString> TaskPaths;
 						TaskPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *NodeDef.TaskClass));
 						TaskPaths.Add(FString::Printf(TEXT("%s/AI/Tasks/%s.%s_C"), *GetProjectRoot(), *NodeDef.TaskClass, *NodeDef.TaskClass));
-						TaskPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
+						TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
 
 						UClass* TaskClass = nullptr;
 						for (const FString& Path : TaskPaths)
@@ -5470,7 +5470,7 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						TArray<FString> DecPaths;
 						DecPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *DecoratorDef.Class));
 						DecPaths.Add(FString::Printf(TEXT("%s/AI/Decorators/%s.%s_C"), *GetProjectRoot(), *DecoratorDef.Class, *DecoratorDef.Class));
-						DecPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
+						DecPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
 
 						for (const FString& Path : DecPaths)
 						{
@@ -14851,7 +14851,7 @@ static UNarrativeEvent* CreateDialogueEventFromDefinition(
 	// v3.9.11: Try to find event class in Narrative Pro paths (fixed paths)
 	TArray<FString> EventSearchPaths = {
 		// Narrative Pro built-in events (primary location)
-		FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.Type, *EventDef.Type),
+		FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.Type, *EventDef.Type),
 		// Project-specific events
 		FString::Printf(TEXT("/Game/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.Type, *EventDef.Type),
 		FString::Printf(TEXT("%s/Tales/Events/%s.%s_C"), *GetProjectRoot(), *EventDef.Type, *EventDef.Type),
@@ -16059,17 +16059,17 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 		// v2.6.9: Try Narrative Pro paths for abilities/activities
 		if (!AbilityClass)
 		{
-			AbilityPath = FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *AbilityName, *AbilityName);
+			AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *AbilityName, *AbilityName);
 			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
 		}
 		if (!AbilityClass)
 		{
-			AbilityPath = FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/%s/%s.%s_C"), *AbilityName, *AbilityName, *AbilityName);
+			AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/%s/%s.%s_C"), *AbilityName, *AbilityName, *AbilityName);
 			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
 		}
 		if (!AbilityClass)
 		{
-			AbilityPath = FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *AbilityName, *AbilityName);
+			AbilityPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *AbilityName, *AbilityName);
 			AbilityClass = LoadObject<UClass>(nullptr, *AbilityPath);
 		}
 		if (!AbilityClass)
@@ -16766,7 +16766,7 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 					FString::Printf(TEXT("%s/Abilities/Actions/%s.%s_C"), *ProjectRoot, *AbilityName, *AbilityName),
 					FString::Printf(TEXT("%s/Abilities/Combat/%s.%s_C"), *ProjectRoot, *AbilityName, *AbilityName),
 					FString::Printf(TEXT("%s/Abilities/%s.%s_C"), *ProjectRoot, *AbilityName, *AbilityName),
-					FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *AbilityName, *AbilityName)
+					FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *AbilityName, *AbilityName)
 				};
 				for (const FString& Path : SearchPaths)
 				{
@@ -18313,17 +18313,17 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 		ParentSearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/AI/Activities/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
 
 		// Narrative Pro plugin built-in activities
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/MeleeAttack/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootAndStrafe/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootFromCover/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Idle/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Flee/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
-		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/MeleeAttack/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/ShootAndStrafe/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/ShootFromCover/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Flee/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
+		ParentSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *Definition.ParentClass, *Definition.ParentClass));
 
 		for (const FString& Path : ParentSearchPaths)
 		{
@@ -18918,19 +18918,19 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Activities/%s.%s_C"), *ActivityName, *ActivityName));
 			// v4.22: Narrative Pro plugin built-in activities (correct plugin mount point)
 			// Activities are organized in subdirectories by type
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/MeleeAttack/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootAndStrafe/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/ShootFromCover/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Idle/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Flee/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *ActivityName, *ActivityName));
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/MeleeAttack/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/ShootAndStrafe/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/ShootFromCover/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Flee/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *ActivityName, *ActivityName));
 			// Legacy path (kept for backwards compatibility)
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/AI/Activities/%s.%s_C"), *ActivityName, *ActivityName));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Activities/%s.%s_C"), *ActivityName, *ActivityName));
 
 			for (const FString& Path : SearchPaths)
 			{
@@ -18982,11 +18982,11 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 		SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
 		SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
 		// v4.22: Narrative Pro plugin built-in goal generators (correct plugin mount point)
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
 		// Legacy path (kept for backwards compatibility)
-		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+		SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
 
 		UClass* GeneratorClass = nullptr;
 		for (const FString& Path : SearchPaths)
@@ -19507,7 +19507,7 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 				SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *CondDef.Type));
 				SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type));
 				SearchPaths.Add(FString::Printf(TEXT("/Game/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type));
-				SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type));
+				SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Conditions/%s.%s_C"), *CondDef.Type, *CondDef.Type));
 
 				for (const FString& Path : SearchPaths)
 				{
@@ -20071,8 +20071,8 @@ static void PopulateLootTableRollArray(
 						TArray<FString> SearchPaths = {
 							FString::Printf(TEXT("%s/Items/%s"), *GetProjectRoot(), *CollectionName),
 							FString::Printf(TEXT("%s/Items/Collections/%s"), *GetProjectRoot(), *CollectionName),
-							FString::Printf(TEXT("/NarrativePro22B57/Pro/Demo/Items/Examples/Items/Weapons/%s"), *CollectionName),
-							FString::Printf(TEXT("/NarrativePro22B57/Pro/Demo/Items/Examples/Items/Clothing/%s"), *CollectionName)
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/%s"), *CollectionName),
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/%s"), *CollectionName)
 						};
 
 						for (const FString& SearchPath : SearchPaths)
@@ -20520,8 +20520,8 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 						TArray<FString> SearchPaths = {
 							FString::Printf(TEXT("%s/Items/%s"), *GetProjectRoot(), *CollectionName),
 							FString::Printf(TEXT("%s/Items/Collections/%s"), *GetProjectRoot(), *CollectionName),
-							FString::Printf(TEXT("/NarrativePro22B57/Pro/Demo/Items/Examples/Items/Weapons/%s"), *CollectionName),
-							FString::Printf(TEXT("/NarrativePro22B57/Pro/Demo/Items/Examples/Items/Clothing/%s"), *CollectionName)
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Weapons/%s"), *CollectionName),
+							FString::Printf(TEXT("/NarrativePro/Pro/Demo/Items/Examples/Items/Clothing/%s"), *CollectionName)
 						};
 
 						UObject* LoadedCollection = nullptr;
@@ -20926,7 +20926,7 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 	{
 		// Search for trigger class in Narrative Pro content
 		TArray<FString> TriggerSearchPaths;
-		TriggerSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Triggers/%s.%s_C"), *TriggerDef.TriggerClass, *TriggerDef.TriggerClass));
+		TriggerSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Triggers/%s.%s_C"), *TriggerDef.TriggerClass, *TriggerDef.TriggerClass));
 		TriggerSearchPaths.Add(FString::Printf(TEXT("/Game/Triggers/%s.%s_C"), *TriggerDef.TriggerClass, *TriggerDef.TriggerClass));
 		TriggerSearchPaths.Add(FString::Printf(TEXT("%s/Triggers/%s.%s_C"), *GetProjectRoot(), *TriggerDef.TriggerClass, *TriggerDef.TriggerClass));
 
@@ -21000,7 +21000,7 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 		{
 			// Search for event class
 			TArray<FString> EventSearchPaths;
-			EventSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.EventClass, *EventDef.EventClass));
+			EventSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Events/%s.%s_C"), *EventDef.EventClass, *EventDef.EventClass));
 			EventSearchPaths.Add(FString::Printf(TEXT("%s/Events/%s.%s_C"), *GetProjectRoot(), *EventDef.EventClass, *EventDef.EventClass));
 			EventSearchPaths.Add(FString::Printf(TEXT("/Game/Events/%s.%s_C"), *EventDef.EventClass, *EventDef.EventClass));
 
@@ -21098,7 +21098,7 @@ FGenerationResult FTriggerSetGenerator::Generate(const FManifestTriggerSetDefini
 					// Try to load the class reference
 					TArray<FString> ClassSearchPaths;
 					ClassSearchPaths.Add(FString::Printf(TEXT("%s/Goals/%s.%s_C"), *GetProjectRoot(), *PropPair.Value, *PropPair.Value));
-					ClassSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Goals/%s.%s_C"), *PropPair.Value, *PropPair.Value));
+					ClassSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *PropPair.Value, *PropPair.Value));
 
 					UClass* RefClass = nullptr;
 					for (const FString& Path : ClassSearchPaths)
@@ -22523,23 +22523,23 @@ FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivitySc
 
 			// Narrative Pro plugin content paths - all known goal locations
 			// Attacks folder (Goal_Attack, Goal_Flee)
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// DriveToDestination folder
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/DriveToDestination/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/DriveToDestination/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// FlyToDestination folder
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FlyToDestination/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FlyToDestination/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// FollowCharacter folder
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// GoToLocation folder (Goal_MoveToDestination)
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// Idle folder
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Idle/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// Interact folder (with Goals subfolder)
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// Patrol folder
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Patrol/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 			// ReturnToSpawn folder
-			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
+			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/ReturnToSpawn/%s.%s_C"), *Behavior.GoalClass, *Behavior.GoalClass));
 
 			for (const FString& Path : SearchPaths)
 			{
@@ -23291,10 +23291,10 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 			if (Definition.Rewards.XP > 0)
 			{
 				TArray<FString> XPEventPaths = {
-					TEXT("/NarrativePro22B57/Pro/Core/Tales/Events/NE_GiveXP.NE_GiveXP_C"),
-					TEXT("/NarrativePro22B57/Tales/Events/NE_GiveXP.NE_GiveXP_C"),
-					TEXT("/NarrativePro22B57/Events/NE_GiveXP.NE_GiveXP_C"),
-					TEXT("/Game/NarrativePro22B57/Events/NE_GiveXP.NE_GiveXP_C")
+					TEXT("/NarrativePro/Pro/Core/Tales/Events/NE_GiveXP.NE_GiveXP_C"),
+					TEXT("/NarrativePro/Tales/Events/NE_GiveXP.NE_GiveXP_C"),
+					TEXT("/NarrativePro/Events/NE_GiveXP.NE_GiveXP_C"),
+					TEXT("/Game/NarrativePro/Events/NE_GiveXP.NE_GiveXP_C")
 				};
 				UClass* GiveXPClass = FindEventClass(XPEventPaths);
 				if (GiveXPClass)
@@ -23330,10 +23330,10 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 			if (Definition.Rewards.Currency > 0)
 			{
 				TArray<FString> CurrencyEventPaths = {
-					TEXT("/NarrativePro22B57/Pro/Core/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
-					TEXT("/NarrativePro22B57/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
-					TEXT("/NarrativePro22B57/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
-					TEXT("/Game/NarrativePro22B57/Events/BPE_AddCurrency.BPE_AddCurrency_C")
+					TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
+					TEXT("/NarrativePro/Tales/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
+					TEXT("/NarrativePro/Events/BPE_AddCurrency.BPE_AddCurrency_C"),
+					TEXT("/Game/NarrativePro/Events/BPE_AddCurrency.BPE_AddCurrency_C")
 				};
 				UClass* AddCurrencyClass = FindEventClass(CurrencyEventPaths);
 				if (AddCurrencyClass)
@@ -23372,10 +23372,10 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 				int32 Qty = Definition.Rewards.ItemQuantities.IsValidIndex(i) ? Definition.Rewards.ItemQuantities[i] : 1;
 
 				TArray<FString> ItemEventPaths = {
-					TEXT("/NarrativePro22B57/Pro/Core/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
-					TEXT("/NarrativePro22B57/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
-					TEXT("/NarrativePro22B57/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
-					TEXT("/Game/NarrativePro22B57/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C")
+					TEXT("/NarrativePro/Pro/Core/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
+					TEXT("/NarrativePro/Tales/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
+					TEXT("/NarrativePro/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C"),
+					TEXT("/Game/NarrativePro/Events/BPE_AddItemToInventory.BPE_AddItemToInventory_C")
 				};
 				UClass* AddItemClass = FindEventClass(ItemEventPaths);
 				if (AddItemClass)
@@ -23387,7 +23387,7 @@ FGenerationResult FQuestGenerator::Generate(const FManifestQuestDefinition& Defi
 						TArray<FString> ItemSearchPaths;
 						ItemSearchPaths.Add(FString::Printf(TEXT("%s/Items/%s.%s_C"), *GetProjectRoot(), *ItemName, *ItemName));
 						ItemSearchPaths.Add(FString::Printf(TEXT("%s/Items/Equipment/%s.%s_C"), *GetProjectRoot(), *ItemName, *ItemName));
-						ItemSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Items/%s.%s_C"), *ItemName, *ItemName));
+						ItemSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Items/%s.%s_C"), *ItemName, *ItemName));
 
 						UClass* ItemClass = nullptr;
 						for (const FString& Path : ItemSearchPaths)
@@ -23569,13 +23569,13 @@ UClass* FQuestGenerator::ResolveQuestTaskClass(const FString& TaskClassName)
 	TArray<FString> TaskSearchPaths;
 
 	// Narrative Pro built-in tasks (BPT_ prefix style)
-	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Tasks/%s.%s_C"), *TaskClassName, *TaskClassName));
-	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Tasks/BPT_%s.BPT_%s_C"), *TaskClassName, *TaskClassName));
+	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/%s.%s_C"), *TaskClassName, *TaskClassName));
+	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/BPT_%s.BPT_%s_C"), *TaskClassName, *TaskClassName));
 
 	// Sub-folders in Narrative Pro
-	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Tasks/GoToLocation/%s.%s_C"), *TaskClassName, *TaskClassName));
-	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Tasks/FindItem/%s.%s_C"), *TaskClassName, *TaskClassName));
-	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/Tales/Tasks/TalkTo/%s.%s_C"), *TaskClassName, *TaskClassName));
+	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/GoToLocation/%s.%s_C"), *TaskClassName, *TaskClassName));
+	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/FindItem/%s.%s_C"), *TaskClassName, *TaskClassName));
+	TaskSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Tasks/TalkTo/%s.%s_C"), *TaskClassName, *TaskClassName));
 
 	// Project-specific paths
 	TaskSearchPaths.Add(FString::Printf(TEXT("%s/Tales/Tasks/%s.%s_C"), *GetProjectRoot(), *TaskClassName, *TaskClassName));
@@ -23997,8 +23997,8 @@ bool FNPCSpawnerPlacementGenerator::ConfigureSpawnComponent(
 	{
 		TArray<FString> GoalSearchPaths;
 		GoalSearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *Entry.OptionalGoal, *Entry.OptionalGoal));
-		GoalSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Entry.OptionalGoal, *Entry.OptionalGoal));
-		GoalSearchPaths.Add(FString::Printf(TEXT("/NarrativePro22B57/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Entry.OptionalGoal, *Entry.OptionalGoal));
+		GoalSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s_C"), *Entry.OptionalGoal, *Entry.OptionalGoal));
+		GoalSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *Entry.OptionalGoal, *Entry.OptionalGoal));
 
 		UClass* GoalClass = nullptr;
 		for (const FString& Path : GoalSearchPaths)

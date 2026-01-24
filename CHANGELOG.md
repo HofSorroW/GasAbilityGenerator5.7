@@ -4,6 +4,28 @@ Full version history for versions prior to v4.14. For recent versions, see `CLAU
 
 ---
 
+## v6.9 - GA_Backstab + GA_FatherEngineer Generation Fixes
+
+**Pin Resolution Improvements:**
+- Improved DynamicCast output pin matching to handle UE's space-separated pin names (e.g., manifest `AsNPCActivityComponent` now matches UE pin `AsNPCActivity Component`)
+- Added fuzzy pin name comparison that normalizes spaces and underscores for reliable matching across all As* cast output patterns
+
+**TSubclassOf Search Paths:**
+- Added Effects subfolders to Blueprint class resolution: FormState, Cooldowns, Damage, Stats, Utility
+- Fixes GE_EngineerState and similar form state effects not being found for TSubclassOf pins
+
+**NarrativePro Blackboard Paths:**
+- Fixed plugin content mount path: `/NarrativePro/` (based on .uplugin name) not `/NarrativePro22B57/` (folder name)
+- BB_Attack, BB_FollowCharacter, and other Narrative Pro blackboards now properly resolved
+
+**Manifest Fix (CheckBackstabCondition):**
+- Added `CastToActivityComp` node between GetActivityComp and GetCurrentGoal
+- GetComponentByClass returns UActorComponent, needs explicit cast to NPCActivityComponent before calling NPCActivityComponent methods
+
+**Result:** All 156 assets now generate successfully (0 failures).
+
+---
+
 ## v4.27 - Dependency Sort Order Audit
 
 - v4.27.1 - Dependency Sort Order Audit: Claude-GPT dual-agent audit of asset generation ordering. **Findings:** (1) TopologicalSort exists but never called - dependency graph informational only, (2) Materials phase (9) runs before MaterialFunctions phase (10) - dormant bug, (3) GA→GA manifest order issue proven (GA_ProtectiveDome → GA_DomeBurst TSubclassOf failure). **Quick-fix applied:** Moved material_functions section before materials in manifest (hygiene). **Backlog:** Consume TopologicalSort result in generation loops, swap M/MF phase order in commandlet. Verification: 156/156 assets. See `ClaudeContext/Handoffs/Dependency_Sort_Order_Audit_v1.md`.
