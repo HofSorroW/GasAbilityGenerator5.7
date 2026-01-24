@@ -3516,10 +3516,11 @@ gameplay_abilities:
             function: GetController
             class: Pawn
           position: [2700, 0]
+        # v6.7: Use NarrativeNPCController - Narrative Pro's AI controller class
         - id: CastToAIController
           type: DynamicCast
           properties:
-            target_class: AAIController
+            target_class: NarrativeNPCController
           position: [3000, 0]
         - id: GetActivityComponent
           type: CallFunction
@@ -3539,11 +3540,11 @@ gameplay_abilities:
             function: StopCurrentActivity
             class: NPCActivityComponent
           position: [3000, 100]
+        # v6.8: RunBehaviorTree resolves via WellKnownFunctions (no explicit class needed)
         - id: RunBehaviorTree
           type: CallFunction
           properties:
             function: RunBehaviorTree
-            class: AAIController
             behavior_tree: BT_FatherEngineer
           position: [3300, 0]
         # === END ABILITY FLOW ===
@@ -3628,9 +3629,9 @@ gameplay_abilities:
         - from: [SetIsAttached, Exec]
           to: [CommitCooldown, Exec]
         # === v4.30 R-AI-1: Turret AI flow (after CommitCooldown) ===
+        # v6.8: GetController and GetComponentByClass are pure functions (no exec pins)
+        #       Exec flow goes directly to impure nodes (casts, function calls)
         - from: [CommitCooldown, Exec]
-          to: [GetFatherController, Exec]
-        - from: [GetFatherController, Exec]
           to: [CastToAIController, Exec]
         - from: [CastToAIController, Exec]
           to: [CastToActivityComponent, Exec]
@@ -3661,7 +3662,7 @@ gameplay_abilities:
           to: [CastToActivityComponent, Object]
         - from: [CastToActivityComponent, AsNPCActivityComponent]
           to: [StopCurrentActivity, Target]
-        - from: [CastToAIController, AsAIController]
+        - from: [CastToAIController, AsNarrativeNPCController]
           to: [RunBehaviorTree, Target]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
@@ -5257,13 +5258,20 @@ gameplay_abilities:
               class: Actor
               param.ComponentClass: NPCActivityComponent
             position: [200, 0]
-          # Step 3: Check if component exists
+          # v6.9: Cast GetComponentByClass result to NPCActivityComponent
+          # GetComponentByClass returns UActorComponent*, need to cast for NPCActivityComponent methods
+          - id: CastToActivityComp
+            type: DynamicCast
+            properties:
+              target_class: NPCActivityComponent
+            position: [350, 0]
+          # Step 3: Check if cast succeeded (component exists and is correct type)
           - id: IsValidComp
             type: CallFunction
             properties:
               function: IsValid
               class: KismetSystemLibrary
-            position: [400, 0]
+            position: [500, 0]
           # Step 4: Get current activity goal (if component valid)
           # This returns the active goal from the NPC's activity system
           - id: GetCurrentGoal
@@ -5271,7 +5279,7 @@ gameplay_abilities:
             properties:
               function: GetCurrentActivityGoal
               class: NPCActivityComponent
-            position: [600, 0]
+            position: [650, 0]
           # Step 5: Cast to Goal_Attack to check if enemy is in attack mode
           - id: CastToGoalAttack
             type: DynamicCast
@@ -5332,14 +5340,17 @@ gameplay_abilities:
           # EnemyActor → GetComponentByClass target
           - from: [FunctionEntry, EnemyActor]
             to: [GetActivityComp, Target]
-          # GetActivityComp → IsValidComp
+          # v6.9: GetActivityComp → CastToActivityComp → IsValidComp/GetCurrentGoal
           - from: [GetActivityComp, ReturnValue]
+            to: [CastToActivityComp, Object]
+          # Check if cast succeeded (component valid and correct type)
+          - from: [CastToActivityComp, AsNPCActivityComponent]
             to: [IsValidComp, Object]
           # IsValidComp → NotValidComp (invert for OR logic)
           - from: [IsValidComp, ReturnValue]
             to: [NotValidComp, A]
-          # GetActivityComp → GetCurrentGoal target
-          - from: [GetActivityComp, ReturnValue]
+          # Cast output → GetCurrentGoal target
+          - from: [CastToActivityComp, AsNPCActivityComponent]
             to: [GetCurrentGoal, Target]
           # GetCurrentGoal → CastToGoalAttack
           - from: [GetCurrentGoal, ReturnValue]

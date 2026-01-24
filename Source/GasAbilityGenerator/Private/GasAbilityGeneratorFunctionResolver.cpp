@@ -25,6 +25,9 @@
 #include "BlueprintGameplayTagLibrary.h"
 #include "NiagaraFunctionLibrary.h"
 
+// AI includes for WellKnownFunctions
+#include "AIController.h"
+
 // Narrative Pro includes for WellKnownFunctions
 #include "Items/InventoryComponent.h"
 #include "Items/WeaponItem.h"
@@ -47,6 +50,9 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("StopAnimMontage"), ACharacter::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetController"), APawn::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetPlayerController"), UGameplayStatics::StaticClass());
+
+	// v6.8: AI Controller functions
+	WellKnownFunctions.Add(TEXT("RunBehaviorTree"), AAIController::StaticClass());
 
 	// Actor functions
 	WellKnownFunctions.Add(TEXT("GetActorLocation"), AActor::StaticClass());
