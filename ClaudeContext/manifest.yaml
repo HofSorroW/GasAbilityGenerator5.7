@@ -994,7 +994,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_CrawlerState
+            param.GameplayEffectClass: GE_CrawlerState
           position: [2500, 200]
         # Step 6: Remove Transitioning tag
         - id: RemoveTransitioningTag
@@ -1395,7 +1395,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_ArmorState
+            param.GameplayEffectClass: GE_ArmorState
           position: [2100, -200]
         - id: SetFirstFalse
           type: VariableSet
@@ -1537,7 +1537,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_ArmorState
+            param.GameplayEffectClass: GE_ArmorState
           position: [2700, 200]
         # Step 6: Remove Transitioning tag
         - id: RemoveTransitioningTag
@@ -1973,7 +1973,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_ExoskeletonState
+            param.GameplayEffectClass: GE_ExoskeletonState
           position: [1800, -200]
         - id: SetFirstFalse
           type: VariableSet
@@ -2115,7 +2115,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_ExoskeletonState
+            param.GameplayEffectClass: GE_ExoskeletonState
           position: [2400, 200]
         # Step 6: Remove Transitioning tag (v4.13.5: replaces GE removal)
         - id: RemoveTransitioningTag
@@ -2556,7 +2556,7 @@ gameplay_abilities:
           properties:
             function: MakeOutgoingGameplayEffectSpec
             target_self: true
-            gameplay_effect_class: GE_SymbioteDuration
+            param.GameplayEffectClass: GE_SymbioteDuration
           position: [50, -100]
         - id: GetSymbioteDuration_Spec
           type: VariableGet
@@ -2619,7 +2619,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_SymbioteState
+            param.GameplayEffectClass: GE_SymbioteState
           position: [1800, -200]
         - id: SetFirstFalse
           type: VariableSet
@@ -2761,7 +2761,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_SymbioteState
+            param.GameplayEffectClass: GE_SymbioteState
           position: [2500, 200]
         # Step 6: Remove Transitioning tag (instead of GE removal)
         - id: RemoveTransitioningTag
@@ -3304,7 +3304,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_EngineerState
+            param.GameplayEffectClass: GE_EngineerState
           position: [1800, -200]
         - id: SetFirstFalse
           type: VariableSet
@@ -3446,7 +3446,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_EngineerState
+            param.GameplayEffectClass: GE_EngineerState
           position: [2400, 200]
         # Step 6: Remove Transitioning tag (v4.13.5: replaces GE removal)
         - id: RemoveTransitioningTag
@@ -3509,7 +3509,7 @@ gameplay_abilities:
         - id: CastToAIController
           type: DynamicCast
           properties:
-            target_class: AIController
+            target_class: AAIController
           position: [3000, 0]
         - id: GetActivityComponent
           type: CallFunction
@@ -3528,7 +3528,7 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: RunBehaviorTree
-            class: AIController
+            class: AAIController
             behavior_tree: BT_FatherEngineer
           position: [3300, 0]
         # === END ABILITY FLOW ===
@@ -4344,6 +4344,7 @@ gameplay_abilities:
           properties:
             function: MakeOutgoingGameplayEffectSpec
             target_self: true
+            param.GameplayEffectClass: GE_DomeBurstDamage
           position: [3300, 0]
         - id: GetDamage
           type: VariableGet
@@ -4502,6 +4503,7 @@ gameplay_abilities:
           properties:
             function: MakeOutgoingGameplayEffectSpec
             target_self: true
+            param.GameplayEffectClass: GE_DomeAbsorption
           position: [1800, 0]
         - id: ApplyGE
           type: CallFunction
@@ -5015,6 +5017,7 @@ gameplay_abilities:
           properties:
             function: MakeOutgoingGameplayEffectSpec
             target_self: true
+            param.GameplayEffectClass: GE_StealthActive
           position: [1800, 0]
         - id: ApplyGE
           type: CallFunction
@@ -5487,6 +5490,7 @@ gameplay_abilities:
           properties:
             function: MakeOutgoingGameplayEffectSpec
             target_self: true
+            param.GameplayEffectClass: GE_ProximityDamage
           position: [3300, 0]
         - id: GetDamage
           type: VariableGet
@@ -5642,6 +5646,7 @@ gameplay_abilities:
           properties:
             function: MakeOutgoingGameplayEffectSpec
             target_self: true
+            param.GameplayEffectClass: GE_MarkEffect
           position: [1500, 0]
         - id: GetDuration
           type: VariableGet
@@ -5796,7 +5801,7 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectToOwner
             target_self: true
-            gameplay_effect_class: GE_SacrificeInvulnerability
+            param.GameplayEffectClass: GE_SacrificeInvulnerability
           position: [2400, 0]
         # Step 2: Hide Father actor
         - id: HideFather

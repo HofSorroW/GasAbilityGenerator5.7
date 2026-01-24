@@ -1,9 +1,11 @@
 # Father Companion GAS & Abilities Audit - Locked Decisions
-## Version 6.2 - January 2026
+## Version 6.3 - January 2026
 
 **Purpose:** This document consolidates all validated findings and locked decisions from dual-agent audits (Claude-GPT) conducted January 2026. These decisions are LOCKED and should not be debated again.
 
 **Audit Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.30
+
+**v6.3 Updates:** Added VTF-9 (MakeOutgoingGameplayEffectSpec param.GameplayEffectClass requirement). 16 manifest abilities fixed. Silent runtime failure discovered and corrected.
 
 **v6.2 Updates:** Added DOC-ONLY PATTERNS section consolidating Research Assessment findings. Archived GAS_Patterns_Research_Assessment_v1.md. Audit closure confirmed after Claude-GPT challenge session.
 
@@ -362,6 +364,80 @@ void UEquippableItem::ModifyEquipmentEffectSpec(FGameplayEffectSpec* Spec)
 **Implication:** Adding `SetByCaller.StaminaRegenRate` to an item would be useless unless the GE has a modifier that reads that tag.
 
 **Enforcement:** Design doc reference - ensure GE has matching modifier before using SetByCaller
+
+---
+
+### VTF-9: MakeOutgoingGameplayEffectSpec Requires param.GameplayEffectClass (NEW v6.3)
+**Status:** LOCKED
+**Source:** Claude-GPT dual audit (2026-01-24)
+**Severity:** Error (Silent Runtime Failure)
+
+`MakeOutgoingGameplayEffectSpec` nodes MUST use `param.GameplayEffectClass: GE_*` syntax in manifest. The `gameplay_effect_class:` property is NOT processed by the generator.
+
+**Evidence:**
+
+1. **Generator Code (GasAbilityGeneratorGenerators.cpp:10335):**
+```cpp
+if (PropPair.Key.StartsWith(TEXT("param.")))  // Only param.* prefix processed
+{
+    // ...
+    ParamPin->DefaultObject = ResolvedClass;  // Sets TSubclassOf pin
+}
+```
+
+2. **UE5.7 Schema (EdGraphSchema_K2.h:394):**
+```cpp
+static UE_API const FName PC_Class;    // DefaultValue string should always be empty, use DefaultObject.
+```
+
+3. **Pin Dump Verification:**
+```
+Available pins:
+  - self (object)
+  - GameplayEffectClass (class)   # <-- Pin name matches C++ parameter exactly
+  - Level (real)
+```
+
+4. **Function Signature (GameplayAbility.h:226):**
+```cpp
+FGameplayEffectSpecHandle MakeOutgoingGameplayEffectSpec(
+    TSubclassOf<UGameplayEffect> GameplayEffectClass,  // Parameter name = pin name
+    float Level=1.f
+) const;
+```
+
+**Failure Mode:**
+- `gameplay_effect_class:` in manifest → Ignored by generator
+- Pin left as nullptr → MakeOutgoingSpec returns invalid handle
+- ApplyGameplayEffectSpecToTarget with invalid handle → No effect applied (silent no-op)
+
+**Correct Pattern:**
+```yaml
+- id: MakeSpec
+  type: CallFunction
+  properties:
+    function: MakeOutgoingGameplayEffectSpec
+    class: UGameplayAbility
+    param.GameplayEffectClass: GE_StealthActive  # CORRECT
+```
+
+**Incorrect Pattern:**
+```yaml
+- id: MakeSpec
+  type: CallFunction
+  properties:
+    function: MakeOutgoingGameplayEffectSpec
+    class: UGameplayAbility
+    gameplay_effect_class: GE_StealthActive      # WRONG - not processed
+```
+
+**Fixed Abilities (16 total):**
+- GA_FatherCrawler, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote, GA_FatherEngineer
+- GA_FatherRifle, GA_FatherSword, GA_FatherAttack, GA_FatherLaserShot
+- GA_TurretShoot, GA_CoreLaser
+- GA_DomeBurst, GA_ProtectiveDome, GA_StealthField, GA_ProximityStrike, GA_FatherMark
+
+**Enforcement:** Pre-validator should flag MakeOutgoingGameplayEffectSpec nodes missing `param.GameplayEffectClass`
 
 ---
 

@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.30)
+# LOCKED_CONTRACTS.md (v4.31)
 
 ## Purpose
 
@@ -346,6 +346,73 @@ NPCs using Narrative Pro's Activity system (via `activity_configuration` in NPCD
 
 ---
 
+## LOCKED CONTRACT 13 — INV-GESPEC-1 MakeOutgoingGameplayEffectSpec Parameter (v4.31)
+
+### Context
+
+`MakeOutgoingGameplayEffectSpec` is a UGameplayAbility member function that creates a GE spec for later application. The first parameter is `TSubclassOf<UGameplayEffect> GameplayEffectClass`. Without this parameter set correctly, the function returns an invalid spec handle and `ApplyGameplayEffectSpecToTarget` silently does nothing.
+
+### Invariant
+
+1. All `MakeOutgoingGameplayEffectSpec` nodes in manifest **MUST** use `param.GameplayEffectClass: GE_*` syntax
+2. The generator **ONLY** processes properties with `param.` prefix for pin value assignment
+3. Using `gameplay_effect_class:` (without `param.` prefix) results in the property being ignored
+
+### Technical Evidence
+
+**Generator Processing (GasAbilityGeneratorGenerators.cpp:10335):**
+```cpp
+if (PropPair.Key.StartsWith(TEXT("param.")))  // Only param.* prefix processed
+{
+    FString PinName = PropPair.Key.Mid(6);  // Extract pin name after "param."
+    // ...
+    ParamPin->DefaultObject = ResolvedClass;  // Sets TSubclassOf<> pin
+}
+```
+
+**UE5.7 Pin Schema (EdGraphSchema_K2.h:394):**
+```cpp
+static UE_API const FName PC_Class;  // DefaultValue string should always be empty, use DefaultObject.
+```
+
+**Pin Name Verification (from generation log):**
+```
+Available pins:
+  - self (object)
+  - GameplayEffectClass (class)  <-- Pin name matches C++ parameter exactly
+  - Level (real)
+```
+
+### Forbidden
+
+- Using `gameplay_effect_class:` property (not processed by generator)
+- Using any property name other than `param.GameplayEffectClass` for this pin
+- Omitting `param.GameplayEffectClass` from MakeOutgoingGameplayEffectSpec nodes
+
+### Correct Pattern
+
+```yaml
+- id: MakeSpec
+  type: CallFunction
+  properties:
+    function: MakeOutgoingGameplayEffectSpec
+    class: UGameplayAbility
+    param.GameplayEffectClass: GE_StealthActive  # CORRECT
+```
+
+### Failure Mode
+
+Silent runtime failure: Null GameplayEffectClass → Invalid FGameplayEffectSpecHandle → ApplyGameplayEffectSpecToTarget no-op → Effect never applied, no error logged.
+
+### Reference
+
+- Audit: `ClaudeContext/Handoffs/Father_Companion_GAS_Abilities_Audit.md` (VTF-9)
+- Generator: `GasAbilityGeneratorGenerators.cpp:10335-10495`
+- UE5.7: `EdGraphSchema_K2.h:394`, `GameplayAbility.h:226`
+- Implementation: v4.31 (16 abilities fixed)
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -370,3 +437,4 @@ Any change that touches a LOCKED implementation must:
 | v4.16.2 | 2026-01-22 | Locked P1.3 Startup Effects Validation (Claude–GPT dual audit): severity definitions, error codes, abort strategy, CI gate, symbol anchors |
 | v4.28.2 | 2026-01-23 | Added Contract 11 — C_SYMBIOTE_STRICT_CANCEL (Claude–GPT dual audit): Symbiote ultimate cannot be cancelled by player-initiated abilities |
 | v4.30 | 2026-01-24 | Added Contract 12 — R-AI-1 Activity System Compatibility (Claude–GPT dual audit): NPCs with ActivityConfiguration must coordinate BT calls with Activity system. GA_FatherEngineer fixed to call StopCurrentActivity before RunBehaviorTree. |
+| v4.31 | 2026-01-24 | Added Contract 13 — INV-GESPEC-1 MakeOutgoingGameplayEffectSpec Parameter (Claude–GPT dual audit): All MakeOutgoingGameplayEffectSpec nodes MUST use `param.GameplayEffectClass:` syntax. 16 abilities fixed for silent runtime failure. |

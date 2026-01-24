@@ -3,9 +3,9 @@
 
 ---
 
-> **⚠️ GAS AUDIT v6.2 COMPLIANCE (January 2026)**
+> **⚠️ GAS AUDIT v6.3 COMPLIANCE (January 2026)**
 >
-> Per GAS Audit v6.2 (Claude-GPT dual audit 2026-01-24), the following rules apply:
+> Per GAS Audit v6.3 (Claude-GPT dual audit 2026-01-24), the following rules apply:
 >
 > **LOCKED Rules (Must Follow):**
 >
@@ -16,6 +16,7 @@
 > | **R-ENUM-1** | LOCKED | Enum is derived view; GE is truth source |
 > | **R-AI-1** | LOCKED | NPCs with Activities must coordinate BT calls |
 > | **R-CLEANUP-1** | LOCKED | Runtime-granted abilities need removal strategy |
+> | **INV-GESPEC-1** | LOCKED | MakeOutgoingGameplayEffectSpec MUST use `param.GameplayEffectClass:` |
 >
 > **DOC-ONLY Patterns (Best Practices):**
 >
@@ -31,6 +32,8 @@
 >
 > **R-AI-1 Details:** GA_FatherEngineer calls StopCurrentActivity() before RunBehaviorTree() per LOCKED CONTRACT 12.
 >
+> **INV-GESPEC-1 Details:** All MakeOutgoingGameplayEffectSpec nodes MUST use `param.GameplayEffectClass: GE_*` syntax. The `gameplay_effect_class:` property is NOT processed by the generator. See LOCKED CONTRACT 13 and VTF-9.
+>
 > See `ClaudeContext/Handoffs/Father_Companion_GAS_Abilities_Audit.md` and `ClaudeContext/Handoffs/LOCKED_CONTRACTS.md` for full details.
 
 ---
@@ -43,12 +46,20 @@
 | Engine Version | Unreal Engine 5.7 |
 | Plugin Version | Narrative Pro v2.2 BETA |
 | Last Updated | January 2026 |
-| Version | 6.6 |
-| Last Audit | 2026-01-24 (GAS Audit v6.2 closure) |
+| Version | 6.7 |
+| Last Audit | 2026-01-24 (GAS Audit v6.3 - INV-GESPEC-1) |
 | Purpose | Combined reference for C++ locations, Blueprint patterns, system architecture, Narrative Pro NPC systems, NarrativeEvent system, cross-actor ability granting, ability validation, death handling, EndPlay safety, multiplayer authority patterns, NPC Schedule system, Interaction Slot system, Time of Day triggers, Goal/Activity Follow System architecture, v2.2 new systems (Projectile, Melee Multi-Hit, Cover, Fragments, Dual Wield/Offhand), UE 5.6 GE component reference, built-in cooldown system, faction attack chain, HandleDeath parameters, Hostiles array patterns, complete content folder structure, BT task system, BT services (complete documentation), GE_EquipmentModifier pattern, EquippableItem lifecycle, child GE architecture, reference asset analysis, father-to-Narrative alignment |
-| Replaces | Father_Companion_Technical_Reference_v6_5.md |
+| Replaces | Father_Companion_Technical_Reference_v6_6.md |
 
 ---
+
+## VERSION 6.7 CHANGES
+
+| Change | Details |
+|--------|---------|
+| **INV-GESPEC-1 Added** | New LOCKED rule: MakeOutgoingGameplayEffectSpec nodes MUST use `param.GameplayEffectClass:` syntax. 16 abilities fixed. |
+| **GAS Audit v6.3** | Added VTF-9 finding for silent runtime failure with incorrect manifest syntax. |
+| **LOCKED CONTRACT 13** | Added Contract 13 documenting generator param.* prefix requirement for TSubclassOf pins. |
 
 ## VERSION 6.6 CHANGES
 
