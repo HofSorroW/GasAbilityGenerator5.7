@@ -1,8 +1,8 @@
 # Support Buffer Healer NPC Implementation Guide
 
-## VERSION 1.0
+## VERSION 1.1
 
-## Unreal Engine 5.6 + Narrative Pro v2.2
+## Unreal Engine 5.7 + Narrative Pro v2.2
 
 ## Blueprint-Only Implementation
 
@@ -15,7 +15,7 @@
 | Document Type | Support NPC Implementation Guide |
 | NPC Name | Support Buffer |
 | Last Updated | January 2026 |
-| Version | 1.0 |
+| Version | 1.1 |
 
 ---
 
@@ -106,8 +106,8 @@
 | GE_SupporterAttributes | Gameplay Effect | /Game/NPCs/Support/Effects/ |
 | GE_SupportHeal | Gameplay Effect | /Game/NPCs/Support/Effects/ |
 | AC_SupportBuffer | Data Asset | /Game/NPCs/Support/Configurations/ |
-| ActConfig_SupportBuffer | Data Asset | /Game/NPCs/Support/Configurations/ |
-| NPCDef_SupportBuffer | Data Asset | /Game/NPCs/Support/Definitions/ |
+| AC_SupportBufferBehavior | Data Asset | /Game/NPCs/Support/Configurations/ |
+| NPC_SupportBuffer | Data Asset | /Game/NPCs/Support/Definitions/ |
 
 ### Existing Narrative Pro Assets Used
 
@@ -729,7 +729,7 @@ Note: Inheriting from BPA_FollowCharacter provides SetupBlackboard functionality
    - 1.2.1) Right-click in Content Browser
    - 1.2.2) Select Miscellaneous -> Data Asset
    - 1.2.3) Select: ActivityConfiguration
-   - 1.2.4) Name: ActConfig_SupportBuffer
+   - 1.2.4) Name: AC_SupportBufferBehavior
    - 1.2.5) Double-click to open
 
 ### **2) Configure Activities**
@@ -765,7 +765,7 @@ Note: Support NPC does not attack, so no attack goal generator
    - 1.2.1) Right-click in Content Browser
    - 1.2.2) Select Miscellaneous -> Data Asset
    - 1.2.3) Select: NPCDefinition
-   - 1.2.4) Name: NPCDef_SupportBuffer
+   - 1.2.4) Name: NPC_SupportBuffer
    - 1.2.5) Double-click to open
 
 ### **2) Configure Basic Properties**
@@ -788,7 +788,7 @@ Note: Support NPC does not attack, so no attack goal generator
 
 #### 4.1) Set Activity Configuration
    - 4.1.1) Find Activity Configuration property
-   - 4.1.2) Select: ActConfig_SupportBuffer
+   - 4.1.2) Select: AC_SupportBufferBehavior
 
 ### **5) Configure Faction**
 
@@ -835,7 +835,7 @@ Note: Support NPC does not attack, so no attack goal generator
 #### 1.1) Add NPCSpawner to Level
    - 1.1.1) Place NPCSpawner actor in level
    - 1.1.2) Configure NPCSpawner:
-      - 1.1.2.1) NPC Definition: NPCDef_SupportBuffer
+      - 1.1.2.1) NPC Definition: NPC_SupportBuffer
       - 1.1.2.2) Spawn on Begin Play: Check (true)
 
 ### **2) Assign Follow Goal**
@@ -860,6 +860,12 @@ Note: Support NPC does not attack, so no attack goal generator
 ---
 
 ## CHANGELOG
+
+### Version 1.1 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| Naming Conventions | Updated to Narrative Pro v2.2: ActConfig_ → AC_*Behavior suffix (AC_SupportBufferBehavior), NPCDef_ → NPC_* prefix (NPC_SupportBuffer). |
 
 ### Version 1.0 - January 2026
 

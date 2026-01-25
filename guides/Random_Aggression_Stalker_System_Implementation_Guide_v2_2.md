@@ -1,6 +1,6 @@
 # Random Aggression Stalker System Implementation Guide
 ## Passive NPCs with Stacking Bond, Tagged Dialogue, and Defend Mechanics
-## Version 2.1
+## Version 2.2
 
 ---
 
@@ -11,8 +11,8 @@
 | Document Type | Implementation Guide |
 | System | Random Aggression Stalker System |
 | Last Updated | January 2026 |
-| Unreal Engine | 5.6 |
-| Narrative Pro | v2.1+ |
+| Unreal Engine | 5.7 |
+| Narrative Pro | v2.2 |
 
 ---
 
@@ -128,8 +128,8 @@
 |-------|------|----------|
 | GoalGenerator_RandomAggression | NPCGoalGenerator | /Game/AI/GoalGenerators/ |
 | TaggedDialogueSet_Returned | TaggedDialogueSet | /Game/Dialogue/TaggedSets/ |
-| ActConfig_ReturnedStalker | ActivityConfiguration | /Game/AI/Configurations/ |
-| NPCDef_ReturnedStalker | NPCDefinition | /Game/NPCs/Returned/ |
+| AC_ReturnedStalkerBehavior | ActivityConfiguration | /Game/AI/Configurations/ |
+| NPC_ReturnedStalker | NPCDefinition | /Game/NPCs/Returned/ |
 
 ### Existing Assets Reused
 
@@ -1119,7 +1119,7 @@
 #### 63.2) Create ActivityConfiguration
    - 63.2.1) Right-click in Content Browser
    - 63.2.2) Select: Narrative -> NPC Activity Configuration
-   - 63.2.3) Name: ActConfig_ReturnedStalker
+   - 63.2.3) Name: AC_ReturnedStalkerBehavior
    - 63.2.4) Double-click to open
 
 ### **64) Configure Default Activities**
@@ -1171,7 +1171,7 @@
 #### 69.1) Create Definition
    - 69.1.1) Right-click in Content Browser
    - 69.1.2) Select: Narrative -> NPC Definition
-   - 69.1.3) Name: NPCDef_ReturnedStalker
+   - 69.1.3) Name: NPC_ReturnedStalker
    - 69.1.4) Double-click to open
 
 ### **70) Configure Basic Properties**
@@ -1185,7 +1185,7 @@
 
 #### 71.1) Set Configuration Reference
    - 71.1.1) Find Activity Configuration property
-   - 71.1.2) Select: ActConfig_ReturnedStalker
+   - 71.1.2) Select: AC_ReturnedStalkerBehavior
 
 ### **72) Configure Tagged Dialogue Set**
 
@@ -1226,7 +1226,7 @@
 ### **77) Place NPCs in Level**
 
 #### 77.1) Drag NPCDefinition to Level
-   - 77.1.1) In Content Browser, find NPCDef_ReturnedStalker
+   - 77.1.1) In Content Browser, find NPC_ReturnedStalker
    - 77.1.2) Drag and drop into level viewport
    - 77.1.3) NPCSpawner actor created automatically
 
@@ -1240,7 +1240,7 @@
 
 #### 78.1) Populate Field with Multiple Returned
    - 78.1.1) Place 20-30 NPCSpawner actors in area
-   - 78.1.2) Each uses NPCDef_ReturnedStalker
+   - 78.1.2) Each uses NPC_ReturnedStalker
    - 78.1.3) Vary patrol routes for natural movement
 
 #### 78.2) Optional Per-Instance Tuning
@@ -1309,6 +1309,7 @@ With TalkCount = 5 (max):
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2 | January 2026 | Updated to Narrative Pro v2.2 naming conventions: ActConfig_ → AC_*Behavior suffix (AC_ReturnedStalkerBehavior), NPCDef_ → NPC_* prefix (NPC_ReturnedStalker). |
 | 2.1 | January 2026 | Fixed ActivityConfiguration type name in Assets Created table for consistency. |
 | 2.0 | January 2026 | Added stacking bond system with TalkCount. Added periodic talk rolls. Added defend player mechanic with player damage binding. Added return to following after defending. Added dynamic stat calculations. Integrated TaggedDialogueSet for all outcomes. Renamed from Stalker to Returned. |
 | 1.0 | January 2026 | Initial implementation with basic follow/attack mechanics |

@@ -1,6 +1,6 @@
 # Warden Husk System Implementation Guide
 ## Two-Phase Enemy with Death Transition
-## Version 1.2
+## Version 1.3
 
 ---
 
@@ -11,8 +11,8 @@
 | Document Type | Implementation Guide |
 | System | Warden Husk System |
 | Last Updated | January 2026 |
-| Unreal Engine | 5.6 |
-| Narrative Pro | v2.1+ |
+| Unreal Engine | 5.7 |
+| Narrative Pro | v2.2 |
 
 ---
 
@@ -97,23 +97,25 @@
 | BP_WardenHusk | Blueprint Class | /Game/Enemies/Warden/ |
 | BP_WardenCore | Blueprint Class | /Game/Enemies/Warden/ |
 | BP_CoreLaserProjectile | Blueprint Class | /Game/Enemies/Warden/ |
-| NPCDef_WardenHusk | NPCDefinition | /Game/Enemies/Warden/ |
-| NPCDef_WardenCore | NPCDefinition | /Game/Enemies/Warden/ |
+| NPC_WardenHusk | NPCDefinition | /Game/Enemies/Warden/ |
+| NPC_WardenCore | NPCDefinition | /Game/Enemies/Warden/ |
 | AC_WardenHusk | AbilityConfiguration | /Game/Enemies/Warden/ |
 | AC_WardenCore | AbilityConfiguration | /Game/Enemies/Warden/ |
-| ActConfig_WardenHusk | ActivityConfiguration | /Game/Enemies/Warden/ |
-| ActConfig_WardenCore | ActivityConfiguration | /Game/Enemies/Warden/ |
+| AC_WardenHuskBehavior | ActivityConfiguration | /Game/Enemies/Warden/ |
+| AC_WardenCoreBehavior | ActivityConfiguration | /Game/Enemies/Warden/ |
 | GA_CoreLaser | GameplayAbility | /Game/Enemies/Warden/ |
 | GE_CoreLaserDamage | GameplayEffect | /Game/Enemies/Warden/ |
 | GE_CoreLaserCooldown | GameplayEffect | /Game/Enemies/Warden/ |
 | GE_WardenHuskAttributes | GameplayEffect | /Game/Enemies/Warden/ |
 | GE_WardenCoreAttributes | GameplayEffect | /Game/Enemies/Warden/ |
 
+> **NAMING CONVENTION:** Narrative Pro uses `NPC_` prefix for NPCDefinition assets (not `NPCDef_`). ActivityConfiguration assets use `AC_*Behavior` suffix to distinguish from AbilityConfiguration which uses plain `AC_` prefix.
+
 ### BP_WardenHusk Variables
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| CoreDefinition | NPCDefinition (Object Reference) | NPCDef_WardenCore | Yes |
+| CoreDefinition | NPCDefinition (Object Reference) | NPC_WardenCore | Yes |
 | SpawnOffset | Vector | (0, 0, 100) | Yes |
 | EjectionMontage | AnimMontage (Object Reference) | None | Yes |
 | bSpawnCorpse | Boolean | false | Yes |
@@ -170,19 +172,19 @@
    - 1.1.4) Name: Warden
    - 1.1.5) Open Warden folder
 
-### **2) Create NPCDef_WardenHusk**
+### **2) Create NPC_WardenHusk**
 
 #### 2.1) Create NPCDefinition Asset
    - 2.1.1) Right-click in Content Browser
    - 2.1.2) Select: Narrative -> NPC Definition
-   - 2.1.3) Name: NPCDef_WardenHusk
+   - 2.1.3) Name: NPC_WardenHusk
 
-### **3) Create NPCDef_WardenCore**
+### **3) Create NPC_WardenCore**
 
 #### 3.1) Create NPCDefinition Asset
    - 3.1.1) Right-click in Content Browser
    - 3.1.2) Select: Narrative -> NPC Definition
-   - 3.1.3) Name: NPCDef_WardenCore
+   - 3.1.3) Name: NPC_WardenCore
 
 ---
 
@@ -559,7 +561,7 @@
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| CoreDefinition | NPCDefinition (Object Reference) | NPCDef_WardenCore | Yes |
+| CoreDefinition | NPCDefinition (Object Reference) | NPC_WardenCore | Yes |
 | SpawnOffset | Vector | (0, 0, 100) | Yes |
 | EjectionMontage | AnimMontage (Object Reference) | None | Yes |
 | bSpawnCorpse | Boolean | false | Yes |
@@ -645,6 +647,17 @@
    - 30.4.2.3) Scale: Leave default (1, 1, 1)
 
 ### **31) Spawn Core Using NarrativeCharacterSubsystem**
+
+> **CRITICAL:** You MUST use `NarrativeCharacterSubsystem.SpawnNPC()` - NOT raw `SpawnActor`.
+>
+> **Why?** Raw SpawnActor does NOT call `SetNPCDefinition()` on the spawned NPC. Without this:
+> - NPCDefinition property is null
+> - AbilityConfiguration is never applied (no abilities granted)
+> - ActivityConfiguration is never applied (no AI activities)
+> - Faction tags are never set
+> - NPC is not registered in the subsystem
+>
+> The spawned Core would be a non-functional shell. SpawnNPC handles all initialization automatically.
 
 #### 31.1) Call SpawnNPC
    - 31.1.1) From the World Subsystem result:
@@ -751,12 +764,14 @@
 
 ## PHASE 8: CREATE ACTIVITY CONFIGURATIONS
 
-### **38) Create ActConfig_WardenHusk**
+> **NOTE:** ActivityConfiguration assets use `AC_*Behavior` suffix to distinguish from AbilityConfiguration which uses plain `AC_` prefix. Both asset types share the `AC_` prefix but serve different purposes.
+
+### **38) Create AC_WardenHuskBehavior**
 
 #### 38.1) Create ActivityConfiguration Asset
    - 38.1.1) Right-click in Content Browser
    - 38.1.2) Select: Narrative -> NPC Activity Configuration
-   - 38.1.3) Name: ActConfig_WardenHusk
+   - 38.1.3) Name: AC_WardenHuskBehavior
    - 38.1.4) Double-click to open
 
 #### 38.2) Configure Default Activities
@@ -772,12 +787,12 @@
 
 #### 38.4) Save Asset
 
-### **39) Create ActConfig_WardenCore**
+### **39) Create AC_WardenCoreBehavior**
 
 #### 39.1) Create ActivityConfiguration Asset
    - 39.1.1) Right-click in Content Browser
    - 39.1.2) Select: Narrative -> NPC Activity Configuration
-   - 39.1.3) Name: ActConfig_WardenCore
+   - 39.1.3) Name: AC_WardenCoreBehavior
    - 39.1.4) Double-click to open
 
 #### 39.2) Configure Default Activities
@@ -797,10 +812,10 @@
 
 ## PHASE 9: CONFIGURE NPCDEFINITIONS
 
-### **40) Configure NPCDef_WardenHusk**
+### **40) Configure NPC_WardenHusk**
 
 #### 40.1) Open NPCDefinition
-   - 40.1.1) Double-click NPCDef_WardenHusk
+   - 40.1.1) Double-click NPC_WardenHusk
 
 #### 40.2) Configure Basic Properties
    - 40.2.1) NPC Name: Warden Husk
@@ -808,7 +823,7 @@
 
 #### 40.3) Configure Configurations
    - 40.3.1) Ability Configuration: AC_WardenHusk
-   - 40.3.2) Activity Configuration: ActConfig_WardenHusk
+   - 40.3.2) Activity Configuration: AC_WardenHuskBehavior
 
 #### 40.4) Configure Faction
    - 40.4.1) Expand: Factions array
@@ -816,10 +831,10 @@
 
 #### 40.5) Save Asset
 
-### **41) Configure NPCDef_WardenCore**
+### **41) Configure NPC_WardenCore**
 
 #### 41.1) Open NPCDefinition
-   - 41.1.1) Double-click NPCDef_WardenCore
+   - 41.1.1) Double-click NPC_WardenCore
 
 #### 41.2) Configure Basic Properties
    - 41.2.1) NPC Name: Warden Core
@@ -827,7 +842,7 @@
 
 #### 41.3) Configure Configurations
    - 41.3.1) Ability Configuration: AC_WardenCore
-   - 41.3.2) Activity Configuration: ActConfig_WardenCore
+   - 41.3.2) Activity Configuration: AC_WardenCoreBehavior
 
 #### 41.4) Configure Faction
    - 41.4.1) Expand: Factions array
@@ -853,7 +868,7 @@
 ### **43) Place Husk in Level**
 
 #### 43.1) Drag NPCDefinition to Level
-   - 43.1.1) In Content Browser, find NPCDef_WardenHusk
+   - 43.1.1) In Content Browser, find NPC_WardenHusk
    - 43.1.2) Drag and drop into level viewport
    - 43.1.3) NPCSpawner actor created automatically
 
@@ -871,7 +886,7 @@
 
 #### 44.2) Verify CoreDefinition
    - 44.2.1) Find CoreDefinition variable
-   - 44.2.2) Ensure set to: NPCDef_WardenCore
+   - 44.2.2) Ensure set to: NPC_WardenCore
 
 ---
 
@@ -1007,6 +1022,8 @@
 
 ### **52) Handle Projectile Hit**
 
+> **LOCKED CONTRACT 13 (INV-GESPEC-1):** When implementing this in manifest YAML, the MakeOutgoingGameplayEffectSpec node MUST use `param.GameplayEffectClass: GE_CoreLaserDamage` syntax. Properties without the `param.` prefix are ignored by the generator, causing silent runtime failure.
+
 #### 52.1) Apply Damage Effect
    - 52.1.1) From OnProjectileHit:
    - 52.1.1.1) Add Make Outgoing Gameplay Effect Spec node
@@ -1065,6 +1082,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | January 2026 | **Naming Convention Alignment (Claude-GPT Audit):** Updated all asset names to match Narrative Pro conventions. NPCDef_* → NPC_* (per Narrative Pro Content folder standard). ActConfig_* → AC_*Behavior (to distinguish from AbilityConfiguration AC_*). Added critical note about SpawnNPC vs raw SpawnActor pattern. Updated UE version to 5.7, Narrative Pro to v2.2. |
 | 1.2 | January 2026 | Fixed SetByCaller tag: Changed Data.Damage to SetByCaller.Damage in GE_CoreLaserDamage config (Section 10.4) and GA_CoreLaser ability (Section 52.1) per Narrative Pro standard (NarrativeGameplayTags.cpp). |
 | 1.1 | January 2026 | Simplified Has Authority pattern. Removed manual aggro transfer (faction system handles automatically via GoalGenerator_Attack). Verified ActivityConfiguration, GoalGenerator, and Default Activities are complete. |
 | 1.0 | January 2026 | Initial implementation guide |

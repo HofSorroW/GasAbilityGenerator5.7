@@ -1,8 +1,8 @@
 # Guard Formation Follow System Implementation Guide
 
-## VERSION 2.4
+## VERSION 2.5
 
-## Unreal Engine 5.6 + Narrative Pro v2.2
+## Unreal Engine 5.7 + Narrative Pro v2.2
 
 ## Blueprint-Only Implementation
 
@@ -20,7 +20,7 @@
 8. [Phase 6: Create BT_FormationFollow Behavior Tree](#phase-6-create-bt_formationfollow-behavior-tree)
 9. [Phase 7: Create BPA_FormationFollow Activity](#phase-7-create-bpa_formationfollow-activity)
 10. [Phase 8: Create BPA_Attack_Formation Activity](#phase-8-create-bpa_attack_formation-activity)
-11. [Phase 9: Create AC_Guard_Formation ActivityConfiguration](#phase-9-create-ac_guard_formation-activityconfiguration)
+11. [Phase 9: Create AC_GuardFormationBehavior ActivityConfiguration](#phase-9-create-ac_guard_formation-activityconfiguration)
 12. [Phase 10: Spawn Guards with Formation Goals](#phase-10-spawn-guards-with-formation-goals)
 13. [Changelog](#changelog)
 
@@ -64,7 +64,7 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
 | BT_FormationFollow | None (new) | Uses TargetLocation for MoveTo |
 | BPA_FormationFollow | NPCActivity | Runs formation behavior tree |
 | BPA_Attack_Formation | BPA_Attack_Melee | Attack with leash radius check |
-| AC_Guard_Formation | NPCActivityConfiguration | Guard-specific activity config |
+| AC_GuardFormationBehavior | NPCActivityConfiguration | Guard-specific activity config |
 
 ### Leash System Overview
 
@@ -90,7 +90,7 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
 | BT_FormationFollow | Behavior Tree | Content/AI/BehaviorTrees/ |
 | BPA_FormationFollow | Blueprint Class | Content/AI/Activities/ |
 | BPA_Attack_Formation | Blueprint Class | Content/AI/Activities/ |
-| AC_Guard_Formation | Data Asset | Content/AI/Configurations/ |
+| AC_GuardFormationBehavior | Data Asset | Content/AI/Configurations/ |
 
 ### Leash Radius Reference
 
@@ -1067,12 +1067,12 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
    - 1.2.3) Select Data Asset
    - 1.2.4) In class picker, search for: NPCActivityConfiguration
    - 1.2.5) Select NPCActivityConfiguration
-   - 1.2.6) Name it: AC_Guard_Formation
+   - 1.2.6) Name it: AC_GuardFormationBehavior
 
 ### 2) Open Data Asset Editor
 
 #### 2.1) Open Asset
-   - 2.1.1) Double-click AC_Guard_Formation to open
+   - 2.1.1) Double-click AC_GuardFormationBehavior to open
 
 ### 3) Configure Activity Settings
 
@@ -1133,7 +1133,7 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
 
 #### 1.2) Set Activity Configuration
    - 1.2.1) In NPCDefinition, find Activity Configuration property
-   - 1.2.2) Set to: AC_Guard_Formation
+   - 1.2.2) Set to: AC_GuardFormationBehavior
 
 ### 2) Create Formation Goal Assignment Function
 
@@ -1222,7 +1222,17 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
 
 ## CHANGELOG
 
-### VERSION 2.4 - Reference Updates
+### VERSION 2.5 - Naming Convention Update
+
+**Release Date:** January 2026
+
+| Change | Description |
+|--------|-------------|
+| Naming Conventions | Updated to Narrative Pro v2.2: AC_Guard_Formation → AC_GuardFormationBehavior (AC_*Behavior suffix pattern). |
+
+---
+
+### VERSION 2.5 - Reference Updates
 
 **Release Date:** January 2026
 
@@ -1604,7 +1614,7 @@ Variables Made Instance Editable:
 
 **New Components:**
 - BPA_Attack_Formation (child of BPA_Attack_Melee with leash check)
-- AC_Guard_Formation (dedicated ActivityConfiguration for guards)
+- AC_GuardFormationBehavior (dedicated ActivityConfiguration for guards)
 
 **Leash System Features:**
 - ScoreGoalItem override checks enemy distance from TargetLocation
@@ -1621,7 +1631,7 @@ Variables Made Instance Editable:
 
 **Phase Updates:**
 - Phase 7: Create BPA_Attack_Formation Activity (NEW)
-- Phase 8: Create AC_Guard_Formation ActivityConfiguration (NEW)
+- Phase 8: Create AC_GuardFormationBehavior ActivityConfiguration (NEW)
 - Phase 9: Spawn Guards with Formation Goals (renamed from Phase 7)
 
 ---
@@ -1651,8 +1661,8 @@ Variables Made Instance Editable:
 
 ---
 
-**END OF GUARD FORMATION FOLLOW SYSTEM IMPLEMENTATION GUIDE v2.2**
+**END OF GUARD FORMATION FOLLOW SYSTEM IMPLEMENTATION GUIDE v2.5**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
 
 **Blueprint-Only Implementation**

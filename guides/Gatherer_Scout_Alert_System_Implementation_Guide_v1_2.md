@@ -1,6 +1,6 @@
 # Gatherer Scout Alert System Implementation Guide
 ## Passive Enemy with Reinforcement Summoning
-## Version 1.1
+## Version 1.2
 
 ---
 
@@ -11,8 +11,8 @@
 | Document Type | Implementation Guide |
 | System | Gatherer Scout Alert System |
 | Last Updated | January 2026 |
-| Unreal Engine | 5.6 |
-| Narrative Pro | v2.1+ |
+| Unreal Engine | 5.7 |
+| Narrative Pro | v2.2 |
 
 ---
 
@@ -70,9 +70,9 @@
 | GoalGenerator_Alert | NPCGoalGenerator | Creates alert goals from perception |
 | BPA_Alert | NPCActivity | Signal animation + spawn reinforcements |
 | BPA_Gather | NPCActivity | Optional gathering behavior (flavor) |
-| ActConfig_GathererScout | ActivityConfiguration | Activities for gatherer |
-| NPCDef_GathererScout | NPCDefinition | Gatherer character definition |
-| NPCDef_Reinforcement | NPCDefinition | Reinforcement character definition |
+| AC_GathererScoutBehavior | ActivityConfiguration | Activities for gatherer |
+| NPC_GathererScout | NPCDefinition | Gatherer character definition |
+| NPC_Reinforcement | NPCDefinition | Reinforcement character definition |
 
 ### Activity Scoring
 
@@ -122,9 +122,9 @@
 | GoalGenerator_Alert | Blueprint Class | /Game/AI/GoalGenerators/ |
 | BPA_Alert | Blueprint Class | /Game/AI/Activities/ |
 | BPA_Gather | Blueprint Class | /Game/AI/Activities/ |
-| ActConfig_GathererScout | ActivityConfiguration | /Game/AI/Configurations/ |
-| NPCDef_GathererScout | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
-| NPCDef_Reinforcement | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
+| AC_GathererScoutBehavior | ActivityConfiguration | /Game/AI/Configurations/ |
+| NPC_GathererScout | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
+| NPC_Reinforcement | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
 
 ### Variable Summary (Goal_Alert)
 
@@ -564,13 +564,13 @@
 
 ## **PHASE 6: CREATE ACTIVITYCONFIGURATION**
 
-### **1) Create ActConfig_GathererScout**
+### **1) Create AC_GathererScoutBehavior**
 
 #### 1.1) Create Asset
 - 1.1.1) Content Browser -> /Game/AI/Configurations/
 - 1.1.2) Right-click in Content Browser
 - 1.1.3) Select: Narrative -> NPC Activity Configuration
-- 1.1.4) Name: ActConfig_GathererScout
+- 1.1.4) Name: AC_GathererScoutBehavior
 - 1.1.5) Double-click to open
 
 #### 1.2) Configure Default Activities
@@ -593,20 +593,20 @@
 
 ## **PHASE 7: CREATE NPCDEFINITIONS**
 
-### **1) Create NPCDef_GathererScout**
+### **1) Create NPC_GathererScout**
 
 #### 1.1) Create Asset
 - 1.1.1) Content Browser -> /Game/Enemies/Gatherer/Definitions/
 - 1.1.2) Right-click in Content Browser
 - 1.1.3) Select: Narrative -> NPC Definition
-- 1.1.4) Name: NPCDef_GathererScout
+- 1.1.4) Name: NPC_GathererScout
 - 1.1.5) Double-click to open
 
 #### 1.2) Set NPC Class Path
 - 1.2.1) NPC Class Path: NarrativeNPCCharacter (or custom BP_GathererScout)
 
 #### 1.3) Set Activity Configuration
-- 1.3.1) Activity Configuration: ActConfig_GathererScout
+- 1.3.1) Activity Configuration: AC_GathererScoutBehavior
 
 #### 1.4) Configure Identity
 - 1.4.1) NPC Name: "Gatherer Scout"
@@ -629,12 +629,12 @@
 #### 1.8) Save Asset
 - 1.8.1) Click Save
 
-### **2) Create NPCDef_Reinforcement**
+### **2) Create NPC_Reinforcement**
 
 #### 2.1) Create Asset
 - 2.1.1) Right-click in Content Browser
 - 2.1.2) Select: Narrative -> NPC Definition
-- 2.1.3) Name: NPCDef_Reinforcement
+- 2.1.3) Name: NPC_Reinforcement
 - 2.1.4) Double-click to open
 
 #### 2.2) Set NPC Class Path
@@ -666,7 +666,7 @@
 
 #### 3.2) Set Default Reinforcement Definition
 - 3.2.1) Click Class Defaults
-- 3.2.2) ReinforcementDefinition: NPCDef_Reinforcement
+- 3.2.2) ReinforcementDefinition: NPC_Reinforcement
 - 3.2.3) ReinforcementCount: 2
 
 #### 3.3) Save
@@ -689,7 +689,7 @@
 ### **2) Create NPCSpawner for Gatherer**
 
 #### 2.1) Drag NPCDefinition into World
-- 2.1.1) Content Browser -> NPCDef_GathererScout
+- 2.1.1) Content Browser -> NPC_GathererScout
 - 2.1.2) Drag into level viewport
 - 2.1.3) NPCSpawner automatically created
 
@@ -744,6 +744,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | January 2026 | Updated to Narrative Pro v2.2 naming conventions: ActConfig_ → AC_*Behavior suffix (AC_GathererScoutBehavior), NPCDef_ → NPC_* prefix (NPC_GathererScout, NPC_Reinforcement). |
 | 1.1 | January 2026 | Fixed ActivityConfiguration naming from AC_ prefix to ActConfig_ prefix for consistency with Narrative Pro conventions. Fixed ActivityConfiguration type name from NPCActivityConfiguration to ActivityConfiguration. Replaced smart quotes with ASCII equivalents. |
 | 1.0 | January 2026 | Initial implementation guide |
 

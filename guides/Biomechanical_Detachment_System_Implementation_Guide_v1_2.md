@@ -1,6 +1,6 @@
 # Biomechanical Detachment System Implementation Guide
 ## Enemy Phase Transition on Death
-## Version 1.1
+## Version 1.2
 
 ---
 
@@ -11,8 +11,8 @@
 | Document Type | Implementation Guide |
 | System | Biomechanical Detachment System |
 | Last Updated | January 2026 |
-| Unreal Engine | 5.6 |
-| Narrative Pro | v2.1+ |
+| Unreal Engine | 5.7 |
+| Narrative Pro | v2.2 |
 
 ---
 
@@ -90,18 +90,20 @@
 |-------|------|----------|
 | BP_BiomechHost | Blueprint Class | /Game/Enemies/Biomech/ |
 | BP_BiomechCreature | Blueprint Class | /Game/Enemies/Biomech/ |
-| NPCDef_BiomechHost | NPCDefinition | /Game/Enemies/Biomech/Definitions/ |
-| NPCDef_BiomechCreature | NPCDefinition | /Game/Enemies/Biomech/Definitions/ |
+| NPC_BiomechHost | NPCDefinition | /Game/Enemies/Biomech/Definitions/ |
+| NPC_BiomechCreature | NPCDefinition | /Game/Enemies/Biomech/Definitions/ |
 | AC_BiomechHost | AbilityConfiguration | /Game/Enemies/Biomech/Configurations/ |
 | AC_BiomechCreature | AbilityConfiguration | /Game/Enemies/Biomech/Configurations/ |
-| ActConfig_BiomechHost | ActivityConfiguration | /Game/Enemies/Biomech/Configurations/ |
-| ActConfig_BiomechCreature | ActivityConfiguration | /Game/Enemies/Biomech/Configurations/ |
+| AC_BiomechHostBehavior | ActivityConfiguration | /Game/Enemies/Biomech/Configurations/ |
+| AC_BiomechCreatureBehavior | ActivityConfiguration | /Game/Enemies/Biomech/Configurations/ |
+
+> **NAMING CONVENTION:** Narrative Pro uses `NPC_` prefix for NPCDefinition assets (not `NPCDef_`). ActivityConfiguration assets use `AC_*Behavior` suffix to distinguish from AbilityConfiguration which uses plain `AC_` prefix.
 
 ### Variable Summary (BP_BiomechHost)
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| CreatureDefinition | NPCDefinition (Object Reference) | NPCDef_BiomechCreature | Yes |
+| CreatureDefinition | NPCDefinition (Object Reference) | NPC_BiomechCreature | Yes |
 | CorpseMesh | Static Mesh (Object Reference) | None | Yes |
 | SpawnOffset | Vector | (0, 0, 50) | Yes |
 | bSpawnCorpse | Boolean | True | Yes |
@@ -135,21 +137,21 @@
 - 1.1.6) Create subfolder: Definitions
 - 1.1.7) Create subfolder: Configurations
 
-### **2) Create NPCDef_BiomechCreature**
+### **2) Create NPC_BiomechCreature**
 
 #### 2.1) Create NPCDefinition Asset
 - 2.1.1) Content Browser -> /Game/Enemies/Biomech/Definitions/
 - 2.1.2) Right-click in Content Browser
 - 2.1.3) Select: Narrative -> NPC Definition
-- 2.1.4) Name: NPCDef_BiomechCreature
+- 2.1.4) Name: NPC_BiomechCreature
 - 2.1.5) Save asset
 
-### **3) Create NPCDef_BiomechHost**
+### **3) Create NPC_BiomechHost**
 
 #### 3.1) Create NPCDefinition Asset
 - 3.1.1) Right-click in Content Browser
 - 3.1.2) Select: Narrative -> NPC Definition
-- 3.1.3) Name: NPCDef_BiomechHost
+- 3.1.3) Name: NPC_BiomechHost
 - 3.1.4) Save asset
 
 ---
@@ -334,6 +336,9 @@
 - 7.2.1.1) Promote to local variable
 - 7.2.1.2) Name: SpawnedCreature
 
+> **CRITICAL: SpawnNPC vs SpawnActor**
+> You MUST use `NarrativeCharacterSubsystem->SpawnNPC()`, NOT raw `SpawnActor`. Raw SpawnActor bypasses NPC initialization because `NarrativeCharacterSubsystem.OnActorSpawned` is COMMENTED OUT in Narrative Pro v2.2 (line 327-332). SpawnNPC_Internal calls `SetNPCDefinition()` which triggers the full initialization chain: `OnRep_NPCDefinition()` → `OnDefinitionSet()` → applies AbilityConfiguration, ActivityConfiguration, faction tags, etc.
+
 ### **8) Spawn Corpse Mesh (Optional)**
 
 #### 8.1) Check bSpawnCorpse Flag
@@ -415,13 +420,13 @@
 
 ## **PHASE 7: CREATE ACTIVITY CONFIGURATIONS**
 
-### **1) Create ActConfig_BiomechCreature**
+### **1) Create AC_BiomechCreatureBehavior**
 
 #### 1.1) Create Asset
 - 1.1.1) Content Browser -> /Game/Enemies/Biomech/Configurations/
 - 1.1.2) Right-click in Content Browser
 - 1.1.3) Select: Narrative -> NPC Activity Configuration
-- 1.1.4) Name: ActConfig_BiomechCreature
+- 1.1.4) Name: AC_BiomechCreatureBehavior
 - 1.1.5) Double-click to open
 
 #### 1.2) Configure Default Activities
@@ -443,12 +448,12 @@
 
 #### 1.4) Save Asset
 
-### **2) Create ActConfig_BiomechHost**
+### **2) Create AC_BiomechHostBehavior**
 
 #### 2.1) Create Asset
 - 2.1.1) Right-click in Content Browser
 - 2.1.2) Select: Narrative -> NPC Activity Configuration
-- 2.1.3) Name: ActConfig_BiomechHost
+- 2.1.3) Name: AC_BiomechHostBehavior
 - 2.1.4) Double-click to open
 
 #### 2.2) Configure Default Activities
@@ -475,17 +480,17 @@
 
 ## **PHASE 8: CONFIGURE NPCDEFINITION PROPERTIES**
 
-### **1) Configure NPCDef_BiomechCreature**
+### **1) Configure NPC_BiomechCreature**
 
 #### 1.1) Open Asset
-- 1.1.1) Double-click NPCDef_BiomechCreature
+- 1.1.1) Double-click NPC_BiomechCreature
 
 #### 1.2) Set NPC Class Path
 - 1.2.1) NPC Class Path: Select BP_BiomechCreature
 
 #### 1.3) Set Configurations
 - 1.3.1) Ability Configuration: AC_BiomechCreature
-- 1.3.2) Activity Configuration: ActConfig_BiomechCreature
+- 1.3.2) Activity Configuration: AC_BiomechCreatureBehavior
 
 #### 1.4) Configure Identity
 - 1.4.1) NPC Name: Biomech Creature
@@ -498,17 +503,17 @@
 
 #### 1.6) Save Asset
 
-### **2) Configure NPCDef_BiomechHost**
+### **2) Configure NPC_BiomechHost**
 
 #### 2.1) Open Asset
-- 2.1.1) Double-click NPCDef_BiomechHost
+- 2.1.1) Double-click NPC_BiomechHost
 
 #### 2.2) Set NPC Class Path
 - 2.2.1) NPC Class Path: Select BP_BiomechHost
 
 #### 2.3) Set Configurations
 - 2.3.1) Ability Configuration: AC_BiomechHost
-- 2.3.2) Activity Configuration: ActConfig_BiomechHost
+- 2.3.2) Activity Configuration: AC_BiomechHostBehavior
 
 #### 2.4) Configure Identity
 - 2.4.1) NPC Name: Biomech Host
@@ -528,7 +533,7 @@
 
 #### 3.2) Set CreatureDefinition Default
 - 3.2.1) Click Class Defaults
-- 3.2.2) CreatureDefinition: NPCDef_BiomechCreature
+- 3.2.2) CreatureDefinition: NPC_BiomechCreature
 
 #### 3.3) Save Asset
 
@@ -556,7 +561,7 @@
 ### **1) Place Host in Level**
 
 #### 1.1) Drag NPCDefinition into World
-- 1.1.1) Content Browser -> NPCDef_BiomechHost
+- 1.1.1) Content Browser -> NPC_BiomechHost
 - 1.1.2) Drag into level viewport
 - 1.1.3) NPCSpawner automatically created
 
@@ -574,7 +579,7 @@
 - 2.2.2) Spawn On Begin Play: Check (for testing)
 
 #### 2.3) Override Instance Properties (Optional)
-- 2.3.1) CreatureDefinition: NPCDef_BiomechCreature (default)
+- 2.3.1) CreatureDefinition: NPC_BiomechCreature (default)
 - 2.3.2) CorpseMesh: Select corpse static mesh
 - 2.3.3) SpawnOffset: Adjust if needed
 - 2.3.4) bSpawnCorpse: True/False as needed
@@ -625,6 +630,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | January 2026 | **Naming convention fix:** NPCDef_ → NPC_ prefix for NPCDefinition assets, ActConfig_ → AC_*Behavior suffix for ActivityConfiguration assets. Added critical note about SpawnNPC vs SpawnActor (SpawnNPC is required for NPC initialization). Updated UE 5.6 → 5.7, Narrative Pro v2.1 → v2.2. |
 | 1.1 | January 2026 | Added PHASE 7 for ActivityConfiguration creation. Added GoalGenerator_Attack references. Added existing Narrative Pro asset documentation. Added faction configuration phase. Added DetachmentMontage variable for animation. Simplified Has Authority pattern. Removed manual aggro transfer (faction system handles automatically via GoalGenerator_Attack). |
 | 1.0 | January 2026 | Initial implementation guide |
 

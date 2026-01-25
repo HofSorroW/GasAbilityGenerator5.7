@@ -1,8 +1,8 @@
 # Possessed Exploder Enemy Implementation Guide
 
-## VERSION 2.1
+## VERSION 2.2
 
-## Unreal Engine 5.6 + Narrative Pro v2.2
+## Unreal Engine 5.7 + Narrative Pro v2.2
 
 ## Blueprint-Only Implementation
 
@@ -15,7 +15,7 @@
 | Document Type | Enemy NPC Implementation Guide |
 | Enemy Name | Possessed Exploder |
 | Last Updated | January 2026 |
-| Version | 2.1 |
+| Version | 2.2 |
 
 ---
 
@@ -95,8 +95,8 @@
 | GE_ExploderAttributes | Gameplay Effect | /Game/Enemies/Possessed/Effects/ |
 | GE_ExplosionDamage | Gameplay Effect | /Game/Enemies/Possessed/Effects/ |
 | AC_PossessedExploder | Data Asset | /Game/Enemies/Possessed/Configurations/ |
-| ActConfig_PossessedExploder | Data Asset | /Game/Enemies/Possessed/Configurations/ |
-| NPCDef_PossessedExploder | Data Asset | /Game/Enemies/Possessed/Definitions/ |
+| AC_PossessedExploderBehavior | Data Asset | /Game/Enemies/Possessed/Configurations/ |
+| NPC_PossessedExploder | Data Asset | /Game/Enemies/Possessed/Definitions/ |
 
 ### Existing Narrative Pro Assets Used
 
@@ -729,7 +729,7 @@
    - 1.1.1) Right-click in Configurations folder
    - 1.1.2) Select Narrative
    - 1.1.3) Select NPC Activity Configuration
-   - 1.1.4) Name: ActConfig_PossessedExploder
+   - 1.1.4) Name: AC_PossessedExploderBehavior
    - 1.1.5) Double-click to open
 
 ### **2) Configure Default Activities
@@ -763,7 +763,7 @@
    - 1.2.1) Right-click in Content Browser
    - 1.2.2) Select Narrative
    - 1.2.3) Select NPC Definition
-   - 1.2.4) Name: NPCDef_PossessedExploder
+   - 1.2.4) Name: NPC_PossessedExploder
    - 1.2.5) Double-click to open
 
 ### **2) Configure NPC Properties
@@ -773,7 +773,7 @@
 | NPC Name | Possessed Exploder |
 | NPC Class Path | BP_PossessedExploder |
 | Ability Configuration | AC_PossessedExploder |
-| Activity Configuration | ActConfig_PossessedExploder |
+| Activity Configuration | AC_PossessedExploderBehavior |
 
 ### **3) Configure Factions
 
@@ -817,7 +817,7 @@
 ### **1) Place NPCDefinition in Level
 
 #### 1.1) Drag and Drop
-   - 1.1.1) In Content Browser, find NPCDef_PossessedExploder
+   - 1.1.1) In Content Browser, find NPC_PossessedExploder
    - 1.1.2) Drag into level viewport
    - 1.1.3) NPCSpawner actor is automatically created
 
@@ -841,14 +841,15 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2 | January 2026 | Updated to Narrative Pro v2.2 naming conventions: ActConfig_ → AC_*Behavior suffix (AC_PossessedExploderBehavior), NPCDef_ → NPC_* prefix (NPC_PossessedExploder). |
 | 2.1 | January 2026 | Fixed SetByCaller tag: Changed Data.Damage to SetByCaller.Damage per Narrative Pro standard (NarrativeGameplayTags.cpp). |
 | 2.0 | January 2026 | Streamlined to use existing Narrative Pro systems: BB_Attack blackboard, Goal_Attack goal, GoalGenerator_Attack generator. Reduced custom assets from 9 to 6. Simplified BT structure. |
 | 1.0 | January 2026 | Initial implementation with custom blackboard and activity. |
 
 ---
 
-**END OF POSSESSED EXPLODER ENEMY IMPLEMENTATION GUIDE v2.1**
+**END OF POSSESSED EXPLODER ENEMY IMPLEMENTATION GUIDE v2.2**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
 
 **Blueprint-Only Implementation**
