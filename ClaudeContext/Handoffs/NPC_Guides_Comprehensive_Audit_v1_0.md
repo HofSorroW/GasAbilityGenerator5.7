@@ -32,15 +32,17 @@ This audit validates NPC implementation guides against manifest.yaml, tech docs,
 
 ## GUIDES AUDITED
 
+> **POLICY:** No manual creation allowed. All guides must have full manifest automation.
+
 | Guide | Version | Manifest Entries | Status |
 |-------|---------|------------------|--------|
-| Biomechanical_Detachment_System_Implementation_Guide | v1.2 | BP_BiomechHost, BP_BiomechCreature | **VIOLATION** |
-| Warden_Husk_System_Implementation_Guide | v1.3 | BP_WardenHusk, BP_WardenCore | **VIOLATION** |
-| Guard_Formation_Follow_System_Implementation_Guide | v2.5 | None (manual creation) | COMPLIANT |
+| Biomechanical_Detachment_System_Implementation_Guide | v1.2 | BP_BiomechHost, BP_BiomechCreature | **SPAWN VIOLATION** |
+| Warden_Husk_System_Implementation_Guide | v1.3 | BP_WardenHusk, BP_WardenCore | **SPAWN VIOLATION** |
+| Guard_Formation_Follow_System_Implementation_Guide | v2.5 | None (manual creation) | **NEEDS AUTOMATION** |
 | Support_Buffer_Healer_NPC_Implementation_Guide | v1.1 | BTS_HealNearbyAllies, BPA_SupportFollow | COMPLIANT |
 | Possessed_Exploder_Enemy_Implementation_Guide | v2.2 | BTS_CheckExplosionProximity, BPA_Explode | COMPLIANT |
-| Gatherer_Scout_Alert_System_Implementation_Guide | v1.2 | None (manual creation) | COMPLIANT |
-| Random_Aggression_Stalker_System_Implementation_Guide | v2.2 | None (manual creation) | COMPLIANT |
+| Gatherer_Scout_Alert_System_Implementation_Guide | v1.2 | None (manual creation) | **NEEDS AUTOMATION** |
+| Random_Aggression_Stalker_System_Implementation_Guide | v2.2 | None (manual creation) | **NEEDS AUTOMATION** |
 
 ---
 
@@ -299,7 +301,17 @@ The guide uses Set Timer by Event with looping enabled - this is acceptable for 
 |------|-------------|-------|
 | **SPAWN-001** | Add SpawnNPC node type to generator OR fix BP_BiomechHost/BP_WardenHusk manifests | Generator Team |
 
-### Priority 2: Documentation
+### Priority 2: AUTOMATION GAPS (No Manual Creation Allowed)
+
+> **POLICY:** All NPC systems must be fully automatable via manifest.yaml. Manual Blueprint creation is NOT acceptable.
+
+| Item | Guide | Current State | Required Action |
+|------|-------|---------------|-----------------|
+| **AUTO-001** | Guard_Formation_Follow | Manual creation guide | Add manifest entries for Goal_FormationFollow, BT services |
+| **AUTO-002** | Gatherer_Scout | Manual creation guide | Add manifest entries for GoalGenerator_Alert, BPA_Alert, reinforcement spawning |
+| **AUTO-003** | Random_Aggression_Stalker | Manual creation guide | Add manifest entries for GoalGenerator_RandomAggression with timer logic |
+
+### Priority 3: Documentation
 
 | Item | Description | Owner |
 |------|-------------|-------|
@@ -312,9 +324,24 @@ The guide uses Set Timer by Event with looping enabled - this is acceptable for 
 
 All NPC guides are technically sound and follow Narrative Pro conventions. The naming convention updates (NPC_*, AC_*Behavior) are complete across all 7 guides.
 
-**One critical violation exists:** The manifest.yaml uses `SpawnActor` for phase transitions where `SpawnNPC` is required. This will cause generated phase-2 entities (BP_BiomechCreature, BP_WardenCore) to be non-functional.
+### Issues Summary
 
-**Recommendation:** Do not regenerate Biomech or Warden blueprints until the SpawnNPC issue is resolved. If already generated, manually edit the blueprints to use `NarrativeCharacterSubsystem.SpawnNPC()`.
+| Issue Type | Count | Guides Affected |
+|------------|-------|-----------------|
+| **SpawnActor Violation** | 2 | Biomech, Warden |
+| **Missing Automation** | 3 | Guard, Gatherer, Stalker |
+| **Fully Compliant** | 2 | Support Buffer, Possessed Exploder |
+
+### Critical Actions Required
+
+1. **SpawnNPC Node Type:** Add `SpawnNPC` node to generator that calls `NarrativeCharacterSubsystem.SpawnNPC()`. This fixes Biomech and Warden phase transitions.
+
+2. **Automation for Manual Guides:** The following guides currently require manual Blueprint creation, which is NOT acceptable:
+   - **Guard_Formation_Follow:** Needs manifest entries for Goal_FormationFollow, BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed
+   - **Gatherer_Scout:** Needs manifest entries for GoalGenerator_Alert, BPA_Alert, reinforcement spawn logic
+   - **Random_Aggression_Stalker:** Needs manifest entries for GoalGenerator_RandomAggression with full timer/state machine logic
+
+**Do NOT proceed with manual Blueprint creation.** All NPC systems must be fully automatable via manifest.yaml.
 
 ---
 
@@ -322,6 +349,7 @@ All NPC guides are technically sound and follow Narrative Pro conventions. The n
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | January 2026 | Added NO MANUAL CREATION policy. Marked Guard, Gatherer, Stalker as NEEDS AUTOMATION. Added Priority 2 action items for automation gaps. |
 | 1.0 | January 2026 | Initial comprehensive audit |
 
 ---

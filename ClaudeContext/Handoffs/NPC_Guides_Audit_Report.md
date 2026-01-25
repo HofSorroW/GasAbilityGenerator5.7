@@ -1,5 +1,5 @@
 # NPC Implementation Guides Audit Report
-## Version 1.6 - January 2026
+## Version 1.7 - January 2026
 
 **Auditor:** Claude (Opus 4.5)
 **Date:** 2026-01-25
@@ -42,15 +42,17 @@ This audit reviews 6 NPC implementation guides against:
 
 ### Automation Status (v4.32+)
 
-| NPC System | Automation Level | Notes |
-|------------|------------------|-------|
-| Warden Husk/Core | **FULL** | HandleDeath spawns Core via SpawnActor |
-| Biomech Host/Creature | **FULL** | HandleDeath spawns Creature via SpawnActor |
-| Possessed Exploder | **FULL** | BTS_CheckExplosionProximity applies GE_ExplosionDamage + HandleDeath |
-| Support Buffer | **HIGH** | BTS_HealNearbyAllies has SphereOverlap + faction check + GE_SupportHeal |
-| Formation Guard | **HIGH** | BTS services calculate position and match speed |
-| Gatherer Scout | **PARTIAL** | Structural scaffolding; alert logic is manual |
-| Random Stalker | **PARTIAL** | GoalGenerator timers need manual validity guards |
+> **POLICY:** No manual creation allowed. All NPC systems must be fully automatable via manifest.yaml.
+
+| NPC System | Automation Level | Notes | Action Required |
+|------------|------------------|-------|-----------------|
+| Warden Husk/Core | **FULL** | HandleDeath spawns Core via SpawnActor | Fix SpawnActor → SpawnNPC |
+| Biomech Host/Creature | **FULL** | HandleDeath spawns Creature via SpawnActor | Fix SpawnActor → SpawnNPC |
+| Possessed Exploder | **FULL** | BTS_CheckExplosionProximity applies GE_ExplosionDamage + HandleDeath | None |
+| Support Buffer | **FULL** | BTS_HealNearbyAllies has SphereOverlap + faction check + GE_SupportHeal | None |
+| Formation Guard | **HIGH** | BTS services calculate position and match speed | None |
+| Gatherer Scout | **NEEDS WORK** | Alert broadcast logic missing from manifest | Add GoalGenerator_Alert automation |
+| Random Stalker | **NEEDS WORK** | GoalGenerator timer/state machine missing from manifest | Add GoalGenerator_RandomAggression automation |
 
 ---
 
@@ -863,6 +865,7 @@ The following patterns are used across NPC guides but are NOT covered by locked 
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.7 | 2026-01-25 | Claude (Opus 4.5) | Added NO MANUAL CREATION policy. Gatherer Scout and Random Stalker marked as NEEDS WORK - require full manifest automation. |
 | 1.6 | 2026-01-25 | Claude (Opus 4.5) | Added CRITICAL ALERT about SpawnActor vs SpawnNPC violation in manifest.yaml. Created comprehensive multi-level audit (NPC_Guides_Comprehensive_Audit_v1_0.md) covering guide-manifest-tech doc-design doc consistency. |
 | 1.5 | 2026-01-25 | Claude (Opus 4.5) | Updated all guide version references after Narrative Pro v2.2 naming convention audit: NPCDef_* → NPC_*, ActConfig_* → AC_*Behavior. Added Guard_Formation_Follow to scope. |
 | 1.4 | 2026-01-25 | Claude (Opus 4.5) | v4.33: Custom function resolution (Step 5 - Blueprint->FunctionGraphs); ParseGoalItems LineIndex fix; Fixed automation script log capture; Deleted duplicate manifest.yaml |
