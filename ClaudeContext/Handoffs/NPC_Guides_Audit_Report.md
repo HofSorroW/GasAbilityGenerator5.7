@@ -1,9 +1,9 @@
 # NPC Implementation Guides Audit Report
-## Version 1.2 - January 2026
+## Version 1.5 - January 2026
 
 **Auditor:** Claude (Opus 4.5)
 **Date:** 2026-01-25
-**Scope:** 6 NPC Implementation Guides
+**Scope:** 7 NPC Implementation Guides
 **Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.33
 
 ---
@@ -20,12 +20,13 @@ This audit reviews 6 NPC implementation guides against:
 
 | Guide | Critical Issues | Warnings | Compliance |
 |-------|----------------|----------|------------|
-| Gatherer_Scout_Alert_System_v1_1 | 0 | 2 | PASS |
-| Possessed_Exploder_Enemy_v2_1 | 1 | 1 | NEEDS REVIEW |
-| Random_Aggression_Stalker_v2_1 | 1 | 2 | NEEDS REVIEW |
-| Support_Buffer_Healer_v1_0 | 1 | 2 | NEEDS REVIEW |
-| Warden_Husk_v1_2 | 0 | 3 | PASS |
-| Biomechanical_Detachment_v1_1 | 0 | 2 | PASS |
+| Gatherer_Scout_Alert_System_v1_2 | 0 | 2 | PASS |
+| Possessed_Exploder_Enemy_v2_2 | 1 | 1 | NEEDS REVIEW |
+| Random_Aggression_Stalker_v2_2 | 1 | 2 | NEEDS REVIEW |
+| Support_Buffer_Healer_v1_1 | 1 | 2 | NEEDS REVIEW |
+| Warden_Husk_v1_3 | 0 | 3 | PASS |
+| Biomechanical_Detachment_v1_2 | 0 | 2 | PASS |
+| Guard_Formation_Follow_v2_5 | 0 | 1 | PASS |
 
 **Total: 3 CRITICAL issues, 12 WARNINGS**
 
@@ -397,7 +398,7 @@ ReceiveTickAI → Accumulate DeltaTime → Cooldown Check (Branch)
 
 ## PER-GUIDE AUDIT DETAILS
 
-### 1. Gatherer_Scout_Alert_System_Implementation_Guide_v1_1.md
+### 1. Gatherer_Scout_Alert_System_Implementation_Guide_v1_2.md
 
 **NPC Type:** Gatherer/Scout with alert propagation
 **Primary Systems:** Activity System, Perception, Goals
@@ -434,7 +435,7 @@ ReceiveTickAI → Accumulate DeltaTime → Cooldown Check (Branch)
 
 ---
 
-### 2. Possessed_Exploder_Enemy_Implementation_Guide_v2_1.md
+### 2. Possessed_Exploder_Enemy_Implementation_Guide_v2_2.md
 
 **NPC Type:** Enemy that explodes on death
 **Primary Systems:** HandleDeath override, GE application
@@ -475,7 +476,7 @@ ReceiveTickAI → Accumulate DeltaTime → Cooldown Check (Branch)
 
 ---
 
-### 3. Random_Aggression_Stalker_System_Implementation_Guide_v2_1.md
+### 3. Random_Aggression_Stalker_System_Implementation_Guide_v2_2.md
 
 **NPC Type:** NPC with randomized aggression phases
 **Primary Systems:** GoalGenerator timers, state machine
@@ -532,7 +533,7 @@ void OnAggressionTimerFire()
 
 ---
 
-### 4. Support_Buffer_Healer_NPC_Implementation_Guide_v1_0.md
+### 4. Support_Buffer_Healer_NPC_Implementation_Guide_v1_1.md
 
 **NPC Type:** NPC that buffs/heals allies
 **Primary Systems:** GE application, target selection
@@ -582,7 +583,7 @@ void OnAggressionTimerFire()
 
 ---
 
-### 5. Warden_Husk_System_Implementation_Guide_v1_2.md
+### 5. Warden_Husk_System_Implementation_Guide_v1_3.md
 
 **NPC Type:** Boss NPC with phase transitions
 **Primary Systems:** HandleDeath override, ability spawning
@@ -636,7 +637,7 @@ void OnAggressionTimerFire()
 
 ---
 
-### 6. Biomechanical_Detachment_System_Implementation_Guide_v1_1.md
+### 6. Biomechanical_Detachment_System_Implementation_Guide_v1_2.md
 
 **NPC Type:** NPC with detachable mechanical parts
 **Primary Systems:** HandleDeath, component spawning
@@ -782,8 +783,10 @@ The following patterns are used across NPC guides but are NOT covered by locked 
 
 ### Immediate Actions (Before Implementation)
 
-1. **Update Version Headers**
-   - Change "UE 5.6 + Narrative Pro v2.1+" to "UE5.7 + Narrative Pro v2.2" in all guides
+1. **Update Version Headers** ✅ COMPLETED (v1.5)
+   - All guides updated to UE5.7 + Narrative Pro v2.2
+   - NPCDef_* renamed to NPC_* (NPCDefinition assets)
+   - ActConfig_* renamed to AC_*Behavior (ActivityConfiguration assets)
 
 2. **Add Manifest Syntax Notes**
    - Add note to guides using MakeOutgoingSpec about Contract 13 manifest syntax
@@ -850,6 +853,7 @@ The following patterns are used across NPC guides but are NOT covered by locked 
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.5 | 2026-01-25 | Claude (Opus 4.5) | Updated all guide version references after Narrative Pro v2.2 naming convention audit: NPCDef_* → NPC_*, ActConfig_* → AC_*Behavior. Added Guard_Formation_Follow to scope. |
 | 1.4 | 2026-01-25 | Claude (Opus 4.5) | v4.33: Custom function resolution (Step 5 - Blueprint->FunctionGraphs); ParseGoalItems LineIndex fix; Fixed automation script log capture; Deleted duplicate manifest.yaml |
 | 1.3 | 2026-01-25 | Claude (Opus 4.5) | v4.32.2-4.32.3: GoalGenerator automation with InitializeGoalGenerator override; Parser debug confirms all sections parsed correctly; GA_Backstab/GA_ProtectiveDome still blocked (custom function resolution D5) |
 | 1.2 | 2026-01-25 | Claude (Opus 4.5) | Added Automation Status section (v4.32/v4.32.1); Updated per-guide sections with automation details; Marked resolved issues |
