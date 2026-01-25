@@ -9280,6 +9280,12 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             function: GetValueAsObject
             class: BlackboardComponent
           position: [600, 200]
+        # v4.32.2: Cast Object to Actor for GetVelocity call
+        - id: CastToActor
+          type: DynamicCast
+          properties:
+            target_class: Actor
+          position: [750, 200]
         # Get leader's velocity magnitude
         - id: GetLeaderVelocity
           type: CallFunction
@@ -9330,6 +9336,10 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         - from: [MakeKeyName_TargetCharacter, ReturnValue]
           to: [GetLeader, KeyName]
         - from: [GetLeader, ReturnValue]
+          to: [CastToActor, Object]
+        - from: [GetLeader, Exec]
+          to: [CastToActor, Exec]
+        - from: [CastToActor, AsActor]
           to: [GetLeaderVelocity, Target]
         - from: [GetLeaderVelocity, ReturnValue]
           to: [VectorLength, A]
@@ -9341,7 +9351,7 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           to: [SetMaxWalkSpeed, MaxWalkSpeed]
         - from: [GetMovementComp, CharacterMovement]
           to: [SetMaxWalkSpeed, Target]
-        - from: [GetLeader, Exec]
+        - from: [CastToActor, Exec]
           to: [SetMaxWalkSpeed, Exec]
 
 goals:  # GUARD FORMATION
@@ -9524,7 +9534,7 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           properties:
             function: ApplyGameplayEffectToTarget
             class: AbilitySystemComponent
-            param.GameplayEffectClass: GE_ExplosionDamage
+            param.GameplayEffectClass: /Game/FatherCompanion/Enemies/Possessed/Effects/GE_ExplosionDamage
             param.Level: 1
           position: [2900, 0]
         # Cast controlled pawn to NarrativeNPCCharacter for HandleDeath

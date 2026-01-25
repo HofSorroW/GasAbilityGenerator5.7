@@ -10403,6 +10403,11 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		DeprecatedFunctionRemapping.Add(TEXT("GreaterEqual_FloatFloat"), TEXT("GreaterEqual_DoubleDouble"));
 		DeprecatedFunctionRemapping.Add(TEXT("EqualEqual_FloatFloat"), TEXT("EqualEqual_DoubleDouble"));
 		DeprecatedFunctionRemapping.Add(TEXT("NotEqual_FloatFloat"), TEXT("NotEqual_DoubleDouble"));
+		// v4.32.2: Add arithmetic operations remapping
+		DeprecatedFunctionRemapping.Add(TEXT("Add_FloatFloat"), TEXT("Add_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("Subtract_FloatFloat"), TEXT("Subtract_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("Multiply_FloatFloat"), TEXT("Multiply_DoubleDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("Divide_FloatFloat"), TEXT("Divide_DoubleDouble"));
 
 		LogGeneration(TEXT("Initialized deprecated function remapping table"));
 	}

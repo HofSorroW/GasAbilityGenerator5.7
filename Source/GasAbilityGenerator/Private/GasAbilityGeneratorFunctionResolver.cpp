@@ -111,6 +111,8 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("HasAllTags"), UBlueprintGameplayTagLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("MatchesTag"), UBlueprintGameplayTagLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetTagName"), UBlueprintGameplayTagLibrary::StaticClass());
+	// v4.32.2: Actor gameplay tag checking
+	WellKnownFunctions.Add(TEXT("ActorHasMatchingGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
 
 	// GameplayAbility functions (core)
 	WellKnownFunctions.Add(TEXT("K2_EndAbility"), UGameplayAbility::StaticClass());
