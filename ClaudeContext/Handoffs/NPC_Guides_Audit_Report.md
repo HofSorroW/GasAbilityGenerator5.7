@@ -1,10 +1,20 @@
 # NPC Implementation Guides Audit Report
-## Version 1.5 - January 2026
+## Version 1.6 - January 2026
 
 **Auditor:** Claude (Opus 4.5)
 **Date:** 2026-01-25
 **Scope:** 7 NPC Implementation Guides
 **Context:** UE5.7 + Narrative Pro v2.2 + GasAbilityGenerator v4.33
+
+---
+
+## CRITICAL ALERT
+
+> **See:** `NPC_Guides_Comprehensive_Audit_v1_0.md` for multi-level consistency audit
+>
+> **CRITICAL FINDING:** manifest.yaml uses `SpawnActor` for phase transitions (BP_BiomechHost line 9972, BP_WardenHusk line 8920) but guides explicitly require `NarrativeCharacterSubsystem.SpawnNPC()`. Spawned phase-2 entities will lack AbilityConfiguration, ActivityConfiguration, and faction tags - they will be non-functional.
+>
+> **DO NOT regenerate Biomech or Warden blueprints** until SpawnNPC node type is added to generator or manifests are manually fixed.
 
 ---
 
@@ -853,6 +863,7 @@ The following patterns are used across NPC guides but are NOT covered by locked 
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.6 | 2026-01-25 | Claude (Opus 4.5) | Added CRITICAL ALERT about SpawnActor vs SpawnNPC violation in manifest.yaml. Created comprehensive multi-level audit (NPC_Guides_Comprehensive_Audit_v1_0.md) covering guide-manifest-tech doc-design doc consistency. |
 | 1.5 | 2026-01-25 | Claude (Opus 4.5) | Updated all guide version references after Narrative Pro v2.2 naming convention audit: NPCDef_* → NPC_*, ActConfig_* → AC_*Behavior. Added Guard_Formation_Follow to scope. |
 | 1.4 | 2026-01-25 | Claude (Opus 4.5) | v4.33: Custom function resolution (Step 5 - Blueprint->FunctionGraphs); ParseGoalItems LineIndex fix; Fixed automation script log capture; Deleted duplicate manifest.yaml |
 | 1.3 | 2026-01-25 | Claude (Opus 4.5) | v4.32.2-4.32.3: GoalGenerator automation with InitializeGoalGenerator override; Parser debug confirms all sections parsed correctly; GA_Backstab/GA_ProtectiveDome still blocked (custom function resolution D5) |
