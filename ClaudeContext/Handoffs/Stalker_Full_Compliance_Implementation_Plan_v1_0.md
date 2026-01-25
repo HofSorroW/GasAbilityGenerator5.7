@@ -1,17 +1,120 @@
 # Stalker System Full Compliance Implementation Plan
 
-## VERSION 1.0.1 - COMPREHENSIVE IMPLEMENTATION (AUDIT PATCHED)
+## VERSION 1.0.3 - COMPREHENSIVE IMPLEMENTATION (GENERATION VERIFIED)
 
-## Audit Patches Applied (v1.0.1)
+## Audit Patches Applied (v1.0.2)
 - **PATCH-B**: Fixed delegate signature to match Narrative Pro `FOnDamagedBy(ASC, Float, Spec)`
 - **PATCH-C**: Added State Tag Contract section with apply/remove rules
 - **PATCH-D**: Split cleanup into `StopFollowing()` and `BecomeAggressive()` for permanent aggro
+- **PATCH-E**: Fixed goal completion binding - use `OnGoalRemoved` only (OnGoalFailed doesn't exist)
 
 ## Decisions Applied
 - Dialogue content: Placeholder lines
-- Defend goal: Handle both OnGoalSucceeded AND OnGoalFailed
-- Faction: New "Returned" faction with attitudes
+- Defend goal: Bind to `OnGoalRemoved` only (fires in ALL termination cases)
+- Faction: New "Returned" faction with attitudes (MANUAL: configure in GameState)
 - BP_ReturnedStalker: Full setup logic
+
+---
+
+## TODO (Audit Session 2026-01-25)
+
+| Priority | Item | Status |
+|----------|------|--------|
+| **DONE** | PATCH-E: OnGoalFailed → OnGoalRemoved | ✅ Fixed in v1.0.2 |
+| **DONE** | v4.37.1: Generation order fix (AC_* → NPCs → DBPs) | ✅ All 194 assets generated |
+| **MANUAL** | Faction attitudes in BP_NarrativeGameState | ⚠️ Not automatable |
+| **INFO** | UObject timer cleanup pattern | ✅ Already correct |
+
+---
+
+## GENERATION VERIFICATION (v4.37.1)
+
+**Status:** ✅ ALL ASSETS GENERATED SUCCESSFULLY
+
+```
+RESULT: New=194 Skipped=0 Failed=0 Deferred=0 Cascaded=0 CascadeRoots=0 Total=194
+```
+
+### Previously Failing Assets (Now Resolved)
+
+| Asset | Issue | Fix Applied |
+|-------|-------|-------------|
+| BP_ReturnedStalker | Delegate binding assertion | v4.37 UK2Node_AddDelegate pattern |
+| GoalGenerator_RandomAggression | Node ordering | Manifest node reorder |
+| DBP_Returned_StartFollow | E_SPEAKER_NPCDEFINITION_NOT_FOUND | Generation order fix |
+| AC_ReturnedStalkerBehavior | Deferred (waiting for AC_*) | Generation order fix |
+
+### Generation Order Fix (v4.37.1)
+
+The core issue was NPCDefinitions generated before AbilityConfigurations/ActivityConfigurations, causing NPCs to be DEFERRED. DialogueBlueprints then couldn't find the NPCDefinitions.
+
+**New order in GasAbilityGeneratorCommandlet.cpp:**
+1. AbilityConfigurations (AC_*)
+2. ActivityConfigurations (AC_*)
+3. NPCDefinitions (NPC_*) ← Now AFTER AC_*
+4. DialogueBlueprints (DBP_*) ← Now AFTER NPCs
+
+---
+
+## CRITICAL: Goal Delegate Analysis (PATCH-E)
+
+### Available Delegates in NPCGoalItem (Narrative Pro)
+
+From `NPCGoalItem.h` lines 81-87:
+```cpp
+//Called when goal is succeeded
+UPROPERTY(BlueprintAssignable, Category = "NPC Activity")
+FOnGoalSignature OnGoalSucceeded;
+
+//Called when goal is removed.
+UPROPERTY(BlueprintAssignable, Category = "NPC Activity")
+FOnGoalSignature OnGoalRemoved;
+```
+
+**`OnGoalFailed` DOES NOT EXIST** - this was a documentation error in v1.0.1.
+
+### Firing Order (from NPCActivity.cpp)
+
+```
+NotifySucceeded()
+    │
+    ├── OnGoalSucceeded.Broadcast()     ← Fires FIRST
+    │
+    └── if (bRemoveOnSucceeded)
+            │
+            └── RemoveActivityGoal()
+                    │
+                    └── OnGoalRemoved.Broadcast()  ← Fires SECOND
+```
+
+### Delegate Firing Matrix
+
+| Scenario | OnGoalSucceeded | OnGoalRemoved |
+|----------|-----------------|---------------|
+| Target killed (success + auto-remove) | ✅ Fires | ✅ Fires |
+| Target escapes (manual removal) | ❌ Never | ✅ Fires |
+| Stalker dies (cleanup) | ❌ Never | ✅ Fires |
+| Goal timeout (GoalLifetime) | ❌ Never | ✅ Fires |
+
+### Recommendation: Bind ONLY to OnGoalRemoved
+
+For Stalker's defend goal cleanup, `OnGoalRemoved` is the correct choice:
+- Fires in **ALL** termination scenarios
+- No need to distinguish success vs failure (just need to reset state)
+- Simpler implementation (one binding, one handler)
+
+### Official Narrative Pro Pattern (AsyncAction_AddGoalAndWait)
+
+Narrative Pro's async action binds to BOTH delegates but uses early unbinding:
+```cpp
+// On success, unbinds BEFORE OnGoalRemoved fires
+void OnGoalSucceeded(...) {
+    GoalSucceeded.Broadcast(Activity);
+    EndTask();  // ← Unbinds from both delegates
+}
+```
+
+This "first one wins" pattern prevents double-firing. However, for GoalGenerators that persist across goal completions, binding only to `OnGoalRemoved` is cleaner.
 
 ---
 
@@ -1041,8 +1144,8 @@ Due to size, event graph implementation follows the patterns established above. 
 |-------|---------|-------------|
 | **OnFollowCheckTimer** | Timer (8s loop) | Validate controller → Check !bIsFollowing → Roll FollowChance → Get player → Check range → Cache player → Create Goal_FollowCharacter → Add goal → **ADD Following tag** → Set state → Play dialogue → Bind to damage → Start 3 timers |
 | **OnTalkCheckTimer** | Timer (8s loop) | Check bIsFollowing → Check TalkCount < Max → Roll TalkChance → Increment count → **ADD Bonded tag (if TalkCount==1)** → Select dialogue tag → Play dialogue → Extend duration timer |
-| **OnPlayerDamaged** | **ASC OnDamagedBy delegate** | Check bIsFollowing & !bIsDefending → **GetAvatarActor from ASC** → Validate attacker → Check range → Roll DefendChance → Create Goal_Attack → **ADD Defending tag** → Set defending → Play dialogue → Bind success+fail |
-| **OnDefendGoalCompleted** | Goal success/fail | **REMOVE Defending tag** → Set !bIsDefending → Clear goal ref |
+| **OnPlayerDamaged** | **ASC OnDamagedBy delegate** | Check bIsFollowing & !bIsDefending → **GetAvatarActor from ASC** → Validate attacker → Check range → Roll DefendChance → Create Goal_Attack → **ADD Defending tag** → Set defending → Play dialogue → **Bind to OnGoalRemoved** (PATCH-E) |
+| **OnDefendGoalCompleted** | **OnGoalRemoved delegate** | **REMOVE Defending tag** → Set !bIsDefending → Clear goal ref |
 | **OnAttackCheckTimer** | Timer (3s loop) | Check bIsFollowing & !bIsDefending → Roll AttackChance → Create Goal_Attack vs player → **ADD Aggressive tag** → Play dialogue → Add goal → **BecomeAggressive()** (NOT StopFollowing) |
 | **OnFollowDurationExpired** | Timer (one-shot) | Play GivingUp dialogue → StopFollowing() |
 
@@ -1092,6 +1195,43 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnDamagedBy,
     const float, Damage,
     const FGameplayEffectSpec&, Spec);
 ```
+
+### Defend Goal Binding Fix (AUDIT PATCH-E)
+
+**WRONG (v1.0.1 - OnGoalFailed doesn't exist):**
+```yaml
+# This was INCORRECT - OnGoalFailed is not a real delegate
+- id: BindDefendSuccess
+  type: CallFunction
+  properties:
+    function: BindEventToOnGoalSucceeded  # Only handles success
+    target: CurrentDefendGoal
+    delegate_event: OnDefendGoalCompleted
+
+- id: BindDefendFail
+  type: CallFunction
+  properties:
+    function: BindEventToOnGoalFailed     # ❌ DOESN'T EXIST!
+    target: CurrentDefendGoal
+    delegate_event: OnDefendGoalCompleted
+```
+
+**CORRECT (v1.0.2 - OnGoalRemoved fires in ALL cases):**
+```yaml
+# Bind ONLY to OnGoalRemoved - fires on success (after auto-remove) AND failure
+- id: BindDefendComplete
+  type: CallFunction
+  properties:
+    function: BindEventToOnGoalRemoved    # ✅ Fires in ALL termination cases
+    target: CurrentDefendGoal
+    delegate_event: OnDefendGoalCompleted
+```
+
+**Why OnGoalRemoved is correct:**
+- `OnGoalSucceeded` fires ONLY on success, then `bRemoveOnSucceeded` triggers removal
+- `OnGoalRemoved` fires when goal is removed FOR ANY REASON (including after success)
+- If target escapes, times out, or goal is manually removed → only `OnGoalRemoved` fires
+- Single binding, handles all cases, no stuck states
 
 ---
 
@@ -1447,7 +1587,7 @@ npc_definitions:
 | ~~Delegate signature mismatch~~ | **RESOLVED:** Signature corrected to match FOnDamagedBy (ASC, Float, Spec) |
 | Timer leak on NPC death | All callbacks check validity, StopFollowing/BecomeAggressive clear all handles |
 | Goal reference leak | Both cleanup functions clear goal refs appropriately |
-| Defend stuck state | Bind to BOTH OnGoalSucceeded AND OnGoalFailed |
+| ~~Defend stuck state~~ | **RESOLVED (PATCH-E):** Bind to `OnGoalRemoved` only - fires in ALL termination cases |
 | **Aggressive state reset** | **RESOLVED:** BecomeAggressive() preserves Aggressive tag, doesn't return to patrol |
 
 ---
@@ -1460,9 +1600,10 @@ npc_definitions:
 | B) Delegate signature wrong | **ACCEPTED** | Fixed to FOnDamagedBy(ASC, Float, Spec) |
 | C) Missing state tag application | **ACCEPTED** | Added State Tag Contract (Part 2.5) + tag nodes in cleanup functions |
 | D) StopFollowing breaks Aggressive | **ACCEPTED** | Added BecomeAggressive() function for attack path |
+| E) OnGoalFailed doesn't exist | **ACCEPTED** | Changed to OnGoalRemoved (PATCH-E) |
 
 ---
 
-**STATUS: COMPREHENSIVE PLAN v1.0.1 - AUDIT PATCHED - READY FOR APPROVAL**
+**STATUS: COMPREHENSIVE PLAN v1.0.2 - AUDIT PATCHED - READY FOR APPROVAL**
 
 **Next:** User approves → Implementation begins

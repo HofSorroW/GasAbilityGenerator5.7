@@ -10413,16 +10413,16 @@ actor_blueprints:  # STALKER NPC BLUEPRINT
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        # Call parent BeginPlay
-        - id: CallParentBeginPlay
-          type: CallParent
-          position: [200, 0]
         # Store original material for reset
         - id: GetMesh
-          type: CallFunction
+          type: PropertyGet
           properties:
-            function: GetMesh
+            property_name: Mesh
+            target_class: Character
           position: [400, 0]
+        - id: SelfRef
+          type: Self
+          position: [200, 100]
         - id: GetMaterial
           type: CallFunction
           properties:
@@ -10448,52 +10448,58 @@ actor_blueprints:  # STALKER NPC BLUEPRINT
           properties:
             variable_name: BondLevelMaterial
           position: [1200, 0]
-        # Apply Returned faction tag
-        - id: GetASC
+        # Create tag container from single tag for AddLooseGameplayTags
+        # Note: AddLooseGameplayTags takes Actor (not ASC) and internally gets the ASC
+        - id: MakeFactionTagContainer
           type: CallFunction
           properties:
-            function: GetAbilitySystemComponent
-          position: [1400, 0]
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+            parameters:
+              SingleTag: "Faction.NPC.Returned"
+          position: [1500, 100]
         - id: AddFactionTag
           type: CallFunction
           properties:
-            function: AddLooseGameplayTag
-            parameters:
-              tag: "Faction.NPC.Returned"
-          position: [1600, 0]
+            function: AddLooseGameplayTags
+            class: AbilitySystemBlueprintLibrary
+          position: [1700, 0]
         # Debug print
         - id: PrintReady
           type: PrintString
           properties:
             message: "BP_ReturnedStalker: Initialized with bond visual system"
-          position: [1800, 0]
+          position: [1900, 0]
       connections:
+        # SelfRef to GetMesh
+        - from: [SelfRef, Self]
+          to: [GetMesh, Target]
+        # BeginPlay exec flow (PropertyGet has no exec pins, so skip to GetMaterial)
         - from: [Event_BeginPlay, Then]
-          to: [CallParentBeginPlay, Exec]
-        - from: [CallParentBeginPlay, Exec]
-          to: [GetMesh, Exec]
-        - from: [GetMesh, ReturnValue]
-          to: [GetMaterial, Target]
-        - from: [GetMesh, Then]
           to: [GetMaterial, Exec]
+        # Data connections using Mesh output
+        - from: [GetMesh, Mesh]
+          to: [GetMaterial, Target]
         - from: [GetMaterial, ReturnValue]
           to: [SetOriginalMaterial, OriginalMaterial]
         - from: [GetMaterial, Then]
           to: [SetOriginalMaterial, Exec]
         - from: [SetOriginalMaterial, Then]
           to: [CreateDMI, Exec]
-        - from: [GetMesh, ReturnValue]
+        - from: [GetMesh, Mesh]
           to: [CreateDMI, Target]
         - from: [CreateDMI, ReturnValue]
           to: [SetBondMaterial, BondLevelMaterial]
         - from: [CreateDMI, Then]
           to: [SetBondMaterial, Exec]
         - from: [SetBondMaterial, Then]
-          to: [GetASC, Exec]
-        - from: [GetASC, ReturnValue]
-          to: [AddFactionTag, Target]
-        - from: [GetASC, Then]
           to: [AddFactionTag, Exec]
+        # AddLooseGameplayTags parameters: Actor (the owner), GameplayTags, ShouldReplicate
+        # Pass Self (the NPC actor) - the function internally gets ASC from the actor
+        - from: [SelfRef, Self]
+          to: [AddFactionTag, Actor]
+        - from: [MakeFactionTagContainer, ReturnValue]
+          to: [AddFactionTag, GameplayTags]
         - from: [AddFactionTag, Then]
           to: [PrintReady, Exec]
 
@@ -10599,6 +10605,11 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         default_value: "1500.0"
         instance_editable: true
         comment: Max distance to attacker to trigger defend
+      - name: DefendGoalClass
+        type: Class
+        class: Goal_Attack
+        instance_editable: true
+        comment: Goal class to spawn when defending player
       # ═══════════════════════════════════════════════════════════════
       # RUNTIME STATE VARIABLES (7) - Not Editable
       # ═══════════════════════════════════════════════════════════════
@@ -10725,7 +10736,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
     # ═══════════════════════════════════════════════════════════════
     # CUSTOM FUNCTIONS (5)
     # ═══════════════════════════════════════════════════════════════
-    functions:
+    custom_functions:
       # GetCurrentFollowDuration: BaseFollowDuration + (TalkCount * FollowDurationPerStack)
       - name: GetCurrentFollowDuration
         return_type: Float
@@ -11136,7 +11147,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - id: LessFollowChance
           type: CallFunction
           properties:
-            function: Less_FloatFloat
+            function: Less_DoubleDouble
             class: KismetMathLibrary
           position: [800, 0]
         - id: BranchFollowRoll
@@ -11229,7 +11240,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - id: LessTalkChance
           type: CallFunction
           properties:
-            function: Less_FloatFloat
+            function: Less_DoubleDouble
             class: KismetMathLibrary
           position: [1400, 500]
         - id: BranchTalkRoll
@@ -11301,7 +11312,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - id: LessAttackChance
           type: CallFunction
           properties:
-            function: Less_FloatFloat
+            function: Less_DoubleDouble
             class: KismetMathLibrary
           position: [1600, 1000]
         - id: BranchAttackRoll
@@ -11355,12 +11366,20 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - id: BranchNotDefendingDef
           type: Branch
           position: [1000, 1500]
-        # Get attacker from ASC
+        # Get attacker actor from DamagerCauserASC using GetOwner
+        # The ASC owner is the actor that dealt the damage (the attacker)
         - id: GetAttackerActor
           type: CallFunction
           properties:
-            function: GetAvatarActor
+            function: GetOwner
+            class: ActorComponent
           position: [1200, 1500]
+        # Cast to NarrativeCharacter for SetDefendTarget.TargetToAttack
+        - id: CastToAttacker
+          type: DynamicCast
+          properties:
+            target_class: NarrativeCharacter
+          position: [1300, 1600]
         - id: IsAttackerValid
           type: CallFunction
           properties:
@@ -11385,7 +11404,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - id: LessDefendChance
           type: CallFunction
           properties:
-            function: Less_FloatFloat
+            function: Less_DoubleDouble
             class: KismetMathLibrary
           position: [2200, 1500]
         - id: BranchDefendRoll
@@ -11397,18 +11416,61 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             variable_name: bIsDefending
             value: true
           position: [2600, 1500]
-        - id: PrintDefending
-          type: PrintString
+        # Create Goal_Attack for defending using SpawnObject
+        - id: GetDefendGoalClass
+          type: VariableGet
           properties:
-            message: "GoalGenerator_RandomAggression: Defending player!"
+            variable_name: DefendGoalClass
           position: [2800, 1500]
+        - id: CreateDefendGoal
+          type: CallFunction
+          properties:
+            function: SpawnObject
+            class: GameplayStatics
+          position: [3000, 1500]
+        # Cast to Goal_Attack to set target
+        - id: CastToDefendGoal
+          type: DynamicCast
+          properties:
+            target_class: Goal_Attack
+          position: [3200, 1500]
+        # Set target on defend goal (attacker is the target to attack)
+        - id: SetDefendTarget
+          type: PropertySet
+          properties:
+            property_name: TargetToAttack
+            target_class: Goal_Attack
+          position: [3400, 1500]
+        # Store defend goal reference
+        - id: StoreDefendGoal
+          type: VariableSet
+          properties:
+            variable_name: CurrentDefendGoal
+          position: [3600, 1500]
+        # Get activity component (OwnerActivityComponent is a BlueprintReadOnly property on NPCGoalGenerator)
+        - id: GetActivityCompDef
+          type: VariableGet
+          properties:
+            variable_name: OwnerActivityComponent
+          position: [3800, 1500]
         # ─────────────────────────────────────────────────────────────
-        # OnDefendGoalCompleted - Called when defend goal succeeds/fails
+        # OnDefendGoalCompleted - v1.0.2 PATCH-E: Bound to OnGoalRemoved
+        # IMPORTANT: CustomEvent MUST be defined BEFORE the binding node (v4.37)
+        # Fires when defend Goal_Attack is removed for ANY reason:
+        # - Target killed (success + auto-remove)
+        # - Target escapes
+        # - Stalker dies
+        # - Goal timeout
+        # v4.36: Parameters match FOnGoalSignature delegate signature
         # ─────────────────────────────────────────────────────────────
         - id: Event_OnDefendGoalCompleted
           type: CustomEvent
           properties:
             event_name: OnDefendGoalCompleted
+            param.0.name: Activity
+            param.0.type: NPCActivity
+            param.1.name: Goal
+            param.1.type: NPCGoalItem
           position: [0, 2000]
         - id: SetDefendingFalse
           type: VariableSet
@@ -11426,6 +11488,28 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           properties:
             message: "GoalGenerator_RandomAggression: Defend goal completed"
           position: [600, 2000]
+        # Add goal to activity component
+        - id: AddDefendGoal
+          type: CallFunction
+          properties:
+            function: AddGoal
+            class: NPCActivityComponent
+            param.bTriggerReselect: true
+          position: [4000, 1500]
+        # v1.0.2 PATCH-E: Bind to OnGoalRemoved (NOT OnGoalSucceeded + OnGoalFailed)
+        # OnGoalRemoved fires in ALL termination cases (success, failure, timeout, cleanup)
+        - id: BindDefendGoalRemoved
+          type: CallFunction
+          properties:
+            function: BindEventToOnGoalRemoved
+            delegate_event: OnDefendGoalCompleted
+            target_class: NPCGoalItem
+          position: [4200, 1500]
+        - id: PrintDefending
+          type: PrintString
+          properties:
+            message: "GoalGenerator_RandomAggression: Defending player!"
+          position: [4400, 1500]
         # ─────────────────────────────────────────────────────────────
         # OnFollowDurationExpired - Timeout reached
         # ─────────────────────────────────────────────────────────────
@@ -11520,7 +11604,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - from: [BranchFollowingAtk, True]
           to: [BranchNotDefending, Exec]
         - from: [GetIsDefendingAtk, bIsDefending]
-          to: [NotDefending, InBool]
+          to: [NotDefending, A]
         - from: [NotDefending, ReturnValue]
           to: [BranchNotDefending, Condition]
         - from: [BranchNotDefending, True]
@@ -11547,7 +11631,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - from: [BranchFollowingDef, True]
           to: [BranchNotDefendingDef, Exec]
         - from: [GetIsDefendingDef, bIsDefending]
-          to: [NotDefendingDef, InBool]
+          to: [NotDefendingDef, A]
         - from: [NotDefendingDef, ReturnValue]
           to: [BranchNotDefendingDef, Condition]
         - from: [BranchNotDefendingDef, True]
@@ -11574,9 +11658,45 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [BranchDefendRoll, Exec]
         - from: [BranchDefendRoll, True]
           to: [SetDefendingTrue, Exec]
+        # v1.0.2: Defend goal creation and OnGoalRemoved binding (PATCH-E)
         - from: [SetDefendingTrue, Then]
+          to: [CreateDefendGoal, Exec]
+        - from: [GetDefendGoalClass, DefendGoalClass]
+          to: [CreateDefendGoal, ObjectClass]
+        - from: [CreateDefendGoal, ReturnValue]
+          to: [CastToDefendGoal, Object]
+        - from: [CreateDefendGoal, Then]
+          to: [CastToDefendGoal, Exec]
+        - from: [CastToDefendGoal, AsGoal_Attack]
+          to: [SetDefendTarget, Target]
+        # Cast attacker to NarrativeCharacter before passing to SetDefendTarget
+        - from: [GetAttackerActor, ReturnValue]
+          to: [CastToAttacker, Object]
+        - from: [CastToAttacker, AsNarrativeCharacter]
+          to: [SetDefendTarget, TargetToAttack]
+        - from: [CastToDefendGoal, Then]
+          to: [CastToAttacker, Exec]
+        - from: [CastToAttacker, Then]
+          to: [SetDefendTarget, Exec]
+        - from: [SetDefendTarget, Then]
+          to: [StoreDefendGoal, Exec]
+        - from: [CastToDefendGoal, AsGoal_Attack]
+          to: [StoreDefendGoal, CurrentDefendGoal]
+        - from: [StoreDefendGoal, Then]
+          to: [GetActivityCompDef, Exec]
+        - from: [GetActivityCompDef, ReturnValue]
+          to: [AddDefendGoal, Target]
+        - from: [CastToDefendGoal, AsGoal_Attack]
+          to: [AddDefendGoal, NewGoal]
+        - from: [GetActivityCompDef, Then]
+          to: [AddDefendGoal, Exec]
+        - from: [AddDefendGoal, ReturnValue]
+          to: [BindDefendGoalRemoved, Target]
+        - from: [AddDefendGoal, Then]
+          to: [BindDefendGoalRemoved, Exec]
+        - from: [BindDefendGoalRemoved, Then]
           to: [PrintDefending, Exec]
-        # OnDefendGoalCompleted connections
+        # OnDefendGoalCompleted connections (triggered by OnGoalRemoved)
         - from: [Event_OnDefendGoalCompleted, Then]
           to: [SetDefendingFalse, Exec]
         - from: [SetDefendingFalse, Then]
@@ -11631,7 +11751,7 @@ tagged_dialogue_sets:  # STALKER
 dialogue_blueprints:  # STALKER DIALOGUES
   - name: DBP_Returned_StartFollow
     folder: Dialogue/Returned
-    parent_class: NarrativeDialogue
+    parent_class: Dialogue
     free_movement: true
     speakers:
       - npc_definition: NPC_ReturnedStalker
@@ -11646,7 +11766,7 @@ dialogue_blueprints:  # STALKER DIALOGUES
 
   - name: DBP_Returned_First
     folder: Dialogue/Returned
-    parent_class: NarrativeDialogue
+    parent_class: Dialogue
     free_movement: true
     speakers:
       - npc_definition: NPC_ReturnedStalker
@@ -11661,7 +11781,7 @@ dialogue_blueprints:  # STALKER DIALOGUES
 
   - name: DBP_Returned_Bonding
     folder: Dialogue/Returned
-    parent_class: NarrativeDialogue
+    parent_class: Dialogue
     free_movement: true
     speakers:
       - npc_definition: NPC_ReturnedStalker
@@ -11676,7 +11796,7 @@ dialogue_blueprints:  # STALKER DIALOGUES
 
   - name: DBP_Returned_Deep
     folder: Dialogue/Returned
-    parent_class: NarrativeDialogue
+    parent_class: Dialogue
     free_movement: true
     speakers:
       - npc_definition: NPC_ReturnedStalker
@@ -11691,7 +11811,7 @@ dialogue_blueprints:  # STALKER DIALOGUES
 
   - name: DBP_Returned_Defending
     folder: Dialogue/Returned
-    parent_class: NarrativeDialogue
+    parent_class: Dialogue
     free_movement: true
     speakers:
       - npc_definition: NPC_ReturnedStalker
@@ -11706,7 +11826,7 @@ dialogue_blueprints:  # STALKER DIALOGUES
 
   - name: DBP_Returned_Attacking
     folder: Dialogue/Returned
-    parent_class: NarrativeDialogue
+    parent_class: Dialogue
     free_movement: true
     speakers:
       - npc_definition: NPC_ReturnedStalker
@@ -11721,7 +11841,7 @@ dialogue_blueprints:  # STALKER DIALOGUES
 
   - name: DBP_Returned_GivingUp
     folder: Dialogue/Returned
-    parent_class: NarrativeDialogue
+    parent_class: Dialogue
     free_movement: true
     speakers:
       - npc_definition: NPC_ReturnedStalker

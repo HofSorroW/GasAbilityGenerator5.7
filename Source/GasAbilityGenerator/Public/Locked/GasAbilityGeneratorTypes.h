@@ -1437,6 +1437,7 @@ struct FManifestFunctionOverrideDefinition
 
 /**
  * Actor blueprint definition
+ * v4.35: Added custom_functions for creating new Blueprint functions (same as GameplayAbility)
  * v2.8.3: Added function_overrides for overriding parent class functions (HandleDeath, etc.)
  * v2.7.6: Added inline event graph support (bHasInlineEventGraph, EventGraphNodes, EventGraphConnections)
  */
@@ -1461,6 +1462,10 @@ struct FManifestActorBlueprintDefinition
 	// v4.33: Delegate bindings for actor blueprints (External ASC Binding pattern)
 	// Binds to delegates on external actors' ASCs (e.g., OwnerPlayer's OnDied)
 	TArray<FManifestDelegateBindingDefinition> DelegateBindings;
+
+	// v4.35: Custom Blueprint functions (new functions, not overrides)
+	// Same as GameplayAbility custom_functions - creates new function graphs
+	TArray<FManifestCustomFunctionDefinition> CustomFunctions;
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -1510,6 +1515,13 @@ struct FManifestActorBlueprintDefinition
 		{
 			Hash ^= Del.ComputeHash();
 			Hash = (Hash << 15) | (Hash >> 49);
+		}
+
+		// v4.35: Custom functions
+		for (const auto& Func : CustomFunctions)
+		{
+			Hash ^= Func.ComputeHash();
+			Hash = (Hash << 16) | (Hash >> 48);
 		}
 
 		return Hash;

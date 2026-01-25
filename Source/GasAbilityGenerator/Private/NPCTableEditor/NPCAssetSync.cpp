@@ -422,7 +422,8 @@ bool FNPCAssetSync::ApplyRowToAsset(const FNPCTableRow& Row, UNPCDefinition* NPC
 	//=========================================================================
 	if (!Row.Appearance.IsNull())
 	{
-		NPCDef->DefaultAppearance = TSoftObjectPtr<UObject>(Row.Appearance);
+		// v4.37.1: Use correct type to avoid C4996 deprecation warning
+		NPCDef->DefaultAppearance = TSoftObjectPtr<UCharacterAppearanceBase>(Row.Appearance);
 	}
 
 	return true;

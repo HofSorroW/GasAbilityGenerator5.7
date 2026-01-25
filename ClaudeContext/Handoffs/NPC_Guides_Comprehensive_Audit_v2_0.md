@@ -11,7 +11,7 @@
 | Document Type | Consolidated Audit Report |
 | Scope | All 7 NPC Implementation Guides |
 | Auditor | Claude (Opus 4.5) - dual audit with GPT |
-| Plugin Version | GasAbilityGenerator v4.34 |
+| Plugin Version | GasAbilityGenerator v4.37.1 |
 | Context | UE5.7 + Narrative Pro v2.2 |
 | Status | **PASS - ALL SYSTEMS COMPLIANT** |
 
@@ -28,7 +28,7 @@ This consolidated audit combines technical validation, gameplay intent review, a
 | Technical Compliance | ✅ PASS |
 | Gameplay Intent | ✅ MATCHES |
 | Locked Contracts | ✅ NO VIOLATIONS |
-| Automation Coverage | ✅ 187/187 (100%) |
+| Automation Coverage | ✅ 194/194 (100%) |
 
 ### Guide Status Summary
 

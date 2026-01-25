@@ -3257,6 +3257,39 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		}
 	}
 
+	// v4.35: Generate custom functions BEFORE event graph (same pattern as GameplayAbility)
+	// This allows event graph nodes to call functions defined in custom_functions
+	LogGeneration(FString::Printf(TEXT("[v4.35-AUDIT] %s: CustomFunctions=%d, InlineEventGraph=%s, EventGraphNodes=%d"),
+		*Definition.Name, Definition.CustomFunctions.Num(),
+		Definition.bHasInlineEventGraph ? TEXT("true") : TEXT("false"),
+		Definition.EventGraphNodes.Num()));
+
+	if (Definition.CustomFunctions.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  [v4.35] Generating %d custom function(s) BEFORE event graph"), Definition.CustomFunctions.Num()));
+		int32 FunctionsGenerated = 0;
+		for (const FManifestCustomFunctionDefinition& FuncDef : Definition.CustomFunctions)
+		{
+			LogGeneration(FString::Printf(TEXT("    [v4.35] About to generate: %s"), *FuncDef.FunctionName));
+			if (FEventGraphGenerator::GenerateCustomFunction(Blueprint, FuncDef, ProjectRoot))
+			{
+				FunctionsGenerated++;
+				LogGeneration(FString::Printf(TEXT("    [v4.35] SUCCESS: %s (FunctionGraphs now: %d)"), *FuncDef.FunctionName, Blueprint->FunctionGraphs.Num()));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("[E_ACTORBP_CUSTOMFUNCTION_FAILED] %s | Failed to generate custom function: %s"),
+					*Definition.Name, *FuncDef.FunctionName));
+				return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					FString::Printf(TEXT("Failed to generate custom function '%s'"), *FuncDef.FunctionName));
+			}
+		}
+		LogGeneration(FString::Printf(TEXT("  Generated %d/%d custom functions"), FunctionsGenerated, Definition.CustomFunctions.Num()));
+
+		// Recompile blueprint after adding custom functions so they're available to event graph
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	}
+
 	// v2.7.6: Generate inline event graph if defined (takes priority over referenced)
 	if (Definition.bHasInlineEventGraph && Definition.EventGraphNodes.Num() > 0)
 	{
@@ -10073,6 +10106,20 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 		{
 			CreatedNode = CreatePropertyGetNode(FunctionGraph, NodeDef, Blueprint);
 		}
+		// v4.35: Handle Return/FunctionResult node type - already created, just retrieve from map
+		else if (NodeDef.Type.Equals(TEXT("Return"), ESearchCase::IgnoreCase) ||
+		         NodeDef.Type.Equals(TEXT("FunctionResult"), ESearchCase::IgnoreCase))
+		{
+			// Return node is already created as FunctionResult, retrieve it from map
+			CreatedNode = Cast<UK2Node>(NodeMap.FindRef(TEXT("Return")));
+			if (!CreatedNode)
+			{
+				LogGeneration(FString::Printf(TEXT("  Return node not in NodeMap - function may not have return type")));
+				// Not an error if function has no return type
+				continue;
+			}
+			LogGeneration(FString::Printf(TEXT("  Using pre-created Return node for '%s'"), *NodeDef.Id));
+		}
 		else
 		{
 			LogGeneration(FString::Printf(TEXT("  Unknown/unsupported node type '%s' for custom function node '%s'"),
@@ -10419,18 +10466,166 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 		DeprecatedFunctionRemapping.Add(TEXT("Multiply_FloatFloat"), TEXT("Multiply_DoubleDouble"));
 		DeprecatedFunctionRemapping.Add(TEXT("Divide_FloatFloat"), TEXT("Divide_DoubleDouble"));
 
+		// v4.35: Add conversion function remapping (UE5 uses double precision)
+		DeprecatedFunctionRemapping.Add(TEXT("Conv_IntToFloat"), TEXT("Conv_IntToDouble"));
+		DeprecatedFunctionRemapping.Add(TEXT("Conv_FloatToInt"), TEXT("Conv_DoubleToInt64"));
+
 		LogGeneration(TEXT("Initialized deprecated function remapping table"));
 	}
 	// ============================================================
 	// END STABLE SECTION: Deprecated Function Remapping
 	// ============================================================
 
+	// v4.35: Check for BindEventTo* delegate binding pattern BEFORE normal function resolution
+	// Pattern: function: BindEventTo{DelegateName}, delegate_event: {HandlerEventName}, target_class: {ClassName}
+	// Example: BindEventToOnGoalRemoved, delegate_event: OnDefendGoalCompleted, target_class: NPCGoalItem
+	// v4.37: Simplified - Uses UK2Node_CustomEvent's DelegateOutputName pin directly (matches UK2Node_AssignDelegate pattern)
+	FString FunctionNameStr = FunctionName.ToString();
+	if (FunctionNameStr.StartsWith(TEXT("BindEventTo")))
+	{
+		const FString* DelegateEventPtr = NodeDef.Properties.Find(TEXT("delegate_event"));
+		const FString* TargetClassPtr = NodeDef.Properties.Find(TEXT("target_class"));
+
+		if (DelegateEventPtr && !DelegateEventPtr->IsEmpty())
+		{
+			// Extract delegate name from function name (e.g., "OnGoalRemoved" from "BindEventToOnGoalRemoved")
+			FString DelegateName = FunctionNameStr.Mid(11); // Skip "BindEventTo"
+			FString HandlerEventName = *DelegateEventPtr;
+			FString TargetClassName = TargetClassPtr ? *TargetClassPtr : TEXT("");
+
+			LogGeneration(FString::Printf(TEXT("  [v4.37] Mid-graph delegate binding: Delegate='%s', Handler='%s', TargetClass='%s'"),
+				*DelegateName, *HandlerEventName, *TargetClassName));
+
+			// v4.37: Find target class for delegate lookup
+			UClass* DelegateOwnerClass = nullptr;
+			if (!TargetClassName.IsEmpty())
+			{
+				// Try common Narrative Pro classes first (direct reference)
+				if (TargetClassName == TEXT("NPCGoalItem"))
+				{
+					DelegateOwnerClass = UNPCGoalItem::StaticClass();
+				}
+
+				// Try direct class lookup via script path
+				if (!DelegateOwnerClass)
+				{
+					FString ScriptPath = FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *TargetClassName);
+					DelegateOwnerClass = FindObject<UClass>(nullptr, *ScriptPath);
+				}
+
+				// Try with U prefix in script path
+				if (!DelegateOwnerClass)
+				{
+					FString ScriptPathU = FString::Printf(TEXT("/Script/NarrativeArsenal.U%s"), *TargetClassName);
+					DelegateOwnerClass = FindObject<UClass>(nullptr, *ScriptPathU);
+				}
+			}
+
+			if (!DelegateOwnerClass)
+			{
+				LogGeneration(FString::Printf(TEXT("  [E_DELEGATE_CLASS_NOT_FOUND] Could not find class '%s' for delegate '%s'"),
+					*TargetClassName, *DelegateName));
+				return nullptr;
+			}
+
+			// v4.37: Find delegate property on target class
+			FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(
+				DelegateOwnerClass, FName(*DelegateName));
+
+			if (!DelegateProp)
+			{
+				LogGeneration(FString::Printf(TEXT("  [E_DELEGATE_NOT_FOUND] Delegate '%s' not found on class '%s'"),
+					*DelegateName, *DelegateOwnerClass->GetName()));
+				return nullptr;
+			}
+
+			UFunction* DelegateSignature = DelegateProp->SignatureFunction;
+			if (!DelegateSignature)
+			{
+				LogGeneration(FString::Printf(TEXT("  [E_DELEGATE_NO_SIGNATURE] No signature function for delegate '%s'"),
+					*DelegateName));
+				return nullptr;
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Found delegate '%s' on %s with signature '%s'"),
+				*DelegateName, *DelegateOwnerClass->GetName(), *DelegateSignature->GetName()));
+
+			// v4.37: Find the existing CustomEvent node that will handle this delegate
+			// The CustomEvent should already be created in the graph with matching name
+			UK2Node_CustomEvent* HandlerEventNode = nullptr;
+			for (UEdGraphNode* Node : Graph->Nodes)
+			{
+				UK2Node_CustomEvent* CustomEvent = Cast<UK2Node_CustomEvent>(Node);
+				if (CustomEvent && CustomEvent->CustomFunctionName == FName(*HandlerEventName))
+				{
+					HandlerEventNode = CustomEvent;
+					break;
+				}
+			}
+
+			if (!HandlerEventNode)
+			{
+				LogGeneration(FString::Printf(TEXT("  [E_DELEGATE_HANDLER_NOT_FOUND] CustomEvent '%s' not found in graph - ensure it's created before the binding node"),
+					*HandlerEventName));
+				return nullptr;
+			}
+
+			LogGeneration(FString::Printf(TEXT("    Found handler CustomEvent '%s' in graph"), *HandlerEventName));
+
+			// v4.37: Build FMemberReference for delegate using SetFromProperty pattern (matches UK2Node_BaseMCDelegate)
+			FMemberReference DelegateRef;
+			DelegateRef.SetFromField<FMulticastDelegateProperty>(DelegateProp, false, DelegateOwnerClass);
+
+			// v4.37: Create UK2Node_AddDelegate - binds the delegate to the target object
+			// Following UK2Node_AssignDelegate::PostPlacedNewNode pattern
+			UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(Graph);
+			AddDelegateNode->SetFromProperty(DelegateProp, false, DelegateOwnerClass);
+			Graph->AddNode(AddDelegateNode, false, false);
+			AddDelegateNode->CreateNewGuid();
+			AddDelegateNode->PostPlacedNewNode();
+			AddDelegateNode->AllocateDefaultPins();
+			AddDelegateNode->NodePosX = NodeDef.PositionX;
+			AddDelegateNode->NodePosY = NodeDef.PositionY;
+
+			// v4.37: Wire CustomEvent.DelegateOutputName → AddDelegate.Delegate
+			// UK2Node_CustomEvent has a static DelegateOutputName pin for delegate binding
+			UEdGraphPin* EventDelegateOutPin = HandlerEventNode->FindPin(UK2Node_CustomEvent::DelegateOutputName);
+			UEdGraphPin* AddDelegateIn = AddDelegateNode->GetDelegatePin();
+
+			if (EventDelegateOutPin && AddDelegateIn)
+			{
+				EventDelegateOutPin->MakeLinkTo(AddDelegateIn);
+				LogGeneration(TEXT("    Wired CustomEvent.DelegateOutput → AddDelegate.Delegate"));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("  [W_DELEGATE_PIN_NOT_FOUND] EventDelegateOut=%s, AddDelegateIn=%s"),
+					EventDelegateOutPin ? TEXT("found") : TEXT("null"),
+					AddDelegateIn ? TEXT("found") : TEXT("null")));
+			}
+
+			// v4.37: The Target pin on AddDelegate is PN_Self - receives the delegate source object
+			// This will be wired by the connection system from manifest (e.g., AddDefendGoal.ReturnValue → BindDefendGoalRemoved.Target)
+			UEdGraphPin* AddDelegateSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+			if (AddDelegateSelfPin)
+			{
+				LogGeneration(FString::Printf(TEXT("    AddDelegate Target pin ready for connection")));
+			}
+
+			LogGeneration(FString::Printf(TEXT("  [v4.37] Created mid-graph delegate binding: %s.%s → %s"),
+				*DelegateOwnerClass->GetName(), *DelegateName, *HandlerEventName));
+
+			// v4.37: Remove the placeholder CallNode that was created at the start of this function
+			Graph->RemoveNode(CallNode);
+
+			// Return AddDelegateNode - it has Exec/Then pins for manifest connections
+			return AddDelegateNode;
+		}
+	}
+
 	// Determine the function owner class
 	UClass* FunctionOwner = nullptr;
 	const FString* ClassNamePtr = NodeDef.Properties.Find(TEXT("class"));
-
-	// v2.4.3: First check the well-known functions table
-	FString FunctionNameStr = FunctionName.ToString();
 
 	// v2.7.4: Check for deprecated function and remap if needed
 	if (FString* RemappedName = DeprecatedFunctionRemapping.Find(FunctionNameStr))
@@ -16623,8 +16818,30 @@ FGenerationResult FDialogueBlueprintGenerator::Generate(
 				// Load NPC Definition if specified
 				if (!SpeakerDef.NPCDefinition.IsEmpty())
 				{
+					// v4.37: First check manifest for NPC folder path (most reliable)
+					FString ManifestNPCFolder;
+					if (ManifestData)
+					{
+						for (const auto& NPCManifestDef : ManifestData->NPCDefinitions)
+						{
+							if (NPCManifestDef.Name == SpeakerDef.NPCDefinition)
+							{
+								ManifestNPCFolder = NPCManifestDef.Folder;
+								break;
+							}
+						}
+					}
+
 					// Try multiple search paths for NPC definition
 					TArray<FString> SearchPaths;
+
+					// v4.37: If manifest folder found, try that first
+					if (!ManifestNPCFolder.IsEmpty())
+					{
+						SearchPaths.Add(FString::Printf(TEXT("%s/%s/%s.%s"), *GetProjectRoot(), *ManifestNPCFolder, *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));
+					}
+
+					// Standard search paths (fallbacks)
 					SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/Definitions/%s.%s"), *GetProjectRoot(), *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));
 					SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/%s.%s"), *GetProjectRoot(), *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));
 					SearchPaths.Add(FString::Printf(TEXT("%s/Definitions/%s.%s"), *GetProjectRoot(), *SpeakerDef.NPCDefinition, *SpeakerDef.NPCDefinition));

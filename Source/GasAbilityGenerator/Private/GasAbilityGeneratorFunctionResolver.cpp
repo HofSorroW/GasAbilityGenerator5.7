@@ -16,6 +16,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -76,6 +77,9 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	// Note: GetActorTransform's C++ name is "GetTransform" with ScriptName="GetActorTransform"
 	WellKnownFunctions.Add(TEXT("GetTransform"), AActor::StaticClass());
 
+	// ActorComponent functions
+	WellKnownFunctions.Add(TEXT("GetOwner"), UActorComponent::StaticClass());
+
 	// SceneComponent functions
 	WellKnownFunctions.Add(TEXT("GetSocketLocation"), USceneComponent::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetSocketRotation"), USceneComponent::StaticClass());
@@ -92,13 +96,22 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("RemoveActiveGameplayEffect"), UAbilitySystemComponent::StaticClass());
 	WellKnownFunctions.Add(TEXT("RemoveActiveGameplayEffectBySourceEffect"), UAbilitySystemComponent::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetActiveGameplayEffectStackCount"), UAbilitySystemComponent::StaticClass());
+	// v4.35: Tag manipulation functions on ASC
+	WellKnownFunctions.Add(TEXT("AddLooseGameplayTag"), UAbilitySystemComponent::StaticClass());
+	WellKnownFunctions.Add(TEXT("RemoveLooseGameplayTag"), UAbilitySystemComponent::StaticClass());
+	WellKnownFunctions.Add(TEXT("AddLooseGameplayTags"), UAbilitySystemComponent::StaticClass());
+	WellKnownFunctions.Add(TEXT("RemoveLooseGameplayTags"), UAbilitySystemComponent::StaticClass());
 
-	// GameplayAbility functions (existing)
+	// AbilitySystemBlueprintLibrary static functions
 	WellKnownFunctions.Add(TEXT("K2_ApplyGameplayEffectSpecToOwner"), UGameplayAbility::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetAbilitySystemComponent"), UAbilitySystemBlueprintLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("SendGameplayEventToActor"), UAbilitySystemBlueprintLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("MakeSpecHandle"), UAbilitySystemBlueprintLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("AssignTagSetByCallerMagnitude"), UAbilitySystemBlueprintLibrary::StaticClass());
+	// v4.36: Static tag manipulation functions (takes ASC as parameter)
+	// NOTE: These are different from the instance methods on UAbilitySystemComponent
+	// The library versions take ASC as first parameter, making them usable without target_self
+	// We add both mappings so the resolver finds the correct class based on manifest context
 
 	// BlueprintGameplayTagLibrary functions
 	WellKnownFunctions.Add(TEXT("MakeLiteralGameplayTag"), UBlueprintGameplayTagLibrary::StaticClass());
@@ -156,6 +169,11 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("GreaterEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("EqualEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("NotEqual_DoubleDouble"), UKismetMathLibrary::StaticClass());
+
+	// v4.35: KismetMathLibrary conversion functions (UE5 double precision)
+	WellKnownFunctions.Add(TEXT("Conv_IntToDouble"), UKismetMathLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("Conv_DoubleToInt64"), UKismetMathLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("Conv_Int64ToDouble"), UKismetMathLibrary::StaticClass());
 
 	// KismetSystemLibrary functions
 	WellKnownFunctions.Add(TEXT("Delay"), UKismetSystemLibrary::StaticClass());

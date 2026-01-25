@@ -1171,6 +1171,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	}
 
 	// Tagged Dialogue Sets
+	LogMessage(TEXT("=== v4.37.2 TAGGED DIALOGUE SETS (debug marker) ==="));
 	for (const auto& Definition : ManifestData.TaggedDialogueSets)
 	{
 		FGenerationResult Result = FTaggedDialogueSetGenerator::Generate(Definition);
@@ -1206,17 +1207,10 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
-	// v2.6.0: Dialogue Blueprints
-	for (const auto& Definition : ManifestData.DialogueBlueprints)
-	{
-		FGenerationResult Result = FDialogueBlueprintGenerator::Generate(Definition, ManifestData.ProjectRoot, &ManifestData);
-		Summary.AddResult(Result);
-		TrackProcessedAsset(Result.AssetName);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
-	}
+	// v4.37: NPCDefinitions and DialogueBlueprints moved to AFTER AC_* assets
+	// NPCDefinitions depend on AbilityConfigurations/ActivityConfigurations
+	// DialogueBlueprints depend on NPCDefinitions (speaker references)
+	// See generation section after ActivityConfigurations (~line 1465)
 
 	// v2.6.0: Equippable Items (v2.6.9: with deferred handling)
 	for (int32 i = 0; i < ManifestData.EquippableItems.Num(); ++i)
@@ -1460,7 +1454,9 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
-	// v2.6.0: NPC Definitions (v2.6.9: with deferred handling)
+	// v4.37: NPC Definitions - AFTER AC_* (NPCs reference ability/activity configs)
+	// Must come BEFORE DialogueBlueprints (dialogue speakers reference NPC definitions)
+	LogMessage(TEXT("=== v4.37.1 NPC DEFINITIONS BLOCK START (should be AFTER AC_*) ==="));
 	for (int32 i = 0; i < ManifestData.NPCDefinitions.Num(); ++i)
 	{
 		const auto& Definition = ManifestData.NPCDefinitions[i];
@@ -1495,6 +1491,18 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 				GeneratedAssets.Add(Definition.Name);
 			}
 		}
+	}
+
+	// v4.37: Dialogue Blueprints - AFTER NPCDefinitions (speakers reference NPCs)
+	for (const auto& Definition : ManifestData.DialogueBlueprints)
+	{
+		FGenerationResult Result = FDialogueBlueprintGenerator::Generate(Definition, ManifestData.ProjectRoot, &ManifestData);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
 	}
 
 	// v2.6.0: Character Definitions

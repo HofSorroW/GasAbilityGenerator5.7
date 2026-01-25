@@ -2167,6 +2167,39 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 				ParseFunctionOverrides(Lines, LineIndex, FuncOverridesIndent, CurrentDef.FunctionOverrides);
 				continue;
 			}
+			// v4.35: Parse custom_functions section for actor blueprints (same as GameplayAbility)
+			// DEBUG: Log when we see custom_functions regardless of conditions
+			if (TrimmedLine.Contains(TEXT("custom_functions")))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[v4.35-DEBUG] Saw 'custom_functions' in line: '%s' | bInEventGraph=%d | CurrentDef=%s"),
+					*TrimmedLine, bInEventGraph ? 1 : 0, *CurrentDef.Name);
+			}
+			if (!bInEventGraph && (TrimmedLine.Equals(TEXT("custom_functions:")) || TrimmedLine.StartsWith(TEXT("custom_functions:"))))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[v4.35-DEBUG] PARSING custom_functions for: %s"), *CurrentDef.Name);
+				// Save pending variable/component before switching sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInComponents && !CurrentComp.Name.IsEmpty())
+				{
+					CurrentDef.Components.Add(CurrentComp);
+					CurrentComp = FManifestActorComponentDefinition();
+				}
+				bInEventGraph = false;
+				bInVariables = false;
+				bInComponents = false;
+
+				// Parse custom functions subsection (reuses GameplayAbility parser)
+				int32 CustomFunctionsIndent = CurrentIndent;
+				LineIndex++;
+				ParseCustomFunctions(Lines, LineIndex, CustomFunctionsIndent, CurrentDef.CustomFunctions);
+				UE_LOG(LogTemp, Warning, TEXT("[v4.35-DEBUG] After ParseCustomFunctions: %s has %d custom functions"),
+					*CurrentDef.Name, CurrentDef.CustomFunctions.Num());
+				continue;
+			}
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
 				bInEventGraph = false;
@@ -4951,9 +4984,11 @@ void FGasAbilityGeneratorParser::ParseCustomFunctions(const TArray<FString>& Lin
 			continue;
 		}
 
-		// Check for new function item (- function_name: name or - function: name)
-		// NOTE: Don't match "- name:" here as it conflicts with parameter names inside inputs:/outputs:
-		if (TrimmedLine.StartsWith(TEXT("- function_name:")) || TrimmedLine.StartsWith(TEXT("- function:")))
+		// Check for new function item (- name:, - function_name:, or - function:)
+		// v4.35: Added "- name:" to match manifest format used by actor blueprints
+		// NOTE: Must check this BEFORE bInInputs/bInOutputs to avoid conflicting with parameter names
+		if ((TrimmedLine.StartsWith(TEXT("- name:")) && !bInInputs && !bInOutputs) ||
+		    TrimmedLine.StartsWith(TEXT("- function_name:")) || TrimmedLine.StartsWith(TEXT("- function:")))
 		{
 			// Save previous function
 			if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
@@ -4976,6 +5011,21 @@ void FGasAbilityGeneratorParser::ParseCustomFunctions(const TArray<FString>& Lin
 			{
 				FString Val = GetLineValue(TrimmedLine);
 				CurrentFunction.bPure = Val.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+			}
+			// v4.35: Handle return_type: shorthand for simple return value functions
+			// Creates an output parameter named "ReturnValue" with the specified type
+			else if (TrimmedLine.StartsWith(TEXT("return_type:")))
+			{
+				FString ReturnType = GetLineValue(TrimmedLine);
+				if (!ReturnType.IsEmpty())
+				{
+					FManifestFunctionParameterDefinition ReturnParam;
+					ReturnParam.Name = TEXT("ReturnValue");
+					ReturnParam.Type = ReturnType;
+					CurrentFunction.Outputs.Add(ReturnParam);
+					UE_LOG(LogTemp, Log, TEXT("[v4.35] ParseCustomFunctions: Added implicit ReturnValue output of type '%s' for function '%s'"),
+						*ReturnType, *CurrentFunction.FunctionName);
+				}
 			}
 			else if (TrimmedLine.Equals(TEXT("inputs:")) || TrimmedLine.StartsWith(TEXT("inputs:")))
 			{
