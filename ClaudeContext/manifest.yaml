@@ -9128,14 +9128,27 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [300, 0]
+        # v4.32.2: MakeLiteralName nodes for blackboard key names (by-ref params require input wires)
+        - id: MakeKeyName_TargetCharacter
+          type: CallFunction
+          properties:
+            function: MakeLiteralName
+            class: KismetSystemLibrary
+            param.Value: TargetCharacter
+          position: [450, 100]
+        - id: MakeKeyName_TargetLocation
+          type: CallFunction
+          properties:
+            function: MakeLiteralName
+            class: KismetSystemLibrary
+            param.Value: TargetLocation
+          position: [1950, 100]
         # Get TargetCharacter key value (the leader to follow)
         - id: GetTargetCharacter
           type: CallFunction
           properties:
             function: GetValueAsObject
             class: BlackboardComponent
-            parameters:
-              KeyName: TargetCharacter
           position: [600, 0]
         # Cast to Actor for location access
         - id: CastToActor
@@ -9178,8 +9191,6 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           properties:
             function: SetValueAsVector
             class: BlackboardComponent
-            parameters:
-              KeyName: TargetLocation
           position: [2100, 0]
       connections:
         - from: [Event_ReceiveTickAI, Then]
@@ -9190,6 +9201,11 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           to: [GetTargetCharacter, Target]
         - from: [GetBlackboard, Exec]
           to: [GetTargetCharacter, Exec]
+        # v4.32.2: Connect MakeLiteralName outputs to blackboard key name pins
+        - from: [MakeKeyName_TargetCharacter, ReturnValue]
+          to: [GetTargetCharacter, KeyName]
+        - from: [MakeKeyName_TargetLocation, ReturnValue]
+          to: [SetTargetLocation, KeyName]
         - from: [GetTargetCharacter, ReturnValue]
           to: [CastToActor, Object]
         - from: [GetTargetCharacter, Exec]
@@ -9249,14 +9265,20 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [300, 200]
+        # v4.32.2: MakeLiteralName for blackboard key (by-ref params require input wires)
+        - id: MakeKeyName_TargetCharacter
+          type: CallFunction
+          properties:
+            function: MakeLiteralName
+            class: KismetSystemLibrary
+            param.Value: TargetCharacter
+          position: [450, 300]
         # Get TargetCharacter (leader)
         - id: GetLeader
           type: CallFunction
           properties:
             function: GetValueAsObject
             class: BlackboardComponent
-            parameters:
-              KeyName: TargetCharacter
           position: [600, 200]
         # Get leader's velocity magnitude
         - id: GetLeaderVelocity
@@ -9304,6 +9326,9 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           to: [GetLeader, Target]
         - from: [GetBlackboard, Exec]
           to: [GetLeader, Exec]
+        # v4.32.2: Connect MakeLiteralName output to blackboard key name pin
+        - from: [MakeKeyName_TargetCharacter, ReturnValue]
+          to: [GetLeader, KeyName]
         - from: [GetLeader, ReturnValue]
           to: [GetLeaderVelocity, Target]
         - from: [GetLeaderVelocity, ReturnValue]
@@ -9426,13 +9451,19 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [600, 0]
+        # v4.32.2: MakeLiteralName for blackboard key (by-ref params require input wires)
+        - id: MakeKeyName_AttackTarget
+          type: CallFunction
+          properties:
+            function: MakeLiteralName
+            class: KismetSystemLibrary
+            param.Value: AttackTarget
+          position: [750, 100]
         - id: GetAttackTarget
           type: CallFunction
           properties:
             function: GetValueAsObject
             class: BlackboardComponent
-            parameters:
-              KeyName: AttackTarget
           position: [900, 0]
         # Cast to Actor
         - id: CastToActor
@@ -9523,6 +9554,9 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           to: [GetAttackTarget, Target]
         - from: [GetBlackboard, Exec]
           to: [GetAttackTarget, Exec]
+        # v4.32.2: Connect MakeLiteralName output to blackboard key name pin
+        - from: [MakeKeyName_AttackTarget, ReturnValue]
+          to: [GetAttackTarget, KeyName]
         - from: [GetAttackTarget, ReturnValue]
           to: [CastToActor, Object]
         - from: [GetAttackTarget, Exec]
@@ -9853,14 +9887,6 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           to: [ApplyHeal, Target]
         - from: [GetTargetASC, Exec]
           to: [ApplyHeal, Exec]
-        - from: [GetBlackboard, Exec]
-          to: [GetTargetCharacter, Exec]
-        - from: [GetTargetCharacter, ReturnValue]
-          to: [CastToNarrativeChar, Object]
-        - from: [GetTargetCharacter, Exec]
-          to: [CastToNarrativeChar, Exec]
-        - from: [CastToNarrativeChar, Exec]
-          to: [PrintHealing, Exec]
 
 behavior_trees:  # SUPPORT BUFFER
 # NOTE: Uses NarrativePro's BB_FollowCharacter at /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/

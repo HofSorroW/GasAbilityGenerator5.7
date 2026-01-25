@@ -2273,6 +2273,16 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 				{
 					CurrentVar.Type = GetLineValue(TrimmedLine);
 				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					// v4.32.2: For Object/Class/TSubclassOf types, combine with Type field
+					// e.g., type: Class + class: NarrativeNPCCharacter -> Class:NarrativeNPCCharacter
+					FString ClassValue = GetLineValue(TrimmedLine);
+					if (!CurrentVar.Type.IsEmpty())
+					{
+						CurrentVar.Type = CurrentVar.Type + TEXT(":") + ClassValue;
+					}
+				}
 				else if (TrimmedLine.StartsWith(TEXT("default:")))
 				{
 					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
