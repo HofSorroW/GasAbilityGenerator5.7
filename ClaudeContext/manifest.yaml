@@ -8905,7 +8905,7 @@ actor_blueprints:  # WARDEN SYSTEM
           - id: GetActorTransform
             type: CallFunction
             properties:
-              function: K2_GetActorTransform
+              function: GetTransform
               class: Actor
               target_self: true
             position: [600, 0]
@@ -9123,10 +9123,10 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           position: [0, 0]
         # Get the blackboard from the AI controller
         - id: GetBlackboard
-          type: CallFunction
+          type: PropertyGet
           properties:
-            function: GetBlackboardComponent
-            target_self: true
+            property_name: Blackboard
+            target_class: AIController
           position: [300, 0]
         # Get TargetCharacter key value (the leader to follow)
         - id: GetTargetCharacter
@@ -9244,10 +9244,10 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           position: [150, 100]
         # Get blackboard for leader info
         - id: GetBlackboard
-          type: CallFunction
+          type: PropertyGet
           properties:
-            function: GetBlackboardComponent
-            target_self: true
+            property_name: Blackboard
+            target_class: AIController
           position: [300, 200]
         # Get TargetCharacter (leader)
         - id: GetLeader
@@ -9421,10 +9421,10 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           position: [400, 0]
         # Get blackboard for AttackTarget
         - id: GetBlackboard
-          type: CallFunction
+          type: PropertyGet
           properties:
-            function: GetBlackboardComponent
-            target_self: true
+            property_name: Blackboard
+            target_class: AIController
           position: [600, 0]
         - id: GetAttackTarget
           type: CallFunction
@@ -9961,7 +9961,7 @@ actor_blueprints:  # BIOMECH
           - id: GetActorTransform
             type: CallFunction
             properties:
-              function: K2_GetActorTransform
+              function: GetTransform
               class: Actor
               target_self: true
             position: [600, 0]

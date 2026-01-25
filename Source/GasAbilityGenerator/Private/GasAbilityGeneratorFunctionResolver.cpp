@@ -73,8 +73,8 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("K2_DetachFromActor"), AActor::StaticClass());
 	WellKnownFunctions.Add(TEXT("SetActorHiddenInGame"), AActor::StaticClass());
 	WellKnownFunctions.Add(TEXT("GetComponentByClass"), AActor::StaticClass());
-	WellKnownFunctions.Add(TEXT("K2_GetActorTransform"), AActor::StaticClass());
-	WellKnownFunctions.Add(TEXT("GetActorTransform"), AActor::StaticClass());
+	// Note: GetActorTransform's C++ name is "GetTransform" with ScriptName="GetActorTransform"
+	WellKnownFunctions.Add(TEXT("GetTransform"), AActor::StaticClass());
 
 	// SceneComponent functions
 	WellKnownFunctions.Add(TEXT("GetSocketLocation"), USceneComponent::StaticClass());

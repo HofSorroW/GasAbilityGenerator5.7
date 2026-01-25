@@ -9817,6 +9817,11 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 		{
 			CreatedNode = CreateDynamicCastNode(FunctionGraph, NodeDef);
 		}
+		// v4.32.1: SpawnActor support for function overrides (e.g., spawning on death)
+		else if (NodeDef.Type.Equals(TEXT("SpawnActor"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSpawnActorNode(FunctionGraph, NodeDef, Blueprint);
+		}
 		else
 		{
 			LogGeneration(FString::Printf(TEXT("  Unknown/unsupported node type '%s' for function override node '%s'"),
