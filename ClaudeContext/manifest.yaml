@@ -401,11 +401,13 @@ tags:
   - tag: Symbiote.State.Merged
     comment: Father merged with player
 
-  # Faction Tags (2)
+  # Faction Tags (3)
   - tag: Narrative.Factions.FatherCompanion
     comment: Father companion faction
   - tag: Narrative.Factions.Player
     comment: Player faction
+  - tag: Faction.NPC.Returned
+    comment: Returned creatures - neutral until provoked or bonded
 
   # Equipment Tags (1)
   - tag: Narrative.Equipment.Slot.FatherForm
@@ -7610,12 +7612,16 @@ npc_definitions:
   # ============================================================================
   - name: NPC_ReturnedStalker
     folder: NPCs/Returned
-    npc_name: Returned Stalker
+    npc_id: ReturnedStalker
+    npc_name: Returned
     npc_blueprint: BP_ReturnedStalker
     ability_configuration: AC_ReturnedStalker
     activity_configuration: AC_ReturnedStalkerBehavior
+    tagged_dialogue_set: TaggedDialogueSet_Returned
     default_factions:
-      - Narrative.Factions.Hostile
+      - Faction.NPC.Returned
+    default_owned_tags:
+      - State.NPC.ReturnedStalker
 
   # ============================================================================
   # SUPPORT BUFFER SYSTEM
@@ -10338,7 +10344,9 @@ activities:  # GATHERER
     parent_class: NarrativeActivityBase
 
 # ============================================================================
-# NPC SYSTEMS - STALKER RANDOM AGGRESSION
+# NPC SYSTEMS - STALKER RANDOM AGGRESSION (FULL BOND SYSTEM v1.0.1)
+# Implements: Follow/Talk/Bond/Attack/Defend probabilistic state machine
+# Audit patches: PATCH-B (delegate sig), PATCH-C (state tags), PATCH-D (BecomeAggressive)
 # ============================================================================
 tags:  # STALKER
   - tag: State.NPC.Returned.Following
@@ -10348,7 +10356,9 @@ tags:  # STALKER
   - tag: State.NPC.Returned.Defending
     comment: Applied while defending player
   - tag: State.NPC.Returned.Aggressive
-    comment: Applied after attacking player
+    comment: Applied after attacking player (PERMANENT)
+  - tag: State.NPC.ReturnedStalker
+    comment: Base state tag for Returned Stalker NPCs
   - tag: Narrative.TaggedDialogue.Returned.StartFollowing
     comment: When follow begins
   - tag: Narrative.TaggedDialogue.Returned.Following.First
@@ -10378,354 +10388,1351 @@ tags:  # STALKER
   - tag: Narrative.TaggedDialogue.Father.Sacrifice
     comment: Father sacrifice barks
 
-actor_blueprints:  # STALKER
+# ============================================================================
+# BP_ReturnedStalker - Full BeginPlay with material setup and faction tag
+# ============================================================================
+actor_blueprints:  # STALKER NPC BLUEPRINT
   - name: BP_ReturnedStalker
     folder: NPCs/Returned
     parent_class: NarrativeNPCCharacter
+    variables:
+      # Visual feedback for bond level
+      - name: BondLevelMaterial
+        type: Object
+        class: MaterialInstanceDynamic
+        comment: MID for visual bond feedback
+      # Original material for reset
+      - name: OriginalMaterial
+        type: Object
+        class: MaterialInterface
     event_graph:
       nodes:
-        # BeginPlay - Log spawn (behavior via GoalGenerator_RandomAggression)
+        # BeginPlay - Initialize visual systems and faction
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
-        - id: PrintReady
+        # Call parent BeginPlay
+        - id: CallParentBeginPlay
+          type: CallParent
+          position: [200, 0]
+        # Store original material for reset
+        - id: GetMesh
           type: CallFunction
           properties:
-            function: PrintString
-            class: KismetSystemLibrary
+            function: GetMesh
+          position: [400, 0]
+        - id: GetMaterial
+          type: CallFunction
+          properties:
+            function: GetMaterial
             parameters:
-              InString: "ReturnedStalker Active - Random aggression mode"
-          position: [300, 0]
+              ElementIndex: 0
+          position: [600, 0]
+        - id: SetOriginalMaterial
+          type: VariableSet
+          properties:
+            variable_name: OriginalMaterial
+          position: [800, 0]
+        # Create dynamic material instance for bond feedback
+        - id: CreateDMI
+          type: CallFunction
+          properties:
+            function: CreateDynamicMaterialInstance
+            parameters:
+              ElementIndex: 0
+          position: [1000, 0]
+        - id: SetBondMaterial
+          type: VariableSet
+          properties:
+            variable_name: BondLevelMaterial
+          position: [1200, 0]
+        # Apply Returned faction tag
+        - id: GetASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1400, 0]
+        - id: AddFactionTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTag
+            parameters:
+              tag: "Faction.NPC.Returned"
+          position: [1600, 0]
+        # Debug print
+        - id: PrintReady
+          type: PrintString
+          properties:
+            message: "BP_ReturnedStalker: Initialized with bond visual system"
+          position: [1800, 0]
       connections:
         - from: [Event_BeginPlay, Then]
+          to: [CallParentBeginPlay, Exec]
+        - from: [CallParentBeginPlay, Exec]
+          to: [GetMesh, Exec]
+        - from: [GetMesh, ReturnValue]
+          to: [GetMaterial, Target]
+        - from: [GetMesh, Then]
+          to: [GetMaterial, Exec]
+        - from: [GetMaterial, ReturnValue]
+          to: [SetOriginalMaterial, OriginalMaterial]
+        - from: [GetMaterial, Then]
+          to: [SetOriginalMaterial, Exec]
+        - from: [SetOriginalMaterial, Then]
+          to: [CreateDMI, Exec]
+        - from: [GetMesh, ReturnValue]
+          to: [CreateDMI, Target]
+        - from: [CreateDMI, ReturnValue]
+          to: [SetBondMaterial, BondLevelMaterial]
+        - from: [CreateDMI, Then]
+          to: [SetBondMaterial, Exec]
+        - from: [SetBondMaterial, Then]
+          to: [GetASC, Exec]
+        - from: [GetASC, ReturnValue]
+          to: [AddFactionTag, Target]
+        - from: [GetASC, Then]
+          to: [AddFactionTag, Exec]
+        - from: [AddFactionTag, Then]
           to: [PrintReady, Exec]
 
+# ============================================================================
+# GoalGenerator_RandomAggression - Full Bond System Implementation
+# 35 variables, 5 functions, 6 CustomEvents
+# ============================================================================
 actor_blueprints:  # STALKER GOAL GENERATORS
-  # v4.32.3: Full automation with SetTimer + OnAggressionTick callback
-  # Uses timer-based aggression buildup with random multiplier, creates Goal_Attack at threshold
   - name: GoalGenerator_RandomAggression
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
     variables:
-      # Aggression level (0-100, attacks at 100)
-      - name: AggressionLevel
+      # ═══════════════════════════════════════════════════════════════
+      # CONFIGURATION VARIABLES (17) - Instance Editable
+      # ═══════════════════════════════════════════════════════════════
+      # Follow Detection
+      - name: FollowCheckInterval
         type: Float
-        default_value: "0.0"
-      # Rate of aggression buildup per tick
-      - name: AggressionBuildRate
+        default_value: "8.0"
+        instance_editable: true
+        comment: Seconds between follow chance rolls
+      - name: FollowChance
+        type: Float
+        default_value: "0.15"
+        instance_editable: true
+        comment: Probability to start following (15%)
+      - name: DetectionRange
+        type: Float
+        default_value: "2000.0"
+        instance_editable: true
+        comment: Max distance to detect player
+      - name: FollowDistance
+        type: Float
+        default_value: "400.0"
+        instance_editable: true
+        comment: Distance to maintain while following
+      # Follow Duration
+      - name: BaseFollowDuration
+        type: Float
+        default_value: "20.0"
+        instance_editable: true
+        comment: Base timeout before giving up (seconds)
+      - name: FollowDurationPerStack
         type: Float
         default_value: "5.0"
         instance_editable: true
-      # Threshold to trigger attack
-      - name: AggressionThreshold
+        comment: Extra duration per TalkCount
+      # Talk/Bond System
+      - name: TalkCheckInterval
         type: Float
-        default_value: "100.0"
+        default_value: "8.0"
         instance_editable: true
-      # Random multiplier range (adds unpredictability)
-      - name: RandomMultiplierMin
+        comment: Seconds between talk rolls
+      - name: TalkChance
+        type: Float
+        default_value: "0.3"
+        instance_editable: true
+        comment: Probability of talk success (30%)
+      - name: MaxTalkStacks
+        type: Integer
+        default_value: "5"
+        instance_editable: true
+        comment: Maximum bond level
+      # Attack System
+      - name: AttackCheckInterval
+        type: Float
+        default_value: "3.0"
+        instance_editable: true
+        comment: Seconds between attack rolls
+      - name: BaseAttackChance
+        type: Float
+        default_value: "0.25"
+        instance_editable: true
+        comment: Base attack probability (25%)
+      - name: AttackReductionPerStack
+        type: Float
+        default_value: "0.05"
+        instance_editable: true
+        comment: Attack chance reduction per TalkCount
+      - name: MinAttackChance
+        type: Float
+        default_value: "0.025"
+        instance_editable: true
+        comment: Minimum attack chance (2.5%)
+      # Defend System
+      - name: BaseDefendChance
         type: Float
         default_value: "0.5"
         instance_editable: true
-      - name: RandomMultiplierMax
+        comment: Base defend probability (50%)
+      - name: DefendBonusPerStack
         type: Float
-        default_value: "2.0"
+        default_value: "0.05"
         instance_editable: true
-      # Timer interval (seconds between aggression ticks)
-      - name: TimerInterval
+        comment: Defend chance bonus per TalkCount
+      - name: MaxDefendChance
         type: Float
-        default_value: "1.0"
+        default_value: "0.75"
         instance_editable: true
-      # Timer handle for aggression tick
-      - name: AggressionTimerHandle
-        type: TimerHandle
-      # Track if currently aggressive
-      - name: bIsAggressive
+        comment: Maximum defend chance (75%)
+      - name: DefendRange
+        type: Float
+        default_value: "1500.0"
+        instance_editable: true
+        comment: Max distance to attacker to trigger defend
+      # ═══════════════════════════════════════════════════════════════
+      # RUNTIME STATE VARIABLES (7) - Not Editable
+      # ═══════════════════════════════════════════════════════════════
+      - name: CurrentFollowGoal
+        type: Object
+        class: Goal_FollowCharacter
+        comment: Active follow goal reference
+      - name: CurrentDefendGoal
+        type: Object
+        class: Goal_Attack
+        comment: Active defend goal reference
+      - name: FollowStartTime
+        type: Float
+        default_value: "0.0"
+        comment: Timestamp when following started
+      - name: TalkCount
+        type: Integer
+        default_value: "0"
+        comment: Current bond level (0-5)
+      - name: bIsFollowing
         type: Boolean
         default_value: "false"
-      # Goal class to create when attacking (defaults to GoalGenerator_Attack's goal)
-      - name: AttackGoalClass
-        type: Class
-        class: NPCGoalItem
+        comment: Currently following player
+      - name: bIsDefending
+        type: Boolean
+        default_value: "false"
+        comment: Currently defending player
+      - name: CachedPlayerCharacter
+        type: Object
+        class: NarrativePlayerCharacter
+        comment: Cached player reference for unbinding
+      # ═══════════════════════════════════════════════════════════════
+      # TIMER HANDLE VARIABLES (4)
+      # ═══════════════════════════════════════════════════════════════
+      - name: FollowCheckTimerHandle
+        type: TimerHandle
+        comment: Periodic follow chance check
+      - name: TalkCheckTimerHandle
+        type: TimerHandle
+        comment: Periodic talk roll
+      - name: AttackCheckTimerHandle
+        type: TimerHandle
+        comment: Periodic attack roll
+      - name: FollowDurationTimerHandle
+        type: TimerHandle
+        comment: Timeout for giving up
+      # ═══════════════════════════════════════════════════════════════
+      # TAGGED DIALOGUE TAG VARIABLES (7) - Instance Editable
+      # ═══════════════════════════════════════════════════════════════
+      - name: Tag_StartFollowing
+        type: GameplayTag
+        default_value: "Narrative.TaggedDialogue.Returned.StartFollowing"
         instance_editable: true
-    # Override InitializeGoalGenerator to set up the timer-based state machine
+      - name: Tag_FollowFirst
+        type: GameplayTag
+        default_value: "Narrative.TaggedDialogue.Returned.Following.First"
+        instance_editable: true
+      - name: Tag_FollowBonding
+        type: GameplayTag
+        default_value: "Narrative.TaggedDialogue.Returned.Following.Bonding"
+        instance_editable: true
+      - name: Tag_FollowDeep
+        type: GameplayTag
+        default_value: "Narrative.TaggedDialogue.Returned.Following.Deep"
+        instance_editable: true
+      - name: Tag_Defending
+        type: GameplayTag
+        default_value: "Narrative.TaggedDialogue.Returned.Defending"
+        instance_editable: true
+      - name: Tag_Attacking
+        type: GameplayTag
+        default_value: "Narrative.TaggedDialogue.Returned.Attacking"
+        instance_editable: true
+      - name: Tag_GivingUp
+        type: GameplayTag
+        default_value: "Narrative.TaggedDialogue.Returned.GivingUp"
+        instance_editable: true
+    # ═══════════════════════════════════════════════════════════════
+    # FUNCTION OVERRIDES - InitializeGoalGenerator
+    # ═══════════════════════════════════════════════════════════════
     function_overrides:
       - function: InitializeGoalGenerator
         nodes:
           - id: CallParent
             type: CallParent
             position: [200, 0]
-          # Set up repeating timer for aggression buildup
-          - id: GetInterval
+          - id: GetFollowCheckInterval
             type: VariableGet
             properties:
-              variable_name: TimerInterval
+              variable_name: FollowCheckInterval
             position: [400, 100]
-          - id: SetTimer
+          - id: SetTimer_FollowCheck
             type: CallFunction
             properties:
               function: K2_SetTimer
               class: KismetSystemLibrary
               target_self: true
-              param.FunctionName: "OnAggressionTick"
+              param.FunctionName: "OnFollowCheckTimer"
               param.bLooping: true
             position: [600, 0]
-          # Store timer handle
-          - id: SetTimerHandle
+          - id: SetFollowCheckHandle
             type: VariableSet
             properties:
-              variable_name: AggressionTimerHandle
+              variable_name: FollowCheckTimerHandle
             position: [800, 0]
           - id: PrintInit
             type: PrintString
             properties:
-              message: "GoalGenerator_RandomAggression: Timer started"
+              message: "GoalGenerator_RandomAggression: Initialized with bond system"
             position: [1000, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [CallParent, Exec]
           - from: [CallParent, Exec]
-            to: [SetTimer, Exec]
-          - from: [GetInterval, TimerInterval]
-            to: [SetTimer, Time]
-          - from: [SetTimer, ReturnValue]
-            to: [SetTimerHandle, AggressionTimerHandle]
-          - from: [SetTimer, Then]
-            to: [SetTimerHandle, Exec]
-          - from: [SetTimerHandle, Then]
+            to: [SetTimer_FollowCheck, Exec]
+          - from: [GetFollowCheckInterval, FollowCheckInterval]
+            to: [SetTimer_FollowCheck, Time]
+          - from: [SetTimer_FollowCheck, ReturnValue]
+            to: [SetFollowCheckHandle, FollowCheckTimerHandle]
+          - from: [SetTimer_FollowCheck, Then]
+            to: [SetFollowCheckHandle, Exec]
+          - from: [SetFollowCheckHandle, Then]
             to: [PrintInit, Exec]
-    # Event graph with OnAggressionTick callback
+    # ═══════════════════════════════════════════════════════════════
+    # CUSTOM FUNCTIONS (5)
+    # ═══════════════════════════════════════════════════════════════
+    functions:
+      # GetCurrentFollowDuration: BaseFollowDuration + (TalkCount * FollowDurationPerStack)
+      - name: GetCurrentFollowDuration
+        return_type: Float
+        nodes:
+          - id: GetTalkCount
+            type: VariableGet
+            properties:
+              variable_name: TalkCount
+            position: [200, 0]
+          - id: ToFloat
+            type: CallFunction
+            properties:
+              function: Conv_IntToFloat
+              class: KismetMathLibrary
+            position: [400, 0]
+          - id: GetDurationPerStack
+            type: VariableGet
+            properties:
+              variable_name: FollowDurationPerStack
+            position: [400, 100]
+          - id: Multiply
+            type: CallFunction
+            properties:
+              function: Multiply_FloatFloat
+              class: KismetMathLibrary
+            position: [600, 0]
+          - id: GetBaseDuration
+            type: VariableGet
+            properties:
+              variable_name: BaseFollowDuration
+            position: [600, 100]
+          - id: Add
+            type: CallFunction
+            properties:
+              function: Add_FloatFloat
+              class: KismetMathLibrary
+            position: [800, 0]
+          - id: Return
+            type: Return
+            position: [1000, 0]
+        connections:
+          - from: [GetTalkCount, TalkCount]
+            to: [ToFloat, InInt]
+          - from: [ToFloat, ReturnValue]
+            to: [Multiply, A]
+          - from: [GetDurationPerStack, FollowDurationPerStack]
+            to: [Multiply, B]
+          - from: [GetBaseDuration, BaseFollowDuration]
+            to: [Add, A]
+          - from: [Multiply, ReturnValue]
+            to: [Add, B]
+          - from: [Add, ReturnValue]
+            to: [Return, ReturnValue]
+      # GetCurrentAttackChance: Max(BaseAttackChance - (TalkCount * AttackReductionPerStack), MinAttackChance)
+      - name: GetCurrentAttackChance
+        return_type: Float
+        nodes:
+          - id: GetTalkCount
+            type: VariableGet
+            properties:
+              variable_name: TalkCount
+            position: [200, 0]
+          - id: ToFloat
+            type: CallFunction
+            properties:
+              function: Conv_IntToFloat
+              class: KismetMathLibrary
+            position: [400, 0]
+          - id: GetReduction
+            type: VariableGet
+            properties:
+              variable_name: AttackReductionPerStack
+            position: [400, 100]
+          - id: Multiply
+            type: CallFunction
+            properties:
+              function: Multiply_FloatFloat
+              class: KismetMathLibrary
+            position: [600, 0]
+          - id: GetBaseChance
+            type: VariableGet
+            properties:
+              variable_name: BaseAttackChance
+            position: [600, 100]
+          - id: Subtract
+            type: CallFunction
+            properties:
+              function: Subtract_FloatFloat
+              class: KismetMathLibrary
+            position: [800, 0]
+          - id: GetMinChance
+            type: VariableGet
+            properties:
+              variable_name: MinAttackChance
+            position: [800, 100]
+          - id: Max
+            type: CallFunction
+            properties:
+              function: FMax
+              class: KismetMathLibrary
+            position: [1000, 0]
+          - id: Return
+            type: Return
+            position: [1200, 0]
+        connections:
+          - from: [GetTalkCount, TalkCount]
+            to: [ToFloat, InInt]
+          - from: [ToFloat, ReturnValue]
+            to: [Multiply, A]
+          - from: [GetReduction, AttackReductionPerStack]
+            to: [Multiply, B]
+          - from: [GetBaseChance, BaseAttackChance]
+            to: [Subtract, A]
+          - from: [Multiply, ReturnValue]
+            to: [Subtract, B]
+          - from: [Subtract, ReturnValue]
+            to: [Max, A]
+          - from: [GetMinChance, MinAttackChance]
+            to: [Max, B]
+          - from: [Max, ReturnValue]
+            to: [Return, ReturnValue]
+      # GetCurrentDefendChance: Min(BaseDefendChance + (TalkCount * DefendBonusPerStack), MaxDefendChance)
+      - name: GetCurrentDefendChance
+        return_type: Float
+        nodes:
+          - id: GetTalkCount
+            type: VariableGet
+            properties:
+              variable_name: TalkCount
+            position: [200, 0]
+          - id: ToFloat
+            type: CallFunction
+            properties:
+              function: Conv_IntToFloat
+              class: KismetMathLibrary
+            position: [400, 0]
+          - id: GetBonus
+            type: VariableGet
+            properties:
+              variable_name: DefendBonusPerStack
+            position: [400, 100]
+          - id: Multiply
+            type: CallFunction
+            properties:
+              function: Multiply_FloatFloat
+              class: KismetMathLibrary
+            position: [600, 0]
+          - id: GetBaseChance
+            type: VariableGet
+            properties:
+              variable_name: BaseDefendChance
+            position: [600, 100]
+          - id: Add
+            type: CallFunction
+            properties:
+              function: Add_FloatFloat
+              class: KismetMathLibrary
+            position: [800, 0]
+          - id: GetMaxChance
+            type: VariableGet
+            properties:
+              variable_name: MaxDefendChance
+            position: [800, 100]
+          - id: Min
+            type: CallFunction
+            properties:
+              function: FMin
+              class: KismetMathLibrary
+            position: [1000, 0]
+          - id: Return
+            type: Return
+            position: [1200, 0]
+        connections:
+          - from: [GetTalkCount, TalkCount]
+            to: [ToFloat, InInt]
+          - from: [ToFloat, ReturnValue]
+            to: [Multiply, A]
+          - from: [GetBonus, DefendBonusPerStack]
+            to: [Multiply, B]
+          - from: [GetBaseChance, BaseDefendChance]
+            to: [Add, A]
+          - from: [Multiply, ReturnValue]
+            to: [Add, B]
+          - from: [Add, ReturnValue]
+            to: [Min, A]
+          - from: [GetMaxChance, MaxDefendChance]
+            to: [Min, B]
+          - from: [Min, ReturnValue]
+            to: [Return, ReturnValue]
+      # StopFollowing - Cleanup for TIMEOUT (returns to patrol)
+      - name: StopFollowing
+        nodes:
+          - id: GetTalkTimer
+            type: VariableGet
+            properties:
+              variable_name: TalkCheckTimerHandle
+            position: [200, 0]
+          - id: ClearTalkTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [400, 0]
+          - id: GetAttackTimer
+            type: VariableGet
+            properties:
+              variable_name: AttackCheckTimerHandle
+            position: [400, 100]
+          - id: ClearAttackTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [600, 0]
+          - id: GetDurationTimer
+            type: VariableGet
+            properties:
+              variable_name: FollowDurationTimerHandle
+            position: [600, 100]
+          - id: ClearDurationTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [800, 0]
+          - id: SetNotFollowing
+            type: VariableSet
+            properties:
+              variable_name: bIsFollowing
+              value: false
+            position: [1000, 0]
+          - id: SetNotDefending
+            type: VariableSet
+            properties:
+              variable_name: bIsDefending
+              value: false
+            position: [1200, 0]
+          - id: ResetTalkCount
+            type: VariableSet
+            properties:
+              variable_name: TalkCount
+              value: 0
+            position: [1400, 0]
+          - id: ClearFollowGoal
+            type: VariableSet
+            properties:
+              variable_name: CurrentFollowGoal
+            position: [1600, 0]
+          - id: ClearDefendGoal
+            type: VariableSet
+            properties:
+              variable_name: CurrentDefendGoal
+            position: [1800, 0]
+          - id: ClearPlayer
+            type: VariableSet
+            properties:
+              variable_name: CachedPlayerCharacter
+            position: [2000, 0]
+          - id: PrintStopped
+            type: PrintString
+            properties:
+              message: "GoalGenerator_RandomAggression: Stopped following, returning to patrol"
+            position: [2200, 0]
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [ClearTalkTimer, Exec]
+          - from: [GetTalkTimer, TalkCheckTimerHandle]
+            to: [ClearTalkTimer, Handle]
+          - from: [ClearTalkTimer, Then]
+            to: [ClearAttackTimer, Exec]
+          - from: [GetAttackTimer, AttackCheckTimerHandle]
+            to: [ClearAttackTimer, Handle]
+          - from: [ClearAttackTimer, Then]
+            to: [ClearDurationTimer, Exec]
+          - from: [GetDurationTimer, FollowDurationTimerHandle]
+            to: [ClearDurationTimer, Handle]
+          - from: [ClearDurationTimer, Then]
+            to: [SetNotFollowing, Exec]
+          - from: [SetNotFollowing, Then]
+            to: [SetNotDefending, Exec]
+          - from: [SetNotDefending, Then]
+            to: [ResetTalkCount, Exec]
+          - from: [ResetTalkCount, Then]
+            to: [ClearFollowGoal, Exec]
+          - from: [ClearFollowGoal, Then]
+            to: [ClearDefendGoal, Exec]
+          - from: [ClearDefendGoal, Then]
+            to: [ClearPlayer, Exec]
+          - from: [ClearPlayer, Then]
+            to: [PrintStopped, Exec]
+      # BecomeAggressive - AUDIT PATCH-D: Cleanup for ATTACK (permanent aggro)
+      - name: BecomeAggressive
+        nodes:
+          - id: GetTalkTimer
+            type: VariableGet
+            properties:
+              variable_name: TalkCheckTimerHandle
+            position: [200, 0]
+          - id: ClearTalkTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [400, 0]
+          - id: GetAttackTimer
+            type: VariableGet
+            properties:
+              variable_name: AttackCheckTimerHandle
+            position: [400, 100]
+          - id: ClearAttackTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [600, 0]
+          - id: GetDurationTimer
+            type: VariableGet
+            properties:
+              variable_name: FollowDurationTimerHandle
+            position: [600, 100]
+          - id: ClearDurationTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [800, 0]
+          - id: SetNotFollowing
+            type: VariableSet
+            properties:
+              variable_name: bIsFollowing
+              value: false
+            position: [1000, 0]
+          - id: ClearFollowGoal
+            type: VariableSet
+            properties:
+              variable_name: CurrentFollowGoal
+            position: [1200, 0]
+          - id: ClearPlayer
+            type: VariableSet
+            properties:
+              variable_name: CachedPlayerCharacter
+            position: [1400, 0]
+          - id: PrintAggressive
+            type: PrintString
+            properties:
+              message: "GoalGenerator_RandomAggression: BECAME PERMANENTLY AGGRESSIVE"
+            position: [1600, 0]
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [ClearTalkTimer, Exec]
+          - from: [GetTalkTimer, TalkCheckTimerHandle]
+            to: [ClearTalkTimer, Handle]
+          - from: [ClearTalkTimer, Then]
+            to: [ClearAttackTimer, Exec]
+          - from: [GetAttackTimer, AttackCheckTimerHandle]
+            to: [ClearAttackTimer, Handle]
+          - from: [ClearAttackTimer, Then]
+            to: [ClearDurationTimer, Exec]
+          - from: [GetDurationTimer, FollowDurationTimerHandle]
+            to: [ClearDurationTimer, Handle]
+          - from: [ClearDurationTimer, Then]
+            to: [SetNotFollowing, Exec]
+          - from: [SetNotFollowing, Then]
+            to: [ClearFollowGoal, Exec]
+          - from: [ClearFollowGoal, Then]
+            to: [ClearPlayer, Exec]
+          - from: [ClearPlayer, Then]
+            to: [PrintAggressive, Exec]
+    # ═══════════════════════════════════════════════════════════════
+    # EVENT GRAPH - 6 CustomEvents
+    # ═══════════════════════════════════════════════════════════════
     event_graph:
       nodes:
-        # OnAggressionTick - Called by timer every TimerInterval seconds
-        - id: Event_OnAggressionTick
+        # ─────────────────────────────────────────────────────────────
+        # OnFollowCheckTimer - Periodic follow chance roll
+        # ─────────────────────────────────────────────────────────────
+        - id: Event_OnFollowCheckTimer
           type: CustomEvent
           properties:
-            event_name: OnAggressionTick
+            event_name: OnFollowCheckTimer
           position: [0, 0]
-        # R-TIMER-2: Validity guard - check if owner is still valid
-        - id: GetController
+        - id: GetIsFollowing
           type: VariableGet
           properties:
-            variable_name: OwnerController
+            variable_name: bIsFollowing
           position: [200, 0]
-        - id: IsValidController
+        - id: BranchNotFollowing
+          type: Branch
+          position: [400, 0]
+        # Roll follow chance
+        - id: RandomFollowRoll
+          type: CallFunction
+          properties:
+            function: RandomFloat
+            class: KismetMathLibrary
+          position: [600, 0]
+        - id: GetFollowChance
+          type: VariableGet
+          properties:
+            variable_name: FollowChance
+          position: [600, 100]
+        - id: LessFollowChance
+          type: CallFunction
+          properties:
+            function: Less_FloatFloat
+            class: KismetMathLibrary
+          position: [800, 0]
+        - id: BranchFollowRoll
+          type: Branch
+          position: [1000, 0]
+        # Get player
+        - id: GetPlayerPawn
+          type: CallFunction
+          properties:
+            function: GetPlayerPawn
+            class: GameplayStatics
+          position: [1200, 0]
+        - id: CastToPlayer
+          type: DynamicCast
+          properties:
+            target_class: NarrativePlayerCharacter
+          position: [1400, 0]
+        - id: IsPlayerValid
           type: CallFunction
           properties:
             function: IsValid
             class: KismetSystemLibrary
-          position: [400, 0]
-        - id: BranchValid
+          position: [1600, 0]
+        - id: BranchPlayerValid
           type: Branch
-          position: [600, 0]
-        # Invalid - clear timer and exit (R-TIMER-2 safety)
-        - id: GetTimerHandle
-          type: VariableGet
-          properties:
-            variable_name: AggressionTimerHandle
-          position: [600, -100]
-        - id: ClearTimer
-          type: CallFunction
-          properties:
-            function: K2_ClearTimerHandle
-            class: KismetSystemLibrary
-          position: [800, -100]
-        # Valid path - calculate aggression increment
-        - id: GetBuildRate
-          type: VariableGet
-          properties:
-            variable_name: AggressionBuildRate
-          position: [800, 50]
-        - id: GetMinMult
-          type: VariableGet
-          properties:
-            variable_name: RandomMultiplierMin
-          position: [800, 100]
-        - id: GetMaxMult
-          type: VariableGet
-          properties:
-            variable_name: RandomMultiplierMax
-          position: [800, 150]
-        - id: RandomFloat
-          type: CallFunction
-          properties:
-            function: RandomFloatInRange
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1000, 100]
-        - id: MultiplyRates
-          type: CallFunction
-          properties:
-            function: Multiply_FloatFloat
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1200, 50]
-        # Get current aggression and add increment
-        - id: GetAggression
-          type: VariableGet
-          properties:
-            variable_name: AggressionLevel
-          position: [1200, 150]
-        - id: AddAggression
-          type: CallFunction
-          properties:
-            function: Add_FloatFloat
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1400, 100]
-        # Store new aggression level
-        - id: SetAggression
+          position: [1800, 0]
+        # Start following
+        - id: CachePlayer
           type: VariableSet
           properties:
-            variable_name: AggressionLevel
-          position: [1600, 100]
-        # Check threshold
-        - id: GetThreshold
-          type: VariableGet
-          properties:
-            variable_name: AggressionThreshold
-          position: [1600, 200]
-        - id: GreaterEqual
-          type: CallFunction
-          properties:
-            function: GreaterEqual_FloatFloat
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1800, 150]
-        - id: BranchThreshold
-          type: Branch
-          position: [2000, 100]
-        # Below threshold - just log
-        - id: PrintBuilding
-          type: PrintString
-          properties:
-            message: "Aggression building..."
-          position: [2200, 200]
-        # Threshold reached - create attack goal
-        - id: SetAggressive
+            variable_name: CachedPlayerCharacter
+          position: [2000, 0]
+        - id: SetFollowingTrue
           type: VariableSet
           properties:
-            variable_name: bIsAggressive
-            value: "true"
+            variable_name: bIsFollowing
+            value: true
           position: [2200, 0]
-        # Reset aggression level
-        - id: ResetAggression
-          type: VariableSet
-          properties:
-            variable_name: AggressionLevel
-            value: "0.0"
-          position: [2400, 0]
-        # Get attack goal class
-        - id: GetAttackClass
-          type: VariableGet
-          properties:
-            variable_name: AttackGoalClass
-          position: [2400, 100]
-        # Spawn attack goal
-        - id: SpawnGoal
-          type: CallFunction
-          properties:
-            function: SpawnObject
-            class: GameplayStatics
-          position: [2600, 0]
-        # Cast to NPCGoalItem
-        - id: CastToGoal
-          type: DynamicCast
-          properties:
-            target_class: NPCGoalItem
-          position: [2800, 0]
-        # Add goal using built-in AddGoalItem
-        - id: AddGoal
-          type: CallFunction
-          properties:
-            function: AddGoalItem
-            class: NPCGoalGenerator
-            target_self: true
-            param.bTriggerReselect: true
-          position: [3000, 0]
-        - id: PrintAttack
+        - id: PrintStartFollow
           type: PrintString
           properties:
-            message: "AGGRESSION THRESHOLD REACHED - Attack goal added!"
-          position: [3200, 0]
+            message: "GoalGenerator_RandomAggression: Started following player"
+          position: [2400, 0]
+        # ─────────────────────────────────────────────────────────────
+        # OnTalkCheckTimer - Periodic talk roll
+        # ─────────────────────────────────────────────────────────────
+        - id: Event_OnTalkCheckTimer
+          type: CustomEvent
+          properties:
+            event_name: OnTalkCheckTimer
+          position: [0, 500]
+        - id: GetIsFollowingTalk
+          type: VariableGet
+          properties:
+            variable_name: bIsFollowing
+          position: [200, 500]
+        - id: BranchFollowingTalk
+          type: Branch
+          position: [400, 500]
+        - id: GetTalkCountCheck
+          type: VariableGet
+          properties:
+            variable_name: TalkCount
+          position: [600, 500]
+        - id: GetMaxTalkStacks
+          type: VariableGet
+          properties:
+            variable_name: MaxTalkStacks
+          position: [600, 600]
+        - id: LessTalkMax
+          type: CallFunction
+          properties:
+            function: Less_IntInt
+            class: KismetMathLibrary
+          position: [800, 500]
+        - id: BranchTalkMax
+          type: Branch
+          position: [1000, 500]
+        - id: RandomTalkRoll
+          type: CallFunction
+          properties:
+            function: RandomFloat
+            class: KismetMathLibrary
+          position: [1200, 500]
+        - id: GetTalkChance
+          type: VariableGet
+          properties:
+            variable_name: TalkChance
+          position: [1200, 600]
+        - id: LessTalkChance
+          type: CallFunction
+          properties:
+            function: Less_FloatFloat
+            class: KismetMathLibrary
+          position: [1400, 500]
+        - id: BranchTalkRoll
+          type: Branch
+          position: [1600, 500]
+        - id: GetTalkCountInc
+          type: VariableGet
+          properties:
+            variable_name: TalkCount
+          position: [1800, 500]
+        - id: AddOne
+          type: CallFunction
+          properties:
+            function: Add_IntInt
+            class: KismetMathLibrary
+          position: [2000, 500]
+        - id: SetTalkCount
+          type: VariableSet
+          properties:
+            variable_name: TalkCount
+          position: [2200, 500]
+        - id: PrintTalkSuccess
+          type: PrintString
+          properties:
+            message: "GoalGenerator_RandomAggression: Talk success, bond increased"
+          position: [2400, 500]
+        # ─────────────────────────────────────────────────────────────
+        # OnAttackCheckTimer - Periodic attack roll
+        # ─────────────────────────────────────────────────────────────
+        - id: Event_OnAttackCheckTimer
+          type: CustomEvent
+          properties:
+            event_name: OnAttackCheckTimer
+          position: [0, 1000]
+        - id: GetIsFollowingAtk
+          type: VariableGet
+          properties:
+            variable_name: bIsFollowing
+          position: [200, 1000]
+        - id: BranchFollowingAtk
+          type: Branch
+          position: [400, 1000]
+        - id: GetIsDefendingAtk
+          type: VariableGet
+          properties:
+            variable_name: bIsDefending
+          position: [600, 1000]
+        - id: NotDefending
+          type: CallFunction
+          properties:
+            function: Not_PreBool
+            class: KismetMathLibrary
+          position: [800, 1000]
+        - id: BranchNotDefending
+          type: Branch
+          position: [1000, 1000]
+        - id: CallGetAttackChance
+          type: CallFunction
+          properties:
+            function: GetCurrentAttackChance
+            target_self: true
+          position: [1200, 1000]
+        - id: RandomAttackRoll
+          type: CallFunction
+          properties:
+            function: RandomFloat
+            class: KismetMathLibrary
+          position: [1400, 1000]
+        - id: LessAttackChance
+          type: CallFunction
+          properties:
+            function: Less_FloatFloat
+            class: KismetMathLibrary
+          position: [1600, 1000]
+        - id: BranchAttackRoll
+          type: Branch
+          position: [1800, 1000]
+        - id: PrintAttackDecided
+          type: PrintString
+          properties:
+            message: "GoalGenerator_RandomAggression: ATTACK ROLL SUCCESS - becoming aggressive!"
+          position: [2000, 1000]
+        - id: CallBecomeAggressive
+          type: CallFunction
+          properties:
+            function: BecomeAggressive
+            target_self: true
+          position: [2200, 1000]
+        # ─────────────────────────────────────────────────────────────
+        # OnPlayerDamaged - AUDIT PATCH-B: Correct delegate signature
+        # ─────────────────────────────────────────────────────────────
+        - id: Event_OnPlayerDamaged
+          type: CustomEvent
+          properties:
+            event_name: OnPlayerDamaged
+            parameters:
+              - name: DamagerCauserASC
+                type: NarrativeAbilitySystemComponent
+              - name: Damage
+                type: Float
+              - name: Spec
+                type: GameplayEffectSpec
+          position: [0, 1500]
+        - id: GetIsFollowingDef
+          type: VariableGet
+          properties:
+            variable_name: bIsFollowing
+          position: [200, 1500]
+        - id: BranchFollowingDef
+          type: Branch
+          position: [400, 1500]
+        - id: GetIsDefendingDef
+          type: VariableGet
+          properties:
+            variable_name: bIsDefending
+          position: [600, 1500]
+        - id: NotDefendingDef
+          type: CallFunction
+          properties:
+            function: Not_PreBool
+            class: KismetMathLibrary
+          position: [800, 1500]
+        - id: BranchNotDefendingDef
+          type: Branch
+          position: [1000, 1500]
+        # Get attacker from ASC
+        - id: GetAttackerActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActor
+          position: [1200, 1500]
+        - id: IsAttackerValid
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [1400, 1500]
+        - id: BranchAttackerValid
+          type: Branch
+          position: [1600, 1500]
+        - id: CallGetDefendChance
+          type: CallFunction
+          properties:
+            function: GetCurrentDefendChance
+            target_self: true
+          position: [1800, 1500]
+        - id: RandomDefendRoll
+          type: CallFunction
+          properties:
+            function: RandomFloat
+            class: KismetMathLibrary
+          position: [2000, 1500]
+        - id: LessDefendChance
+          type: CallFunction
+          properties:
+            function: Less_FloatFloat
+            class: KismetMathLibrary
+          position: [2200, 1500]
+        - id: BranchDefendRoll
+          type: Branch
+          position: [2400, 1500]
+        - id: SetDefendingTrue
+          type: VariableSet
+          properties:
+            variable_name: bIsDefending
+            value: true
+          position: [2600, 1500]
+        - id: PrintDefending
+          type: PrintString
+          properties:
+            message: "GoalGenerator_RandomAggression: Defending player!"
+          position: [2800, 1500]
+        # ─────────────────────────────────────────────────────────────
+        # OnDefendGoalCompleted - Called when defend goal succeeds/fails
+        # ─────────────────────────────────────────────────────────────
+        - id: Event_OnDefendGoalCompleted
+          type: CustomEvent
+          properties:
+            event_name: OnDefendGoalCompleted
+          position: [0, 2000]
+        - id: SetDefendingFalse
+          type: VariableSet
+          properties:
+            variable_name: bIsDefending
+            value: false
+          position: [200, 2000]
+        - id: ClearDefendGoalRef
+          type: VariableSet
+          properties:
+            variable_name: CurrentDefendGoal
+          position: [400, 2000]
+        - id: PrintDefendComplete
+          type: PrintString
+          properties:
+            message: "GoalGenerator_RandomAggression: Defend goal completed"
+          position: [600, 2000]
+        # ─────────────────────────────────────────────────────────────
+        # OnFollowDurationExpired - Timeout reached
+        # ─────────────────────────────────────────────────────────────
+        - id: Event_OnFollowDurationExpired
+          type: CustomEvent
+          properties:
+            event_name: OnFollowDurationExpired
+          position: [0, 2500]
+        - id: PrintGivingUp
+          type: PrintString
+          properties:
+            message: "GoalGenerator_RandomAggression: Follow duration expired, giving up"
+          position: [200, 2500]
+        - id: CallStopFollowing
+          type: CallFunction
+          properties:
+            function: StopFollowing
+            target_self: true
+          position: [400, 2500]
       connections:
-        - from: [Event_OnAggressionTick, Then]
-          to: [BranchValid, Exec]
-        - from: [GetController, OwnerController]
-          to: [IsValidController, Object]
-        - from: [IsValidController, ReturnValue]
-          to: [BranchValid, Condition]
-        - from: [BranchValid, False]
-          to: [ClearTimer, Exec]
-        - from: [GetTimerHandle, AggressionTimerHandle]
-          to: [ClearTimer, Handle]
-        - from: [BranchValid, True]
-          to: [SetAggression, Exec]
-        - from: [GetMinMult, RandomMultiplierMin]
-          to: [RandomFloat, Min]
-        - from: [GetMaxMult, RandomMultiplierMax]
-          to: [RandomFloat, Max]
-        - from: [GetBuildRate, AggressionBuildRate]
-          to: [MultiplyRates, A]
-        - from: [RandomFloat, ReturnValue]
-          to: [MultiplyRates, B]
-        - from: [GetAggression, AggressionLevel]
-          to: [AddAggression, A]
-        - from: [MultiplyRates, ReturnValue]
-          to: [AddAggression, B]
-        - from: [AddAggression, ReturnValue]
-          to: [SetAggression, AggressionLevel]
-        - from: [SetAggression, Then]
-          to: [BranchThreshold, Exec]
-        - from: [AddAggression, ReturnValue]
-          to: [GreaterEqual, A]
-        - from: [GetThreshold, AggressionThreshold]
-          to: [GreaterEqual, B]
-        - from: [GreaterEqual, ReturnValue]
-          to: [BranchThreshold, Condition]
-        - from: [BranchThreshold, False]
-          to: [PrintBuilding, Exec]
-        - from: [BranchThreshold, True]
-          to: [SetAggressive, Exec]
-        - from: [SetAggressive, Then]
-          to: [ResetAggression, Exec]
-        - from: [ResetAggression, Then]
-          to: [SpawnGoal, Exec]
-        - from: [GetAttackClass, AttackGoalClass]
-          to: [SpawnGoal, ObjectClass]
-        - from: [SpawnGoal, ReturnValue]
-          to: [CastToGoal, Object]
-        - from: [SpawnGoal, Then]
-          to: [CastToGoal, Exec]
-        - from: [CastToGoal, AsNPCGoalItem]
-          to: [AddGoal, Goal]
-        - from: [CastToGoal, Then]
-          to: [AddGoal, Exec]
-        - from: [AddGoal, Then]
-          to: [PrintAttack, Exec]
+        # OnFollowCheckTimer connections
+        - from: [Event_OnFollowCheckTimer, Then]
+          to: [BranchNotFollowing, Exec]
+        - from: [GetIsFollowing, bIsFollowing]
+          to: [BranchNotFollowing, Condition]
+        - from: [BranchNotFollowing, False]
+          to: [RandomFollowRoll, Exec]
+        - from: [RandomFollowRoll, ReturnValue]
+          to: [LessFollowChance, A]
+        - from: [GetFollowChance, FollowChance]
+          to: [LessFollowChance, B]
+        - from: [LessFollowChance, ReturnValue]
+          to: [BranchFollowRoll, Condition]
+        - from: [RandomFollowRoll, Then]
+          to: [BranchFollowRoll, Exec]
+        - from: [BranchFollowRoll, True]
+          to: [GetPlayerPawn, Exec]
+        - from: [GetPlayerPawn, ReturnValue]
+          to: [CastToPlayer, Object]
+        - from: [GetPlayerPawn, Then]
+          to: [CastToPlayer, Exec]
+        - from: [CastToPlayer, AsNarrativePlayerCharacter]
+          to: [IsPlayerValid, Object]
+        - from: [CastToPlayer, Then]
+          to: [BranchPlayerValid, Exec]
+        - from: [IsPlayerValid, ReturnValue]
+          to: [BranchPlayerValid, Condition]
+        - from: [BranchPlayerValid, True]
+          to: [CachePlayer, Exec]
+        - from: [CastToPlayer, AsNarrativePlayerCharacter]
+          to: [CachePlayer, CachedPlayerCharacter]
+        - from: [CachePlayer, Then]
+          to: [SetFollowingTrue, Exec]
+        - from: [SetFollowingTrue, Then]
+          to: [PrintStartFollow, Exec]
+        # OnTalkCheckTimer connections
+        - from: [Event_OnTalkCheckTimer, Then]
+          to: [BranchFollowingTalk, Exec]
+        - from: [GetIsFollowingTalk, bIsFollowing]
+          to: [BranchFollowingTalk, Condition]
+        - from: [BranchFollowingTalk, True]
+          to: [BranchTalkMax, Exec]
+        - from: [GetTalkCountCheck, TalkCount]
+          to: [LessTalkMax, A]
+        - from: [GetMaxTalkStacks, MaxTalkStacks]
+          to: [LessTalkMax, B]
+        - from: [LessTalkMax, ReturnValue]
+          to: [BranchTalkMax, Condition]
+        - from: [BranchTalkMax, True]
+          to: [RandomTalkRoll, Exec]
+        - from: [RandomTalkRoll, ReturnValue]
+          to: [LessTalkChance, A]
+        - from: [GetTalkChance, TalkChance]
+          to: [LessTalkChance, B]
+        - from: [LessTalkChance, ReturnValue]
+          to: [BranchTalkRoll, Condition]
+        - from: [RandomTalkRoll, Then]
+          to: [BranchTalkRoll, Exec]
+        - from: [BranchTalkRoll, True]
+          to: [SetTalkCount, Exec]
+        - from: [GetTalkCountInc, TalkCount]
+          to: [AddOne, A]
+        - from: [AddOne, ReturnValue]
+          to: [SetTalkCount, TalkCount]
+        - from: [SetTalkCount, Then]
+          to: [PrintTalkSuccess, Exec]
+        # OnAttackCheckTimer connections
+        - from: [Event_OnAttackCheckTimer, Then]
+          to: [BranchFollowingAtk, Exec]
+        - from: [GetIsFollowingAtk, bIsFollowing]
+          to: [BranchFollowingAtk, Condition]
+        - from: [BranchFollowingAtk, True]
+          to: [BranchNotDefending, Exec]
+        - from: [GetIsDefendingAtk, bIsDefending]
+          to: [NotDefending, InBool]
+        - from: [NotDefending, ReturnValue]
+          to: [BranchNotDefending, Condition]
+        - from: [BranchNotDefending, True]
+          to: [CallGetAttackChance, Exec]
+        - from: [CallGetAttackChance, Then]
+          to: [RandomAttackRoll, Exec]
+        - from: [RandomAttackRoll, ReturnValue]
+          to: [LessAttackChance, A]
+        - from: [CallGetAttackChance, ReturnValue]
+          to: [LessAttackChance, B]
+        - from: [LessAttackChance, ReturnValue]
+          to: [BranchAttackRoll, Condition]
+        - from: [RandomAttackRoll, Then]
+          to: [BranchAttackRoll, Exec]
+        - from: [BranchAttackRoll, True]
+          to: [PrintAttackDecided, Exec]
+        - from: [PrintAttackDecided, Then]
+          to: [CallBecomeAggressive, Exec]
+        # OnPlayerDamaged connections
+        - from: [Event_OnPlayerDamaged, Then]
+          to: [BranchFollowingDef, Exec]
+        - from: [GetIsFollowingDef, bIsFollowing]
+          to: [BranchFollowingDef, Condition]
+        - from: [BranchFollowingDef, True]
+          to: [BranchNotDefendingDef, Exec]
+        - from: [GetIsDefendingDef, bIsDefending]
+          to: [NotDefendingDef, InBool]
+        - from: [NotDefendingDef, ReturnValue]
+          to: [BranchNotDefendingDef, Condition]
+        - from: [BranchNotDefendingDef, True]
+          to: [GetAttackerActor, Exec]
+        - from: [Event_OnPlayerDamaged, DamagerCauserASC]
+          to: [GetAttackerActor, Target]
+        - from: [GetAttackerActor, ReturnValue]
+          to: [IsAttackerValid, Object]
+        - from: [GetAttackerActor, Then]
+          to: [BranchAttackerValid, Exec]
+        - from: [IsAttackerValid, ReturnValue]
+          to: [BranchAttackerValid, Condition]
+        - from: [BranchAttackerValid, True]
+          to: [CallGetDefendChance, Exec]
+        - from: [CallGetDefendChance, Then]
+          to: [RandomDefendRoll, Exec]
+        - from: [RandomDefendRoll, ReturnValue]
+          to: [LessDefendChance, A]
+        - from: [CallGetDefendChance, ReturnValue]
+          to: [LessDefendChance, B]
+        - from: [LessDefendChance, ReturnValue]
+          to: [BranchDefendRoll, Condition]
+        - from: [RandomDefendRoll, Then]
+          to: [BranchDefendRoll, Exec]
+        - from: [BranchDefendRoll, True]
+          to: [SetDefendingTrue, Exec]
+        - from: [SetDefendingTrue, Then]
+          to: [PrintDefending, Exec]
+        # OnDefendGoalCompleted connections
+        - from: [Event_OnDefendGoalCompleted, Then]
+          to: [SetDefendingFalse, Exec]
+        - from: [SetDefendingFalse, Then]
+          to: [ClearDefendGoalRef, Exec]
+        - from: [ClearDefendGoalRef, Then]
+          to: [PrintDefendComplete, Exec]
+        # OnFollowDurationExpired connections
+        - from: [Event_OnFollowDurationExpired, Then]
+          to: [PrintGivingUp, Exec]
+        - from: [PrintGivingUp, Then]
+          to: [CallStopFollowing, Exec]
 
+# ============================================================================
+# TaggedDialogueSet_Returned - With dialogue blueprint references
+# ============================================================================
 tagged_dialogue_sets:  # STALKER
   - name: TaggedDialogueSet_Returned
     folder: Dialogue/TaggedSets
     dialogues:
       - tag: Narrative.TaggedDialogue.Returned.StartFollowing
+        dialogue: DBP_Returned_StartFollow
         cooldown: 30.0
         max_distance: 5000.0
       - tag: Narrative.TaggedDialogue.Returned.Following.First
+        dialogue: DBP_Returned_First
         cooldown: 30.0
         max_distance: 5000.0
       - tag: Narrative.TaggedDialogue.Returned.Following.Bonding
+        dialogue: DBP_Returned_Bonding
         cooldown: 30.0
         max_distance: 5000.0
       - tag: Narrative.TaggedDialogue.Returned.Following.Deep
+        dialogue: DBP_Returned_Deep
         cooldown: 30.0
         max_distance: 5000.0
       - tag: Narrative.TaggedDialogue.Returned.Defending
+        dialogue: DBP_Returned_Defending
         cooldown: 5.0
         max_distance: 5000.0
       - tag: Narrative.TaggedDialogue.Returned.Attacking
+        dialogue: DBP_Returned_Attacking
         cooldown: 5.0
         max_distance: 5000.0
       - tag: Narrative.TaggedDialogue.Returned.GivingUp
+        dialogue: DBP_Returned_GivingUp
         cooldown: 30.0
         max_distance: 5000.0
+
+# ============================================================================
+# Dialogue Blueprints - Returned Stalker (7 placeholder dialogues)
+# ============================================================================
+dialogue_blueprints:  # STALKER DIALOGUES
+  - name: DBP_Returned_StartFollow
+    folder: Dialogue/Returned
+    parent_class: NarrativeDialogue
+    free_movement: true
+    speakers:
+      - npc_definition: NPC_ReturnedStalker
+    dialogue_tree:
+      root: start_node
+      nodes:
+        - id: start_node
+          type: npc
+          speaker: NPC_ReturnedStalker
+          text: "*The creature tilts its head and begins following you*"
+          duration: 2.0
+
+  - name: DBP_Returned_First
+    folder: Dialogue/Returned
+    parent_class: NarrativeDialogue
+    free_movement: true
+    speakers:
+      - npc_definition: NPC_ReturnedStalker
+    dialogue_tree:
+      root: first_node
+      nodes:
+        - id: first_node
+          type: npc
+          speaker: NPC_ReturnedStalker
+          text: "*The creature makes a curious chirping sound*"
+          duration: 2.0
+
+  - name: DBP_Returned_Bonding
+    folder: Dialogue/Returned
+    parent_class: NarrativeDialogue
+    free_movement: true
+    speakers:
+      - npc_definition: NPC_ReturnedStalker
+    dialogue_tree:
+      root: bonding_node
+      nodes:
+        - id: bonding_node
+          type: npc
+          speaker: NPC_ReturnedStalker
+          text: "*The creature nuzzles closer, seeming more comfortable*"
+          duration: 2.0
+
+  - name: DBP_Returned_Deep
+    folder: Dialogue/Returned
+    parent_class: NarrativeDialogue
+    free_movement: true
+    speakers:
+      - npc_definition: NPC_ReturnedStalker
+    dialogue_tree:
+      root: deep_node
+      nodes:
+        - id: deep_node
+          type: npc
+          speaker: NPC_ReturnedStalker
+          text: "*The creature purrs contentedly, fully bonded*"
+          duration: 2.0
+
+  - name: DBP_Returned_Defending
+    folder: Dialogue/Returned
+    parent_class: NarrativeDialogue
+    free_movement: true
+    speakers:
+      - npc_definition: NPC_ReturnedStalker
+    dialogue_tree:
+      root: defending_node
+      nodes:
+        - id: defending_node
+          type: npc
+          speaker: NPC_ReturnedStalker
+          text: "*The creature SCREECHES and charges at your attacker!*"
+          duration: 1.5
+
+  - name: DBP_Returned_Attacking
+    folder: Dialogue/Returned
+    parent_class: NarrativeDialogue
+    free_movement: true
+    speakers:
+      - npc_definition: NPC_ReturnedStalker
+    dialogue_tree:
+      root: attacking_node
+      nodes:
+        - id: attacking_node
+          type: npc
+          speaker: NPC_ReturnedStalker
+          text: "*The creature's eyes turn RED as it lunges at YOU!*"
+          duration: 1.5
+
+  - name: DBP_Returned_GivingUp
+    folder: Dialogue/Returned
+    parent_class: NarrativeDialogue
+    free_movement: true
+    speakers:
+      - npc_definition: NPC_ReturnedStalker
+    dialogue_tree:
+      root: givingup_node
+      nodes:
+        - id: givingup_node
+          type: npc
+          speaker: NPC_ReturnedStalker
+          text: "*The creature loses interest and wanders away*"
+          duration: 2.0
 
 # ============================================================================
 # END OF MANIFEST
