@@ -4611,13 +4611,14 @@ gameplay_abilities:
         # === DAMAGE ABSORPTION HANDLER (v3.0: Variable-based architecture) ===
         # Called when player takes damage via OnDamagedBy delegate binding
         # Calculates 30% of damage, adds to Father's DomeEnergy, grants FullyCharged tag at 500
+        # v4.34: CustomEvent with params matching delegate signature (required for connections)
         - id: Event_HandleDomeDamageAbsorption
           type: CustomEvent
           properties:
             event_name: HandleDomeDamageAbsorption
             parameters:
-              - name: DamageCauserASC
-                type: AbilitySystemComponent
+              - name: DamagerCauserASC
+                type: NarrativeAbilitySystemComponent
               - name: Damage
                 type: Float
               - name: Spec
@@ -4729,6 +4730,7 @@ gameplay_abilities:
         # === PLAYER DEATH RESET HANDLER (v4.33: D-DEATH-RESET-1/2) ===
         # Called when player dies via OnDied delegate binding
         # Per D-DEATH-RESET-2: Silent reset - DomeEnergy=0, remove FullyCharged, no burst/VFX
+        # v4.34: CustomEvent with params matching delegate signature (required for binding)
         - id: Event_HandlePlayerDeathReset
           type: CustomEvent
           properties:
@@ -4736,8 +4738,8 @@ gameplay_abilities:
             parameters:
               - name: KilledActor
                 type: Actor
-              - name: KillerASC
-                type: AbilitySystemComponent
+              - name: KilledActorASC
+                type: NarrativeAbilitySystemComponent
           position: [0, 1200]
         # Step 1: Get Father reference and validate
         - id: GetFatherRef_Death
@@ -8867,15 +8869,15 @@ gameplay_effects:  # WARDEN SYSTEM
     duration_policy: Instant
 
 actor_blueprints:  # WARDEN SYSTEM
-  # v4.32: Enhanced with actual SpawnActor for phase transition
+  # v4.34: SpawnNPC for proper NPC initialization on phase transition
   - name: BP_WardenHusk
     folder: Enemies/Warden
     parent_class: NarrativeNPCCharacter
     variables:
-      # TSubclassOf<ANarrativeNPCCharacter> for spawning WardenCore on death
-      - name: PhaseSpawnClass
-        type: Class
-        class: NarrativeNPCCharacter
+      # NPCDefinition for spawning WardenCore on death via SpawnNPC
+      - name: PhaseSpawnDefinition
+        type: Object
+        class: NPCDefinition
         instance_editable: true
     event_graph:
       nodes:
@@ -8909,17 +8911,17 @@ actor_blueprints:  # WARDEN SYSTEM
               class: Actor
               target_self: true
             position: [600, 0]
-          # Get the class to spawn (set in editor to BP_WardenCore)
-          - id: GetSpawnClass
+          # Get the NPCDefinition to spawn (set in editor to NPC_WardenCore)
+          - id: GetSpawnDefinition
             type: VariableGet
             properties:
-              variable_name: PhaseSpawnClass
+              variable_name: PhaseSpawnDefinition
             position: [600, 100]
-          # Spawn the WardenCore at death location
+          # Spawn the WardenCore via SpawnNPC for proper NPC initialization
           - id: SpawnCore
-            type: SpawnActor
+            type: SpawnNPC
             properties:
-              actor_class_variable: PhaseSpawnClass
+              npc_definition_variable: PhaseSpawnDefinition
             position: [800, 0]
           - id: CallParentDeath
             type: CallParent
@@ -8933,10 +8935,10 @@ actor_blueprints:  # WARDEN SYSTEM
             to: [GetActorTransform, Exec]
           - from: [GetActorTransform, Exec]
             to: [SpawnCore, Exec]
-          - from: [GetSpawnClass, PhaseSpawnClass]
-            to: [SpawnCore, Class]
+          - from: [GetSpawnDefinition, PhaseSpawnDefinition]
+            to: [SpawnCore, NPCData]
           - from: [GetActorTransform, ReturnValue]
-            to: [SpawnCore, SpawnTransform]
+            to: [SpawnCore, Transform]
           - from: [SpawnCore, Then]
             to: [CallParentDeath, Exec]
           - from: [AuthBranch, False]
@@ -9919,15 +9921,15 @@ gameplay_effects:  # BIOMECH
     duration_policy: Instant
 
 actor_blueprints:  # BIOMECH
-  # v4.32: Enhanced with actual SpawnActor for phase transition
+  # v4.34: SpawnNPC for proper NPC initialization on phase transition
   - name: BP_BiomechHost
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
     variables:
-      # TSubclassOf<ANarrativeNPCCharacter> for spawning BiomechCreature on death
-      - name: PhaseSpawnClass
-        type: Class
-        class: NarrativeNPCCharacter
+      # NPCDefinition for spawning BiomechCreature on death via SpawnNPC
+      - name: PhaseSpawnDefinition
+        type: Object
+        class: NPCDefinition
         instance_editable: true
     event_graph:
       nodes:
@@ -9961,17 +9963,17 @@ actor_blueprints:  # BIOMECH
               class: Actor
               target_self: true
             position: [600, 0]
-          # Get the class to spawn (set in editor to BP_BiomechCreature)
-          - id: GetSpawnClass
+          # Get the NPCDefinition to spawn (set in editor to NPC_BiomechCreature)
+          - id: GetSpawnDefinition
             type: VariableGet
             properties:
-              variable_name: PhaseSpawnClass
+              variable_name: PhaseSpawnDefinition
             position: [600, 100]
-          # Spawn the BiomechCreature at death location
+          # Spawn the BiomechCreature via SpawnNPC for proper NPC initialization
           - id: SpawnCreature
-            type: SpawnActor
+            type: SpawnNPC
             properties:
-              actor_class_variable: PhaseSpawnClass
+              npc_definition_variable: PhaseSpawnDefinition
             position: [800, 0]
           - id: CallParentDeath
             type: CallParent
@@ -9985,10 +9987,10 @@ actor_blueprints:  # BIOMECH
             to: [GetActorTransform, Exec]
           - from: [GetActorTransform, Exec]
             to: [SpawnCreature, Exec]
-          - from: [GetSpawnClass, PhaseSpawnClass]
-            to: [SpawnCreature, Class]
+          - from: [GetSpawnDefinition, PhaseSpawnDefinition]
+            to: [SpawnCreature, NPCData]
           - from: [GetActorTransform, ReturnValue]
-            to: [SpawnCreature, SpawnTransform]
+            to: [SpawnCreature, Transform]
           - from: [SpawnCreature, Then]
             to: [CallParentDeath, Exec]
           - from: [AuthBranch, False]

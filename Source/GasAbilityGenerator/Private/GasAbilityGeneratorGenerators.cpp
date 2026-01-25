@@ -8899,7 +8899,7 @@ bool FEventGraphGenerator::ValidateEventGraph(
 		TEXT("Event"), TEXT("CustomEvent"), TEXT("CallFunction"), TEXT("Branch"),
 		TEXT("VariableGet"), TEXT("VariableSet"), TEXT("PropertyGet"), TEXT("PropertySet"),
 		TEXT("Sequence"), TEXT("Delay"), TEXT("PrintString"), TEXT("DynamicCast"),
-		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("BreakStruct"), TEXT("MakeArray"),
+		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("SpawnNPC"), TEXT("BreakStruct"), TEXT("MakeArray"),
 		TEXT("GetArrayItem"), TEXT("Self")
 	};
 
@@ -9215,6 +9215,11 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("SpawnActor"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateSpawnActorNode(EventGraph, NodeDef, Blueprint);
+		}
+		// v4.34: SpawnNPC support - spawns NPC via NarrativeCharacterSubsystem for proper initialization
+		else if (NodeDef.Type.Equals(TEXT("SpawnNPC"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSpawnNPCNode(EventGraph, NodeDef, Blueprint, NodeMap);
 		}
 		// v2.4.2: PropertyGet - access properties on external objects (e.g., MaxWalkSpeed on CharacterMovementComponent)
 		else if (NodeDef.Type.Equals(TEXT("PropertyGet"), ESearchCase::IgnoreCase))
@@ -9821,6 +9826,11 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 		else if (NodeDef.Type.Equals(TEXT("SpawnActor"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateSpawnActorNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		// v4.34: SpawnNPC support for function overrides (proper NPC initialization on death)
+		else if (NodeDef.Type.Equals(TEXT("SpawnNPC"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateSpawnNPCNode(FunctionGraph, NodeDef, Blueprint, NodeMap);
 		}
 		else
 		{
@@ -11506,6 +11516,110 @@ UK2Node* FEventGraphGenerator::CreateSpawnActorNode(
 	}
 
 	return CallNode;
+}
+
+// v4.34: Create SpawnNPC node using NarrativeCharacterSubsystem
+// This creates: GetSubsystem<UNarrativeCharacterSubsystem>() -> SpawnNPC(NPCData, Transform)
+// Returns the SpawnNPC call node for external connections
+UK2Node* FEventGraphGenerator::CreateSpawnNPCNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef,
+	UBlueprint* Blueprint,
+	TMap<FString, UK2Node*>& OutNodeMap)
+{
+	// Step 1: Create GetSubsystem node for UNarrativeCharacterSubsystem
+	UK2Node_CallFunction* GetSubsystemNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(GetSubsystemNode, false, false);
+
+	// Use USubsystemBlueprintLibrary::GetWorldSubsystem
+	UFunction* GetSubsystemFunc = FindObject<UFunction>(nullptr,
+		TEXT("/Script/Engine.SubsystemBlueprintLibrary:GetWorldSubsystem"));
+
+	if (GetSubsystemFunc)
+	{
+		GetSubsystemNode->SetFromFunction(GetSubsystemFunc);
+	}
+	else
+	{
+		// Fallback to setting function reference manually
+		UClass* SubsystemLibClass = FindObject<UClass>(nullptr,
+			TEXT("/Script/Engine.SubsystemBlueprintLibrary"));
+		if (SubsystemLibClass)
+		{
+			GetSubsystemNode->FunctionReference.SetExternalMember(
+				FName(TEXT("GetWorldSubsystem")), SubsystemLibClass);
+		}
+	}
+
+	GetSubsystemNode->CreateNewGuid();
+	GetSubsystemNode->PostPlacedNewNode();
+	GetSubsystemNode->AllocateDefaultPins();
+
+	// Set the Class pin to NarrativeCharacterSubsystem
+	UEdGraphPin* ClassPin = GetSubsystemNode->FindPin(TEXT("Class"));
+	if (ClassPin)
+	{
+		// Find the NarrativeCharacterSubsystem class
+		UClass* NarrativeCharSubsystemClass = FindObject<UClass>(nullptr,
+			TEXT("/Script/NarrativeArsenal.NarrativeCharacterSubsystem"));
+		if (NarrativeCharSubsystemClass)
+		{
+			ClassPin->DefaultObject = NarrativeCharSubsystemClass;
+		}
+	}
+
+	// Add the GetSubsystem node to the map with a helper ID
+	FString GetSubsystemNodeId = NodeDef.Id + TEXT("_GetSubsystem");
+	OutNodeMap.Add(GetSubsystemNodeId, GetSubsystemNode);
+
+	// Step 2: Create SpawnNPC CallFunction node
+	UK2Node_CallFunction* SpawnNPCNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(SpawnNPCNode, false, false);
+
+	// Find UNarrativeCharacterSubsystem::SpawnNPC function
+	UClass* NarrativeCharSubsystemClass = FindObject<UClass>(nullptr,
+		TEXT("/Script/NarrativeArsenal.NarrativeCharacterSubsystem"));
+
+	if (NarrativeCharSubsystemClass)
+	{
+		UFunction* SpawnNPCFunc = NarrativeCharSubsystemClass->FindFunctionByName(FName(TEXT("SpawnNPC")));
+		if (SpawnNPCFunc)
+		{
+			SpawnNPCNode->SetFromFunction(SpawnNPCFunc);
+		}
+		else
+		{
+			SpawnNPCNode->FunctionReference.SetExternalMember(
+				FName(TEXT("SpawnNPC")), NarrativeCharSubsystemClass);
+		}
+	}
+
+	SpawnNPCNode->CreateNewGuid();
+	SpawnNPCNode->PostPlacedNewNode();
+	SpawnNPCNode->AllocateDefaultPins();
+
+	// Step 3: Connect GetSubsystem ReturnValue to SpawnNPC Target (self)
+	UEdGraphPin* SubsystemReturnPin = GetSubsystemNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+	UEdGraphPin* SpawnNPCSelfPin = SpawnNPCNode->FindPin(UEdGraphSchema_K2::PN_Self);
+
+	if (SubsystemReturnPin && SpawnNPCSelfPin)
+	{
+		SubsystemReturnPin->MakeLinkTo(SpawnNPCSelfPin);
+	}
+
+	// Log the node creation
+	const FString* NPCDefVar = NodeDef.Properties.Find(TEXT("npc_definition_variable"));
+	if (NPCDefVar && !NPCDefVar->IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("  SpawnNPC node '%s' will use NPCDefinition from variable '%s'"),
+			*NodeDef.Id, **NPCDefVar));
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Created SpawnNPC node '%s' with internal GetSubsystem node '%s'"),
+		*NodeDef.Id, *GetSubsystemNodeId));
+
+	// Return the SpawnNPC node - this is the node that external connections will use
+	return SpawnNPCNode;
 }
 
 bool FEventGraphGenerator::ConnectPins(
@@ -13421,36 +13535,72 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 			continue;
 		}
 
-		// 2. Create Custom Event with delegate signature parameters
-		UK2Node_CustomEvent* HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
-		EventGraph->AddNode(HandlerEvent, false, false);
-		HandlerEvent->CustomFunctionName = FName(*Binding.Handler);
-		HandlerEvent->bIsEditable = true;
-		HandlerEvent->CreateNewGuid();
-		HandlerEvent->PostPlacedNewNode();
-		HandlerEvent->AllocateDefaultPins();
-		HandlerEvent->NodePosX = CurrentPosX;
-		HandlerEvent->NodePosY = CurrentPosY;
+		// 2. Find or create Custom Event with delegate signature parameters
+		// v4.34: Check if a CustomEvent with this handler name already exists (from manifest event_graph)
+		// This prevents duplicate CustomEvents when manifest defines explicit handler nodes
+		UK2Node_CustomEvent* HandlerEvent = nullptr;
+		FName HandlerEventName(*Binding.Handler);
+		bool bExistingEventFound = false;
 
-		// Add parameters from delegate signature
+		for (UEdGraphNode* Node : EventGraph->Nodes)
+		{
+			if (UK2Node_CustomEvent* ExistingEvent = Cast<UK2Node_CustomEvent>(Node))
+			{
+				if (ExistingEvent->CustomFunctionName == HandlerEventName)
+				{
+					HandlerEvent = ExistingEvent;
+					bExistingEventFound = true;
+					LogGeneration(FString::Printf(TEXT("    Found existing handler event: %s (reusing)"), *Binding.Handler));
+					break;
+				}
+			}
+		}
+
+		// Create new CustomEvent if one doesn't already exist
+		if (!HandlerEvent)
+		{
+			HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
+			EventGraph->AddNode(HandlerEvent, false, false);
+			HandlerEvent->CustomFunctionName = HandlerEventName;
+			HandlerEvent->bIsEditable = true;
+			HandlerEvent->CreateNewGuid();
+			HandlerEvent->PostPlacedNewNode();
+			HandlerEvent->AllocateDefaultPins();
+			HandlerEvent->NodePosX = CurrentPosX;
+			HandlerEvent->NodePosY = CurrentPosY;
+		}
+
+		// v4.34: Always ensure delegate signature parameters exist on the handler event
+		// This handles both newly created events AND existing events from manifest
+		// that may have been created without parameters or with wrong parameters
 		for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
 		{
 			FProperty* Param = *PropIt;
 			if (Param->HasAnyPropertyFlags(CPF_Parm) && !Param->HasAnyPropertyFlags(CPF_ReturnParm))
 			{
-				FEdGraphPinType PinType;
-				Schema->ConvertPropertyToPinType(Param, PinType);
+				// Check if parameter already exists on the event
+				UEdGraphPin* ExistingPin = HandlerEvent->FindPin(Param->GetFName(), EGPD_Output);
+				if (!ExistingPin)
+				{
+					FEdGraphPinType PinType;
+					Schema->ConvertPropertyToPinType(Param, PinType);
 
-				HandlerEvent->CreateUserDefinedPin(
-					Param->GetFName(),
-					PinType,
-					EGPD_Output
-				);
+					HandlerEvent->CreateUserDefinedPin(
+						Param->GetFName(),
+						PinType,
+						EGPD_Output
+					);
+					LogGeneration(FString::Printf(TEXT("    Added delegate parameter: %s to %s"),
+						*Param->GetName(), *Binding.Handler));
+				}
 			}
 		}
 
-		LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
-			*Binding.Handler, *DelegateSignature->GetName()));
+		if (!bExistingEventFound)
+		{
+			LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
+				*Binding.Handler, *DelegateSignature->GetName()));
+		}
 
 		// 3. Create Self node for ability reference (used by CreateDelegate.PN_Self)
 		UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);

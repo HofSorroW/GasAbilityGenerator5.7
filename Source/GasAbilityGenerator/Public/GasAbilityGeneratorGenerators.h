@@ -750,6 +750,13 @@ private:
 		const FManifestGraphNodeDefinition& NodeDef,
 		UBlueprint* Blueprint);
 
+	// v4.34: SpawnNPC - spawn NPC via NarrativeCharacterSubsystem (proper NPC initialization)
+	static UK2Node* CreateSpawnNPCNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef,
+		UBlueprint* Blueprint,
+		TMap<FString, UK2Node*>& OutNodeMap);
+
 	// v2.7.0: BreakStruct - break a struct into individual member pins
 	static UK2Node* CreateBreakStructNode(
 		UEdGraph* Graph,
