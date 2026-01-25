@@ -554,6 +554,223 @@ Narrative Pro uses a tag-based input system where:
 
 ---
 
+## LOCKED CONTRACT 16 — R-SPAWN-1 SpawnNPC-Only for NPC Spawning (v4.34)
+
+### Context
+
+NPCs in Narrative Pro require proper initialization via `NarrativeCharacterSubsystem.SpawnNPC()`. Raw `SpawnActor` bypasses critical initialization:
+- `SetNPCDefinition()` not called → No abilities, activities, or faction tags
+- Subsystem registration skipped → NPC invisible to AI systems
+- AbilityConfiguration/ActivityConfiguration not applied → No GAS setup
+
+**Discovery:** BP_WardenHusk and BP_BiomechHost phase transitions originally used `SpawnActor`, causing spawned NPCs (WardenCore, BiomechCreature) to be non-functional.
+
+### Invariant
+
+1. All NPC spawning in manifests **MUST** use `type: SpawnNPC` node (NOT `SpawnActor`)
+2. `SpawnNPC` requires `npc_definition_variable` property referencing an `NPCDefinition` variable
+3. The NPCDefinition variable must be typed as `Object` with `class: NPCDefinition`
+
+### Correct Pattern
+
+```yaml
+variables:
+  - name: PhaseSpawnDefinition
+    type: Object
+    class: NPCDefinition
+
+event_graph:
+  nodes:
+    - id: SpawnCore
+      type: SpawnNPC
+      properties:
+        npc_definition_variable: PhaseSpawnDefinition
+```
+
+### Forbidden
+
+- Using `type: SpawnActor` for any NPC spawning
+- Using `TSubclassOf` for NPCDefinition variables (use `Object` with `class: NPCDefinition`)
+- Spawning NPCs without NPCDefinition reference
+
+### Reference
+
+- Manifest: `manifest.yaml` — BP_WardenHusk (lines 8921-8925), BP_BiomechHost (lines 9973-9977)
+- Narrative Pro: `NarrativeCharacterSubsystem.h` — `SpawnNPC()` function
+- Audit: Claude–GPT dual audit session (2026-01-25)
+- Implementation: v4.34
+
+---
+
+## LOCKED CONTRACT 17 — R-PHASE-1 Two-Phase Death Transition Pattern (v4.34)
+
+### Context
+
+Multi-phase enemies (Warden Husk → Warden Core, Biomech Host → Biomech Creature) require proper death transition handling. The transition must:
+1. Detect death via delegate binding
+2. Check authority before spawning
+3. Spawn replacement NPC via SpawnNPC
+4. Complete parent death handling
+
+### Invariant
+
+1. Phase transition blueprints **MUST** bind to `OnDied` delegate from ASC
+2. Death handler **MUST** check `HasAuthority` before spawning (multiplayer safety)
+3. Spawn **MUST** use `SpawnNPC` (per R-SPAWN-1)
+4. Handler **MUST** call parent death handling (`CallParent` or equivalent)
+
+### Correct Pattern
+
+```yaml
+delegate_bindings:
+  - source_variable: ASC
+    delegate: OnDied
+    handler: HandleDeath
+
+event_graph:
+  nodes:
+    - id: Event_HandleDeath
+      type: CustomEvent
+      properties:
+        event_name: HandleDeath
+        parameters:
+          - name: KilledActor
+            type: Actor
+          - name: KilledActorASC
+            type: NarrativeAbilitySystemComponent
+    - id: HasAuthority
+      type: CallFunction
+      properties:
+        function: HasAuthority
+        class: Actor
+    - id: AuthBranch
+      type: Branch
+    - id: SpawnReplacement
+      type: SpawnNPC
+      properties:
+        npc_definition_variable: PhaseSpawnDefinition
+    - id: CallParent
+      type: CallFunction
+      properties:
+        function: HandleDeath
+        call_parent: true
+```
+
+### Forbidden
+
+- Spawning replacement NPC without authority check
+- Using SpawnActor for phase transition spawning
+- Skipping parent death handling after spawn
+- Binding to incorrect delegate (must be OnDied from ASC)
+
+### Reference
+
+- Manifest: `manifest.yaml` — BP_WardenHusk, BP_BiomechHost event graphs
+- Narrative Pro: `NarrativeAbilitySystemComponent.h` — OnDied delegate signature
+- Audit: Claude–GPT dual audit session (2026-01-25)
+- Implementation: v4.34
+
+---
+
+## LOCKED CONTRACT 18 — R-DELEGATE-1 Delegate Binding CustomEvent Signature (v4.34)
+
+### Context
+
+The generator's `delegate_bindings` system auto-creates CustomEvent nodes for handlers. When manifest also defines explicit CustomEvent nodes for the same handler (to support event_graph connections), the CustomEvent **MUST** include parameters matching the delegate signature exactly.
+
+**Discovery:** GA_ProtectiveDome failed compilation with "duplicate function names" when explicit CustomEvents had wrong/missing parameters vs delegate signature.
+
+### Invariant
+
+1. If manifest defines both `delegate_bindings` entry AND explicit `CustomEvent` node for same handler name:
+   - CustomEvent parameters **MUST** match delegate signature exactly
+   - Parameter names and types must match delegate's `FProperty` definitions
+2. Generator will merge/validate, but manifest should be explicit to avoid timing issues
+
+### Delegate Signatures (Narrative Pro)
+
+| Delegate | Parameters |
+|----------|------------|
+| `OnDamagedBy` | `DamagerCauserASC: NarrativeAbilitySystemComponent`, `Damage: Float`, `Spec: GameplayEffectSpec` |
+| `OnDied` | `KilledActor: Actor`, `KilledActorASC: NarrativeAbilitySystemComponent` |
+
+### Correct Pattern
+
+```yaml
+delegate_bindings:
+  - source_variable: ASC
+    delegate: OnDamagedBy
+    handler: HandleDamage
+
+event_graph:
+  nodes:
+    - id: Event_HandleDamage
+      type: CustomEvent
+      properties:
+        event_name: HandleDamage
+        parameters:
+          - name: DamagerCauserASC
+            type: NarrativeAbilitySystemComponent
+          - name: Damage
+            type: Float
+          - name: Spec
+            type: GameplayEffectSpec
+```
+
+### Forbidden
+
+- Defining CustomEvent with missing parameters (connections will fail to find pins)
+- Defining CustomEvent with wrong parameter names (signature mismatch)
+- Defining CustomEvent with wrong parameter types
+
+### Reference
+
+- Manifest: `manifest.yaml` — GA_ProtectiveDome (lines 4614-4626, 4727-4739)
+- Generator: `GasAbilityGeneratorGenerators.cpp` — `GenerateDelegateBindingNodes()`
+- Narrative Pro: `NarrativeAbilitySystemComponent.h` — delegate signatures
+- Audit: Claude–GPT dual audit session (2026-01-25)
+- Implementation: v4.34
+
+---
+
+## LOCKED CONTRACT 19 — R-NPCDEF-1 NPCDefinition Variable Type (v4.34)
+
+### Context
+
+NPCDefinition references in blueprints must use the correct variable type for proper SpawnNPC integration. `TSubclassOf<UNPCDefinition>` is **incorrect** — NPCDefinition is a DataAsset, not a class.
+
+### Invariant
+
+1. Variables storing NPCDefinition references **MUST** use:
+   - `type: Object`
+   - `class: NPCDefinition`
+2. This produces a `TObjectPtr<UNPCDefinition>` variable in Blueprint
+3. SpawnNPC node expects this type for `npc_definition_variable`
+
+### Correct Pattern
+
+```yaml
+variables:
+  - name: PhaseSpawnDefinition
+    type: Object
+    class: NPCDefinition
+```
+
+### Forbidden
+
+- Using `type: TSubclassOf` for NPCDefinition (wrong — it's a DataAsset, not a class)
+- Using `type: Class` for NPCDefinition
+- Omitting `class: NPCDefinition` specification
+
+### Reference
+
+- Manifest: `manifest.yaml` — BP_WardenHusk, BP_BiomechHost variables
+- Narrative Pro: `NPCDefinition.h` — inherits from UDataAsset
+- Audit: Claude–GPT dual audit session (2026-01-25)
+- Implementation: v4.34
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -581,3 +798,4 @@ Any change that touches a LOCKED implementation must:
 | v4.31 | 2026-01-24 | Added Contract 13 — INV-GESPEC-1 MakeOutgoingGameplayEffectSpec Parameter (Claude–GPT dual audit): All MakeOutgoingGameplayEffectSpec nodes MUST use `param.GameplayEffectClass:` syntax. 16 abilities fixed for silent runtime failure. |
 | v4.32 | 2026-01-24 | Added Contract 14 — INV-INPUT-1 Input Architecture Invariants (Claude–GPT dual audit): input_tag valid only for Player ASC abilities; must use Narrative Pro built-in tags (Narrative.Input.Ability1/2/3); custom namespaces cause HasTagExact mismatch. Pending Erdem review for final ability-to-input mapping. |
 | v4.33 | 2026-01-24 | Added Contract 15 — D-DEATH-RESET Player Death Reset System (Claude–GPT dual audit): PlayerASC.OnDied bindings for DomeEnergy/SymbioteCharge reset; silent reset (no burst/VFX); GA_Death unchanged (OnDied delegate for custom logic); D-SACRIFICE-1 one-shot bypass documented. |
+| v4.34 | 2026-01-25 | Added Contracts 16-19 from NPC Guides audit (Claude–GPT dual audit): R-SPAWN-1 SpawnNPC-only for NPC spawning; R-PHASE-1 Two-phase death transition pattern; R-DELEGATE-1 Delegate binding CustomEvent signature matching; R-NPCDEF-1 NPCDefinition variable type (Object not TSubclassOf). |
