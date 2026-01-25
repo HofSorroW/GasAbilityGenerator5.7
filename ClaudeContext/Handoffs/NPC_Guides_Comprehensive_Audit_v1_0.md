@@ -1,6 +1,6 @@
 # NPC Guides Comprehensive Audit Report
 ## Multi-Level Technical, Logical, and Gameplay Validation
-## Version 1.0
+## Version 1.2
 
 ---
 
@@ -12,7 +12,7 @@
 | Scope | All NPC Implementation Guides |
 | Date | January 2026 |
 | Auditor | Claude (multi-level consistency audit) |
-| Status | **CRITICAL VIOLATIONS FOUND** |
+| Status | **RESOLVED** (v4.34) |
 
 ---
 
@@ -20,13 +20,16 @@
 
 This audit validates NPC implementation guides against manifest.yaml, tech docs, design docs, LOCKED_CONTRACTS.md, and Father_Companion_GAS_Abilities_Audit.md.
 
-### Critical Finding
+### Resolution Status (v4.34)
 
-| Severity | Issue | Location |
-|----------|-------|----------|
-| **CRITICAL** | SpawnActor used instead of SpawnNPC for phase transitions | BP_BiomechHost, BP_WardenHusk in manifest.yaml |
+| Severity | Issue | Resolution |
+|----------|-------|------------|
+| ~~CRITICAL~~ | ~~SpawnActor used instead of SpawnNPC~~ | **FIXED** - SpawnNPC node type added, manifest updated |
 
-**Impact:** Spawned phase-2 entities (BP_BiomechCreature, BP_WardenCore) will be non-functional shells - no abilities, no activities, no faction tags.
+**v4.34 Changes:**
+- Added `SpawnNPC` node type to generator (calls `NarrativeCharacterSubsystem.SpawnNPC()`)
+- Updated BP_BiomechHost and BP_WardenHusk manifests to use SpawnNPC
+- All 187 manifest assets now generate successfully
 
 ---
 
@@ -36,19 +39,19 @@ This audit validates NPC implementation guides against manifest.yaml, tech docs,
 
 | Guide | Version | Manifest Entries | Status |
 |-------|---------|------------------|--------|
-| Biomechanical_Detachment_System_Implementation_Guide | v1.2 | BP_BiomechHost, BP_BiomechCreature | **SPAWN VIOLATION** |
-| Warden_Husk_System_Implementation_Guide | v1.3 | BP_WardenHusk, BP_WardenCore | **SPAWN VIOLATION** |
-| Guard_Formation_Follow_System_Implementation_Guide | v2.5 | None (manual creation) | **NEEDS AUTOMATION** |
+| Biomechanical_Detachment_System_Implementation_Guide | v1.2 | BP_BiomechHost, BP_BiomechCreature | **COMPLIANT** (v4.34) |
+| Warden_Husk_System_Implementation_Guide | v1.3 | BP_WardenHusk, BP_WardenCore | **COMPLIANT** (v4.34) |
+| Guard_Formation_Follow_System_Implementation_Guide | v2.5 | BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, Goal_FormationFollow | **COMPLIANT** |
 | Support_Buffer_Healer_NPC_Implementation_Guide | v1.1 | BTS_HealNearbyAllies, BPA_SupportFollow | COMPLIANT |
 | Possessed_Exploder_Enemy_Implementation_Guide | v2.2 | BTS_CheckExplosionProximity, BPA_Explode | COMPLIANT |
-| Gatherer_Scout_Alert_System_Implementation_Guide | v1.2 | None (manual creation) | **NEEDS AUTOMATION** |
-| Random_Aggression_Stalker_System_Implementation_Guide | v2.2 | None (manual creation) | **NEEDS AUTOMATION** |
+| Gatherer_Scout_Alert_System_Implementation_Guide | v1.2 | GoalGenerator_Alert, BPA_Alert, NPC_GathererScout | **COMPLIANT** |
+| Random_Aggression_Stalker_System_Implementation_Guide | v2.2 | GoalGenerator_RandomAggression, NPC_ReturnedStalker, TaggedDialogueSet_Returned | **COMPLIANT** |
 
 ---
 
-## CRITICAL VIOLATION: SpawnActor vs SpawnNPC
+## RESOLVED: SpawnActor → SpawnNPC (v4.34)
 
-### The Problem
+### The Problem (Now Fixed)
 
 **Guide Requirement (Biomechanical_Detachment v1.2, line 339-340):**
 ```
@@ -68,48 +71,70 @@ This audit validates NPC implementation guides against manifest.yaml, tech docs,
 > - NPC is not registered in the subsystem
 ```
 
-**Manifest Reality (BP_BiomechHost - line 9971-9975):**
+### v4.34 Resolution
+
+**Generator Enhancement:**
+- Added `CreateSpawnNPCNode` function to `GasAbilityGeneratorGenerators.cpp`
+- Creates `GetSubsystem<UNarrativeCharacterSubsystem>` + `SpawnNPC` nodes
+- Auto-wires subsystem output to SpawnNPC target
+- Exposes `NPCData` and `Transform` pins for manifest connections
+
+**Updated Manifest (BP_BiomechHost):**
 ```yaml
+variables:
+  # NPCDefinition for spawning BiomechCreature on death via SpawnNPC
+  - name: PhaseSpawnDefinition
+    type: Object
+    class: NPCDefinition
+    instance_editable: true
+
+# In function_overrides.HandleDeath:
 - id: SpawnCreature
-  type: SpawnActor
+  type: SpawnNPC
   properties:
-    actor_class_variable: PhaseSpawnClass
+    npc_definition_variable: PhaseSpawnDefinition
   position: [800, 0]
+
+connections:
+  - from: [GetSpawnTransform, ReturnValue]
+    to: [SpawnCreature, Transform]
+  - from: [SpawnCreature, ReturnValue]
+    to: [IsValid_Spawned, Object]
 ```
 
-**Manifest Reality (BP_WardenHusk - line 8918-8923):**
+**Updated Manifest (BP_WardenHusk):**
 ```yaml
+variables:
+  # NPCDefinition for spawning WardenCore on death via SpawnNPC
+  - name: PhaseSpawnDefinition
+    type: Object
+    class: NPCDefinition
+    instance_editable: true
+
+# In function_overrides.HandleDeath:
 - id: SpawnCore
-  type: SpawnActor
+  type: SpawnNPC
   properties:
-    actor_class_variable: PhaseSpawnClass
+    npc_definition_variable: PhaseSpawnDefinition
   position: [800, 0]
+
+connections:
+  - from: [GetSpawnTransform, ReturnValue]
+    to: [SpawnCore, Transform]
+  - from: [SpawnCore, ReturnValue]
+    to: [IsValid_Spawned, Object]
 ```
 
-### Root Cause Analysis
+### Impact Assessment (Now Resolved)
 
-The manifest generator has a `SpawnActor` node type but lacks a `SpawnNPC` node type that calls `NarrativeCharacterSubsystem.SpawnNPC()`.
-
-### Impact Assessment
-
-| Component | With SpawnActor | With SpawnNPC |
-|-----------|-----------------|---------------|
-| NPCDefinition | null | Properly set |
-| AbilityConfiguration | Not applied | Applied |
-| ActivityConfiguration | Not applied | Applied |
-| Faction Tags | Not set | Set from NPCDef |
-| Subsystem Registration | Not registered | Registered |
-| AI Behavior | Non-functional | Functional |
-
-**Severity: CRITICAL** - The spawned phase-2 enemies will not function as NPCs.
-
-### Resolution Options
-
-1. **Add SpawnNPC node type to generator** - Implement a new node type that calls `GetWorld()->GetSubsystem<UNarrativeCharacterSubsystem>()->SpawnNPC()`
-
-2. **Use CallFunction workaround** - Chain CallFunction nodes to replicate the SpawnNPC call sequence (complex, error-prone)
-
-3. **Manual Blueprint fix** - After generation, manually edit the blueprints to use SpawnNPC (breaks regeneration)
+| Component | ~~With SpawnActor~~ | With SpawnNPC (v4.34) |
+|-----------|---------------------|----------------------|
+| NPCDefinition | ~~null~~ | **Properly set** |
+| AbilityConfiguration | ~~Not applied~~ | **Applied** |
+| ActivityConfiguration | ~~Not applied~~ | **Applied** |
+| Faction Tags | ~~Not set~~ | **Set from NPCDef** |
+| Subsystem Registration | ~~Not registered~~ | **Registered** |
+| AI Behavior | ~~Non-functional~~ | **Functional** |
 
 ---
 
@@ -147,13 +172,13 @@ Not applicable to NPC guides (player-specific).
 |-----------|----------------|---------------------|
 | HandleDeath Override | Server authority check -> Spawn new entity -> Call parent | Correct pattern |
 | State Tags | Applied during transition (State.Warden.Ejecting, etc.) | Correct |
-| Spawn Method | **SpawnActor in manifest** | **VIOLATION** |
+| Spawn Method | **SpawnNPC in manifest (v4.34)** | **COMPLIANT** |
 
 **Expected Flow:**
 1. Entity dies -> OnDied delegate fires
 2. HandleDeath override executes
 3. Server authority check
-4. **SpawnNPC** (NOT SpawnActor) creates phase-2 entity with full NPC initialization
+4. **SpawnNPC** creates phase-2 entity with full NPC initialization
 5. Original entity calls parent HandleDeath
 
 **Locked Status:** Pattern is **NOT explicitly locked** in LOCKED_CONTRACTS.md but follows established Narrative Pro conventions.
@@ -190,11 +215,12 @@ Not applicable to NPC guides (player-specific).
 
 | Component | Implementation | Status |
 |-----------|----------------|--------|
-| Goal_FormationFollow | Custom goal for formation slots | Manual creation guide |
-| BT Services | Formation position calculation | Manual creation guide |
+| Goal_FormationFollow | Custom goal for formation slots | **Manifest automated** |
+| BTS_CalculateFormationPosition | Formation position calculation service | **Manifest automated** |
+| BTS_AdjustFormationSpeed | Speed adjustment service | **Manifest automated** |
 | Activity System | Uses standard Narrative Pro activities | COMPLIANT |
 
-**Locked Status:** Not locked - no manifest entries to validate.
+**Locked Status:** Not locked.
 
 ### Pattern 5: Alert-and-Reinforce (Gatherer Scout)
 
@@ -202,11 +228,12 @@ Not applicable to NPC guides (player-specific).
 
 | Component | Implementation | Status |
 |-----------|----------------|--------|
-| GoalGenerator_Alert | Creates alert goals from perception | Manual creation guide |
-| BPA_Alert | Signal animation + spawn reinforcements | Manual creation guide |
+| GoalGenerator_Alert | Creates alert goals from perception | **Manifest automated** |
+| BPA_Alert | Signal animation + spawn reinforcements | **Manifest automated** |
+| NPC_GathererScout | NPCDefinition | **Manifest automated** |
 | SpawnNPC | Correctly documented in guide | COMPLIANT |
 
-**Locked Status:** Not locked - manual creation guide, follows correct SpawnNPC pattern.
+**Locked Status:** Not locked.
 
 ### Pattern 6: Random Aggression Bond (Stalker)
 
@@ -214,7 +241,9 @@ Not applicable to NPC guides (player-specific).
 
 | Component | Implementation | Status |
 |-----------|----------------|--------|
-| GoalGenerator_RandomAggression | Stacking bond system with timers | Manual creation guide |
+| GoalGenerator_RandomAggression | Stacking bond system with timers | **Manifest automated** |
+| NPC_ReturnedStalker | NPCDefinition | **Manifest automated** |
+| TaggedDialogueSet_Returned | Contextual barks | **Manifest automated** |
 | Tagged Dialogue | Integration with TaggedDialogueSet | COMPLIANT |
 | Defend Mechanic | Player damage binding | COMPLIANT |
 | Timer System | Multiple independent timers | **See R-TIMER-1 analysis** |
@@ -226,7 +255,7 @@ The guide uses Set Timer by Event with looping enabled - this is acceptable for 
 - AttackCheckTimerHandle cleanup
 - FollowDurationTimerHandle cleanup
 
-**Locked Status:** Not locked - manual creation guide, timer cleanup is properly documented.
+**Locked Status:** Not locked - timer cleanup is properly documented.
 
 ---
 
@@ -273,9 +302,9 @@ The guide uses Set Timer by Event with looping enabled - this is acceptable for 
 |-------|------------------|---------------------------|------------------|
 | Biomech | Yes (BPA_Patrol, BPA_Attack_Melee) | Yes (AC_BiomechHostBehavior, AC_BiomechCreatureBehavior) | Yes (GoalGenerator_Attack) |
 | Warden | Yes (BPA_Attack_Melee, BPA_Wander) | Yes (AC_WardenHuskBehavior, AC_WardenCoreBehavior) | Yes (GoalGenerator_Attack) |
-| Guard | Yes (BPA_FollowCharacter, BPA_Attack_Melee) | Yes (AC_GuardBehavior) | Yes (Goal_FormationFollow) |
+| Guard | Yes (BPA_FollowCharacter, BPA_Attack_Melee) | Yes (AC_FormationGuardBehavior) | Yes (Goal_FormationFollow) |
 | Support | Yes (BPA_SupportFollow) | Yes (AC_SupportBufferBehavior) | Yes (GoalGenerator_Attack) |
-| Exploder | Yes (BPA_Explode, BPA_Attack_Melee) | Yes (AC_ExploderBehavior) | Yes (GoalGenerator_Attack) |
+| Exploder | Yes (BPA_Explode, BPA_Attack_Melee) | Yes (AC_PossessedExploderBehavior) | Yes (GoalGenerator_Attack) |
 | Gatherer | Yes (BPA_Alert, BPA_Wander, BPA_Flee) | Yes (AC_GathererScoutBehavior) | Yes (GoalGenerator_Alert) |
 | Stalker | Yes (BPA_Patrol, BPA_FollowCharacter, BPA_Attack_Melee) | Yes (AC_ReturnedStalkerBehavior) | Yes (GoalGenerator_RandomAggression) |
 
@@ -285,9 +314,9 @@ The guide uses Set Timer by Event with looping enabled - this is acceptable for 
 |-------|---------------------|------------------------------|--------|
 | Biomech | NPC_BiomechHost, NPC_BiomechCreature | AC_BiomechHostBehavior, AC_BiomechCreatureBehavior | COMPLIANT |
 | Warden | NPC_WardenHusk, NPC_WardenCore | AC_WardenHuskBehavior, AC_WardenCoreBehavior | COMPLIANT |
-| Guard | NPC_Guard | AC_GuardBehavior | COMPLIANT |
+| Guard | NPC_FormationGuard | AC_FormationGuardBehavior | COMPLIANT |
 | Support | NPC_SupportBuffer | AC_SupportBufferBehavior | COMPLIANT |
-| Exploder | NPC_PossessedExploder | AC_ExploderBehavior | COMPLIANT |
+| Exploder | NPC_PossessedExploder | AC_PossessedExploderBehavior | COMPLIANT |
 | Gatherer | NPC_GathererScout | AC_GathererScoutBehavior | COMPLIANT |
 | Stalker | NPC_ReturnedStalker | AC_ReturnedStalkerBehavior | COMPLIANT |
 
@@ -295,53 +324,212 @@ The guide uses Set Timer by Event with looping enabled - this is acceptable for 
 
 ## ACTION ITEMS
 
-### Priority 1: CRITICAL
+### Priority 1: CRITICAL - **RESOLVED**
 
-| Item | Description | Owner |
-|------|-------------|-------|
-| **SPAWN-001** | Add SpawnNPC node type to generator OR fix BP_BiomechHost/BP_WardenHusk manifests | Generator Team |
+| Item | Description | Status |
+|------|-------------|--------|
+| ~~SPAWN-001~~ | ~~Add SpawnNPC node type to generator~~ | **RESOLVED (v4.34)** |
 
-### Priority 2: AUTOMATION GAPS (No Manual Creation Allowed)
+### Priority 2: AUTOMATION GAPS - **RESOLVED**
 
 > **POLICY:** All NPC systems must be fully automatable via manifest.yaml. Manual Blueprint creation is NOT acceptable.
 
-| Item | Guide | Current State | Required Action |
-|------|-------|---------------|-----------------|
-| **AUTO-001** | Guard_Formation_Follow | Manual creation guide | Add manifest entries for Goal_FormationFollow, BT services |
-| **AUTO-002** | Gatherer_Scout | Manual creation guide | Add manifest entries for GoalGenerator_Alert, BPA_Alert, reinforcement spawning |
-| **AUTO-003** | Random_Aggression_Stalker | Manual creation guide | Add manifest entries for GoalGenerator_RandomAggression with timer logic |
+| Item | Guide | Status |
+|------|-------|--------|
+| ~~AUTO-001~~ | ~~Guard_Formation_Follow~~ | **RESOLVED** - BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, Goal_FormationFollow in manifest |
+| ~~AUTO-002~~ | ~~Gatherer_Scout~~ | **RESOLVED** - GoalGenerator_Alert, BPA_Alert, NPC_GathererScout in manifest |
+| ~~AUTO-003~~ | ~~Random_Aggression_Stalker~~ | **RESOLVED** - GoalGenerator_RandomAggression, NPC_ReturnedStalker, TaggedDialogueSet_Returned in manifest |
 
 ### Priority 3: Documentation
 
-| Item | Description | Owner |
-|------|-------------|-------|
-| **DOC-001** | Add SpawnActor vs SpawnNPC warning to Generator Implementation Reference | Documentation |
-| **DOC-002** | Lock the Two-Phase Death Transition pattern in LOCKED_CONTRACTS.md | Documentation |
+| Item | Description | Status |
+|------|-------------|--------|
+| DOC-001 | Add SpawnActor vs SpawnNPC warning to Generator Implementation Reference | PENDING |
+| DOC-002 | Lock the Two-Phase Death Transition pattern in LOCKED_CONTRACTS.md | PENDING |
+
+---
+
+## SUGGESTED LOCKS (v4.34 Session Findings)
+
+Based on the v4.34 implementation session, the following patterns should be considered for addition to `LOCKED_CONTRACTS.md`:
+
+### LOCK-SUGGEST-1: SpawnNPC for NPC Spawning (R-SPAWN-1)
+
+**Pattern:** All NPC spawning in manifest blueprints MUST use `SpawnNPC` node type, NOT `SpawnActor`.
+
+**Rationale:**
+Raw `SpawnActor` does NOT call `SetNPCDefinition()` on the spawned NPC. Without this:
+- NPCDefinition property is null
+- AbilityConfiguration is never applied (no abilities granted)
+- ActivityConfiguration is never applied (no AI activities)
+- Faction tags are never set
+- NPC is not registered in the NarrativeCharacterSubsystem
+
+**Correct Pattern:**
+```yaml
+variables:
+  - name: SpawnDefinition
+    type: Object           # NOT TSubclassOf
+    class: NPCDefinition   # NPCDefinition instance reference
+
+nodes:
+  - id: SpawnNPC
+    type: SpawnNPC
+    properties:
+      npc_definition_variable: SpawnDefinition
+```
+
+**Wrong Pattern (LOCKED - DO NOT USE):**
+```yaml
+variables:
+  - name: SpawnClass
+    type: Class
+    class: NarrativeNPCCharacter
+
+nodes:
+  - id: SpawnActor
+    type: SpawnActor
+    properties:
+      actor_class_variable: SpawnClass
+```
+
+**Severity:** CRITICAL - Spawned NPCs will be non-functional shells.
+
+---
+
+### LOCK-SUGGEST-2: Two-Phase Death Transition (R-PHASE-1)
+
+**Pattern:** Multi-phase enemies (Warden Husk → Core, Biomech Host → Creature) MUST:
+1. Override `HandleDeath` function
+2. Check `HasAuthority()` before spawning
+3. Use `SpawnNPC` (not SpawnActor) for phase-2 entity
+4. Call parent `HandleDeath` after spawn
+
+**Correct Pattern:**
+```yaml
+function_overrides:
+  - name: HandleDeath
+    nodes:
+      - id: AuthCheck
+        type: CallFunction
+        properties:
+          function: HasAuthority
+      - id: Branch_Auth
+        type: Branch
+      - id: SpawnPhase2
+        type: SpawnNPC
+        properties:
+          npc_definition_variable: PhaseSpawnDefinition
+      - id: CallParent
+        type: CallParent
+    connections:
+      - from: [AuthCheck, ReturnValue]
+        to: [Branch_Auth, Condition]
+      - from: [Branch_Auth, True]
+        to: [SpawnPhase2, Exec]
+      - from: [SpawnPhase2, Exec]
+        to: [CallParent, Exec]
+```
+
+**Severity:** HIGH - Incorrect phase transitions break enemy progression.
+
+---
+
+### LOCK-SUGGEST-3: Delegate Binding CustomEvent Signature (R-DELEGATE-1)
+
+**Pattern:** When using `delegate_bindings`, the corresponding CustomEvent in `event_graph` MUST have parameters matching the delegate signature EXACTLY.
+
+**Rationale:**
+- Event graph connections are made BEFORE delegate_bindings runs
+- Connections reference pin names that must exist on the CustomEvent
+- Parameter names must match delegate signature (e.g., `DamagerCauserASC`, `Damage`, `Spec` for OnDamagedBy)
+
+**Delegate Signatures (Narrative Pro v2.2):**
+| Delegate | Parameters |
+|----------|------------|
+| OnDamagedBy | `DamagerCauserASC: NarrativeAbilitySystemComponent`, `Damage: Float`, `Spec: GameplayEffectSpec` |
+| OnDealtDamage | `DamagedASC: NarrativeAbilitySystemComponent`, `Damage: Float`, `Spec: GameplayEffectSpec` |
+| OnDied | `KilledActor: Actor`, `KilledActorASC: NarrativeAbilitySystemComponent` |
+| OnHealedBy | `Healer: NarrativeAbilitySystemComponent`, `Amount: Float`, `Spec: GameplayEffectSpec` |
+
+**Correct Pattern:**
+```yaml
+delegate_bindings:
+  - id: BindDamage
+    delegate: OnDamagedBy
+    source: OwnerASC
+    handler: HandleDamage
+
+event_graph:
+  nodes:
+    - id: Event_HandleDamage
+      type: CustomEvent
+      properties:
+        event_name: HandleDamage
+        parameters:
+          - name: DamagerCauserASC       # MUST match delegate
+            type: NarrativeAbilitySystemComponent
+          - name: Damage                 # MUST match delegate
+            type: Float
+          - name: Spec                   # MUST match delegate
+            type: GameplayEffectSpec
+```
+
+**Severity:** HIGH - Mismatched signatures cause "Signature Error" compile failures.
+
+---
+
+### LOCK-SUGGEST-4: NPCDefinition Variable Type (R-NPCDEF-1)
+
+**Pattern:** Variables storing NPCDefinition references for SpawnNPC MUST use `type: Object` with `class: NPCDefinition`, NOT `type: Class`.
+
+**Rationale:**
+- `SpawnNPC()` takes `UNPCDefinition*` (object instance), not `TSubclassOf<>`
+- Using `type: Class` creates a class reference pin, not an object reference
+- The SpawnNPC node expects `NPCData` pin to receive an object
+
+**Correct:**
+```yaml
+variables:
+  - name: PhaseSpawnDefinition
+    type: Object
+    class: NPCDefinition
+    instance_editable: true
+```
+
+**Wrong:**
+```yaml
+variables:
+  - name: PhaseSpawnClass
+    type: Class
+    class: NarrativeNPCCharacter
+```
+
+**Severity:** MEDIUM - Wrong type causes pin connection failures.
 
 ---
 
 ## CONCLUSION
 
-All NPC guides are technically sound and follow Narrative Pro conventions. The naming convention updates (NPC_*, AC_*Behavior) are complete across all 7 guides.
+All NPC guides are technically sound, follow Narrative Pro conventions, and are fully automated via manifest.yaml.
 
-### Issues Summary
+### Issues Summary (v4.34)
 
-| Issue Type | Count | Guides Affected |
-|------------|-------|-----------------|
-| **SpawnActor Violation** | 2 | Biomech, Warden |
-| **Missing Automation** | 3 | Guard, Gatherer, Stalker |
-| **Fully Compliant** | 2 | Support Buffer, Possessed Exploder |
+| Issue Type | Count | Resolution |
+|------------|-------|------------|
+| ~~SpawnActor Violation~~ | ~~2~~ | **RESOLVED** - SpawnNPC node added |
+| ~~Missing Automation~~ | ~~3~~ | **RESOLVED** - All guides have manifest entries |
+| **Fully Compliant** | **7** | All guides passing |
 
-### Critical Actions Required
+### v4.34 Resolution Summary
 
-1. **SpawnNPC Node Type:** Add `SpawnNPC` node to generator that calls `NarrativeCharacterSubsystem.SpawnNPC()`. This fixes Biomech and Warden phase transitions.
+1. **SpawnNPC Node Type:** Added to generator - creates `GetSubsystem<UNarrativeCharacterSubsystem>` + `SpawnNPC()` call chain with proper wiring.
 
-2. **Automation for Manual Guides:** The following guides currently require manual Blueprint creation, which is NOT acceptable:
-   - **Guard_Formation_Follow:** Needs manifest entries for Goal_FormationFollow, BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed
-   - **Gatherer_Scout:** Needs manifest entries for GoalGenerator_Alert, BPA_Alert, reinforcement spawn logic
-   - **Random_Aggression_Stalker:** Needs manifest entries for GoalGenerator_RandomAggression with full timer/state machine logic
+2. **Manifest Updates:**
+   - BP_BiomechHost: Variable changed to NPCDefinition, uses SpawnNPC node
+   - BP_WardenHusk: Variable changed to NPCDefinition, uses SpawnNPC node
 
-**Do NOT proceed with manual Blueprint creation.** All NPC systems must be fully automatable via manifest.yaml.
+3. **Generation Result:** 187/187 assets passing (0 failures)
 
 ---
 
@@ -349,6 +537,7 @@ All NPC guides are technically sound and follow Narrative Pro conventions. The n
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | January 2026 | **v4.34 Resolution:** SpawnNPC node type added to generator. BP_BiomechHost and BP_WardenHusk fixed. All 7 guides now COMPLIANT. Updated action items to RESOLVED. |
 | 1.1 | January 2026 | Added NO MANUAL CREATION policy. Marked Guard, Gatherer, Stalker as NEEDS AUTOMATION. Added Priority 2 action items for automation gaps. |
 | 1.0 | January 2026 | Initial comprehensive audit |
 
