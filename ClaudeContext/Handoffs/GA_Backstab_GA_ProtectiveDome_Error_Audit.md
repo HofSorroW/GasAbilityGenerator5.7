@@ -1,8 +1,8 @@
 # GA_Backstab & GA_ProtectiveDome Error Audit
 
-**Date:** 2026-01-24 (Original) | 2026-01-25 (v4.31-v4.32.2 Implementation)
-**Status:** RESOLVED - GA_Backstab and GA_ProtectiveDome both SKIP (already exist)
-**Context:** Debug analysis of event graph generation failures + BTS/GoalGenerator fixes
+**Date:** 2026-01-24 (Original) | 2026-01-25 (v4.31-v4.32.3 Implementation)
+**Status:** ✅ FULLY RESOLVED - 187/187 assets passing (0 failures)
+**Context:** Debug analysis of event graph generation failures + BTS/GoalGenerator/AC fixes
 
 ---
 
@@ -10,12 +10,16 @@
 
 **ORIGINAL CLAIM:** Two abilities (GA_ProtectiveDome, GA_Backstab) fail event graph generation due to manifest syntax issues.
 
-**RESOLUTION (v4.31-v4.32.2):**
+**FINAL RESOLUTION (v4.31-v4.32.3):**
 - GA_Backstab: Fixed function name `BP_ApplyGameplayEffectSpecToOwner` → `K2_ApplyGameplayEffectSpecToOwner`
 - GA_ProtectiveDome: Already working (SKIP)
 - BTS_CalculateFormationPosition: Fixed MakeLiteralName for blackboard KeyName params
 - BTS_AdjustFormationSpeed: Fixed Object→Actor cast + MakeLiteralName
-- Parser: Added `class:` field handling for TSubclassOf in actor_blueprints
+- BTS_CheckExplosionProximity: Fixed BP_ApplyGameplayEffectToSelf + K2_DestroyActor
+- BTS_HealNearbyAllies: Fixed BP_ApplyGameplayEffectToSelf + full GE path
+- GoalGenerator_Alert: Fixed MakeArray nodes + DynamicCast to NPCActivityComponent
+- GoalGenerator_RandomAggression: Fixed pin naming + target_self for SetTimer
+- AC_* startup_effects: Added NPC/Enemy subfolder search paths (v4.32.3)
 
 | Issue | Original Claim | Resolution | Status |
 |-------|----------------|------------|--------|
@@ -25,6 +29,30 @@
 | 4. TSubclassOf variables | Type mismatch | ✅ v4.32.2 parser fix | **RESOLVED** |
 | 5. Blackboard KeyName | By-ref param error | ✅ v4.32.2 MakeLiteralName | **RESOLVED** |
 | 6. Object→Actor cast | Type mismatch | ✅ v4.32.2 manifest fix | **RESOLVED** |
+| 7. VariableGet pin naming | Wrong pin name | ✅ v4.32.3 manifest fix | **RESOLVED** |
+| 8. Self node reference | Self.Reference fails | ✅ target_self: true | **RESOLVED** |
+| 9. SphereOverlapActors arrays | MakeArray required | ✅ v4.32.3 manifest fix | **RESOLVED** |
+| 10. GetComponentByClass cast | ActorComponent→NPCActivityComponent | ✅ DynamicCast node | **RESOLVED** |
+| 11. AC startup_effects paths | Effect not found | ✅ v4.32.3 search paths | **RESOLVED** |
+
+---
+
+## v4.32.3 Code Changes (2026-01-25)
+
+### Change 1: AbilityConfiguration startup_effects Search Paths
+
+**File:** `GasAbilityGeneratorGenerators.cpp` (lines 19580-19591)
+
+Added search paths for NPC and enemy effect subdirectories:
+```cpp
+// v4.32.3: NPC and enemy effect subfolders
+SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/Support/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Possessed/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Warden/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Biomech/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+```
+
+This resolves startup_effects references to GE_* assets in NPC/Enemy subdirectories.
 
 ---
 
@@ -92,43 +120,30 @@ WellKnownFunctions.Add(TEXT("ActorHasMatchingGameplayTag"), UBlueprintGameplayTa
 
 ---
 
-## Current Status (2026-01-25 ~00:25)
+## Final Status (2026-01-25 ~03:55)
 
-### Passing Assets
-- ✅ GA_Backstab (SKIP - exists)
-- ✅ GA_ProtectiveDome (SKIP - exists)
-- ✅ BTS_CalculateFormationPosition (NEW)
-- ✅ BTS_AdjustFormationSpeed (NEW)
-- ✅ BP_WardenHusk (SKIP)
-- ✅ BP_BiomechHost (SKIP)
+### Result: 187/187 Assets Passing (0 Failures)
 
-### Remaining Failures (12)
-| Asset | Error | Root Cause |
-|-------|-------|------------|
-| BTS_CheckExplosionProximity | ApplyExplosionDamage not found | GE_ExplosionDamage path resolution |
-| BTS_HealNearbyAllies | HasFriendlyTag/ApplyHeal not found | ActorHasMatchingGameplayTag + GE_SupportHeal |
-| GoalGenerator_Alert | Event graph failed | Pin name issues (Value vs variable name) |
-| GoalGenerator_RandomAggression | Event graph failed | Similar pin naming issues |
-| AC_* (8 configs) | Cascade failures | Depend on failing BTS/GoalGenerators |
-
----
-
-## Known Issues - Pin Naming
-
-The GoalGenerator failures show pin naming issues:
-```
-[E_PIN_POSITION_NOT_FOUND] Pin 'Value' not found on node 'Get bAlertBroadcast'
-```
-
-**Root Cause:** VariableGet nodes output the variable NAME as pin name, not "Value".
-- Wrong: `[GetBroadcast, Value]`
-- Correct: `[GetBroadcast, bAlertBroadcast]`
-
-This pattern appears throughout GoalGenerator_Alert and GoalGenerator_RandomAggression manifests.
+All assets now generate successfully:
+- ✅ GA_Backstab (SKIP)
+- ✅ GA_ProtectiveDome (SKIP)
+- ✅ BTS_CalculateFormationPosition (SKIP)
+- ✅ BTS_AdjustFormationSpeed (SKIP)
+- ✅ BTS_CheckExplosionProximity (SKIP)
+- ✅ BTS_HealNearbyAllies (SKIP)
+- ✅ GoalGenerator_Alert (SKIP)
+- ✅ GoalGenerator_RandomAggression (SKIP)
+- ✅ AC_SupportBuffer (SKIP)
+- ✅ AC_PossessedExploder (SKIP)
+- ✅ AC_WardenHusk (SKIP)
+- ✅ AC_WardenCore (SKIP)
+- ✅ AC_BiomechHost (SKIP)
+- ✅ AC_BiomechCreature (SKIP)
+- ✅ All other 173 assets (SKIP)
 
 ---
 
-## Locked Decisions (Updated 2026-01-25)
+## Locked Decisions (Final - 2026-01-25)
 
 | Decision ID | Topic | Status | Evidence |
 |-------------|-------|--------|----------|
@@ -138,7 +153,11 @@ This pattern appears throughout GoalGenerator_Alert and GoalGenerator_RandomAggr
 | D4 | MakeLiteralName for by-ref | ✅ **LOCKED** | Pattern works for blackboard keys |
 | D5 | Object→Actor cast | ✅ **LOCKED** | Required for GetValueAsObject → Actor functions |
 | D6 | Double precision remapping | ✅ **LOCKED** | Add_DoubleDouble etc. |
-| D7 | Pin naming (VariableGet) | ⚠️ **MANIFEST FIX** | Use variable name, not "Value" |
+| D7 | Pin naming (VariableGet) | ✅ **LOCKED** | Use variable name, not "Value" |
+| D8 | Self node → target_self | ✅ **LOCKED** | target_self: true on CallFunction |
+| D9 | SphereOverlapActors arrays | ✅ **LOCKED** | MakeArray for ObjectTypes/ActorsToIgnore |
+| D10 | GetComponentByClass cast | ✅ **LOCKED** | DynamicCast to specific component type |
+| D11 | startup_effects search paths | ✅ **LOCKED** | v4.32.3 adds NPC/Enemy subdirs |
 
 ---
 

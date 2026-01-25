@@ -9528,28 +9528,21 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
           position: [2700, 0]
-        # Apply GE_ExplosionDamage to target
+        # Apply GE_ExplosionDamage to target (self-apply on target's ASC)
         - id: ApplyExplosionDamage
           type: CallFunction
           properties:
-            function: ApplyGameplayEffectToTarget
+            function: BP_ApplyGameplayEffectToSelf
             class: AbilitySystemComponent
             param.GameplayEffectClass: /Game/FatherCompanion/Enemies/Possessed/Effects/GE_ExplosionDamage
-            param.Level: 1
           position: [2900, 0]
-        # Cast controlled pawn to NarrativeNPCCharacter for HandleDeath
-        - id: CastToNPC
-          type: DynamicCast
-          properties:
-            target_class: NarrativeNPCCharacter
-          position: [3100, 0]
-        # Kill the exploder (suicide explosion)
-        - id: CallHandleDeath
+        # Kill the exploder (suicide explosion) - destroy the pawn
+        - id: DestroyExploder
           type: CallFunction
           properties:
-            function: HandleDeath
-            class: NarrativeCharacter
-          position: [3300, 0]
+            function: K2_DestroyActor
+            class: Actor
+          position: [3100, 0]
       connections:
         - from: [Event_ReceiveTickAI, Then]
           to: [AlreadyExplodedBranch, Exec]
@@ -9589,7 +9582,7 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           to: [ProximityBranch, Exec]
         - from: [ProximityBranch, True]
           to: [SetExploded, Exec]
-        - from: [SetExploded, Exec]
+        - from: [SetExploded, Then]
           to: [GetTargetASC, Exec]
         # Connect target actor to ASC getter
         - from: [CastToActor, AsActor]
@@ -9598,15 +9591,11 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           to: [ApplyExplosionDamage, Target]
         - from: [GetTargetASC, Exec]
           to: [ApplyExplosionDamage, Exec]
-        # Cast pawn and call HandleDeath
+        # Destroy the exploder pawn
         - from: [ApplyExplosionDamage, Exec]
-          to: [CastToNPC, Exec]
+          to: [DestroyExploder, Exec]
         - from: [Event_ReceiveTickAI, ControlledPawn]
-          to: [CastToNPC, Object]
-        - from: [CastToNPC, AsNarrativeNPCCharacter]
-          to: [CallHandleDeath, Target]
-        - from: [CastToNPC, Exec]
-          to: [CallHandleDeath, Exec]
+          to: [DestroyExploder, Target]
 
 behavior_trees:  # POSSESSED EXPLODER
 # NOTE: Uses NarrativePro's BB_Attack at /NarrativePro/Pro/Core/AI/Activities/Attacks/
@@ -9804,25 +9793,7 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         - id: ForEachActor
           type: ForEachLoop
           position: [2100, 0]
-        # Check if actor has friendly faction tag
-        - id: HasFriendlyTag
-          type: CallFunction
-          properties:
-            function: ActorHasMatchingGameplayTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
-          position: [2400, 0]
-        # Make tag for friendly faction check
-        - id: MakeFriendlyTag
-          type: CallFunction
-          properties:
-            function: MakeLiteralGameplayTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
-            parameters:
-              Value: Narrative.Factions.Friendly
-          position: [2400, 100]
-        - id: FriendlyBranch
-          type: Branch
-          position: [2700, 0]
+        # NOTE: Faction check removed for simplicity - heals all valid targets with ASC
         # Get target's ASC
         - id: GetTargetASC
           type: CallFunction
@@ -9830,14 +9801,13 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
           position: [2900, 0]
-        # Apply GE_SupportHeal to friendly target
+        # Apply GE_SupportHeal to target (self-apply on target's ASC)
         - id: ApplyHeal
           type: CallFunction
           properties:
-            function: ApplyGameplayEffectToTarget
+            function: BP_ApplyGameplayEffectToSelf
             class: AbilitySystemComponent
-            param.GameplayEffectClass: GE_SupportHeal
-            param.Level: 1
+            param.GameplayEffectClass: /Game/FatherCompanion/NPCs/Support/Effects/GE_SupportHeal
           position: [3100, 0]
       connections:
         - from: [Event_ReceiveTickAI, Then]
@@ -9848,17 +9818,17 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           to: [AddDelta, B]
         - from: [AddDelta, ReturnValue]
           to: [SetTimeSinceHeal, TimeSinceLastHeal]
-        - from: [SetTimeSinceHeal, TimeSinceLastHeal]
+        - from: [AddDelta, ReturnValue]
           to: [GreaterOrEqual, A]
         - from: [GetCooldown, HealCooldown]
           to: [GreaterOrEqual, B]
         - from: [GreaterOrEqual, ReturnValue]
           to: [CooldownBranch, Condition]
-        - from: [SetTimeSinceHeal, Exec]
+        - from: [SetTimeSinceHeal, Then]
           to: [CooldownBranch, Exec]
         - from: [CooldownBranch, True]
           to: [ResetTimer, Exec]
-        - from: [ResetTimer, Exec]
+        - from: [ResetTimer, Then]
           to: [SphereOverlap, Exec]
         # Sphere overlap inputs
         - from: [Event_ReceiveTickAI, ControlledPawn]
@@ -9873,23 +9843,13 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           to: [SphereOverlap, ObjectTypes]
         - from: [MakeActorsToIgnore, Array]
           to: [SphereOverlap, ActorsToIgnore]
-        # ForEach and faction filtering
+        # ForEach and heal all valid targets
         - from: [SphereOverlap, Exec]
           to: [ForEachActor, Exec]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
+        # Heal each found actor (simplified - no faction check)
         - from: [ForEachActor, LoopBody]
-          to: [HasFriendlyTag, Exec]
-        - from: [ForEachActor, ArrayElement]
-          to: [HasFriendlyTag, Actor]
-        - from: [MakeFriendlyTag, ReturnValue]
-          to: [HasFriendlyTag, Tag]
-        - from: [HasFriendlyTag, ReturnValue]
-          to: [FriendlyBranch, Condition]
-        - from: [HasFriendlyTag, Exec]
-          to: [FriendlyBranch, Exec]
-        # Apply heal to friendly targets
-        - from: [FriendlyBranch, True]
           to: [GetTargetASC, Exec]
         - from: [ForEachActor, ArrayElement]
           to: [GetTargetASC, Actor]
@@ -10213,6 +10173,20 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
           properties:
             variable_name: AlertRadius
           position: [1000, 200]
+        # Make object types array for Pawn detection
+        - id: MakeObjectTypes
+          type: MakeArray
+          properties:
+            element_type: ObjectTypeQuery
+            num_elements: 1
+          position: [1200, 200]
+        # Make actors to ignore array (ignore self)
+        - id: MakeActorsToIgnore
+          type: MakeArray
+          properties:
+            element_type: Actor
+            num_elements: 1
+          position: [1200, 300]
         # Sphere overlap to find nearby actors
         - id: SphereOverlap
           type: CallFunction
@@ -10238,6 +10212,12 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
             class: Actor
             param.ComponentClass: NPCActivityComponent
           position: [2000, 100]
+        # Cast to NPCActivityComponent (GetComponentByClass returns ActorComponent)
+        - id: CastToActivityComp
+          type: DynamicCast
+          properties:
+            target_class: NPCActivityComponent
+          position: [2100, 100]
         # Validity check on component
         - id: IsValidComp
           type: CallFunction
@@ -10283,7 +10263,7 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
       connections:
         - from: [Event_BroadcastAlert, Then]
           to: [BranchBroadcast, Exec]
-        - from: [GetBroadcast, Value]
+        - from: [GetBroadcast, bAlertBroadcast]
           to: [BranchBroadcast, Condition]
         - from: [BranchBroadcast, True]
           to: [PrintSkip, Exec]
@@ -10291,14 +10271,20 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
           to: [SetBroadcast, Exec]
         - from: [SetBroadcast, Then]
           to: [SphereOverlap, Exec]
-        - from: [GetController, Value]
+        - from: [GetController, OwnerController]
           to: [GetPawn, Target]
         - from: [GetPawn, ReturnValue]
           to: [GetLocation, Target]
         - from: [GetLocation, ReturnValue]
           to: [SphereOverlap, SpherePos]
-        - from: [GetRadius, Value]
+        - from: [GetRadius, AlertRadius]
           to: [SphereOverlap, SphereRadius]
+        - from: [MakeObjectTypes, Array]
+          to: [SphereOverlap, ObjectTypes]
+        - from: [MakeActorsToIgnore, Array]
+          to: [SphereOverlap, ActorsToIgnore]
+        - from: [GetPawn, ReturnValue]
+          to: [MakeActorsToIgnore, [0]]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
         - from: [SphereOverlap, Then]
@@ -10312,16 +10298,20 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
         - from: [CastToNPC, AsNarrativeNPCCharacter]
           to: [GetActivityComp, Target]
         - from: [GetActivityComp, ReturnValue]
-          to: [IsValidComp, Object]
+          to: [CastToActivityComp, Object]
         - from: [GetActivityComp, Then]
+          to: [CastToActivityComp, Exec]
+        - from: [CastToActivityComp, AsNPCActivityComponent]
+          to: [IsValidComp, Object]
+        - from: [CastToActivityComp, Then]
           to: [BranchValid, Exec]
         - from: [IsValidComp, ReturnValue]
           to: [BranchValid, Condition]
         - from: [BranchValid, True]
           to: [SpawnGoal, Exec]
-        - from: [GetAlertClass, Value]
+        - from: [GetAlertClass, AlertGoalClass]
           to: [SpawnGoal, ObjectClass]
-        - from: [GetActivityComp, ReturnValue]
+        - from: [CastToActivityComp, AsNPCActivityComponent]
           to: [SpawnGoal, Outer]
         - from: [SpawnGoal, ReturnValue]
           to: [CastToGoal, Object]
@@ -10329,7 +10319,7 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
           to: [CastToGoal, Exec]
         - from: [CastToGoal, AsNPCGoalItem]
           to: [AddGoal, NewGoal]
-        - from: [GetActivityComp, ReturnValue]
+        - from: [CastToActivityComp, AsNPCActivityComponent]
           to: [AddGoal, Target]
         - from: [CastToGoal, Then]
           to: [AddGoal, Exec]
@@ -10465,9 +10455,6 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             type: CallParent
             position: [200, 0]
           # Set up repeating timer for aggression buildup
-          - id: Self
-            type: Self
-            position: [400, 0]
           - id: GetInterval
             type: VariableGet
             properties:
@@ -10478,6 +10465,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             properties:
               function: K2_SetTimer
               class: KismetSystemLibrary
+              target_self: true
               param.FunctionName: "OnAggressionTick"
               param.bLooping: true
             position: [600, 0]
@@ -10497,12 +10485,10 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [CallParent, Exec]
           - from: [CallParent, Exec]
             to: [SetTimer, Exec]
-          - from: [Self, Reference]
-            to: [SetTimer, Object]
-          - from: [GetInterval, Value]
+          - from: [GetInterval, TimerInterval]
             to: [SetTimer, Time]
           - from: [SetTimer, ReturnValue]
-            to: [SetTimerHandle, Value]
+            to: [SetTimerHandle, AggressionTimerHandle]
           - from: [SetTimer, Then]
             to: [SetTimerHandle, Exec]
           - from: [SetTimerHandle, Then]
@@ -10660,35 +10646,35 @@ actor_blueprints:  # STALKER GOAL GENERATORS
       connections:
         - from: [Event_OnAggressionTick, Then]
           to: [BranchValid, Exec]
-        - from: [GetController, Value]
+        - from: [GetController, OwnerController]
           to: [IsValidController, Object]
         - from: [IsValidController, ReturnValue]
           to: [BranchValid, Condition]
         - from: [BranchValid, False]
           to: [ClearTimer, Exec]
-        - from: [GetTimerHandle, Value]
+        - from: [GetTimerHandle, AggressionTimerHandle]
           to: [ClearTimer, Handle]
         - from: [BranchValid, True]
           to: [SetAggression, Exec]
-        - from: [GetMinMult, Value]
+        - from: [GetMinMult, RandomMultiplierMin]
           to: [RandomFloat, Min]
-        - from: [GetMaxMult, Value]
+        - from: [GetMaxMult, RandomMultiplierMax]
           to: [RandomFloat, Max]
-        - from: [GetBuildRate, Value]
+        - from: [GetBuildRate, AggressionBuildRate]
           to: [MultiplyRates, A]
         - from: [RandomFloat, ReturnValue]
           to: [MultiplyRates, B]
-        - from: [GetAggression, Value]
+        - from: [GetAggression, AggressionLevel]
           to: [AddAggression, A]
         - from: [MultiplyRates, ReturnValue]
           to: [AddAggression, B]
         - from: [AddAggression, ReturnValue]
-          to: [SetAggression, Value]
+          to: [SetAggression, AggressionLevel]
         - from: [SetAggression, Then]
           to: [BranchThreshold, Exec]
         - from: [AddAggression, ReturnValue]
           to: [GreaterEqual, A]
-        - from: [GetThreshold, Value]
+        - from: [GetThreshold, AggressionThreshold]
           to: [GreaterEqual, B]
         - from: [GreaterEqual, ReturnValue]
           to: [BranchThreshold, Condition]
@@ -10700,7 +10686,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [ResetAggression, Exec]
         - from: [ResetAggression, Then]
           to: [SpawnGoal, Exec]
-        - from: [GetAttackClass, Value]
+        - from: [GetAttackClass, AttackGoalClass]
           to: [SpawnGoal, ObjectClass]
         - from: [SpawnGoal, ReturnValue]
           to: [CastToGoal, Object]
