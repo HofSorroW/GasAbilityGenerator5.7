@@ -9836,10 +9836,14 @@ actor_blueprints:  # SUPPORT BUFFER
         inputs: []
         outputs: []
         nodes:
+          # v4.39.3: Use CallFunction for MakeLiteralBool
           - id: MakeTrue
-            type: MakeLiteralBool
+            type: CallFunction
             properties:
-              value: true
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+            data:
+              bool_value: true
           - id: SetCanHeal
             type: VariableSet
             properties:
@@ -9876,10 +9880,14 @@ actor_blueprints:  # SUPPORT BUFFER
             type: VariableSet
             properties:
               variable_name: bCanHeal
+          # v4.39.3: Use CallFunction for MakeLiteralBool
           - id: SetCooldownFalse
-            type: MakeLiteralBool
+            type: CallFunction
             properties:
-              value: false
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+            data:
+              bool_value: false
           # Start cooldown timer (calls ResetHealCooldown after HealCooldown seconds)
           - id: GetCooldownDuration
             type: VariableGet
@@ -9892,20 +9900,26 @@ actor_blueprints:  # SUPPORT BUFFER
             properties:
               function: K2_SetTimer
               class: KismetSystemLibrary
+          # v4.39.3: K2_SetTimer.FunctionName is string type in UE5.7
           - id: MakeTimerFunctionName
             type: CallFunction
             properties:
-              function: MakeLiteralName
+              function: MakeLiteralString
+              class: KismetSystemLibrary
             data:
-              name_value: ResetHealCooldown
+              string_value: ResetHealCooldown
           # Get target ASC
           - id: GetTargetASC
             type: CallFunction
             properties:
               function: GetAbilitySystemComponent
               class: AbilitySystemBlueprintLibrary
+          # v4.39.3: IsValid needs to be CallFunction type
           - id: ValidASC
-            type: IsValid
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
           - id: ASCBranch
             type: Branch
           # Get source ASC (self)
@@ -9917,12 +9931,13 @@ actor_blueprints:  # SUPPORT BUFFER
           - id: SelfRef
             type: Self
           # Make outgoing spec from Source ASC (not GameplayAbility)
+          # v4.39.3: Use full path for TSubclassOf resolution
           - id: MakeSpec
             type: CallFunction
             properties:
               function: MakeOutgoingSpec
               class: AbilitySystemComponent
-              param.GameplayEffectClass: GE_SupportHeal
+              param.GameplayEffectClass: /Game/FatherCompanion/NPCs/Support/Effects/GE_SupportHeal
           # Get heal amount
           - id: GetHealAmount
             type: VariableGet
@@ -9949,7 +9964,8 @@ actor_blueprints:  # SUPPORT BUFFER
               class: AbilitySystemComponent
         connections:
           # Authority check
-          - from: [Entry, Then]
+          # v4.39.3: FunctionEntry is the entry point for custom functions (not Entry)
+          - from: [FunctionEntry, Then]
             to: [HasAuthority, Exec]
           - from: [HasAuthority, ReturnValue]
             to: [AuthBranch, Condition]
@@ -9970,7 +9986,8 @@ actor_blueprints:  # SUPPORT BUFFER
           # Start timer (K2_SetTimer with function name)
           - from: [SetCooldown, Then]
             to: [StartCooldownTimer, Exec]
-          - from: [SelfForTimer, Reference]
+          # v4.39.3: Self node output pin is 'self' (lowercase)
+          - from: [SelfForTimer, self]
             to: [StartCooldownTimer, Object]
           - from: [MakeTimerFunctionName, ReturnValue]
             to: [StartCooldownTimer, FunctionName]
@@ -9979,7 +9996,8 @@ actor_blueprints:  # SUPPORT BUFFER
           # Get target ASC
           - from: [StartCooldownTimer, Exec]
             to: [GetTargetASC, Exec]
-          - from: [Entry, TargetCharacter]
+          # v4.39.3: FunctionEntry has the function input pins
+          - from: [FunctionEntry, TargetCharacter]
             to: [GetTargetASC, Actor]
           - from: [GetTargetASC, ReturnValue]
             to: [ValidASC, Object]
@@ -9990,7 +10008,8 @@ actor_blueprints:  # SUPPORT BUFFER
           # Get self ASC and make spec
           - from: [ASCBranch, True]
             to: [GetSelfASC, Exec]
-          - from: [SelfRef, Reference]
+          # v4.39.3: Self node output pin is 'self' (lowercase)
+          - from: [SelfRef, self]
             to: [GetSelfASC, Actor]
           - from: [GetSelfASC, ReturnValue]
             to: [MakeSpec, Target]
@@ -10167,12 +10186,8 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           properties:
             function: ApplyHealToTarget
           position: [3000, 0]
-        # Break loop after first heal (one target per tick per guide)
-        - id: BreakLoop
-          type: CallFunction
-          properties:
-            function: BreakExecution
-          position: [3400, 0]
+        # v4.39.3: Removed BreakLoop - cooldown in ApplyHealToTarget prevents multiple heals
+        # ForEach will continue but only first ally healed per tick interval
       connections:
         # Cast pawn to BP_SupportBuffer
         - from: [Event_ReceiveTickAI, Then]
@@ -10210,8 +10225,9 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         # Faction check
         - from: [CastToNarrativeChar, Then]
           to: [GetAttitude, Exec]
+        # v4.39.3: ArsenalStatics::GetAttitude uses TestActor and Target pins
         - from: [CastToSupport, AsBP_SupportBuffer]
-          to: [GetAttitude, Source]
+          to: [GetAttitude, TestActor]
         - from: [CastToNarrativeChar, AsNarrativeCharacter]
           to: [GetAttitude, Target]
         # Check if Friendly (ETeamAttitude::Friendly = 0)
@@ -10252,9 +10268,7 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           to: [CallApplyHeal, Target]
         - from: [CastToNarrativeChar, AsNarrativeCharacter]
           to: [CallApplyHeal, TargetCharacter]
-        # Break loop after first heal
-        - from: [CallApplyHeal, Exec]
-          to: [BreakLoop, Exec]
+        # v4.39.3: Removed BreakLoop connection - cooldown prevents multiple heals per tick
 
 behavior_trees:  # SUPPORT BUFFER
 # NOTE: Uses NarrativePro's BB_FollowCharacter at /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/

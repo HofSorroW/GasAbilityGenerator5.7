@@ -94,8 +94,10 @@ PowerShell automation script: `Tools/claude_automation.ps1`
 | `run` | Launch Unreal Editor | `UnrealEditor.exe "{project}"` |
 | `logs` | Get generation logs (after closing editor) | Reads `NP22B57.log`, filters for GasAbilityGenerator entries |
 | `full` | Build + launch editor | `build` then `run` |
-| `generate` | Headless commandlet generation (no editor UI) | `UnrealEditor.exe -run=GasAbilityGenerator -manifest="..." -unattended -nosplash -nullrhi` |
+| `generate` | Headless commandlet generation (no editor UI) | `UnrealEditor.exe -run=GasAbilityGenerator -manifest="..." -unattended -nosplash` |
 | `cycle` | Build + headless generation (most common) | `build` then `generate` |
+
+**IMPORTANT: Do NOT use `-nullrhi` flag** - It prevents Blueprint assets from persisting to disk. The headless generation works correctly without it.
 
 **Development Cycle (Editor UI):**
 1. Edit source files

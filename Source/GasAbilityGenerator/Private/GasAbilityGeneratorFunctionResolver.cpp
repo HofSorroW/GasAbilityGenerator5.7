@@ -38,6 +38,9 @@
 #include "Items/InventoryComponent.h"
 #include "Items/WeaponItem.h"
 #include "Items/EquippableItem.h"
+#include "UnrealFramework/NarrativeCharacter.h"
+// Note: ArsenalStatics not included directly due to header dependency chain issues
+// GetAttitude resolved via dynamic class lookup below
 
 // Static member definitions
 TMap<FString, UClass*> FGasAbilityGeneratorFunctionResolver::WellKnownFunctions;
@@ -224,6 +227,16 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("EquipItem"), UEquippableItem::StaticClass());
 	WellKnownFunctions.Add(TEXT("UnequipItem"), UEquippableItem::StaticClass());
 	WellKnownFunctions.Add(TEXT("IsEquipped"), UEquippableItem::StaticClass());
+
+	// v4.39.3: Narrative Pro Character functions
+	WellKnownFunctions.Add(TEXT("GetHealth"), ANarrativeCharacter::StaticClass());
+	WellKnownFunctions.Add(TEXT("GetMaxHealth"), ANarrativeCharacter::StaticClass());
+
+	// v4.39.3: Narrative Pro ArsenalStatics functions (dynamic lookup to avoid header chain issues)
+	if (UClass* ArsenalStaticsClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.ArsenalStatics")))
+	{
+		WellKnownFunctions.Add(TEXT("GetAttitude"), ArsenalStaticsClass);
+	}
 
 	// ========================================================================
 	// v4.29: Option 2 - Missing ScriptName entries from Parity Audit

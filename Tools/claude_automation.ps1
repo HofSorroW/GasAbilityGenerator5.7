@@ -196,14 +196,14 @@ switch ($Action) {
         Write-Host ""
 
         # Build argument list with proper quoting
+        # v4.39.3: Removed -nullrhi - it prevents Blueprint assets from persisting to disk
         $args = @(
             "`"$ProjectFile`"",
             "-run=GasAbilityGenerator",
             "-manifest=`"$ManifestPathUE`"",
             "-output=`"$OutputLogUE`"",
             "-unattended",
-            "-nosplash",
-            "-nullrhi"
+            "-nosplash"
         )
 
         Write-Host "Running: $EditorCmd $($args -join ' ')"
@@ -267,15 +267,14 @@ switch ($Action) {
         Write-Host "Manifest: $ManifestPathUE"
         Write-Host "Output: $OutputLogUE"
 
-        # Build argument list with proper quoting
+        # v4.39.3: Removed -nullrhi - it prevents Blueprint assets from persisting to disk
         $args = @(
             "`"$ProjectFile`"",
             "-run=GasAbilityGenerator",
             "-manifest=`"$ManifestPathUE`"",
             "-output=`"$OutputLogUE`"",
             "-unattended",
-            "-nosplash",
-            "-nullrhi"
+            "-nosplash"
         )
 
         # Run commandlet and capture output (use EditorCmd for headless operation)
