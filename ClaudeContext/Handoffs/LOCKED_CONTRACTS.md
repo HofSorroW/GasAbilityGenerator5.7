@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.32)
+# LOCKED_CONTRACTS.md (v4.38)
 
 ## Purpose
 
@@ -771,6 +771,87 @@ variables:
 
 ---
 
+## LOCKED CONTRACT 20 — P-BB-KEY-2 NarrativeProSettings BB Key Access (v4.38)
+
+### Context
+
+Narrative Pro centralizes blackboard key names in `UArsenalSettings`. BT Services and Activities must access these keys via the canonical Blueprint pattern, not hardcoded string literals.
+
+### Invariant
+
+1. For canonical Narrative Pro BB keys (`FollowTarget`, `AttackTarget`, `TargetLocation`, `TargetRotation`, `PlayerPawn`):
+   - **MUST** use: `Get Narrative Pro Settings → BBKey [Name]` node pattern
+   - **MUST NOT** use: `MakeLiteralName("KeyName")` hardcoded strings
+
+2. Access pattern in Blueprint:
+   ```
+   GetNarrativeProSettings (ArsenalStatics) → ReturnValue
+       ↓
+   PropertyGet (BBKey_FollowTarget / BBKey_AttackTarget / etc.) → FName
+       ↓
+   GetValueAsObject / SetValueAsVector (KeyName pin)
+   ```
+
+3. Manifest pattern:
+   ```yaml
+   - id: GetNarrativeProSettings
+     type: CallFunction
+     properties:
+       function: GetNarrativeProSettings
+       class: ArsenalStatics
+   - id: GetBBKeyFollowTarget
+     type: PropertyGet
+     properties:
+       property_name: BBKey_FollowTarget
+       target_class: ArsenalSettings
+   ```
+
+### Correct Pattern
+
+```yaml
+# v4.38: P-BB-KEY-2 compliant
+- id: GetNarrativeProSettings
+  type: CallFunction
+  properties:
+    function: GetNarrativeProSettings
+    class: ArsenalStatics
+- id: GetBBKeyFollowTarget
+  type: PropertyGet
+  properties:
+    property_name: BBKey_FollowTarget
+    target_class: ArsenalSettings
+
+connections:
+  - from: [GetNarrativeProSettings, ReturnValue]
+    to: [GetBBKeyFollowTarget, Target]
+  - from: [GetBBKeyFollowTarget, BBKey_FollowTarget]
+    to: [GetValueAsObject, KeyName]
+```
+
+### Forbidden
+
+- Using `MakeLiteralName("FollowTarget")` for canonical NP keys
+- Using `MakeLiteralName("AttackTarget")` for canonical NP keys
+- Hardcoding any key name that exists in `UArsenalSettings::BBKey_*`
+
+### Why LOCKED
+
+- Ensures consistency with Narrative Pro BTS implementations (BTS_AdjustFollowSpeed, etc.)
+- If Narrative Pro changes key names in settings, our code auto-adapts
+- Tech Reference v6_8.md:6016 explicitly documents this as the canonical pattern
+- Screenshots of NP BTS_AdjustFollowSpeed confirm this is the official NP approach
+
+### Reference
+
+- Manifest: `manifest.yaml` — BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, BTS_CheckExplosionProximity
+- Narrative Pro: `ArsenalStatics.h:97` — `GetNarrativeProSettings()` BlueprintPure function
+- Narrative Pro: `ArsenalSettings.h:76-80` — `BBKey_FollowTarget`, `BBKey_AttackTarget` properties
+- Tech Reference: `Father_Companion_Technical_Reference_v6_8.md:6016` — "Access pattern: Get Narrative Pro Settings -> BBKey [Name]"
+- Audit: Claude–GPT dual audit session (2026-01-26)
+- Implementation: v4.38
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -799,3 +880,4 @@ Any change that touches a LOCKED implementation must:
 | v4.32 | 2026-01-24 | Added Contract 14 — INV-INPUT-1 Input Architecture Invariants (Claude–GPT dual audit): input_tag valid only for Player ASC abilities; must use Narrative Pro built-in tags (Narrative.Input.Ability1/2/3); custom namespaces cause HasTagExact mismatch. Pending Erdem review for final ability-to-input mapping. |
 | v4.33 | 2026-01-24 | Added Contract 15 — D-DEATH-RESET Player Death Reset System (Claude–GPT dual audit): PlayerASC.OnDied bindings for DomeEnergy/SymbioteCharge reset; silent reset (no burst/VFX); GA_Death unchanged (OnDied delegate for custom logic); D-SACRIFICE-1 one-shot bypass documented. |
 | v4.34 | 2026-01-25 | Added Contracts 16-19 from NPC Guides audit (Claude–GPT dual audit): R-SPAWN-1 SpawnNPC-only for NPC spawning; R-PHASE-1 Two-phase death transition pattern; R-DELEGATE-1 Delegate binding CustomEvent signature matching; R-NPCDEF-1 NPCDefinition variable type (Object not TSubclassOf). |
+| v4.38 | 2026-01-26 | Added Contract 20 — P-BB-KEY-2 NarrativeProSettings BB Key Access (Claude–GPT dual audit): Canonical NP BB keys must use `Get Narrative Pro Settings → BBKey [Name]` pattern, not hardcoded MakeLiteralName. Fixed INC-4/5/6 in BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, BTS_CheckExplosionProximity. |

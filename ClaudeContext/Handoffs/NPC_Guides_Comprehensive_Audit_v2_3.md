@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 2.2 (Formation Guard BB Key Compliance)
+## Version 2.3 (P-BB-KEY-2 NarrativeProSettings Pattern)
 ## January 2026
 
 ---
@@ -11,7 +11,7 @@
 | Document Type | Consolidated Audit Report |
 | Scope | All 7 NPC Implementation Guides |
 | Auditor | Claude (Opus 4.5) - dual audit with GPT |
-| Plugin Version | GasAbilityGenerator v4.37.1 |
+| Plugin Version | GasAbilityGenerator v4.38 |
 | Context | UE5.7 + Narrative Pro v2.2 |
 | Status | **PASS - ALL SYSTEMS COMPLIANT** |
 
@@ -506,6 +506,40 @@ event_graph:
 
 ---
 
+#### P-BB-KEY-2: NarrativeProSettings BB Key Access Pattern (v4.38)
+**Classification:** LOCKED (Contract 20)
+**Status:** Implemented via INC-4, INC-5, INC-6
+**Source:** Father_Companion_Technical_Reference_v6_8.md:6016, NP BTS_AdjustFollowSpeed screenshots
+
+**Pattern:**
+- Access BB key names via `Get Narrative Pro Settings → BBKey [Name]` node pattern
+- Do NOT use hardcoded `MakeLiteralName("KeyName")` for canonical NP keys
+- Canonical NP keys: `BBKey_FollowTarget`, `BBKey_TargetLocation`, `BBKey_AttackTarget`, `BBKey_PlayerPawn`
+
+**Blueprint Access Pattern:**
+```
+GetNarrativeProSettings (ArsenalStatics)
+    ↓ ReturnValue
+PropertyGet (BBKey_FollowTarget / BBKey_AttackTarget / etc.)
+    ↓ FName output
+GetValueAsObject / SetValueAsVector / etc. (KeyName pin)
+```
+
+**Why LOCKED:**
+- Ensures consistency with Narrative Pro BTS implementations
+- If NP changes key names in settings, our code auto-adapts
+- Tech Reference v6_8.md:6016 explicitly documents canonical pattern
+- Screenshots of NP BTS_AdjustFollowSpeed confirm official NP approach
+
+**INC Tickets Fixed (v4.38):**
+| INC | Service | Violation | Resolution |
+|-----|---------|-----------|------------|
+| INC-4 | BTS_CalculateFormationPosition | `MakeLiteralName("FollowTarget")`, `MakeLiteralName("TargetLocation")` | Use `GetNarrativeProSettings → BBKey_FollowTarget/BBKey_TargetLocation` |
+| INC-5 | BTS_AdjustFormationSpeed | `MakeLiteralName("FollowTarget")` | Use `GetNarrativeProSettings → BBKey_FollowTarget` |
+| INC-6 | BTS_CheckExplosionProximity | `MakeLiteralName("AttackTarget")` | Use `GetNarrativeProSettings → BBKey_AttackTarget` |
+
+---
+
 ## AUTOMATION VERIFICATION
 
 ### Generation Results
@@ -576,6 +610,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.3 | 2026-01-26 | **P-BB-KEY-2 NarrativeProSettings Pattern (Claude-GPT Audit):** Research verified NP BTS_AdjustFollowSpeed uses `Get Narrative Pro Settings → BBKey Follow Target` (screenshots). Tech Reference v6_8.md:6016 documents pattern. Fixed INC-4 (BTS_CalculateFormationPosition), INC-5 (BTS_AdjustFormationSpeed), INC-6 (BTS_CheckExplosionProximity) - all now use NarrativeProSettings instead of MakeLiteralName. Added P-BB-KEY-2 DOC-ONLY pattern. Plugin version v4.38. |
 | 2.2 | 2026-01-26 | **Formation Guard BB Key Compliance (Claude-GPT Audit):** Fixed INC-1 (AC naming: Guide v2.6 uses `AC_FormationGuardBehavior`), INC-2 (BB key: Manifest uses `FollowTarget` per Narrative Pro `BBKey_FollowTarget`), INC-3 (Speed restore: BTS_AdjustFormationSpeed implements P-MOVE-1 via ReceiveActivationAI/DeactivationAI). Added P-FORMATION-SPEED-1 and P-BB-KEY-1 DOC-ONLY patterns. |
 | 2.1 | 2026-01-26 | **Claude-GPT Audit Closure:** Patched line 131 (Stalker "Cooldown/Reset" → "Stays aggressive permanently"). Added P-GG-TIMER-1 DOC-ONLY pattern. Added R-TIMER-1 cross-reference with scope clarification. |
 | 2.0 | 2026-01-25 | **Consolidated Report:** Merged NPC_Guides_Comprehensive_Audit_v1_0.md and NPC_Guides_Audit_Report.md. Added gameplay intent findings. Updated to v4.34 with all 4 new locked contracts (16-19). All 7 NPC systems PASS. |

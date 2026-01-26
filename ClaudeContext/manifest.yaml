@@ -9134,21 +9134,25 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [300, 0]
-        # v4.37.2: MakeLiteralName nodes for blackboard key names (by-ref params require input wires)
-        - id: MakeKeyName_FollowTarget
+        # v4.38: P-BB-KEY-2 - Use Get Narrative Pro Settings for canonical BB keys
+        - id: GetNarrativeProSettings
           type: CallFunction
           properties:
-            function: MakeLiteralName
-            class: KismetSystemLibrary
-            param.Value: FollowTarget
-          position: [450, 100]
-        - id: MakeKeyName_TargetLocation
-          type: CallFunction
+            function: GetNarrativeProSettings
+            class: ArsenalStatics
+          position: [400, 150]
+        - id: GetBBKeyFollowTarget
+          type: PropertyGet
           properties:
-            function: MakeLiteralName
-            class: KismetSystemLibrary
-            param.Value: TargetLocation
-          position: [1950, 100]
+            property_name: BBKey_FollowTarget
+            target_class: ArsenalSettings
+          position: [550, 100]
+        - id: GetBBKeyTargetLocation
+          type: PropertyGet
+          properties:
+            property_name: BBKey_TargetLocation
+            target_class: ArsenalSettings
+          position: [550, 200]
         # Get FollowTarget key value (the leader to follow) - per Narrative Pro BBKey_FollowTarget
         - id: GetFollowTarget
           type: CallFunction
@@ -9207,10 +9211,14 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           to: [GetFollowTarget, Target]
         - from: [GetBlackboard, Exec]
           to: [GetFollowTarget, Exec]
-        # v4.37.2: Connect MakeLiteralName outputs to blackboard key name pins
-        - from: [MakeKeyName_FollowTarget, ReturnValue]
+        # v4.38: P-BB-KEY-2 - Connect NarrativeProSettings BB keys
+        - from: [GetNarrativeProSettings, ReturnValue]
+          to: [GetBBKeyFollowTarget, Target]
+        - from: [GetNarrativeProSettings, ReturnValue]
+          to: [GetBBKeyTargetLocation, Target]
+        - from: [GetBBKeyFollowTarget, BBKey_FollowTarget]
           to: [GetFollowTarget, KeyName]
-        - from: [MakeKeyName_TargetLocation, ReturnValue]
+        - from: [GetBBKeyTargetLocation, BBKey_TargetLocation]
           to: [SetTargetLocation, KeyName]
         - from: [GetFollowTarget, ReturnValue]
           to: [CastToActor, Object]
@@ -9331,14 +9339,19 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [300, 200]
-        # v4.37.2: MakeLiteralName for blackboard key (by-ref params require input wires)
-        - id: MakeKeyName_FollowTarget
+        # v4.38: P-BB-KEY-2 - Use Get Narrative Pro Settings for canonical BB keys
+        - id: GetNarrativeProSettings
           type: CallFunction
           properties:
-            function: MakeLiteralName
-            class: KismetSystemLibrary
-            param.Value: FollowTarget
-          position: [450, 300]
+            function: GetNarrativeProSettings
+            class: ArsenalStatics
+          position: [400, 350]
+        - id: GetBBKeyFollowTarget
+          type: PropertyGet
+          properties:
+            property_name: BBKey_FollowTarget
+            target_class: ArsenalSettings
+          position: [550, 300]
         # Get FollowTarget (leader) - per Narrative Pro BBKey_FollowTarget
         - id: GetLeader
           type: CallFunction
@@ -9425,8 +9438,10 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           to: [GetLeader, Target]
         - from: [GetBlackboard, Exec]
           to: [GetLeader, Exec]
-        # v4.37.2: Connect MakeLiteralName output to blackboard key name pin
-        - from: [MakeKeyName_FollowTarget, ReturnValue]
+        # v4.38: P-BB-KEY-2 - Connect NarrativeProSettings BB key
+        - from: [GetNarrativeProSettings, ReturnValue]
+          to: [GetBBKeyFollowTarget, Target]
+        - from: [GetBBKeyFollowTarget, BBKey_FollowTarget]
           to: [GetLeader, KeyName]
         - from: [GetLeader, ReturnValue]
           to: [CastToActor, Object]
@@ -9554,14 +9569,19 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [600, 0]
-        # v4.32.2: MakeLiteralName for blackboard key (by-ref params require input wires)
-        - id: MakeKeyName_AttackTarget
+        # v4.38: P-BB-KEY-2 - Use Get Narrative Pro Settings for canonical BB keys
+        - id: GetNarrativeProSettings
           type: CallFunction
           properties:
-            function: MakeLiteralName
-            class: KismetSystemLibrary
-            param.Value: AttackTarget
-          position: [750, 100]
+            function: GetNarrativeProSettings
+            class: ArsenalStatics
+          position: [700, 150]
+        - id: GetBBKeyAttackTarget
+          type: PropertyGet
+          properties:
+            property_name: BBKey_AttackTarget
+            target_class: ArsenalSettings
+          position: [850, 100]
         - id: GetAttackTarget
           type: CallFunction
           properties:
@@ -9650,8 +9670,10 @@ actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
           to: [GetAttackTarget, Target]
         - from: [GetBlackboard, Exec]
           to: [GetAttackTarget, Exec]
-        # v4.32.2: Connect MakeLiteralName output to blackboard key name pin
-        - from: [MakeKeyName_AttackTarget, ReturnValue]
+        # v4.38: P-BB-KEY-2 - Connect NarrativeProSettings BB key
+        - from: [GetNarrativeProSettings, ReturnValue]
+          to: [GetBBKeyAttackTarget, Target]
+        - from: [GetBBKeyAttackTarget, BBKey_AttackTarget]
           to: [GetAttackTarget, KeyName]
         - from: [GetAttackTarget, ReturnValue]
           to: [CastToActor, Object]
