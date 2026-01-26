@@ -9777,17 +9777,236 @@ gameplay_effects:  # SUPPORT BUFFER
     folder: NPCs/Support/Effects
     duration_policy: Instant
 
+  # v4.39: Full NarrativeHealExecution with SetByCaller.Heal (INC-SB-4 fix)
   - name: GE_SupportHeal
     folder: NPCs/Support/Effects
     duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeHealExecution
+    setbycaller_magnitudes:
+      - tag: SetByCaller.Heal
+    asset_tag: Effect.Support.Heal
+    gameplay_cues:
+      - GameplayCue.Support.Heal
 
 actor_blueprints:  # SUPPORT BUFFER
+  # v4.39: Full guide implementation (INC-SB-3 fix) - all variables and functions
   - name: BP_SupportBuffer
     folder: NPCs/Support
     parent_class: NarrativeNPCCharacter
+    variables:
+      # Healing parameters
+      - name: HealRadius
+        type: Float
+        default_value: "500.0"
+        instance_editable: true
+      - name: HealAmount
+        type: Float
+        default_value: "50.0"
+        instance_editable: true
+      - name: HealCooldown
+        type: Float
+        default_value: "3.0"
+        instance_editable: true
+      # Speed boost parameters
+      - name: SpeedBoostPercent
+        type: Float
+        default_value: "30.0"
+        instance_editable: true
+      - name: SpeedBoostDuration
+        type: Float
+        default_value: "5.0"
+        instance_editable: true
+      # Cooldown tracking
+      - name: bCanHeal
+        type: Bool
+        default_value: "true"
+      # Track original speed for restoration (single target simplified)
+      - name: LastBoostedActor
+        type: Actor
+      - name: OriginalWalkSpeed
+        type: Float
+        default_value: "0.0"
+    custom_functions:
+      # ResetHealCooldown - Called by timer to reset bCanHeal
+      - name: ResetHealCooldown
+        inputs: []
+        outputs: []
+        nodes:
+          - id: SetCanHeal
+            type: VariableSet
+            properties:
+              variable_name: bCanHeal
+        connections:
+          # Set bCanHeal = true (default when no value specified)
+          - from: [Entry, Then]
+            to: [SetCanHeal, Exec]
+      # ApplyHealToTarget - Main healing function called by BTS_HealNearbyAllies
+      - name: ApplyHealToTarget
+        inputs:
+          - name: TargetCharacter
+            type: NarrativeCharacter
+        outputs: []
+        nodes:
+          # Authority check (multiplayer safety)
+          - id: HasAuthority
+            type: CallFunction
+            properties:
+              function: HasAuthority
+              class: Actor
+          - id: AuthBranch
+            type: Branch
+          # Cooldown check
+          - id: GetCanHeal
+            type: VariableGet
+            properties:
+              variable_name: bCanHeal
+          - id: CooldownBranch
+            type: Branch
+          # Set cooldown
+          - id: SetCooldown
+            type: VariableSet
+            properties:
+              variable_name: bCanHeal
+          - id: SetCooldownFalse
+            type: MakeLiteralBool
+            properties:
+              value: false
+          # Start cooldown timer (calls ResetHealCooldown after HealCooldown seconds)
+          - id: GetCooldownDuration
+            type: VariableGet
+            properties:
+              variable_name: HealCooldown
+          - id: SelfForTimer
+            type: Self
+          - id: StartCooldownTimer
+            type: CallFunction
+            properties:
+              function: K2_SetTimer
+              class: KismetSystemLibrary
+          - id: MakeTimerFunctionName
+            type: CallFunction
+            properties:
+              function: MakeLiteralName
+            data:
+              name_value: ResetHealCooldown
+          # Get target ASC
+          - id: GetTargetASC
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+              class: AbilitySystemBlueprintLibrary
+          - id: ValidASC
+            type: IsValid
+          - id: ASCBranch
+            type: Branch
+          # Get source ASC (self)
+          - id: GetSelfASC
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+              class: AbilitySystemBlueprintLibrary
+          - id: SelfRef
+            type: Self
+          # Make outgoing spec from Source ASC (not GameplayAbility)
+          - id: MakeSpec
+            type: CallFunction
+            properties:
+              function: MakeOutgoingSpec
+              class: AbilitySystemComponent
+              param.GameplayEffectClass: GE_SupportHeal
+          # Get heal amount
+          - id: GetHealAmount
+            type: VariableGet
+            properties:
+              variable_name: HealAmount
+          # Assign SetByCaller magnitude
+          - id: AssignMagnitude
+            type: CallFunction
+            properties:
+              function: AssignTagSetByCallerMagnitude
+              class: AbilitySystemBlueprintLibrary
+          - id: MakeHealTag
+            type: CallFunction
+            properties:
+              function: MakeLiteralGameplayTag
+              class: KismetGameplayTagLibrary
+            data:
+              tag_value: SetByCaller.Heal
+          # Apply to target
+          - id: ApplyToTarget
+            type: CallFunction
+            properties:
+              function: BP_ApplyGameplayEffectSpecToTarget
+              class: AbilitySystemComponent
+        connections:
+          # Authority check
+          - from: [Entry, Then]
+            to: [HasAuthority, Exec]
+          - from: [HasAuthority, ReturnValue]
+            to: [AuthBranch, Condition]
+          - from: [HasAuthority, Exec]
+            to: [AuthBranch, Exec]
+          # Cooldown check (if authorized)
+          - from: [AuthBranch, True]
+            to: [GetCanHeal, Exec]
+          - from: [GetCanHeal, bCanHeal]
+            to: [CooldownBranch, Condition]
+          - from: [GetCanHeal, Exec]
+            to: [CooldownBranch, Exec]
+          # Set cooldown (if can heal)
+          - from: [CooldownBranch, True]
+            to: [SetCooldown, Exec]
+          - from: [SetCooldownFalse, ReturnValue]
+            to: [SetCooldown, bCanHeal]
+          # Start timer (K2_SetTimer with function name)
+          - from: [SetCooldown, Then]
+            to: [StartCooldownTimer, Exec]
+          - from: [SelfForTimer, Reference]
+            to: [StartCooldownTimer, Object]
+          - from: [MakeTimerFunctionName, ReturnValue]
+            to: [StartCooldownTimer, FunctionName]
+          - from: [GetCooldownDuration, HealCooldown]
+            to: [StartCooldownTimer, Time]
+          # Get target ASC
+          - from: [StartCooldownTimer, Exec]
+            to: [GetTargetASC, Exec]
+          - from: [Entry, TargetCharacter]
+            to: [GetTargetASC, Actor]
+          - from: [GetTargetASC, ReturnValue]
+            to: [ValidASC, Object]
+          - from: [ValidASC, ReturnValue]
+            to: [ASCBranch, Condition]
+          - from: [GetTargetASC, Exec]
+            to: [ASCBranch, Exec]
+          # Get self ASC and make spec
+          - from: [ASCBranch, True]
+            to: [GetSelfASC, Exec]
+          - from: [SelfRef, Reference]
+            to: [GetSelfASC, Actor]
+          - from: [GetSelfASC, ReturnValue]
+            to: [MakeSpec, Target]
+          - from: [GetSelfASC, Exec]
+            to: [MakeSpec, Exec]
+          # Assign magnitude
+          - from: [MakeSpec, ReturnValue]
+            to: [AssignMagnitude, SpecHandle]
+          - from: [MakeHealTag, ReturnValue]
+            to: [AssignMagnitude, DataTag]
+          - from: [GetHealAmount, HealAmount]
+            to: [AssignMagnitude, Magnitude]
+          - from: [MakeSpec, Exec]
+            to: [AssignMagnitude, Exec]
+          # Apply to target
+          - from: [AssignMagnitude, ReturnValue]
+            to: [ApplyToTarget, SpecHandle]
+          - from: [GetTargetASC, ReturnValue]
+            to: [ApplyToTarget, Target]
+          - from: [AssignMagnitude, Exec]
+            to: [ApplyToTarget, Exec]
     event_graph:
       nodes:
-        # BeginPlay - Log spawn (healing via BTS_HealNearbyAllies service)
+        # BeginPlay - Log spawn
         - id: Event_BeginPlay
           type: Event
           properties:
@@ -9799,14 +10018,17 @@ actor_blueprints:  # SUPPORT BUFFER
             function: PrintString
             class: KismetSystemLibrary
             parameters:
-              InString: "SupportBuffer Active - Healing via service"
+              InString: "SupportBuffer Active - Full healing support"
           position: [300, 0]
       connections:
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
 
 actor_blueprints:  # SUPPORT BUFFER BT SERVICES
-  # v4.32: Enhanced with ReceiveTickAI + SphereOverlap + faction check + GE_SupportHeal
+  # v4.39: Full guide implementation (INC-SB-2, INC-SB-5, INC-SB-6 fixes)
+  # - Faction check via GetAttitude (ArsenalStatics)
+  # - DamageThreshold for health ratio check
+  # - Calls BP_SupportBuffer.ApplyHealToTarget instead of direct GE
   - name: BTS_HealNearbyAllies
     folder: AI/Services
     parent_class: BTService_BlueprintBase
@@ -9816,140 +10038,171 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         type: Float
         default_value: "500.0"
         instance_editable: true
-      # Time since last heal (throttle healing)
-      - name: TimeSinceLastHeal
+      # Damage threshold - heal if Health/MaxHealth < this value
+      - name: DamageThreshold
         type: Float
-        default_value: "0.0"
-      # Heal cooldown
-      - name: HealCooldown
-        type: Float
-        default_value: "2.0"
+        default_value: "0.9"
         instance_editable: true
     event_graph:
       nodes:
-        # ReceiveTickAI - Accumulate time and heal when ready
+        # ReceiveTickAI - Find damaged friendlies and heal them
         - id: Event_ReceiveTickAI
           type: Event
           properties:
             event_name: ReceiveTickAI
           position: [0, 0]
-        # Accumulate delta time
-        - id: GetTimeSinceHeal
-          type: VariableGet
+        # Cast pawn to BP_SupportBuffer
+        - id: CastToSupport
+          type: DynamicCast
           properties:
-            variable_name: TimeSinceLastHeal
-          position: [200, 100]
-        - id: AddDelta
-          type: CallFunction
-          properties:
-            function: Add_FloatFloat
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [400, 50]
-        - id: SetTimeSinceHeal
-          type: VariableSet
-          properties:
-            variable_name: TimeSinceLastHeal
-          position: [600, 0]
-        # Check if cooldown elapsed
-        - id: GetCooldown
-          type: VariableGet
-          properties:
-            variable_name: HealCooldown
-          position: [600, 150]
-        - id: GreaterOrEqual
-          type: CallFunction
-          properties:
-            function: GreaterEqual_FloatFloat
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [800, 100]
-        - id: CooldownBranch
-          type: Branch
-          position: [1000, 0]
-        # Reset timer
-        - id: ResetTimer
-          type: VariableSet
-          properties:
-            variable_name: TimeSinceLastHeal
-          position: [1200, 0]
+            target_class: BP_SupportBuffer
+          position: [200, 0]
         # Get pawn location for sphere overlap center
         - id: GetPawnLocation
           type: CallFunction
           properties:
             function: K2_GetActorLocation
             class: Actor
-          position: [1400, 0]
+          position: [400, 0]
         # Get heal radius variable
         - id: GetRadius
           type: VariableGet
           properties:
             variable_name: HealRadius
-          position: [1400, 100]
+          position: [400, 100]
         # Make object types array for Pawn detection
         - id: MakeObjectTypes
           type: MakeArray
           properties:
             element_type: ObjectTypeQuery
             num_elements: 1
-          position: [1600, 200]
+          position: [600, 200]
         # Make actors to ignore array (ignore self)
         - id: MakeActorsToIgnore
           type: MakeArray
           properties:
             element_type: Actor
             num_elements: 1
-          position: [1600, 300]
+          position: [600, 300]
         # SphereOverlapActors to find nearby characters
         - id: SphereOverlap
           type: CallFunction
           properties:
             function: SphereOverlapActors
-          position: [1800, 0]
+          position: [800, 0]
         # ForEach loop to process each found actor
         - id: ForEachActor
           type: ForEachLoop
-          position: [2100, 0]
-        # NOTE: Faction check removed for simplicity - heals all valid targets with ASC
-        # Get target's ASC
+          position: [1000, 0]
+        # Cast to NarrativeCharacter
+        - id: CastToNarrativeChar
+          type: DynamicCast
+          properties:
+            target_class: NarrativeCharacter
+          position: [1200, 0]
+        # Faction check - GetAttitude
+        - id: GetAttitude
+          type: CallFunction
+          properties:
+            function: GetAttitude
+            class: ArsenalStatics
+          position: [1400, 0]
+        # Check if Friendly
+        - id: IsFriendly
+          type: CallFunction
+          properties:
+            function: EqualEqual_ByteByte
+          position: [1600, 0]
+        - id: FriendlyBranch
+          type: Branch
+          position: [1800, 0]
+        # Get target's ASC for health check
         - id: GetTargetASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
-          position: [2900, 0]
-        # Apply GE_SupportHeal to target (self-apply on target's ASC)
-        - id: ApplyHeal
+          position: [2000, 0]
+        # Get Health attribute
+        - id: GetHealth
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToSelf
-            class: AbilitySystemComponent
-            param.GameplayEffectClass: /Game/FatherCompanion/NPCs/Support/Effects/GE_SupportHeal
-          position: [3100, 0]
+            function: GetNumericAttribute
+            class: AbilitySystemBlueprintLibrary
+          position: [2200, 0]
+        - id: HealthAttribute
+          type: CallFunction
+          properties:
+            function: MakeGameplayAttribute
+            class: AbilitySystemBlueprintLibrary
+          data:
+            attribute: NarrativeAttributeSetBase.Health
+          position: [2200, 100]
+        # Get MaxHealth attribute
+        - id: GetMaxHealth
+          type: CallFunction
+          properties:
+            function: GetNumericAttribute
+            class: AbilitySystemBlueprintLibrary
+          position: [2400, 0]
+        - id: MaxHealthAttribute
+          type: CallFunction
+          properties:
+            function: MakeGameplayAttribute
+            class: AbilitySystemBlueprintLibrary
+          data:
+            attribute: NarrativeAttributeSetBase.MaxHealth
+          position: [2400, 100]
+        # Calculate health ratio
+        - id: DivideHealth
+          type: CallFunction
+          properties:
+            function: Divide_FloatFloat
+          position: [2600, 0]
+        # Get damage threshold
+        - id: GetThreshold
+          type: VariableGet
+          properties:
+            variable_name: DamageThreshold
+          position: [2600, 100]
+        # Check if needs healing (Health/MaxHealth < Threshold)
+        - id: NeedsHealCheck
+          type: CallFunction
+          properties:
+            function: Less_FloatFloat
+          position: [2800, 0]
+        - id: NeedsHealBranch
+          type: Branch
+          position: [3000, 0]
+        # Call ApplyHealToTarget on BP_SupportBuffer
+        - id: CallApplyHeal
+          type: CallFunction
+          properties:
+            function: ApplyHealToTarget
+            class: BP_SupportBuffer
+          position: [3200, 0]
+        # Break loop after first heal (one target per tick per guide)
+        - id: BreakLoop
+          type: CallFunction
+          properties:
+            function: BreakExecution
+          position: [3400, 0]
       connections:
+        # Cast pawn to BP_SupportBuffer
         - from: [Event_ReceiveTickAI, Then]
-          to: [SetTimeSinceHeal, Exec]
-        - from: [GetTimeSinceHeal, TimeSinceLastHeal]
-          to: [AddDelta, A]
-        - from: [Event_ReceiveTickAI, DeltaSeconds]
-          to: [AddDelta, B]
-        - from: [AddDelta, ReturnValue]
-          to: [SetTimeSinceHeal, TimeSinceLastHeal]
-        - from: [AddDelta, ReturnValue]
-          to: [GreaterOrEqual, A]
-        - from: [GetCooldown, HealCooldown]
-          to: [GreaterOrEqual, B]
-        - from: [GreaterOrEqual, ReturnValue]
-          to: [CooldownBranch, Condition]
-        - from: [SetTimeSinceHeal, Then]
-          to: [CooldownBranch, Exec]
-        - from: [CooldownBranch, True]
-          to: [ResetTimer, Exec]
-        - from: [ResetTimer, Then]
-          to: [SphereOverlap, Exec]
-        # Sphere overlap inputs
+          to: [CastToSupport, Exec]
         - from: [Event_ReceiveTickAI, ControlledPawn]
+          to: [CastToSupport, Object]
+        # Get location for sphere overlap
+        - from: [CastToSupport, Then]
+          to: [GetPawnLocation, Exec]
+        - from: [CastToSupport, As BP_SupportBuffer]
           to: [GetPawnLocation, Target]
-        - from: [Event_ReceiveTickAI, ControlledPawn]
+        - from: [CastToSupport, As BP_SupportBuffer]
           to: [MakeActorsToIgnore, [0]]
+        # Sphere overlap
+        - from: [GetPawnLocation, Exec]
+          to: [SphereOverlap, Exec]
         - from: [GetPawnLocation, ReturnValue]
           to: [SphereOverlap, SpherePos]
         - from: [GetRadius, HealRadius]
@@ -9958,24 +10211,78 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           to: [SphereOverlap, ObjectTypes]
         - from: [MakeActorsToIgnore, Array]
           to: [SphereOverlap, ActorsToIgnore]
-        # ForEach and heal all valid targets
+        # ForEach loop
         - from: [SphereOverlap, Exec]
           to: [ForEachActor, Exec]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
-        # Heal each found actor (simplified - no faction check)
+        # Cast to NarrativeCharacter
         - from: [ForEachActor, LoopBody]
-          to: [GetTargetASC, Exec]
+          to: [CastToNarrativeChar, Exec]
         - from: [ForEachActor, ArrayElement]
+          to: [CastToNarrativeChar, Object]
+        # Faction check
+        - from: [CastToNarrativeChar, Then]
+          to: [GetAttitude, Exec]
+        - from: [CastToSupport, As BP_SupportBuffer]
+          to: [GetAttitude, Source]
+        - from: [CastToNarrativeChar, As NarrativeCharacter]
+          to: [GetAttitude, Target]
+        # Check if Friendly (ETeamAttitude::Friendly = 0)
+        - from: [GetAttitude, ReturnValue]
+          to: [IsFriendly, A]
+        - from: [GetAttitude, Exec]
+          to: [FriendlyBranch, Exec]
+        - from: [IsFriendly, ReturnValue]
+          to: [FriendlyBranch, Condition]
+        # Get Health if friendly
+        - from: [FriendlyBranch, True]
+          to: [GetTargetASC, Exec]
+        - from: [CastToNarrativeChar, As NarrativeCharacter]
           to: [GetTargetASC, Actor]
         - from: [GetTargetASC, ReturnValue]
-          to: [ApplyHeal, Target]
+          to: [GetHealth, AbilitySystem]
+        - from: [HealthAttribute, ReturnValue]
+          to: [GetHealth, Attribute]
         - from: [GetTargetASC, Exec]
-          to: [ApplyHeal, Exec]
+          to: [GetHealth, Exec]
+        # Get MaxHealth
+        - from: [GetTargetASC, ReturnValue]
+          to: [GetMaxHealth, AbilitySystem]
+        - from: [MaxHealthAttribute, ReturnValue]
+          to: [GetMaxHealth, Attribute]
+        - from: [GetHealth, Exec]
+          to: [GetMaxHealth, Exec]
+        # Calculate ratio
+        - from: [GetHealth, ReturnValue]
+          to: [DivideHealth, A]
+        - from: [GetMaxHealth, ReturnValue]
+          to: [DivideHealth, B]
+        # Check if needs healing
+        - from: [DivideHealth, ReturnValue]
+          to: [NeedsHealCheck, A]
+        - from: [GetThreshold, DamageThreshold]
+          to: [NeedsHealCheck, B]
+        - from: [NeedsHealCheck, ReturnValue]
+          to: [NeedsHealBranch, Condition]
+        - from: [GetMaxHealth, Exec]
+          to: [NeedsHealBranch, Exec]
+        # Call ApplyHealToTarget if needs healing
+        - from: [NeedsHealBranch, True]
+          to: [CallApplyHeal, Exec]
+        - from: [CastToSupport, As BP_SupportBuffer]
+          to: [CallApplyHeal, Target]
+        - from: [CastToNarrativeChar, As NarrativeCharacter]
+          to: [CallApplyHeal, TargetCharacter]
+        # Break loop after first heal
+        - from: [CallApplyHeal, Exec]
+          to: [BreakLoop, Exec]
 
 behavior_trees:  # SUPPORT BUFFER
 # NOTE: Uses NarrativePro's BB_FollowCharacter at /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/
-# v4.37.2: Updated to use FollowTarget per Narrative Pro BBKey_FollowTarget standard
+# v4.39: Full guide implementation (INC-SB-1, INC-SB-5 fixes)
+# - Added BTS_SetAIFocus and BTS_AdjustFollowSpeed services per guide
+# - Changed interval from 1.0 to 0.5 per guide
   - name: BT_SupportFollow
     folder: AI/BehaviorTrees
     blackboard: BB_FollowCharacter
@@ -9992,11 +10299,16 @@ behavior_trees:  # SUPPORT BUFFER
         children:
           - follow_heal_sequence
       # Follow Sequence - Move to target while healing nearby allies
+      # v4.39: Full service stack per guide: HealNearbyAllies + SetAIFocus + AdjustFollowSpeed
       - id: follow_heal_sequence
         type: Sequence
         services:
           - class: BTS_HealNearbyAllies
-            interval: 1.0
+            interval: 0.5
+            random_deviation: 0.1
+          - class: BTS_SetAIFocus
+            focus_target_key: FollowTarget
+          - class: BTS_AdjustFollowSpeed
         children:
           - move_to_target
       - id: move_to_target
@@ -10004,7 +10316,7 @@ behavior_trees:  # SUPPORT BUFFER
         task_class: BTTask_MoveTo
         blackboard_key: FollowTarget
         properties:
-          AcceptableRadius: "150.0"
+          AcceptableRadius: "200.0"
 
 activities:  # SUPPORT BUFFER
   - name: BPA_SupportFollow
