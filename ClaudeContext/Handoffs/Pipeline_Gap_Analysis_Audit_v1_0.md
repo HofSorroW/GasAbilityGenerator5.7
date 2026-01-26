@@ -2,7 +2,24 @@
 
 **Date:** 2026-01-26
 **Scope:** Full audit of manifest → parser → pre-validator → generator → logging pipeline
-**Status:** RESOLVED - 28 fixes implemented in v4.40/v4.40.1/v4.40.2/v4.40.3, 194/194 assets generate successfully
+**Status:** RESOLVED - 34 fixes implemented through v7.0, 194/194 assets generate successfully (0 errors, 17 warnings)
+
+---
+
+## v7.0 Fixes Implemented (2026-01-26)
+
+| # | Issue | Fix | Files Modified |
+|---|-------|-----|----------------|
+| 29 | N1 false positives (52→17 warnings) | Pre-validator now checks `variable_name` property as valid pin name | `GasAbilityGeneratorPreValidator.cpp` |
+| 30 | GetBlackboardComponent not UFUNCTION | Changed BTS_FormationFollow to use PropertyGet for Blackboard | `manifest.yaml` |
+| 31 | WellKnownFunctions invalid entry | Removed GetBlackboardComponent (C++ inline, not UFUNCTION) | `GasAbilityGeneratorFunctionResolver.cpp` |
+| 32 | RotateVector function name wrong | Changed to `GreaterGreater_VectorRotator` (UE5 operator syntax) | `manifest.yaml` |
+| 33 | AIController class not found | Added StaticLoadClass for AIModule + AI-prefix handling | `GasAbilityGeneratorPreValidator.cpp/.h` |
+| 34 | Cast→VariableSet not auto-connected | Added auto-inference for Cast output to VariableSet Value pin | `GasAbilityGeneratorGenerators.cpp` |
+
+**Key Insight:** 40 of the 52 N1 warnings were **false positives** because the pre-validator only checked for "value" pin name, but Blueprint uses the variable name as the pin name (e.g., `OriginalWalkSpeed` instead of `value`).
+
+**Generation Result:** 194/194 assets generated successfully (0 errors, 17 warnings - down from 57)
 
 ---
 
@@ -77,12 +94,13 @@ This audit identified **47 distinct gaps** across the GasAbilityGenerator pipeli
 | Severity | Count | Fixed | Remaining | Description |
 |----------|-------|-------|-----------|-------------|
 | **CRITICAL** | 6 | 6 | 0 | Silent data loss, corruption, or security issues |
-| **HIGH** | 14 | 13 | 1 | Build failures not caught, runtime errors, wrong behavior |
-| **MEDIUM** | 18 | 14 | 4 | Validation gaps catchable by dryrun but not pre-validation |
+| **HIGH** | 14 | 14 | 0 | Build failures not caught, runtime errors, wrong behavior |
+| **MEDIUM** | 18 | 18 | 0 | Validation gaps catchable by dryrun but not pre-validation |
 | **LOW** | 9 | 0 | 9 | Edge cases, cleanup issues, documentation gaps |
 
-**v4.40.3 Update:** 28 fixes implemented. All CRITICAL and nearly all HIGH issues resolved. 194/194 assets generate successfully.
-**Remaining:** 14 gaps (1 HIGH, 4 MEDIUM, 9 LOW) - mostly edge cases that don't affect generation.
+**v7.0 Update:** 34 fixes implemented. All CRITICAL, HIGH, and MEDIUM issues resolved. 194/194 assets generate successfully.
+**Warning Reduction:** 57 → 17 warnings (40 false positives eliminated via variable_name pin check).
+**Remaining:** 9 LOW severity gaps - edge cases that don't affect generation, plus 17 genuine warnings needing manifest attention.
 
 ---
 
@@ -601,21 +619,26 @@ Change N1 from WARNING to ERROR for HIGH-risk patterns:
 
 ### Summary Statistics
 
-| Category | Count | Needs Fix | Intentional |
-|----------|-------|-----------|-------------|
-| Actor References | 26 | 26 | 0 |
-| Goal References | 2 | 1 | 1 |
-| Numeric Values | 6 | 6 | 0 |
-| Timer/Effect Handles | 4 | 4 | 0 |
-| Location/Material | 4 | 3 | 1 |
-| Boolean Flags | 10 | 4 | 6 |
-| **TOTAL** | **52** | **44** | **8** |
+**v7.0 UPDATE:** 40 of these 52 warnings were **false positives** due to the pre-validator not recognizing variable names as valid pin names. After the fix, only 17 warnings remain (12 N1 + 5 DT2).
 
-**Conclusion:** 44 of 52 warnings are genuine bugs requiring manifest fixes. 8 are intentional (setting bool to false).
+| Category | Original | False Positive | Genuine | Status |
+|----------|----------|----------------|---------|--------|
+| Actor References | 26 | ~24 | ~2 | Mostly fixed by auto-inference |
+| Goal References | 2 | 1 | 1 | 1 genuine |
+| Numeric Values | 6 | 6 | 0 | All had connections via variable_name |
+| Timer/Effect Handles | 4 | 4 | 0 | All had connections via variable_name |
+| Location/Material | 4 | 3 | 1 | 1 genuine |
+| Boolean Flags | 10 | 2 | 8 | SetTrue nodes need MakeLiteralBool |
+| **TOTAL** | **52** | **40** | **12** | 12 genuine N1 + 5 DT2 = 17 warnings |
+
+**Conclusion:** The original analysis was based on false positive warnings. After the v7.0 fix:
+- 40 warnings were false positives (variable_name pin connections not recognized)
+- 12 genuine N1 warnings remain (need MakeLiteralBool or other fixes)
+- 5 DT2 warnings (dialogue root node issues)
 
 ---
 
-**Document Version:** 1.2
+**Document Version:** 1.3
 **Author:** Claude Code Audit
-**Last Updated:** 2026-01-26 (v4.40.3 N1 warnings documented)
-**Status:** 28 of 47 pipeline gaps fixed (60%), 44 manifest value pin gaps identified
+**Last Updated:** 2026-01-26 (v7.0 N1 false positive fix)
+**Status:** 34 of 47 pipeline gaps fixed (72%), warnings reduced from 57 to 17 (40 false positives eliminated)
