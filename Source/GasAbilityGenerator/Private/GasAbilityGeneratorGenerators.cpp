@@ -1921,6 +1921,7 @@ void FGeneratorBase::LogGeneration(const FString& Message)
 
 // v4.40: Safe package save with return value check
 // Note: In UE 5.7, SavePackage returns bool (not ESavePackageResult)
+// v4.40.2: Added asset registry notification for immediate visibility
 bool FGeneratorBase::SafeSavePackage(UPackage* Package, UObject* Asset, const FString& PackageFileName, const FString& AssetName)
 {
 	if (!Package || !Asset)
@@ -1940,6 +1941,9 @@ bool FGeneratorBase::SafeSavePackage(UPackage* Package, UObject* Asset, const FS
 		LogGeneration(FString::Printf(TEXT("[E_SAVE_FAILED] %s | SavePackage failed - asset may not persist"), *AssetName));
 		return false;
 	}
+
+	// v4.40.2: Notify asset registry so asset is immediately visible to other systems
+	FAssetRegistryModule::AssetCreated(Asset);
 
 	return true;
 }
@@ -9867,6 +9871,104 @@ bool FEventGraphGenerator::GenerateEventGraph(
 					}
 				}
 
+				// v4.40.2: Check SpawnActorFromClass Class pin - REQUIRED
+				if (UK2Node_SpawnActorFromClass* SpawnNode = Cast<UK2Node_SpawnActorFromClass>(Node))
+				{
+					if (PinNameStr.Equals(TEXT("Class"), ESearchCase::IgnoreCase))
+					{
+						UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] SPAWN ERROR: [%s].Class not connected - SpawnActor requires a class to spawn"),
+							*NodeId);
+						LogGeneration(FString::Printf(TEXT("    ERROR: [%s].Class must be connected - SpawnActor node requires class input"),
+							*NodeId));
+						ValuePinErrors++;
+					}
+				}
+
+				// v4.40.2: Check Delay Duration pin - REQUIRED (0.0 default is usually wrong)
+				if (UK2Node_CallFunction* DelayNode = Cast<UK2Node_CallFunction>(Node))
+				{
+					if (DelayNode->GetFunctionName() == FName(TEXT("Delay")) ||
+					    DelayNode->GetFunctionName() == FName(TEXT("K2_Delay")) ||
+					    NodeId.Contains(TEXT("Delay"), ESearchCase::IgnoreCase))
+					{
+						if (PinNameStr.Equals(TEXT("Duration"), ESearchCase::IgnoreCase))
+						{
+							UE_LOG(LogTemp, Warning, TEXT("[GasAbilityGenerator] DELAY WARNING: [%s].Duration not connected - defaults to 0 (immediate)"),
+								*NodeId);
+							LogGeneration(FString::Printf(TEXT("    WARN: [%s].Duration not connected - defaults to 0.0 which may be unintended"),
+								*NodeId));
+							// Warning only - 0 delay might be intentional in some cases
+						}
+					}
+				}
+
+				// v4.40.2: Check GetArrayItem Array+Index pins - REQUIRED
+				if (UK2Node_GetArrayItem* ArrayItemNode = Cast<UK2Node_GetArrayItem>(Node))
+				{
+					if (PinNameStr.Equals(TEXT("Array"), ESearchCase::IgnoreCase) ||
+					    PinNameStr.Equals(TEXT("TargetArray"), ESearchCase::IgnoreCase))
+					{
+						UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] ARRAY ERROR: [%s].Array not connected - GetArrayItem requires array input"),
+							*NodeId);
+						LogGeneration(FString::Printf(TEXT("    ERROR: [%s].Array must be connected - GetArrayItem needs an array to access"),
+							*NodeId));
+						ArrayInputErrors++;
+					}
+					// Index pin - warning only since 0 default is sometimes intentional
+					if (PinNameStr.Equals(TEXT("Index"), ESearchCase::IgnoreCase))
+					{
+						UE_LOG(LogTemp, Warning, TEXT("[GasAbilityGenerator] ARRAY WARNING: [%s].Index not connected - defaults to 0"),
+							*NodeId);
+						LogGeneration(FString::Printf(TEXT("    WARN: [%s].Index not connected - defaults to 0 (first element)"),
+							*NodeId));
+					}
+				}
+
+				// v4.40.2: Check MakeArray element pins - at least one should be connected
+				if (UK2Node_MakeArray* MakeArrayNode = Cast<UK2Node_MakeArray>(Node))
+				{
+					// MakeArray with no connected elements creates an empty array
+					// Count connected input pins (excluding self)
+					bool bHasAnyElementConnected = false;
+					for (UEdGraphPin* ArrayPin : MakeArrayNode->Pins)
+					{
+						if (ArrayPin && ArrayPin->Direction == EGPD_Input &&
+						    !ArrayPin->PinName.ToString().Equals(TEXT("self"), ESearchCase::IgnoreCase) &&
+						    ArrayPin->LinkedTo.Num() > 0)
+						{
+							bHasAnyElementConnected = true;
+							break;
+						}
+					}
+					if (!bHasAnyElementConnected && PinNameStr.StartsWith(TEXT("["), ESearchCase::IgnoreCase))
+					{
+						// Only log once per MakeArray node
+						static TSet<FString> LoggedMakeArrayNodes;
+						if (!LoggedMakeArrayNodes.Contains(NodeId))
+						{
+							LoggedMakeArrayNodes.Add(NodeId);
+							UE_LOG(LogTemp, Warning, TEXT("[GasAbilityGenerator] MAKEARRAY WARNING: [%s] has no elements connected - creates empty array"),
+								*NodeId);
+							LogGeneration(FString::Printf(TEXT("    WARN: [%s] MakeArray has no elements connected - will create empty array"),
+								*NodeId));
+						}
+					}
+				}
+
+				// v4.40.2: Check Sequence exec input - REQUIRED (sequence with no input never fires)
+				if (UK2Node_ExecutionSequence* SeqNode = Cast<UK2Node_ExecutionSequence>(Node))
+				{
+					if (PinNameStr.Equals(TEXT("execute"), ESearchCase::IgnoreCase) ||
+					    PinNameStr.Equals(TEXT("Exec"), ESearchCase::IgnoreCase))
+					{
+						UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] SEQUENCE ERROR: [%s].Exec not connected - Sequence will never execute"),
+							*NodeId);
+						LogGeneration(FString::Printf(TEXT("    ERROR: [%s].Exec must be connected - Sequence node requires exec input to fire"),
+							*NodeId));
+						ValuePinErrors++;
+					}
+				}
+
 				// Log other significant unconnected pins
 				if (!bIsExecPin && !bHasDefaultValue && !Pin->PinType.PinCategory.IsNone())
 				{
@@ -14284,7 +14386,10 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 						PinType,
 						EGPD_Output
 					);
-					LogGeneration(FString::Printf(TEXT("    Added delegate parameter: %s to %s"),
+					// v4.40.2: Upgrade to WARNING - auto-fixing signature may mask manifest errors
+					UE_LOG(LogTemp, Warning, TEXT("[GasAbilityGenerator] SIGNATURE AUTO-FIX: [%s] Handler '%s' missing parameter '%s' from delegate '%s' - added automatically"),
+						*Blueprint->GetName(), *Binding.Handler, *Param->GetName(), *Binding.Delegate);
+					LogGeneration(FString::Printf(TEXT("    WARNING: Auto-added delegate parameter '%s' to handler '%s' - consider adding explicitly in manifest"),
 						*Param->GetName(), *Binding.Handler));
 				}
 			}

@@ -174,6 +174,7 @@ FPreValidationReport FPreValidator::Validate(const FManifestData& Data, const FS
 	ValidateAssetReferences(Data, Report, Cache, ManifestPath);
 	ValidateTags(Data, Report, Cache, ManifestPath);
 	ValidateTokens(Data, Report, Cache, ManifestPath);
+	ValidateConnections(Data, Report, Cache, ManifestPath);  // v4.40.2: N2 rule - node ID and pin validation
 
 	// Update caching stats
 	Report.TotalChecks = Cache.GetHitCount() + Cache.GetMissCount();
@@ -679,6 +680,105 @@ void FPreValidator::ValidateFunctions(const FManifestData& Data, FPreValidationR
 	{
 		const auto& WBP = Data.WidgetBlueprints[i];
 		ValidateEventGraphNodes(WBP.EventGraphNodes, WBP.Name, FString::Printf(TEXT("widget_blueprints[%d]"), i));
+	}
+}
+
+// v4.40.2: Validate event graph connections (N2 rule)
+// Checks that connection endpoints reference existing nodes
+void FPreValidator::ValidateConnections(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
+{
+	// Helper lambda to validate connections in an event graph
+	auto ValidateEventGraphConnections = [&](const TArray<FManifestGraphNodeDefinition>& Nodes,
+	                                         const TArray<FManifestGraphConnectionDefinition>& Connections,
+	                                         const FString& OwnerName, const FString& YAMLPrefix)
+	{
+		// Build a set of node IDs for quick lookup
+		TSet<FString> NodeIds;
+		for (const auto& Node : Nodes)
+		{
+			NodeIds.Add(Node.Id);
+		}
+
+		for (int32 ConnIdx = 0; ConnIdx < Connections.Num(); ConnIdx++)
+		{
+			const auto& Conn = Connections[ConnIdx];
+
+			// Check that From node exists
+			if (!NodeIds.Contains(Conn.From.NodeId))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("N2");
+				Issue.ErrorCode = TEXT("E_PREVAL_CONNECTION_FROM_NOT_FOUND");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Connection references non-existent source node '%s'"), *Conn.From.NodeId);
+				Issue.ItemId = FString::Printf(TEXT("%s.connection[%d]"), *OwnerName, ConnIdx);
+				Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.connections[%d].from"), *YAMLPrefix, ConnIdx);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+
+			// Check that To node exists
+			if (!NodeIds.Contains(Conn.To.NodeId))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("N2");
+				Issue.ErrorCode = TEXT("E_PREVAL_CONNECTION_TO_NOT_FOUND");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Connection references non-existent target node '%s'"), *Conn.To.NodeId);
+				Issue.ItemId = FString::Printf(TEXT("%s.connection[%d]"), *OwnerName, ConnIdx);
+				Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.connections[%d].to"), *YAMLPrefix, ConnIdx);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+
+			// Check that pin names are not empty
+			if (Conn.From.PinName.IsEmpty())
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("N2");
+				Issue.ErrorCode = TEXT("E_PREVAL_CONNECTION_PIN_EMPTY");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Connection from '%s' has empty source pin name"), *Conn.From.NodeId);
+				Issue.ItemId = FString::Printf(TEXT("%s.connection[%d]"), *OwnerName, ConnIdx);
+				Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.connections[%d].from[1]"), *YAMLPrefix, ConnIdx);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+
+			if (Conn.To.PinName.IsEmpty())
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("N2");
+				Issue.ErrorCode = TEXT("E_PREVAL_CONNECTION_PIN_EMPTY");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Connection to '%s' has empty target pin name"), *Conn.To.NodeId);
+				Issue.ItemId = FString::Printf(TEXT("%s.connection[%d]"), *OwnerName, ConnIdx);
+				Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.connections[%d].to[1]"), *YAMLPrefix, ConnIdx);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+		}
+	};
+
+	// Validate GameplayAbility connections
+	for (int32 i = 0; i < Data.GameplayAbilities.Num(); i++)
+	{
+		const auto& GA = Data.GameplayAbilities[i];
+		ValidateEventGraphConnections(GA.EventGraphNodes, GA.EventGraphConnections, GA.Name, FString::Printf(TEXT("gameplay_abilities[%d]"), i));
+	}
+
+	// Validate ActorBlueprint connections
+	for (int32 i = 0; i < Data.ActorBlueprints.Num(); i++)
+	{
+		const auto& BP = Data.ActorBlueprints[i];
+		ValidateEventGraphConnections(BP.EventGraphNodes, BP.EventGraphConnections, BP.Name, FString::Printf(TEXT("actor_blueprints[%d]"), i));
+	}
+
+	// Validate WidgetBlueprint connections
+	for (int32 i = 0; i < Data.WidgetBlueprints.Num(); i++)
+	{
+		const auto& WBP = Data.WidgetBlueprints[i];
+		ValidateEventGraphConnections(WBP.EventGraphNodes, WBP.EventGraphConnections, WBP.Name, FString::Printf(TEXT("widget_blueprints[%d]"), i));
 	}
 }
 

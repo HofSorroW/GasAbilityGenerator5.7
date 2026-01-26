@@ -92,6 +92,7 @@ private:
 	static void ValidateAssetReferences(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 	static void ValidateTags(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 	static void ValidateTokens(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
+	static void ValidateConnections(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);  // v4.40.2: N2 rule
 
 	// Helper functions
 	static UClass* FindClassByName(const FString& ClassName, FPreValidationCache& Cache);
