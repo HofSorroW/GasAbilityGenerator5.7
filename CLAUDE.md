@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v4.30) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.1) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -1029,11 +1029,11 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
+| **v7.1** | INC-WARDEN-CORELASER-1 Fix (Claude-GPT dual audit): GA_CoreLaser was non-functional - missing `input_tag` and stub implementation. Added `input_tag: Narrative.Input.Attack` for BPA_Attack_Ranged compatibility. Implemented full event graph with AI targeting (Blackboard→BBKey_AttackTarget via P-BB-KEY-2), SetByCaller damage (GE_CoreLaserDamage with Data.Damage.CoreLaser tag), proper validity checks. New LOCKED Contract 21 (R-INPUTTAG-1): NPC combat abilities used by BPA_Attack_* MUST define valid Narrative.Input.* tag. |
 | **v7.0** | N1 Warning Fix: Pre-validator now checks variable_name as valid pin name, reducing false positive warnings from 57 to 17. Fixed BTS_FormationFollow to use PropertyGet for Blackboard (GetBlackboardComponent is C++ inline, not UFUNCTION). Auto-inference for Cast→VariableSet connections added. AIController class resolution fixed for headless mode. 194/194 assets verified. |
 | **v6.9** | GA_Backstab + GA_FatherEngineer fixes: DynamicCast fuzzy pin matching for space-separated names, TSubclassOf Effects subfolder paths, NarrativePro blackboard mount path fix (`/NarrativePro/` not `/NarrativePro22B57/`). All 156 assets generate successfully. |
 | **v4.27** | Dependency Sort Order Audit: TopologicalSort exists but never called, Materials/MaterialFunctions phase order bug identified. Quick-fix: moved material_functions before materials in manifest. 156/156 assets verified. |
 | **v4.13.3** | Quest SM Semantic Verification: Post-generation validation for quest state machines. Validates start state, detects duplicate IDs, counts unresolved destinations. Emits `RESULT QuestSM:` summary line. |
-| **v4.12.4** | Full Sync-from-Assets: Item Table extracts EquipmentAbilities via reflection. Quest Table extracts per-state tasks, rewards, parent branches. Both PopulateRowsFromAssets() fully implemented. |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 

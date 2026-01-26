@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 3.1 (P-GG-TIMER-1 Closed - No Bug)
+## Version 3.2 (INC-WARDEN-CORELASER-1 Fixed)
 ## January 2026
 
 ---
@@ -11,9 +11,9 @@
 | Document Type | Consolidated Audit Report |
 | Scope | All 7 NPC Implementation Guides |
 | Auditor | Claude (Opus 4.5) - dual audit with GPT |
-| Plugin Version | GasAbilityGenerator v4.39.6 |
+| Plugin Version | GasAbilityGenerator v7.1 |
 | Context | UE5.7 + Narrative Pro v2.2 |
-| Status | **193/194 COMPLIANT** (1 requires manual completion) + ✅ ALL FIXES APPLIED |
+| Status | **194/194 COMPLIANT** + ✅ ALL FIXES APPLIED |
 
 ---
 
@@ -28,7 +28,7 @@ This consolidated audit combines technical validation, gameplay intent review, a
 | Technical Compliance | ✅ PASS |
 | Gameplay Intent | ✅ MATCHES |
 | Locked Contracts | ✅ NO VIOLATIONS |
-| Automation Coverage | ⚠️ 193/194 (99.5%) - BTS_HealNearbyAllies requires manual completion |
+| Automation Coverage | ✅ 194/194 (100%) - All assets fully automated |
 
 ### Guide Status Summary
 
@@ -484,6 +484,65 @@ Each NPC system audited against:
 | INV-GESPEC-1 (13) | N/A | - | No MakeOutgoingGameplayEffectSpec calls |
 
 **Warden Husk/Core Verdict:** ✅ FULLY COMPLIANT with all applicable LOCKED contracts.
+
+---
+
+### INC-WARDEN-CORELASER-1: GA_CoreLaser Non-Functional (FIXED v3.2)
+
+**Classification:** CRITICAL → FIXED
+**Discovered:** Claude-GPT dual audit (January 2026)
+**Fixed:** v3.2 / Plugin v7.1
+
+#### Issue Summary
+
+GA_CoreLaser was non-functional in combat due to two CRITICAL issues:
+
+| Issue | Impact | Evidence |
+|-------|--------|----------|
+| Missing `input_tag` | AI cannot activate ability | `BPA_Attack_Ranged` uses `AbilityInputTagPressed()` which requires InputTag in `DynamicSpecSourceTags` |
+| Stub implementation | No damage even if activated | Event graph only had `CommitCooldown → EndAbility`, no targeting or damage logic |
+
+**Result:** Warden Core spawned correctly (R-PHASE-1 compliant) but could not attack.
+
+#### Root Cause Analysis
+
+**Why InputTag is required for NPC combat:**
+
+1. `AC_WardenCoreBehavior` uses `BPA_Attack_Ranged` (line 7592)
+2. `BPA_Attack_Ranged` is a generic Narrative Pro activity that cannot hardcode ability classes
+3. Activity activates abilities via `AbilityInputTagPressed(InputTag)` (NarrativeAbilitySystemComponent.cpp:260)
+4. `AbilityInputTagPressed` finds abilities using `FindAbilitiesWithTag(InputTag, Specs)` (line 285)
+5. Abilities are matched by checking `Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag)`
+6. InputTag is added to spec when ability is granted (NarrativeCharacter.cpp:791)
+
+**Evidence (NarrativeAbilitySystemComponent.cpp:185-200):**
+```cpp
+float UNarrativeAbilitySystemComponent::GetBotAttackFrequency(FGameplayTag InputTag)
+{
+    TArray<FGameplayAbilitySpecHandle> Specs;
+    FindAbilitiesWithTag(InputTag, Specs);  // Uses InputTag lookup!
+    // ...
+}
+```
+
+#### Fix Applied (v3.2)
+
+**Manifest changes to GA_CoreLaser:**
+
+1. Added `input_tag: Narrative.Input.Attack` for BPA_Attack_Ranged compatibility
+2. Implemented full event graph with:
+   - Get avatar actor and cast to NarrativeNPCCharacter
+   - Get AI Controller → Blackboard → BBKey_AttackTarget
+   - IsValid check with Branch
+   - Get target's ASC
+   - Make and apply damage GE spec with SetByCaller damage
+   - End ability (both success and failure paths)
+3. Added variables: `LaserDamage` (Float, 50.0), `TargetActor` (Object)
+4. Added `bot_attack_frequency: 2.0` and `bot_attack_range: 1500.0` for AI tuning
+
+**New LOCKED Contract Added:**
+
+Contract 21 (R-INPUTTAG-1): NPC combat abilities activated via `BPA_Attack_*` activities MUST define a valid `Narrative.Input.*` tag.
 
 ---
 
@@ -1220,6 +1279,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.2 | 2026-01-27 | **INC-WARDEN-CORELASER-1 Fixed (Claude-GPT Dual Audit):** Plugin v7.1. **CRITICAL:** GA_CoreLaser was non-functional - missing `input_tag` and stub implementation. Fix: Added `input_tag: Narrative.Input.Attack` for BPA_Attack_Ranged compatibility. Implemented full event graph with AI targeting (Blackboard → BBKey_AttackTarget), damage GE application (GE_CoreLaserDamage with SetByCaller), proper validity checks. Added `LaserDamage` variable (50.0) and bot tuning properties. **New LOCKED Contract 21 (R-INPUTTAG-1):** NPC combat abilities used by BPA_Attack_* MUST define valid Narrative.Input.* tag. Status: 194/194 (100% automation). |
 | 3.1 | 2026-01-26 | **P-GG-TIMER-1 Investigation - NO BUG + Stalker Consolidation (Claude-GPT Audit):** Investigated GoalGenerator timer lifecycle concern. Initial worry: `FollowCheckTimerHandle` never cleared, orphan timers possible. **Finding: NOT A BUG.** Analysis: (1) NPC death = destruction chain, GC auto-cancels timers; (2) `RemoveGoalGenerator()` while alive has no code path; (3) `Deactivate()` while alive has no code path. GPT conceded: "My earlier stance over-weighted theoretical engine-level risk and under-weighted real code-path existence." **Both auditors agree:** DOC-ONLY, not LOCKED. **Stalker Consolidation:** Merged `Stalker_Full_Compliance_Implementation_Plan_v1_0.md` into this document (PATCH-B/C/D/E details, goal delegate analysis, state tag contract, metrics). Implementation plan deleted. |
 | 3.0 | 2026-01-26 | **All Audit Findings Fixed (Claude-GPT Audit):** Plugin v4.39.6. **GA_StealthField Stealth Break - FIXED:** Added `Event_HandleStealthDamageBreak` and `Event_HandleStealthAttackBreak` CustomEvent nodes with proper parameters (DamagerCauserASC/DamagedASC, Damage, Spec) and `K2_EndAbility` calls. Connections added per R-DELEGATE-1 Contract 18. **BTS_CalculateFormationPosition - FIXED:** Complete rewrite per Guide v2.6 Phase 4 Node Connection Summary. Changed from `Quat_RotateVector` to `RotateVector` (Rotator input). Removed all orphan connections (BreakRotator, GetNarrativeProSettings, GetLeaderLocation, MultiplyOffset, SubtractOffset). Now properly rotates `FormationOffset` Vector from blackboard by target rotation. All 19 connections match guide exactly. |
 | 2.9 | 2026-01-26 | **Death Signal Path Audit + Doc Drift Finding (Claude-GPT Audit):** Cross-checked Warden and Biomech guides. DOC DRIFT: Contract 17 shows `delegate_bindings:` but guides use `function_overrides: HandleDeath`. Root cause: NP auto-binds OnDied→HandleDeath. **Contract 17 UPDATED** with Pattern A (NP) and Pattern B (non-NP). **R-PHASE-1 Scope:** Exploder/Stalker correctly excluded. **Aggression Escalation:** P-GG-TIMER-1 COMPLIANT. **Stealth Break Audit:** ⚠️ INCOMPLETE - GA_StealthField declares `delegate_bindings` but handler CustomEvents (`HandleStealthDamageBreak`, `HandleStealthAttackBreak`) missing from event_graph; guide uses different approach (Gameplay Events). **Formation Authority Audit:** ✅ COMPLIANT - BTS_CalculateFormationPosition and BTS_AdjustFormationSpeed both satisfy P-BB-KEY-2 and P-MOVE-1. |

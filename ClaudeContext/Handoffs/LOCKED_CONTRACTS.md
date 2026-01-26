@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v4.38)
+# LOCKED_CONTRACTS.md (v7.1)
 
 ## Purpose
 
@@ -880,6 +880,97 @@ connections:
 
 ---
 
+## LOCKED CONTRACT 21 — R-INPUTTAG-1 NPC Combat Ability InputTag Requirement (v7.1)
+
+### Context
+
+NPC combat abilities activated via Narrative Pro's `BPA_Attack_*` activities require InputTag for ability lookup. The Activity system doesn't hardcode ability classes - it uses `AbilityInputTagPressed(InputTag)` which finds abilities by matching InputTag in `DynamicSpecSourceTags`.
+
+**Discovery (Claude-GPT dual audit 2026-01-27):** GA_CoreLaser was non-functional because:
+1. `AC_WardenCoreBehavior` uses `BPA_Attack_Ranged` activity
+2. `BPA_Attack_Ranged` calls `AbilityInputTagPressed(Narrative.Input.Attack)`
+3. `FindAbilitiesWithTag()` searches for matching InputTag
+4. GA_CoreLaser had no `input_tag` → ability never found → never activated
+
+### Invariant
+
+1. NPC combat abilities used by `BPA_Attack_*` activities **MUST** define a valid `input_tag`:
+   - `BPA_Attack_Melee` → `input_tag: Narrative.Input.Attack`
+   - `BPA_Attack_Ranged` → `input_tag: Narrative.Input.Attack`
+   - `BPA_Attack_Ranged_Strafe` → `input_tag: Narrative.Input.Attack`
+   - `BPA_Attack_Formation` → `input_tag: Narrative.Input.Attack`
+
+2. The InputTag must match what the activity broadcasts via `AbilityInputTagPressed()`
+
+3. AbilityConfiguration granting the ability is **not sufficient** - InputTag is stored in the ability's `DynamicSpecSourceTags` at grant time, not the AC
+
+### Technical Evidence
+
+**NarrativeAbilitySystemComponent.cpp:260-316:**
+```cpp
+void UNarrativeAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
+{
+    // ...
+    if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+    {
+        TryActivateAbility(Spec.Handle);
+    }
+}
+```
+
+**NarrativeCharacter.cpp:788-791:**
+```cpp
+// InputTag added to spec at grant time
+if (!InputTag.MatchesTagExact(FNarrativeGameplayTags::Get().Narrative_Input_None))
+{
+    AbilitySpec.GetDynamicSpecSourceTags().AddTag(InputTag);
+}
+```
+
+**Bot Attack System (NarrativeAbilitySystemComponent.cpp:185-200):**
+```cpp
+float UNarrativeAbilitySystemComponent::GetBotAttackFrequency(FGameplayTag InputTag)
+{
+    TArray<FGameplayAbilitySpecHandle> Specs;
+    FindAbilitiesWithTag(InputTag, Specs);  // Uses InputTag lookup
+    // ...
+}
+```
+
+### Correct Pattern
+
+```yaml
+# NPC ranged attack ability (used by BPA_Attack_Ranged)
+- name: GA_CoreLaser
+  folder: Enemies/Warden/Abilities
+  parent_class: NarrativeGameplayAbility
+  input_tag: Narrative.Input.Attack  # REQUIRED for BPA_Attack_Ranged
+  # ... rest of definition
+```
+
+### Forbidden
+
+- Omitting `input_tag` from NPC combat abilities used by `BPA_Attack_*` activities
+- Using custom InputTag namespaces that don't match activity broadcasts
+- Assuming AbilityConfiguration grants provide InputTag (they don't)
+
+### Affected Systems (Fixed v7.1)
+
+| Ability | Activity | InputTag | Status |
+|---------|----------|----------|--------|
+| GA_CoreLaser | BPA_Attack_Ranged | `Narrative.Input.Attack` | ✅ FIXED |
+
+### Reference
+
+- Manifest: `manifest.yaml` — GA_CoreLaser, AC_WardenCoreBehavior
+- Narrative Pro: `NarrativeAbilitySystemComponent.cpp:260-316` — AbilityInputTagPressed
+- Narrative Pro: `NarrativeAbilitySystemComponent.cpp:185-200` — GetBotAttackFrequency
+- Narrative Pro: `NarrativeCharacter.cpp:788-791` — InputTag added at grant
+- Audit: Claude–GPT dual audit session (2026-01-27), INC-WARDEN-CORELASER-1
+- Implementation: v7.1
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -909,3 +1000,4 @@ Any change that touches a LOCKED implementation must:
 | v4.33 | 2026-01-24 | Added Contract 15 — D-DEATH-RESET Player Death Reset System (Claude–GPT dual audit): PlayerASC.OnDied bindings for DomeEnergy/SymbioteCharge reset; silent reset (no burst/VFX); GA_Death unchanged (OnDied delegate for custom logic); D-SACRIFICE-1 one-shot bypass documented. |
 | v4.34 | 2026-01-25 | Added Contracts 16-19 from NPC Guides audit (Claude–GPT dual audit): R-SPAWN-1 SpawnNPC-only for NPC spawning; R-PHASE-1 Two-phase death transition pattern; R-DELEGATE-1 Delegate binding CustomEvent signature matching; R-NPCDEF-1 NPCDefinition variable type (Object not TSubclassOf). |
 | v4.38 | 2026-01-26 | Added Contract 20 — P-BB-KEY-2 NarrativeProSettings BB Key Access (Claude–GPT dual audit): Canonical NP BB keys must use `Get Narrative Pro Settings → BBKey [Name]` pattern, not hardcoded MakeLiteralName. Fixed INC-4/5/6 in BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, BTS_CheckExplosionProximity. |
+| v7.1 | 2026-01-27 | Added Contract 21 — R-INPUTTAG-1 NPC Combat Ability InputTag Requirement (Claude–GPT dual audit): NPC combat abilities used by BPA_Attack_* activities MUST define valid Narrative.Input.* tag. GA_CoreLaser was non-functional due to missing input_tag (INC-WARDEN-CORELASER-1). Fixed manifest with proper event graph including AI targeting from blackboard and damage GE application. |

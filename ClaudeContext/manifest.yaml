@@ -4398,11 +4398,9 @@ gameplay_abilities:
           position: [2400, 200]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        # Exec flow (impure nodes only - pure functions have no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [CastToFather, Exec]
+          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
@@ -4474,18 +4472,16 @@ gameplay_abilities:
         - Father.Dome.Active
       # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
       # Equipment granting already ensures this ability is only available in Armor form
-    # v4.21: Delegate bindings - fires when player takes damage while dome is active
-    # v4.33: Added PlayerDeath binding for D-DEATH-RESET-1 (silent reset on player death)
+    # v4.21: Delegate bindings - RE-ENABLED for crash testing
     delegate_bindings:
       - id: BindDomeDamageAbsorption
-        delegate: OnDamagedBy                    # Fires when owner (player) takes damage
-        source: OwnerASC                         # Player's ASC (ability runs on player)
-        handler: HandleDomeDamageAbsorption      # Custom Event (auto-created with signature)
-        # Handler params: DamagerCauserASC, Damage, Spec - use for dome absorption logic
+        delegate: OnDamagedBy
+        source: OwnerASC
+        handler: HandleDomeDamageAbsorption
       - id: BindPlayerDeath
-        delegate: OnDied                         # Fires when player actually dies (HP=0)
-        source: OwnerASC                         # Player's ASC
-        handler: HandlePlayerDeathReset          # D-DEATH-RESET-2: Silent reset (no burst, no VFX)
+        delegate: OnDied
+        source: OwnerASC
+        handler: HandlePlayerDeathReset
     variables:
       - name: PlayerRef
         type: Object
@@ -4799,11 +4795,9 @@ gameplay_abilities:
           position: [1700, 1200]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet/CallFunction nodes)
+        # Exec flow (impure nodes only - pure functions have no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [CastToFather, Exec]
+          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
@@ -5045,11 +5039,9 @@ gameplay_abilities:
           position: [3900, 0]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        # Exec flow (impure nodes only - pure functions have no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [CastToFather, Exec]
+          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         # v4.14: Rewired to skip dead invuln nodes (GAS Audit CRIT-2)
@@ -5204,11 +5196,9 @@ gameplay_abilities:
           position: [900, 400]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        # Exec flow (impure nodes only - pure functions have no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [CastToFather, Exec]
+          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
@@ -5445,11 +5435,9 @@ gameplay_abilities:
           position: [400, 1000]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        # Exec flow (impure nodes only - pure functions have no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [CastToFather, Exec]
+          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
@@ -5970,11 +5958,9 @@ gameplay_abilities:
           position: [2400, 200]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - skip pure PropertyGet nodes)
+        # Exec flow (impure nodes only - pure functions have no exec pins)
         - from: [Event_Activate, Then]
-          to: [GetOwningActor, Exec]
-        - from: [GetOwningActor, Exec]
-          to: [CastToFather, Exec]
+          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
@@ -8891,19 +8877,29 @@ tags:  # WARDEN SYSTEM
     comment: Applied to flying core
   - tag: State.Warden.Ejecting
     comment: During transition phase
+  - tag: State.Warden.Attacking
+    comment: Warden Core is attacking
   - tag: Faction.Enemy.Warden
     comment: Warden faction identifier
   - tag: Ability.Warden.CoreLaser
     comment: Laser attack ability
   - tag: Cooldown.Warden.CoreLaser
     comment: Laser cooldown tag
+  - tag: Data.Damage.CoreLaser
+    comment: SetByCaller tag for CoreLaser damage magnitude
   - tag: Effect.Damage.WardenLaser
     comment: Laser damage type
 
 gameplay_effects:  # WARDEN SYSTEM
+  # v7.1: INC-WARDEN-CORELASER-1 - Added proper damage modifier with SetByCaller
   - name: GE_CoreLaserDamage
     folder: Enemies/Warden/Effects
     duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.Damage
+        modifier_op: Additive
+        magnitude_calculation_type: SetByCaller
+        set_by_caller_tag: Data.Damage.CoreLaser
 
   - name: GE_CoreLaserCooldown
     folder: Enemies/Warden/Effects
@@ -9044,42 +9040,255 @@ materials:  # WARDEN SYSTEM
 
 gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_System_Implementation_Guide_v1_2.md)
   # GA_CoreLaser - Warden Core Laser Attack
-  # v4.14: Added minimal event_graph per GAS Audit CRIT-4 (instant ability pattern)
+  # v7.1: INC-WARDEN-CORELASER-1 FIXED - Added input_tag and full implementation
+  # R-INPUTTAG-1: NPC combat abilities used by BPA_Attack_* MUST have valid input_tag
   - name: GA_CoreLaser
     folder: Enemies/Warden/Abilities
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
     net_execution_policy: ServerOnly
     cooldown_gameplay_effect_class: GE_CoreLaserCooldown
+    # v7.1: CRITICAL - Required for BPA_Attack_Ranged activation via AbilityInputTagPressed
+    input_tag: Narrative.Input.Attack
+    # v7.1: Bot tuning properties for AI attack behavior
+    bot_attack_frequency: 2.0
+    bot_attack_range: 1500.0
     tags:
       ability_tags:
         - Ability.Warden.CoreLaser
+      activation_owned_tags:
+        - State.Warden.Attacking
       activation_blocked_tags:
         - Cooldown.Warden.CoreLaser
+    variables:
+      - name: LaserDamage
+        type: Float
+        default_value: "50.0"
+        instance_editable: true
+      - name: TargetActor
+        type: Object
+        class: Actor
     event_graph:
       nodes:
+        # Activation - Get target from AI blackboard and apply damage
         - id: Event_Activate
           type: Event
           properties:
             event_name: K2_ActivateAbility
           position: [0, 0]
+        # Get avatar actor (the Warden Core NPC)
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [300, 0]
+        # Cast to NarrativeNPCCharacter to get AI controller
+        - id: CastToNPC
+          type: DynamicCast
+          properties:
+            target_class: NarrativeNPCCharacter
+          position: [600, 0]
+        # Get AI Controller from NPC
+        - id: GetAIController
+          type: PropertyGet
+          properties:
+            property_name: Controller
+            target_class: Pawn
+          position: [900, 0]
+        # Cast controller to AIController to access blackboard
+        - id: CastToAIController
+          type: DynamicCast
+          properties:
+            target_class: AIController
+          position: [1200, 0]
+        # Get Blackboard component from AI Controller
+        - id: GetBlackboard
+          type: PropertyGet
+          properties:
+            property_name: Blackboard
+            target_class: AIController
+          position: [1500, 0]
+        # Get NarrativeProSettings for canonical BB key access (P-BB-KEY-2)
+        - id: GetNarrativeProSettings
+          type: CallFunction
+          properties:
+            function: GetNarrativeProSettings
+            class: ArsenalStatics
+          position: [1500, 100]
+        # Get BBKey_AttackTarget from settings
+        - id: GetBBKeyAttackTarget
+          type: PropertyGet
+          properties:
+            property_name: BBKey_AttackTarget
+            target_class: ArsenalSettings
+          position: [1800, 100]
+        # Get attack target from blackboard (AI sets this)
+        - id: GetAttackTarget
+          type: CallFunction
+          properties:
+            function: GetValueAsObject
+            class: BlackboardComponent
+          position: [2100, 0]
+        # Validate target exists
+        - id: IsValid
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2400, 0]
+        - id: BranchValid
+          type: Branch
+          position: [2700, 0]
+        # Store target for later use
+        - id: SetTargetActor
+          type: VariableSet
+          properties:
+            variable_name: TargetActor
+          position: [3000, 0]
+        # Get target's ASC for damage application
+        - id: GetTargetASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [3300, 0]
+        # Get own ASC for spec creation
+        - id: GetOwnASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponentFromActorInfo
+            target_self: true
+          position: [3300, 100]
+        # Make damage GE spec
+        - id: MakeDamageSpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+            param.GameplayEffectClass: GE_CoreLaserDamage
+          position: [3600, 0]
+        # Get damage value from variable
+        - id: GetDamageValue
+          type: VariableGet
+          properties:
+            variable_name: LaserDamage
+          position: [3600, 150]
+        # Set damage magnitude via SetByCaller
+        - id: SetDamageByCaller
+          type: CallFunction
+          properties:
+            function: AssignTagSetByCallerMagnitude
+            class: AbilitySystemBlueprintLibrary
+          position: [3900, 0]
+        # Apply damage GE to target
+        - id: ApplyDamageGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToTarget
+            class: AbilitySystemComponent
+          position: [4200, 0]
+        # Commit cooldown after successful damage
         - id: CommitCooldown
           type: CallFunction
           properties:
             function: K2_CommitAbilityCooldown
             target_self: true
-          position: [300, 0]
+          position: [4500, 0]
+        # End ability (success path)
         - id: EndAbility
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [600, 0]
+          position: [4800, 0]
+        # End ability (no target path)
+        - id: EndAbility_NoTarget
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [3000, 200]
+        # Make Data.Damage.CoreLaser tag for SetByCaller
+        - id: MakeDamageTag
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Data.Damage.CoreLaser
+          position: [3900, 150]
       connections:
+        # Main execution flow
         - from: [Event_Activate, Then]
+          to: [CastToNPC, Exec]
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToNPC, Object]
+        - from: [CastToNPC, Then]
+          to: [CastToAIController, Exec]
+        - from: [CastToNPC, As Narrative NPCCharacter]
+          to: [GetAIController, Target]
+        - from: [GetAIController, Controller]
+          to: [CastToAIController, Object]
+        - from: [CastToAIController, Then]
+          to: [GetAttackTarget, Exec]
+        - from: [CastToAIController, As AIController]
+          to: [GetBlackboard, Target]
+        - from: [GetBlackboard, Blackboard]
+          to: [GetAttackTarget, Target]
+        # P-BB-KEY-2: Use NarrativeProSettings for BB key name
+        - from: [GetNarrativeProSettings, ReturnValue]
+          to: [GetBBKeyAttackTarget, Target]
+        - from: [GetBBKeyAttackTarget, BBKey_AttackTarget]
+          to: [GetAttackTarget, KeyName]
+        # Target validation
+        - from: [GetAttackTarget, Exec]
+          to: [IsValid, Exec]
+        - from: [GetAttackTarget, ReturnValue]
+          to: [IsValid, Object]
+        - from: [IsValid, Exec]
+          to: [BranchValid, Exec]
+        - from: [IsValid, ReturnValue]
+          to: [BranchValid, Condition]
+        # Valid target path
+        - from: [BranchValid, True]
+          to: [SetTargetActor, Exec]
+        - from: [GetAttackTarget, ReturnValue]
+          to: [SetTargetActor, TargetActor]
+        - from: [SetTargetActor, Exec]
+          to: [GetTargetASC, Exec]
+        - from: [GetAttackTarget, ReturnValue]
+          to: [GetTargetASC, Actor]
+        - from: [GetTargetASC, Exec]
+          to: [MakeDamageSpec, Exec]
+        # Make and apply damage spec
+        - from: [MakeDamageSpec, Exec]
+          to: [SetDamageByCaller, Exec]
+        - from: [MakeDamageSpec, ReturnValue]
+          to: [SetDamageByCaller, SpecHandle]
+        - from: [MakeDamageTag, ReturnValue]
+          to: [SetDamageByCaller, DataTag]
+        - from: [GetDamageValue, LaserDamage]
+          to: [SetDamageByCaller, Magnitude]
+        - from: [SetDamageByCaller, Exec]
+          to: [ApplyDamageGE, Exec]
+        - from: [SetDamageByCaller, ReturnValue]
+          to: [ApplyDamageGE, SpecHandle]
+        - from: [GetOwnASC, ReturnValue]
+          to: [ApplyDamageGE, Target]
+        - from: [GetTargetASC, ReturnValue]
+          to: [ApplyDamageGE, Target Data]
+        # Commit cooldown and end
+        - from: [ApplyDamageGE, Exec]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
+        # No target path - end immediately
+        - from: [BranchValid, False]
+          to: [EndAbility_NoTarget, Exec]
+        # Cast fail paths - end ability
+        - from: [CastToNPC, Cast Failed]
+          to: [EndAbility_NoTarget, Exec]
+        - from: [CastToAIController, Cast Failed]
+          to: [EndAbility_NoTarget, Exec]
 
 # ============================================================================
 # NPC SYSTEMS - GUARD FORMATION
