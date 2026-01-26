@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 2.0 (Consolidated)
+## Version 2.1 (Claude-GPT Audit Closure)
 ## January 2026
 
 ---
@@ -128,7 +128,7 @@ Based on this audit session, 4 new contracts were added to `LOCKED_CONTRACTS.md`
 1. **Passive/Following:** Follows player at distance, appears non-threatening
 2. **Agitation Building:** Subtle tells as internal aggression meter rises
 3. **Aggression Burst:** Suddenly attacks with full hostility
-4. **Cooldown/Reset:** May return to passive or continue attacking
+4. **Cooldown/Reset:** ~~May return to passive or~~ Stays aggressive permanently (Implementation: Permanent - see Stalker Guide v2.2, line 51)
 
 **Strategic Impact:** Creates paranoia - player never knows when attack will come
 
@@ -420,6 +420,28 @@ event_graph:
 | NPC-to-NPC Broadcast | Gatherer | LOW | Narrative Pro handles |
 | Formation Math | Guard | LOW | Standard calculation |
 
+### DOC-ONLY Patterns
+
+#### P-GG-TIMER-1: GoalGenerator Timer Cleanup
+**Classification:** DOC-ONLY
+**Status:** Already implemented correctly (Stalker)
+**Analogous Rule:** R-TIMER-1 (GAS Abilities Audit v6.5) - scoped to GameplayAbility only
+
+**Pattern:**
+- Store TimerHandle in member variable (`AggressionTimerHandle`)
+- Clear all handles in cleanup functions (`StopFollowing`, `BecomeAggressive`)
+- Timer callbacks check validity before executing
+
+**Why not LOCKED:**
+- GoalGenerators are UObject-based, not GameplayAbility (R-TIMER-1 scope is ability-only)
+- Stalker implementation already correct with proper cleanup
+- MEDIUM risk (not HIGH like ability timers due to simpler lifecycle)
+
+**Cross-Reference:**
+> R-TIMER-1 (Father_Companion_GAS_Abilities_Audit v6.5, lines 647-673) governs timer safety for GameplayAbilities.
+> GoalGenerator timers follow the same principle but are NOT covered by R-TIMER-1 due to scope boundary.
+> This pattern (P-GG-TIMER-1) documents the analogous requirement for UObject-based GoalGenerators.
+
 ---
 
 ## AUTOMATION VERIFICATION
@@ -492,6 +514,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2026-01-26 | **Claude-GPT Audit Closure:** Patched line 131 (Stalker "Cooldown/Reset" → "Stays aggressive permanently"). Added P-GG-TIMER-1 DOC-ONLY pattern. Added R-TIMER-1 cross-reference with scope clarification. |
 | 2.0 | 2026-01-25 | **Consolidated Report:** Merged NPC_Guides_Comprehensive_Audit_v1_0.md and NPC_Guides_Audit_Report.md. Added gameplay intent findings. Updated to v4.34 with all 4 new locked contracts (16-19). All 7 NPC systems PASS. |
 | 1.2 | 2026-01-25 | SpawnNPC resolution, suggested locks |
 | 1.1 | 2026-01-25 | NO MANUAL CREATION policy |
