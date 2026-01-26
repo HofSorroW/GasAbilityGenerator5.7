@@ -10758,9 +10758,388 @@ actor_blueprints:  # GATHERER GOAL GENERATORS
           to: [PrintAlerted, Exec]
 
 activities:  # GATHERER
+  # v4.39.2: Full BPA_Alert implementation per Guide v1.2 L320-510
+  # Spawns reinforcements when Gatherer detects threat, then flees
   - name: BPA_Alert
     folder: AI/Activities
-    parent_class: NarrativeActivityBase
+    parent_class: NPCActivity
+    # Class properties per Guide L374-375
+    supported_goal_type: Goal_Alert
+    is_interruptable: false
+    variables:
+      # Guide L333-339: NPCDefinition for reinforcement spawning
+      - name: ReinforcementDefinition
+        type: Object
+        class: NPCDefinition
+        instance_editable: true
+        expose_on_spawn: true
+      # Guide L341-346: Number of reinforcements to spawn
+      - name: ReinforcementCount
+        type: Integer
+        default_value: "2"
+        instance_editable: true
+      # Guide L348-353: Radius around gatherer to spawn reinforcements
+      - name: SpawnRadius
+        type: Float
+        default_value: "100.0"
+        instance_editable: true
+      # Guide L355-360: Animation to play when signaling
+      - name: SignalMontage
+        type: AnimMontage
+        instance_editable: true
+      # Guide L362-366: Cached reference to the alert goal
+      - name: CachedAlertGoal
+        type: Object
+        class: NPCGoalItem
+    # K2_RunActivity override - Guide L377-510
+    function_overrides:
+      - function: K2_RunActivity
+        nodes:
+          # Cast ActivityGoal to Goal_Alert (Guide L385-389)
+          - id: CastToGoalAlert
+            type: DynamicCast
+            properties:
+              target_class: Goal_Alert
+            position: [200, 0]
+          # Cache the alert goal (Guide L389)
+          - id: SetCachedGoal
+            type: VariableSet
+            properties:
+              variable_name: CachedAlertGoal
+            position: [400, 0]
+          # Get owner character for ASC (Guide L393-394)
+          - id: GetOwnerChar1
+            type: CallFunction
+            properties:
+              function: GetOwnerCharacter
+              target_self: true
+            position: [600, 0]
+          # Get ASC (Guide L395-396)
+          - id: GetASC1
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+            position: [800, 0]
+          # Add signaling tag (Guide L397-398)
+          - id: AddSignalingTag
+            type: CallFunction
+            properties:
+              function: AddLooseGameplayTag
+              parameters:
+                Tag: State.NPC.Alert.Signaling
+            position: [1000, 0]
+          # Get owner for montage (Guide L402-403)
+          - id: GetOwnerChar2
+            type: CallFunction
+            properties:
+              function: GetOwnerCharacter
+              target_self: true
+            position: [1200, 0]
+          # Get signal montage variable
+          - id: GetSignalMontage
+            type: VariableGet
+            properties:
+              variable_name: SignalMontage
+            position: [1200, 100]
+          # Play signal animation (Guide L404-405)
+          - id: PlayMontage
+            type: CallFunction
+            properties:
+              function: PlayAnimMontage
+            position: [1400, 0]
+          # Delay for animation (Guide L407-408)
+          - id: Delay
+            type: Delay
+            properties:
+              duration: 2.0
+            position: [1600, 0]
+          # Authority check before spawning (multiplayer safety)
+          - id: HasAuthority
+            type: CallFunction
+            properties:
+              function: HasAuthority
+              class: Actor
+            position: [1800, 0]
+          - id: AuthBranch
+            type: Branch
+            position: [2000, 0]
+          # Get reinforcement count for loop (Guide L413-414)
+          - id: GetReinforcementCount
+            type: VariableGet
+            properties:
+              variable_name: ReinforcementCount
+            position: [2200, 100]
+          # Subtract 1 for last index
+          - id: SubtractOne
+            type: CallFunction
+            properties:
+              function: Subtract_IntInt
+              class: KismetMathLibrary
+            position: [2400, 100]
+          # For loop to spawn reinforcements (Guide L410-414)
+          - id: SpawnLoop
+            type: ForLoop
+            position: [2600, 0]
+          # Validate reinforcement definition (Guide L416-421)
+          - id: GetReinforcementDef
+            type: VariableGet
+            properties:
+              variable_name: ReinforcementDefinition
+            position: [2800, 100]
+          - id: IsValidDef
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [3000, 0]
+          - id: ValidBranch
+            type: Branch
+            position: [3200, 0]
+          # Get owner location for spawn (Guide L425-427)
+          - id: GetOwnerChar3
+            type: CallFunction
+            properties:
+              function: GetOwnerCharacter
+              target_self: true
+            position: [3400, 0]
+          - id: GetOwnerLocation
+            type: CallFunction
+            properties:
+              function: K2_GetActorLocation
+              class: Actor
+            position: [3600, 0]
+          # Random offset (Guide L428-431)
+          - id: RandomUnitVector
+            type: CallFunction
+            properties:
+              function: RandomUnitVector
+              class: KismetMathLibrary
+            position: [3600, 100]
+          - id: GetSpawnRadius
+            type: VariableGet
+            properties:
+              variable_name: SpawnRadius
+            position: [3600, 200]
+          - id: MultiplyVectorFloat
+            type: CallFunction
+            properties:
+              function: Multiply_VectorFloat
+              class: KismetMathLibrary
+            position: [3800, 100]
+          # Add offset to location (Guide L432-434)
+          - id: AddVectors
+            type: CallFunction
+            properties:
+              function: Add_VectorVector
+              class: KismetMathLibrary
+            position: [4000, 0]
+          # Get owner rotation
+          - id: GetOwnerRotation
+            type: CallFunction
+            properties:
+              function: K2_GetActorRotation
+              class: Actor
+            position: [4000, 150]
+          # Make spawn transform (Guide L435-438)
+          - id: MakeTransform
+            type: CallFunction
+            properties:
+              function: MakeTransform
+              class: KismetMathLibrary
+            position: [4200, 0]
+          # Get subsystem for spawn (Guide L441)
+          - id: GetCharSubsystem
+            type: CallFunction
+            properties:
+              function: GetNarrativeCharacterSubsystem
+              class: NarrativeCharacterSubsystem
+            position: [4400, 0]
+          # SpawnNPC (Guide L443-445)
+          - id: SpawnReinforcement
+            type: SpawnNPC
+            properties:
+              npc_definition_variable: ReinforcementDefinition
+            position: [4600, 0]
+          # Print spawn success
+          - id: PrintSpawned
+            type: PrintString
+            properties:
+              message: "BPA_Alert: Spawned reinforcement"
+            position: [4800, 0]
+          # After loop completes - add Goal_Flee to gatherer (Guide L472-494)
+          - id: GetOwnerChar4
+            type: CallFunction
+            properties:
+              function: GetOwnerCharacter
+              target_self: true
+            position: [5000, 0]
+          - id: GetActivityComp
+            type: CallFunction
+            properties:
+              function: GetActivityComponent
+            position: [5200, 0]
+          # Get cached goal for removal
+          - id: GetCachedGoal
+            type: VariableGet
+            properties:
+              variable_name: CachedAlertGoal
+            position: [5200, 100]
+          # Remove Goal_Alert (Guide L496-500)
+          - id: RemoveGoal
+            type: CallFunction
+            properties:
+              function: RemoveGoal
+            position: [5400, 0]
+          # Get ASC for tag removal (Guide L504)
+          - id: GetOwnerChar5
+            type: CallFunction
+            properties:
+              function: GetOwnerCharacter
+              target_self: true
+            position: [5600, 0]
+          - id: GetASC2
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+            position: [5800, 0]
+          # Remove signaling tag (Guide L505-506)
+          - id: RemoveSignalingTag
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTag
+              parameters:
+                Tag: State.NPC.Alert.Signaling
+            position: [6000, 0]
+          # Print completion
+          - id: PrintComplete
+            type: PrintString
+            properties:
+              message: "BPA_Alert: Alert sequence complete"
+            position: [6200, 0]
+        connections:
+          # Entry -> Cast to Goal_Alert
+          - from: [FunctionEntry, Then]
+            to: [CastToGoalAlert, Exec]
+          - from: [FunctionEntry, ActivityGoal]
+            to: [CastToGoalAlert, Object]
+          # Cast -> Set cached goal
+          - from: [CastToGoalAlert, Then]
+            to: [SetCachedGoal, Exec]
+          - from: [CastToGoalAlert, AsGoal_Alert]
+            to: [SetCachedGoal, CachedAlertGoal]
+          # Set -> Get owner for ASC
+          - from: [SetCachedGoal, Then]
+            to: [GetOwnerChar1, Exec]
+          - from: [GetOwnerChar1, ReturnValue]
+            to: [GetASC1, Target]
+          - from: [GetOwnerChar1, Exec]
+            to: [GetASC1, Exec]
+          # Get ASC -> Add signaling tag
+          - from: [GetASC1, ReturnValue]
+            to: [AddSignalingTag, Target]
+          - from: [GetASC1, Exec]
+            to: [AddSignalingTag, Exec]
+          # Add tag -> Get owner for montage
+          - from: [AddSignalingTag, Then]
+            to: [GetOwnerChar2, Exec]
+          - from: [GetOwnerChar2, ReturnValue]
+            to: [PlayMontage, Target]
+          - from: [GetSignalMontage, SignalMontage]
+            to: [PlayMontage, MontageToPlay]
+          - from: [GetOwnerChar2, Exec]
+            to: [PlayMontage, Exec]
+          # Play montage -> Delay
+          - from: [PlayMontage, Then]
+            to: [Delay, Exec]
+          # Delay -> Authority check
+          - from: [Delay, Completed]
+            to: [HasAuthority, Exec]
+          - from: [HasAuthority, ReturnValue]
+            to: [AuthBranch, Condition]
+          - from: [HasAuthority, Exec]
+            to: [AuthBranch, Exec]
+          # Authority true -> For loop
+          - from: [AuthBranch, True]
+            to: [SpawnLoop, Exec]
+          - from: [GetReinforcementCount, ReinforcementCount]
+            to: [SubtractOne, A]
+          - from: [SubtractOne, ReturnValue]
+            to: [SpawnLoop, LastIndex]
+          # Loop body -> Validate definition
+          - from: [SpawnLoop, LoopBody]
+            to: [IsValidDef, Exec]
+          - from: [GetReinforcementDef, ReinforcementDefinition]
+            to: [IsValidDef, Object]
+          - from: [IsValidDef, ReturnValue]
+            to: [ValidBranch, Condition]
+          - from: [IsValidDef, Exec]
+            to: [ValidBranch, Exec]
+          # Valid true -> Get owner location
+          - from: [ValidBranch, True]
+            to: [GetOwnerChar3, Exec]
+          - from: [GetOwnerChar3, ReturnValue]
+            to: [GetOwnerLocation, Target]
+          - from: [GetOwnerChar3, ReturnValue]
+            to: [GetOwnerRotation, Target]
+          - from: [GetOwnerChar3, Exec]
+            to: [GetOwnerLocation, Exec]
+          # Calculate spawn location
+          - from: [RandomUnitVector, ReturnValue]
+            to: [MultiplyVectorFloat, A]
+          - from: [GetSpawnRadius, SpawnRadius]
+            to: [MultiplyVectorFloat, B]
+          - from: [GetOwnerLocation, ReturnValue]
+            to: [AddVectors, A]
+          - from: [MultiplyVectorFloat, ReturnValue]
+            to: [AddVectors, B]
+          # Make transform
+          - from: [AddVectors, ReturnValue]
+            to: [MakeTransform, Location]
+          - from: [GetOwnerRotation, ReturnValue]
+            to: [MakeTransform, Rotation]
+          # Spawn NPC
+          - from: [GetOwnerLocation, Exec]
+            to: [GetCharSubsystem, Exec]
+          - from: [GetCharSubsystem, Exec]
+            to: [SpawnReinforcement, Exec]
+          - from: [GetReinforcementDef, ReinforcementDefinition]
+            to: [SpawnReinforcement, NPCDefinition]
+          - from: [MakeTransform, ReturnValue]
+            to: [SpawnReinforcement, Transform]
+          # Print spawned
+          - from: [SpawnReinforcement, Then]
+            to: [PrintSpawned, Exec]
+          # Loop completed -> Cleanup
+          - from: [SpawnLoop, Completed]
+            to: [GetOwnerChar4, Exec]
+          - from: [GetOwnerChar4, ReturnValue]
+            to: [GetActivityComp, Target]
+          - from: [GetOwnerChar4, Exec]
+            to: [GetActivityComp, Exec]
+          # Remove goal
+          - from: [GetActivityComp, ReturnValue]
+            to: [RemoveGoal, Target]
+          - from: [GetCachedGoal, CachedAlertGoal]
+            to: [RemoveGoal, GoalToRemove]
+          - from: [GetActivityComp, Exec]
+            to: [RemoveGoal, Exec]
+          # Remove signaling tag
+          - from: [RemoveGoal, Then]
+            to: [GetOwnerChar5, Exec]
+          - from: [GetOwnerChar5, ReturnValue]
+            to: [GetASC2, Target]
+          - from: [GetOwnerChar5, Exec]
+            to: [GetASC2, Exec]
+          - from: [GetASC2, ReturnValue]
+            to: [RemoveSignalingTag, Target]
+          - from: [GetASC2, Exec]
+            to: [RemoveSignalingTag, Exec]
+          # Print complete
+          - from: [RemoveSignalingTag, Then]
+            to: [PrintComplete, Exec]
+          # Authority false -> Skip to cleanup (no spawn on client)
+          - from: [AuthBranch, False]
+            to: [GetOwnerChar4, Exec]
 
   - name: BPA_Gather
     folder: AI/Activities
