@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 2.5 (Generator Gap - Heal Meta-Attribute Pattern)
+## Version 2.6 (BPA_Alert Implementation Gap Closed)
 ## January 2026
 
 ---
@@ -613,6 +613,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.6 | 2026-01-26 | **BPA_Alert Implementation Gap Closed (Claude-GPT Audit):** Identified BPA_Alert was a stub (parent class only, no variables or event graph). Implemented full activity per Guide v1.2 L320-510: Variables (ReinforcementDefinition, ReinforcementCount, SpawnRadius, SignalMontage, CachedAlertGoal), class properties (supported_goal_type=Goal_Alert, is_interruptable=false), K2_RunActivity override with full spawn logic (Cast to Goal_Alert, add signaling tag, play montage, HasAuthority check, spawn loop via SpawnNPC, cleanup). Plugin version v4.39.2. |
 | 2.5 | 2026-01-26 | **Generator Gap - Heal Meta-Attribute Pattern (Claude-GPT Audit):** Research into NarrativeAttributeSetBase.cpp:162-173 revealed Narrative Pro's Heal meta-attribute pattern (PostGameplayEffectExecute processes Heal → calls HealedBy delegate → adds to Health → resets Heal to 0). CRITICAL FINDING: Generator parses `execution_calculations` but NEVER applies them (GasAbilityGeneratorGenerators.cpp gap). Resolution: GE_SupportHeal changed from `execution_calculations: NarrativeHealExecution` to regular modifier on `NarrativeAttributeSetBase.Heal` attribute with `SetByCaller` magnitude. Guide updated to v1.2 documenting correct pattern. Plugin version v4.39.1. |
 | 2.4 | 2026-01-26 | **Support Buffer Full Guide Alignment (Claude-GPT Audit):** Comprehensive multi-level audit identified 6 INC issues (INC-SB-1 through INC-SB-6). Fixed: GE_SupportHeal now uses NarrativeHealExecution + SetByCaller.Heal (INC-SB-4); BP_SupportBuffer has full variables and ApplyHealToTarget function with authority check, cooldown, spec creation (INC-SB-3); BTS_HealNearbyAllies has faction check via GetAttitude and DamageThreshold health ratio check (INC-SB-2, INC-SB-6); BT_SupportFollow has all 3 services (BTS_HealNearbyAllies + BTS_SetAIFocus + BTS_AdjustFollowSpeed) with interval 0.5s (INC-SB-1, INC-SB-5). Plugin version v4.39. |
 | 2.3 | 2026-01-26 | **P-BB-KEY-2 NarrativeProSettings Pattern (Claude-GPT Audit):** Research verified NP BTS_AdjustFollowSpeed uses `Get Narrative Pro Settings → BBKey Follow Target` (screenshots). Tech Reference v6_8.md:6016 documents pattern. Fixed INC-4 (BTS_CalculateFormationPosition), INC-5 (BTS_AdjustFormationSpeed), INC-6 (BTS_CheckExplosionProximity) - all now use NarrativeProSettings instead of MakeLiteralName. Added P-BB-KEY-2 DOC-ONLY pattern. Plugin version v4.38. |
