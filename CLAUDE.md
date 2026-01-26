@@ -231,7 +231,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v4.30)
+## GasAbilityGenerator Plugin (v6.9)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1027,11 +1027,11 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
-| **v4.33** | Delegate bindings for actor blueprints; custom function resolution via Blueprint->FunctionGraphs (Step 5); ParseGoalItems LineIndex fix for section boundary detection |
-| **v4.32** | NPC automation enhancement: GoalGenerator automation with InitializeGoalGenerator override; BT Service actual behavior implementation; phase transition blueprints |
-| **v4.30** | Automation Gap Closure: MeshMaterials/Morphs struct automation for clothing items; deferred resolution for EquipmentAbilities/ActivitiesToGrant; DialogueShot SequenceAssets array automation |
-| **v4.29** | PreValidator-Generator Function Resolution Parity: Shared `FGasAbilityGeneratorFunctionResolver` class ensures identical behavior; 17 new ScriptName entries (K2_CancelAbility, etc.) |
-| **v4.28** | Option C Item Generation: Fragments system (AmmoFragment, PoisonableFragment), consumable_items/ammo_items/weapon_attachments manifest sections, S2 dot notation for struct properties |
+| **v6.9** | GA_Backstab + GA_FatherEngineer fixes: DynamicCast fuzzy pin matching for space-separated names, TSubclassOf Effects subfolder paths, NarrativePro blackboard mount path fix (`/NarrativePro/` not `/NarrativePro22B57/`). All 156 assets generate successfully. |
+| **v4.27** | Dependency Sort Order Audit: TopologicalSort exists but never called, Materials/MaterialFunctions phase order bug identified. Quick-fix: moved material_functions before materials in manifest. 156/156 assets verified. |
+| **v4.13.3** | Quest SM Semantic Verification: Post-generation validation for quest state machines. Validates start state, detects duplicate IDs, counts unresolved destinations. Emits `RESULT QuestSM:` summary line. |
+| **v4.12.4** | Full Sync-from-Assets: Item Table extracts EquipmentAbilities via reflection. Quest Table extracts per-state tasks, rewards, parent branches. Both PopulateRowsFromAssets() fully implemented. |
+| **v4.12.3** | Table Editor Button Parity: All 4 editors (NPC, Dialogue, Quest, Item) have consistent Save/Sync XLSX buttons. Base row reconstruction fixed using `LastSyncedHash != 0` filter for accurate 3-way merge. |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
