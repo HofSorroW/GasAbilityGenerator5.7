@@ -11809,6 +11809,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           - from: [Min, ReturnValue]
             to: [Return, ReturnValue]
       # StopFollowing - Cleanup for TIMEOUT (returns to patrol)
+      # PATCH-C: Includes state tag removal for Following, Bonded, Defending
       - name: StopFollowing
         nodes:
           - id: GetTalkTimer
@@ -11880,11 +11881,50 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             properties:
               variable_name: CachedPlayerCharacter
             position: [2000, 0]
+          # PATCH-C: State tag removal nodes
+          - id: GetOwnerController
+            type: VariableGet
+            properties:
+              variable_name: OwnerController
+            position: [2200, 0]
+          - id: GetControlledPawn
+            type: CallFunction
+            properties:
+              function: GetPawn
+              class: Controller
+            position: [2400, 0]
+          - id: GetASC
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+              class: AbilitySystemBlueprintLibrary
+            position: [2600, 0]
+          - id: RemoveFollowingTag
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTag
+              class: AbilitySystemComponent
+              param.GameplayTag: "State.NPC.Returned.Following"
+            position: [2800, 0]
+          - id: RemoveBondedTag
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTag
+              class: AbilitySystemComponent
+              param.GameplayTag: "State.NPC.Returned.Bonded"
+            position: [3000, 0]
+          - id: RemoveDefendingTag
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTag
+              class: AbilitySystemComponent
+              param.GameplayTag: "State.NPC.Returned.Defending"
+            position: [3200, 0]
           - id: PrintStopped
             type: PrintString
             properties:
               message: "GoalGenerator_RandomAggression: Stopped following, returning to patrol"
-            position: [2200, 0]
+            position: [3400, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [ClearTalkTimer, Exec]
@@ -11910,9 +11950,31 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [ClearDefendGoal, Exec]
           - from: [ClearDefendGoal, Then]
             to: [ClearPlayer, Exec]
+          # PATCH-C: State tag removal connections
           - from: [ClearPlayer, Then]
+            to: [GetControlledPawn, Exec]
+          - from: [GetOwnerController, OwnerController]
+            to: [GetControlledPawn, Target]
+          - from: [GetControlledPawn, ReturnValue]
+            to: [GetASC, Actor]
+          - from: [GetControlledPawn, Then]
+            to: [GetASC, Exec]
+          - from: [GetASC, ReturnValue]
+            to: [RemoveFollowingTag, Target]
+          - from: [GetASC, Then]
+            to: [RemoveFollowingTag, Exec]
+          - from: [GetASC, ReturnValue]
+            to: [RemoveBondedTag, Target]
+          - from: [RemoveFollowingTag, Then]
+            to: [RemoveBondedTag, Exec]
+          - from: [GetASC, ReturnValue]
+            to: [RemoveDefendingTag, Target]
+          - from: [RemoveBondedTag, Then]
+            to: [RemoveDefendingTag, Exec]
+          - from: [RemoveDefendingTag, Then]
             to: [PrintStopped, Exec]
       # BecomeAggressive - AUDIT PATCH-D: Cleanup for ATTACK (permanent aggro)
+      # PATCH-C: Removes Following/Bonded tags; does NOT remove Defending (let OnDefendGoalCompleted handle it)
       - name: BecomeAggressive
         nodes:
           - id: GetTalkTimer
@@ -11967,11 +12029,43 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             properties:
               variable_name: CachedPlayerCharacter
             position: [1400, 0]
+          # PATCH-C: State tag removal (Following, Bonded only - NOT Defending)
+          - id: GetOwnerController
+            type: VariableGet
+            properties:
+              variable_name: OwnerController
+            position: [1600, 0]
+          - id: GetControlledPawn
+            type: CallFunction
+            properties:
+              function: GetPawn
+              class: Controller
+            position: [1800, 0]
+          - id: GetASC
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+              class: AbilitySystemBlueprintLibrary
+            position: [2000, 0]
+          - id: RemoveFollowingTag
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTag
+              class: AbilitySystemComponent
+              param.GameplayTag: "State.NPC.Returned.Following"
+            position: [2200, 0]
+          - id: RemoveBondedTag
+            type: CallFunction
+            properties:
+              function: RemoveLooseGameplayTag
+              class: AbilitySystemComponent
+              param.GameplayTag: "State.NPC.Returned.Bonded"
+            position: [2400, 0]
           - id: PrintAggressive
             type: PrintString
             properties:
               message: "GoalGenerator_RandomAggression: BECAME PERMANENTLY AGGRESSIVE"
-            position: [1600, 0]
+            position: [2600, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [ClearTalkTimer, Exec]
@@ -11991,7 +12085,24 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [ClearFollowGoal, Exec]
           - from: [ClearFollowGoal, Then]
             to: [ClearPlayer, Exec]
+          # PATCH-C: State tag removal connections
           - from: [ClearPlayer, Then]
+            to: [GetControlledPawn, Exec]
+          - from: [GetOwnerController, OwnerController]
+            to: [GetControlledPawn, Target]
+          - from: [GetControlledPawn, ReturnValue]
+            to: [GetASC, Actor]
+          - from: [GetControlledPawn, Then]
+            to: [GetASC, Exec]
+          - from: [GetASC, ReturnValue]
+            to: [RemoveFollowingTag, Target]
+          - from: [GetASC, Then]
+            to: [RemoveFollowingTag, Exec]
+          - from: [GetASC, ReturnValue]
+            to: [RemoveBondedTag, Target]
+          - from: [RemoveFollowingTag, Then]
+            to: [RemoveBondedTag, Exec]
+          - from: [RemoveBondedTag, Then]
             to: [PrintAggressive, Exec]
     # ═══════════════════════════════════════════════════════════════
     # EVENT GRAPH - 6 CustomEvents

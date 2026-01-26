@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 3.0 (All Audit Findings Fixed)
+## Version 3.1 (P-GG-TIMER-1 Closed - No Bug)
 ## January 2026
 
 ---
@@ -38,7 +38,7 @@ This consolidated audit combines technical validation, gameplay intent review, a
 | Biomechanical_Detachment_v1_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 | Guard_Formation_Follow_v2_5 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 | Gatherer_Scout_Alert_v1_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
-| Random_Aggression_Stalker_v2_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
+| Random_Aggression_Stalker_v2_3 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 | Possessed_Exploder_v2_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 | Support_Buffer_Healer_v1_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 
@@ -384,16 +384,26 @@ event_graph:
 
 **Question:** Should R-TIMER-1 (Timer Callback Safety) be extended to cover GoalGenerator UObjects?
 
-**Finding:** YES - GoalGenerators face higher risk than GameplayAbilities because:
-- UObjects do NOT auto-cancel timers on destruction (unlike AActor)
-- Timer callbacks can outlive owner UObject
-- Requires explicit `ClearAndInvalidateTimerByHandle` in cleanup
+**Finding:** NO BUG - DO NOT FIX
 
-**Current Implementation (Random Stalker):**
-- Stores `AggressionTimerHandle` for cleanup
-- Properly initialized in `InitializeGoalGenerator`
+**Initial Concern:** GoalGenerators extend UObject (not AActor), so they lack `EndPlay()` lifecycle hooks. Narrative Pro's `UNPCGoalGenerator` provides `InitializeGoalGenerator()` but no `DeinitializeGoalGenerator()` cleanup hook. This raised concern about orphan timers.
 
-**Recommendation:** Document as pattern (timers in UObjects require explicit cleanup).
+**Investigation Result:** After detailed analysis, this is NOT a practical bug:
+
+| Scenario | Code Path Exists? | Risk |
+|----------|-------------------|------|
+| NPC dies | Yes (normal gameplay) | **NONE** - Destruction chain: NPC Actor destroyed → Controller destroyed → ActivityComponent destroyed → GoalGenerator outer chain broken → GC collects → Timers auto-cancel |
+| `RemoveGoalGenerator()` while alive | **NO** - No built-in code calls this | **NONE** - No code path triggers this |
+| `Deactivate()` while alive | **NO** - No built-in code calls this | **NONE** - No code path triggers this |
+
+**Why No Bug:**
+1. **NPC Death = Destruction (not Deactivation):** When NPC dies, the entire ownership chain is destroyed, not just deactivated. GC handles cleanup.
+2. **No Dynamic Generator Removal:** Narrative Pro pattern is "generators live for NPC lifetime" - use tags/scoring for behavior control, not runtime generator add/remove.
+3. **API Exists but Unused:** `RemoveGoalGenerator()` and `Deactivate()` exist as APIs but no Narrative Pro code calls them while NPC is alive.
+
+**Conclusion:** The orphan timer scenario requires calling `RemoveGoalGenerator()` or `Deactivate()` while the NPC is still alive. No code path does this. Normal NPC death triggers destruction, and GC auto-cancels timers.
+
+**Status:** CLOSED - No fix required. Documented for future reference if project adds dynamic generator removal.
 
 ---
 
@@ -565,24 +575,31 @@ NASC->OnDied.AddUniqueDynamic(this, &ThisClass::HandleDeath);
 ### DOC-ONLY Patterns
 
 #### P-GG-TIMER-1: GoalGenerator Timer Cleanup
-**Classification:** DOC-ONLY
-**Status:** Already implemented correctly (Stalker)
+**Classification:** NO BUG - CLOSED
+**Status:** Investigated and determined NOT a bug (v3.1 audit)
 **Analogous Rule:** R-TIMER-1 (GAS Abilities Audit v6.5) - scoped to GameplayAbility only
 
-**Pattern:**
-- Store TimerHandle in member variable (`AggressionTimerHandle`)
-- Clear all handles in cleanup functions (`StopFollowing`, `BecomeAggressive`)
-- Timer callbacks check validity before executing
+**Initial Concern:**
+- GoalGenerators are UObjects without `EndPlay()` lifecycle
+- Narrative Pro provides `InitializeGoalGenerator()` but no `DeinitializeGoalGenerator()`
+- Timers might become orphaned if generator removed while NPC alive
 
-**Why not LOCKED:**
-- GoalGenerators are UObject-based, not GameplayAbility (R-TIMER-1 scope is ability-only)
-- Stalker implementation already correct with proper cleanup
-- MEDIUM risk (not HIGH like ability timers due to simpler lifecycle)
+**Why NOT a Bug:**
 
-**Cross-Reference:**
-> R-TIMER-1 (Father_Companion_GAS_Abilities_Audit v6.5, lines 647-673) governs timer safety for GameplayAbilities.
-> GoalGenerator timers follow the same principle but are NOT covered by R-TIMER-1 due to scope boundary.
-> This pattern (P-GG-TIMER-1) documents the analogous requirement for UObject-based GoalGenerators.
+| Scenario | Analysis |
+|----------|----------|
+| NPC dies | Destruction chain handles cleanup: Actor → Controller → Component → GoalGenerator all destroyed. GC collects GoalGenerator, timers auto-cancel. **No risk.** |
+| `RemoveGoalGenerator()` while alive | **No code path exists.** This API is unused by Narrative Pro. NP pattern is "generators live for NPC lifetime". |
+| `Deactivate()` while alive | **No code path exists.** NPCActivityComponent.Deactivate() is not called while NPC is alive in normal gameplay. |
+
+**Key Insight:** The orphan timer bug would require `RemoveGoalGenerator()` or `Deactivate()` to be called while the NPC is still alive. Since no code does this, the bug cannot manifest.
+
+**Stalker Timer Implementation:**
+- `FollowCheckTimerHandle` intentionally persists (allows re-follow after timeout)
+- `TalkCheckTimerHandle`, `AttackCheckTimerHandle`, `FollowDurationTimerHandle` cleared on state transitions
+- All timers auto-cancel when NPC dies (GC cleanup)
+
+**Resolution:** No fix needed. Pattern documented for reference only. If project adds dynamic generator removal in future, revisit this analysis.
 
 ---
 
@@ -932,16 +949,23 @@ TriggerExplosion → Delay(0.1s) → DestroyActor(Self)
 
 Audit of `GoalGenerator_RandomAggression` timer safety and state transitions.
 
-### Timer Safety (P-GG-TIMER-1 Compliance)
+### Timer Safety (P-GG-TIMER-1 - NO BUG)
 
 | Timer Handle | Initialized | Cleared on Stop | Cleared on Aggro | Design Intent |
 |--------------|-------------|-----------------|------------------|---------------|
-| `FollowCheckTimerHandle` | InitializeGoalGenerator | ❌ | ❌ | Persists for re-follow |
+| `FollowCheckTimerHandle` | InitializeGoalGenerator | N/A (intentional) | N/A (intentional) | Persists for NPC lifetime - allows re-follow |
 | `TalkCheckTimerHandle` | StartFollowing | ✅ Line 11800 | ✅ Line 11887 | Follow-only timer |
 | `AttackCheckTimerHandle` | StartFollowing | ✅ Line 11804 | ✅ Line 11891 | Follow-only timer |
 | `FollowDurationTimerHandle` | StartFollowing | ✅ Line 11808 | ✅ Line 11895 | Follow-only timer |
 
-**Design Note:** `FollowCheckTimerHandle` intentionally persists after timeout - allows Stalker to re-enter follow state later. This is correct behavior per guide (timeout → patrol → can start following again).
+**Design Note:** `FollowCheckTimerHandle` intentionally persists for NPC lifetime - allows Stalker to re-enter follow state after timeout/aggression. This is correct behavior.
+
+**Why No Cleanup Bug (v3.1 Investigation):**
+- When NPC dies: Destruction chain (Actor → Controller → Component → GoalGenerator) triggers GC, which auto-cancels all timers
+- `RemoveGoalGenerator()` while alive: No code path exists - Narrative Pro doesn't call this at runtime
+- `Deactivate()` while alive: No code path exists - not called during normal gameplay
+
+**Conclusion:** Timer cleanup is handled automatically by GC on NPC death. No orphan timer risk exists because no code removes/deactivates generators while NPC is alive.
 
 ### Attack Chance Calculation
 
@@ -1120,6 +1144,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.1 | 2026-01-26 | **P-GG-TIMER-1 Investigation - NO BUG (Claude-GPT Audit):** Investigated GoalGenerator timer lifecycle concern. Initial worry: `FollowCheckTimerHandle` never cleared, orphan timers possible. **Finding: NOT A BUG.** Analysis: (1) NPC death = destruction chain, GC auto-cancels timers; (2) `RemoveGoalGenerator()` while alive has no code path - API exists but unused; (3) `Deactivate()` while alive has no code path. Orphan timer scenario requires calling removal/deactivation while NPC alive, which doesn't happen. **Resolution:** Closed as "no bug, do not fix". Updated Research Findings section, P-GG-TIMER-1 pattern, and Aggression Escalation audit to reflect. |
 | 3.0 | 2026-01-26 | **All Audit Findings Fixed (Claude-GPT Audit):** Plugin v4.39.6. **GA_StealthField Stealth Break - FIXED:** Added `Event_HandleStealthDamageBreak` and `Event_HandleStealthAttackBreak` CustomEvent nodes with proper parameters (DamagerCauserASC/DamagedASC, Damage, Spec) and `K2_EndAbility` calls. Connections added per R-DELEGATE-1 Contract 18. **BTS_CalculateFormationPosition - FIXED:** Complete rewrite per Guide v2.6 Phase 4 Node Connection Summary. Changed from `Quat_RotateVector` to `RotateVector` (Rotator input). Removed all orphan connections (BreakRotator, GetNarrativeProSettings, GetLeaderLocation, MultiplyOffset, SubtractOffset). Now properly rotates `FormationOffset` Vector from blackboard by target rotation. All 19 connections match guide exactly. |
 | 2.9 | 2026-01-26 | **Death Signal Path Audit + Doc Drift Finding (Claude-GPT Audit):** Cross-checked Warden and Biomech guides. DOC DRIFT: Contract 17 shows `delegate_bindings:` but guides use `function_overrides: HandleDeath`. Root cause: NP auto-binds OnDied→HandleDeath. **Contract 17 UPDATED** with Pattern A (NP) and Pattern B (non-NP). **R-PHASE-1 Scope:** Exploder/Stalker correctly excluded. **Aggression Escalation:** P-GG-TIMER-1 COMPLIANT. **Stealth Break Audit:** ⚠️ INCOMPLETE - GA_StealthField declares `delegate_bindings` but handler CustomEvents (`HandleStealthDamageBreak`, `HandleStealthAttackBreak`) missing from event_graph; guide uses different approach (Gameplay Events). **Formation Authority Audit:** ✅ COMPLIANT - BTS_CalculateFormationPosition and BTS_AdjustFormationSpeed both satisfy P-BB-KEY-2 and P-MOVE-1. |
 | 2.8 | 2026-01-26 | **Cross-GPT Consistency Diff Audit:** Added full consistency diff methodology for LOCKED contract validation. Support Buffer: R-AI-1 compliant, INV-GESPEC-1 N/A (uses MakeOutgoingSpec not MakeOutgoingGameplayEffectSpec), P-BB-KEY-2 N/A (no BB keys used). Warden Husk/Core: R-SPAWN-1, R-PHASE-1, R-NPCDEF-1 all COMPLIANT with manifest evidence (lines 8879-8951). Claude-GPT Validated Findings: (1) INV-GESPEC-1 explicitly scoped to UGameplayAbility function, not ASC; (2) NP built-in services authoritative for P-BB-KEY-2; (3) Cross-BP limitation acceptable as tracked Generation Completeness Gate; (4) R-PHASE-1 clarification - NP auto-binds OnDied→HandleDeath in NarrativeNPCController.cpp:165. |
@@ -1147,7 +1172,7 @@ VERIFICATION PASSED: All whitelist assets processed
   - `guides/Support_Buffer_Healer_Guide_v1_2.md`
   - `guides/Guard_Formation_Follow_Implementation_Guide_v2_6.md`
   - `guides/Gatherer_Scout_Alert_Implementation_Guide_v1_2.md`
-  - `guides/Random_Aggression_Stalker_Implementation_Guide_v2_2.md`
+  - `guides/Random_Aggression_Stalker_System_Implementation_Guide_v2_3.md`
   - `guides/Possessed_Exploder_Implementation_Guide_v2_2.md`
 
 ---

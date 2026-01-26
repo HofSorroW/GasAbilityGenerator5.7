@@ -1,6 +1,6 @@
 # Random Aggression Stalker System Implementation Guide
 ## Passive NPCs with Stacking Bond, Tagged Dialogue, and Defend Mechanics
-## Version 2.2
+## Version 2.3
 
 ---
 
@@ -508,9 +508,10 @@
    - 22.1.3) From Red delegate pin:
    - 22.1.3.1) Drag and select: Add Custom Event
    - 22.1.3.2) Name: OnPlayerDamaged
-   - 22.1.4) Add parameters to match delegate signature:
-   - 22.1.4.1) DamageInstigator: Actor Reference
-   - 22.1.4.2) DamageAmount: Float
+   - 22.1.4) Add parameters to match FOnDamagedBy delegate signature:
+   - 22.1.4.1) DamagerCauserASC: NarrativeAbilitySystemComponent Reference
+   - 22.1.4.2) Damage: Float
+   - 22.1.4.3) Spec: GameplayEffectSpec Reference
 
 ### **23) Start Talk Check Timer**
 
@@ -712,24 +713,29 @@
    - 35.2.2) Add Branch node
    - 35.2.3) Connect NOT result to Condition
 
-### **36) Validate Damage Instigator**
+### **36) Extract Attacker Actor from ASC**
 
-#### 36.1) Check Instigator Valid
+#### 36.1) Get Attacker Actor
    - 36.1.1) From Branch True pin:
-   - 36.1.1.1) Drag DamageInstigator parameter
-   - 36.1.1.2) Add Is Valid node
-   - 36.1.2) Add Branch node
-   - 36.1.3) Connect Is Valid result to Condition
+   - 36.1.1.1) Drag DamagerCauserASC parameter
+   - 36.1.1.2) Add Get Owner node (from ActorComponent)
+   - 36.1.2) Store result as AttackerActor (local variable or wire)
 
-#### 36.2) Check Instigator Not Self
-   - 36.2.1) From Branch True pin:
-   - 36.2.1.1) Add Equal (Object) node
-   - 36.2.2) Connect:
-   - 36.2.2.1) A: DamageInstigator
-   - 36.2.2.2) B: From OwnerController -> Get Controlled Pawn
-   - 36.2.3) Add NOT Boolean node
-   - 36.2.4) Add Branch node
-   - 36.2.5) Connect NOT result to Condition
+#### 36.2) Check Attacker Valid
+   - 36.2.1) From Get Owner Return Value:
+   - 36.2.1.1) Add Is Valid node
+   - 36.2.2) Add Branch node
+   - 36.2.3) Connect Is Valid result to Condition
+
+#### 36.3) Check Attacker Not Self
+   - 36.3.1) From Branch True pin:
+   - 36.3.1.1) Add Equal (Object) node
+   - 36.3.2) Connect:
+   - 36.3.2.1) A: AttackerActor (from Get Owner)
+   - 36.3.2.2) B: From OwnerController -> Get Controlled Pawn
+   - 36.3.3) Add NOT Boolean node
+   - 36.3.4) Add Branch node
+   - 36.3.5) Connect NOT result to Condition
 
 ### **37) Check Attacker in Range**
 
@@ -738,7 +744,7 @@
    - 37.1.1.1) From OwnerController -> Get Controlled Pawn
    - 37.1.2) Add Get Distance To node
    - 37.1.3) Connect:
-   - 37.1.3.1) Other Actor: DamageInstigator
+   - 37.1.3.1) Other Actor: AttackerActor (from Get Owner)
 
 #### 37.2) Compare to Defend Range
    - 37.2.1) Add Less Than or Equal (Float) node
@@ -777,8 +783,9 @@
 
 #### 39.2) Configure Attack Goal
    - 39.2.1) From Construct Object Return Value:
-   - 39.2.1.1) Add SET node for Target Actor (or appropriate property)
-   - 39.2.1.2) Connect DamageInstigator to target
+   - 39.2.1.1) Cast AttackerActor to NarrativeCharacter
+   - 39.2.1.2) Add SET node for TargetToAttack property
+   - 39.2.1.3) Connect Cast result (As NarrativeCharacter) to TargetToAttack
 
 #### 39.3) Store Defend Goal Reference
    - 39.3.1) From SET Target execution:
@@ -818,14 +825,22 @@
 
 ### **43) Bind to Defend Goal Completion**
 
-#### 43.1) Bind to Goal Succeeded
+#### 43.1) Bind to OnGoalRemoved (NOT OnGoalSucceeded)
    - 43.1.1) From Play Tagged Dialogue execution:
-   - 43.1.1.1) Add Bind Event to On Goal Succeeded node
+   - 43.1.1.1) Add Bind Event to On Goal Removed node
    - 43.1.2) Connect:
    - 43.1.2.1) Target: CurrentDefendGoal
    - 43.1.3) From Red delegate pin:
    - 43.1.3.1) Drag and select: Add Custom Event
    - 43.1.3.2) Name: OnDefendGoalCompleted
+   - 43.1.3.3) Add parameters to match FOnGoalSignature:
+   - 43.1.3.3.1) Activity: NPCActivity Reference
+   - 43.1.3.3.2) Goal: NPCGoalItem Reference
+
+> **IMPORTANT:** Use OnGoalRemoved, NOT OnGoalSucceeded. OnGoalRemoved fires in ALL
+> termination cases (success, failure, timeout, cleanup). OnGoalFailed does NOT exist
+> in Narrative Pro. Using OnGoalSucceeded alone causes stuck defending state when
+> target escapes or goal times out.
 
 ### **44) Implement OnDefendGoalCompleted**
 
@@ -918,9 +933,13 @@
    - 50.1.2.1) Goal: Constructed Goal_Attack
    - 50.1.2.2) Trigger Reselect: Check (true)
 
-#### 50.2) Call StopFollowing
+#### 50.2) Call BecomeAggressive (NOT StopFollowing)
    - 50.2.1) From Add Goal Item execution:
-   - 50.2.1.1) Add Call Function: StopFollowing (created in Phase 8)
+   - 50.2.1.1) Add Call Function: BecomeAggressive (created in Phase 8)
+
+> **IMPORTANT:** Use BecomeAggressive, NOT StopFollowing. The attack path leads to
+> PERMANENT aggression - the NPC should stay hostile. StopFollowing returns the NPC
+> to patrol mode, which is wrong for attack behavior.
 
 ### **51) Compile and Save**
    - 51.1) Click Compile
@@ -1029,9 +1048,59 @@
    - 57.5.1.1) Add SET TalkCount node
    - 57.5.1.2) TalkCount: 0
 
-### **58) Compile and Save**
-   - 58.1) Click Compile
-   - 58.2) Click Save
+#### 57.6) Remove State Tags
+   - 57.6.1) From SET TalkCount execution:
+   - 57.6.1.1) From OwnerController, Add Get Controlled Pawn node
+   - 57.6.2) Add Get Ability System Component node
+   - 57.6.3) Add Remove Loose Gameplay Tag node
+   - 57.6.3.1) Tag: State.NPC.Returned.Following
+   - 57.6.4) Add Remove Loose Gameplay Tag node
+   - 57.6.4.1) Tag: State.NPC.Returned.Bonded
+   - 57.6.5) Add Remove Loose Gameplay Tag node
+   - 57.6.5.1) Tag: State.NPC.Returned.Defending
+
+### **58) Create BecomeAggressive Function**
+
+> **Purpose:** Cleanup for ATTACK path - leads to PERMANENT aggression. Unlike
+> StopFollowing, this does NOT return to patrol and does NOT reset TalkCount.
+
+#### 58.1) Add Function
+   - 58.1.1) In My Blueprint panel, click + next to Functions
+   - 58.1.2) Name: BecomeAggressive
+   - 58.1.3) Press Enter
+
+#### 58.2) Clear Timers (Same as StopFollowing)
+   - 58.2.1) From function entry node:
+   - 58.2.1.1) Add Clear and Invalidate Timer by Handle node for TalkCheckTimerHandle
+   - 58.2.1.2) Add Clear and Invalidate Timer by Handle node for AttackCheckTimerHandle
+   - 58.2.1.3) Add Clear and Invalidate Timer by Handle node for FollowDurationTimerHandle
+
+#### 58.3) Unbind Player Damage (Same as StopFollowing)
+   - 58.3.1) Check CachedPlayerCharacter validity
+   - 58.3.2) If valid, Unbind Event from On Damage Received
+
+#### 58.4) Remove Follow Goal Only (Keep Defend Goal)
+   - 58.4.1) Check CurrentFollowGoal validity
+   - 58.4.2) If valid, Remove Goal Item for CurrentFollowGoal
+   - 58.4.3) Clear CurrentFollowGoal reference
+   - 58.4.4) Clear CachedPlayerCharacter reference
+   - 58.4.5) NOTE: Do NOT clear CurrentDefendGoal - may still be active
+
+#### 58.5) Update State (Partial Reset)
+   - 58.5.1) SET bIsFollowing = false
+   - 58.5.2) NOTE: Do NOT reset bIsDefending (defend may still be active)
+   - 58.5.3) NOTE: Do NOT reset TalkCount (irrelevant when aggressive)
+
+#### 58.6) Update State Tags
+   - 58.6.1) From OwnerController, Get Controlled Pawn -> Get Ability System Component
+   - 58.6.2) Add Remove Loose Gameplay Tag: State.NPC.Returned.Following
+   - 58.6.3) Add Remove Loose Gameplay Tag: State.NPC.Returned.Bonded
+   - 58.6.4) NOTE: Do NOT remove Defending tag (let OnDefendGoalCompleted handle it)
+   - 58.6.5) NOTE: Aggressive tag is added in OnAttackCheckTimer BEFORE calling this
+
+### **59) Compile and Save**
+   - 59.1) Click Compile
+   - 59.2) Click Save
 
 ---
 
@@ -1309,6 +1378,7 @@ With TalkCount = 5 (max):
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.3 | January 2026 | **AUDIT FIXES:** (PATCH-B) Fixed OnPlayerDamaged delegate signature to match FOnDamagedBy(ASC, Float, Spec). (PATCH-D) Added BecomeAggressive function for attack path - separates permanent aggression from timeout cleanup. (PATCH-E) Changed defend goal binding from OnGoalSucceeded to OnGoalRemoved - fires in ALL termination cases. Added state tag removal to StopFollowing. Added GetOwner pattern to extract attacker actor from ASC. |
 | 2.2 | January 2026 | Updated to Narrative Pro v2.2 naming conventions: ActConfig_ → AC_*Behavior suffix (AC_ReturnedStalkerBehavior), NPCDef_ → NPC_* prefix (NPC_ReturnedStalker). |
 | 2.1 | January 2026 | Fixed ActivityConfiguration type name in Assets Created table for consistency. |
 | 2.0 | January 2026 | Added stacking bond system with TalkCount. Added periodic talk rolls. Added defend player mechanic with player damage binding. Added return to following after defending. Added dynamic stat calculations. Integrated TaggedDialogueSet for all outcomes. Renamed from Stalker to Returned. |
