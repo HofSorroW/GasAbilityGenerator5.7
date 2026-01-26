@@ -1919,6 +1919,31 @@ void FGeneratorBase::LogGeneration(const FString& Message)
 	UE_LOG(LogGasAbilityGenerator, Display, TEXT("%s"), *Message);
 }
 
+// v4.40: Safe package save with return value check
+// Note: In UE 5.7, SavePackage returns bool (not ESavePackageResult)
+bool FGeneratorBase::SafeSavePackage(UPackage* Package, UObject* Asset, const FString& PackageFileName, const FString& AssetName)
+{
+	if (!Package || !Asset)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_SAVE_FAILED] %s | Package or Asset is null"), *AssetName));
+		return false;
+	}
+
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+
+	bool bSaveSuccess = UPackage::SavePackage(Package, Asset, *PackageFileName, SaveArgs);
+
+	if (!bSaveSuccess)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("[E_SAVE_FAILED] %s | SavePackage returned false"), *AssetName);
+		LogGeneration(FString::Printf(TEXT("[E_SAVE_FAILED] %s | SavePackage failed - asset may not persist"), *AssetName));
+		return false;
+	}
+
+	return true;
+}
+
 // ============================================================================
 // v2.1.8: Helper function to convert type string to FEdGraphPinType
 // Updated to use FindUserDefinedEnum for enum types
@@ -2866,6 +2891,19 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	}
 	if (Definition.DelegateBindings.Num() > 0)
 	{
+		// v4.40: Pre-validate delegate bindings before generation
+		TArray<FString> DelegateValidationErrors;
+		TArray<FManifestActorVariableDefinition> EmptyVariables; // GA uses OwnerASC/PlayerASC, not variables
+		if (!FEventGraphGenerator::ValidateDelegateBindings(Definition.DelegateBindings, EmptyVariables, Definition.Name, DelegateValidationErrors))
+		{
+			for (const FString& Error : DelegateValidationErrors)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DELEGATE PRE-VALIDATION: %s"), *Error);
+				LogGeneration(FString::Printf(TEXT("  DELEGATE ERROR: %s"), *Error));
+			}
+			// Continue with generation but log errors - don't fail entire ability generation
+		}
+
 		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateDelegateBindingNodes(Blueprint, Definition.DelegateBindings);
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
 	}
@@ -2994,10 +3032,12 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	}
 
 	// v4.16: Single save at end (D-011 invariant) - only reached if compile succeeded
+	// v4.40: Use SafeSavePackage for return value check
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
-	FSavePackageArgs SaveArgs;
-	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+	if (!SafeSavePackage(Package, Blueprint, PackageFileName, Definition.Name))
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("SavePackage failed - asset may not persist"));
+	}
 
 	LogGeneration(FString::Printf(TEXT("Created Gameplay Ability: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
 
@@ -3412,6 +3452,18 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	// v4.33: Generate delegate bindings for actor blueprints (External ASC Binding pattern)
 	if (Definition.DelegateBindings.Num() > 0)
 	{
+		// v4.40: Pre-validate delegate bindings before generation
+		TArray<FString> DelegateValidationErrors;
+		if (!FEventGraphGenerator::ValidateDelegateBindings(Definition.DelegateBindings, Definition.Variables, Definition.Name, DelegateValidationErrors))
+		{
+			for (const FString& Error : DelegateValidationErrors)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DELEGATE PRE-VALIDATION: %s"), *Error);
+				LogGeneration(FString::Printf(TEXT("  DELEGATE ERROR: %s"), *Error));
+			}
+			// Continue with generation but log errors - don't fail entire blueprint generation
+		}
+
 		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateActorDelegateBindingNodes(Blueprint, Definition.DelegateBindings, Definition.Variables);
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d actor delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
 	}
@@ -3457,10 +3509,12 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	FAssetRegistryModule::AssetCreated(Blueprint);
 
 	// Save package (only reached if compile succeeded)
+	// v4.40: Use SafeSavePackage for return value check
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
-	FSavePackageArgs SaveArgs;
-	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+	if (!SafeSavePackage(Package, Blueprint, PackageFileName, Definition.Name))
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("SavePackage failed - asset may not persist"));
+	}
 
 	LogGeneration(FString::Printf(TEXT("Created Actor Blueprint: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
 
@@ -4468,10 +4522,12 @@ FGenerationResult FWidgetBlueprintGenerator::Generate(
 	FAssetRegistryModule::AssetCreated(WidgetBP);
 
 	// Save package (only reached if compile succeeded)
+	// v4.40: Use SafeSavePackage for return value check
 	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
-	FSavePackageArgs SaveArgs;
-	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	UPackage::SavePackage(Package, WidgetBP, *PackageFileName, SaveArgs);
+	if (!SafeSavePackage(Package, WidgetBP, PackageFileName, Definition.Name))
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("SavePackage failed - asset may not persist"));
+	}
 
 	LogGeneration(FString::Printf(TEXT("Created Widget Blueprint: %s (with %d variables)"), *Definition.Name, Definition.Variables.Num()));
 
@@ -9146,6 +9202,150 @@ bool FEventGraphGenerator::ValidateActorBlueprintEventGraph(
 	return bValid;
 }
 
+// v4.40: Validate delegate bindings before generation
+// Checks that delegate names are known and sources reference existing variables
+bool FEventGraphGenerator::ValidateDelegateBindings(
+	const TArray<FManifestDelegateBindingDefinition>& DelegateBindings,
+	const TArray<FManifestActorVariableDefinition>& Variables,
+	const FString& BlueprintName,
+	TArray<FString>& OutErrors)
+{
+	if (DelegateBindings.Num() == 0)
+	{
+		return true; // No bindings to validate
+	}
+
+	bool bValid = true;
+
+	// Known delegate names on UNarrativeAbilitySystemComponent (Narrative Pro)
+	static TSet<FString> KnownDelegates = {
+		TEXT("OnDied"),
+		TEXT("OnDamagedBy"),
+		TEXT("OnHealedBy"),
+		TEXT("OnDealtDamage"),
+		TEXT("OnAbilityActivated"),
+		TEXT("OnAbilityEnded"),
+		TEXT("OnAbilityCommitted"),
+		TEXT("OnAbilityFailed"),
+		// Goal delegates (on UNPCGoalItem)
+		TEXT("OnGoalSucceeded"),
+		TEXT("OnGoalFailed"),
+		TEXT("OnGoalRemoved"),
+		TEXT("OnGoalActivated"),
+		// Generic GameplayAbility delegates
+		TEXT("OnGameplayAbilityEnded"),
+		TEXT("OnGameplayAbilityActivated"),
+		// Attribute change (future support)
+		TEXT("OnAttributeChanged")
+	};
+
+	// Known built-in sources that don't require variable lookup
+	static TSet<FString> KnownSources = {
+		TEXT("OwnerASC"),
+		TEXT("PlayerASC"),
+		TEXT("SelfASC"),
+		TEXT("self"),
+		TEXT("Self")
+	};
+
+	// Build a set of variable names for quick lookup
+	TSet<FString> VariableNames;
+	for (const FManifestActorVariableDefinition& Var : Variables)
+	{
+		VariableNames.Add(Var.Name);
+	}
+
+	for (const FManifestDelegateBindingDefinition& Binding : DelegateBindings)
+	{
+		// Validate delegate name
+		if (Binding.Delegate.IsEmpty())
+		{
+			OutErrors.Add(FString::Printf(TEXT("[E_DELEGATE_EMPTY] [%s] Delegate binding '%s' has empty delegate name"),
+				*BlueprintName, *Binding.Id));
+			bValid = false;
+			continue;
+		}
+
+		if (!KnownDelegates.Contains(Binding.Delegate))
+		{
+			OutErrors.Add(FString::Printf(TEXT("[E_DELEGATE_NOT_FOUND] [%s] Delegate binding '%s' references unknown delegate '%s' - valid delegates: OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage, OnGoalSucceeded, OnGoalFailed, OnGoalRemoved"),
+				*BlueprintName, *Binding.Id, *Binding.Delegate));
+			bValid = false;
+		}
+
+		// Validate source
+		if (Binding.Source.IsEmpty())
+		{
+			OutErrors.Add(FString::Printf(TEXT("[E_DELEGATE_SOURCE_EMPTY] [%s] Delegate binding '%s' has empty source"),
+				*BlueprintName, *Binding.Id));
+			bValid = false;
+			continue;
+		}
+
+		// Check if source is a known built-in or a variable
+		if (!KnownSources.Contains(Binding.Source) && !VariableNames.Contains(Binding.Source))
+		{
+			OutErrors.Add(FString::Printf(TEXT("[E_DELEGATE_SOURCE_INVALID] [%s] Delegate binding '%s' references source '%s' which is not a known source (OwnerASC, PlayerASC) or defined variable"),
+				*BlueprintName, *Binding.Id, *Binding.Source));
+			bValid = false;
+		}
+
+		// Validate handler name format (must be valid identifier)
+		if (Binding.Handler.IsEmpty())
+		{
+			OutErrors.Add(FString::Printf(TEXT("[E_DELEGATE_HANDLER_EMPTY] [%s] Delegate binding '%s' has empty handler name"),
+				*BlueprintName, *Binding.Id));
+			bValid = false;
+		}
+		else
+		{
+			// Check handler is valid identifier (starts with letter/underscore, contains only alphanumeric/underscore)
+			bool bValidHandler = true;
+			if (Binding.Handler.Len() > 0)
+			{
+				TCHAR FirstChar = Binding.Handler[0];
+				if (!FChar::IsAlpha(FirstChar) && FirstChar != TEXT('_'))
+				{
+					bValidHandler = false;
+				}
+				else
+				{
+					for (TCHAR C : Binding.Handler)
+					{
+						if (!FChar::IsAlnum(C) && C != TEXT('_'))
+						{
+							bValidHandler = false;
+							break;
+						}
+					}
+				}
+			}
+
+			if (!bValidHandler)
+			{
+				OutErrors.Add(FString::Printf(TEXT("[E_DELEGATE_HANDLER_INVALID] [%s] Delegate binding '%s' has invalid handler name '%s' - must be valid identifier"),
+					*BlueprintName, *Binding.Id, *Binding.Handler));
+				bValid = false;
+			}
+		}
+
+		// Log successful validation
+		if (bValid)
+		{
+			LogGeneration(FString::Printf(TEXT("  Delegate binding '%s': delegate=%s source=%s handler=%s - VALID"),
+				*Binding.Id, *Binding.Delegate, *Binding.Source, *Binding.Handler));
+		}
+	}
+
+	if (bValid)
+	{
+		LogGeneration(FString::Printf(TEXT("[%s] All %d delegate binding(s) validated successfully"),
+			*BlueprintName, DelegateBindings.Num()));
+	}
+
+	return bValid;
+}
+
 bool FEventGraphGenerator::GenerateEventGraph(
 	UBlueprint* Blueprint,
 	const FManifestEventGraphDefinition& GraphDefinition,
@@ -9283,6 +9483,26 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateSelfNode(EventGraph, NodeDef);
+		}
+		// v4.40: MakeLiteralBool - create a boolean literal value for VariableSet nodes
+		else if (NodeDef.Type.Equals(TEXT("MakeLiteralBool"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeLiteralBoolNode(EventGraph, NodeDef);
+		}
+		// v4.40: MakeLiteralFloat - create a float literal value for VariableSet nodes
+		else if (NodeDef.Type.Equals(TEXT("MakeLiteralFloat"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeLiteralFloatNode(EventGraph, NodeDef);
+		}
+		// v4.40: MakeLiteralInt - create an integer literal value for VariableSet nodes
+		else if (NodeDef.Type.Equals(TEXT("MakeLiteralInt"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeLiteralIntNode(EventGraph, NodeDef);
+		}
+		// v4.40: MakeLiteralString - create a string literal value
+		else if (NodeDef.Type.Equals(TEXT("MakeLiteralString"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeLiteralStringNode(EventGraph, NodeDef);
 		}
 		else
 		{
@@ -9471,6 +9691,7 @@ bool FEventGraphGenerator::GenerateEventGraph(
 	int32 ASCTargetErrors = 0;
 	int32 ArrayInputErrors = 0;
 	int32 ActorPinErrors = 0;
+	int32 ValuePinErrors = 0;     // v4.40: VariableSet/Branch/Cast value pin validation
 	LogGeneration(TEXT("  --- Pin Connection Validation ---"));
 
 	// Get Blueprint parent class to check if self is Actor/ASC
@@ -9576,6 +9797,76 @@ bool FEventGraphGenerator::GenerateEventGraph(
 					ArrayInputErrors++;
 				}
 
+				// v4.40: Check VariableSet Value pin - REQUIRED for any type
+				if (UK2Node_VariableSet* VarSetNode = Cast<UK2Node_VariableSet>(Node))
+				{
+					// Value pin on VariableSet is NOT the exec pin - it's the actual value to set
+					// Find the value input pin (not exec, not self)
+					if (!bIsExecPin && !bIsSelfPin)
+					{
+						// Check if this is a value pin by checking if it's an output pin of the variable
+						// For VariableSet, input pins that aren't exec are the Value pins
+						FString VarName = VarSetNode->GetVarName().ToString();
+						bool bIsValuePin = PinNameStr.Equals(VarName, ESearchCase::IgnoreCase) ||
+						                   PinNameStr.Equals(TEXT("Value"), ESearchCase::IgnoreCase) ||
+						                   (!PinNameStr.Equals(TEXT("Exec"), ESearchCase::IgnoreCase) &&
+						                    !PinNameStr.Equals(TEXT("self"), ESearchCase::IgnoreCase) &&
+						                    !PinNameStr.Contains(TEXT("Output")));
+						// v4.40.1: Allow object-type variables to be cleared (nullptr is valid)
+						// Only flag primitive types (bool, int, real, byte) where default 0/false is likely wrong
+						bool bIsObjectType = PinCategory == TEXT("object") || PinCategory == TEXT("class") ||
+						                     PinCategory == TEXT("softobject") || PinCategory == TEXT("softclass") ||
+						                     PinCategory == TEXT("struct");
+						if (bIsValuePin && !bHasDefaultValue && !bIsObjectType)
+						{
+							UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] VARIABLESET ERROR: [%s].%s Value pin not connected - variable will be set to default (0/false)"),
+								*NodeId, *PinNameStr);
+							LogGeneration(FString::Printf(TEXT("    ERROR: [%s].%s VariableSet Value pin must be connected - use MakeLiteralBool/Float/Int or connect a data source"),
+								*NodeId, *PinNameStr));
+							ValuePinErrors++;
+						}
+						else if (bIsValuePin && !bHasDefaultValue && bIsObjectType)
+						{
+							// v4.40.1: Object type with no connection = nullptr (intentional clear) - just log info
+							LogGeneration(FString::Printf(TEXT("    INFO: [%s].%s VariableSet clearing object reference to nullptr"),
+								*NodeId, *PinNameStr));
+						}
+					}
+				}
+
+				// v4.40: Check PropertySet Value pin - REQUIRED for any type
+				if (UK2Node_VariableSet* PropSetNode = Cast<UK2Node_VariableSet>(Node))
+				{
+					// Similar to VariableSet check - property set nodes need value connection
+					// Note: UE5 uses UK2Node_VariableSet for both variables and some properties
+				}
+
+				// v4.40: Check Branch Condition pin - REQUIRED
+				if (UK2Node_IfThenElse* BranchNode = Cast<UK2Node_IfThenElse>(Node))
+				{
+					if (PinNameStr.Equals(TEXT("Condition"), ESearchCase::IgnoreCase))
+					{
+						UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] BRANCH ERROR: [%s].Condition not connected - Branch requires a boolean condition"),
+							*NodeId);
+						LogGeneration(FString::Printf(TEXT("    ERROR: [%s].Condition must be connected - Branch node requires a boolean input"),
+							*NodeId));
+						ValuePinErrors++;
+					}
+				}
+
+				// v4.40: Check DynamicCast Object pin - REQUIRED
+				if (UK2Node_DynamicCast* CastNode = Cast<UK2Node_DynamicCast>(Node))
+				{
+					if (PinNameStr.Equals(TEXT("Object"), ESearchCase::IgnoreCase))
+					{
+						UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] CAST ERROR: [%s].Object not connected - Cast requires an object to cast"),
+							*NodeId);
+						LogGeneration(FString::Printf(TEXT("    ERROR: [%s].Object must be connected - Cast node requires an input object"),
+							*NodeId));
+						ValuePinErrors++;
+					}
+				}
+
 				// Log other significant unconnected pins
 				if (!bIsExecPin && !bHasDefaultValue && !Pin->PinType.PinCategory.IsNone())
 				{
@@ -9624,7 +9915,8 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		ConnectionsCreated, ConnectionsCreated + ConnectionsFailed));
 
 	// v2.7.4: Enhanced error reporting
-	int32 TotalErrors = MultipleExecConnections + ASCTargetErrors + ArrayInputErrors + ActorPinErrors;
+	// v4.40: Added ValuePinErrors for VariableSet/Branch/Cast validation
+	int32 TotalErrors = MultipleExecConnections + ASCTargetErrors + ArrayInputErrors + ActorPinErrors + ValuePinErrors;
 	if (TotalErrors > 0)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] VALIDATION ERRORS in %s:"), *GraphDefinition.Name);
@@ -9649,6 +9941,12 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		{
 			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   - Actor pins missing: %d (connect GetAvatarActor)"), ActorPinErrors);
 			LogGeneration(FString::Printf(TEXT("    - ACTOR ERROR: %d Actor pin(s) need connection (self is not Actor)"), ActorPinErrors));
+		}
+		// v4.40: Report VariableSet/Branch/Cast value pin errors
+		if (ValuePinErrors > 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   - Value pins missing: %d (connect value source or MakeLiteral*)"), ValuePinErrors);
+			LogGeneration(FString::Printf(TEXT("    - VALUE ERROR: %d required value pin(s) need connection - use MakeLiteralBool/Float/Int or connect data source"), ValuePinErrors));
 		}
 
 		LogGeneration(FString::Printf(TEXT("  TOTAL VALIDATION ERRORS: %d"), TotalErrors));
@@ -10715,15 +11013,45 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 	// v4.31: Handle Blueprint FunctionGraph case (custom functions in same Blueprint)
 	// When Resolved.bFound is true but Function is nullptr, this is a custom function
 	// defined in custom_functions. Use SetSelfMember to reference it by name.
-	else if (Resolved.bFound && !Function && Blueprint)
+	// v4.40.1: For cross-Blueprint calls (BlueprintAsset), use SetExternalMember with target class
+	else if (Resolved.bFound && !Function)
 	{
-		CallNode->FunctionReference.SetSelfMember(FunctionName);
-		CallNode->CreateNewGuid();
-		CallNode->PostPlacedNewNode();
-		CallNode->AllocateDefaultPins();
-		// v4.31-AUDIT: Log to verify SetSelfMember fallback produces valid pins
-		LogGeneration(FString::Printf(TEXT("[v4.31-AUDIT] SetSelfMember fallback: '%s' | Pins=%d | Path=%s"),
-			*FunctionName.ToString(), CallNode->Pins.Num(), *Resolved.ResolutionPath));
+		// v4.40.1: Check if this is a cross-Blueprint call
+		if (Resolved.ResolutionPath.Contains(TEXT("BlueprintAsset")))
+		{
+			// Cross-Blueprint call - need to use SetExternalMember with the target class
+			if (Resolved.OwnerClass)
+			{
+				CallNode->FunctionReference.SetExternalMember(FunctionName, Resolved.OwnerClass);
+				CallNode->CreateNewGuid();
+				CallNode->PostPlacedNewNode();
+				CallNode->AllocateDefaultPins();
+				LogGeneration(FString::Printf(TEXT("[v4.40.1] SetExternalMember: '%s' on '%s' | Pins=%d | Path=%s"),
+					*FunctionName.ToString(), *Resolved.OwnerClass->GetName(), CallNode->Pins.Num(), *Resolved.ResolutionPath));
+			}
+			else
+			{
+				// OwnerClass not available yet - fall back to logging error
+				LogGeneration(FString::Printf(TEXT("[v4.40.1] WARNING: BlueprintAsset resolved but OwnerClass is null for '%s' - function may need recompile"),
+					*FunctionName.ToString()));
+				// Still try SetSelfMember as fallback
+				CallNode->FunctionReference.SetSelfMember(FunctionName);
+				CallNode->CreateNewGuid();
+				CallNode->PostPlacedNewNode();
+				CallNode->AllocateDefaultPins();
+			}
+		}
+		else if (Blueprint)
+		{
+			// Same-Blueprint custom function
+			CallNode->FunctionReference.SetSelfMember(FunctionName);
+			CallNode->CreateNewGuid();
+			CallNode->PostPlacedNewNode();
+			CallNode->AllocateDefaultPins();
+			// v4.31-AUDIT: Log to verify SetSelfMember fallback produces valid pins
+			LogGeneration(FString::Printf(TEXT("[v4.31-AUDIT] SetSelfMember fallback: '%s' | Pins=%d | Path=%s"),
+				*FunctionName.ToString(), CallNode->Pins.Num(), *Resolved.ResolutionPath));
+		}
 	}
 	else
 	{
@@ -11576,6 +11904,177 @@ UK2Node* FEventGraphGenerator::CreatePrintStringNode(
 	}
 
 	return PrintNode;
+}
+
+// v4.40: MakeLiteralBool - create a boolean literal value node
+// Use for explicit true/false values to connect to VariableSet Value pins
+UK2Node* FEventGraphGenerator::CreateMakeLiteralBoolNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_CallFunction* LiteralNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(LiteralNode, false, false);
+
+	// Use MakeLiteralBool from UKismetSystemLibrary
+	UFunction* LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralBool"));
+	if (LiteralFunc)
+	{
+		LiteralNode->SetFromFunction(LiteralFunc);
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("[E_MAKELITERALBOOL_NOT_FOUND] MakeLiteralBool function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	LiteralNode->CreateNewGuid();
+	LiteralNode->PostPlacedNewNode();
+	LiteralNode->AllocateDefaultPins();
+
+	// Set the value from properties
+	const FString* ValuePtr = NodeDef.Properties.Find(TEXT("value"));
+	if (ValuePtr)
+	{
+		UEdGraphPin* ValuePin = LiteralNode->FindPin(FName("Value"));
+		if (ValuePin)
+		{
+			// Accept "true", "True", "1" as true; otherwise false
+			bool bValue = ValuePtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ||
+			              ValuePtr->Equals(TEXT("1"));
+			ValuePin->DefaultValue = bValue ? TEXT("true") : TEXT("false");
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("MakeLiteralBool node '%s': Created with value=%s"),
+		*NodeDef.Id, ValuePtr ? **ValuePtr : TEXT("false")));
+
+	return LiteralNode;
+}
+
+// v4.40: MakeLiteralFloat - create a float literal value node
+// Use for explicit float values to connect to VariableSet Value pins
+UK2Node* FEventGraphGenerator::CreateMakeLiteralFloatNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_CallFunction* LiteralNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(LiteralNode, false, false);
+
+	// Use MakeLiteralFloat from UKismetSystemLibrary
+	UFunction* LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralFloat"));
+	if (LiteralFunc)
+	{
+		LiteralNode->SetFromFunction(LiteralFunc);
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("[E_MAKELITERALFLOAT_NOT_FOUND] MakeLiteralFloat function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	LiteralNode->CreateNewGuid();
+	LiteralNode->PostPlacedNewNode();
+	LiteralNode->AllocateDefaultPins();
+
+	// Set the value from properties
+	const FString* ValuePtr = NodeDef.Properties.Find(TEXT("value"));
+	if (ValuePtr)
+	{
+		UEdGraphPin* ValuePin = LiteralNode->FindPin(FName("Value"));
+		if (ValuePin)
+		{
+			ValuePin->DefaultValue = *ValuePtr;
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("MakeLiteralFloat node '%s': Created with value=%s"),
+		*NodeDef.Id, ValuePtr ? **ValuePtr : TEXT("0.0")));
+
+	return LiteralNode;
+}
+
+// v4.40: MakeLiteralInt - create an integer literal value node
+// Use for explicit integer values to connect to VariableSet Value pins
+UK2Node* FEventGraphGenerator::CreateMakeLiteralIntNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_CallFunction* LiteralNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(LiteralNode, false, false);
+
+	// Use MakeLiteralInt from UKismetSystemLibrary
+	UFunction* LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralInt"));
+	if (LiteralFunc)
+	{
+		LiteralNode->SetFromFunction(LiteralFunc);
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("[E_MAKELITERALINT_NOT_FOUND] MakeLiteralInt function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	LiteralNode->CreateNewGuid();
+	LiteralNode->PostPlacedNewNode();
+	LiteralNode->AllocateDefaultPins();
+
+	// Set the value from properties
+	const FString* ValuePtr = NodeDef.Properties.Find(TEXT("value"));
+	if (ValuePtr)
+	{
+		UEdGraphPin* ValuePin = LiteralNode->FindPin(FName("Value"));
+		if (ValuePin)
+		{
+			ValuePin->DefaultValue = *ValuePtr;
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("MakeLiteralInt node '%s': Created with value=%s"),
+		*NodeDef.Id, ValuePtr ? **ValuePtr : TEXT("0")));
+
+	return LiteralNode;
+}
+
+// v4.40: MakeLiteralString - create a string literal value node
+// Use for explicit string values to connect to VariableSet Value pins
+UK2Node* FEventGraphGenerator::CreateMakeLiteralStringNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_CallFunction* LiteralNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(LiteralNode, false, false);
+
+	// Use MakeLiteralString from UKismetSystemLibrary
+	UFunction* LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralString"));
+	if (LiteralFunc)
+	{
+		LiteralNode->SetFromFunction(LiteralFunc);
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("[E_MAKELITERALSTRING_NOT_FOUND] MakeLiteralString function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	LiteralNode->CreateNewGuid();
+	LiteralNode->PostPlacedNewNode();
+	LiteralNode->AllocateDefaultPins();
+
+	// Set the value from properties
+	const FString* ValuePtr = NodeDef.Properties.Find(TEXT("value"));
+	if (ValuePtr)
+	{
+		UEdGraphPin* ValuePin = LiteralNode->FindPin(FName("Value"));
+		if (ValuePin)
+		{
+			ValuePin->DefaultValue = *ValuePtr;
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("MakeLiteralString node '%s': Created with value='%s'"),
+		*NodeDef.Id, ValuePtr ? **ValuePtr : TEXT("")));
+
+	return LiteralNode;
 }
 
 UK2Node* FEventGraphGenerator::CreateDynamicCastNode(

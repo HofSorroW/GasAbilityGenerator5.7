@@ -452,6 +452,64 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveViaBlueprintFunct
 	return FResolvedFunction();
 }
 
+// v4.40.1: Load a Blueprint asset and search its FunctionGraphs for a custom function
+// Used for cross-Blueprint function calls (e.g., BTS_HealNearbyAllies calls BP_SupportBuffer.ApplyHealToTarget)
+FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveViaBlueprintAsset(const FString& FunctionName, const FString& BlueprintName)
+{
+	if (BlueprintName.IsEmpty() || FunctionName.IsEmpty())
+	{
+		return FResolvedFunction();
+	}
+
+	// Use Asset Registry to find all Blueprint assets matching the name
+	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+
+	FARFilter Filter;
+	Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+	Filter.bRecursiveClasses = true;
+	Filter.bRecursivePaths = true;
+
+	TArray<FAssetData> BlueprintAssets;
+	AssetRegistry.GetAssets(Filter, BlueprintAssets);
+
+	// Find the Blueprint with matching name
+	for (const FAssetData& AssetData : BlueprintAssets)
+	{
+		if (AssetData.AssetName.ToString().Equals(BlueprintName, ESearchCase::IgnoreCase))
+		{
+			// Load the Blueprint
+			UBlueprint* FoundBlueprint = Cast<UBlueprint>(AssetData.GetAsset());
+			if (FoundBlueprint)
+			{
+				UE_LOG(LogTemp, Display, TEXT("[FunctionResolver] Found Blueprint asset '%s', searching FunctionGraphs for '%s'"),
+					*BlueprintName, *FunctionName);
+
+				// Search its FunctionGraphs
+				for (UEdGraph* Graph : FoundBlueprint->FunctionGraphs)
+				{
+					if (Graph && Graph->GetFName() == FName(*FunctionName))
+					{
+						// Found the function graph - return pending result
+						// The function will be resolved at compile time via SetExternalMember
+						FResolvedFunction Result;
+						Result.Function = nullptr;  // Will be resolved at runtime
+						Result.OwnerClass = FoundBlueprint->GeneratedClass ? FoundBlueprint->GeneratedClass : FoundBlueprint->SkeletonGeneratedClass;
+						Result.bFound = true;
+						Result.ResolutionPath = FString::Printf(TEXT("BlueprintAsset[%s::%s]"), *BlueprintName, *FunctionName);
+						return Result;
+					}
+				}
+
+				UE_LOG(LogTemp, Warning, TEXT("[FunctionResolver] Blueprint '%s' found but function '%s' not in FunctionGraphs (count: %d)"),
+					*BlueprintName, *FunctionName, FoundBlueprint->FunctionGraphs.Num());
+			}
+			break;
+		}
+	}
+
+	return FResolvedFunction();
+}
+
 FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 	const FString& FunctionName,
 	const FString& ExplicitClassName,
@@ -478,6 +536,18 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 		if (Result.bFound)
 		{
 			return Result;
+		}
+
+		// v4.40.1: If explicit class is a Blueprint name (BP_, BTS_, etc.), try loading it as an asset
+		// This handles cross-Blueprint function calls where the target was just generated
+		if (ExplicitClassName.StartsWith(TEXT("BP_")) || ExplicitClassName.StartsWith(TEXT("BTS_")) ||
+		    ExplicitClassName.StartsWith(TEXT("WBP_")) || ExplicitClassName.StartsWith(TEXT("GA_")))
+		{
+			Result = ResolveViaBlueprintAsset(FunctionName, ExplicitClassName);
+			if (Result.bFound)
+			{
+				return Result;
+			}
 		}
 	}
 

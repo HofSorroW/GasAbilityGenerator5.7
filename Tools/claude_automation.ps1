@@ -187,6 +187,18 @@ switch ($Action) {
         }
 
         $OutputLog = "$LogDir\commandlet_output.log"
+
+        # v4.40: Delete stale logs before running to prevent reading old results
+        if (Test-Path $OutputLog) {
+            Remove-Item $OutputLog -Force
+            Write-Host "[CLEANUP] Deleted stale output log"
+        }
+        if (Test-Path "$LogDir\commandlet_stdout.log") {
+            Remove-Item "$LogDir\commandlet_stdout.log" -Force
+        }
+        if (Test-Path "$LogDir\commandlet_stderr.log") {
+            Remove-Item "$LogDir\commandlet_stderr.log" -Force
+        }
         # Convert to forward slashes for UE compatibility and quote properly
         $ManifestPathUE = $ManifestPath -replace '\\', '/'
         $OutputLogUE = $OutputLog -replace '\\', '/'
@@ -259,6 +271,19 @@ switch ($Action) {
         }
 
         $OutputLog = "$LogDir\commandlet_output.log"
+
+        # v4.40: Delete stale logs before running to prevent reading old results
+        if (Test-Path $OutputLog) {
+            Remove-Item $OutputLog -Force
+            Write-Host "[CLEANUP] Deleted stale output log"
+        }
+        if (Test-Path "$LogDir\commandlet_stdout.log") {
+            Remove-Item "$LogDir\commandlet_stdout.log" -Force
+        }
+        if (Test-Path "$LogDir\commandlet_stderr.log") {
+            Remove-Item "$LogDir\commandlet_stderr.log" -Force
+        }
+
         # Convert to forward slashes for UE compatibility
         $ManifestPathUE = $ManifestPath -replace '\\', '/'
         $OutputLogUE = $OutputLog -replace '\\', '/'

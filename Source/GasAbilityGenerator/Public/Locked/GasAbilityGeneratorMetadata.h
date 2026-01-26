@@ -185,6 +185,9 @@ public:
 private:
 	static TWeakObjectPtr<UGeneratorMetadataRegistry> CachedRegistry;
 
+	/** v4.40: Thread-safe cache access */
+	static FCriticalSection CacheAccessLock;
+
 	/** v4.16.1: Transient map for collision detection (Hash string -> first asset path) */
 	TMap<FString, FString> HashToAssetMap;
 };

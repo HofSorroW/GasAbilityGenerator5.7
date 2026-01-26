@@ -730,9 +730,22 @@ int32 UGasAbilityGeneratorCommandlet::Main(const FString& Params)
 	// Save output log if specified
 	if (!OutputLogPath.IsEmpty())
 	{
-		FString LogContent = FString::Join(LogMessages, TEXT("\n"));
-		FFileHelper::SaveStringToFile(LogContent, *OutputLogPath);
-		UE_LOG(LogGasAbilityGenerator, Display, TEXT("Log saved to: %s"), *OutputLogPath);
+		// v4.40: Flush UE log system before writing to ensure all messages captured
+		GLog->Flush();
+
+		// v4.40: Add timestamp header for log freshness verification
+		FString TimestampHeader = FString::Printf(TEXT("=== Generation Log ===\nTimestamp: %s\nManifest: %s\n\n"),
+			*FDateTime::Now().ToString(), *CachedManifestPath);
+		FString LogContent = TimestampHeader + FString::Join(LogMessages, TEXT("\n"));
+
+		if (FFileHelper::SaveStringToFile(LogContent, *OutputLogPath))
+		{
+			UE_LOG(LogGasAbilityGenerator, Display, TEXT("Log saved to: %s"), *OutputLogPath);
+		}
+		else
+		{
+			UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to save log to: %s"), *OutputLogPath);
+		}
 	}
 
 	LogMessage(TEXT(""));

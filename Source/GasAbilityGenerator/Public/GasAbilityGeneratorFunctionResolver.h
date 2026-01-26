@@ -112,6 +112,9 @@ private:
 	/** Step 5: Search Blueprint's FunctionGraphs for custom functions (v4.31) */
 	static FResolvedFunction ResolveViaBlueprintFunctionGraph(const FString& FunctionName, class UBlueprint* Blueprint);
 
+	/** Step 2.5: Load Blueprint asset and search its FunctionGraphs (v4.40.1) - for cross-Blueprint calls */
+	static FResolvedFunction ResolveViaBlueprintAsset(const FString& FunctionName, const FString& BlueprintName);
+
 	/** The WellKnownFunctions table - maps function names to owning classes */
 	static TMap<FString, UClass*> WellKnownFunctions;
 

@@ -10180,11 +10180,12 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           type: Branch
           position: [2800, 0]
         # Call ApplyHealToTarget on the casted BP_SupportBuffer reference
-        # NOTE: Uses casted reference from CastToSupport, not class specification
+        # v4.40.1: Added class specification for function resolution
         - id: CallApplyHeal
           type: CallFunction
           properties:
             function: ApplyHealToTarget
+            class: BP_SupportBuffer
           position: [3000, 0]
         # v4.39.3: Removed BreakLoop - cooldown in ApplyHealToTarget prevents multiple heals
         # ForEach will continue but only first ally healed per tick interval

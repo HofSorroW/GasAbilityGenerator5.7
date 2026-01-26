@@ -16,6 +16,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogGeneratorMetadata, Log, All);
 // v3.1: Static registry cache
 TWeakObjectPtr<UGeneratorMetadataRegistry> UGeneratorMetadataRegistry::CachedRegistry;
 
+// v4.40: Thread-safe cache access mutex
+FCriticalSection UGeneratorMetadataRegistry::CacheAccessLock;
+
 UGeneratorAssetMetadata::UGeneratorAssetMetadata()
 	: InputHash(0)
 	, OutputHash(0)
@@ -147,6 +150,9 @@ void UGeneratorMetadataRegistry::ClearAllRecords()
 
 UGeneratorMetadataRegistry* UGeneratorMetadataRegistry::GetOrCreateRegistry()
 {
+	// v4.40: Thread-safe cache access
+	FScopeLock Lock(&CacheAccessLock);
+
 	// Return cached if valid
 	if (CachedRegistry.IsValid())
 	{
@@ -181,9 +187,14 @@ UGeneratorMetadataRegistry* UGeneratorMetadataRegistry::GetOrCreateRegistry()
 				FString PackageFileName = FPackageName::LongPackageNameToFilename(RegistryPath, FPackageName::GetAssetPackageExtension());
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-				UPackage::SavePackage(Package, Registry, *PackageFileName, SaveArgs);
-
-				UE_LOG(LogGeneratorMetadata, Display, TEXT("Created new metadata registry at %s"), *RegistryPath);
+				if (!UPackage::SavePackage(Package, Registry, *PackageFileName, SaveArgs))
+				{
+					UE_LOG(LogGeneratorMetadata, Error, TEXT("Failed to save new metadata registry at %s"), *RegistryPath);
+				}
+				else
+				{
+					UE_LOG(LogGeneratorMetadata, Display, TEXT("Created new metadata registry at %s"), *RegistryPath);
+				}
 			}
 		}
 	}
@@ -194,6 +205,9 @@ UGeneratorMetadataRegistry* UGeneratorMetadataRegistry::GetOrCreateRegistry()
 
 UGeneratorMetadataRegistry* UGeneratorMetadataRegistry::GetRegistry()
 {
+	// v4.40: Thread-safe cache access
+	FScopeLock Lock(&CacheAccessLock);
+
 	if (CachedRegistry.IsValid())
 	{
 		return CachedRegistry.Get();
@@ -213,15 +227,20 @@ UGeneratorMetadataRegistry* UGeneratorMetadataRegistry::GetRegistry()
 
 void UGeneratorMetadataRegistry::SaveRegistry()
 {
-	UGeneratorMetadataRegistry* Registry = GetRegistry();
+	// v4.40: Thread-safe cache access
+	FScopeLock Lock(&CacheAccessLock);
+
+	UGeneratorMetadataRegistry* Registry = CachedRegistry.IsValid() ? CachedRegistry.Get() : nullptr;
 	if (!Registry)
 	{
+		UE_LOG(LogGeneratorMetadata, Warning, TEXT("SaveRegistry called but no registry cached"));
 		return;
 	}
 
 	UPackage* Package = Registry->GetOutermost();
 	if (!Package)
 	{
+		UE_LOG(LogGeneratorMetadata, Error, TEXT("SaveRegistry failed - registry has no outer package"));
 		return;
 	}
 
@@ -232,13 +251,22 @@ void UGeneratorMetadataRegistry::SaveRegistry()
 
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	UPackage::SavePackage(Package, Registry, *PackageFileName, SaveArgs);
 
-	UE_LOG(LogGeneratorMetadata, Display, TEXT("Saved metadata registry with %d records"), Registry->Records.Num());
+	// v4.40: Check SavePackage return value
+	if (UPackage::SavePackage(Package, Registry, *PackageFileName, SaveArgs))
+	{
+		UE_LOG(LogGeneratorMetadata, Display, TEXT("Saved metadata registry with %d records"), Registry->Records.Num());
+	}
+	else
+	{
+		UE_LOG(LogGeneratorMetadata, Error, TEXT("Failed to save metadata registry with %d records"), Registry->Records.Num());
+	}
 }
 
 void UGeneratorMetadataRegistry::ClearRegistryCache()
 {
+	// v4.40: Thread-safe cache access
+	FScopeLock Lock(&CacheAccessLock);
 	CachedRegistry.Reset();
 }
 

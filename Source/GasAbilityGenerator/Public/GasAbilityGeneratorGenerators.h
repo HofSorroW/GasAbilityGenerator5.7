@@ -291,6 +291,17 @@ protected:
 	static void LogGeneration(const FString& Message);
 
 	/**
+	 * v4.40: Safe package save with return value check
+	 * Logs errors if save fails and returns success status
+	 * @param Package The package to save
+	 * @param Asset The asset being saved (for error reporting)
+	 * @param PackageFileName The file path to save to
+	 * @param AssetName Human-readable name for error messages
+	 * @return true if save succeeded, false if failed
+	 */
+	static bool SafeSavePackage(UPackage* Package, UObject* Asset, const FString& PackageFileName, const FString& AssetName);
+
+	/**
 	 * v4.22: Get the active manifest for reference checking
 	 * Used to determine if a referenced asset is defined in the manifest (vs external plugin)
 	 */
@@ -561,6 +572,21 @@ public:
 		TArray<FString>& OutErrors);
 
 	/**
+	 * v4.40: Validate delegate bindings before generation
+	 * Checks that delegate names are known and sources are valid variables
+	 * @param DelegateBindings Array of delegate binding definitions to validate
+	 * @param Variables Array of available variables to validate source references
+	 * @param BlueprintName Name of the blueprint for error context
+	 * @param OutErrors Output array for validation error messages
+	 * @return true if all bindings are valid, false if any validation failed
+	 */
+	static bool ValidateDelegateBindings(
+		const TArray<FManifestDelegateBindingDefinition>& DelegateBindings,
+		const TArray<FManifestActorVariableDefinition>& Variables,
+		const FString& BlueprintName,
+		TArray<FString>& OutErrors);
+
+	/**
 	 * Generate event graph nodes and connections in a Blueprint
 	 */
 	static bool GenerateEventGraph(
@@ -774,6 +800,26 @@ private:
 
 	// v2.7.8: Self - reference to the blueprint self
 	static UK2Node* CreateSelfNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	/** v4.40: MakeLiteralBool - create a boolean literal value for VariableSet nodes */
+	static UK2Node* CreateMakeLiteralBoolNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	/** v4.40: MakeLiteralFloat - create a float literal value for VariableSet nodes */
+	static UK2Node* CreateMakeLiteralFloatNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	/** v4.40: MakeLiteralInt - create an integer literal value for VariableSet nodes */
+	static UK2Node* CreateMakeLiteralIntNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	/** v4.40: MakeLiteralString - create a string literal value */
+	static UK2Node* CreateMakeLiteralStringNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 

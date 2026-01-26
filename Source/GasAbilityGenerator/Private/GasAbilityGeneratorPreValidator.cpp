@@ -576,6 +576,48 @@ void FPreValidator::ValidateFunctions(const FManifestData& Data, FPreValidationR
 					continue;
 				}
 
+				// v4.40.1: Check if class is an in-manifest Blueprint (will be generated during this run)
+				// Skip validation for these - function will be resolved during generation phase
+				bool bIsInManifestBlueprint = false;
+				for (const auto& BP : Data.ActorBlueprints)
+				{
+					if (ClassName.Equals(BP.Name, ESearchCase::IgnoreCase))
+					{
+						bIsInManifestBlueprint = true;
+						break;
+					}
+				}
+				if (!bIsInManifestBlueprint)
+				{
+					for (const auto& GA : Data.GameplayAbilities)
+					{
+						if (ClassName.Equals(GA.Name, ESearchCase::IgnoreCase))
+						{
+							bIsInManifestBlueprint = true;
+							break;
+						}
+					}
+				}
+				if (!bIsInManifestBlueprint)
+				{
+					for (const auto& WBP : Data.WidgetBlueprints)
+					{
+						if (ClassName.Equals(WBP.Name, ESearchCase::IgnoreCase))
+						{
+							bIsInManifestBlueprint = true;
+							break;
+						}
+					}
+				}
+
+				if (bIsInManifestBlueprint)
+				{
+					// Skip validation - class will be generated before this Blueprint
+					UE_LOG(LogTemp, Display, TEXT("[PRE-VAL] Deferring validation: %s.%s calls %s.%s (in-manifest Blueprint)"),
+						*OwnerName, *Node.Id, *ClassName, *FunctionName);
+					continue;
+				}
+
 				// Resolve class
 				UClass* Class = FindClassByName(ClassName, Cache);
 				if (!Class)
