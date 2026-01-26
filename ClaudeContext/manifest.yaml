@@ -9836,14 +9836,19 @@ actor_blueprints:  # SUPPORT BUFFER
         inputs: []
         outputs: []
         nodes:
+          - id: MakeTrue
+            type: MakeLiteralBool
+            properties:
+              value: true
           - id: SetCanHeal
             type: VariableSet
             properties:
               variable_name: bCanHeal
         connections:
-          # Set bCanHeal = true (default when no value specified)
-          - from: [Entry, Then]
+          - from: [FunctionEntry, Then]
             to: [SetCanHeal, Exec]
+          - from: [MakeTrue, ReturnValue]
+            to: [SetCanHeal, bCanHeal]
       # ApplyHealToTarget - Main healing function called by BTS_HealNearbyAllies
       - name: ApplyHealToTarget
         inputs:
@@ -10119,71 +10124,49 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         - id: FriendlyBranch
           type: Branch
           position: [1800, 0]
-        # Get target's ASC for health check
-        - id: GetTargetASC
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-            class: AbilitySystemBlueprintLibrary
-          position: [2000, 0]
-        # Get Health attribute
+        # v4.39.3: Use NarrativeCharacter.GetHealth/GetMaxHealth (simpler than attribute system)
+        # Get Health from NarrativeCharacter (cast already done above)
         - id: GetHealth
           type: CallFunction
           properties:
-            function: GetNumericAttribute
-            class: AbilitySystemBlueprintLibrary
-          position: [2200, 0]
-        - id: HealthAttribute
-          type: CallFunction
-          properties:
-            function: MakeGameplayAttribute
-            class: AbilitySystemBlueprintLibrary
-          data:
-            attribute: NarrativeAttributeSetBase.Health
-          position: [2200, 100]
-        # Get MaxHealth attribute
+            function: GetHealth
+            class: NarrativeCharacter
+          position: [2000, 0]
+        # Get MaxHealth from NarrativeCharacter
         - id: GetMaxHealth
           type: CallFunction
           properties:
-            function: GetNumericAttribute
-            class: AbilitySystemBlueprintLibrary
-          position: [2400, 0]
-        - id: MaxHealthAttribute
-          type: CallFunction
-          properties:
-            function: MakeGameplayAttribute
-            class: AbilitySystemBlueprintLibrary
-          data:
-            attribute: NarrativeAttributeSetBase.MaxHealth
-          position: [2400, 100]
+            function: GetMaxHealth
+            class: NarrativeCharacter
+          position: [2200, 0]
         # Calculate health ratio
         - id: DivideHealth
           type: CallFunction
           properties:
             function: Divide_FloatFloat
-          position: [2600, 0]
+          position: [2400, 0]
         # Get damage threshold
         - id: GetThreshold
           type: VariableGet
           properties:
             variable_name: DamageThreshold
-          position: [2600, 100]
+          position: [2400, 100]
         # Check if needs healing (Health/MaxHealth < Threshold)
         - id: NeedsHealCheck
           type: CallFunction
           properties:
             function: Less_FloatFloat
-          position: [2800, 0]
+          position: [2600, 0]
         - id: NeedsHealBranch
           type: Branch
-          position: [3000, 0]
-        # Call ApplyHealToTarget on BP_SupportBuffer
+          position: [2800, 0]
+        # Call ApplyHealToTarget on the casted BP_SupportBuffer reference
+        # NOTE: Uses casted reference from CastToSupport, not class specification
         - id: CallApplyHeal
           type: CallFunction
           properties:
             function: ApplyHealToTarget
-            class: BP_SupportBuffer
-          position: [3200, 0]
+          position: [3000, 0]
         # Break loop after first heal (one target per tick per guide)
         - id: BreakLoop
           type: CallFunction
@@ -10199,9 +10182,9 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         # Get location for sphere overlap
         - from: [CastToSupport, Then]
           to: [GetPawnLocation, Exec]
-        - from: [CastToSupport, As BP_SupportBuffer]
+        - from: [CastToSupport, AsBP_SupportBuffer]
           to: [GetPawnLocation, Target]
-        - from: [CastToSupport, As BP_SupportBuffer]
+        - from: [CastToSupport, AsBP_SupportBuffer]
           to: [MakeActorsToIgnore, [0]]
         # Sphere overlap
         - from: [GetPawnLocation, Exec]
@@ -10227,9 +10210,9 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         # Faction check
         - from: [CastToNarrativeChar, Then]
           to: [GetAttitude, Exec]
-        - from: [CastToSupport, As BP_SupportBuffer]
+        - from: [CastToSupport, AsBP_SupportBuffer]
           to: [GetAttitude, Source]
-        - from: [CastToNarrativeChar, As NarrativeCharacter]
+        - from: [CastToNarrativeChar, AsNarrativeCharacter]
           to: [GetAttitude, Target]
         # Check if Friendly (ETeamAttitude::Friendly = 0)
         - from: [GetAttitude, ReturnValue]
@@ -10238,24 +10221,16 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
           to: [FriendlyBranch, Exec]
         - from: [IsFriendly, ReturnValue]
           to: [FriendlyBranch, Condition]
-        # Get Health if friendly
+        # v4.39.3: Get Health/MaxHealth directly from NarrativeCharacter (simpler)
         - from: [FriendlyBranch, True]
-          to: [GetTargetASC, Exec]
-        - from: [CastToNarrativeChar, As NarrativeCharacter]
-          to: [GetTargetASC, Actor]
-        - from: [GetTargetASC, ReturnValue]
-          to: [GetHealth, AbilitySystem]
-        - from: [HealthAttribute, ReturnValue]
-          to: [GetHealth, Attribute]
-        - from: [GetTargetASC, Exec]
           to: [GetHealth, Exec]
+        - from: [CastToNarrativeChar, AsNarrativeCharacter]
+          to: [GetHealth, Target]
         # Get MaxHealth
-        - from: [GetTargetASC, ReturnValue]
-          to: [GetMaxHealth, AbilitySystem]
-        - from: [MaxHealthAttribute, ReturnValue]
-          to: [GetMaxHealth, Attribute]
         - from: [GetHealth, Exec]
           to: [GetMaxHealth, Exec]
+        - from: [CastToNarrativeChar, AsNarrativeCharacter]
+          to: [GetMaxHealth, Target]
         # Calculate ratio
         - from: [GetHealth, ReturnValue]
           to: [DivideHealth, A]
@@ -10273,9 +10248,9 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
         # Call ApplyHealToTarget if needs healing
         - from: [NeedsHealBranch, True]
           to: [CallApplyHeal, Exec]
-        - from: [CastToSupport, As BP_SupportBuffer]
+        - from: [CastToSupport, AsBP_SupportBuffer]
           to: [CallApplyHeal, Target]
-        - from: [CastToNarrativeChar, As NarrativeCharacter]
+        - from: [CastToNarrativeChar, AsNarrativeCharacter]
           to: [CallApplyHeal, TargetCharacter]
         # Break loop after first heal
         - from: [CallApplyHeal, Exec]

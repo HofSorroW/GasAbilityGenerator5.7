@@ -186,6 +186,15 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 	WellKnownFunctions.Add(TEXT("K2_ClearAndInvalidateTimerHandle"), UKismetSystemLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("SphereOverlapActors"), UKismetSystemLibrary::StaticClass());
 	WellKnownFunctions.Add(TEXT("LineTraceSingle"), UKismetSystemLibrary::StaticClass());
+	// v4.39.3: Literal value functions
+	WellKnownFunctions.Add(TEXT("MakeLiteralBool"), UKismetSystemLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("MakeLiteralInt"), UKismetSystemLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("MakeLiteralFloat"), UKismetSystemLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("MakeLiteralDouble"), UKismetSystemLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("MakeLiteralString"), UKismetSystemLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("MakeLiteralText"), UKismetSystemLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("MakeLiteralName"), UKismetSystemLibrary::StaticClass());
+	WellKnownFunctions.Add(TEXT("MakeLiteralByte"), UKismetSystemLibrary::StaticClass());
 
 	// GameplayStatics functions
 	WellKnownFunctions.Add(TEXT("SpawnEmitterAtLocation"), UGameplayStatics::StaticClass());
