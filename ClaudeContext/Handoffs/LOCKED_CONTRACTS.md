@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v7.1)
+# LOCKED_CONTRACTS.md (v7.2)
 
 ## Purpose
 
@@ -971,6 +971,162 @@ float UNarrativeAbilitySystemComponent::GetBotAttackFrequency(FGameplayTag Input
 
 ---
 
+## LOCKED CONTRACT 22 — C_PIN_CONNECTION_FAILURE_GATE (C1)
+
+### Purpose
+
+Prevent saving any Blueprint that contains unresolved/missing/invalid pin connections created by the generator. This eliminates "generated successfully but crashes on open / thumbnail compile" failures (e.g., EdGraphNode assertions for missing pins).
+
+### Invariant (Hard Rule)
+
+For any generated Blueprint asset (GA/BP/GE/Components/etc.):
+
+1. Every generator connection attempt **MUST** pass all three checks:
+   - **Pin Existence:** both pins are found (non-null)
+   - **Schema Approval:** `UEdGraphSchema_K2::CanCreateConnection(A,B)` approves a link
+   - **Link Integrity:** after linking, both pins list each other in `LinkedTo`
+
+2. If **ANY** connection attempt fails:
+   - The asset **MUST** be marked UNSAVABLE
+   - The generator **MUST NOT** write the package to disk (`SavePackage` forbidden)
+   - The run **MUST** end with failure status (non-zero exit / overall FAIL)
+
+### Severity
+
+FAIL (blocks asset creation/saving)
+
+### Error Codes
+
+| Code | Meaning |
+|------|---------|
+| `E_PIN_NOT_FOUND` | One or both pins are null |
+| `E_PIN_CONNECTION_REJECTED` | K2 schema rejects the connection |
+| `E_PIN_LINK_INTEGRITY_FAIL` | Link did not persist on both pins after attempt |
+
+### Message Format (single-line, pipe-delimited)
+
+```
+FAIL|<CODE>|<ASSET_TYPE>|<ASSET_NAME>|<GRAPH>|<NODE_ID>|<PIN>|<DETAIL>
+```
+
+### Examples
+
+```
+FAIL|E_PIN_NOT_FOUND|GA|GA_ProtectiveDome|EventGraph|CreateDelegateA|OutputDelegate|Pin missing during delegate wiring
+FAIL|E_PIN_CONNECTION_REJECTED|GA|GA_ProtectiveDome|EventGraph|AddDelegate|Delegate|Schema rejected link from OutputDelegate
+FAIL|E_PIN_LINK_INTEGRITY_FAIL|GA|GA_X|EventGraph|NodeA->NodeB|Exec|MakeLinkTo did not persist in LinkedTo
+```
+
+### Abort Strategy
+
+1. Collect all FAIL errors per asset (do not fail-fast inside the asset)
+2. If asset has any FAIL errors → abort that asset and do not save
+3. If any asset aborted due to this contract → overall run FAIL
+
+### Forbidden
+
+- Soft-fail behavior ("continue with generation but log errors") for pin connection failures
+- Direct `MakeLinkTo()` calls without validation gate or equivalent checks
+- Saving assets with known pin connection failures
+
+### Reference
+
+- Generator: `GasAbilityGeneratorGenerators.cpp` — `ConnectPinsHelper()` (lines 12698-12753) implements 3-step gate
+- Generator: Lines 14612-14986 — delegate binding code requires gate enforcement
+- Crash class: Blueprint open/thumbnail compile asserts when saved graphs contain invalid pin references
+- Audit: Claude–GPT dual audit session (2026-01-27), H4 investigation
+- Related: Contract 10 (Blueprint Compile Gate)
+- Implementation: v7.2
+
+---
+
+## LOCKED CONTRACT 23 — C_SKELETON_SYNC_BEFORE_CREATEDELEGATE (C2)
+
+### Purpose
+
+Ensure CustomEvent handlers created/modified for delegate bindings exist in the Skeleton Generated Class before `UK2Node_CreateDelegate` attempts to resolve handler by name.
+
+**Note:** Blueprint compile error gating (Contract 10) does not cover this failure class; CreateDelegate handler resolution issues can produce load/reconstruction-time crashes without a compile error. C2 prevents saving assets that can crash the editor during open/thumbnail compile.
+
+### Context
+
+`UK2Node_CreateDelegate::SetFunction(FName)` stores only the name and invalidates GUID; resolution occurs later against the Skeleton Generated Class. If the handler CustomEvent is not yet registered in skeleton, CreateDelegate resolution fails and the blueprint can be saved in an invalid state (leading to crash on open/compile).
+
+### Technical Evidence
+
+**K2Node_CreateDelegate.cpp:512-516:**
+```cpp
+void UK2Node_CreateDelegate::SetFunction(FName Name)
+{
+    SelectedFunctionName = Name;
+    SelectedFunctionGuid.Invalidate();  // GUID cleared, must re-resolve later
+}
+```
+
+**BlueprintEditorUtils.cpp:1856-1880:**
+```cpp
+void FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(UBlueprint* Blueprint)
+{
+    // ...
+    FBlueprintCompilationManager::CompileSynchronously(
+        FBPCompileRequest(Blueprint, EBlueprintCompileOptions::RegenerateSkeletonOnly, nullptr)
+    );
+    // ...
+}
+```
+
+### Invariant (Hard Rule)
+
+During `delegate_bindings` generation:
+
+1. If a handler `UK2Node_CustomEvent` is created **OR** modified (user-defined param pins created/changed) for a binding:
+   - The generator **MUST** perform a skeleton sync:
+     ```cpp
+     FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint)
+     ```
+   - This **MUST** occur after the CustomEvent name and all param pins are finalized
+   - This **MUST** occur before any `UK2Node_CreateDelegate` is instantiated/added for that binding pass
+
+2. Forbidden ordering:
+   - Creating `UK2Node_CreateDelegate` (or wiring it) before skeleton sync when handler event was created/changed
+
+### Severity
+
+Required (violation is FAIL because it can produce crash-on-open assets)
+
+### Error Code
+
+| Code | Meaning |
+|------|---------|
+| `E_DELEGATE_HANDLER_NOT_IN_SKELETON` | CreateDelegate references a handler name that does not resolve during validation/compile |
+
+### Message Format
+
+```
+FAIL|E_DELEGATE_HANDLER_NOT_IN_SKELETON|GA|<GA_NAME>|EventGraph|CreateDelegate|<HandlerName>|Handler not registered in skeleton before CreateDelegate
+```
+
+### Exact Insertion Point (Generator)
+
+After CustomEvent creation + `CreateUserDefinedPin` loop completes, and before any CreateDelegate nodes are created.
+
+**Location:** `GasAbilityGeneratorGenerators.cpp` — after line 14536 (end of CreateUserDefinedPin loop), before line 14544 (Self node creation)
+
+### Notes
+
+- This contract does **NOT** require calling `ReconstructNode()` on CreateDelegate
+- If CreateDelegate reconstruction is known to clear `SelectedFunctionName` before delegate wiring, do **NOT** reconstruct CreateDelegate in this phase (scoped to delegate binding build step before OutputDelegate wiring)
+
+### Reference
+
+- UE5.7: `FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified()` calls skeleton-only compile (`RegenerateSkeletonOnly`)
+- UE5.7: `UK2Node_CreateDelegate` resolves selected function/event by name against the blueprint member reference during validation/compile
+- Generator: `GasAbilityGeneratorGenerators.cpp:14536-14544` — insertion point
+- Audit: Claude–GPT dual audit session (2026-01-27), H4 confirmed
+- Implementation: v7.2
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -1001,3 +1157,4 @@ Any change that touches a LOCKED implementation must:
 | v4.34 | 2026-01-25 | Added Contracts 16-19 from NPC Guides audit (Claude–GPT dual audit): R-SPAWN-1 SpawnNPC-only for NPC spawning; R-PHASE-1 Two-phase death transition pattern; R-DELEGATE-1 Delegate binding CustomEvent signature matching; R-NPCDEF-1 NPCDefinition variable type (Object not TSubclassOf). |
 | v4.38 | 2026-01-26 | Added Contract 20 — P-BB-KEY-2 NarrativeProSettings BB Key Access (Claude–GPT dual audit): Canonical NP BB keys must use `Get Narrative Pro Settings → BBKey [Name]` pattern, not hardcoded MakeLiteralName. Fixed INC-4/5/6 in BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, BTS_CheckExplosionProximity. |
 | v7.1 | 2026-01-27 | Added Contract 21 — R-INPUTTAG-1 NPC Combat Ability InputTag Requirement (Claude–GPT dual audit): NPC combat abilities used by BPA_Attack_* activities MUST define valid Narrative.Input.* tag. GA_CoreLaser was non-functional due to missing input_tag (INC-WARDEN-CORELASER-1). Fixed manifest with proper event graph including AI targeting from blackboard and damage GE application. |
+| v7.2 | 2026-01-27 | Added Contracts 22-23 (Claude–GPT dual audit): C1 (C_PIN_CONNECTION_FAILURE_GATE) — All pin connections must pass 3-step gate (existence, schema approval, link integrity); no soft-fail; unsavable on failure. C2 (C_SKELETON_SYNC_BEFORE_CREATEDELEGATE) — Skeleton sync required after CustomEvent creation/modification, before CreateDelegate instantiation; prevents crash-on-open from unresolved handler names. Root cause H4 for GA_ProtectiveDome crash confirmed and fixed. |

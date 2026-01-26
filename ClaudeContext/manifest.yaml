@@ -4228,12 +4228,11 @@ gameplay_abilities:
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
+        # v7.2: Direct exec - K2_GetActorLocation is pure (no exec pins)
         - from: [SetFatherRef, Exec]
-          to: [GetActorLocation, Exec]
+          to: [SpawnTrap, Exec]
         - from: [SetFatherRef, FatherRef]
           to: [GetActorLocation, Target]
-        - from: [GetActorLocation, Exec]
-          to: [SpawnTrap, Exec]
         - from: [GetTrapClass, TrapClass]
           to: [SpawnTrap, Class]
         - from: [GetActorLocation, ReturnValue]
@@ -4407,9 +4406,8 @@ gameplay_abilities:
           to: [SphereOverlap, Exec]
         - from: [SphereOverlap, Exec]
           to: [ForEachActor, Exec]
+        # v7.2: Direct exec - ActorHasTag is pure (no exec pins)
         - from: [ForEachActor, LoopBody]
-          to: [HasTag, Exec]
-        - from: [HasTag, Exec]
           to: [Branch_Enemy, Exec]
         - from: [Branch_Enemy, then]
           to: [MakeGESpec, Exec]
@@ -5967,9 +5965,8 @@ gameplay_abilities:
           to: [SphereOverlap, Exec]
         - from: [SphereOverlap, Exec]
           to: [ForEachActor, Exec]
+        # v7.2: Direct exec - ActorHasTag is pure (no exec pins)
         - from: [ForEachActor, LoopBody]
-          to: [HasTag, Exec]
-        - from: [HasTag, Exec]
           to: [Branch_Enemy, Exec]
         - from: [Branch_Enemy, then]
           to: [MakeGESpec, Exec]
@@ -9140,6 +9137,12 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
         - id: BranchValid
           type: Branch
           position: [2700, 0]
+        # v7.2: Cast UObject to Actor for ASC lookup (GetAbilitySystemComponent requires AActor*)
+        - id: CastToActor
+          type: DynamicCast
+          properties:
+            target_class: Actor
+          position: [2850, 0]
         # Store target for later use
         - id: SetTargetActor
           type: VariableSet
@@ -9228,8 +9231,9 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           to: [GetAIController, Target]
         - from: [GetAIController, Controller]
           to: [CastToAIController, Object]
+        # v7.2: Direct exec connection - GetAttackTarget/IsValid are pure (no exec pins)
         - from: [CastToAIController, Then]
-          to: [GetAttackTarget, Exec]
+          to: [BranchValid, Exec]
         - from: [CastToAIController, As AIController]
           to: [GetBlackboard, Target]
         - from: [GetBlackboard, Blackboard]
@@ -9239,29 +9243,26 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           to: [GetBBKeyAttackTarget, Target]
         - from: [GetBBKeyAttackTarget, BBKey_AttackTarget]
           to: [GetAttackTarget, KeyName]
-        # Target validation
-        - from: [GetAttackTarget, Exec]
-          to: [IsValid, Exec]
+        # Target validation (data connections only - pure nodes)
         - from: [GetAttackTarget, ReturnValue]
           to: [IsValid, Object]
-        - from: [IsValid, Exec]
-          to: [BranchValid, Exec]
         - from: [IsValid, ReturnValue]
           to: [BranchValid, Condition]
-        # Valid target path
+        # Valid target path - v7.2: Route through CastToActor for type safety
         - from: [BranchValid, True]
+          to: [CastToActor, Exec]
+        - from: [GetAttackTarget, ReturnValue]
+          to: [CastToActor, Object]
+        - from: [CastToActor, Then]
           to: [SetTargetActor, Exec]
-        - from: [GetAttackTarget, ReturnValue]
+        - from: [CastToActor, AsActor]
           to: [SetTargetActor, TargetActor]
+        # v7.2: Direct exec - GetTargetASC/MakeDamageSpec are pure (no exec pins)
         - from: [SetTargetActor, Exec]
-          to: [GetTargetASC, Exec]
-        - from: [GetAttackTarget, ReturnValue]
-          to: [GetTargetASC, Actor]
-        - from: [GetTargetASC, Exec]
-          to: [MakeDamageSpec, Exec]
-        # Make and apply damage spec
-        - from: [MakeDamageSpec, Exec]
           to: [SetDamageByCaller, Exec]
+        - from: [CastToActor, AsActor]
+          to: [GetTargetASC, Actor]
+        # Make and apply damage spec (data connections only)
         - from: [MakeDamageSpec, ReturnValue]
           to: [SetDamageByCaller, SpecHandle]
         - from: [MakeDamageTag, ReturnValue]
@@ -9288,6 +9289,8 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
         - from: [CastToNPC, Cast Failed]
           to: [EndAbility_NoTarget, Exec]
         - from: [CastToAIController, Cast Failed]
+          to: [EndAbility_NoTarget, Exec]
+        - from: [CastToActor, Cast Failed]
           to: [EndAbility_NoTarget, Exec]
 
 # ============================================================================

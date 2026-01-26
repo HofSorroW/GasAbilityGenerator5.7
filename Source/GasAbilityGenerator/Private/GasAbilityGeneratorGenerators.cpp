@@ -2909,6 +2909,20 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		}
 
 		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateDelegateBindingNodes(Blueprint, Definition.DelegateBindings);
+		// v7.2: C1 - LOCKED CONTRACT 22 - Abort on connection failures
+		if (DelegateNodesGenerated < 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Delegate binding connection failures (%d) - asset UNSAVABLE"),
+				*Definition.Name, -DelegateNodesGenerated);
+			LogGeneration(FString::Printf(TEXT("  FAILED: Delegate binding has %d connection failures - aborting"), -DelegateNodesGenerated));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("C1: %d delegate binding connection failures"), -DelegateNodesGenerated));
+			Result.AssetPath = AssetPath;
+			Result.GeneratorId = TEXT("GameplayAbility");
+			Result.DetermineCategory();
+			return Result;
+		}
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
 	}
 	// v4.22: Section 11 - Generate attribute binding nodes (AbilityTask-based)
@@ -12761,6 +12775,90 @@ bool FEventGraphGenerator::ConnectPins(
 	return true;
 }
 
+// v7.2: C1 - LOCKED CONTRACT 22 - Validated pin connection for direct pin-to-pin wiring
+// Implements 3-step gate: pin existence, schema approval, link integrity
+// Audit: Claude-GPT dual audit 2026-01-27
+bool FEventGraphGenerator::ValidatedMakeLinkTo(
+	UEdGraphPin* FromPin,
+	UEdGraphPin* ToPin,
+	const FString& ContextInfo,
+	int32& OutFailureCount)
+{
+	// Step 1: Pin existence check
+	if (!FromPin)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] FAIL|E_PIN_NOT_FOUND|%s|FromPin is null"), *ContextInfo);
+		LogGeneration(FString::Printf(TEXT("    FAIL|E_PIN_NOT_FOUND|%s|FromPin is null"), *ContextInfo));
+		OutFailureCount++;
+		return false;
+	}
+	if (!ToPin)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] FAIL|E_PIN_NOT_FOUND|%s|ToPin is null"), *ContextInfo);
+		LogGeneration(FString::Printf(TEXT("    FAIL|E_PIN_NOT_FOUND|%s|ToPin is null"), *ContextInfo));
+		OutFailureCount++;
+		return false;
+	}
+
+	// Already connected check
+	if (FromPin->LinkedTo.Contains(ToPin))
+	{
+		return true;
+	}
+
+	// Step 2: Schema approval check
+	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+	if (K2Schema)
+	{
+		FPinConnectionResponse Response = K2Schema->CanCreateConnection(FromPin, ToPin);
+
+		if (Response.Response == CONNECT_RESPONSE_DISALLOW)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] FAIL|E_PIN_CONNECTION_REJECTED|%s|%s->%s|Schema disallowed: %s"),
+				*ContextInfo, *FromPin->PinName.ToString(), *ToPin->PinName.ToString(), *Response.Message.ToString());
+			LogGeneration(FString::Printf(TEXT("    FAIL|E_PIN_CONNECTION_REJECTED|%s|%s->%s|%s"),
+				*ContextInfo, *FromPin->PinName.ToString(), *ToPin->PinName.ToString(), *Response.Message.ToString()));
+			OutFailureCount++;
+			return false;
+		}
+		else if (Response.Response == CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] FAIL|E_PIN_CONNECTION_REJECTED|%s|%s->%s|Requires conversion node"),
+				*ContextInfo, *FromPin->PinName.ToString(), *ToPin->PinName.ToString());
+			LogGeneration(FString::Printf(TEXT("    FAIL|E_PIN_CONNECTION_REJECTED|%s|%s->%s|Requires conversion node"),
+				*ContextInfo, *FromPin->PinName.ToString(), *ToPin->PinName.ToString()));
+			OutFailureCount++;
+			return false;
+		}
+	}
+
+	// Make the connection
+	FromPin->MakeLinkTo(ToPin);
+
+	// Step 3: Link integrity check
+	if (!FromPin->LinkedTo.Contains(ToPin))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] FAIL|E_PIN_LINK_INTEGRITY_FAIL|%s|%s->%s|MakeLinkTo did not persist"),
+			*ContextInfo, *FromPin->PinName.ToString(), *ToPin->PinName.ToString());
+		LogGeneration(FString::Printf(TEXT("    FAIL|E_PIN_LINK_INTEGRITY_FAIL|%s|%s->%s|MakeLinkTo did not persist"),
+			*ContextInfo, *FromPin->PinName.ToString(), *ToPin->PinName.ToString()));
+		OutFailureCount++;
+		return false;
+	}
+
+	// Notify nodes about the connection change (UK2Node method)
+	if (UK2Node* FromK2Node = Cast<UK2Node>(FromPin->GetOwningNode()))
+	{
+		FromK2Node->NotifyPinConnectionListChanged(FromPin);
+	}
+	if (UK2Node* ToK2Node = Cast<UK2Node>(ToPin->GetOwningNode()))
+	{
+		ToK2Node->NotifyPinConnectionListChanged(ToPin);
+	}
+
+	return true;
+}
+
 UEdGraphPin* FEventGraphGenerator::FindPinByName(
 	UK2Node* Node,
 	const FString& PinName,
@@ -14433,6 +14531,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	// Get the schema for connection validation
 	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
 
+	// v7.2: C1 - LOCKED CONTRACT 22 - Track connection failures
+	int32 ConnectionFailures = 0;
+
 	// Source class for delegate lookup (Narrative Pro delegates)
 	UClass* NarrativeASCClass = UNarrativeAbilitySystemComponent::StaticClass();
 
@@ -14540,6 +14641,14 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 			LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
 				*Binding.Handler, *DelegateSignature->GetName()));
 		}
+
+		// v7.2: C2 - LOCKED CONTRACT 23 - Skeleton sync BEFORE CreateDelegate
+		// CustomEvent handler must exist in Skeleton Generated Class before CreateDelegate
+		// can resolve the handler function name. Without this sync, CreateDelegate stores
+		// an unresolved name, causing crash-on-open/thumbnail-compile.
+		// Audit: Claude-GPT dual audit 2026-01-27, H4 root cause confirmed
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		LogGeneration(TEXT("    Skeleton sync performed (C2: handler registered before CreateDelegate)"));
 
 		// 3. Create Self node for ability reference (used by CreateDelegate.PN_Self)
 		UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);
@@ -14938,10 +15047,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 		// Wire CreateDelegate_A.PN_Self → Ability Self
 		UEdGraphPin* CreateASelfPin = CreateDelegateA->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
-		if (SelfOutPin && CreateASelfPin)
-		{
-			SelfOutPin->MakeLinkTo(CreateASelfPin);
-		}
+		// v7.2: C1 - Use validated connection
+		ValidatedMakeLinkTo(SelfOutPin, CreateASelfPin,
+			FString::Printf(TEXT("Self->CreateDelegateA.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 		// 7. AddDelegate node
 		UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
@@ -14956,10 +15064,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		// Wire CreateDelegate_A.OutputDelegate → AddDelegate.Delegate
 		UEdGraphPin* DelegateAOut = CreateDelegateA->FindPin(TEXT("OutputDelegate"), EGPD_Output);
 		UEdGraphPin* AddDelegateIn = AddDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
-		if (DelegateAOut && AddDelegateIn)
-		{
-			DelegateAOut->MakeLinkTo(AddDelegateIn);
-		}
+		// v7.2: C1 - Use validated connection (critical H4 crash point)
+		ValidatedMakeLinkTo(DelegateAOut, AddDelegateIn,
+			FString::Printf(TEXT("CreateDelegateA.OutputDelegate->AddDelegate.Delegate|%s"), *Binding.Handler), ConnectionFailures);
 
 		// Wire SourceASC → AddDelegate.PN_Self (Target)
 		UEdGraphPin* AddSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
@@ -14981,18 +15088,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 			LogGeneration(FString::Printf(TEXT("    [DEBUG] AddDelegate ALL input pins: %s"), *AvailablePins));
 		}
 
-		if (SourceASCPinForAdd && AddSelfPin)
-		{
-			SourceASCPinForAdd->MakeLinkTo(AddSelfPin);
-			// Verify connection was actually made
-			bool bConnectionExists = AddSelfPin->LinkedTo.Contains(SourceASCPinForAdd);
-			LogGeneration(FString::Printf(TEXT("    [DEBUG] AddDelegate Target connection made: verified=%s, LinkedTo.Num=%d"),
-				bConnectionExists ? TEXT("YES") : TEXT("NO"), AddSelfPin->LinkedTo.Num()));
-		}
-		else
-		{
-			LogGeneration(TEXT("    [ERROR] AddDelegate Target connection FAILED - pin(s) null"));
-		}
+		// v7.2: C1 - Use validated connection (replaces manual verify)
+		ValidatedMakeLinkTo(SourceASCPinForAdd, AddSelfPin,
+			FString::Printf(TEXT("SourceASC->AddDelegate.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 		// v4.21.2: Store CastNode and AddDelegate together for exec wiring
 		AddDelegateNodes.Add(AddDelegateNode);
@@ -15014,10 +15112,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 		// Wire CreateDelegate_B.PN_Self → Ability Self
 		UEdGraphPin* CreateBSelfPin = CreateDelegateB->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
-		if (SelfOutPin && CreateBSelfPin)
-		{
-			SelfOutPin->MakeLinkTo(CreateBSelfPin);
-		}
+		// v7.2: C1 - Use validated connection
+		ValidatedMakeLinkTo(SelfOutPin, CreateBSelfPin,
+			FString::Printf(TEXT("Self->CreateDelegateB.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 		// 9. RemoveDelegate node
 		UK2Node_RemoveDelegate* RemoveDelegateNode = NewObject<UK2Node_RemoveDelegate>(EventGraph);
@@ -15032,10 +15129,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		// Wire CreateDelegate_B.OutputDelegate → RemoveDelegate.Delegate
 		UEdGraphPin* DelegateBOut = CreateDelegateB->FindPin(TEXT("OutputDelegate"), EGPD_Output);
 		UEdGraphPin* RemoveDelegateIn = RemoveDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
-		if (DelegateBOut && RemoveDelegateIn)
-		{
-			DelegateBOut->MakeLinkTo(RemoveDelegateIn);
-		}
+		// v7.2: C1 - Use validated connection (critical H4 crash point)
+		ValidatedMakeLinkTo(DelegateBOut, RemoveDelegateIn,
+			FString::Printf(TEXT("CreateDelegateB.OutputDelegate->RemoveDelegate.Delegate|%s"), *Binding.Handler), ConnectionFailures);
 
 		// Wire SourceASCPinForRemove → RemoveDelegate.PN_Self (Target)
 		UEdGraphPin* RemoveSelfPin = RemoveDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
@@ -15059,18 +15155,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 			LogGeneration(FString::Printf(TEXT("    [DEBUG] RemoveDelegate input pins: %s"), *AvailablePins));
 		}
 
-		if (SourceASCPinForRemove && RemoveSelfPin)
-		{
-			SourceASCPinForRemove->MakeLinkTo(RemoveSelfPin);
-			// Verify connection was actually made
-			bool bConnectionExists = RemoveSelfPin->LinkedTo.Contains(SourceASCPinForRemove);
-			LogGeneration(FString::Printf(TEXT("    [DEBUG] RemoveDelegate Target connection made: verified=%s, LinkedTo.Num=%d"),
-				bConnectionExists ? TEXT("YES") : TEXT("NO"), RemoveSelfPin->LinkedTo.Num()));
-		}
-		else
-		{
-			LogGeneration(TEXT("    [ERROR] RemoveDelegate Target connection FAILED - pin(s) null"));
-		}
+		// v7.2: C1 - Use validated connection (replaces manual verify)
+		ValidatedMakeLinkTo(SourceASCPinForRemove, RemoveSelfPin,
+			FString::Printf(TEXT("SourceASC->RemoveDelegate.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 		// v4.21.2: Store CastNode and RemoveDelegate together for exec wiring
 		RemoveDelegateNodes.Add(RemoveDelegateNode);
@@ -15339,6 +15426,15 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	}
 	LogGeneration(FString::Printf(TEXT("    [VERIFY] AddDelegate: %d connected, %d not connected"), AddConnected, AddNotConnected));
 	LogGeneration(FString::Printf(TEXT("    [VERIFY] RemoveDelegate: %d connected, %d not connected"), RemoveConnected, RemoveNotConnected));
+
+	// v7.2: C1 - LOCKED CONTRACT 22 - Report connection failures
+	if (ConnectionFailures > 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] FAIL|C1_DELEGATE_BINDING|%s|%d connection failures - asset UNSAVABLE"),
+			*Blueprint->GetName(), ConnectionFailures);
+		LogGeneration(FString::Printf(TEXT("    FAIL|C1_DELEGATE_BINDING|%d connection failures - asset MUST NOT be saved"), ConnectionFailures));
+		return -ConnectionFailures;  // Negative return indicates failure count
+	}
 
 	return NodesGenerated;
 }

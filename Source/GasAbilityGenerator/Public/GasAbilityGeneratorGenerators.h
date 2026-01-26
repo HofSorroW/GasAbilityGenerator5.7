@@ -827,6 +827,20 @@ private:
 		const TMap<FString, UK2Node*>& NodeMap,
 		const FManifestGraphConnectionDefinition& Connection);
 
+	/** v7.2: C1 - LOCKED CONTRACT 22 - Validated pin connection for direct pin-to-pin wiring
+	 * Implements 3-step gate: pin existence, schema approval, link integrity
+	 * Returns false if any check fails (caller must abort save)
+	 * @param FromPin Source pin (must be non-null)
+	 * @param ToPin Target pin (must be non-null)
+	 * @param ContextInfo Debug context string (e.g., "CreateDelegate->AddDelegate")
+	 * @param OutFailureCount Incremented on failure for tracking
+	 */
+	static bool ValidatedMakeLinkTo(
+		UEdGraphPin* FromPin,
+		UEdGraphPin* ToPin,
+		const FString& ContextInfo,
+		int32& OutFailureCount);
+
 	static UEdGraphPin* FindPinByName(
 		UK2Node* Node,
 		const FString& PinName,
