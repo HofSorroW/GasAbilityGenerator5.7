@@ -1,6 +1,6 @@
 # Warden Husk System Implementation Guide
 ## Two-Phase Enemy with Death Transition
-## Version 1.3
+## Version 1.4
 
 ---
 
@@ -13,6 +13,14 @@
 | Last Updated | January 2026 |
 | Unreal Engine | 5.7 |
 | Narrative Pro | v2.2 |
+
+---
+
+## VERSION 1.4 CHANGES
+
+| Change | Details |
+|--------|---------|
+| Variable Rename | `CoreDefinition` → `PhaseSpawnDefinition` to match manifest.yaml (authoritative source) |
 
 ---
 
@@ -115,7 +123,7 @@
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| CoreDefinition | NPCDefinition (Object Reference) | NPC_WardenCore | Yes |
+| PhaseSpawnDefinition | NPCDefinition (Object Reference) | NPC_WardenCore | Yes |
 | SpawnOffset | Vector | (0, 0, 100) | Yes |
 | EjectionMontage | AnimMontage (Object Reference) | None | Yes |
 | bSpawnCorpse | Boolean | false | Yes |
@@ -561,7 +569,7 @@
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| CoreDefinition | NPCDefinition (Object Reference) | NPC_WardenCore | Yes |
+| PhaseSpawnDefinition | NPCDefinition (Object Reference) | NPC_WardenCore | Yes |
 | SpawnOffset | Vector | (0, 0, 100) | Yes |
 | EjectionMontage | AnimMontage (Object Reference) | None | Yes |
 | bSpawnCorpse | Boolean | false | Yes |
@@ -598,9 +606,9 @@
 
 #### 28.1) Check Definition Exists
    - 28.1.1) From Branch True pin:
-   - 28.1.1.1) Drag CoreDefinition variable getter
+   - 28.1.1.1) Drag PhaseSpawnDefinition variable getter
    - 28.1.1.2) Add Is Valid node
-   - 28.1.1.3) Connect CoreDefinition to Object input
+   - 28.1.1.3) Connect PhaseSpawnDefinition to Object input
    - 28.1.2) From Is Valid -> Is Valid pin:
    - 28.1.2.1) Add Branch node
 
@@ -664,7 +672,7 @@
    - 31.1.1.1) Add Spawn NPC node
    - 31.1.2) Connect:
    - 31.1.2.1) Target: NarrativeCharacterSubsystem reference
-   - 31.1.2.2) NPCData: CoreDefinition variable
+   - 31.1.2.2) NPCData: PhaseSpawnDefinition variable
    - 31.1.2.3) Transform: Make Transform result
 
 #### 31.2) Store Spawned Core Reference
@@ -884,8 +892,8 @@
    - 44.1.1) In Content Browser, find BP_WardenHusk
    - 44.1.2) Right-click -> Edit Defaults
 
-#### 44.2) Verify CoreDefinition
-   - 44.2.1) Find CoreDefinition variable
+#### 44.2) Verify PhaseSpawnDefinition
+   - 44.2.1) Find PhaseSpawnDefinition variable
    - 44.2.2) Ensure set to: NPC_WardenCore
 
 ---
