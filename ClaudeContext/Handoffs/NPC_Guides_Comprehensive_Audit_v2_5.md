@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 2.4 (Support Buffer Full Guide Alignment)
+## Version 2.5 (Generator Gap - Heal Meta-Attribute Pattern)
 ## January 2026
 
 ---
@@ -40,7 +40,7 @@ This consolidated audit combines technical validation, gameplay intent review, a
 | Gatherer_Scout_Alert_v1_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 | Random_Aggression_Stalker_v2_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 | Possessed_Exploder_v2_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
-| Support_Buffer_Healer_v1_1 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
+| Support_Buffer_Healer_v1_2 | ✅ PASS | ✅ MATCHES | ✅ FULL | **COMPLIANT** |
 
 ---
 
@@ -225,7 +225,7 @@ Same pattern as Warden (authority check → spawn at location → parent call).
 | Area healing | `SphereOverlap` at 500 radius | ✅ |
 | Faction filtering | `GetAttitude` → Friendly filter (v4.39 fix) | ✅ |
 | Health ratio check | `DamageThreshold: 0.9` - heals if Health/MaxHealth < 0.9 (v4.39 fix) | ✅ |
-| GE application | `NarrativeHealExecution` + `SetByCaller.Heal` (v4.39 fix) | ✅ |
+| GE application | Heal meta-attribute modifier + `SetByCaller.Heal` (v4.39.1 fix) | ✅ |
 | BB key compliance | Uses Narrative Pro `BBKey_FollowTarget` standard | ✅ |
 | ApplyHealToTarget function | Authority check + cooldown + spec creation (v4.39 fix) | ✅ |
 | BT services | BTS_HealNearbyAllies + BTS_SetAIFocus + BTS_AdjustFollowSpeed (v4.39 fix) | ✅ |
@@ -613,6 +613,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.5 | 2026-01-26 | **Generator Gap - Heal Meta-Attribute Pattern (Claude-GPT Audit):** Research into NarrativeAttributeSetBase.cpp:162-173 revealed Narrative Pro's Heal meta-attribute pattern (PostGameplayEffectExecute processes Heal → calls HealedBy delegate → adds to Health → resets Heal to 0). CRITICAL FINDING: Generator parses `execution_calculations` but NEVER applies them (GasAbilityGeneratorGenerators.cpp gap). Resolution: GE_SupportHeal changed from `execution_calculations: NarrativeHealExecution` to regular modifier on `NarrativeAttributeSetBase.Heal` attribute with `SetByCaller` magnitude. Guide updated to v1.2 documenting correct pattern. Plugin version v4.39.1. |
 | 2.4 | 2026-01-26 | **Support Buffer Full Guide Alignment (Claude-GPT Audit):** Comprehensive multi-level audit identified 6 INC issues (INC-SB-1 through INC-SB-6). Fixed: GE_SupportHeal now uses NarrativeHealExecution + SetByCaller.Heal (INC-SB-4); BP_SupportBuffer has full variables and ApplyHealToTarget function with authority check, cooldown, spec creation (INC-SB-3); BTS_HealNearbyAllies has faction check via GetAttitude and DamageThreshold health ratio check (INC-SB-2, INC-SB-6); BT_SupportFollow has all 3 services (BTS_HealNearbyAllies + BTS_SetAIFocus + BTS_AdjustFollowSpeed) with interval 0.5s (INC-SB-1, INC-SB-5). Plugin version v4.39. |
 | 2.3 | 2026-01-26 | **P-BB-KEY-2 NarrativeProSettings Pattern (Claude-GPT Audit):** Research verified NP BTS_AdjustFollowSpeed uses `Get Narrative Pro Settings → BBKey Follow Target` (screenshots). Tech Reference v6_8.md:6016 documents pattern. Fixed INC-4 (BTS_CalculateFormationPosition), INC-5 (BTS_AdjustFormationSpeed), INC-6 (BTS_CheckExplosionProximity) - all now use NarrativeProSettings instead of MakeLiteralName. Added P-BB-KEY-2 DOC-ONLY pattern. Plugin version v4.38. |
 | 2.2 | 2026-01-26 | **Formation Guard BB Key Compliance (Claude-GPT Audit):** Fixed INC-1 (AC naming: Guide v2.6 uses `AC_FormationGuardBehavior`), INC-2 (BB key: Manifest uses `FollowTarget` per Narrative Pro `BBKey_FollowTarget`), INC-3 (Speed restore: BTS_AdjustFormationSpeed implements P-MOVE-1 via ReceiveActivationAI/DeactivationAI). Added P-FORMATION-SPEED-1 and P-BB-KEY-1 DOC-ONLY patterns. |

@@ -1,6 +1,6 @@
 # Support Buffer Healer NPC Implementation Guide
 
-## VERSION 1.1
+## VERSION 1.2
 
 ## Unreal Engine 5.7 + Narrative Pro v2.2
 
@@ -15,7 +15,7 @@
 | Document Type | Support NPC Implementation Guide |
 | NPC Name | Support Buffer |
 | Last Updated | January 2026 |
-| Version | 1.1 |
+| Version | 1.2 |
 
 ---
 
@@ -201,6 +201,11 @@
 
 ### **2) Create GE_SupportHeal**
 
+> **v1.2 UPDATE:** Uses Heal meta-attribute modifier pattern instead of NarrativeHealExecution.
+> This is the correct Narrative Pro pattern - PostGameplayEffectExecute processes the Heal
+> attribute change, triggers HealedBy delegate, and applies healing to Health.
+> Reference: NarrativeAttributeSetBase.cpp:162-173
+
 #### 2.1) Create Gameplay Effect
    - 2.1.1) Right-click in Content Browser
    - 2.1.2) Select Blueprint Class
@@ -215,44 +220,38 @@
 |----------|-------|
 | Duration Policy | Instant |
 
-#### 2.3) Add Executions Component
-   - 2.3.1) Find Components array
+#### 2.3) Add Modifier for Heal Meta-Attribute
+   - 2.3.1) Find Modifiers array
    - 2.3.2) Click + to add element
-   - 2.3.3) Select: Executions (GameplayEffectExecutions_GameplayEffectComponent)
-
-#### 2.4) Configure Execution
+   - 2.3.3) Configure modifier:
 
 | Property | Value |
 |----------|-------|
-| Calculation Class | NarrativeHealExecution |
-
-#### 2.5) Add Calculation Modifier for SetByCaller
-   - 2.5.1) Expand Executions component
-   - 2.5.2) Find Calculation Modifiers array
-   - 2.5.3) Click + to add modifier
-   - 2.5.4) Configure modifier:
-
-| Property | Value |
-|----------|-------|
-| Backing Capture Definition -> Attribute | Heal |
-| Modifier Op | Override |
+| Attribute | NarrativeAttributeSetBase.Heal |
+| Modifier Op | Additive |
 | Modifier Magnitude -> Magnitude Calculation Type | Set By Caller |
 | Modifier Magnitude -> Set By Caller Tag | SetByCaller.Heal |
 
-#### 2.6) Add Asset Tag
-   - 2.6.1) Find Components array
-   - 2.6.2) Click + to add element
-   - 2.6.3) Select: Tags This Effect Has (Asset Tags)
-   - 2.6.4) Add tag: Effect.Support.Heal
+Note: The Heal attribute is a meta-attribute in Narrative Pro. When modified, PostGameplayEffectExecute:
+1. Detects Heal attribute change
+2. Calls TargetASC->HealedBy() to fire healing delegates
+3. Adds HealAmount to Health (clamped to MaxHealth)
+4. Resets Heal to 0
 
-#### 2.7) Add Gameplay Cues Component
-   - 2.7.1) Find Components array
-   - 2.7.2) Click + to add element
-   - 2.7.3) Select: Gameplay Cues (Cues_GameplayEffectComponent)
-   - 2.7.4) Expand component
-   - 2.7.5) Add to Gameplay Cue Tags: GameplayCue.Support.Heal
+#### 2.4) Add Asset Tag
+   - 2.4.1) Find Components array
+   - 2.4.2) Click + to add element
+   - 2.4.3) Select: Tags This Effect Has (Asset Tags)
+   - 2.4.4) Add tag: Effect.Support.Heal
 
-#### 2.8) Save Asset
+#### 2.5) Add Gameplay Cues Component
+   - 2.5.1) Find Components array
+   - 2.5.2) Click + to add element
+   - 2.5.3) Select: Gameplay Cues (Cues_GameplayEffectComponent)
+   - 2.5.4) Expand component
+   - 2.5.5) Add to Gameplay Cue Tags: GameplayCue.Support.Heal
+
+#### 2.6) Save Asset
 
 ---
 
@@ -860,6 +859,13 @@ Note: Support NPC does not attack, so no attack goal generator
 ---
 
 ## CHANGELOG
+
+### Version 1.2 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| GE_SupportHeal Pattern | Changed from NarrativeHealExecution + Calculation Modifiers to Heal meta-attribute modifier pattern. This is the correct Narrative Pro pattern per NarrativeAttributeSetBase.cpp:162-173. PostGameplayEffectExecute processes Heal → HealedBy delegate → Health increase. Generator supports this pattern (execution_calculations not implemented). |
+| Phase 2 Rewrite | Simplified GE_SupportHeal creation - uses standard modifier instead of Executions component. |
 
 ### Version 1.1 - January 2026
 

@@ -9777,14 +9777,17 @@ gameplay_effects:  # SUPPORT BUFFER
     folder: NPCs/Support/Effects
     duration_policy: Instant
 
-  # v4.39: Full NarrativeHealExecution with SetByCaller.Heal (INC-SB-4 fix)
+  # v4.39.1: Heal meta-attribute modifier pattern (Generator doesn't support execution_calculations)
+  # PostGameplayEffectExecute processes Heal attribute → HealedBy delegate → Health increase
+  # This is the correct Narrative Pro pattern per NarrativeAttributeSetBase.cpp:162-173
   - name: GE_SupportHeal
     folder: NPCs/Support/Effects
     duration_policy: Instant
-    execution_calculations:
-      - class: NarrativeHealExecution
-    setbycaller_magnitudes:
-      - tag: SetByCaller.Heal
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.Heal
+        operation: Additive
+        magnitude_type: SetByCaller
+        set_by_caller_tag: SetByCaller.Heal
     asset_tag: Effect.Support.Heal
     gameplay_cues:
       - GameplayCue.Support.Heal
