@@ -311,6 +311,9 @@ switch ($Action) {
             Copy-Item "$LogDir\commandlet_stdout.log" "$LogDir\commandlet_full.log" -Force
         }
 
+        # v4.40.3: Wait for log flush to complete before reading
+        Start-Sleep -Milliseconds 500
+
         # Display relevant output
         if (Test-Path $OutputLog) {
             Write-Host ""
@@ -318,9 +321,22 @@ switch ($Action) {
             Get-Content $OutputLog | Where-Object { $_ -match "\[NEW\]|\[FAIL\]|ERROR|Summary|---" }
         } else {
             Write-Host "[WARN] Output log not created at: $OutputLog"
-            # Fallback: extract from UE log
-            if (Test-Path $UELogPath) {
-                Write-Host "Extracting from UE log..."
+            # v4.40.3: Use stdout.log as primary fallback (synchronized with process completion)
+            if (Test-Path "$LogDir\commandlet_stdout.log") {
+                Write-Host "Using stdout log as fallback..."
+                $stdoutContent = Get-Content "$LogDir\commandlet_stdout.log" | Where-Object { $_ -match "GasAbilityGenerator" }
+                # Add timestamp header for freshness verification
+                $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                $header = "=== Fallback Log (from stdout) ===`nTimestamp: $timestamp`n`n"
+                $header + ($stdoutContent -join "`n") | Out-File $OutputLog -Encoding UTF8
+                if (Test-Path $OutputLog) {
+                    Get-Content $OutputLog | Where-Object { $_ -match "\[NEW\]|\[FAIL\]|ERROR|Summary|---" }
+                }
+            }
+            # Secondary fallback: UE log (avoid if possible due to race condition)
+            elseif (Test-Path $UELogPath) {
+                Write-Host "[WARN] Using UE log fallback (may have race condition)..."
+                Start-Sleep -Seconds 2  # v4.40.3: Extra wait for UE log flush
                 $ueContent = Get-Content $UELogPath -Tail 500 | Where-Object { $_ -match "GasAbilityGenerator" }
                 $ueContent | Out-File $OutputLog -Encoding UTF8
                 if (Test-Path $OutputLog) {

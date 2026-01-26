@@ -9685,6 +9685,146 @@ bool FEventGraphGenerator::GenerateEventGraph(
 	}
 
 	// ============================================================
+	// v4.40.4: AUTO-INFERENCE - Connect Cast outputs to VariableSet Value pins
+	// ============================================================
+	// Pattern: When VariableSet follows a Cast node in exec flow and the Value pin
+	// is unconnected, auto-connect the Cast's "As X" output to the Value pin.
+	// This fixes the N1 warnings for SetFatherRef, SetPlayerRef, etc.
+	LogGeneration(TEXT("  --- Auto-Inference: Cast → VariableSet ---"));
+	int32 AutoInferredConnections = 0;
+
+	for (const auto& NodePair : NodeMap)
+	{
+		UK2Node* Node = NodePair.Value;
+		if (!Node) continue;
+
+		const FString& NodeId = NodePair.Key;
+
+		// Only process VariableSet nodes
+		UK2Node_VariableSet* VarSetNode = Cast<UK2Node_VariableSet>(Node);
+		if (!VarSetNode) continue;
+
+		// Find the Value input pin
+		UEdGraphPin* ValuePin = nullptr;
+		FString VarName = VarSetNode->GetVarName().ToString();
+		for (UEdGraphPin* Pin : VarSetNode->Pins)
+		{
+			if (Pin && Pin->Direction == EGPD_Input &&
+			    Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
+			{
+				// Value pin matches variable name or is simply "Value"
+				FString PinName = Pin->PinName.ToString();
+				if (PinName.Equals(VarName, ESearchCase::IgnoreCase) ||
+				    PinName.Equals(TEXT("Value"), ESearchCase::IgnoreCase) ||
+				    (!PinName.Equals(TEXT("self"), ESearchCase::IgnoreCase) &&
+				     !PinName.Equals(TEXT("Exec"), ESearchCase::IgnoreCase)))
+				{
+					ValuePin = Pin;
+					break;
+				}
+			}
+		}
+
+		// Skip if Value pin is already connected
+		if (!ValuePin || ValuePin->LinkedTo.Num() > 0) continue;
+
+		// Skip primitive types that might be intentionally set to default
+		// (Bool variables ending in "False" are likely intentional)
+		if (NodeId.EndsWith(TEXT("False"), ESearchCase::IgnoreCase) &&
+		    ValuePin->PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
+		{
+			LogGeneration(FString::Printf(TEXT("    SKIP: %s - intentional false assignment"), *NodeId));
+			continue;
+		}
+
+		// Find the exec source node (what connects TO this VariableSet's Exec pin)
+		FString* SourceNodeIdPtr = ExecSourceMap.Find(NodeId);
+		if (!SourceNodeIdPtr) continue;
+
+		UK2Node* const* SourceNodePtr = NodeMap.Find(*SourceNodeIdPtr);
+		if (!SourceNodePtr || !*SourceNodePtr) continue;
+
+		UK2Node* SourceNode = *SourceNodePtr;
+
+		// Check if source is a Cast node
+		UK2Node_DynamicCast* CastNode = Cast<UK2Node_DynamicCast>(*SourceNodePtr);
+		if (!CastNode)
+		{
+			// Also check if it's a CallFunction that does casting (CastTo* functions)
+			if (UK2Node_CallFunction* CallFunc = Cast<UK2Node_CallFunction>(SourceNode))
+			{
+				FString FuncName = CallFunc->GetFunctionName().ToString();
+				if (!FuncName.StartsWith(TEXT("CastTo"), ESearchCase::IgnoreCase) &&
+				    !FuncName.Contains(TEXT("DynamicCast"), ESearchCase::IgnoreCase))
+				{
+					continue; // Not a cast function
+				}
+			}
+			else
+			{
+				continue; // Not a cast node
+			}
+		}
+
+		// Find the Cast's output pin (the "As TargetClass" pin)
+		UEdGraphPin* CastOutputPin = nullptr;
+		for (UEdGraphPin* Pin : SourceNode->Pins)
+		{
+			if (Pin && Pin->Direction == EGPD_Output &&
+			    Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec &&
+			    Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Boolean) // Skip "Success" pin
+			{
+				FString PinName = Pin->PinName.ToString();
+				// Cast outputs are named "As ClassName" or "CastOutput" or the class name
+				if (PinName.StartsWith(TEXT("As "), ESearchCase::IgnoreCase) ||
+				    PinName.Equals(TEXT("CastOutput"), ESearchCase::IgnoreCase) ||
+				    PinName.Contains(TEXT("Result"), ESearchCase::IgnoreCase) ||
+				    Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object)
+				{
+					CastOutputPin = Pin;
+					break;
+				}
+			}
+		}
+
+		if (!CastOutputPin) continue;
+
+		// Check type compatibility
+		const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+		if (!K2Schema->ArePinsCompatible(CastOutputPin, ValuePin, nullptr, false))
+		{
+			LogGeneration(FString::Printf(TEXT("    SKIP: %s - type mismatch (Cast:%s vs Var:%s)"),
+				*NodeId,
+				*CastOutputPin->PinType.PinCategory.ToString(),
+				*ValuePin->PinType.PinCategory.ToString()));
+			continue;
+		}
+
+		// Auto-connect!
+		bool bConnected = K2Schema->TryCreateConnection(CastOutputPin, ValuePin);
+		if (bConnected)
+		{
+			AutoInferredConnections++;
+			LogGeneration(FString::Printf(TEXT("    AUTO-CONNECT: [%s].%s → [%s].%s"),
+				*(*SourceNodeIdPtr), *CastOutputPin->PinName.ToString(),
+				*NodeId, *ValuePin->PinName.ToString()));
+			UE_LOG(LogGasAbilityGenerator, Display, TEXT("[AUTO-INFER] Connected %s.%s → %s.%s"),
+				*(*SourceNodeIdPtr), *CastOutputPin->PinName.ToString(),
+				*NodeId, *ValuePin->PinName.ToString());
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("    AUTO-CONNECT FAILED: [%s] → [%s]"),
+				*(*SourceNodeIdPtr), *NodeId));
+		}
+	}
+
+	if (AutoInferredConnections > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Auto-inferred %d Cast→VariableSet connections"), AutoInferredConnections));
+	}
+
+	// ============================================================
 	// STABLE SECTION: Post-Generation Validation v2.7.5
 	// Verified: 2026-01-11 - DO NOT MODIFY WITHOUT TESTING
 	// ============================================================

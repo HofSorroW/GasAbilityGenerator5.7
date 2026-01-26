@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 2.6 (BPA_Alert Implementation Gap Closed)
+## Version 3.0 (All Audit Findings Fixed)
 ## January 2026
 
 ---
@@ -11,9 +11,9 @@
 | Document Type | Consolidated Audit Report |
 | Scope | All 7 NPC Implementation Guides |
 | Auditor | Claude (Opus 4.5) - dual audit with GPT |
-| Plugin Version | GasAbilityGenerator v4.38 |
+| Plugin Version | GasAbilityGenerator v4.39.6 |
 | Context | UE5.7 + Narrative Pro v2.2 |
-| Status | **PASS - ALL SYSTEMS COMPLIANT** |
+| Status | **193/194 COMPLIANT** (1 requires manual completion) + ✅ ALL FIXES APPLIED |
 
 ---
 
@@ -28,7 +28,7 @@ This consolidated audit combines technical validation, gameplay intent review, a
 | Technical Compliance | ✅ PASS |
 | Gameplay Intent | ✅ MATCHES |
 | Locked Contracts | ✅ NO VIOLATIONS |
-| Automation Coverage | ✅ 194/194 (100%) |
+| Automation Coverage | ⚠️ 193/194 (99.5%) - BTS_HealNearbyAllies requires manual completion |
 
 ### Guide Status Summary
 
@@ -407,6 +407,141 @@ event_graph:
 
 ---
 
+## CROSS-GPT CONSISTENCY DIFF AUDIT (v2.8)
+
+This section documents the Claude-GPT dual-auditor consistency diff performed against current manifest and LOCKED contracts.
+
+### Audit Methodology
+
+Each NPC system audited against:
+1. **LOCKED Contracts** - Must pass all applicable gates
+2. **Manifest Evidence** - Line numbers cited for validation
+3. **NP Source Code** - Patterns verified against Narrative Pro implementation
+
+### Support Buffer Consistency Diff
+
+#### System Assets
+| Asset | Manifest Line | Status |
+|-------|---------------|--------|
+| NPC_SupportBuffer | 7629-7636 | ✅ Exists |
+| AC_SupportBuffer | 7412-7417 | ✅ Exists |
+| AC_SupportBufferBehavior | 7526-7530 | ✅ Exists |
+| GE_SupportHeal | 9783-9793 | ✅ Exists |
+| BP_SupportBuffer | 9797-10052 | ✅ Exists |
+| BTS_HealNearbyAllies | 10059-10271 | ✅ Exists |
+| BT_SupportFollow | 10278-10311 | ✅ Exists |
+| BPA_SupportFollow | 10314-10317 | ✅ Exists |
+
+#### Contract Audit Results
+
+| Contract | Applicability | Status | Evidence |
+|----------|---------------|--------|----------|
+| R-SPAWN-1 (16) | N/A | - | No NPC spawning in Support Buffer |
+| R-PHASE-1 (17) | N/A | - | Single-phase NPC |
+| R-NPCDEF-1 (19) | N/A | - | No phase spawn variable |
+| P-BB-KEY-2 (20) | N/A | - | BTS_HealNearbyAllies uses instance variables (HealRadius, DamageThreshold), not BB keys |
+| R-AI-1 (12) | ✅ Yes | ✅ COMPLIANT | Activity system pattern: BPA_SupportFollow → BT_SupportFollow |
+| INV-GESPEC-1 (13) | N/A | - | Uses `MakeOutgoingSpec` (ASC), not `MakeOutgoingGameplayEffectSpec` (GA) |
+
+**Support Buffer Verdict:** ✅ COMPLIANT with all applicable LOCKED contracts.
+
+---
+
+### Warden Husk/Core Consistency Diff
+
+#### System Assets
+| Asset | Manifest Line | Status |
+|-------|---------------|--------|
+| NPC_WardenHusk | 7665 | ✅ Exists |
+| NPC_WardenCore | 7674 | ✅ Exists |
+| BP_WardenHusk | 8879-8951 | ✅ Exists |
+| BP_WardenCore | 8953-8987 | ✅ Exists |
+| AC_WardenHusk | 7440-7445 | ✅ Exists |
+| AC_WardenCore | 7447-7453 | ✅ Exists |
+| AC_WardenHuskBehavior | 7552-7555 | ✅ Exists |
+| AC_WardenCoreBehavior | 7557-7560 | ✅ Exists |
+| GA_CoreLaser | 9002-9036 | ✅ Exists |
+
+#### Contract Audit Results
+
+| Contract | Applicability | Status | Evidence |
+|----------|---------------|--------|----------|
+| R-SPAWN-1 (16) | ✅ Yes | ✅ COMPLIANT | Lines 8927-8930: `type: SpawnNPC` |
+| R-PHASE-1 (17) | ✅ Yes | ✅ COMPLIANT | Lines 8903-8951: HasAuthority → SpawnNPC → CallParent |
+| R-NPCDEF-1 (19) | ✅ Yes | ✅ COMPLIANT | Lines 8884-8887: `type: Object, class: NPCDefinition` |
+| R-AI-1 (12) | ✅ Yes | ✅ COMPLIANT | No direct RunBehaviorTree bypass |
+| P-BB-KEY-2 (20) | N/A | - | No BB key access in Warden Blueprints |
+| INV-GESPEC-1 (13) | N/A | - | No MakeOutgoingGameplayEffectSpec calls |
+
+**Warden Husk/Core Verdict:** ✅ FULLY COMPLIANT with all applicable LOCKED contracts.
+
+---
+
+### Claude-GPT Validated Findings
+
+#### Finding 1: INV-GESPEC-1 Scope Clarification
+
+**Question:** Does INV-GESPEC-1 (Contract 13) apply to `MakeOutgoingSpec` (ASC version)?
+
+**GPT Verdict:** NO - Contract 13 is explicitly scoped to `UGameplayAbility::MakeOutgoingGameplayEffectSpec`, not `UAbilitySystemComponent::MakeOutgoingSpec`.
+
+**Evidence:**
+- LOCKED_CONTRACTS.md Contract 13 specifies `MakeOutgoingGameplayEffectSpec`
+- BP_SupportBuffer uses `MakeOutgoingSpec` (ASC) because it's a non-ability context
+- Using ASC-side spec construction is correct for Actor/Component context
+
+**Resolution:** No contract violation. Different functions for different contexts.
+
+---
+
+#### Finding 2: NP Built-in Services Authority
+
+**Question:** Do NP built-in services (BTS_SetAIFocus, BTS_AdjustFollowSpeed) need P-BB-KEY-2 audit?
+
+**GPT Verdict:** NO - Narrative Pro built-ins are authoritative. P-BB-KEY-2 audits **our custom graphs**, not NP internals.
+
+**Evidence:**
+- NP BT services are Blueprint assets in `Content/Pro/Core/AI/`
+- `GetNarrativeProSettings()` and `BBKey_*` are `BlueprintReadOnly`/`BlueprintCallable`
+- Pattern designed for Blueprint consumers, not NP C++ internals
+
+**Audit Split:**
+- ✅ Audit: Custom BTS/BTT/Activities we generate that touch canonical NP keys
+- ❌ Don't audit: NP's own BTS implementations
+
+---
+
+#### Finding 3: Cross-Blueprint Limitation Acceptance
+
+**Question:** Is 193/194 (99.5%) acceptable with cross-BP limitation documented?
+
+**GPT Verdict:** YES - Acceptable as tracked "Generation Completeness Gate" item.
+
+**Conditions:**
+1. Clearly tracked as generator limitation
+2. Cannot masquerade as "fully generated & working"
+3. Core behavior requiring manual fix is documented
+
+**Status:** BTS_HealNearbyAllies → BP_SupportBuffer.ApplyHealToTarget documented in TODO section with enhancement approaches.
+
+---
+
+#### Finding 4: R-PHASE-1 Clarification
+
+**Discovery:** Narrative Pro **automatically binds** `OnDied` → `HandleDeath` in `NarrativeNPCController`.
+
+**Evidence (NarrativeNPCController.cpp:165):**
+```cpp
+NASC->OnDied.AddUniqueDynamic(this, &ThisClass::HandleDeath);
+```
+
+**Impact:** R-PHASE-1 wording "bind to OnDied delegate from ASC" is satisfied by NP's internal binding when using `function_overrides: - function: HandleDeath`.
+
+**Recommended Clarification for LOCKED_CONTRACTS.md:**
+> For NarrativeNPCCharacter subclasses, override `HandleDeath` (NP auto-binds OnDied→HandleDeath). For non-NP characters, explicitly bind to OnDied delegate.
+
+---
+
 ## PATTERNS DOCUMENTED
 
 ### Locked Patterns (LOCKED_CONTRACTS.md)
@@ -543,6 +678,376 @@ GetValueAsObject / SetValueAsVector / etc. (KeyName pin)
 
 ---
 
+## TODO: Cross-Blueprint Function Call Enhancement
+
+### Problem Statement
+
+**BTS_HealNearbyAllies** calls `ApplyHealToTarget()`, a custom function defined on **BP_SupportBuffer**. The generator cannot resolve this cross-Blueprint function reference during generation because:
+
+1. Both Blueprints are generated in the same pass
+2. When BTS_HealNearbyAllies is generated, BP_SupportBuffer may not exist yet (or its function graph isn't compiled)
+3. `FindFunction()` fails because the target Blueprint's UClass hasn't been fully constructed
+
+**Current Status:** BTS_HealNearbyAllies requires manual completion (CallApplyHeal node fails)
+
+### Research Findings
+
+**Root Cause Analysis:**
+- Generator uses `FGasAbilityGeneratorFunctionResolver::ResolveFunction()` to find functions
+- For generated Blueprints, resolution checks `Blueprint->GeneratedClass->FindFunctionByName()`
+- During generation, `GeneratedClass` may be nullptr or incomplete
+- Even if the Blueprint asset exists on disk, its function graphs aren't registered until compiled
+
+**Affected Pattern:**
+```yaml
+# In BTS_HealNearbyAllies event_graph
+- id: CallApplyHeal
+  type: CallFunction
+  properties:
+    function: ApplyHealToTarget
+    class: BP_SupportBuffer        # <-- Cross-Blueprint reference
+    target_self: false
+```
+
+**Why This Works for Native Classes:**
+- Native classes (UKismetSystemLibrary, ANarrativeCharacter) have StaticClass() available at load time
+- Their functions are registered in UClass during module startup
+- Generator can always find native functions via FindFunctionByName()
+
+### Potential Enhancement Approaches
+
+**Option A: Two-Pass Generation**
+1. First pass: Generate all Blueprint shells (class, variables, function stubs)
+2. Compile all Blueprints to register function signatures
+3. Second pass: Generate event graphs and function bodies with full resolution
+
+Pros: Clean separation, all functions available
+Cons: Major architectural change, doubled asset iteration, longer generation time
+
+**Option B: Deferred Resolution Queue**
+1. Generate what's possible in first pass
+2. Queue unresolved cross-BP function calls
+3. After all Blueprints exist, resolve queue and patch graphs
+4. Recompile affected Blueprints
+
+Pros: Minimal architectural change, handles edge cases
+Cons: Complex patching logic, potential compile order issues
+
+**Option C: Explicit Cross-Blueprint Registry**
+1. Add manifest section for cross-BP function declarations:
+   ```yaml
+   cross_blueprint_functions:
+     - blueprint: BP_SupportBuffer
+       functions:
+         - name: ApplyHealToTarget
+           inputs: [Target: Actor]
+           outputs: [Success: Bool]
+   ```
+2. Generator creates stub functions during Blueprint shell creation
+3. Function bodies generated in second pass
+
+Pros: Explicit contract, validates signatures
+Cons: Requires manifest changes, duplicates function definition
+
+**Option D: Runtime Resolution (Manual Completion)**
+1. Accept that cross-BP calls require manual completion
+2. Document pattern in guides
+3. Generator creates placeholder with comment
+
+Pros: No generator changes needed
+Cons: Not fully automated (current state)
+
+### Recommended Approach
+
+**Option B (Deferred Resolution Queue)** is recommended for v4.40+:
+- Extends existing deferred resolution system
+- Minimal manifest schema changes
+- Handles arbitrary cross-BP patterns
+- Can be implemented incrementally
+
+### Implementation TODO (v4.40)
+
+- [ ] Add `FCrossBluprintFunctionCall` struct to track unresolved calls
+- [ ] Modify `FBlueprintGenerator::GenerateEventGraph()` to queue failures
+- [ ] Add `ResolveDeferredCrossBlueprintCalls()` post-generation pass
+- [ ] Add compilation step between generation and resolution
+- [ ] Update `FGasAbilityGeneratorFunctionResolver` to check compiled Blueprints
+- [ ] Test with BTS_HealNearbyAllies → BP_SupportBuffer.ApplyHealToTarget
+
+### Workaround (Current)
+
+Until enhancement is implemented, cross-Blueprint function calls require manual completion:
+1. Generate both Blueprints
+2. Open BTS_HealNearbyAllies in editor
+3. Manually create CallFunction node targeting BP_SupportBuffer.ApplyHealToTarget
+4. Connect pins per manifest definition
+
+---
+
+## DEATH SIGNAL PATH AUDIT (v2.9)
+
+This section documents the cross-NPC death signal path check across Warden and Biomech systems per GPT request.
+
+### Audit Scope
+
+| Guide | File | Lines Audited |
+|-------|------|---------------|
+| Warden Husk/Core | `guides/Warden_Husk_System_Implementation_Guide_v1_3.md` | Section 25-26 (570-720), System Flow (57-67) |
+| Biomech Host/Creature | `guides/Biomechanical_Detachment_System_Implementation_Guide_v1_2.md` | Phase 5 (243-387), System Flow (50-59) |
+
+### Death Signal Path Consistency
+
+**Both guides document the same death flow:**
+
+```
+OnDied delegate fires → HandleDeath override executes → HasAuthority → SpawnNPC → CallParent
+```
+
+**Warden Guide Evidence (v1_3, lines 57-67):**
+> "On death, the Warden Husk spawns a Warden Core at the death location. This uses Narrative Pro's death handling system where OnDied fires and HandleDeath receives the call."
+
+**Biomech Guide Evidence (v1_2, lines 50-59):**
+> "When the Host dies, it triggers detachment: OnDied delegate fires → HandleDeath override executes → Biomech Creature spawns at location."
+
+### Implementation Pattern Check
+
+| Element | Warden Guide | Biomech Guide | Manifest |
+|---------|--------------|---------------|----------|
+| Death handler | `function_overrides: HandleDeath` | `function_overrides: HandleDeath` | ✅ `function_overrides` |
+| Authority check | `HasAuthority → Branch` | `HasAuthority → Branch` | ✅ Present |
+| Spawn method | `SpawnNPC` | `SpawnNPC` | ✅ `type: SpawnNPC` |
+| Parent call | `CallParent` | `CallParent` | ✅ `type: CallParent` |
+| NPC definition | `PhaseSpawnDefinition: Object/NPCDefinition` | `DetachDefinition: Object/NPCDefinition` | ✅ Object type |
+
+**Verdict:** ✅ Warden and Biomech guides are **CONSISTENT** with each other and with manifest.yaml.
+
+---
+
+### DOC DRIFT FINDING: LOCKED_CONTRACTS vs Guides/Manifest
+
+**Issue Identified:** LOCKED_CONTRACTS.md Contract 17 (R-PHASE-1) shows `delegate_bindings:` as the "Correct Pattern" (lines 624-628), but both guides and manifest use `function_overrides: - function: HandleDeath`.
+
+#### LOCKED_CONTRACTS.md (lines 624-628):
+```yaml
+delegate_bindings:
+  - source_variable: ASC
+    delegate: OnDied
+    handler: HandleDeath
+```
+
+#### Guides/Manifest Pattern:
+```yaml
+function_overrides:
+  - function: HandleDeath
+    nodes:
+      - id: HasAuth
+        type: CallFunction
+        # ...
+```
+
+#### Root Cause Analysis
+
+**Finding:** Both patterns are VALID due to Narrative Pro auto-binding.
+
+**Evidence (NarrativeNPCController.cpp:165):**
+```cpp
+NASC->OnDied.AddUniqueDynamic(this, &ThisClass::HandleDeath);
+```
+
+**Explanation:**
+- Narrative Pro automatically binds `OnDied → HandleDeath` in `NarrativeNPCController`
+- For `NarrativeNPCCharacter` subclasses (BP_WardenHusk, BP_BiomechHost), overriding `HandleDeath` is sufficient
+- The `delegate_bindings:` approach in LOCKED_CONTRACTS would be needed for non-NP characters that don't have auto-binding
+
+#### Impact Assessment
+
+| Scenario | Pattern Needed | Status |
+|----------|----------------|--------|
+| NarrativeNPCCharacter subclass | `function_overrides: HandleDeath` | ✅ Guides/Manifest correct |
+| Non-NP character (custom) | `delegate_bindings:` + `CustomEvent` | ✅ LOCKED_CONTRACTS pattern |
+| NP character with delegate | Either works | ✅ Both valid |
+
+**Classification:** DOC DRIFT (non-breaking)
+- Manifest and guides are correct for current implementation
+- LOCKED_CONTRACTS shows alternative valid pattern
+- No functionality affected
+
+---
+
+### PROPOSED ACTION: Contract 17 Clarification
+
+**Current Wording (R-PHASE-1, line 617):**
+> "Phase transition blueprints **MUST** bind to `OnDied` delegate from ASC"
+
+**Proposed Wording:**
+> "Phase transition blueprints **MUST** handle the `OnDied` event. For `NarrativeNPCCharacter` subclasses, override `HandleDeath` (NP auto-binds `OnDied→HandleDeath` in `NarrativeNPCController`). For non-NP characters, explicitly bind to `OnDied` delegate."
+
+**Rationale:**
+1. Clarifies that both patterns achieve the same goal
+2. Documents NP auto-binding behavior
+3. Guides readers to correct pattern for their base class
+4. Maintains backward compatibility with existing manifests
+
+**Status:** ✅ APPLIED - Contract 17 updated in LOCKED_CONTRACTS.md (v4.39.4 clarification)
+
+---
+
+### R-PHASE-1 Scope Validation (GPT Challenge)
+
+**Challenge:** Verify Contract 17's clarified wording doesn't accidentally over-scope to NPCs that don't phase-spawn.
+
+**Exploder Death Pattern (Guide v2.2, Phase 3, lines 423-429):**
+```
+TriggerExplosion → Delay(0.1s) → DestroyActor(Self)
+```
+- Self-destruction via `DestroyActor`, bypasses NP death system
+- No HandleDeath override
+- No SpawnNPC
+- **R-PHASE-1: NOT APPLICABLE**
+
+**Stalker Death Pattern (Guide v2.2):**
+- No death customization in guide
+- Uses NarrativeNPCCharacter default death handling
+- No HandleDeath override
+- No SpawnNPC
+- **R-PHASE-1: NOT APPLICABLE**
+
+**Scope Matrix:**
+
+| NPC | Has HandleDeath Override | Spawns Replacement | R-PHASE-1 Applies |
+|-----|--------------------------|-------------------|-------------------|
+| Warden Husk | ✅ Yes | ✅ Warden Core | ✅ YES |
+| Biomech Host | ✅ Yes | ✅ Biomech Creature | ✅ YES |
+| Possessed Exploder | ❌ No | ❌ No | ❌ NO |
+| Returned Stalker | ❌ No | ❌ No | ❌ NO |
+| Support Buffer | ❌ No | ❌ No | ❌ NO |
+| Formation Guard | ❌ No | ❌ No | ❌ NO |
+| Gatherer Scout | ❌ No | ❌ No | ❌ NO |
+
+**Verdict:** ✅ Contract 17 scope is correctly bounded. The contract title "Two-Phase Death Transition Pattern" and invariant "Phase transition blueprints MUST..." naturally excludes single-phase NPCs.
+
+---
+
+## AGGRESSION ESCALATION AUDIT (v2.9)
+
+Audit of `GoalGenerator_RandomAggression` timer safety and state transitions.
+
+### Timer Safety (P-GG-TIMER-1 Compliance)
+
+| Timer Handle | Initialized | Cleared on Stop | Cleared on Aggro | Design Intent |
+|--------------|-------------|-----------------|------------------|---------------|
+| `FollowCheckTimerHandle` | InitializeGoalGenerator | ❌ | ❌ | Persists for re-follow |
+| `TalkCheckTimerHandle` | StartFollowing | ✅ Line 11800 | ✅ Line 11887 | Follow-only timer |
+| `AttackCheckTimerHandle` | StartFollowing | ✅ Line 11804 | ✅ Line 11891 | Follow-only timer |
+| `FollowDurationTimerHandle` | StartFollowing | ✅ Line 11808 | ✅ Line 11895 | Follow-only timer |
+
+**Design Note:** `FollowCheckTimerHandle` intentionally persists after timeout - allows Stalker to re-enter follow state later. This is correct behavior per guide (timeout → patrol → can start following again).
+
+### Attack Chance Calculation
+
+**Formula:** `Max(BaseAttackChance - (TalkCount * AttackReductionPerStack), MinAttackChance)`
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| BaseAttackChance | 0.25 | 25% base attack chance |
+| AttackReductionPerStack | 0.05 | 5% reduction per talk |
+| MinAttackChance | 0.025 | 2.5% minimum (even at max bond) |
+
+**Validation:** Lines 11585-11652 implement formula correctly.
+
+### Defend Chance Calculation
+
+**Formula:** `Min(BaseDefendChance + (TalkCount * DefendBonusPerStack), MaxDefendChance)`
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| BaseDefendChance | 0.5 | 50% base defend chance |
+| DefendBonusPerStack | 0.05 | 5% bonus per talk |
+| MaxDefendChance | 0.75 | 75% maximum |
+
+**Validation:** Lines 11653-11720 implement formula correctly.
+
+### State Transition Verification
+
+| Transition | Timer Cleanup | State Reset | Status |
+|------------|---------------|-------------|--------|
+| Following → Patrol (timeout) | ✅ 3 timers cleared | ✅ bIsFollowing=false | ✅ |
+| Following → Aggressive | ✅ 3 timers cleared | ✅ bIsFollowing=false | ✅ |
+| Following → Defending | N/A (temporary) | ✅ bIsDefending=true | ✅ |
+| Defending → Following | N/A | ✅ bIsDefending=false | ✅ |
+
+**Aggression Escalation Verdict:** ✅ **COMPLIANT** - All P-GG-TIMER-1 requirements met.
+
+---
+
+## STEALTH BREAK AUDIT (v3.0 - FIXED)
+
+Audit of `GA_StealthField` stealth break mechanism.
+
+### Implementation Status: ✅ FIXED (v4.39.5)
+
+| Aspect | Guide (v3.8) | Manifest (v4.39.5) | Status |
+|--------|--------------|----------------------------|--------|
+| Break Mechanism | `Event On Gameplay Event` | `delegate_bindings` | ✅ Alternative approach |
+| Attack Break | Tag: `State.Attacking` | Delegate: `OnDealtDamage` → `HandleStealthAttackBreak` | ✅ |
+| Damage Break | Tag: `State.TakingDamage` | Delegate: `OnDamagedBy` → `HandleStealthDamageBreak` | ✅ |
+| Handler Defined | `EndStealth` function | ✅ `Event_HandleStealthDamageBreak`, `Event_HandleStealthAttackBreak` with `K2_EndAbility` | ✅ FIXED |
+
+### Issue Analysis
+
+**Manifest declares:**
+```yaml
+delegate_bindings:
+  - delegate: OnDamagedBy
+    handler: HandleStealthDamageBreak
+  - delegate: OnDealtDamage
+    handler: HandleStealthAttackBreak
+```
+
+**Missing from event_graph:**
+- `CustomEvent: HandleStealthDamageBreak` with `K2_EndAbility` call
+- `CustomEvent: HandleStealthAttackBreak` with `K2_EndAbility` call
+
+**v4.39.5 Fix:**
+- Added `Event_HandleStealthDamageBreak` CustomEvent node with proper parameters (DamagerCauserASC, Damage, Spec)
+- Added `Event_HandleStealthAttackBreak` CustomEvent node with proper parameters (DamagedASC, Damage, Spec)
+- Both handlers call `K2_EndAbility` to properly end the stealth ability
+- Connections: `Event_HandleStealthDamageBreak → EndAbility_DamageBreak` and `Event_HandleStealthAttackBreak → EndAbility_AttackBreak`
+
+**Stealth Break Verdict:** ✅ **FIXED (v4.39.5)** - Handler CustomEvents now explicitly defined with `K2_EndAbility` calls.
+
+---
+
+## FORMATION AUTHORITY AUDIT (v3.0 - FIXED)
+
+Audit of `BTS_CalculateFormationPosition` and `BTS_AdjustFormationSpeed` services.
+
+### BTS_CalculateFormationPosition - ✅ FIXED (v4.39.6)
+
+| Invariant | Status | Evidence |
+|-----------|--------|----------|
+| FormationOffset Vector | ✅ FIXED | Uses `GetValueAsVector` from blackboard (per Guide Phase 4 step 4.8) |
+| RotateVector Function | ✅ FIXED | Uses `RotateVector(A, B)` with Rotator input (per Guide step 4.9) |
+| Guide Compliance | ✅ FIXED | All 19 connections match Guide v2.6 Node Connection Summary |
+
+**v4.39.6 Fix Applied:**
+- Removed orphan connections (BreakRotator, GetNarrativeProSettings, GetLeaderLocation, etc.)
+- Changed from `Quat_RotateVector` to `RotateVector` per Guide Phase 4 step 4.9
+- Now uses `FormationOffset` (Vector) from blackboard, rotated by target rotation
+- Full implementation matches Guide v2.6 Phase 4 Node Connection Summary exactly
+
+### BTS_AdjustFormationSpeed
+
+| Invariant | Status | Evidence |
+|-----------|--------|----------|
+| P-MOVE-1 (Speed Restore) | ✅ | `ReceiveActivationAI` stores, `ReceiveDeactivationAI` restores |
+| P-BB-KEY-2 (NP Settings) | ✅ | Lines 9342-9354: Uses canonical BB keys |
+| Speed Matching | ✅ | `FMax(LeaderVelocity, BaseWalkSpeed)` ensures minimum speed |
+
+**Formation Authority Verdict:** ✅ **COMPLIANT (v4.39.6)** - Full Guide v2.6 implementation with proper FormationOffset vector rotation.
+
+---
+
 ## AUTOMATION VERIFICATION
 
 ### Generation Results
@@ -556,6 +1061,8 @@ Deferred: 0
 Total: 187
 VERIFICATION PASSED: All whitelist assets processed
 ```
+
+**Note:** BTS_HealNearbyAllies generates but CallApplyHeal node fails (cross-BP limitation). Manual completion required.
 
 ### NPC Assets Generated
 
@@ -613,6 +1120,10 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.0 | 2026-01-26 | **All Audit Findings Fixed (Claude-GPT Audit):** Plugin v4.39.6. **GA_StealthField Stealth Break - FIXED:** Added `Event_HandleStealthDamageBreak` and `Event_HandleStealthAttackBreak` CustomEvent nodes with proper parameters (DamagerCauserASC/DamagedASC, Damage, Spec) and `K2_EndAbility` calls. Connections added per R-DELEGATE-1 Contract 18. **BTS_CalculateFormationPosition - FIXED:** Complete rewrite per Guide v2.6 Phase 4 Node Connection Summary. Changed from `Quat_RotateVector` to `RotateVector` (Rotator input). Removed all orphan connections (BreakRotator, GetNarrativeProSettings, GetLeaderLocation, MultiplyOffset, SubtractOffset). Now properly rotates `FormationOffset` Vector from blackboard by target rotation. All 19 connections match guide exactly. |
+| 2.9 | 2026-01-26 | **Death Signal Path Audit + Doc Drift Finding (Claude-GPT Audit):** Cross-checked Warden and Biomech guides. DOC DRIFT: Contract 17 shows `delegate_bindings:` but guides use `function_overrides: HandleDeath`. Root cause: NP auto-binds OnDied→HandleDeath. **Contract 17 UPDATED** with Pattern A (NP) and Pattern B (non-NP). **R-PHASE-1 Scope:** Exploder/Stalker correctly excluded. **Aggression Escalation:** P-GG-TIMER-1 COMPLIANT. **Stealth Break Audit:** ⚠️ INCOMPLETE - GA_StealthField declares `delegate_bindings` but handler CustomEvents (`HandleStealthDamageBreak`, `HandleStealthAttackBreak`) missing from event_graph; guide uses different approach (Gameplay Events). **Formation Authority Audit:** ✅ COMPLIANT - BTS_CalculateFormationPosition and BTS_AdjustFormationSpeed both satisfy P-BB-KEY-2 and P-MOVE-1. |
+| 2.8 | 2026-01-26 | **Cross-GPT Consistency Diff Audit:** Added full consistency diff methodology for LOCKED contract validation. Support Buffer: R-AI-1 compliant, INV-GESPEC-1 N/A (uses MakeOutgoingSpec not MakeOutgoingGameplayEffectSpec), P-BB-KEY-2 N/A (no BB keys used). Warden Husk/Core: R-SPAWN-1, R-PHASE-1, R-NPCDEF-1 all COMPLIANT with manifest evidence (lines 8879-8951). Claude-GPT Validated Findings: (1) INV-GESPEC-1 explicitly scoped to UGameplayAbility function, not ASC; (2) NP built-in services authoritative for P-BB-KEY-2; (3) Cross-BP limitation acceptable as tracked Generation Completeness Gate; (4) R-PHASE-1 clarification - NP auto-binds OnDied→HandleDeath in NarrativeNPCController.cpp:165. |
+| 2.7 | 2026-01-26 | **Cross-Blueprint Function Research + Generator Fixes (Claude-GPT Audit):** Plugin v4.39.4. Added MakeLiteral* functions (Bool, Int, Float, Double, String, Text, Name, Byte) to FunctionResolver. Removed `-nullrhi` from automation script (was preventing Blueprint asset persistence). Fixed BP_SupportBuffer generation (20 nodes, 28 connections). BTS_HealNearbyAllies identified as cross-Blueprint limitation (calls BP_SupportBuffer.ApplyHealToTarget). Added TODO section with 4 enhancement approaches (Two-Pass, Deferred Queue, Registry, Manual). Recommended Option B (Deferred Resolution Queue) for v4.40. Status: 193/194 (99.5%). |
 | 2.6 | 2026-01-26 | **BPA_Alert Implementation Gap Closed (Claude-GPT Audit):** Identified BPA_Alert was a stub (parent class only, no variables or event graph). Implemented full activity per Guide v1.2 L320-510: Variables (ReinforcementDefinition, ReinforcementCount, SpawnRadius, SignalMontage, CachedAlertGoal), class properties (supported_goal_type=Goal_Alert, is_interruptable=false), K2_RunActivity override with full spawn logic (Cast to Goal_Alert, add signaling tag, play montage, HasAuthority check, spawn loop via SpawnNPC, cleanup). Plugin version v4.39.2. |
 | 2.5 | 2026-01-26 | **Generator Gap - Heal Meta-Attribute Pattern (Claude-GPT Audit):** Research into NarrativeAttributeSetBase.cpp:162-173 revealed Narrative Pro's Heal meta-attribute pattern (PostGameplayEffectExecute processes Heal → calls HealedBy delegate → adds to Health → resets Heal to 0). CRITICAL FINDING: Generator parses `execution_calculations` but NEVER applies them (GasAbilityGeneratorGenerators.cpp gap). Resolution: GE_SupportHeal changed from `execution_calculations: NarrativeHealExecution` to regular modifier on `NarrativeAttributeSetBase.Heal` attribute with `SetByCaller` magnitude. Guide updated to v1.2 documenting correct pattern. Plugin version v4.39.1. |
 | 2.4 | 2026-01-26 | **Support Buffer Full Guide Alignment (Claude-GPT Audit):** Comprehensive multi-level audit identified 6 INC issues (INC-SB-1 through INC-SB-6). Fixed: GE_SupportHeal now uses NarrativeHealExecution + SetByCaller.Heal (INC-SB-4); BP_SupportBuffer has full variables and ApplyHealToTarget function with authority check, cooldown, spec creation (INC-SB-3); BTS_HealNearbyAllies has faction check via GetAttitude and DamageThreshold health ratio check (INC-SB-2, INC-SB-6); BT_SupportFollow has all 3 services (BTS_HealNearbyAllies + BTS_SetAIFocus + BTS_AdjustFollowSpeed) with interval 0.5s (INC-SB-1, INC-SB-5). Plugin version v4.39. |
@@ -630,7 +1141,14 @@ VERIFICATION PASSED: All whitelist assets processed
 
 - `LOCKED_CONTRACTS.md` - Contracts 16-19 (R-SPAWN-1, R-PHASE-1, R-DELEGATE-1, R-NPCDEF-1)
 - `manifest.yaml` - Source of truth for all NPC implementations
-- Individual NPC Implementation Guides (in ClaudeContext/Handoffs/)
+- NPC Implementation Guides (in `guides/` folder):
+  - `guides/Warden_Husk_System_Implementation_Guide_v1_3.md`
+  - `guides/Biomechanical_Detachment_System_Implementation_Guide_v1_2.md`
+  - `guides/Support_Buffer_Healer_Guide_v1_2.md`
+  - `guides/Guard_Formation_Follow_Implementation_Guide_v2_6.md`
+  - `guides/Gatherer_Scout_Alert_Implementation_Guide_v1_2.md`
+  - `guides/Random_Aggression_Stalker_Implementation_Guide_v2_2.md`
+  - `guides/Possessed_Exploder_Implementation_Guide_v2_2.md`
 
 ---
 

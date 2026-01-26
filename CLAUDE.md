@@ -233,7 +233,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v6.9)
+## GasAbilityGenerator Plugin (v7.0)
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1029,11 +1029,11 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
+| **v7.0** | N1 Warning Fix: Pre-validator now checks variable_name as valid pin name, reducing false positive warnings from 57 to 17. Fixed BTS_FormationFollow to use PropertyGet for Blackboard (GetBlackboardComponent is C++ inline, not UFUNCTION). Auto-inference for Cast→VariableSet connections added. AIController class resolution fixed for headless mode. 194/194 assets verified. |
 | **v6.9** | GA_Backstab + GA_FatherEngineer fixes: DynamicCast fuzzy pin matching for space-separated names, TSubclassOf Effects subfolder paths, NarrativePro blackboard mount path fix (`/NarrativePro/` not `/NarrativePro22B57/`). All 156 assets generate successfully. |
 | **v4.27** | Dependency Sort Order Audit: TopologicalSort exists but never called, Materials/MaterialFunctions phase order bug identified. Quick-fix: moved material_functions before materials in manifest. 156/156 assets verified. |
 | **v4.13.3** | Quest SM Semantic Verification: Post-generation validation for quest state machines. Validates start state, detects duplicate IDs, counts unresolved destinations. Emits `RESULT QuestSM:` summary line. |
 | **v4.12.4** | Full Sync-from-Assets: Item Table extracts EquipmentAbilities via reflection. Quest Table extracts per-state tasks, rewards, parent branches. Both PopulateRowsFromAssets() fully implemented. |
-| **v4.12.3** | Table Editor Button Parity: All 4 editors (NPC, Dialogue, Quest, Item) have consistent Save/Sync XLSX buttons. Base row reconstruction fixed using `LastSyncedHash != 0` filter for accurate 3-way merge. |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 

@@ -93,6 +93,12 @@ private:
 	static void ValidateTags(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 	static void ValidateTokens(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 	static void ValidateConnections(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);  // v4.40.2: N2 rule
+	// v4.40.3: Extended pre-validation
+	static void ValidateWidgetTree(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
+	static void ValidateDialogueTree(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
+	static void ValidateQuestStateMachine(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
+	static void ValidateBehaviorTreeNodes(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
+	static void ValidateNPCReferences(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 
 	// Helper functions
 	static UClass* FindClassByName(const FString& ClassName, FPreValidationCache& Cache);

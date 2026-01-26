@@ -62,7 +62,8 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 
 	// v6.8: AI Controller functions
 	WellKnownFunctions.Add(TEXT("RunBehaviorTree"), AAIController::StaticClass());
-	WellKnownFunctions.Add(TEXT("GetBlackboardComponent"), AAIController::StaticClass());
+	// NOTE: GetBlackboardComponent is a C++ inline getter, NOT a UFUNCTION
+	// Use PropertyGet with "Blackboard" property instead of CallFunction
 
 	// Actor functions
 	WellKnownFunctions.Add(TEXT("GetActorLocation"), AActor::StaticClass());

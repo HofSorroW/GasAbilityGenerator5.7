@@ -5404,6 +5404,45 @@ gameplay_abilities:
           properties:
             function: RemoveActiveGameplayEffect
           position: [900, 400]
+        # === STEALTH BREAK HANDLERS (v4.39.5 - per R-DELEGATE-1 Contract 18) ===
+        # Handler for OnDamagedBy delegate - breaks stealth when player takes damage
+        - id: Event_HandleStealthDamageBreak
+          type: CustomEvent
+          properties:
+            event_name: HandleStealthDamageBreak
+            parameters:
+              - name: DamagerCauserASC
+                type: NarrativeAbilitySystemComponent
+              - name: Damage
+                type: Float
+              - name: Spec
+                type: GameplayEffectSpec
+          position: [0, 800]
+        - id: EndAbility_DamageBreak
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [400, 800]
+        # Handler for OnDealtDamage delegate - breaks stealth when player attacks
+        - id: Event_HandleStealthAttackBreak
+          type: CustomEvent
+          properties:
+            event_name: HandleStealthAttackBreak
+            parameters:
+              - name: DamagedASC
+                type: NarrativeAbilitySystemComponent
+              - name: Damage
+                type: Float
+              - name: Spec
+                type: GameplayEffectSpec
+          position: [0, 1000]
+        - id: EndAbility_AttackBreak
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [400, 1000]
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (impure nodes only - skip pure PropertyGet nodes)
@@ -5461,6 +5500,13 @@ gameplay_abilities:
           to: [RemoveGE, Target]
         - from: [GetStealthHandle, StealthEffectHandle]
           to: [RemoveGE, Handle]
+        # === STEALTH BREAK HANDLER CONNECTIONS (v4.39.5) ===
+        # Damage break: Event → EndAbility
+        - from: [Event_HandleStealthDamageBreak, Then]
+          to: [EndAbility_DamageBreak, Exec]
+        # Attack break: Event → EndAbility
+        - from: [Event_HandleStealthAttackBreak, Then]
+          to: [EndAbility_AttackBreak, Exec]
 
   # GA_Backstab - Universal Player Passive Backstab Damage
   # v4.26 (Decision 4): Universal ability - add to player's Default Abilities array, NOT granted via equipment
@@ -9102,144 +9148,188 @@ activities:  # GUARD FORMATION
     parent_class: BPA_Attack_Melee
 
 actor_blueprints:  # GUARD FORMATION BT SERVICES
-  # v4.32: Enhanced with ReceiveTickAI event graph
-  # NOTE: FormationIndex variable must be set by the spawner or activity
+  # v4.39.6: Full implementation per Guide v2.6 Phase 4 - vector offset with rotation
+  # Uses FormationOffset (Vector) from blackboard, rotates by target rotation via RotateVector
+  # Reference: Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 4 Node Connection Summary
   - name: BTS_CalculateFormationPosition
     folder: AI/Services
     parent_class: BTService_BlueprintBase
     variables:
-      # Formation offset index (0 = directly behind, 1-3 = diagonal positions)
-      - name: FormationIndex
-        type: Integer
-        default_value: "0"
-        instance_editable: true
-      # Offset distance from leader
-      - name: FormationDistance
-        type: Float
-        default_value: "200.0"
-        instance_editable: true
+      # BB key names per guide Phase 4 steps 3.1-3.3
+      - name: BBKey_FollowTarget
+        type: Name
+        default_value: "FollowTarget"
+      - name: BBKey_FormationOffset
+        type: Name
+        default_value: "FormationOffset"
+      - name: BBKey_TargetLocation
+        type: Name
+        default_value: "TargetLocation"
     event_graph:
       nodes:
-        # ReceiveTickAI - Called by BT Service on tick
-        # OwnerController: AAIController, ControlledPawn: APawn, DeltaSeconds: float
+        # Step 4.1: Event Receive Tick AI - Called by BT Service on tick
         - id: Event_ReceiveTickAI
           type: Event
           properties:
             event_name: ReceiveTickAI
           position: [0, 0]
-        # Get the blackboard from the AI controller
+        # Step 4.2: Get Blackboard Component from OwnerController
+        # v4.40.4: Use PropertyGet for Blackboard (GetBlackboardComponent is C++ inline, not UFUNCTION)
         - id: GetBlackboard
           type: PropertyGet
           properties:
             property_name: Blackboard
             target_class: AIController
-          position: [300, 0]
-        # v4.38: P-BB-KEY-2 - Use Get Narrative Pro Settings for canonical BB keys
-        - id: GetNarrativeProSettings
-          type: CallFunction
+          position: [200, 0]
+        # Step 4.3: Get FollowTarget (Object) from blackboard
+        - id: GetBBKey_FollowTarget
+          type: VariableGet
           properties:
-            function: GetNarrativeProSettings
-            class: ArsenalStatics
-          position: [400, 150]
-        - id: GetBBKeyFollowTarget
-          type: PropertyGet
-          properties:
-            property_name: BBKey_FollowTarget
-            target_class: ArsenalSettings
-          position: [550, 100]
-        - id: GetBBKeyTargetLocation
-          type: PropertyGet
-          properties:
-            property_name: BBKey_TargetLocation
-            target_class: ArsenalSettings
-          position: [550, 200]
-        # Get FollowTarget key value (the leader to follow) - per Narrative Pro BBKey_FollowTarget
+            variable_name: BBKey_FollowTarget
+          position: [300, 100]
         - id: GetFollowTarget
           type: CallFunction
           properties:
             function: GetValueAsObject
             class: BlackboardComponent
-          position: [600, 0]
-        # Cast to Actor for location access
+          position: [400, 0]
+        # Step 4.4: Cast to Actor
         - id: CastToActor
           type: DynamicCast
           properties:
             target_class: Actor
-          position: [900, 0]
-        # Get leader's location
-        - id: GetLeaderLocation
+          position: [600, 0]
+        # Step 4.5: Validate Follow Target - IsValid check with Branch
+        - id: IsValidTarget
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [800, 0]
+        - id: BranchValid
+          type: Branch
+          position: [950, 0]
+        # Step 4.6: Get Follow Target Location
+        - id: GetTargetLocation
           type: CallFunction
           properties:
             function: K2_GetActorLocation
             class: Actor
-          position: [1200, 0]
-        # Get leader's forward vector for offset calculation
-        - id: GetLeaderForward
+          position: [1100, 0]
+        # Step 4.7: Get Follow Target Rotation
+        - id: GetTargetRotation
           type: CallFunction
           properties:
-            function: GetActorForwardVector
+            function: K2_GetActorRotation
             class: Actor
-          position: [1200, 100]
-        # Calculate offset position (behind leader)
-        # NOTE: Full formula requires GetActorRightVector * FormationIndex for spread
-        # This simplified version places guard directly behind leader
-        - id: MultiplyOffset
+          position: [1100, 100]
+        # Step 4.8: Get FormationOffset (Vector) from blackboard
+        - id: GetBBKey_FormationOffset
+          type: VariableGet
+          properties:
+            variable_name: BBKey_FormationOffset
+          position: [1100, 200]
+        - id: GetFormationOffset
           type: CallFunction
           properties:
-            function: Multiply_VectorFloat
-            # class: KismetMathLibrary  # Commented out - let resolver find
+            function: GetValueAsVector
+            class: BlackboardComponent
+          position: [1300, 150]
+        # Step 4.9: Rotate Offset by Target Rotation (per Guide v2.6 step 4.9)
+        # v4.40.4: Use >> operator (GreaterGreater_VectorRotator) to rotate vector by rotator
+        - id: RotateVector
+          type: CallFunction
+          properties:
+            function: GreaterGreater_VectorRotator
+            class: KismetMathLibrary
           position: [1500, 0]
-        - id: SubtractOffset
+        # Step 4.10: Calculate World Position = TargetLocation + RotatedOffset
+        - id: AddVectors
           type: CallFunction
           properties:
-            function: Subtract_VectorVector
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1800, 0]
-        # Set TargetLocation blackboard key
+            function: Add_VectorVector
+            class: KismetMathLibrary
+          position: [1700, 0]
+        # Step 4.11: Set TargetLocation on Blackboard
+        - id: GetBBKey_TargetLocation
+          type: VariableGet
+          properties:
+            variable_name: BBKey_TargetLocation
+          position: [1800, 100]
         - id: SetTargetLocation
           type: CallFunction
           properties:
             function: SetValueAsVector
             class: BlackboardComponent
-          position: [2100, 0]
+          position: [1900, 0]
       connections:
+        # === EXEC FLOW (Guide Steps 1, 6, 8) ===
+        # Step 1: Event Receive Tick AI → Cast To Actor
         - from: [Event_ReceiveTickAI, Then]
-          to: [GetBlackboard, Exec]
+          to: [CastToActor, Exec]
+        # Step 6: Cast To Actor → Branch (via IsValid check)
+        - from: [CastToActor, Exec]
+          to: [BranchValid, Exec]
+        # Step 8: Branch True → Set Value as Vector
+        - from: [BranchValid, True]
+          to: [SetTargetLocation, Exec]
+        # === DATA FLOW - Blackboard Access (Guide Steps 2-5) ===
+        # Step 2: Event Receive Tick AI OwnerController → Get Blackboard Component Target
         - from: [Event_ReceiveTickAI, OwnerController]
           to: [GetBlackboard, Target]
+        # Step 3: Get Blackboard Component Return Value → Get Value as Object Target
         - from: [GetBlackboard, ReturnValue]
           to: [GetFollowTarget, Target]
-        - from: [GetBlackboard, Exec]
-          to: [GetFollowTarget, Exec]
-        # v4.38: P-BB-KEY-2 - Connect NarrativeProSettings BB keys
-        - from: [GetNarrativeProSettings, ReturnValue]
-          to: [GetBBKeyFollowTarget, Target]
-        - from: [GetNarrativeProSettings, ReturnValue]
-          to: [GetBBKeyTargetLocation, Target]
-        - from: [GetBBKeyFollowTarget, BBKey_FollowTarget]
+        # Step 4: BBKey_FollowTarget Value → Get Value as Object Key Name
+        - from: [GetBBKey_FollowTarget, BBKey_FollowTarget]
           to: [GetFollowTarget, KeyName]
-        - from: [GetBBKeyTargetLocation, BBKey_TargetLocation]
-          to: [SetTargetLocation, KeyName]
+        # Step 5: Get Value as Object Return Value → Cast To Actor Object
         - from: [GetFollowTarget, ReturnValue]
           to: [CastToActor, Object]
-        - from: [GetFollowTarget, Exec]
-          to: [CastToActor, Exec]
+        # === DATA FLOW - Validation (Guide Step 7) ===
+        # Step 7: Cast To Actor As Actor → Is Valid Input Object
         - from: [CastToActor, AsActor]
-          to: [GetLeaderLocation, Target]
+          to: [IsValidTarget, Object]
+        - from: [IsValidTarget, ReturnValue]
+          to: [BranchValid, Condition]
+        # === DATA FLOW - Location and Rotation (Guide Steps 9-10) ===
+        # Step 9: Cast To Actor As Actor → Get Actor Location Target
         - from: [CastToActor, AsActor]
-          to: [GetLeaderForward, Target]
-        - from: [CastToActor, Exec]
-          to: [SetTargetLocation, Exec]
-        - from: [GetLeaderForward, ReturnValue]
-          to: [MultiplyOffset, A]
-        - from: [GetLeaderLocation, ReturnValue]
-          to: [SubtractOffset, A]
-        - from: [MultiplyOffset, ReturnValue]
-          to: [SubtractOffset, B]
-        - from: [SubtractOffset, ReturnValue]
-          to: [SetTargetLocation, Value]
+          to: [GetTargetLocation, Target]
+        # Step 10: Cast To Actor As Actor → Get Actor Rotation Target
+        - from: [CastToActor, AsActor]
+          to: [GetTargetRotation, Target]
+        # === DATA FLOW - Formation Offset (Guide Steps 11-12) ===
+        # Step 11: Get Blackboard Component Return Value → Get Value as Vector Target
+        - from: [GetBlackboard, ReturnValue]
+          to: [GetFormationOffset, Target]
+        # Step 12: BBKey_FormationOffset Value → Get Value as Vector Key Name
+        - from: [GetBBKey_FormationOffset, BBKey_FormationOffset]
+          to: [GetFormationOffset, KeyName]
+        # === DATA FLOW - Rotate Offset (Guide Steps 13-14) ===
+        # Step 13: Get Actor Rotation Return Value → Rotate Vector B (Rotator)
+        - from: [GetTargetRotation, ReturnValue]
+          to: [RotateVector, B]
+        # Step 14: Get Value as Vector Return Value → Rotate Vector A (Vector)
+        - from: [GetFormationOffset, ReturnValue]
+          to: [RotateVector, A]
+        # === DATA FLOW - Calculate World Position (Guide Steps 15-16) ===
+        # Step 15: Get Actor Location Return Value → Vector + Vector First Input
+        - from: [GetTargetLocation, ReturnValue]
+          to: [AddVectors, A]
+        # Step 16: Rotate Vector Return Value → Vector + Vector Second Input
+        - from: [RotateVector, ReturnValue]
+          to: [AddVectors, B]
+        # === DATA FLOW - Set Blackboard Value (Guide Steps 17-19) ===
+        # Step 17: Get Blackboard Component Return Value → Set Value as Vector Target
         - from: [GetBlackboard, ReturnValue]
           to: [SetTargetLocation, Target]
+        # Step 18: BBKey_TargetLocation Value → Set Value as Vector Key Name
+        - from: [GetBBKey_TargetLocation, BBKey_TargetLocation]
+          to: [SetTargetLocation, KeyName]
+        # Step 19: Vector + Vector Return Value → Set Value as Vector Vector Value
+        - from: [AddVectors, ReturnValue]
+          to: [SetTargetLocation, VectorValue]
 
   # v4.37.2: Enhanced with ReceiveActivationAI/DeactivationAI for P-MOVE-1 compliance
   - name: BTS_AdjustFormationSpeed

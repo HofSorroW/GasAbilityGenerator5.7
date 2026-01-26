@@ -175,6 +175,12 @@ FPreValidationReport FPreValidator::Validate(const FManifestData& Data, const FS
 	ValidateTags(Data, Report, Cache, ManifestPath);
 	ValidateTokens(Data, Report, Cache, ManifestPath);
 	ValidateConnections(Data, Report, Cache, ManifestPath);  // v4.40.2: N2 rule - node ID and pin validation
+	// v4.40.3: Extended pre-validation
+	ValidateWidgetTree(Data, Report, Cache, ManifestPath);
+	ValidateDialogueTree(Data, Report, Cache, ManifestPath);
+	ValidateQuestStateMachine(Data, Report, Cache, ManifestPath);
+	ValidateBehaviorTreeNodes(Data, Report, Cache, ManifestPath);
+	ValidateNPCReferences(Data, Report, Cache, ManifestPath);
 
 	// Update caching stats
 	Report.TotalChecks = Cache.GetHitCount() + Cache.GetMissCount();
@@ -194,6 +200,7 @@ FPreValidationReport FPreValidator::Validate(const FManifestData& Data, const FS
 // e.g., UNarrativeAttributeSetBase -> /Script/NarrativeArsenal.NarrativeAttributeSetBase
 // Safety: Only strip if second char is uppercase (UE naming convention)
 // e.g., UUserWidget -> UserWidget (strip U), but UserWidget stays UserWidget (don't strip)
+// v4.40.4: Don't strip 'A' from AI-prefixed classes (AIController, AIPerceptionComponent, etc.)
 static FString GetScriptClassName(const FString& ClassName)
 {
 	// Safety: skip if already qualified or contains module separator
@@ -206,6 +213,14 @@ static FString GetScriptClassName(const FString& ClassName)
 
 	// Safety: skip if too short (need at least 2 chars to check convention)
 	if (ClassName.Len() <= 1)
+	{
+		return ClassName;
+	}
+
+	// v4.40.4: Don't strip 'A' prefix from AI-prefixed classes
+	// These are actual class names, not Actor prefix patterns
+	// AIController, AIPerceptionComponent, AIPerceptionSystem, etc.
+	if (ClassName.StartsWith(TEXT("AI"), ESearchCase::CaseSensitive))
 	{
 		return ClassName;
 	}
@@ -300,10 +315,22 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 	}
 
 	// 9. Try with /Script/AIModule prefix (v4.24.2: use normalized name)
+	// v4.40.4: Use StaticLoadClass to handle headless mode
 	if (!FoundClass)
 	{
 		FString AIPath = FString::Printf(TEXT("/Script/AIModule.%s"), *ScriptName);
-		FoundClass = FindObject<UClass>(nullptr, *AIPath);
+		FoundClass = StaticLoadClass(UObject::StaticClass(), nullptr, *AIPath, nullptr, LOAD_None, nullptr);
+	}
+
+	// v4.40.4: Try with A prefix for Actor classes (AActor, ACharacter, AAIController, etc.)
+	if (!FoundClass && !ClassName.StartsWith(TEXT("A")) && !ClassName.StartsWith(TEXT("U")))
+	{
+		FString WithA = FString::Printf(TEXT("A%s"), *ClassName);
+		FoundClass = FindClassByName(WithA, Cache);
+		if (FoundClass)
+		{
+			return FoundClass;
+		}
 	}
 
 	// 10. Try with U prefix if not present
@@ -780,6 +807,160 @@ void FPreValidator::ValidateConnections(const FManifestData& Data, FPreValidatio
 		const auto& WBP = Data.WidgetBlueprints[i];
 		ValidateEventGraphConnections(WBP.EventGraphNodes, WBP.EventGraphConnections, WBP.Name, FString::Printf(TEXT("widget_blueprints[%d]"), i));
 	}
+
+	// v4.40.3: N1 - Validate node required inputs at pre-validation time
+	// Known node types with required inputs
+	auto ValidateNodeRequiredInputs = [&](const TArray<FManifestGraphNodeDefinition>& Nodes,
+	                                      const TArray<FManifestGraphConnectionDefinition>& Connections,
+	                                      const FString& OwnerName, const FString& YAMLPrefix)
+	{
+		// Build map of connections TO each node's pins
+		TMap<FString, TSet<FString>> NodePinConnections; // NodeId -> connected pin names
+		for (const auto& Conn : Connections)
+		{
+			FString Key = Conn.To.NodeId;
+			if (!NodePinConnections.Contains(Key))
+			{
+				NodePinConnections.Add(Key, TSet<FString>());
+			}
+			NodePinConnections[Key].Add(Conn.To.PinName.ToLower());
+		}
+
+		// Check required inputs for known node types
+		for (int32 j = 0; j < Nodes.Num(); j++)
+		{
+			const auto& Node = Nodes[j];
+			TSet<FString>* ConnectedPins = NodePinConnections.Find(Node.Id);
+
+			// Branch requires Condition
+			if (Node.Type.Equals(TEXT("Branch"), ESearchCase::IgnoreCase))
+			{
+				if (!ConnectedPins || !ConnectedPins->Contains(TEXT("condition")))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("N1");
+					Issue.ErrorCode = TEXT("E_PREVAL_NODE_MISSING_INPUT");
+					Issue.Severity = EValidationSeverity::Warning;
+					Issue.Message = FString::Printf(TEXT("Branch node '%s' has no connection to Condition pin"), *Node.Id);
+					Issue.ItemId = OwnerName;
+					Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.nodes[%d]"), *YAMLPrefix, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+
+			// VariableSet requires Value (unless object type which can be cleared)
+			// v4.40.4: Also check for variable_name as pin name (Blueprint uses variable name as pin name)
+			if (Node.Type.Equals(TEXT("VariableSet"), ESearchCase::IgnoreCase))
+			{
+				bool bHasValueConnection = false;
+				if (ConnectedPins)
+				{
+					// Check for "value" pin (generic name)
+					if (ConnectedPins->Contains(TEXT("value")))
+					{
+						bHasValueConnection = true;
+					}
+					// Check for node ID as pin name
+					else if (ConnectedPins->Contains(Node.Id.ToLower()))
+					{
+						bHasValueConnection = true;
+					}
+					// v4.40.4: Check for variable_name from properties (Blueprint pin name = variable name)
+					else
+					{
+						const FString* VariableName = Node.Properties.Find(TEXT("variable_name"));
+						if (VariableName && ConnectedPins->Contains(VariableName->ToLower()))
+						{
+							bHasValueConnection = true;
+						}
+					}
+				}
+
+				if (!bHasValueConnection)
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("N1");
+					Issue.ErrorCode = TEXT("E_PREVAL_NODE_MISSING_INPUT");
+					Issue.Severity = EValidationSeverity::Warning;
+					Issue.Message = FString::Printf(TEXT("VariableSet node '%s' has no connection to Value pin - variable will be set to default"), *Node.Id);
+					Issue.ItemId = OwnerName;
+					Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.nodes[%d]"), *YAMLPrefix, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+
+			// DynamicCast requires Object
+			if (Node.Type.Equals(TEXT("DynamicCast"), ESearchCase::IgnoreCase))
+			{
+				if (!ConnectedPins || !ConnectedPins->Contains(TEXT("object")))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("N1");
+					Issue.ErrorCode = TEXT("E_PREVAL_NODE_MISSING_INPUT");
+					Issue.Severity = EValidationSeverity::Warning;
+					Issue.Message = FString::Printf(TEXT("DynamicCast node '%s' has no connection to Object pin"), *Node.Id);
+					Issue.ItemId = OwnerName;
+					Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.nodes[%d]"), *YAMLPrefix, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+
+			// ForEachLoop requires Array
+			if (Node.Type.Equals(TEXT("ForEachLoop"), ESearchCase::IgnoreCase))
+			{
+				if (!ConnectedPins || !ConnectedPins->Contains(TEXT("array")))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("N1");
+					Issue.ErrorCode = TEXT("E_PREVAL_NODE_MISSING_INPUT");
+					Issue.Severity = EValidationSeverity::Warning;
+					Issue.Message = FString::Printf(TEXT("ForEachLoop node '%s' has no connection to Array pin"), *Node.Id);
+					Issue.ItemId = OwnerName;
+					Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.nodes[%d]"), *YAMLPrefix, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+
+			// SpawnActor requires Class
+			if (Node.Type.Equals(TEXT("SpawnActor"), ESearchCase::IgnoreCase) ||
+			    Node.Type.Equals(TEXT("SpawnActorFromClass"), ESearchCase::IgnoreCase))
+			{
+				if (!ConnectedPins || !ConnectedPins->Contains(TEXT("class")))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("N1");
+					Issue.ErrorCode = TEXT("E_PREVAL_NODE_MISSING_INPUT");
+					Issue.Severity = EValidationSeverity::Warning;
+					Issue.Message = FString::Printf(TEXT("SpawnActor node '%s' has no connection to Class pin"), *Node.Id);
+					Issue.ItemId = OwnerName;
+					Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.nodes[%d]"), *YAMLPrefix, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+		}
+	};
+
+	// Run N1 validation on all event graphs
+	for (int32 i = 0; i < Data.GameplayAbilities.Num(); i++)
+	{
+		const auto& GA = Data.GameplayAbilities[i];
+		ValidateNodeRequiredInputs(GA.EventGraphNodes, GA.EventGraphConnections, GA.Name, FString::Printf(TEXT("gameplay_abilities[%d]"), i));
+	}
+	for (int32 i = 0; i < Data.ActorBlueprints.Num(); i++)
+	{
+		const auto& BP = Data.ActorBlueprints[i];
+		ValidateNodeRequiredInputs(BP.EventGraphNodes, BP.EventGraphConnections, BP.Name, FString::Printf(TEXT("actor_blueprints[%d]"), i));
+	}
+	for (int32 i = 0; i < Data.WidgetBlueprints.Num(); i++)
+	{
+		const auto& WBP = Data.WidgetBlueprints[i];
+		ValidateNodeRequiredInputs(WBP.EventGraphNodes, WBP.EventGraphConnections, WBP.Name, FString::Printf(TEXT("widget_blueprints[%d]"), i));
+	}
 }
 
 void FPreValidator::ValidateAttributes(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
@@ -1074,9 +1255,413 @@ void FPreValidator::ValidateTags(const FManifestData& Data, FPreValidationReport
 
 void FPreValidator::ValidateTokens(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
 {
-	// K1, K2: Token validation
-	// Currently a placeholder - token validation is specific to dialogue system
-	// Will be implemented when dialogue token registry is integrated
+	// K1, K2: Token validation - v4.40.3
+	// Validates dialogue tokens like {player_name}, {npc_name}, etc.
 
-	// For now, no token validation (tokens are validated during dialogue generation)
+	// Known supported tokens
+	static TSet<FString> KnownTokens = {
+		TEXT("player_name"), TEXT("npc_name"), TEXT("speaker_name"),
+		TEXT("target_name"), TEXT("item_name"), TEXT("quest_name"),
+		TEXT("location_name"), TEXT("faction_name"), TEXT("time"),
+		TEXT("date"), TEXT("gold"), TEXT("level"), TEXT("health"),
+		TEXT("mana"), TEXT("stamina"), TEXT("experience")
+	};
+
+	// Helper to extract and validate tokens from text
+	auto ValidateTextTokens = [&](const FString& Text, const FString& ItemId, const FString& YAMLPath)
+	{
+		// Find all {token} patterns
+		int32 StartIdx = 0;
+		while ((StartIdx = Text.Find(TEXT("{"), ESearchCase::IgnoreCase, ESearchDir::FromStart, StartIdx)) != INDEX_NONE)
+		{
+			int32 EndIdx = Text.Find(TEXT("}"), ESearchCase::IgnoreCase, ESearchDir::FromStart, StartIdx);
+			if (EndIdx == INDEX_NONE) break;
+
+			FString Token = Text.Mid(StartIdx + 1, EndIdx - StartIdx - 1);
+			if (!Token.IsEmpty() && !KnownTokens.Contains(Token.ToLower()))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("K1");
+				Issue.ErrorCode = TEXT("E_PREVAL_TOKEN_UNKNOWN");
+				Issue.Severity = EValidationSeverity::Warning;
+				Issue.Message = FString::Printf(TEXT("Unknown dialogue token '{%s}' - may not resolve at runtime"), *Token);
+				Issue.ItemId = ItemId;
+				Issue.YAMLPath = YAMLPath;
+				Issue.ManifestPath = ManifestPath;
+				Issue.AttemptedMember = Token;
+				Report.AddIssue(Issue);
+			}
+			StartIdx = EndIdx + 1;
+		}
+	};
+
+	// Validate tokens in dialogue blueprints
+	for (int32 i = 0; i < Data.DialogueBlueprints.Num(); i++)
+	{
+		const auto& DBP = Data.DialogueBlueprints[i];
+		for (int32 j = 0; j < DBP.DialogueTree.Nodes.Num(); j++)
+		{
+			const auto& Node = DBP.DialogueTree.Nodes[j];
+			ValidateTextTokens(Node.Text, DBP.Name, FString::Printf(TEXT("dialogue_blueprints[%d].dialogue_tree.nodes[%d].text"), i, j));
+			ValidateTextTokens(Node.OptionText, DBP.Name, FString::Printf(TEXT("dialogue_blueprints[%d].dialogue_tree.nodes[%d].option_text"), i, j));
+		}
+	}
+}
+
+// v4.40.3: Pre-validate widget tree structure
+void FPreValidator::ValidateWidgetTree(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
+{
+	// Known widget types supported by generator
+	static TSet<FString> KnownWidgetTypes = {
+		TEXT("CanvasPanel"), TEXT("VerticalBox"), TEXT("HorizontalBox"),
+		TEXT("TextBlock"), TEXT("Image"), TEXT("Button"), TEXT("ProgressBar"),
+		TEXT("Border"), TEXT("Overlay"), TEXT("SizeBox"), TEXT("Spacer"),
+		TEXT("GridPanel"), TEXT("UniformGridPanel"), TEXT("WrapBox"),
+		TEXT("ScrollBox"), TEXT("EditableText"), TEXT("EditableTextBox"),
+		TEXT("CheckBox"), TEXT("Slider"), TEXT("SpinBox"), TEXT("ComboBox")
+	};
+
+	for (int32 i = 0; i < Data.WidgetBlueprints.Num(); i++)
+	{
+		const auto& WBP = Data.WidgetBlueprints[i];
+		TSet<FString> WidgetIds;
+
+		for (int32 j = 0; j < WBP.WidgetTree.Widgets.Num(); j++)
+		{
+			const auto& Widget = WBP.WidgetTree.Widgets[j];
+
+			// Check for duplicate widget IDs
+			if (WidgetIds.Contains(Widget.Id))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("W1");
+				Issue.ErrorCode = TEXT("E_PREVAL_WIDGET_DUPLICATE_ID");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Duplicate widget ID '%s'"), *Widget.Id);
+				Issue.ItemId = WBP.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("widget_blueprints[%d].widget_tree.widgets[%d].id"), i, j);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+			WidgetIds.Add(Widget.Id);
+
+			// Check widget type is known
+			if (!KnownWidgetTypes.Contains(Widget.Type))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("W2");
+				Issue.ErrorCode = TEXT("E_PREVAL_WIDGET_TYPE_UNKNOWN");
+				Issue.Severity = EValidationSeverity::Warning;
+				Issue.Message = FString::Printf(TEXT("Unknown widget type '%s' - may fail at generation"), *Widget.Type);
+				Issue.ItemId = WBP.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("widget_blueprints[%d].widget_tree.widgets[%d].type"), i, j);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+		}
+
+		// Check children references exist
+		for (int32 j = 0; j < WBP.WidgetTree.Widgets.Num(); j++)
+		{
+			const auto& Widget = WBP.WidgetTree.Widgets[j];
+			for (const FString& ChildId : Widget.Children)
+			{
+				if (!WidgetIds.Contains(ChildId))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("W3");
+					Issue.ErrorCode = TEXT("E_PREVAL_WIDGET_CHILD_NOT_FOUND");
+					Issue.Severity = EValidationSeverity::Error;
+					Issue.Message = FString::Printf(TEXT("Widget '%s' references non-existent child '%s'"), *Widget.Id, *ChildId);
+					Issue.ItemId = WBP.Name;
+					Issue.YAMLPath = FString::Printf(TEXT("widget_blueprints[%d].widget_tree.widgets[%d].children"), i, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+		}
+	}
+}
+
+// v4.40.3: Pre-validate dialogue tree structure
+void FPreValidator::ValidateDialogueTree(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
+{
+	for (int32 i = 0; i < Data.DialogueBlueprints.Num(); i++)
+	{
+		const auto& DBP = Data.DialogueBlueprints[i];
+		if (DBP.DialogueTree.Nodes.Num() == 0) continue;
+
+		TSet<FString> NodeIds;
+		for (const auto& Node : DBP.DialogueTree.Nodes)
+		{
+			// Check for duplicate node IDs
+			if (NodeIds.Contains(Node.Id))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("DT1");
+				Issue.ErrorCode = TEXT("E_PREVAL_DIALOGUE_DUPLICATE_ID");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Duplicate dialogue node ID '%s'"), *Node.Id);
+				Issue.ItemId = DBP.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("dialogue_blueprints[%d].dialogue_tree"), i);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+			NodeIds.Add(Node.Id);
+		}
+
+		// Check root node exists (WARNING - empty dialogue trees are valid)
+		if (!DBP.DialogueTree.RootNodeId.IsEmpty() && NodeIds.Num() > 0 && !NodeIds.Contains(DBP.DialogueTree.RootNodeId))
+		{
+			FPreValidationIssue Issue;
+			Issue.RuleId = TEXT("DT2");
+			Issue.ErrorCode = TEXT("E_PREVAL_DIALOGUE_ROOT_NOT_FOUND");
+			Issue.Severity = EValidationSeverity::Warning;  // v4.40.3: Downgrade to warning - empty trees are valid
+			Issue.Message = FString::Printf(TEXT("Root node '%s' not found in dialogue tree"), *DBP.DialogueTree.RootNodeId);
+			Issue.ItemId = DBP.Name;
+			Issue.YAMLPath = FString::Printf(TEXT("dialogue_blueprints[%d].dialogue_tree.root"), i);
+			Issue.ManifestPath = ManifestPath;
+			Report.AddIssue(Issue);
+		}
+
+		// Check reply references exist
+		for (int32 j = 0; j < DBP.DialogueTree.Nodes.Num(); j++)
+		{
+			const auto& Node = DBP.DialogueTree.Nodes[j];
+			for (const FString& ReplyId : Node.PlayerReplies)
+			{
+				if (!NodeIds.Contains(ReplyId))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("DT3");
+					Issue.ErrorCode = TEXT("E_PREVAL_DIALOGUE_REPLY_NOT_FOUND");
+					Issue.Severity = EValidationSeverity::Error;
+					Issue.Message = FString::Printf(TEXT("Node '%s' references non-existent reply '%s'"), *Node.Id, *ReplyId);
+					Issue.ItemId = DBP.Name;
+					Issue.YAMLPath = FString::Printf(TEXT("dialogue_blueprints[%d].dialogue_tree.nodes[%d].player_replies"), i, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+			for (const FString& ReplyId : Node.NPCReplies)
+			{
+				if (!NodeIds.Contains(ReplyId))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("DT3");
+					Issue.ErrorCode = TEXT("E_PREVAL_DIALOGUE_REPLY_NOT_FOUND");
+					Issue.Severity = EValidationSeverity::Error;
+					Issue.Message = FString::Printf(TEXT("Node '%s' references non-existent NPC reply '%s'"), *Node.Id, *ReplyId);
+					Issue.ItemId = DBP.Name;
+					Issue.YAMLPath = FString::Printf(TEXT("dialogue_blueprints[%d].dialogue_tree.nodes[%d].npc_replies"), i, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+		}
+	}
+}
+
+// v4.40.3: Pre-validate quest state machine
+void FPreValidator::ValidateQuestStateMachine(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
+{
+	for (int32 i = 0; i < Data.Quests.Num(); i++)
+	{
+		const auto& Quest = Data.Quests[i];
+
+		TSet<FString> StateIds;
+		for (const auto& State : Quest.States)
+		{
+			// Check for duplicate state IDs
+			if (StateIds.Contains(State.Id))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("Q1");
+				Issue.ErrorCode = TEXT("E_PREVAL_QUEST_DUPLICATE_STATE");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Duplicate quest state ID '%s'"), *State.Id);
+				Issue.ItemId = Quest.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("quests[%d].states"), i);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+			StateIds.Add(State.Id);
+		}
+
+		// Check branch references (branches are nested inside states)
+		for (int32 j = 0; j < Quest.States.Num(); j++)
+		{
+			const auto& State = Quest.States[j];
+			for (int32 k = 0; k < State.Branches.Num(); k++)
+			{
+				const auto& Branch = State.Branches[k];
+				// Branch goes FROM current state TO DestinationState
+				if (!Branch.DestinationState.IsEmpty() && !StateIds.Contains(Branch.DestinationState))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("Q2");
+					Issue.ErrorCode = TEXT("E_PREVAL_QUEST_STATE_NOT_FOUND");
+					Issue.Severity = EValidationSeverity::Error;
+					Issue.Message = FString::Printf(TEXT("Branch '%s' in state '%s' references non-existent destination_state '%s'"),
+						Branch.Id.IsEmpty() ? TEXT("(unnamed)") : *Branch.Id, *State.Id, *Branch.DestinationState);
+					Issue.ItemId = Quest.Name;
+					Issue.YAMLPath = FString::Printf(TEXT("quests[%d].states[%d].branches[%d].destination_state"), i, j, k);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+		}
+	}
+}
+
+// v4.40.3: Pre-validate behavior tree nodes
+void FPreValidator::ValidateBehaviorTreeNodes(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
+{
+	for (int32 i = 0; i < Data.BehaviorTrees.Num(); i++)
+	{
+		const auto& BT = Data.BehaviorTrees[i];
+
+		TSet<FString> NodeIds;
+		for (int32 j = 0; j < BT.Nodes.Num(); j++)
+		{
+			const auto& Node = BT.Nodes[j];
+
+			// Check for duplicate node IDs
+			if (NodeIds.Contains(Node.Id))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("BT1");
+				Issue.ErrorCode = TEXT("E_PREVAL_BT_DUPLICATE_ID");
+				Issue.Severity = EValidationSeverity::Error;
+				Issue.Message = FString::Printf(TEXT("Duplicate behavior tree node ID '%s'"), *Node.Id);
+				Issue.ItemId = BT.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("behavior_trees[%d].nodes[%d]"), i, j);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+			NodeIds.Add(Node.Id);
+
+			// Check task class exists if specified
+			if (!Node.TaskClass.IsEmpty())
+			{
+				UClass* TaskClass = FindClassByName(Node.TaskClass, Cache);
+				if (!TaskClass)
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("BT2");
+					Issue.ErrorCode = TEXT("E_PREVAL_BT_TASK_NOT_FOUND");
+					Issue.Severity = EValidationSeverity::Warning;
+					Issue.Message = FString::Printf(TEXT("Task class '%s' not found"), *Node.TaskClass);
+					Issue.ItemId = BT.Name;
+					Issue.YAMLPath = FString::Printf(TEXT("behavior_trees[%d].nodes[%d].task_class"), i, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+		}
+	}
+}
+
+// v4.40.3: Pre-validate NPC/Character references
+void FPreValidator::ValidateNPCReferences(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
+{
+	// Build sets of defined assets for cross-reference checking
+	TSet<FString> DefinedAbilityConfigs;
+	TSet<FString> DefinedActivityConfigs;
+	TSet<FString> DefinedDialogues;
+	TSet<FString> DefinedSchedules;
+	TSet<FString> DefinedNPCs;
+
+	for (const auto& AC : Data.AbilityConfigurations) DefinedAbilityConfigs.Add(AC.Name);
+	for (const auto& AC : Data.ActivityConfigurations) DefinedActivityConfigs.Add(AC.Name);
+	for (const auto& DBP : Data.DialogueBlueprints) DefinedDialogues.Add(DBP.Name);
+	for (const auto& Sched : Data.ActivitySchedules) DefinedSchedules.Add(Sched.Name);
+	for (const auto& NPC : Data.NPCDefinitions) DefinedNPCs.Add(NPC.Name);
+
+	// Validate NPC references
+	for (int32 i = 0; i < Data.NPCDefinitions.Num(); i++)
+	{
+		const auto& NPC = Data.NPCDefinitions[i];
+
+		// Check ability configuration reference
+		if (!NPC.AbilityConfiguration.IsEmpty() && !DefinedAbilityConfigs.Contains(NPC.AbilityConfiguration))
+		{
+			// Check if asset exists in registry
+			FString AssetPath = FString::Printf(TEXT("/Game/FatherCompanion/AbilityConfigs/%s"), *NPC.AbilityConfiguration);
+			if (!AssetExistsInRegistry(AssetPath))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("NPC1");
+				Issue.ErrorCode = TEXT("E_PREVAL_NPC_AC_NOT_FOUND");
+				Issue.Severity = EValidationSeverity::Warning;
+				Issue.Message = FString::Printf(TEXT("AbilityConfiguration '%s' not found in manifest or asset registry"), *NPC.AbilityConfiguration);
+				Issue.ItemId = NPC.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("npc_definitions[%d].ability_configuration"), i);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+		}
+
+		// Check activity configuration reference
+		if (!NPC.ActivityConfiguration.IsEmpty() && !DefinedActivityConfigs.Contains(NPC.ActivityConfiguration))
+		{
+			FString AssetPath = FString::Printf(TEXT("/Game/FatherCompanion/ActivityConfigs/%s"), *NPC.ActivityConfiguration);
+			if (!AssetExistsInRegistry(AssetPath))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("NPC2");
+				Issue.ErrorCode = TEXT("E_PREVAL_NPC_ACTC_NOT_FOUND");
+				Issue.Severity = EValidationSeverity::Warning;
+				Issue.Message = FString::Printf(TEXT("ActivityConfiguration '%s' not found in manifest or asset registry"), *NPC.ActivityConfiguration);
+				Issue.ItemId = NPC.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("npc_definitions[%d].activity_configuration"), i);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+		}
+
+		// Check dialogue reference
+		if (!NPC.Dialogue.IsEmpty() && !DefinedDialogues.Contains(NPC.Dialogue))
+		{
+			FString AssetPath = FString::Printf(TEXT("/Game/FatherCompanion/Dialogues/%s"), *NPC.Dialogue);
+			if (!AssetExistsInRegistry(AssetPath))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("NPC3");
+				Issue.ErrorCode = TEXT("E_PREVAL_NPC_DIALOGUE_NOT_FOUND");
+				Issue.Severity = EValidationSeverity::Warning;
+				Issue.Message = FString::Printf(TEXT("Dialogue '%s' not found in manifest or asset registry"), *NPC.Dialogue);
+				Issue.ItemId = NPC.Name;
+				Issue.YAMLPath = FString::Printf(TEXT("npc_definitions[%d].dialogue"), i);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+		}
+	}
+
+	// Validate dialogue speaker references
+	for (int32 i = 0; i < Data.DialogueBlueprints.Num(); i++)
+	{
+		const auto& DBP = Data.DialogueBlueprints[i];
+		for (int32 j = 0; j < DBP.Speakers.Num(); j++)
+		{
+			const auto& Speaker = DBP.Speakers[j];
+			if (!Speaker.NPCDefinition.IsEmpty() && !DefinedNPCs.Contains(Speaker.NPCDefinition))
+			{
+				FString AssetPath = FString::Printf(TEXT("/Game/FatherCompanion/NPCs/%s"), *Speaker.NPCDefinition);
+				if (!AssetExistsInRegistry(AssetPath))
+				{
+					FPreValidationIssue Issue;
+					Issue.RuleId = TEXT("NPC4");
+					Issue.ErrorCode = TEXT("E_PREVAL_SPEAKER_NPC_NOT_FOUND");
+					Issue.Severity = EValidationSeverity::Warning;
+					Issue.Message = FString::Printf(TEXT("Speaker NPC '%s' not found in manifest or asset registry"), *Speaker.NPCDefinition);
+					Issue.ItemId = DBP.Name;
+					Issue.YAMLPath = FString::Printf(TEXT("dialogue_blueprints[%d].speakers[%d].npc_definition"), i, j);
+					Issue.ManifestPath = ManifestPath;
+					Report.AddIssue(Issue);
+				}
+			}
+		}
+	}
 }

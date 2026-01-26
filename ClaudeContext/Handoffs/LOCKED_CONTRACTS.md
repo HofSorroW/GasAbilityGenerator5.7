@@ -602,26 +602,53 @@ event_graph:
 
 ---
 
-## LOCKED CONTRACT 17 — R-PHASE-1 Two-Phase Death Transition Pattern (v4.34)
+## LOCKED CONTRACT 17 — R-PHASE-1 Two-Phase Death Transition Pattern (v4.34, clarified v4.39.4)
 
 ### Context
 
 Multi-phase enemies (Warden Husk → Warden Core, Biomech Host → Biomech Creature) require proper death transition handling. The transition must:
-1. Detect death via delegate binding
+1. Handle the `OnDied` signal (via override or explicit binding)
 2. Check authority before spawning
 3. Spawn replacement NPC via SpawnNPC
 4. Complete parent death handling
 
+**Scope:** This contract applies ONLY to phase-spawning NPCs. Single-phase NPCs (Exploder, Stalker, Support Buffer, etc.) are NOT subject to R-PHASE-1.
+
 ### Invariant
 
-1. Phase transition blueprints **MUST** bind to `OnDied` delegate from ASC
+1. Phase transition blueprints **MUST** handle the `OnDied` signal:
+   - **For `NarrativeNPCCharacter` subclasses:** Override `HandleDeath` function (NP auto-binds `OnDied→HandleDeath` in `NarrativeNPCController.cpp:165`)
+   - **For non-NP characters:** Explicitly bind to `OnDied` delegate from ASC
 2. Death handler **MUST** check `HasAuthority` before spawning (multiplayer safety)
 3. Spawn **MUST** use `SpawnNPC` (per R-SPAWN-1)
 4. Handler **MUST** call parent death handling (`CallParent` or equivalent)
 
-### Correct Pattern
+### Correct Pattern A — NarrativeNPCCharacter Subclasses (Preferred)
 
 ```yaml
+# NP auto-binds OnDied → HandleDeath, so use function_overrides
+function_overrides:
+  - function: HandleDeath
+    nodes:
+      - id: HasAuthority
+        type: CallFunction
+        properties:
+          function: HasAuthority
+          class: Actor
+      - id: AuthBranch
+        type: Branch
+      - id: SpawnReplacement
+        type: SpawnNPC
+        properties:
+          npc_definition_variable: PhaseSpawnDefinition
+      - id: CallParent
+        type: CallParent
+```
+
+### Correct Pattern B — Non-NP Characters (Explicit Binding)
+
+```yaml
+# For characters without NP auto-binding, use delegate_bindings
 delegate_bindings:
   - source_variable: ASC
     delegate: OnDied
@@ -661,14 +688,15 @@ event_graph:
 - Spawning replacement NPC without authority check
 - Using SpawnActor for phase transition spawning
 - Skipping parent death handling after spawn
-- Binding to incorrect delegate (must be OnDied from ASC)
+- For non-NP characters: Missing explicit `OnDied` binding
 
 ### Reference
 
-- Manifest: `manifest.yaml` — BP_WardenHusk, BP_BiomechHost event graphs
+- Manifest: `manifest.yaml` — BP_WardenHusk, BP_BiomechHost (use Pattern A)
+- Narrative Pro: `NarrativeNPCController.cpp:165` — Auto-binds `OnDied→HandleDeath`
 - Narrative Pro: `NarrativeAbilitySystemComponent.h` — OnDied delegate signature
-- Audit: Claude–GPT dual audit session (2026-01-25)
-- Implementation: v4.34
+- Audit: Claude–GPT dual audit session (2026-01-25, 2026-01-26)
+- Implementation: v4.34, clarified v4.39.4
 
 ---
 
