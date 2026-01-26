@@ -1,5 +1,5 @@
 # NPC Implementation Guides - Comprehensive Audit Report
-## Version 2.1 (Claude-GPT Audit Closure)
+## Version 2.2 (Formation Guard BB Key Compliance)
 ## January 2026
 
 ---
@@ -220,11 +220,12 @@ Same pattern as Warden (authority check → spawn at location → parent call).
 
 | Requirement | Implementation | Status |
 |-------------|----------------|--------|
-| Follow behavior | `BTTask_MoveTo` with `TargetCharacter` | ✅ |
+| Follow behavior | `BTTask_MoveTo` with `FollowTarget` (v4.37.2 fix) | ✅ |
 | Periodic healing | Service interval 1.0s + cooldown 2.0s | ✅ |
 | Area healing | `SphereOverlap` at 500 radius | ✅ |
 | Faction filtering | Faction check in ReceiveTickAI | ✅ |
 | GE application | Uses `param.GameplayEffectClass: GE_SupportHeal` | ✅ |
+| BB key compliance | Uses Narrative Pro `BBKey_FollowTarget` standard | ✅ |
 
 ### Formation Guard - Validation
 
@@ -235,6 +236,9 @@ Same pattern as Warden (authority check → spawn at location → parent call).
 | Speed matching | Clamp to leader velocity | ✅ |
 | Fast speed updates | 0.1s interval for responsiveness | ✅ |
 | Position updates | 0.25s interval (smooth, not jittery) | ✅ |
+| BB key compliance | Uses Narrative Pro `BBKey_FollowTarget` standard (v4.37.2) | ✅ |
+| Speed restore | P-MOVE-1 compliance via ReceiveActivationAI/DeactivationAI (v4.37.2) | ✅ |
+| AC naming | `AC_FormationGuardBehavior` per manifest pattern (Guide v2.6) | ✅ |
 
 ### Gameplay Pattern Observations
 
@@ -444,6 +448,64 @@ event_graph:
 
 ---
 
+#### P-FORMATION-SPEED-1: BT Service Speed Restoration (v4.37.2)
+**Classification:** DOC-ONLY
+**Status:** Implemented in BTS_AdjustFormationSpeed
+**Analogous Rule:** P-MOVE-1 (GAS Abilities Audit v6.5) - movement speed restore pattern
+
+**Pattern:**
+- `ReceiveActivationAI`: Store `OriginalWalkSpeed = CharacterMovement.MaxWalkSpeed`
+- `ReceiveTickAI`: Modify speed as needed (match leader velocity)
+- `ReceiveDeactivationAI`: Restore `CharacterMovement.MaxWalkSpeed = OriginalWalkSpeed`
+
+**Why not LOCKED:**
+- BT Services are not GameplayAbilities (P-MOVE-1 scope is ability-only)
+- Failure mode is visual/feel bug, not catastrophic
+- Low priority - works for normal gameplay
+
+**Implementation (v4.37.2):**
+```yaml
+variables:
+  - name: OriginalWalkSpeed
+    type: Float
+    default_value: "0.0"
+
+event_graph:
+  nodes:
+    - id: Event_ReceiveActivationAI    # Store original speed
+    - id: Event_ReceiveDeactivationAI  # Restore original speed
+    - id: Event_ReceiveTickAI          # Adjust speed dynamically
+```
+
+**Cross-Reference:**
+> P-MOVE-1 (Father_Companion_GAS_Abilities_Audit v6.5) documents the same principle for GameplayAbilities.
+> BTService_BlueprintBase provides lifecycle events (UE5.7 BTService_BlueprintBase.h:126,133).
+
+---
+
+#### P-BB-KEY-1: Narrative Pro Centralized BB Key Usage (v4.37.2)
+**Classification:** DOC-ONLY
+**Status:** Compliant after v4.37.2 fixes
+**Source:** ArsenalSettings.cpp:30 - `BBKey_FollowTarget = FName("FollowTarget")`
+
+**Pattern:**
+- Use Narrative Pro's centralized BB key names from `UArsenalSettings`
+- `BBKey_FollowTarget` ("FollowTarget") for follow target references
+- `BBKey_TargetLocation` ("TargetLocation") for position targets
+- `BBKey_AttackTarget` ("AttackTarget") for combat targets
+
+**Why not LOCKED:**
+- Deviation causes silent functionality issues, not data corruption
+- Standard Narrative Pro practice, not project-specific
+
+**Affected Systems (v4.37.2 fixes):**
+- BT_FormationFollow: `TargetCharacter` → `FollowTarget`
+- BTS_CalculateFormationPosition: `TargetCharacter` → `FollowTarget`
+- BTS_AdjustFormationSpeed: `TargetCharacter` → `FollowTarget`
+- BT_SupportFollow: `TargetCharacter` → `FollowTarget`
+
+---
+
 ## AUTOMATION VERIFICATION
 
 ### Generation Results
@@ -514,6 +576,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2 | 2026-01-26 | **Formation Guard BB Key Compliance (Claude-GPT Audit):** Fixed INC-1 (AC naming: Guide v2.6 uses `AC_FormationGuardBehavior`), INC-2 (BB key: Manifest uses `FollowTarget` per Narrative Pro `BBKey_FollowTarget`), INC-3 (Speed restore: BTS_AdjustFormationSpeed implements P-MOVE-1 via ReceiveActivationAI/DeactivationAI). Added P-FORMATION-SPEED-1 and P-BB-KEY-1 DOC-ONLY patterns. |
 | 2.1 | 2026-01-26 | **Claude-GPT Audit Closure:** Patched line 131 (Stalker "Cooldown/Reset" → "Stays aggressive permanently"). Added P-GG-TIMER-1 DOC-ONLY pattern. Added R-TIMER-1 cross-reference with scope clarification. |
 | 2.0 | 2026-01-25 | **Consolidated Report:** Merged NPC_Guides_Comprehensive_Audit_v1_0.md and NPC_Guides_Audit_Report.md. Added gameplay intent findings. Updated to v4.34 with all 4 new locked contracts (16-19). All 7 NPC systems PASS. |
 | 1.2 | 2026-01-25 | SpawnNPC resolution, suggested locks |

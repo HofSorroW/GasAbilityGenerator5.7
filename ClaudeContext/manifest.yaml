@@ -9052,9 +9052,7 @@ blackboards:  # GUARD FORMATION
       - key_name: FollowTarget
         key_type: Object
         base_class: Actor
-      - key_name: TargetCharacter
-        key_type: Object
-        base_class: Actor
+      # NOTE: TargetCharacter removed in v4.37.2 - use FollowTarget per Narrative Pro BBKey_FollowTarget standard
       - key_name: FormationOffset
         key_type: Vector
       - key_name: TargetLocation
@@ -9072,7 +9070,7 @@ behavior_trees:  # GUARD FORMATION
         type: Selector
         decorators:
           - class: BTDecorator_Blackboard
-            blackboard_key: TargetCharacter
+            blackboard_key: FollowTarget
             key_query: IsSet
         children:
           - formation_sequence
@@ -9136,13 +9134,13 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [300, 0]
-        # v4.32.2: MakeLiteralName nodes for blackboard key names (by-ref params require input wires)
-        - id: MakeKeyName_TargetCharacter
+        # v4.37.2: MakeLiteralName nodes for blackboard key names (by-ref params require input wires)
+        - id: MakeKeyName_FollowTarget
           type: CallFunction
           properties:
             function: MakeLiteralName
             class: KismetSystemLibrary
-            param.Value: TargetCharacter
+            param.Value: FollowTarget
           position: [450, 100]
         - id: MakeKeyName_TargetLocation
           type: CallFunction
@@ -9151,8 +9149,8 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             class: KismetSystemLibrary
             param.Value: TargetLocation
           position: [1950, 100]
-        # Get TargetCharacter key value (the leader to follow)
-        - id: GetTargetCharacter
+        # Get FollowTarget key value (the leader to follow) - per Narrative Pro BBKey_FollowTarget
+        - id: GetFollowTarget
           type: CallFunction
           properties:
             function: GetValueAsObject
@@ -9206,17 +9204,17 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         - from: [Event_ReceiveTickAI, OwnerController]
           to: [GetBlackboard, Target]
         - from: [GetBlackboard, ReturnValue]
-          to: [GetTargetCharacter, Target]
+          to: [GetFollowTarget, Target]
         - from: [GetBlackboard, Exec]
-          to: [GetTargetCharacter, Exec]
-        # v4.32.2: Connect MakeLiteralName outputs to blackboard key name pins
-        - from: [MakeKeyName_TargetCharacter, ReturnValue]
-          to: [GetTargetCharacter, KeyName]
+          to: [GetFollowTarget, Exec]
+        # v4.37.2: Connect MakeLiteralName outputs to blackboard key name pins
+        - from: [MakeKeyName_FollowTarget, ReturnValue]
+          to: [GetFollowTarget, KeyName]
         - from: [MakeKeyName_TargetLocation, ReturnValue]
           to: [SetTargetLocation, KeyName]
-        - from: [GetTargetCharacter, ReturnValue]
+        - from: [GetFollowTarget, ReturnValue]
           to: [CastToActor, Object]
-        - from: [GetTargetCharacter, Exec]
+        - from: [GetFollowTarget, Exec]
           to: [CastToActor, Exec]
         - from: [CastToActor, AsActor]
           to: [GetLeaderLocation, Target]
@@ -9235,7 +9233,7 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         - from: [GetBlackboard, ReturnValue]
           to: [SetTargetLocation, Target]
 
-  # v4.32: Enhanced with ReceiveTickAI event graph
+  # v4.37.2: Enhanced with ReceiveActivationAI/DeactivationAI for P-MOVE-1 compliance
   - name: BTS_AdjustFormationSpeed
     folder: AI/Services
     parent_class: BTService_BlueprintBase
@@ -9245,8 +9243,68 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         type: Float
         default_value: "400.0"
         instance_editable: true
+      # v4.37.2: Store original speed for P-MOVE-1 restore pattern
+      - name: OriginalWalkSpeed
+        type: Float
+        default_value: "0.0"
     event_graph:
       nodes:
+        # ReceiveActivationAI - Store original speed (P-MOVE-1 pattern)
+        - id: Event_ReceiveActivationAI
+          type: Event
+          properties:
+            event_name: ReceiveActivationAI
+          position: [0, -300]
+        - id: CastToChar_Activate
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [200, -300]
+        - id: GetMovement_Activate
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [400, -300]
+        - id: GetOriginalSpeed
+          type: PropertyGet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [600, -300]
+        - id: SetOriginalSpeed
+          type: VariableSet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [800, -300]
+        # ReceiveDeactivationAI - Restore original speed (P-MOVE-1 pattern)
+        - id: Event_ReceiveDeactivationAI
+          type: Event
+          properties:
+            event_name: ReceiveDeactivationAI
+          position: [0, -500]
+        - id: CastToChar_Deactivate
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [200, -500]
+        - id: GetMovement_Deactivate
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [400, -500]
+        - id: GetStoredSpeed
+          type: VariableGet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [600, -500]
+        - id: RestoreSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [800, -500]
         # ReceiveTickAI - Adjust speed to match leader
         - id: Event_ReceiveTickAI
           type: Event
@@ -9273,15 +9331,15 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             property_name: Blackboard
             target_class: AIController
           position: [300, 200]
-        # v4.32.2: MakeLiteralName for blackboard key (by-ref params require input wires)
-        - id: MakeKeyName_TargetCharacter
+        # v4.37.2: MakeLiteralName for blackboard key (by-ref params require input wires)
+        - id: MakeKeyName_FollowTarget
           type: CallFunction
           properties:
             function: MakeLiteralName
             class: KismetSystemLibrary
-            param.Value: TargetCharacter
+            param.Value: FollowTarget
           position: [450, 300]
-        # Get TargetCharacter (leader)
+        # Get FollowTarget (leader) - per Narrative Pro BBKey_FollowTarget
         - id: GetLeader
           type: CallFunction
           properties:
@@ -9326,6 +9384,33 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             target_class: CharacterMovementComponent
           position: [1800, 0]
       connections:
+        # ReceiveActivationAI connections - Store original speed
+        - from: [Event_ReceiveActivationAI, Then]
+          to: [CastToChar_Activate, Exec]
+        - from: [Event_ReceiveActivationAI, ControlledPawn]
+          to: [CastToChar_Activate, Object]
+        - from: [CastToChar_Activate, Exec]
+          to: [SetOriginalSpeed, Exec]
+        - from: [CastToChar_Activate, AsCharacter]
+          to: [GetMovement_Activate, Target]
+        - from: [GetMovement_Activate, CharacterMovement]
+          to: [GetOriginalSpeed, Target]
+        - from: [GetOriginalSpeed, MaxWalkSpeed]
+          to: [SetOriginalSpeed, OriginalWalkSpeed]
+        # ReceiveDeactivationAI connections - Restore original speed
+        - from: [Event_ReceiveDeactivationAI, Then]
+          to: [CastToChar_Deactivate, Exec]
+        - from: [Event_ReceiveDeactivationAI, ControlledPawn]
+          to: [CastToChar_Deactivate, Object]
+        - from: [CastToChar_Deactivate, Exec]
+          to: [RestoreSpeed, Exec]
+        - from: [CastToChar_Deactivate, AsCharacter]
+          to: [GetMovement_Deactivate, Target]
+        - from: [GetMovement_Deactivate, CharacterMovement]
+          to: [RestoreSpeed, Target]
+        - from: [GetStoredSpeed, OriginalWalkSpeed]
+          to: [RestoreSpeed, MaxWalkSpeed]
+        # ReceiveTickAI connections - Adjust speed
         - from: [Event_ReceiveTickAI, Then]
           to: [CastToCharacter, Exec]
         - from: [Event_ReceiveTickAI, ControlledPawn]
@@ -9340,8 +9425,8 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           to: [GetLeader, Target]
         - from: [GetBlackboard, Exec]
           to: [GetLeader, Exec]
-        # v4.32.2: Connect MakeLiteralName output to blackboard key name pin
-        - from: [MakeKeyName_TargetCharacter, ReturnValue]
+        # v4.37.2: Connect MakeLiteralName output to blackboard key name pin
+        - from: [MakeKeyName_FollowTarget, ReturnValue]
           to: [GetLeader, KeyName]
         - from: [GetLeader, ReturnValue]
           to: [CastToActor, Object]
@@ -9868,6 +9953,7 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
 
 behavior_trees:  # SUPPORT BUFFER
 # NOTE: Uses NarrativePro's BB_FollowCharacter at /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/
+# v4.37.2: Updated to use FollowTarget per Narrative Pro BBKey_FollowTarget standard
   - name: BT_SupportFollow
     folder: AI/BehaviorTrees
     blackboard: BB_FollowCharacter
@@ -9879,7 +9965,7 @@ behavior_trees:  # SUPPORT BUFFER
         type: Selector
         decorators:
           - class: BTDecorator_Blackboard
-            blackboard_key: TargetCharacter
+            blackboard_key: FollowTarget
             key_query: IsSet
         children:
           - follow_heal_sequence
@@ -9894,7 +9980,7 @@ behavior_trees:  # SUPPORT BUFFER
       - id: move_to_target
         type: Task
         task_class: BTTask_MoveTo
-        blackboard_key: TargetCharacter
+        blackboard_key: FollowTarget
         properties:
           AcceptableRadius: "150.0"
 
