@@ -601,6 +601,12 @@ NASC->OnDied.AddUniqueDynamic(this, &ThisClass::HandleDeath);
 
 **Resolution:** No fix needed. Pattern documented for reference only. If project adds dynamic generator removal in future, revisit this analysis.
 
+**GPT Audit Consensus (v3.1):**
+GPT initially recommended P-GG-TIMER-1 as LOCKED/Tier-1 but revised after challenge:
+> "You are correct. Given the actual Narrative Pro execution model, P-GG-TIMER-1 does not qualify as a LOCKED / Tier-1 contract. My earlier stance over-weighted theoretical engine-level risk and under-weighted real code-path existence, which violates our own audit rules."
+
+**Both auditors agree:** The contract should be DOC-ONLY / DESIGN-INTENT-CONFIRMED, not enforced.
+
 ---
 
 #### P-FORMATION-SPEED-1: BT Service Speed Restoration (v4.37.2)
@@ -1002,6 +1008,76 @@ Audit of `GoalGenerator_RandomAggression` timer safety and state transitions.
 
 **Aggression Escalation Verdict:** ✅ **COMPLIANT** - All P-GG-TIMER-1 requirements met.
 
+**GPT Audit Consensus (v3.1):**
+GPT initially recommended P-GG-TIMER-1 as LOCKED/Tier-1 but revised after challenge:
+> "You are correct. Given the actual Narrative Pro execution model, P-GG-TIMER-1 does not qualify as a LOCKED / Tier-1 contract. My earlier stance over-weighted theoretical engine-level risk and under-weighted real code-path existence, which violates our own audit rules."
+
+**Both auditors agree:** The contract should be DOC-ONLY / DESIGN-INTENT-CONFIRMED, not enforced.
+
+---
+
+## STALKER AUDIT PATCHES (Consolidated from Implementation Plan v1.0.3)
+
+This section consolidates findings from the now-deleted `Stalker_Full_Compliance_Implementation_Plan_v1_0.md`.
+
+### Audit Patches Summary
+
+| Patch | Issue | Resolution |
+|-------|-------|------------|
+| **PATCH-B** | `OnPlayerDamaged` had wrong signature `(Actor, Float)` | Fixed to `FOnDamagedBy(ASC, Float, Spec)` - use `GetAvatarActor` to extract attacker |
+| **PATCH-C** | State tags not applied/removed at transitions | Added tag nodes to `StopFollowing()` and `BecomeAggressive()` |
+| **PATCH-D** | `StopFollowing()` used for both timeout AND attack | Split into `StopFollowing()` (timeout→patrol) and `BecomeAggressive()` (attack→hostile) |
+| **PATCH-E** | Bound to `OnGoalFailed` which doesn't exist | Changed to `OnGoalRemoved` (fires in ALL termination cases) |
+
+### Goal Delegate Analysis (PATCH-E Detail)
+
+**Available Delegates in NPCGoalItem (Narrative Pro):**
+- `OnGoalSucceeded` - fires when goal succeeds
+- `OnGoalRemoved` - fires when goal is removed FOR ANY REASON
+- `OnGoalFailed` - **DOES NOT EXIST**
+
+**Delegate Firing Matrix:**
+
+| Scenario | OnGoalSucceeded | OnGoalRemoved |
+|----------|-----------------|---------------|
+| Target killed (success + auto-remove) | ✅ | ✅ |
+| Target escapes (manual removal) | ❌ | ✅ |
+| Stalker dies (cleanup) | ❌ | ✅ |
+| Goal timeout (GoalLifetime) | ❌ | ✅ |
+
+**Recommendation:** Bind ONLY to `OnGoalRemoved` for cleanup - handles all cases.
+
+### State Tag Contract (PATCH-C Detail)
+
+| Transition | Tag Action | Function |
+|------------|------------|----------|
+| Follow Starts | ADD `State.NPC.Returned.Following` | OnFollowCheckTimer |
+| First Talk | ADD `State.NPC.Returned.Bonded` | OnTalkCheckTimer |
+| Defend Starts | ADD `State.NPC.Returned.Defending` | OnPlayerDamaged |
+| Defend Ends | REMOVE `State.NPC.Returned.Defending` | OnDefendGoalCompleted |
+| Attack Player | ADD `State.NPC.Returned.Aggressive` | OnAttackCheckTimer |
+| Timeout/GiveUp | REMOVE Following, Bonded, Defending | StopFollowing() |
+| Become Aggressive | REMOVE Following, Bonded; KEEP Aggressive | BecomeAggressive() |
+
+**Critical Rule:** `State.NPC.Returned.Aggressive` is **PERMANENT** - never removed once applied.
+
+### OnPlayerDamaged Signature (PATCH-B Detail)
+
+**WRONG (v1.0):** `(Actor DamageInstigator, Float DamageAmount)`
+
+**CORRECT (v1.0.2+):** `(NarrativeAbilitySystemComponent DamagerCauserASC, Float Damage, GameplayEffectSpec Spec)`
+
+**To extract attacker Actor:** `GetAvatarActor(DamagerCauserASC)` or `GetOwner(DamagerCauserASC)`
+
+### GoalGenerator_RandomAggression Metrics
+
+| Metric | Value |
+|--------|-------|
+| Variables | 35 (17 config + 7 runtime + 4 timer handles + 7 dialogue tags) |
+| Functions | 5 (GetCurrentFollowDuration, GetCurrentAttackChance, GetCurrentDefendChance, StopFollowing, BecomeAggressive) |
+| CustomEvents | 6 |
+| Timer Handles | 4 (FollowCheck, TalkCheck, AttackCheck, FollowDuration) |
+
 ---
 
 ## STEALTH BREAK AUDIT (v3.0 - FIXED)
@@ -1144,7 +1220,7 @@ VERIFICATION PASSED: All whitelist assets processed
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 3.1 | 2026-01-26 | **P-GG-TIMER-1 Investigation - NO BUG (Claude-GPT Audit):** Investigated GoalGenerator timer lifecycle concern. Initial worry: `FollowCheckTimerHandle` never cleared, orphan timers possible. **Finding: NOT A BUG.** Analysis: (1) NPC death = destruction chain, GC auto-cancels timers; (2) `RemoveGoalGenerator()` while alive has no code path - API exists but unused; (3) `Deactivate()` while alive has no code path. Orphan timer scenario requires calling removal/deactivation while NPC alive, which doesn't happen. **Resolution:** Closed as "no bug, do not fix". Updated Research Findings section, P-GG-TIMER-1 pattern, and Aggression Escalation audit to reflect. |
+| 3.1 | 2026-01-26 | **P-GG-TIMER-1 Investigation - NO BUG + Stalker Consolidation (Claude-GPT Audit):** Investigated GoalGenerator timer lifecycle concern. Initial worry: `FollowCheckTimerHandle` never cleared, orphan timers possible. **Finding: NOT A BUG.** Analysis: (1) NPC death = destruction chain, GC auto-cancels timers; (2) `RemoveGoalGenerator()` while alive has no code path; (3) `Deactivate()` while alive has no code path. GPT conceded: "My earlier stance over-weighted theoretical engine-level risk and under-weighted real code-path existence." **Both auditors agree:** DOC-ONLY, not LOCKED. **Stalker Consolidation:** Merged `Stalker_Full_Compliance_Implementation_Plan_v1_0.md` into this document (PATCH-B/C/D/E details, goal delegate analysis, state tag contract, metrics). Implementation plan deleted. |
 | 3.0 | 2026-01-26 | **All Audit Findings Fixed (Claude-GPT Audit):** Plugin v4.39.6. **GA_StealthField Stealth Break - FIXED:** Added `Event_HandleStealthDamageBreak` and `Event_HandleStealthAttackBreak` CustomEvent nodes with proper parameters (DamagerCauserASC/DamagedASC, Damage, Spec) and `K2_EndAbility` calls. Connections added per R-DELEGATE-1 Contract 18. **BTS_CalculateFormationPosition - FIXED:** Complete rewrite per Guide v2.6 Phase 4 Node Connection Summary. Changed from `Quat_RotateVector` to `RotateVector` (Rotator input). Removed all orphan connections (BreakRotator, GetNarrativeProSettings, GetLeaderLocation, MultiplyOffset, SubtractOffset). Now properly rotates `FormationOffset` Vector from blackboard by target rotation. All 19 connections match guide exactly. |
 | 2.9 | 2026-01-26 | **Death Signal Path Audit + Doc Drift Finding (Claude-GPT Audit):** Cross-checked Warden and Biomech guides. DOC DRIFT: Contract 17 shows `delegate_bindings:` but guides use `function_overrides: HandleDeath`. Root cause: NP auto-binds OnDied→HandleDeath. **Contract 17 UPDATED** with Pattern A (NP) and Pattern B (non-NP). **R-PHASE-1 Scope:** Exploder/Stalker correctly excluded. **Aggression Escalation:** P-GG-TIMER-1 COMPLIANT. **Stealth Break Audit:** ⚠️ INCOMPLETE - GA_StealthField declares `delegate_bindings` but handler CustomEvents (`HandleStealthDamageBreak`, `HandleStealthAttackBreak`) missing from event_graph; guide uses different approach (Gameplay Events). **Formation Authority Audit:** ✅ COMPLIANT - BTS_CalculateFormationPosition and BTS_AdjustFormationSpeed both satisfy P-BB-KEY-2 and P-MOVE-1. |
 | 2.8 | 2026-01-26 | **Cross-GPT Consistency Diff Audit:** Added full consistency diff methodology for LOCKED contract validation. Support Buffer: R-AI-1 compliant, INV-GESPEC-1 N/A (uses MakeOutgoingSpec not MakeOutgoingGameplayEffectSpec), P-BB-KEY-2 N/A (no BB keys used). Warden Husk/Core: R-SPAWN-1, R-PHASE-1, R-NPCDEF-1 all COMPLIANT with manifest evidence (lines 8879-8951). Claude-GPT Validated Findings: (1) INV-GESPEC-1 explicitly scoped to UGameplayAbility function, not ASC; (2) NP built-in services authoritative for P-BB-KEY-2; (3) Cross-BP limitation acceptable as tracked Generation Completeness Gate; (4) R-PHASE-1 clarification - NP auto-binds OnDied→HandleDeath in NarrativeNPCController.cpp:165. |
