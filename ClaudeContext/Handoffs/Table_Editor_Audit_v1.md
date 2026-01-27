@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-All 4 table editors (NPC, Dialogue, Quest, Item) implement 8 major pipelines with **100% feature parity**. Initial audit incorrectly flagged Quest/Item Asset Sync and Dirty Tab as missing - verification confirmed all features are fully implemented. v7.4 adds Undo/Redo and Find & Replace - ALL GAPS RESOLVED.
+All 4 table editors (NPC, Dialogue, Quest, Item) implement 8 major pipelines with **100% feature parity**. v7.5 achieves **100% undo/redo coverage** - all Add/Delete/Duplicate operations across all editors now use transaction-aware methods. Find & Replace also fully implemented. **ALL GAPS RESOLVED.**
 
 ---
 
@@ -437,10 +437,24 @@ if (ParentTab.IsValid()) {
 
 ### ~~P2 - Medium~~ (RESOLVED)
 
-~~Undo/Redo~~ - **IMPLEMENTED** (v7.4)
+~~Undo/Redo~~ - **IMPLEMENTED** (v7.5)
 - `TableEditorTransaction.h` - Transaction stack infrastructure with templated row operations
 - All 4 editors have Undo/Redo buttons, Ctrl+Z/Ctrl+Y shortcuts, and 50-action history
 - AddRowWithUndo, DeleteRowsWithUndo, RecordRowEdit methods
+
+#### Undo/Redo Coverage Matrix (v7.5)
+
+| Operation | NPC | Dialogue | Quest | Item |
+|-----------|:---:|:--------:|:-----:|:----:|
+| OnAddRowClicked → AddRowWithUndo | ✓ | ✓ | ✓ | ✓ |
+| OnDeleteRowsClicked → DeleteRowsWithUndo | ✓ | ✓ | ✓ | ✓ |
+| OnDuplicateRowClicked → AddRowWithUndo | ✓ | ✓ | ✓ | ✓ |
+| Ctrl+Z / Ctrl+Y shortcuts | ✓ | ✓ | ✓ | ✓ |
+| Toolbar Undo/Redo buttons | ✓ | ✓ | ✓ | ✓ |
+| 50-action history limit | ✓ | ✓ | ✓ | ✓ |
+| TableData null check | ✓ | ✓ | ✓ | ✓ |
+
+**100% coverage achieved in v7.5.**
 
 ### ~~P3 - Low~~ (RESOLVED)
 
@@ -475,7 +489,7 @@ if (ParentTab.IsValid()) {
 
 ## File Locations
 
-### Common Infrastructure (v7.4)
+### Common Infrastructure (v7.5)
 - `Source/GasAbilityGenerator/Public/TableEditorTransaction.h` - Undo/Redo transaction system
 
 ### NPC Editor
@@ -532,7 +546,7 @@ if (ParentTab.IsValid()) {
 | ~~Item Asset Sync~~ | ~~P0~~ | ~~Medium~~ | **DONE** | ItemAssetSync.cpp (v4.12) |
 | ~~Quest Dirty Tab~~ | ~~P1~~ | ~~Low~~ | **DONE** | SQuestTableEditor.cpp |
 | ~~Item Dirty Tab~~ | ~~P1~~ | ~~Low~~ | **DONE** | SItemTableEditor.cpp |
-| ~~Undo/Redo System~~ | ~~P2~~ | ~~High~~ | **DONE** | TableEditorTransaction.h + All 4 editors (v7.4) |
+| ~~Undo/Redo System~~ | ~~P2~~ | ~~High~~ | **DONE** | TableEditorTransaction.h + All 4 editors (v7.5 - 100% coverage) |
 | ~~Find & Replace~~ | ~~P3~~ | ~~Medium~~ | **DONE** | All 4 editors have Find bar (v7.4) |
 
 ---
