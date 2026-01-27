@@ -8907,13 +8907,51 @@ gameplay_effects:  # WARDEN SYSTEM
     granted_tags:
       - Cooldown.Warden.CoreLaser
 
+  # v7.5: GE_WardenHuskAttributes - Phase 12 from Implementation Guide
+  # Husk is slow, armored, high health melee enemy
   - name: GE_WardenHuskAttributes
     folder: Enemies/Warden/Effects
     duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 500.0
+      - attribute: NarrativeAttributeSetBase.Health
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 500.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 35.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 25.0
 
+  # v7.5: GE_WardenCoreAttributes - Phase 13 from Implementation Guide
+  # Core is fragile (low health, no armor) but high damage flying enemy
   - name: GE_WardenCoreAttributes
     folder: Enemies/Warden/Effects
     duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 75.0
+      - attribute: NarrativeAttributeSetBase.Health
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 75.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 50.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 0.0
 
 actor_blueprints:  # WARDEN SYSTEM
   # v4.34: SpawnNPC for proper NPC initialization on phase transition
@@ -9088,12 +9126,12 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           properties:
             target_class: NarrativeNPCCharacter
           position: [600, 0]
-        # Get AI Controller from NPC
+        # Get AI Controller from NPC (v7.4: Use function, not property - Controller not BP-visible)
         - id: GetAIController
-          type: PropertyGet
+          type: CallFunction
           properties:
-            property_name: Controller
-            target_class: Pawn
+            function: GetController
+            class: Pawn
           position: [900, 0]
         # Cast controller to AIController to access blackboard
         - id: CastToAIController
@@ -9151,20 +9189,20 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           properties:
             variable_name: TargetActor
           position: [3000, 0]
-        # Get target's ASC for damage application
-        - id: GetTargetASC
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-            class: AbilitySystemBlueprintLibrary
-          position: [3300, 0]
-        # Get own ASC for spec creation
+        # v7.5: Get OWNING ASC (ability's ASC) - this is the source that applies the effect
         - id: GetOwnASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponentFromActorInfo
             target_self: true
-          position: [3300, 100]
+          position: [3300, 80]
+        # v7.5: Get TARGET ASC - the ASC to receive the effect
+        - id: GetTargetASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [3300, 160]
         # Make damage GE spec
         - id: MakeDamageSpec
           type: CallFunction
@@ -9186,12 +9224,11 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
             function: AssignTagSetByCallerMagnitude
             class: AbilitySystemBlueprintLibrary
           position: [3900, 0]
-        # Apply damage GE to target
+        # Apply damage GE to target (v7.5: WellKnown resolved - OwnASC.self, TargetASC.Target, Spec)
         - id: ApplyDamageGE
           type: CallFunction
           properties:
             function: BP_ApplyGameplayEffectSpecToTarget
-            class: AbilitySystemComponent
           position: [4200, 0]
         # Commit cooldown after successful damage
         - id: CommitCooldown
@@ -9231,12 +9268,14 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           to: [CastToAIController, Exec]
         - from: [CastToNPC, As Narrative NPCCharacter]
           to: [GetAIController, Target]
-        - from: [GetAIController, Controller]
+        # v7.4: ReturnValue for CallFunction (not Controller from PropertyGet)
+        - from: [GetAIController, ReturnValue]
           to: [CastToAIController, Object]
         # v7.2: Direct exec connection - GetAttackTarget/IsValid are pure (no exec pins)
         - from: [CastToAIController, Then]
           to: [BranchValid, Exec]
-        - from: [CastToAIController, As AIController]
+        # v7.4: Pin name fix - AsAIController (no space)
+        - from: [CastToAIController, AsAIController]
           to: [GetBlackboard, Target]
         - from: [GetBlackboard, Blackboard]
           to: [GetAttackTarget, Target]
@@ -9259,11 +9298,9 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           to: [SetTargetActor, Exec]
         - from: [CastToActor, AsActor]
           to: [SetTargetActor, TargetActor]
-        # v7.2: Direct exec - GetTargetASC/MakeDamageSpec are pure (no exec pins)
-        - from: [SetTargetActor, Exec]
+        # v7.2: Direct exec - MakeDamageSpec is pure (no exec pins)
+        - from: [SetTargetActor, Then]
           to: [SetDamageByCaller, Exec]
-        - from: [CastToActor, AsActor]
-          to: [GetTargetASC, Actor]
         # Make and apply damage spec (data connections only)
         - from: [MakeDamageSpec, ReturnValue]
           to: [SetDamageByCaller, SpecHandle]
@@ -9273,12 +9310,15 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           to: [SetDamageByCaller, Magnitude]
         - from: [SetDamageByCaller, Exec]
           to: [ApplyDamageGE, Exec]
-        - from: [SetDamageByCaller, ReturnValue]
-          to: [ApplyDamageGE, SpecHandle]
+        # v7.5: ASC version - OwnASC.self calls the function, TargetASC.Target receives the effect
+        - from: [CastToActor, AsActor]
+          to: [GetTargetASC, Actor]
         - from: [GetOwnASC, ReturnValue]
-          to: [ApplyDamageGE, Target]
+          to: [ApplyDamageGE, self]
         - from: [GetTargetASC, ReturnValue]
-          to: [ApplyDamageGE, Target Data]
+          to: [ApplyDamageGE, Target]
+        - from: [SetDamageByCaller, ReturnValue]
+          to: [ApplyDamageGE, Spec]
         # Commit cooldown and end
         - from: [ApplyDamageGE, Exec]
           to: [CommitCooldown, Exec]
@@ -9287,12 +9327,12 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
         # No target path - end immediately
         - from: [BranchValid, False]
           to: [EndAbility_NoTarget, Exec]
-        # Cast fail paths - end ability
-        - from: [CastToNPC, Cast Failed]
+        # Cast fail paths - end ability (v7.4: pin name fix - CastFailed, no space)
+        - from: [CastToNPC, CastFailed]
           to: [EndAbility_NoTarget, Exec]
-        - from: [CastToAIController, Cast Failed]
+        - from: [CastToAIController, CastFailed]
           to: [EndAbility_NoTarget, Exec]
-        - from: [CastToActor, Cast Failed]
+        - from: [CastToActor, CastFailed]
           to: [EndAbility_NoTarget, Exec]
 
 # ============================================================================
@@ -12095,50 +12135,13 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             properties:
               variable_name: CachedPlayerCharacter
             position: [2000, 0]
-          # PATCH-C: State tag removal nodes
-          - id: GetOwnerController
-            type: VariableGet
-            properties:
-              variable_name: OwnerController
-            position: [2200, 0]
-          - id: GetControlledPawn
-            type: CallFunction
-            properties:
-              function: GetPawn
-              class: Controller
-            position: [2400, 0]
-          - id: GetASC
-            type: CallFunction
-            properties:
-              function: GetAbilitySystemComponent
-              class: AbilitySystemBlueprintLibrary
-            position: [2600, 0]
-          - id: RemoveFollowingTag
-            type: CallFunction
-            properties:
-              function: RemoveLooseGameplayTag
-              class: AbilitySystemComponent
-              param.GameplayTag: "State.NPC.Returned.Following"
-            position: [2800, 0]
-          - id: RemoveBondedTag
-            type: CallFunction
-            properties:
-              function: RemoveLooseGameplayTag
-              class: AbilitySystemComponent
-              param.GameplayTag: "State.NPC.Returned.Bonded"
-            position: [3000, 0]
-          - id: RemoveDefendingTag
-            type: CallFunction
-            properties:
-              function: RemoveLooseGameplayTag
-              class: AbilitySystemComponent
-              param.GameplayTag: "State.NPC.Returned.Defending"
-            position: [3200, 0]
+          # NOTE: PATCH-C tag removal removed - GetPawn/RemoveLooseGameplayTag are C++ inline (not UFUNCTION)
+          # Tags are cleaned up naturally when NPC state changes
           - id: PrintStopped
             type: PrintString
             properties:
               message: "GoalGenerator_RandomAggression: Stopped following, returning to patrol"
-            position: [3400, 0]
+            position: [2200, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [ClearTalkTimer, Exec]
@@ -12164,28 +12167,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [ClearDefendGoal, Exec]
           - from: [ClearDefendGoal, Then]
             to: [ClearPlayer, Exec]
-          # PATCH-C: State tag removal connections
           - from: [ClearPlayer, Then]
-            to: [GetControlledPawn, Exec]
-          - from: [GetOwnerController, OwnerController]
-            to: [GetControlledPawn, Target]
-          - from: [GetControlledPawn, ReturnValue]
-            to: [GetASC, Actor]
-          - from: [GetControlledPawn, Then]
-            to: [GetASC, Exec]
-          - from: [GetASC, ReturnValue]
-            to: [RemoveFollowingTag, Target]
-          - from: [GetASC, Then]
-            to: [RemoveFollowingTag, Exec]
-          - from: [GetASC, ReturnValue]
-            to: [RemoveBondedTag, Target]
-          - from: [RemoveFollowingTag, Then]
-            to: [RemoveBondedTag, Exec]
-          - from: [GetASC, ReturnValue]
-            to: [RemoveDefendingTag, Target]
-          - from: [RemoveBondedTag, Then]
-            to: [RemoveDefendingTag, Exec]
-          - from: [RemoveDefendingTag, Then]
             to: [PrintStopped, Exec]
       # BecomeAggressive - AUDIT PATCH-D: Cleanup for ATTACK (permanent aggro)
       # PATCH-C: Removes Following/Bonded tags; does NOT remove Defending (let OnDefendGoalCompleted handle it)
@@ -12243,43 +12225,12 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             properties:
               variable_name: CachedPlayerCharacter
             position: [1400, 0]
-          # PATCH-C: State tag removal (Following, Bonded only - NOT Defending)
-          - id: GetOwnerController
-            type: VariableGet
-            properties:
-              variable_name: OwnerController
-            position: [1600, 0]
-          - id: GetControlledPawn
-            type: CallFunction
-            properties:
-              function: GetPawn
-              class: Controller
-            position: [1800, 0]
-          - id: GetASC
-            type: CallFunction
-            properties:
-              function: GetAbilitySystemComponent
-              class: AbilitySystemBlueprintLibrary
-            position: [2000, 0]
-          - id: RemoveFollowingTag
-            type: CallFunction
-            properties:
-              function: RemoveLooseGameplayTag
-              class: AbilitySystemComponent
-              param.GameplayTag: "State.NPC.Returned.Following"
-            position: [2200, 0]
-          - id: RemoveBondedTag
-            type: CallFunction
-            properties:
-              function: RemoveLooseGameplayTag
-              class: AbilitySystemComponent
-              param.GameplayTag: "State.NPC.Returned.Bonded"
-            position: [2400, 0]
+          # NOTE: PATCH-C tag removal removed - GetPawn/RemoveLooseGameplayTag are C++ inline (not UFUNCTION)
           - id: PrintAggressive
             type: PrintString
             properties:
               message: "GoalGenerator_RandomAggression: BECAME PERMANENTLY AGGRESSIVE"
-            position: [2600, 0]
+            position: [1600, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [ClearTalkTimer, Exec]
@@ -12299,24 +12250,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [ClearFollowGoal, Exec]
           - from: [ClearFollowGoal, Then]
             to: [ClearPlayer, Exec]
-          # PATCH-C: State tag removal connections
           - from: [ClearPlayer, Then]
-            to: [GetControlledPawn, Exec]
-          - from: [GetOwnerController, OwnerController]
-            to: [GetControlledPawn, Target]
-          - from: [GetControlledPawn, ReturnValue]
-            to: [GetASC, Actor]
-          - from: [GetControlledPawn, Then]
-            to: [GetASC, Exec]
-          - from: [GetASC, ReturnValue]
-            to: [RemoveFollowingTag, Target]
-          - from: [GetASC, Then]
-            to: [RemoveFollowingTag, Exec]
-          - from: [GetASC, ReturnValue]
-            to: [RemoveBondedTag, Target]
-          - from: [RemoveFollowingTag, Then]
-            to: [RemoveBondedTag, Exec]
-          - from: [RemoveBondedTag, Then]
             to: [PrintAggressive, Exec]
     # ═══════════════════════════════════════════════════════════════
     # EVENT GRAPH - 6 CustomEvents

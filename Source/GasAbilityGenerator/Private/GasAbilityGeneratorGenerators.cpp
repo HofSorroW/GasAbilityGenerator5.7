@@ -11477,6 +11477,11 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Damage/%s"), *ClassName));
 						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Stats/%s"), *ClassName));
 						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/Utility/%s"), *ClassName));
+						// v7.4: Add enemy-specific effect paths for TSubclassOf resolution
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Enemies/Warden/Effects/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Enemies/Possessed/Effects/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Enemies/Biomech/Effects/%s"), *ClassName));
+						SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/NPCs/Support/Effects/%s"), *ClassName));
 
 						// Check if it's a full path already
 						if (ClassName.StartsWith(TEXT("/Game/")))
@@ -14703,10 +14708,12 @@ bool FEventGraphGenerator::GenerateBridgeBasedBinding(
 
 	UFunction* GetBridgeFunc = UDamageEventBridge::StaticClass()->FindFunctionByName(
 		TEXT("GetOrCreateFromASC"));
-	if (GetBridgeFunc)
+	if (!GetBridgeFunc)
 	{
-		GetBridgeNode->SetFromFunction(GetBridgeFunc);
+		LogGeneration(TEXT("    [E_BRIDGE_FUNC] GetOrCreateFromASC function not found on UDamageEventBridge"));
+		return false;
 	}
+	GetBridgeNode->SetFromFunction(GetBridgeFunc);
 	GetBridgeNode->CreateNewGuid();
 	GetBridgeNode->PostPlacedNewNode();
 	GetBridgeNode->AllocateDefaultPins();
@@ -14716,10 +14723,14 @@ bool FEventGraphGenerator::GenerateBridgeBasedBinding(
 	// Wire Cast.AsNarrativeASC → GetBridge.OwnerASC
 	UEdGraphPin* CastResultPin = CastNode->GetCastResultPin();
 	UEdGraphPin* BridgeASCPin = GetBridgeNode->FindPin(TEXT("OwnerASC"));
-	if (CastResultPin && BridgeASCPin)
+	if (!CastResultPin || !BridgeASCPin)
 	{
-		Schema->TryCreateConnection(CastResultPin, BridgeASCPin);
+		LogGeneration(FString::Printf(TEXT("    [E_BRIDGE_PIN] Cast→Bridge wire failed: CastResult=%s, BridgeASC=%s"),
+			CastResultPin ? TEXT("OK") : TEXT("NULL"),
+			BridgeASCPin ? TEXT("OK") : TEXT("NULL")));
+		return false;
 	}
+	Schema->TryCreateConnection(CastResultPin, BridgeASCPin);
 
 	// 7. Create AddDelegate node for bridge event
 	UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
@@ -14728,22 +14739,68 @@ bool FEventGraphGenerator::GenerateBridgeBasedBinding(
 	// Find bridge delegate property
 	FMulticastDelegateProperty* BridgeDelegateProp = FindFProperty<FMulticastDelegateProperty>(
 		UDamageEventBridge::StaticClass(), BridgeEventName);
-	if (BridgeDelegateProp)
+	if (!BridgeDelegateProp)
 	{
-		AddDelegateNode->SetFromProperty(BridgeDelegateProp, false, UDamageEventBridge::StaticClass());
+		LogGeneration(FString::Printf(TEXT("    [E_BRIDGE_DELEGATE] Delegate property '%s' not found on UDamageEventBridge"),
+			*BridgeEventName.ToString()));
+		return false;
 	}
+	AddDelegateNode->SetFromProperty(BridgeDelegateProp, false, UDamageEventBridge::StaticClass());
 	AddDelegateNode->CreateNewGuid();
 	AddDelegateNode->PostPlacedNewNode();
 	AddDelegateNode->AllocateDefaultPins();
 	AddDelegateNode->NodePosX = CurrentPosX + 1000.0f;
 	AddDelegateNode->NodePosY = CurrentPosY + 100.0f;
 
-	// Wire GetBridge.ReturnValue → AddDelegate.self
-	UEdGraphPin* BridgeReturnPin = GetBridgeNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+	// Wire GetBridge.ReturnValue → AddDelegate.Target (PN_Self)
+	// Use GetReturnValuePin() for canonical access
+	UEdGraphPin* BridgeReturnPin = GetBridgeNode->GetReturnValuePin();
 	UEdGraphPin* AddDelegateSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self);
-	if (BridgeReturnPin && AddDelegateSelfPin)
+	if (!BridgeReturnPin || !AddDelegateSelfPin)
 	{
-		Schema->TryCreateConnection(BridgeReturnPin, AddDelegateSelfPin);
+		LogGeneration(FString::Printf(TEXT("    [E_BRIDGE_PIN] Bridge→AddDelegate wire failed: BridgeReturn=%s, AddDelegateSelf=%s"),
+			BridgeReturnPin ? TEXT("OK") : TEXT("NULL"),
+			AddDelegateSelfPin ? TEXT("OK") : TEXT("NULL")));
+		return false;
+	}
+
+	// Diagnostic: Log pin types before connection
+	auto DumpPin = [](const TCHAR* Label, UEdGraphPin* P)
+	{
+		if (!P)
+		{
+			UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [%s] NULL"), Label);
+			return;
+		}
+		const FEdGraphPinType& T = P->PinType;
+		UObject* SubObjObj = T.PinSubCategoryObject.Get();
+		FString SubObj = SubObjObj ? SubObjObj->GetName() : TEXT("None");
+		UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [%s] Cat=%s SubCat=%s SubObj=%s"),
+			Label, *T.PinCategory.ToString(), *T.PinSubCategory.ToString(), *SubObj);
+	};
+	DumpPin(TEXT("BridgeReturn"), BridgeReturnPin);
+	DumpPin(TEXT("AddDelegateTarget"), AddDelegateSelfPin);
+
+	bool bConnected = Schema->TryCreateConnection(BridgeReturnPin, AddDelegateSelfPin);
+	LogGeneration(FString::Printf(TEXT("    [BRIDGE] Bridge→AddDelegate.Target connection: %s"),
+		bConnected ? TEXT("SUCCESS") : TEXT("FAILED")));
+
+	// Force AddDelegate node reconstruction to commit pin types
+	// Note: Reconstruct can invalidate pins, so re-acquire and verify after
+	if (bConnected)
+	{
+		AddDelegateNode->ReconstructNode();
+
+		// Re-acquire pins after reconstruct
+		BridgeReturnPin = GetBridgeNode->GetReturnValuePin();
+		AddDelegateSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self);
+
+		// Verify connection still exists; rewire if needed
+		if (BridgeReturnPin && AddDelegateSelfPin && !AddDelegateSelfPin->LinkedTo.Contains(BridgeReturnPin))
+		{
+			LogGeneration(TEXT("    [BRIDGE] Connection lost after ReconstructNode, rewiring..."));
+			Schema->TryCreateConnection(BridgeReturnPin, AddDelegateSelfPin);
+		}
 	}
 
 	// 8. Create CreateDelegate node for handler
@@ -20964,6 +21021,9 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 			SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Forms/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
 			SearchPaths.Add(FString::Printf(TEXT("%s/Abilities/Actions/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
 			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Abilities/%s.%s_C"), *AbilityName, *AbilityName));
+			// v7.5: Add Enemies subfolder paths for Warden and other enemy abilities
+			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Warden/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Possessed/Abilities/%s.%s_C"), *GetProjectRoot(), *AbilityName, *AbilityName));
 
 			for (const FString& Path : SearchPaths)
 			{
@@ -21032,6 +21092,10 @@ FGenerationResult FAbilityConfigurationGenerator::Generate(const FManifestAbilit
 			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/FormState/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
 			// Cooldowns subfolder
 			SearchPaths.Add(FString::Printf(TEXT("%s/Effects/Cooldowns/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// v7.5: Enemy-specific effect folders
+			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Warden/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Possessed/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/Support/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
 			// Legacy hardcoded paths
 			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
 			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
