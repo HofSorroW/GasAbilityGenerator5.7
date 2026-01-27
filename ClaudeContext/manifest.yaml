@@ -166,15 +166,9 @@ tags:
   - tag: Cooldown.Father.Symbiote
     comment: Symbiote form cooldown
 
-  # Data Tags - SetByCaller (7)
-  - tag: Data.Backstab.DamageBonus
-    comment: SetByCaller backstab bonus
-  - tag: Data.Dome.Energy
-    comment: SetByCaller dome energy
-  - tag: Data.Duration
-    comment: SetByCaller effect duration
-  - tag: Data.Mark.DamageBonus
-    comment: SetByCaller mark bonus
+  # Data Tags - SetByCaller (4)
+  - tag: Data.Mark.ArmorReduction
+    comment: SetByCaller armor reduction on marked targets
   - tag: Data.Mark.Duration
     comment: SetByCaller mark duration
   - tag: Data.Sacrifice.DormantDuration
@@ -725,6 +719,12 @@ gameplay_effects:
     folder: Effects/Utility
     duration_policy: HasDuration
     duration_setbycaller: Data.Mark.Duration
+    modifiers:
+      # v7.3: Armor reduction on marked targets (-10 = ~10% more damage taken)
+      - attribute: NarrativeAttributeSetBase.Armor
+        modifier_op: Add
+        magnitude_calculation_type: SetByCaller
+        set_by_caller_tag: Data.Mark.ArmorReduction
     granted_tags:
       - Character.Marked
     asset_tag: Effect.Father.Mark
@@ -6062,17 +6062,42 @@ gameplay_abilities:
           type: VariableGet
           properties:
             variable_name: MarkDuration
-          position: [1800, 100]
+          position: [1800, 150]
+        - id: MakeDurationTag
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Data.Mark.Duration
+          position: [1800, 200]
         - id: SetDurationByCaller
           type: CallFunction
           properties:
             function: AssignTagSetByCallerMagnitude
+            class: AbilitySystemBlueprintLibrary
           position: [1800, 0]
+        # v7.3: Add armor reduction SetByCaller
+        - id: GetArmorReduction
+          type: VariableGet
+          properties:
+            variable_name: MarkArmorReduction
+          position: [2100, 150]
+        - id: MakeArmorTag
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Data.Mark.ArmorReduction
+          position: [2100, 200]
+        - id: SetArmorByCaller
+          type: CallFunction
+          properties:
+            function: AssignTagSetByCallerMagnitude
+            class: AbilitySystemBlueprintLibrary
+          position: [2100, 0]
         - id: ApplyGE
           type: CallFunction
           properties:
             function: BP_ApplyGameplayEffectSpecToTarget
-          position: [2100, 0]
+          position: [2400, 0]
         - id: EndAbility
           type: CallFunction
           properties:
@@ -6094,6 +6119,8 @@ gameplay_abilities:
         - from: [MakeGESpec, Exec]
           to: [SetDurationByCaller, Exec]
         - from: [SetDurationByCaller, Exec]
+          to: [SetArmorByCaller, Exec]
+        - from: [SetArmorByCaller, Exec]
           to: [ApplyGE, Exec]
         - from: [ApplyGE, Exec]
           to: [EndAbility, Exec]
@@ -6110,7 +6137,16 @@ gameplay_abilities:
           to: [SetDurationByCaller, SpecHandle]
         - from: [GetDuration, MarkDuration]
           to: [SetDurationByCaller, Magnitude]
+        - from: [MakeDurationTag, ReturnValue]
+          to: [SetDurationByCaller, DataTag]
+        # v7.3: Chain spec through armor reduction SetByCaller
         - from: [SetDurationByCaller, ReturnValue]
+          to: [SetArmorByCaller, SpecHandle]
+        - from: [GetArmorReduction, MarkArmorReduction]
+          to: [SetArmorByCaller, Magnitude]
+        - from: [MakeArmorTag, ReturnValue]
+          to: [SetArmorByCaller, DataTag]
+        - from: [SetArmorByCaller, ReturnValue]
           to: [ApplyGE, Spec]
         - from: [GetEnemyASC, ReturnValue]
           to: [ApplyGE, Target]
