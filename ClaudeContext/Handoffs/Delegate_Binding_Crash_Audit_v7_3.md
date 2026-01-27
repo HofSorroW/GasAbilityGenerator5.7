@@ -785,24 +785,20 @@ bool FStructProperty::SameType(const FProperty* Other) const
 - `GasAbilityGeneratorGenerators.h` - Added `RequiresNativeBridge()` and `GenerateBridgeBasedBinding()` declarations
 - `GasAbilityGeneratorGenerators.cpp` - Added bridge detection and routing logic (~200 lines)
 
-**Detection Logic (v7.4):**
+**Detection Logic (v4.31 - struct-type based):**
 ```cpp
 bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignature)
 {
-    // Check for known problematic delegates by name
-    FString DelegateName = DelegateSignature->GetName();
+    if (!DelegateSignature) return false;
 
-    if (DelegateName.Contains(TEXT("OnDamagedBy")) ||
-        DelegateName.Contains(TEXT("OnDealtDamage")) ||
-        DelegateName.Contains(TEXT("OnHealedBy")))
+    // Type-based detection: route any delegate with FGameplayEffectSpec through bridge
+    for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
     {
-        // Verify it has FGameplayEffectSpec parameter
-        for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+        if (const FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
         {
-            if (const FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
+            if (StructProp->Struct == FGameplayEffectSpec::StaticStruct())
             {
-                if (StructProp->Struct->GetName() == TEXT("GameplayEffectSpec"))
-                    return true;
+                return true;  // BP-hostile struct detected
             }
         }
     }
@@ -810,7 +806,7 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 }
 ```
 
-**Key Insight:** Initial attempt used `CPF_ReferenceParm && !CPF_OutParm` detection, but UE5.7 sets BOTH flags for const-ref parameters. Final solution uses explicit delegate name matching + struct type verification.
+**Key Insight:** Initial attempt used `CPF_ReferenceParm && !CPF_OutParm` detection, but UE5.7 sets BOTH flags for const-ref parameters. Final solution uses struct-type detection (`FGameplayEffectSpec::StaticStruct()`) to route any delegate with this BP-hostile struct through the bridge, independent of delegate naming.
 
 ### Generated Blueprint Structure
 

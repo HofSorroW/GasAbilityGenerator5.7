@@ -1,7 +1,8 @@
-// GasAbilityGenerator v7.4
+// GasAbilityGenerator v4.31
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
-// v7.4: Track E Native Bridge - UDamageEventBridge for const-ref delegate params (OnDamagedBy, etc.)
-//       Bypasses K2 binding crash for delegates with const FGameplayEffectSpec& parameters
+// v4.31: Track E Native Bridge - UDamageEventBridge for FGameplayEffectSpec delegate params
+//       Type-based detection routes any delegate with FGameplayEffectSpec through bridge
+//       See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
 // v4.30: Automation Gap Closure - MeshMaterials/Morphs struct automation, deferred resolution for
 //        EquipmentAbilities/ActivitiesToGrant, DialogueShot SequenceAssets array automation
 // v4.13: Category C Full Automation - P3.2 GameplayCue Auto-Wiring (ExecuteGameplayCue nodes),
@@ -14507,17 +14508,20 @@ int32 FEventGraphGenerator::GenerateVFXSpawnNodes(
 }
 
 // ============================================================================
-// v7.4: Track E - Native Bridge for Delegate Binding Crash Workaround
+// Track E - Native Bridge for Delegate Binding Crash Workaround
+// Type-based detection: any delegate with FGameplayEffectSpec routes to bridge
 // See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
 // ============================================================================
 
 /**
- * v7.4: Track E - Native Bridge Detection
- * Checks if a delegate signature contains input const-ref parameters that require
+ * Track E - Native Bridge Detection
+ * Checks if a delegate signature contains BP-hostile struct parameters that require
  * the native bridge workaround.
  *
- * Crash trigger: const FGameplayEffectSpec& and similar input const-ref params
- * These have CPF_ReferenceParm but NOT CPF_OutParm, causing K2 binding crashes.
+ * Detection: Any delegate with FGameplayEffectSpec parameter routes through bridge.
+ * This is type-based detection (not name-based) for future-proofing.
+ *
+ * See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
  */
 bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignature)
 {
@@ -14526,25 +14530,15 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 		return false;
 	}
 
-	// v7.4: Check for known problematic delegates by name
-	// These delegates have const FGameplayEffectSpec& parameters that crash K2 binding
-	FString DelegateName = DelegateSignature->GetName();
-
-	// OnDamagedBy__DelegateSignature, OnDealtDamage__DelegateSignature, OnHealedBy__DelegateSignature
-	if (DelegateName.Contains(TEXT("OnDamagedBy")) ||
-		DelegateName.Contains(TEXT("OnDealtDamage")) ||
-		DelegateName.Contains(TEXT("OnHealedBy")))
+	// Type-based detection: route any delegate with FGameplayEffectSpec through bridge
+	// This catches OnDamagedBy, OnDealtDamage, OnHealedBy and any future delegates
+	for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
 	{
-		// Double-check: verify it has the FGameplayEffectSpec parameter
-		for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+		if (const FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
 		{
-			const FProperty* Prop = *PropIt;
-			if (const FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+			if (StructProp->Struct == FGameplayEffectSpec::StaticStruct())
 			{
-				if (StructProp->Struct && StructProp->Struct->GetName() == TEXT("GameplayEffectSpec"))
-				{
-					return true;  // Known problematic delegate - requires bridge
-				}
+				return true;  // BP-hostile struct detected - requires bridge
 			}
 		}
 	}
