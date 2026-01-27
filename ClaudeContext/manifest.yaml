@@ -8860,21 +8860,17 @@ tags:  # WARDEN SYSTEM
     comment: Laser attack ability
   - tag: Cooldown.Warden.CoreLaser
     comment: Laser cooldown tag
-  - tag: Data.Damage.CoreLaser
-    comment: SetByCaller tag for CoreLaser damage magnitude
   - tag: Effect.Damage.WardenLaser
     comment: Laser damage type
 
 gameplay_effects:  # WARDEN SYSTEM
-  # v7.1: INC-WARDEN-CORELASER-1 - Added proper damage modifier with SetByCaller
+  # v7.3: Unified damage system - uses NarrativeDamageExecCalc like all other damage GEs
+  # Damage comes from WardenCore's AttackDamage attribute (set by GE_WardenCoreAttributes: 50.0)
   - name: GE_CoreLaserDamage
     folder: Enemies/Warden/Effects
     duration_policy: Instant
-    modifiers:
-      - attribute: NarrativeAttributeSetBase.Damage
-        modifier_op: Additive
-        magnitude_calculation_type: SetByCaller
-        set_by_caller_tag: Data.Damage.CoreLaser
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
 
   - name: GE_CoreLaserCooldown
     folder: Enemies/Warden/Effects
@@ -9074,10 +9070,7 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
       activation_blocked_tags:
         - Cooldown.Warden.CoreLaser
     variables:
-      - name: LaserDamage
-        type: Float
-        default_value: "50.0"
-        instance_editable: true
+      # v7.3: LaserDamage variable removed - damage now from AttackDamage attribute via NarrativeDamageExecCalc
       - name: TargetActor
         type: Object
         class: Actor
@@ -9179,7 +9172,7 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
           position: [3300, 160]
-        # Make damage GE spec
+        # Make damage GE spec (v7.3: uses NarrativeDamageExecCalc - damage from AttackDamage attribute)
         - id: MakeDamageSpec
           type: CallFunction
           properties:
@@ -9187,20 +9180,7 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
             target_self: true
             param.GameplayEffectClass: GE_CoreLaserDamage
           position: [3600, 0]
-        # Get damage value from variable
-        - id: GetDamageValue
-          type: VariableGet
-          properties:
-            variable_name: LaserDamage
-          position: [3600, 150]
-        # Set damage magnitude via SetByCaller
-        - id: SetDamageByCaller
-          type: CallFunction
-          properties:
-            function: AssignTagSetByCallerMagnitude
-            class: AbilitySystemBlueprintLibrary
-          position: [3900, 0]
-        # Apply damage GE to target (v7.5: WellKnown resolved - OwnASC.self, TargetASC.Target, Spec)
+        # Apply damage GE to target (v7.3: simplified - no SetByCaller needed)
         - id: ApplyDamageGE
           type: CallFunction
           properties:
@@ -9227,13 +9207,6 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
             function: K2_EndAbility
             target_self: true
           position: [3000, 200]
-        # Make Data.Damage.CoreLaser tag for SetByCaller
-        - id: MakeDamageTag
-          type: CallFunction
-          properties:
-            function: MakeLiteralGameplayTag
-            literal_value: Data.Damage.CoreLaser
-          position: [3900, 150]
       connections:
         # Main execution flow
         - from: [Event_Activate, Then]
@@ -9274,17 +9247,8 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           to: [SetTargetActor, Exec]
         - from: [CastToActor, AsActor]
           to: [SetTargetActor, TargetActor]
-        # v7.2: Direct exec - MakeDamageSpec is pure (no exec pins)
+        # v7.3: Simplified - direct to ApplyDamageGE (no SetByCaller)
         - from: [SetTargetActor, Then]
-          to: [SetDamageByCaller, Exec]
-        # Make and apply damage spec (data connections only)
-        - from: [MakeDamageSpec, ReturnValue]
-          to: [SetDamageByCaller, SpecHandle]
-        - from: [MakeDamageTag, ReturnValue]
-          to: [SetDamageByCaller, DataTag]
-        - from: [GetDamageValue, LaserDamage]
-          to: [SetDamageByCaller, Magnitude]
-        - from: [SetDamageByCaller, Exec]
           to: [ApplyDamageGE, Exec]
         # v7.5: ASC version - OwnASC.self calls the function, TargetASC.Target receives the effect
         - from: [CastToActor, AsActor]
@@ -9293,7 +9257,8 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
           to: [ApplyDamageGE, self]
         - from: [GetTargetASC, ReturnValue]
           to: [ApplyDamageGE, Target]
-        - from: [SetDamageByCaller, ReturnValue]
+        # v7.3: Direct spec connection (damage from AttackDamage attribute via NarrativeDamageExecCalc)
+        - from: [MakeDamageSpec, ReturnValue]
           to: [ApplyDamageGE, Spec]
         # Commit cooldown and end
         - from: [ApplyDamageGE, Exec]
