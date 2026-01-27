@@ -4470,12 +4470,13 @@ gameplay_abilities:
         - Father.Dome.Active
       # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
       # Equipment granting already ensures this ability is only available in Armor form
-    # v4.21: Delegate bindings - RE-ENABLED for crash testing
+    # v4.21: Delegate bindings - VISUAL TEST: OnDied only (check Self pin existence)
     delegate_bindings:
-      - id: BindDomeDamageAbsorption
-        delegate: OnDamagedBy
-        source: OwnerASC
-        handler: HandleDomeDamageAbsorption
+      # DISABLED FOR VISUAL TEST:
+      # - id: BindDomeDamageAbsorption
+      #   delegate: OnDamagedBy
+      #   source: OwnerASC
+      #   handler: HandleDomeDamageAbsorption
       - id: BindPlayerDeath
         delegate: OnDied
         source: OwnerASC
@@ -4570,7 +4571,7 @@ gameplay_abilities:
             function: TryActivateAbilityByClass
             class: AbilitySystemComponent
             parameters:
-              InAbilityToActivate: GA_DomeBurst
+              InAbilityToActivate: /Game/FatherCompanion/Abilities/Actions/GA_DomeBurst.GA_DomeBurst_C
               bAllowRemoteActivation: false
           position: [600, 400]
         # Step 2: Clear Father.Dome.FullyCharged tag (reset state)

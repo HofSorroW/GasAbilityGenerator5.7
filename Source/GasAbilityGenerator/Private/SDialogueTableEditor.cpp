@@ -1636,6 +1636,7 @@ void SDialogueTableEditor::Construct(const FArguments& InArgs)
 {
 	TableData = InArgs._TableData;
 	OnDirtyStateChanged = InArgs._OnDirtyStateChanged;  // v4.6: Store delegate
+	TransactionStack = MakeShared<FTableEditorTransactionStack>(50);  // v7.2: Initialize undo/redo stack
 	SyncFromTableData();
 	InitializeColumnFilters();
 	UpdateColumnFilterOptions();
@@ -1650,6 +1651,101 @@ void SDialogueTableEditor::Construct(const FArguments& InArgs)
 		.Padding(4.0f)
 		[
 			BuildToolbar()
+		]
+
+		// v7.2: Find & Replace bar
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("FindLabel", "Find:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(FindTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("FindHint", "Search text..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					FindText = Text.ToString();
+					PerformSearch();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindPrev", "<"))
+				.ToolTipText(LOCTEXT("FindPrevTip", "Find Previous"))
+				.OnClicked(this, &SDialogueTableEditor::OnFindPrevClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindNext", ">"))
+				.ToolTipText(LOCTEXT("FindNextTip", "Find Next"))
+				.OnClicked(this, &SDialogueTableEditor::OnFindNextClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(10.0f, 2.0f, 2.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("ReplaceLabel", "Replace:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(ReplaceTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("ReplaceHint", "Replace with..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					ReplaceText = Text.ToString();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("Replace", "Replace"))
+				.OnClicked(this, &SDialogueTableEditor::OnReplaceClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("ReplaceAll", "Replace All"))
+				.OnClicked(this, &SDialogueTableEditor::OnReplaceAllClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNullWidget::NullWidget
+			]
 		]
 
 		// Separator
@@ -1741,6 +1837,44 @@ TSharedRef<SWidget> SDialogueTableEditor::BuildToolbar()
 				.OnClicked(this, &SDialogueTableEditor::OnDeleteBranchClicked)
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
 				.ToolTipText(LOCTEXT("DeleteBranchTip", "Delete selected node(s) AND all their children (cascade delete)"))
+		]
+
+		// v7.2: Undo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Undo", "Undo"))
+				.OnClicked(this, &SDialogueTableEditor::OnUndoClicked)
+				.ToolTipText_Lambda([this]() -> FText {
+					if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+					{
+						return FText::Format(LOCTEXT("UndoTipFormat", "Undo: {0} (Ctrl+Z)"),
+							FText::FromString(TransactionStack->GetUndoDescription()));
+					}
+					return LOCTEXT("UndoTipEmpty", "Nothing to undo (Ctrl+Z)");
+				})
+				.IsEnabled(this, &SDialogueTableEditor::CanUndo)
+		]
+
+		// v7.2: Redo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Redo", "Redo"))
+				.OnClicked(this, &SDialogueTableEditor::OnRedoClicked)
+				.ToolTipText_Lambda([this]() -> FText {
+					if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+					{
+						return FText::Format(LOCTEXT("RedoTipFormat", "Redo: {0} (Ctrl+Y)"),
+							FText::FromString(TransactionStack->GetRedoDescription()));
+					}
+					return LOCTEXT("RedoTipEmpty", "Nothing to redo (Ctrl+Y)");
+				})
+				.IsEnabled(this, &SDialogueTableEditor::CanRedo)
 		]
 
 		// Separator
@@ -4526,6 +4660,471 @@ bool SDialogueTableEditorWindow::CanCloseTab() const
 		default:
 			return false;  // Don't close
 	}
+}
+
+//=============================================================================
+// v7.2: Undo/Redo System Implementation
+//=============================================================================
+
+FReply SDialogueTableEditor::OnUndoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+	{
+		TransactionStack->Undo();
+		CalculateSequences();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnRedoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+	{
+		TransactionStack->Redo();
+		CalculateSequences();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+bool SDialogueTableEditor::CanUndo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanUndo();
+}
+
+bool SDialogueTableEditor::CanRedo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanRedo();
+}
+
+FReply SDialogueTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	// Ctrl+Z = Undo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Z)
+	{
+		return OnUndoClicked();
+	}
+	// Ctrl+Y = Redo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Y)
+	{
+		return OnRedoClicked();
+	}
+	return FReply::Unhandled();
+}
+
+void SDialogueTableEditor::AddRowWithUndo(TSharedPtr<FDialogueTableRowEx> NewRow)
+{
+	if (!NewRow.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	// Create transaction
+	class FDialogueAddRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FDialogueAddRowTransaction(SDialogueTableEditor* InEditor, TSharedPtr<FDialogueTableRowEx> InRow, int32 InIndex)
+			: Editor(InEditor), Row(InRow), InsertIndex(InIndex)
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Editor && Row.IsValid())
+			{
+				if (InsertIndex != INDEX_NONE && InsertIndex < Editor->AllRows.Num())
+				{
+					Editor->AllRows.Insert(Row, InsertIndex);
+				}
+				else
+				{
+					InsertIndex = Editor->AllRows.Num();
+					Editor->AllRows.Add(Row);
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Editor && Row.IsValid())
+			{
+				Editor->AllRows.RemoveAll([this](const TSharedPtr<FDialogueTableRowEx>& Item)
+				{
+					return Item->Data.IsValid() && Row->Data.IsValid() &&
+						   Item->Data->RowId == Row->Data->RowId;
+				});
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			if (Row.IsValid() && Row->Data.IsValid())
+			{
+				return FString::Printf(TEXT("Add Node: %s"), *Row->Data->NodeID.ToString());
+			}
+			return TEXT("Add Dialogue Node");
+		}
+
+	private:
+		SDialogueTableEditor* Editor;
+		TSharedPtr<FDialogueTableRowEx> Row;
+		int32 InsertIndex;
+	};
+
+	int32 Index = AllRows.Num();
+	auto Transaction = MakeShared<FDialogueAddRowTransaction>(this, NewRow, Index);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SDialogueTableEditor::DeleteRowsWithUndo(const TArray<TSharedPtr<FDialogueTableRowEx>>& RowsToDelete)
+{
+	if (RowsToDelete.Num() == 0 || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	// Create transaction
+	class FDialogueDeleteRowsTransaction : public FTableEditorTransaction
+	{
+	public:
+		FDialogueDeleteRowsTransaction(SDialogueTableEditor* InEditor, const TArray<TSharedPtr<FDialogueTableRowEx>>& InRows)
+			: Editor(InEditor)
+		{
+			for (const TSharedPtr<FDialogueTableRowEx>& Row : InRows)
+			{
+				int32 Index = Editor->AllRows.IndexOfByPredicate([&Row](const TSharedPtr<FDialogueTableRowEx>& Item)
+				{
+					return Item->Data.IsValid() && Row->Data.IsValid() &&
+						   Item->Data->RowId == Row->Data->RowId;
+				});
+				if (Index != INDEX_NONE)
+				{
+					// Deep copy the row
+					TSharedPtr<FDialogueTableRowEx> RowCopy = MakeShared<FDialogueTableRowEx>();
+					RowCopy->Data = MakeShared<FDialogueTableRow>(*Row->Data);
+					RowCopy->Sequence = Row->Sequence;
+					RowCopy->Depth = Row->Depth;
+					RowCopy->SeqDisplay = Row->SeqDisplay;
+					DeletedRows.Add(TPair<int32, TSharedPtr<FDialogueTableRowEx>>(Index, RowCopy));
+				}
+			}
+			DeletedRows.Sort([](const auto& A, const auto& B) { return A.Key > B.Key; });
+		}
+
+		virtual void Execute() override
+		{
+			if (!Editor) return;
+
+			for (const auto& Pair : DeletedRows)
+			{
+				Editor->AllRows.RemoveAll([&Pair](const TSharedPtr<FDialogueTableRowEx>& Item)
+				{
+					return Item->Data.IsValid() && Pair.Value->Data.IsValid() &&
+						   Item->Data->RowId == Pair.Value->Data->RowId;
+				});
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (!Editor) return;
+
+			for (int32 i = DeletedRows.Num() - 1; i >= 0; --i)
+			{
+				const auto& Pair = DeletedRows[i];
+				// Deep copy for restore
+				TSharedPtr<FDialogueTableRowEx> RestoredRow = MakeShared<FDialogueTableRowEx>();
+				RestoredRow->Data = MakeShared<FDialogueTableRow>(*Pair.Value->Data);
+				RestoredRow->Sequence = Pair.Value->Sequence;
+				RestoredRow->Depth = Pair.Value->Depth;
+				RestoredRow->SeqDisplay = Pair.Value->SeqDisplay;
+
+				if (Pair.Key <= Editor->AllRows.Num())
+				{
+					Editor->AllRows.Insert(RestoredRow, Pair.Key);
+				}
+				else
+				{
+					Editor->AllRows.Add(RestoredRow);
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			if (DeletedRows.Num() == 1 && DeletedRows[0].Value->Data.IsValid())
+			{
+				return FString::Printf(TEXT("Delete Node: %s"), *DeletedRows[0].Value->Data->NodeID.ToString());
+			}
+			return FString::Printf(TEXT("Delete %d Nodes"), DeletedRows.Num());
+		}
+
+	private:
+		SDialogueTableEditor* Editor;
+		TArray<TPair<int32, TSharedPtr<FDialogueTableRowEx>>> DeletedRows;
+	};
+
+	auto Transaction = MakeShared<FDialogueDeleteRowsTransaction>(this, RowsToDelete);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SDialogueTableEditor::RecordRowEdit(TSharedPtr<FDialogueTableRow> Row, const FDialogueTableRow& OldState)
+{
+	if (!Row.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	class FDialogueEditRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FDialogueEditRowTransaction(TSharedPtr<FDialogueTableRow> InRow, const FDialogueTableRow& InOldState)
+			: Row(InRow)
+			, OldState(MakeShared<FDialogueTableRow>(InOldState))
+			, NewState(MakeShared<FDialogueTableRow>(*InRow))
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Row.IsValid() && NewState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *NewState;
+				Row->RowId = SavedRowId;
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Row.IsValid() && OldState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *OldState;
+				Row->RowId = SavedRowId;
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			return FString::Printf(TEXT("Edit Node: %s"), *Row->NodeID.ToString());
+		}
+
+	private:
+		TSharedPtr<FDialogueTableRow> Row;
+		TSharedPtr<FDialogueTableRow> OldState;
+		TSharedPtr<FDialogueTableRow> NewState;
+	};
+
+	auto Transaction = MakeShared<FDialogueEditRowTransaction>(Row, OldState);
+	TransactionStack->AddTransaction(Transaction);
+}
+
+//=============================================================================
+// v7.2: Find & Replace Implementation
+//=============================================================================
+
+void SDialogueTableEditor::PerformSearch()
+{
+	SearchResults.Empty();
+	CurrentMatchIndex = -1;
+
+	if (FindText.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FDialogueTableColumn> Columns = GetDialogueTableColumns();
+
+	for (int32 RowIndex = 0; RowIndex < DisplayedRows.Num(); ++RowIndex)
+	{
+		const TSharedPtr<FDialogueTableRowEx>& RowEx = DisplayedRows[RowIndex];
+		if (!RowEx.IsValid() || !RowEx->Data.IsValid()) continue;
+
+		for (const FDialogueTableColumn& Col : Columns)
+		{
+			FString CellValue = GetColumnValue(*RowEx, Col.ColumnId);
+			if (CellValue.Contains(FindText, ESearchCase::IgnoreCase))
+			{
+				SearchResults.Add(TPair<int32, FName>(RowIndex, Col.ColumnId));
+			}
+		}
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = 0;
+		NavigateToMatch(CurrentMatchIndex);
+	}
+}
+
+void SDialogueTableEditor::NavigateToMatch(int32 MatchIndex)
+{
+	if (MatchIndex < 0 || MatchIndex >= SearchResults.Num())
+	{
+		return;
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[MatchIndex];
+	int32 RowIndex = Match.Key;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		if (ListView.IsValid())
+		{
+			ListView->SetSelection(DisplayedRows[RowIndex]);
+			ListView->RequestScrollIntoView(DisplayedRows[RowIndex]);
+		}
+	}
+}
+
+FReply SDialogueTableEditor::OnFindNextClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex + 1) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnFindPrevClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex - 1 + SearchResults.Num()) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnReplaceClicked()
+{
+	if (FindText.IsEmpty() || CurrentMatchIndex < 0 || CurrentMatchIndex >= SearchResults.Num())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[CurrentMatchIndex];
+	int32 RowIndex = Match.Key;
+	FName ColumnId = Match.Value;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		TSharedPtr<FDialogueTableRowEx> RowEx = DisplayedRows[RowIndex];
+		if (RowEx.IsValid() && RowEx->Data.IsValid())
+		{
+			FString CurrentValue = GetColumnValue(*RowEx, ColumnId);
+			FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+			// Set new value based on column
+			if (ColumnId == TEXT("Text")) RowEx->Data->Text = NewValue;
+			else if (ColumnId == TEXT("OptionText")) RowEx->Data->OptionText = NewValue;
+			else if (ColumnId == TEXT("Notes")) RowEx->Data->Notes = NewValue;
+
+			MarkDirty();
+			RefreshList();
+			OnFindNextClicked();
+		}
+	}
+
+	return FReply::Handled();
+}
+
+FReply SDialogueTableEditor::OnReplaceAllClicked()
+{
+	if (FindText.IsEmpty())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	PerformSearch();
+	int32 ReplacementCount = 0;
+
+	for (int32 i = SearchResults.Num() - 1; i >= 0; --i)
+	{
+		const TPair<int32, FName>& Match = SearchResults[i];
+		int32 RowIndex = Match.Key;
+		FName ColumnId = Match.Value;
+
+		if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+		{
+			TSharedPtr<FDialogueTableRowEx> RowEx = DisplayedRows[RowIndex];
+			if (RowEx.IsValid() && RowEx->Data.IsValid())
+			{
+				FString CurrentValue = GetColumnValue(*RowEx, ColumnId);
+				FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+				if (ColumnId == TEXT("Text")) RowEx->Data->Text = NewValue;
+				else if (ColumnId == TEXT("OptionText")) RowEx->Data->OptionText = NewValue;
+				else if (ColumnId == TEXT("Notes")) RowEx->Data->Notes = NewValue;
+
+				ReplacementCount++;
+			}
+		}
+	}
+
+	if (ReplacementCount > 0)
+	{
+		MarkDirty();
+		RefreshList();
+		SearchResults.Empty();
+		CurrentMatchIndex = -1;
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok,
+		FText::Format(LOCTEXT("ReplaceAllResult", "Replaced {0} occurrence(s)."), FText::AsNumber(ReplacementCount)));
+
+	return FReply::Handled();
+}
+
+bool SDialogueTableEditor::IsCellMatch(int32 RowIndex, FName ColumnId) const
+{
+	for (const TPair<int32, FName>& Match : SearchResults)
+	{
+		if (Match.Key == RowIndex && Match.Value == ColumnId)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -11,6 +11,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/SHeaderRow.h"
 #include "ItemTableEditorTypes.h"
+#include "TableEditorTransaction.h"  // v7.2: Undo/Redo support
 
 class SEditableText;
 class SCheckBox;
@@ -386,6 +387,40 @@ private:
 
 	/** Re-entrancy guard - prevents double-clicks on long operations */
 	bool bIsBusy = false;
+
+	//=========================================================================
+	// v7.2: Undo/Redo System
+	//=========================================================================
+	TSharedPtr<FTableEditorTransactionStack> TransactionStack;
+
+	FReply OnUndoClicked();
+	FReply OnRedoClicked();
+	bool CanUndo() const;
+	bool CanRedo() const;
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
+
+	void AddRowWithUndo(TSharedPtr<FItemTableRow> NewRow);
+	void DeleteRowsWithUndo(const TArray<TSharedPtr<FItemTableRow>>& RowsToDelete);
+	void RecordRowEdit(TSharedPtr<FItemTableRow> Row, const FItemTableRow& OldState);
+
+	//=========================================================================
+	// Find & Replace System (v7.2)
+	//=========================================================================
+
+	FString FindText;
+	FString ReplaceText;
+	TArray<TPair<int32, FName>> SearchResults;
+	int32 CurrentMatchIndex = -1;
+	TSharedPtr<SEditableTextBox> FindTextBox;
+	TSharedPtr<SEditableTextBox> ReplaceTextBox;
+
+	FReply OnFindNextClicked();
+	FReply OnFindPrevClicked();
+	FReply OnReplaceClicked();
+	FReply OnReplaceAllClicked();
+	void PerformSearch();
+	void NavigateToMatch(int32 MatchIndex);
+	bool IsCellMatch(int32 RowIndex, FName ColumnId) const;
 };
 
 /**

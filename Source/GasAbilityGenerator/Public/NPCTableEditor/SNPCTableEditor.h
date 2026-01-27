@@ -10,6 +10,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/SHeaderRow.h"
 #include "NPCTableEditorTypes.h"
+#include "TableEditorTransaction.h"
 
 class SEditableText;
 class SCheckBox;
@@ -419,6 +420,80 @@ private:
 
 	/** v4.8.4: Re-entrancy guard - prevents double-clicks on long operations */
 	bool bIsBusy = false;
+
+	//=========================================================================
+	// Undo/Redo System (v7.2)
+	//=========================================================================
+
+	/** Transaction stack for undo/redo */
+	TSharedPtr<FTableEditorTransactionStack> TransactionStack;
+
+	/** Undo the last action */
+	FReply OnUndoClicked();
+
+	/** Redo the last undone action */
+	FReply OnRedoClicked();
+
+	/** Check if undo is available */
+	bool CanUndo() const;
+
+	/** Check if redo is available */
+	bool CanRedo() const;
+
+	/** Handle keyboard input for undo/redo shortcuts */
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
+
+	/** Add a new row with undo support */
+	void AddRowWithUndo(TSharedPtr<FNPCTableRow> NewRow);
+
+	/** Delete rows with undo support */
+	void DeleteRowsWithUndo(const TArray<TSharedPtr<FNPCTableRow>>& RowsToDelete);
+
+	/** Record row edit for undo */
+	void RecordRowEdit(TSharedPtr<FNPCTableRow> Row, const FNPCTableRow& OldState);
+
+	//=========================================================================
+	// Find & Replace System (v7.2)
+	//=========================================================================
+
+	/** Current search text */
+	FString FindText;
+
+	/** Current replace text */
+	FString ReplaceText;
+
+	/** Search results - pairs of (row index, column id) */
+	TArray<TPair<int32, FName>> SearchResults;
+
+	/** Current match index in SearchResults */
+	int32 CurrentMatchIndex = -1;
+
+	/** Find text input widget reference */
+	TSharedPtr<SEditableTextBox> FindTextBox;
+
+	/** Replace text input widget reference */
+	TSharedPtr<SEditableTextBox> ReplaceTextBox;
+
+	/** Find next match */
+	FReply OnFindNextClicked();
+
+	/** Find previous match */
+	FReply OnFindPrevClicked();
+
+	/** Replace current match */
+	FReply OnReplaceClicked();
+
+	/** Replace all matches */
+	FReply OnReplaceAllClicked();
+
+	/** Perform search and populate SearchResults */
+	void PerformSearch();
+
+	/** Navigate to match at given index */
+	void NavigateToMatch(int32 MatchIndex);
+
+	/** Check if current cell matches search (for highlighting) */
+	bool IsCellMatch(int32 RowIndex, FName ColumnId) const;
 };
 
 /**

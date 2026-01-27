@@ -1531,6 +1531,7 @@ void SItemTableEditor::Construct(const FArguments& InArgs)
 {
 	TableData = InArgs._TableData;
 	OnDirtyStateChanged = InArgs._OnDirtyStateChanged;
+	TransactionStack = MakeShared<FTableEditorTransactionStack>(50);  // v7.2: Initialize undo/redo stack
 
 	InitializeColumnFilters();
 	SyncFromTableData();
@@ -1545,6 +1546,101 @@ void SItemTableEditor::Construct(const FArguments& InArgs)
 		.Padding(5)
 		[
 			BuildToolbar()
+		]
+
+		// v7.2: Find & Replace bar
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("FindLabel", "Find:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(FindTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("FindHint", "Search text..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					FindText = Text.ToString();
+					PerformSearch();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindPrev", "<"))
+				.ToolTipText(LOCTEXT("FindPrevTip", "Find Previous"))
+				.OnClicked(this, &SItemTableEditor::OnFindPrevClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindNext", ">"))
+				.ToolTipText(LOCTEXT("FindNextTip", "Find Next"))
+				.OnClicked(this, &SItemTableEditor::OnFindNextClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(10.0f, 2.0f, 2.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("ReplaceLabel", "Replace:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(ReplaceTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("ReplaceHint", "Replace with..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					ReplaceText = Text.ToString();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("Replace", "Replace"))
+				.OnClicked(this, &SItemTableEditor::OnReplaceClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("ReplaceAll", "Replace All"))
+				.OnClicked(this, &SItemTableEditor::OnReplaceAllClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNullWidget::NullWidget
+			]
 		]
 
 		+ SVerticalBox::Slot()
@@ -1616,6 +1712,44 @@ TSharedRef<SWidget> SItemTableEditor::BuildToolbar()
 			.Text(LOCTEXT("Delete", "Delete"))
 			.OnClicked(this, &SItemTableEditor::OnDeleteRowsClicked)
 			.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+		]
+
+		// v7.2: Undo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Undo", "Undo"))
+			.OnClicked(this, &SItemTableEditor::OnUndoClicked)
+			.ToolTipText_Lambda([this]() -> FText {
+				if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+				{
+					return FText::Format(LOCTEXT("UndoTipFormat", "Undo: {0} (Ctrl+Z)"),
+						FText::FromString(TransactionStack->GetUndoDescription()));
+				}
+				return LOCTEXT("UndoTipEmpty", "Nothing to undo (Ctrl+Z)");
+			})
+			.IsEnabled(this, &SItemTableEditor::CanUndo)
+		]
+
+		// v7.2: Redo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Redo", "Redo"))
+			.OnClicked(this, &SItemTableEditor::OnRedoClicked)
+			.ToolTipText_Lambda([this]() -> FText {
+				if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+				{
+					return FText::Format(LOCTEXT("RedoTipFormat", "Redo: {0} (Ctrl+Y)"),
+						FText::FromString(TransactionStack->GetRedoDescription()));
+				}
+				return LOCTEXT("RedoTipEmpty", "Nothing to redo (Ctrl+Y)");
+			})
+			.IsEnabled(this, &SItemTableEditor::CanRedo)
 		]
 
 		// Vertical separator
@@ -3661,6 +3795,462 @@ bool SItemTableEditorWindow::CanCloseTab() const
 		return false;  // Cancel
 	}
 	return true;
+}
+
+//=============================================================================
+// v7.2: Undo/Redo System Implementation
+//=============================================================================
+
+FReply SItemTableEditor::OnUndoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+	{
+		TransactionStack->Undo();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+FReply SItemTableEditor::OnRedoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+	{
+		TransactionStack->Redo();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+bool SItemTableEditor::CanUndo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanUndo();
+}
+
+bool SItemTableEditor::CanRedo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanRedo();
+}
+
+FReply SItemTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	// Ctrl+Z = Undo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Z)
+	{
+		return OnUndoClicked();
+	}
+	// Ctrl+Y = Redo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Y)
+	{
+		return OnRedoClicked();
+	}
+	return FReply::Unhandled();
+}
+
+void SItemTableEditor::AddRowWithUndo(TSharedPtr<FItemTableRow> NewRow)
+{
+	if (!NewRow.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	class FItemAddRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FItemAddRowTransaction(SItemTableEditor* InEditor, TSharedPtr<FItemTableRow> InRow)
+			: Editor(InEditor), Row(InRow)
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Editor && Row.IsValid())
+			{
+				Editor->AllRows.Add(Row);
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.Add(*Row);
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Editor && Row.IsValid())
+			{
+				Editor->AllRows.RemoveAll([this](const TSharedPtr<FItemTableRow>& Item)
+				{
+					return Item->RowId == Row->RowId;
+				});
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.RemoveAll([this](const FItemTableRow& Item)
+					{
+						return Item.RowId == Row->RowId;
+					});
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			return FString::Printf(TEXT("Add Item: %s"), *Row->ItemName);
+		}
+
+	private:
+		SItemTableEditor* Editor;
+		TSharedPtr<FItemTableRow> Row;
+	};
+
+	auto Transaction = MakeShared<FItemAddRowTransaction>(this, NewRow);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SItemTableEditor::DeleteRowsWithUndo(const TArray<TSharedPtr<FItemTableRow>>& RowsToDelete)
+{
+	if (RowsToDelete.Num() == 0 || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	class FItemDeleteRowsTransaction : public FTableEditorTransaction
+	{
+	public:
+		FItemDeleteRowsTransaction(SItemTableEditor* InEditor, const TArray<TSharedPtr<FItemTableRow>>& InRows)
+			: Editor(InEditor)
+		{
+			for (const TSharedPtr<FItemTableRow>& Row : InRows)
+			{
+				int32 Index = Editor->AllRows.IndexOfByPredicate([&Row](const TSharedPtr<FItemTableRow>& Item)
+				{
+					return Item->RowId == Row->RowId;
+				});
+				if (Index != INDEX_NONE)
+				{
+					DeletedRows.Add(TPair<int32, TSharedPtr<FItemTableRow>>(Index, MakeShared<FItemTableRow>(*Row)));
+				}
+			}
+			DeletedRows.Sort([](const auto& A, const auto& B) { return A.Key > B.Key; });
+		}
+
+		virtual void Execute() override
+		{
+			if (!Editor) return;
+
+			for (const auto& Pair : DeletedRows)
+			{
+				Editor->AllRows.RemoveAll([&Pair](const TSharedPtr<FItemTableRow>& Item)
+				{
+					return Item->RowId == Pair.Value->RowId;
+				});
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.RemoveAll([&Pair](const FItemTableRow& Item)
+					{
+						return Item.RowId == Pair.Value->RowId;
+					});
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (!Editor) return;
+
+			for (int32 i = DeletedRows.Num() - 1; i >= 0; --i)
+			{
+				const auto& Pair = DeletedRows[i];
+				TSharedPtr<FItemTableRow> RestoredRow = MakeShared<FItemTableRow>(*Pair.Value);
+
+				if (Pair.Key <= Editor->AllRows.Num())
+				{
+					Editor->AllRows.Insert(RestoredRow, Pair.Key);
+				}
+				else
+				{
+					Editor->AllRows.Add(RestoredRow);
+				}
+
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.Add(*RestoredRow);
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			if (DeletedRows.Num() == 1)
+			{
+				return FString::Printf(TEXT("Delete Item: %s"), *DeletedRows[0].Value->ItemName);
+			}
+			return FString::Printf(TEXT("Delete %d Items"), DeletedRows.Num());
+		}
+
+	private:
+		SItemTableEditor* Editor;
+		TArray<TPair<int32, TSharedPtr<FItemTableRow>>> DeletedRows;
+	};
+
+	auto Transaction = MakeShared<FItemDeleteRowsTransaction>(this, RowsToDelete);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SItemTableEditor::RecordRowEdit(TSharedPtr<FItemTableRow> Row, const FItemTableRow& OldState)
+{
+	if (!Row.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	class FItemEditRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FItemEditRowTransaction(TSharedPtr<FItemTableRow> InRow, const FItemTableRow& InOldState)
+			: Row(InRow)
+			, OldState(MakeShared<FItemTableRow>(InOldState))
+			, NewState(MakeShared<FItemTableRow>(*InRow))
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Row.IsValid() && NewState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *NewState;
+				Row->RowId = SavedRowId;
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Row.IsValid() && OldState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *OldState;
+				Row->RowId = SavedRowId;
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			return FString::Printf(TEXT("Edit Item: %s"), *Row->ItemName);
+		}
+
+	private:
+		TSharedPtr<FItemTableRow> Row;
+		TSharedPtr<FItemTableRow> OldState;
+		TSharedPtr<FItemTableRow> NewState;
+	};
+
+	auto Transaction = MakeShared<FItemEditRowTransaction>(Row, OldState);
+	TransactionStack->AddTransaction(Transaction);
+}
+
+//=============================================================================
+// v7.2: Find & Replace Implementation
+//=============================================================================
+
+void SItemTableEditor::PerformSearch()
+{
+	SearchResults.Empty();
+	CurrentMatchIndex = -1;
+
+	if (FindText.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FItemTableColumn> Columns = GetItemTableColumns();
+
+	for (int32 RowIndex = 0; RowIndex < DisplayedRows.Num(); ++RowIndex)
+	{
+		const TSharedPtr<FItemTableRow>& Row = DisplayedRows[RowIndex];
+		if (!Row.IsValid()) continue;
+
+		for (const FItemTableColumn& Col : Columns)
+		{
+			FString CellValue = GetColumnValue(Row, Col.ColumnId);
+			if (CellValue.Contains(FindText, ESearchCase::IgnoreCase))
+			{
+				SearchResults.Add(TPair<int32, FName>(RowIndex, Col.ColumnId));
+			}
+		}
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = 0;
+		NavigateToMatch(CurrentMatchIndex);
+	}
+}
+
+void SItemTableEditor::NavigateToMatch(int32 MatchIndex)
+{
+	if (MatchIndex < 0 || MatchIndex >= SearchResults.Num())
+	{
+		return;
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[MatchIndex];
+	int32 RowIndex = Match.Key;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		if (ListView.IsValid())
+		{
+			ListView->SetSelection(DisplayedRows[RowIndex]);
+			ListView->RequestScrollIntoView(DisplayedRows[RowIndex]);
+		}
+	}
+}
+
+FReply SItemTableEditor::OnFindNextClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex + 1) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SItemTableEditor::OnFindPrevClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex - 1 + SearchResults.Num()) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SItemTableEditor::OnReplaceClicked()
+{
+	if (FindText.IsEmpty() || CurrentMatchIndex < 0 || CurrentMatchIndex >= SearchResults.Num())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[CurrentMatchIndex];
+	int32 RowIndex = Match.Key;
+	FName ColumnId = Match.Value;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		TSharedPtr<FItemTableRow> Row = DisplayedRows[RowIndex];
+		if (Row.IsValid())
+		{
+			FString CurrentValue = GetColumnValue(Row, ColumnId);
+			FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+			// Set new value based on column
+			if (ColumnId == TEXT("ItemName")) Row->ItemName = NewValue;
+			else if (ColumnId == TEXT("DisplayName")) Row->DisplayName = NewValue;
+			else if (ColumnId == TEXT("Description")) Row->Description = NewValue;
+
+			MarkDirty();
+			RefreshList();
+			OnFindNextClicked();
+		}
+	}
+
+	return FReply::Handled();
+}
+
+FReply SItemTableEditor::OnReplaceAllClicked()
+{
+	if (FindText.IsEmpty())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	PerformSearch();
+	int32 ReplacementCount = 0;
+
+	for (int32 i = SearchResults.Num() - 1; i >= 0; --i)
+	{
+		const TPair<int32, FName>& Match = SearchResults[i];
+		int32 RowIndex = Match.Key;
+		FName ColumnId = Match.Value;
+
+		if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+		{
+			TSharedPtr<FItemTableRow> Row = DisplayedRows[RowIndex];
+			if (Row.IsValid())
+			{
+				FString CurrentValue = GetColumnValue(Row, ColumnId);
+				FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+				if (ColumnId == TEXT("ItemName")) Row->ItemName = NewValue;
+				else if (ColumnId == TEXT("DisplayName")) Row->DisplayName = NewValue;
+				else if (ColumnId == TEXT("Description")) Row->Description = NewValue;
+
+				ReplacementCount++;
+			}
+		}
+	}
+
+	if (ReplacementCount > 0)
+	{
+		MarkDirty();
+		RefreshList();
+		SearchResults.Empty();
+		CurrentMatchIndex = -1;
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok,
+		FText::Format(LOCTEXT("ReplaceAllResult", "Replaced {0} occurrence(s)."), FText::AsNumber(ReplacementCount)));
+
+	return FReply::Handled();
+}
+
+bool SItemTableEditor::IsCellMatch(int32 RowIndex, FName ColumnId) const
+{
+	for (const TPair<int32, FName>& Match : SearchResults)
+	{
+		if (Match.Key == RowIndex && Match.Value == ColumnId)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -2439,6 +2439,7 @@ void SNPCTableEditor::Construct(const FArguments& InArgs)
 {
 	TableData = InArgs._TableData;
 	OnDirtyStateChanged = InArgs._OnDirtyStateChanged;  // v4.6: Store delegate
+	TransactionStack = MakeShared<FTableEditorTransactionStack>(50);  // v7.2: Initialize undo/redo stack
 	SyncFromTableData();
 	InitializeColumnFilters();
 	UpdateColumnFilterOptions();
@@ -2453,6 +2454,101 @@ void SNPCTableEditor::Construct(const FArguments& InArgs)
 		.Padding(4.0f)
 		[
 			BuildToolbar()
+		]
+
+		// v7.2: Find & Replace bar
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("FindLabel", "Find:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(FindTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("FindHint", "Search text..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					FindText = Text.ToString();
+					PerformSearch();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindPrev", "<"))
+				.ToolTipText(LOCTEXT("FindPrevTip", "Find Previous"))
+				.OnClicked(this, &SNPCTableEditor::OnFindPrevClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindNext", ">"))
+				.ToolTipText(LOCTEXT("FindNextTip", "Find Next"))
+				.OnClicked(this, &SNPCTableEditor::OnFindNextClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(10.0f, 2.0f, 2.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("ReplaceLabel", "Replace:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(ReplaceTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("ReplaceHint", "Replace with..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					ReplaceText = Text.ToString();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("Replace", "Replace"))
+				.OnClicked(this, &SNPCTableEditor::OnReplaceClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("ReplaceAll", "Replace All"))
+				.OnClicked(this, &SNPCTableEditor::OnReplaceAllClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNullWidget::NullWidget
+			]
 		]
 
 		// Separator
@@ -2531,6 +2627,44 @@ TSharedRef<SWidget> SNPCTableEditor::BuildToolbar()
 				.Text(LOCTEXT("DeleteRows", "Delete"))
 				.OnClicked(this, &SNPCTableEditor::OnDeleteRowsClicked)
 				.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+		]
+
+		// v7.2: Undo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Undo", "Undo"))
+				.OnClicked(this, &SNPCTableEditor::OnUndoClicked)
+				.ToolTipText_Lambda([this]() -> FText {
+					if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+					{
+						return FText::Format(LOCTEXT("UndoTipFormat", "Undo: {0} (Ctrl+Z)"),
+							FText::FromString(TransactionStack->GetUndoDescription()));
+					}
+					return LOCTEXT("UndoTipEmpty", "Nothing to undo (Ctrl+Z)");
+				})
+				.IsEnabled(this, &SNPCTableEditor::CanUndo)
+		]
+
+		// v7.2: Redo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+				.Text(LOCTEXT("Redo", "Redo"))
+				.OnClicked(this, &SNPCTableEditor::OnRedoClicked)
+				.ToolTipText_Lambda([this]() -> FText {
+					if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+					{
+						return FText::Format(LOCTEXT("RedoTipFormat", "Redo: {0} (Ctrl+Y)"),
+							FText::FromString(TransactionStack->GetRedoDescription()));
+					}
+					return LOCTEXT("RedoTipEmpty", "Nothing to redo (Ctrl+Y)");
+				})
+				.IsEnabled(this, &SNPCTableEditor::CanRedo)
 		]
 
 		// Vertical separator
@@ -3431,8 +3565,11 @@ FReply SNPCTableEditor::OnAddRowClicked()
 {
 	if (TableData)
 	{
-		FNPCTableRow& NewRow = TableData->AddRow();
-		AllRows.Add(MakeShared<FNPCTableRow>(NewRow));
+		// v7.2: Use undo-aware version
+		TSharedPtr<FNPCTableRow> NewRow = MakeShared<FNPCTableRow>();
+		NewRow->RowId = FGuid::NewGuid();
+		NewRow->NPCName = TEXT("New NPC");
+		AddRowWithUndo(NewRow);
 		ApplyFilters();
 		MarkDirty();
 	}
@@ -3448,20 +3585,8 @@ FReply SNPCTableEditor::OnDeleteRowsClicked()
 		return FReply::Handled();
 	}
 
-	// Remove from AllRows and TableData
-	for (const TSharedPtr<FNPCTableRow>& Row : Selected)
-	{
-		AllRows.RemoveAll([&Row](const TSharedPtr<FNPCTableRow>& Item)
-		{
-			return Item->RowId == Row->RowId;
-		});
-
-		if (TableData)
-		{
-			TableData->RemoveRowByGuid(Row->RowId);
-		}
-	}
-
+	// v7.2: Use undo-aware version
+	DeleteRowsWithUndo(Selected);
 	ApplyFilters();
 	MarkDirty();
 	return FReply::Handled();
@@ -3476,17 +3601,13 @@ FReply SNPCTableEditor::OnDuplicateRowClicked()
 		return FReply::Handled();
 	}
 
-	// Find index in TableData
-	int32 SourceIndex = TableData->FindRowIndexByGuid(Selected[0]->RowId);
-	if (SourceIndex != INDEX_NONE)
-	{
-		FNPCTableRow* NewRow = TableData->DuplicateRow(SourceIndex);
-		if (NewRow)
-		{
-			AllRows.Add(MakeShared<FNPCTableRow>(*NewRow));
-		}
-	}
+	// v7.2: Use undo-aware version - duplicate first selected row
+	TSharedPtr<FNPCTableRow> SourceRow = Selected[0];
+	TSharedPtr<FNPCTableRow> NewRow = MakeShared<FNPCTableRow>(*SourceRow);
+	NewRow->RowId = FGuid::NewGuid();
+	NewRow->NPCName = SourceRow->NPCName + TEXT(" (Copy)");
 
+	AddRowWithUndo(NewRow);
 	ApplyFilters();
 	MarkDirty();
 	return FReply::Handled();
@@ -4994,6 +5115,494 @@ bool SNPCTableEditorWindow::CanCloseTab() const
 		default:
 			return false;  // Don't close
 	}
+}
+
+//=============================================================================
+// v7.2: Undo/Redo System Implementation
+//=============================================================================
+
+FReply SNPCTableEditor::OnUndoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+	{
+		TransactionStack->Undo();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+FReply SNPCTableEditor::OnRedoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+	{
+		TransactionStack->Redo();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+bool SNPCTableEditor::CanUndo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanUndo();
+}
+
+bool SNPCTableEditor::CanRedo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanRedo();
+}
+
+FReply SNPCTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	// Ctrl+Z = Undo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Z)
+	{
+		return OnUndoClicked();
+	}
+	// Ctrl+Y = Redo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Y)
+	{
+		return OnRedoClicked();
+	}
+	return FReply::Unhandled();
+}
+
+void SNPCTableEditor::AddRowWithUndo(TSharedPtr<FNPCTableRow> NewRow)
+{
+	if (!NewRow.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	// Create transaction that captures this editor's state
+	class FNPCAddRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FNPCAddRowTransaction(SNPCTableEditor* InEditor, TSharedPtr<FNPCTableRow> InRow)
+			: Editor(InEditor), Row(InRow)
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Editor && Row.IsValid())
+			{
+				Editor->AllRows.Add(Row);
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.Add(*Row);
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Editor && Row.IsValid())
+			{
+				Editor->AllRows.RemoveAll([this](const TSharedPtr<FNPCTableRow>& Item)
+				{
+					return Item->RowId == Row->RowId;
+				});
+				if (Editor->TableData)
+				{
+					Editor->TableData->RemoveRowByGuid(Row->RowId);
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			return FString::Printf(TEXT("Add NPC: %s"), *Row->NPCName);
+		}
+
+	private:
+		SNPCTableEditor* Editor;
+		TSharedPtr<FNPCTableRow> Row;
+	};
+
+	auto Transaction = MakeShared<FNPCAddRowTransaction>(this, NewRow);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SNPCTableEditor::DeleteRowsWithUndo(const TArray<TSharedPtr<FNPCTableRow>>& RowsToDelete)
+{
+	if (RowsToDelete.Num() == 0 || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	// Create transaction that captures deleted rows
+	class FNPCDeleteRowsTransaction : public FTableEditorTransaction
+	{
+	public:
+		FNPCDeleteRowsTransaction(SNPCTableEditor* InEditor, const TArray<TSharedPtr<FNPCTableRow>>& InRows)
+			: Editor(InEditor)
+		{
+			// Store copies of rows with their indices
+			for (const TSharedPtr<FNPCTableRow>& Row : InRows)
+			{
+				int32 Index = Editor->AllRows.IndexOfByPredicate([&Row](const TSharedPtr<FNPCTableRow>& Item)
+				{
+					return Item->RowId == Row->RowId;
+				});
+				if (Index != INDEX_NONE)
+				{
+					DeletedRows.Add(TPair<int32, TSharedPtr<FNPCTableRow>>(Index, MakeShared<FNPCTableRow>(*Row)));
+				}
+			}
+			// Sort descending for removal order
+			DeletedRows.Sort([](const auto& A, const auto& B) { return A.Key > B.Key; });
+		}
+
+		virtual void Execute() override
+		{
+			if (!Editor) return;
+
+			for (const auto& Pair : DeletedRows)
+			{
+				Editor->AllRows.RemoveAll([&Pair](const TSharedPtr<FNPCTableRow>& Item)
+				{
+					return Item->RowId == Pair.Value->RowId;
+				});
+				if (Editor->TableData)
+				{
+					Editor->TableData->RemoveRowByGuid(Pair.Value->RowId);
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (!Editor) return;
+
+			// Re-insert in ascending order
+			for (int32 i = DeletedRows.Num() - 1; i >= 0; --i)
+			{
+				const auto& Pair = DeletedRows[i];
+				TSharedPtr<FNPCTableRow> RestoredRow = MakeShared<FNPCTableRow>(*Pair.Value);
+
+				if (Pair.Key <= Editor->AllRows.Num())
+				{
+					Editor->AllRows.Insert(RestoredRow, Pair.Key);
+				}
+				else
+				{
+					Editor->AllRows.Add(RestoredRow);
+				}
+
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.Add(*RestoredRow);
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			if (DeletedRows.Num() == 1)
+			{
+				return FString::Printf(TEXT("Delete NPC: %s"), *DeletedRows[0].Value->NPCName);
+			}
+			return FString::Printf(TEXT("Delete %d NPCs"), DeletedRows.Num());
+		}
+
+	private:
+		SNPCTableEditor* Editor;
+		TArray<TPair<int32, TSharedPtr<FNPCTableRow>>> DeletedRows;
+	};
+
+	auto Transaction = MakeShared<FNPCDeleteRowsTransaction>(this, RowsToDelete);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SNPCTableEditor::RecordRowEdit(TSharedPtr<FNPCTableRow> Row, const FNPCTableRow& OldState)
+{
+	if (!Row.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	// Create transaction with before/after state
+	class FNPCEditRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FNPCEditRowTransaction(SNPCTableEditor* InEditor, TSharedPtr<FNPCTableRow> InRow, const FNPCTableRow& InOldState)
+			: Editor(InEditor)
+			, Row(InRow)
+			, OldState(MakeShared<FNPCTableRow>(InOldState))
+			, NewState(MakeShared<FNPCTableRow>(*InRow))
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Row.IsValid() && NewState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *NewState;
+				Row->RowId = SavedRowId;
+
+				// Also update TableData
+				if (Editor && Editor->TableData)
+				{
+					int32 Index = Editor->TableData->FindRowIndexByGuid(SavedRowId);
+					if (Index != INDEX_NONE && Editor->TableData->Rows.IsValidIndex(Index))
+					{
+						FNPCTableRow& DataRow = Editor->TableData->Rows[Index];
+						DataRow = *NewState;
+						DataRow.RowId = SavedRowId;
+					}
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Row.IsValid() && OldState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *OldState;
+				Row->RowId = SavedRowId;
+
+				// Also update TableData
+				if (Editor && Editor->TableData)
+				{
+					int32 Index = Editor->TableData->FindRowIndexByGuid(SavedRowId);
+					if (Index != INDEX_NONE && Editor->TableData->Rows.IsValidIndex(Index))
+					{
+						FNPCTableRow& DataRow = Editor->TableData->Rows[Index];
+						DataRow = *OldState;
+						DataRow.RowId = SavedRowId;
+					}
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			return FString::Printf(TEXT("Edit NPC: %s"), *Row->NPCName);
+		}
+
+	private:
+		SNPCTableEditor* Editor;
+		TSharedPtr<FNPCTableRow> Row;
+		TSharedPtr<FNPCTableRow> OldState;
+		TSharedPtr<FNPCTableRow> NewState;
+	};
+
+	auto Transaction = MakeShared<FNPCEditRowTransaction>(this, Row, OldState);
+	TransactionStack->AddTransaction(Transaction);
+}
+
+//=============================================================================
+// v7.2: Find & Replace Implementation
+//=============================================================================
+
+void SNPCTableEditor::PerformSearch()
+{
+	SearchResults.Empty();
+	CurrentMatchIndex = -1;
+
+	if (FindText.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FNPCTableColumn> Columns = GetNPCTableColumns();
+
+	for (int32 RowIndex = 0; RowIndex < DisplayedRows.Num(); ++RowIndex)
+	{
+		const TSharedPtr<FNPCTableRow>& Row = DisplayedRows[RowIndex];
+		if (!Row.IsValid()) continue;
+
+		for (const FNPCTableColumn& Col : Columns)
+		{
+			FString CellValue = GetColumnValue(Row, Col.ColumnId);
+			if (CellValue.Contains(FindText, ESearchCase::IgnoreCase))
+			{
+				SearchResults.Add(TPair<int32, FName>(RowIndex, Col.ColumnId));
+			}
+		}
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = 0;
+		NavigateToMatch(CurrentMatchIndex);
+	}
+}
+
+void SNPCTableEditor::NavigateToMatch(int32 MatchIndex)
+{
+	if (MatchIndex < 0 || MatchIndex >= SearchResults.Num())
+	{
+		return;
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[MatchIndex];
+	int32 RowIndex = Match.Key;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		// Select the row
+		if (ListView.IsValid())
+		{
+			ListView->SetSelection(DisplayedRows[RowIndex]);
+			ListView->RequestScrollIntoView(DisplayedRows[RowIndex]);
+		}
+	}
+}
+
+FReply SNPCTableEditor::OnFindNextClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex + 1) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SNPCTableEditor::OnFindPrevClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex - 1 + SearchResults.Num()) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SNPCTableEditor::OnReplaceClicked()
+{
+	if (FindText.IsEmpty() || CurrentMatchIndex < 0 || CurrentMatchIndex >= SearchResults.Num())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[CurrentMatchIndex];
+	int32 RowIndex = Match.Key;
+	FName ColumnId = Match.Value;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		TSharedPtr<FNPCTableRow> Row = DisplayedRows[RowIndex];
+		if (Row.IsValid())
+		{
+			// Get current value
+			FString CurrentValue = GetColumnValue(Row, ColumnId);
+			FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+			// Set new value based on column
+			if (ColumnId == TEXT("NPCName")) Row->NPCName = NewValue;
+			else if (ColumnId == TEXT("DisplayName")) Row->DisplayName = NewValue;
+			else if (ColumnId == TEXT("Notes")) Row->Notes = NewValue;
+
+			MarkDirty();
+			RefreshList();
+
+			// Move to next match
+			OnFindNextClicked();
+		}
+	}
+
+	return FReply::Handled();
+}
+
+FReply SNPCTableEditor::OnReplaceAllClicked()
+{
+	if (FindText.IsEmpty())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	PerformSearch();
+
+	int32 ReplacementCount = 0;
+
+	// Process all matches (iterate backwards to avoid index issues)
+	for (int32 i = SearchResults.Num() - 1; i >= 0; --i)
+	{
+		const TPair<int32, FName>& Match = SearchResults[i];
+		int32 RowIndex = Match.Key;
+		FName ColumnId = Match.Value;
+
+		if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+		{
+			TSharedPtr<FNPCTableRow> Row = DisplayedRows[RowIndex];
+			if (Row.IsValid())
+			{
+				FString CurrentValue = GetColumnValue(Row, ColumnId);
+				FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+				if (ColumnId == TEXT("NPCName")) Row->NPCName = NewValue;
+				else if (ColumnId == TEXT("DisplayName")) Row->DisplayName = NewValue;
+				else if (ColumnId == TEXT("Notes")) Row->Notes = NewValue;
+
+				ReplacementCount++;
+			}
+		}
+	}
+
+	if (ReplacementCount > 0)
+	{
+		MarkDirty();
+		RefreshList();
+		SearchResults.Empty();
+		CurrentMatchIndex = -1;
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok,
+		FText::Format(LOCTEXT("ReplaceAllResult", "Replaced {0} occurrence(s)."), FText::AsNumber(ReplacementCount)));
+
+	return FReply::Handled();
+}
+
+bool SNPCTableEditor::IsCellMatch(int32 RowIndex, FName ColumnId) const
+{
+	for (const TPair<int32, FName>& Match : SearchResults)
+	{
+		if (Match.Key == RowIndex && Match.Value == ColumnId)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 #undef LOCTEXT_NAMESPACE

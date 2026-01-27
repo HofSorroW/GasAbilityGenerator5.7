@@ -567,6 +567,7 @@ void SQuestTableEditor::Construct(const FArguments& InArgs)
 {
 	TableData = InArgs._TableData;
 	OnDirtyStateChanged = InArgs._OnDirtyStateChanged;
+	TransactionStack = MakeShared<FTableEditorTransactionStack>(50);  // v7.2: Initialize undo/redo stack
 
 	InitializeColumnFilters();
 	SyncFromTableData();
@@ -581,6 +582,101 @@ void SQuestTableEditor::Construct(const FArguments& InArgs)
 		.Padding(5)
 		[
 			BuildToolbar()
+		]
+
+		// v7.2: Find & Replace bar
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(4.0f, 0.0f)
+		[
+			SNew(SHorizontalBox)
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("FindLabel", "Find:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(FindTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("FindHint", "Search text..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					FindText = Text.ToString();
+					PerformSearch();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindPrev", "<"))
+				.ToolTipText(LOCTEXT("FindPrevTip", "Find Previous"))
+				.OnClicked(this, &SQuestTableEditor::OnFindPrevClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("FindNext", ">"))
+				.ToolTipText(LOCTEXT("FindNextTip", "Find Next"))
+				.OnClicked(this, &SQuestTableEditor::OnFindNextClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(10.0f, 2.0f, 2.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("ReplaceLabel", "Replace:"))
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SAssignNew(ReplaceTextBox, SEditableTextBox)
+				.MinDesiredWidth(150.0f)
+				.HintText(LOCTEXT("ReplaceHint", "Replace with..."))
+				.OnTextCommitted_Lambda([this](const FText& Text, ETextCommit::Type) {
+					ReplaceText = Text.ToString();
+				})
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("Replace", "Replace"))
+				.OnClicked(this, &SQuestTableEditor::OnReplaceClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("ReplaceAll", "Replace All"))
+				.OnClicked(this, &SQuestTableEditor::OnReplaceAllClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNullWidget::NullWidget
+			]
 		]
 
 		+ SVerticalBox::Slot()
@@ -664,6 +760,44 @@ TSharedRef<SWidget> SQuestTableEditor::BuildToolbar()
 			.Text(LOCTEXT("Delete", "Delete"))
 			.OnClicked(this, &SQuestTableEditor::OnDeleteRowsClicked)
 			.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+		]
+
+		// v7.2: Undo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Undo", "Undo"))
+			.OnClicked(this, &SQuestTableEditor::OnUndoClicked)
+			.ToolTipText_Lambda([this]() -> FText {
+				if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+				{
+					return FText::Format(LOCTEXT("UndoTipFormat", "Undo: {0} (Ctrl+Z)"),
+						FText::FromString(TransactionStack->GetUndoDescription()));
+				}
+				return LOCTEXT("UndoTipEmpty", "Nothing to undo (Ctrl+Z)");
+			})
+			.IsEnabled(this, &SQuestTableEditor::CanUndo)
+		]
+
+		// v7.2: Redo
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(2.0f)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Redo", "Redo"))
+			.OnClicked(this, &SQuestTableEditor::OnRedoClicked)
+			.ToolTipText_Lambda([this]() -> FText {
+				if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+				{
+					return FText::Format(LOCTEXT("RedoTipFormat", "Redo: {0} (Ctrl+Y)"),
+						FText::FromString(TransactionStack->GetRedoDescription()));
+				}
+				return LOCTEXT("RedoTipEmpty", "Nothing to redo (Ctrl+Y)");
+			})
+			.IsEnabled(this, &SQuestTableEditor::CanRedo)
 		]
 
 		// Vertical separator
@@ -2430,6 +2564,477 @@ bool SQuestTableEditorWindow::CanCloseTab() const
 		return false;  // Cancel
 	}
 	return true;
+}
+
+//=============================================================================
+// v7.2: Undo/Redo System Implementation
+//=============================================================================
+
+FReply SQuestTableEditor::OnUndoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanUndo())
+	{
+		TransactionStack->Undo();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+FReply SQuestTableEditor::OnRedoClicked()
+{
+	if (TransactionStack.IsValid() && TransactionStack->CanRedo())
+	{
+		TransactionStack->Redo();
+		ApplyFilters();
+		MarkDirty();
+	}
+	return FReply::Handled();
+}
+
+bool SQuestTableEditor::CanUndo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanUndo();
+}
+
+bool SQuestTableEditor::CanRedo() const
+{
+	return TransactionStack.IsValid() && TransactionStack->CanRedo();
+}
+
+FReply SQuestTableEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	// Ctrl+Z = Undo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Z)
+	{
+		return OnUndoClicked();
+	}
+	// Ctrl+Y = Redo
+	if (InKeyEvent.IsControlDown() && InKeyEvent.GetKey() == EKeys::Y)
+	{
+		return OnRedoClicked();
+	}
+	return FReply::Unhandled();
+}
+
+void SQuestTableEditor::AddRowWithUndo(TSharedPtr<FQuestTableRowEx> NewRow)
+{
+	if (!NewRow.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	class FQuestAddRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FQuestAddRowTransaction(SQuestTableEditor* InEditor, TSharedPtr<FQuestTableRowEx> InRow)
+			: Editor(InEditor), Row(InRow)
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Editor && Row.IsValid())
+			{
+				Editor->AllRows.Add(Row);
+				if (Editor->TableData && Row->Data.IsValid())
+				{
+					Editor->TableData->Rows.Add(*Row->Data);
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Editor && Row.IsValid() && Row->Data.IsValid())
+			{
+				Editor->AllRows.RemoveAll([this](const TSharedPtr<FQuestTableRowEx>& Item)
+				{
+					return Item->Data.IsValid() && Item->Data->RowId == Row->Data->RowId;
+				});
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.RemoveAll([this](const FQuestTableRow& Item)
+					{
+						return Item.RowId == Row->Data->RowId;
+					});
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			if (Row.IsValid() && Row->Data.IsValid())
+			{
+				return FString::Printf(TEXT("Add Quest State: %s"), *Row->Data->StateID);
+			}
+			return TEXT("Add Quest State");
+		}
+
+	private:
+		SQuestTableEditor* Editor;
+		TSharedPtr<FQuestTableRowEx> Row;
+	};
+
+	auto Transaction = MakeShared<FQuestAddRowTransaction>(this, NewRow);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SQuestTableEditor::DeleteRowsWithUndo(const TArray<TSharedPtr<FQuestTableRowEx>>& RowsToDelete)
+{
+	if (RowsToDelete.Num() == 0 || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	class FQuestDeleteRowsTransaction : public FTableEditorTransaction
+	{
+	public:
+		FQuestDeleteRowsTransaction(SQuestTableEditor* InEditor, const TArray<TSharedPtr<FQuestTableRowEx>>& InRows)
+			: Editor(InEditor)
+		{
+			for (const TSharedPtr<FQuestTableRowEx>& Row : InRows)
+			{
+				if (!Row.IsValid() || !Row->Data.IsValid()) continue;
+
+				int32 Index = Editor->AllRows.IndexOfByPredicate([&Row](const TSharedPtr<FQuestTableRowEx>& Item)
+				{
+					return Item->Data.IsValid() && Item->Data->RowId == Row->Data->RowId;
+				});
+				if (Index != INDEX_NONE)
+				{
+					TSharedPtr<FQuestTableRowEx> RowCopy = MakeShared<FQuestTableRowEx>();
+					RowCopy->Data = MakeShared<FQuestTableRow>(*Row->Data);
+					DeletedRows.Add(TPair<int32, TSharedPtr<FQuestTableRowEx>>(Index, RowCopy));
+				}
+			}
+			DeletedRows.Sort([](const auto& A, const auto& B) { return A.Key > B.Key; });
+		}
+
+		virtual void Execute() override
+		{
+			if (!Editor) return;
+
+			for (const auto& Pair : DeletedRows)
+			{
+				if (!Pair.Value.IsValid() || !Pair.Value->Data.IsValid()) continue;
+
+				Editor->AllRows.RemoveAll([&Pair](const TSharedPtr<FQuestTableRowEx>& Item)
+				{
+					return Item->Data.IsValid() && Item->Data->RowId == Pair.Value->Data->RowId;
+				});
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.RemoveAll([&Pair](const FQuestTableRow& Item)
+					{
+						return Item.RowId == Pair.Value->Data->RowId;
+					});
+				}
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (!Editor) return;
+
+			for (int32 i = DeletedRows.Num() - 1; i >= 0; --i)
+			{
+				const auto& Pair = DeletedRows[i];
+				if (!Pair.Value.IsValid() || !Pair.Value->Data.IsValid()) continue;
+
+				TSharedPtr<FQuestTableRowEx> RestoredRow = MakeShared<FQuestTableRowEx>();
+				RestoredRow->Data = MakeShared<FQuestTableRow>(*Pair.Value->Data);
+
+				if (Pair.Key <= Editor->AllRows.Num())
+				{
+					Editor->AllRows.Insert(RestoredRow, Pair.Key);
+				}
+				else
+				{
+					Editor->AllRows.Add(RestoredRow);
+				}
+
+				if (Editor->TableData)
+				{
+					Editor->TableData->Rows.Add(*RestoredRow->Data);
+				}
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			if (DeletedRows.Num() == 1 && DeletedRows[0].Value->Data.IsValid())
+			{
+				return FString::Printf(TEXT("Delete Quest State: %s"), *DeletedRows[0].Value->Data->StateID);
+			}
+			return FString::Printf(TEXT("Delete %d Quest States"), DeletedRows.Num());
+		}
+
+	private:
+		SQuestTableEditor* Editor;
+		TArray<TPair<int32, TSharedPtr<FQuestTableRowEx>>> DeletedRows;
+	};
+
+	auto Transaction = MakeShared<FQuestDeleteRowsTransaction>(this, RowsToDelete);
+	Transaction->Execute();
+	TransactionStack->AddTransaction(Transaction);
+}
+
+void SQuestTableEditor::RecordRowEdit(TSharedPtr<FQuestTableRow> Row, const FQuestTableRow& OldState)
+{
+	if (!Row.IsValid() || !TransactionStack.IsValid())
+	{
+		return;
+	}
+
+	class FQuestEditRowTransaction : public FTableEditorTransaction
+	{
+	public:
+		FQuestEditRowTransaction(TSharedPtr<FQuestTableRow> InRow, const FQuestTableRow& InOldState)
+			: Row(InRow)
+			, OldState(MakeShared<FQuestTableRow>(InOldState))
+			, NewState(MakeShared<FQuestTableRow>(*InRow))
+		{
+		}
+
+		virtual void Execute() override
+		{
+			if (Row.IsValid() && NewState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *NewState;
+				Row->RowId = SavedRowId;
+			}
+		}
+
+		virtual void Undo() override
+		{
+			if (Row.IsValid() && OldState.IsValid())
+			{
+				FGuid SavedRowId = Row->RowId;
+				*Row = *OldState;
+				Row->RowId = SavedRowId;
+			}
+		}
+
+		virtual FString GetDescription() const override
+		{
+			return FString::Printf(TEXT("Edit Quest State: %s"), *Row->StateID);
+		}
+
+	private:
+		TSharedPtr<FQuestTableRow> Row;
+		TSharedPtr<FQuestTableRow> OldState;
+		TSharedPtr<FQuestTableRow> NewState;
+	};
+
+	auto Transaction = MakeShared<FQuestEditRowTransaction>(Row, OldState);
+	TransactionStack->AddTransaction(Transaction);
+}
+
+//=============================================================================
+// v7.2: Find & Replace Implementation
+//=============================================================================
+
+void SQuestTableEditor::PerformSearch()
+{
+	SearchResults.Empty();
+	CurrentMatchIndex = -1;
+
+	if (FindText.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FQuestTableColumn> Columns = GetQuestTableColumns();
+
+	for (int32 RowIndex = 0; RowIndex < DisplayedRows.Num(); ++RowIndex)
+	{
+		const TSharedPtr<FQuestTableRowEx>& RowEx = DisplayedRows[RowIndex];
+		if (!RowEx.IsValid() || !RowEx->Data.IsValid()) continue;
+
+		for (const FQuestTableColumn& Col : Columns)
+		{
+			FString CellValue = GetColumnValue(RowEx, Col.ColumnId);
+			if (CellValue.Contains(FindText, ESearchCase::IgnoreCase))
+			{
+				SearchResults.Add(TPair<int32, FName>(RowIndex, Col.ColumnId));
+			}
+		}
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = 0;
+		NavigateToMatch(CurrentMatchIndex);
+	}
+}
+
+void SQuestTableEditor::NavigateToMatch(int32 MatchIndex)
+{
+	if (MatchIndex < 0 || MatchIndex >= SearchResults.Num())
+	{
+		return;
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[MatchIndex];
+	int32 RowIndex = Match.Key;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		if (ListView.IsValid())
+		{
+			ListView->SetSelection(DisplayedRows[RowIndex]);
+			ListView->RequestScrollIntoView(DisplayedRows[RowIndex]);
+		}
+	}
+}
+
+FReply SQuestTableEditor::OnFindNextClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex + 1) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SQuestTableEditor::OnFindPrevClicked()
+{
+	if (FindTextBox.IsValid())
+	{
+		FindText = FindTextBox->GetText().ToString();
+	}
+
+	if (SearchResults.Num() == 0)
+	{
+		PerformSearch();
+	}
+
+	if (SearchResults.Num() > 0)
+	{
+		CurrentMatchIndex = (CurrentMatchIndex - 1 + SearchResults.Num()) % SearchResults.Num();
+		NavigateToMatch(CurrentMatchIndex);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SQuestTableEditor::OnReplaceClicked()
+{
+	if (FindText.IsEmpty() || CurrentMatchIndex < 0 || CurrentMatchIndex >= SearchResults.Num())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	const TPair<int32, FName>& Match = SearchResults[CurrentMatchIndex];
+	int32 RowIndex = Match.Key;
+	FName ColumnId = Match.Value;
+
+	if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+	{
+		TSharedPtr<FQuestTableRowEx> RowEx = DisplayedRows[RowIndex];
+		if (RowEx.IsValid() && RowEx->Data.IsValid())
+		{
+			FString CurrentValue = GetColumnValue(RowEx, ColumnId);
+			FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+			// Set new value based on column
+			if (ColumnId == TEXT("QuestName")) RowEx->Data->QuestName = NewValue;
+			else if (ColumnId == TEXT("DisplayName")) RowEx->Data->DisplayName = NewValue;
+			else if (ColumnId == TEXT("StateID")) RowEx->Data->StateID = NewValue;
+			else if (ColumnId == TEXT("Description")) RowEx->Data->Description = NewValue;
+
+			MarkDirty();
+			RefreshList();
+			OnFindNextClicked();
+		}
+	}
+
+	return FReply::Handled();
+}
+
+FReply SQuestTableEditor::OnReplaceAllClicked()
+{
+	if (FindText.IsEmpty())
+	{
+		return FReply::Handled();
+	}
+
+	if (ReplaceTextBox.IsValid())
+	{
+		ReplaceText = ReplaceTextBox->GetText().ToString();
+	}
+
+	PerformSearch();
+	int32 ReplacementCount = 0;
+
+	for (int32 i = SearchResults.Num() - 1; i >= 0; --i)
+	{
+		const TPair<int32, FName>& Match = SearchResults[i];
+		int32 RowIndex = Match.Key;
+		FName ColumnId = Match.Value;
+
+		if (RowIndex >= 0 && RowIndex < DisplayedRows.Num())
+		{
+			TSharedPtr<FQuestTableRowEx> RowEx = DisplayedRows[RowIndex];
+			if (RowEx.IsValid() && RowEx->Data.IsValid())
+			{
+				FString CurrentValue = GetColumnValue(RowEx, ColumnId);
+				FString NewValue = CurrentValue.Replace(*FindText, *ReplaceText);
+
+				if (ColumnId == TEXT("QuestName")) RowEx->Data->QuestName = NewValue;
+				else if (ColumnId == TEXT("DisplayName")) RowEx->Data->DisplayName = NewValue;
+				else if (ColumnId == TEXT("StateID")) RowEx->Data->StateID = NewValue;
+				else if (ColumnId == TEXT("Description")) RowEx->Data->Description = NewValue;
+
+				ReplacementCount++;
+			}
+		}
+	}
+
+	if (ReplacementCount > 0)
+	{
+		MarkDirty();
+		RefreshList();
+		SearchResults.Empty();
+		CurrentMatchIndex = -1;
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok,
+		FText::Format(LOCTEXT("ReplaceAllResult", "Replaced {0} occurrence(s)."), FText::AsNumber(ReplacementCount)));
+
+	return FReply::Handled();
+}
+
+bool SQuestTableEditor::IsCellMatch(int32 RowIndex, FName ColumnId) const
+{
+	for (const TPair<int32, FName>& Match : SearchResults)
+	{
+		if (Match.Key == RowIndex && Match.Value == ColumnId)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 #undef LOCTEXT_NAMESPACE

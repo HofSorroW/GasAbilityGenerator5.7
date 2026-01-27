@@ -233,7 +233,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v7.0)
+## GasAbilityGenerator Plugin (v7.1)
 
 Location: `Plugins/GasAbilityGenerator/`
 
