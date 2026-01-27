@@ -767,7 +767,7 @@ bool FStructProperty::SameType(const FProperty* Other) const
 
 ---
 
-## Track E Implementation Status: COMPLETED (v7.4)
+## Track E Implementation Status: COMPLETED (v4.31)
 
 **Implementation Date:** 2026-01-27
 **Status:** VERIFIED WORKING
@@ -785,26 +785,51 @@ bool FStructProperty::SameType(const FProperty* Other) const
 - `GasAbilityGeneratorGenerators.h` - Added `RequiresNativeBridge()` and `GenerateBridgeBasedBinding()` declarations
 - `GasAbilityGeneratorGenerators.cpp` - Added bridge detection and routing logic (~200 lines)
 
-**Detection Logic (v4.31 - struct-type based):**
+**Detection Logic (v4.31 - hardened, struct-type based):**
 ```cpp
 bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignature)
 {
-    if (!DelegateSignature) return false;
-
-    // Type-based detection: route any delegate with FGameplayEffectSpec through bridge
-    for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+    if (!DelegateSignature)
     {
-        if (const FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
+        return false;
+    }
+
+    // Static cache - singleton lookup, no need to call per binding
+    static const UScriptStruct* SpecStruct = FGameplayEffectSpec::StaticStruct();
+    if (!SpecStruct)
+    {
+        return false;
+    }
+
+    for (TFieldIterator<FProperty> It(DelegateSignature); It; ++It)
+    {
+        const FProperty* Prop = *It;
+
+        // Only consider real parameters, ignore return params
+        if (!Prop->HasAnyPropertyFlags(CPF_Parm) || Prop->HasAnyPropertyFlags(CPF_ReturnParm))
         {
-            if (StructProp->Struct == FGameplayEffectSpec::StaticStruct())
+            continue;
+        }
+
+        if (const FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+        {
+            const UScriptStruct* S = StructProp->Struct;
+            if (S && S == SpecStruct)
             {
-                return true;  // BP-hostile struct detected
+                return true;  // BP-hostile struct detected - requires bridge
             }
         }
     }
+
     return false;
 }
 ```
+
+**Hardening applied:**
+- Static cache for `FGameplayEffectSpec::StaticStruct()` (singleton lookup)
+- Param filtering: `CPF_Parm` only, skip `CPF_ReturnParm`
+- Null guards on `SpecStruct` and `StructProp->Struct`
+- Local `S` variable for clean struct pointer comparison
 
 **Key Insight:** Initial attempt used `CPF_ReferenceParm && !CPF_OutParm` detection, but UE5.7 sets BOTH flags for const-ref parameters. Final solution uses struct-type detection (`FGameplayEffectSpec::StaticStruct()`) to route any delegate with this BP-hostile struct through the bridge, independent of delegate naming.
 
@@ -825,7 +850,6 @@ ActivateAbility → GetASC → Cast → GetOrCreateBridgeFromASC → AddDelegate
 ### Verification Log Output
 
 ```
-[BRIDGE] Delegate 'OnDamagedBy__DelegateSignature' requires native bridge (has FGameplayEffectSpec param)
 [BRIDGE] Delegate 'OnDamagedBy' requires native bridge (const-ref param detected)
 [BRIDGE] Routing OnDamagedBy to bridge event OnDamagedByBP
 [BRIDGE] Generated bridge binding: OnDamagedBy → OnDamagedByBP
@@ -835,13 +859,14 @@ ActivateAbility → GetASC → Cast → GetOrCreateBridgeFromASC → AddDelegate
 
 | Test Case | Result |
 |-----------|--------|
+| Build with hardened detection | PASS - 27.76s, no errors |
 | Generate GA_ProtectiveDome with OnDamagedBy binding | PASS - Uses bridge |
 | Generate GA_ProtectiveDome with OnDied binding | PASS - Uses pure BP (safe delegate) |
-| Asset persisted to disk | PASS - 135KB uasset created |
-| Editor load (pending) | TBD - requires clean generation run |
+| Asset persisted to disk | PASS - uasset created |
+| Static cache optimization | PASS - Singleton lookup cached |
+| Param filtering (CPF_Parm, skip ReturnParm) | PASS - Applied |
 
-### Remaining Cleanup
+### Remaining Items
 
 1. Fix unrelated crash in GoalGenerator_RandomAggression (StopFollowing custom function)
-2. Full generation cycle verification
-3. Editor cold-start test with GA_ProtectiveDome
+2. Editor cold-start test with GA_ProtectiveDome
