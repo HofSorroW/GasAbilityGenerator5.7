@@ -1,14 +1,14 @@
-# Table Editor Pipeline Audit v1.0
+# Table Editor Pipeline Audit v1.4
 
 **Date:** January 2026
-**Plugin Version:** v7.1
+**Plugin Version:** v7.4
 **Auditor:** Claude Code
 
 ---
 
 ## Executive Summary
 
-All 4 table editors (NPC, Dialogue, Quest, Item) implement 8 major pipelines with **100% feature parity**. Initial audit incorrectly flagged Quest/Item Asset Sync and Dirty Tab as missing - verification confirmed all features are fully implemented. v7.2 adds Undo/Redo and Find & Replace - ALL GAPS RESOLVED.
+All 4 table editors (NPC, Dialogue, Quest, Item) implement 8 major pipelines with **100% feature parity**. Initial audit incorrectly flagged Quest/Item Asset Sync and Dirty Tab as missing - verification confirmed all features are fully implemented. v7.4 adds Undo/Redo and Find & Replace - ALL GAPS RESOLVED.
 
 ---
 
@@ -437,14 +437,14 @@ if (ParentTab.IsValid()) {
 
 ### ~~P2 - Medium~~ (RESOLVED)
 
-~~Undo/Redo~~ - **IMPLEMENTED** (v7.2)
+~~Undo/Redo~~ - **IMPLEMENTED** (v7.4)
 - `TableEditorTransaction.h` - Transaction stack infrastructure with templated row operations
 - All 4 editors have Undo/Redo buttons, Ctrl+Z/Ctrl+Y shortcuts, and 50-action history
 - AddRowWithUndo, DeleteRowsWithUndo, RecordRowEdit methods
 
 ### ~~P3 - Low~~ (RESOLVED)
 
-~~Find & Replace~~ - **IMPLEMENTED** (v7.2)
+~~Find & Replace~~ - **IMPLEMENTED** (v7.4)
 - All 4 editors have Find bar with Find/Replace text inputs
 - Find Next (<), Find Prev (>), Replace, Replace All buttons
 - Search results navigate and select matching rows
@@ -465,8 +465,8 @@ if (ParentTab.IsValid()) {
 
 ## Architecture Concerns
 
-1. ~~**No undo/redo**~~ - **RESOLVED (v7.2)**: Transaction-based undo/redo with 50-action history
-2. ~~**No find/replace**~~ - **RESOLVED (v7.2)**: Find bar with search, replace, replace all
+1. ~~**No undo/redo**~~ - **RESOLVED (v7.4)**: Transaction-based undo/redo with 50-action history
+2. ~~**No find/replace**~~ - **RESOLVED (v7.4)**: Find bar with search, replace, replace all
 3. **No cross-table operations** - Cannot copy between tables (low priority)
 
 *Note: Initial audit incorrectly flagged Asset Sync and Dirty Tab as missing - verification confirmed full implementation.*
@@ -475,7 +475,7 @@ if (ParentTab.IsValid()) {
 
 ## File Locations
 
-### Common Infrastructure (v7.2)
+### Common Infrastructure (v7.4)
 - `Source/GasAbilityGenerator/Public/TableEditorTransaction.h` - Undo/Redo transaction system
 
 ### NPC Editor
@@ -532,8 +532,8 @@ if (ParentTab.IsValid()) {
 | ~~Item Asset Sync~~ | ~~P0~~ | ~~Medium~~ | **DONE** | ItemAssetSync.cpp (v4.12) |
 | ~~Quest Dirty Tab~~ | ~~P1~~ | ~~Low~~ | **DONE** | SQuestTableEditor.cpp |
 | ~~Item Dirty Tab~~ | ~~P1~~ | ~~Low~~ | **DONE** | SItemTableEditor.cpp |
-| ~~Undo/Redo System~~ | ~~P2~~ | ~~High~~ | **DONE** | TableEditorTransaction.h + All 4 editors (v7.2) |
-| ~~Find & Replace~~ | ~~P3~~ | ~~Medium~~ | **DONE** | All 4 editors have Find bar (v7.2) |
+| ~~Undo/Redo System~~ | ~~P2~~ | ~~High~~ | **DONE** | TableEditorTransaction.h + All 4 editors (v7.4) |
+| ~~Find & Replace~~ | ~~P3~~ | ~~Medium~~ | **DONE** | All 4 editors have Find bar (v7.4) |
 
 ---
 
@@ -545,3 +545,4 @@ if (ParentTab.IsValid()) {
 | v1.1 | January 2026 | Corrected false positives: Quest/Item Asset Sync and Dirty Tab verified as implemented. Updated gap list to reflect only P2/P3 remaining. |
 | v1.2 | January 2026 | P2 Undo/Redo implemented. Added TableEditorTransaction.h with transaction stack. All 4 editors have Undo/Redo buttons and Ctrl+Z/Ctrl+Y. Only P3 (Find & Replace) remains. |
 | v1.3 | January 2026 | **ALL GAPS RESOLVED.** P3 Find & Replace implemented. All 4 editors have Find bar with Find/Replace/Replace All. Audit complete - no remaining gaps. |
+| v1.4 | January 2026 | Build verified, committed as v7.4, pushed to origin/master. Fixed UNPCTableData API usage (Rows.Add vs AddRowFromCopy). Final audit - all features operational. |
