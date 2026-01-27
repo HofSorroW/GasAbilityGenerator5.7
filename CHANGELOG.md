@@ -4,6 +4,54 @@ Full version history for versions prior to v4.14. For recent versions, see `CLAU
 
 ---
 
+## v7.5.8 - Contract 22 Compliance Fix (Pre-Validation Gate)
+
+**Root Cause:** Delegate pre-validation had two contract violations:
+1. GA validator received empty variables array instead of `Definition.Variables`
+2. Pre-validation errors logged but generation continued (soft-fail)
+
+**Fix:** Contract 22 Compliance
+- Pass `Definition.Variables` to validator so it can resolve `FatherASC` and other GA-defined variables
+- Pre-validation errors now return `EGenerationStatus::Failed` and abort generation (hard-fail)
+- Both GA generator and Actor BP generator enforce the gate
+
+**Contract Reference:**
+- Contract 22 (C_PIN_CONNECTION_FAILURE_GATE): "Soft-fail behavior FORBIDDEN"
+- Contract 10 (Blueprint Compile Gate): "MUST NOT save" on errors
+
+**Result:** 194/194 assets generate successfully with proper contract compliance.
+
+---
+
+## v7.5.7 - Track E Delegate Binding Fix (Contract 10.1)
+
+**Root Cause:** The v4.16 "final compile with validation" was reconstructing `UK2Node_CreateDelegate` nodes and clearing `SelectedFunctionName` after the two-pass delegate binding had correctly set it.
+
+**Fix:** Contract 10.1 - Conditional Final Compile
+- Skip final compile if delegate bindings were created
+- Two-pass binding already performs skeleton sync compile
+- Preserves `SelectedFunctionName` on CreateDelegate nodes
+
+**Complete Fix Chain (v7.5.5 → v7.5.7):**
+- **v7.5.5**: Logging bridge - `FGeneratorLogCallback` forwards `LogGeneration()` to commandlet output
+- **v7.5.6**: Two-pass delegate binding - Pass 1 creates handlers, single compile, Pass 2 creates nodes
+- **v7.5.7**: Contract 10.1 - Skip final compile for abilities with delegate bindings
+
+**New Runtime Module:** `GasAbilityGeneratorRuntime` with `UDamageEventBridge` component for Track-E delegate routing. Bridge intercepts raw delegates with `const FGameplayEffectSpec&` and broadcasts safe `FDamageEventSummary` struct.
+
+**Fixed Abilities (5):**
+- GA_FatherCrawler (OnDamagedBy, OnDealtDamage)
+- GA_FatherArmor (OnDied)
+- GA_FatherSymbiote (OnDamagedBy, OnHealedBy)
+- GA_ProtectiveDome (OnDied)
+- GA_StealthField (OnDamagedBy, OnDealtDamage)
+
+**Result:** 194/194 assets now generate successfully (was 189/194).
+
+See: `ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md`
+
+---
+
 ## v6.9 - GA_Backstab + GA_FatherEngineer Generation Fixes
 
 **Pin Resolution Improvements:**

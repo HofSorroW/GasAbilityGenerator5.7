@@ -2929,16 +2929,27 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	if (Definition.DelegateBindings.Num() > 0)
 	{
 		// v4.40: Pre-validate delegate bindings before generation
+		// v7.5.8: Contract 22 compliance - pre-validation errors MUST block generation
+		// v7.5.8: Pass actual GA variables (not empty) so validator can resolve FatherASC etc.
 		TArray<FString> DelegateValidationErrors;
-		TArray<FManifestActorVariableDefinition> EmptyVariables; // GA uses OwnerASC/PlayerASC, not variables
-		if (!FEventGraphGenerator::ValidateDelegateBindings(Definition.DelegateBindings, EmptyVariables, Definition.Name, DelegateValidationErrors))
+		if (!FEventGraphGenerator::ValidateDelegateBindings(Definition.DelegateBindings, Definition.Variables, Definition.Name, DelegateValidationErrors))
 		{
 			for (const FString& Error : DelegateValidationErrors)
 			{
 				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DELEGATE PRE-VALIDATION: %s"), *Error);
 				LogGeneration(FString::Printf(TEXT("  DELEGATE ERROR: %s"), *Error));
 			}
-			// Continue with generation but log errors - don't fail entire ability generation
+			// v7.5.8: Contract 22 - FAIL errors MUST block generation (no soft-fail)
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Delegate pre-validation failed with %d errors - aborting"),
+				*Definition.Name, DelegateValidationErrors.Num());
+			LogGeneration(FString::Printf(TEXT("  FAILED: Delegate pre-validation errors - aborting generation")));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Delegate pre-validation: %d errors"), DelegateValidationErrors.Num()));
+			Result.AssetPath = AssetPath;
+			Result.GeneratorId = TEXT("GameplayAbility");
+			Result.DetermineCategory();
+			return Result;
 		}
 
 		DelegateNodesGenerated = FEventGraphGenerator::GenerateDelegateBindingNodes(Blueprint, Definition.DelegateBindings);
@@ -3546,6 +3557,7 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	if (Definition.DelegateBindings.Num() > 0)
 	{
 		// v4.40: Pre-validate delegate bindings before generation
+		// v7.5.8: Contract 22 compliance - pre-validation errors MUST block generation
 		TArray<FString> DelegateValidationErrors;
 		if (!FEventGraphGenerator::ValidateDelegateBindings(Definition.DelegateBindings, Definition.Variables, Definition.Name, DelegateValidationErrors))
 		{
@@ -3554,7 +3566,15 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] DELEGATE PRE-VALIDATION: %s"), *Error);
 				LogGeneration(FString::Printf(TEXT("  DELEGATE ERROR: %s"), *Error));
 			}
-			// Continue with generation but log errors - don't fail entire blueprint generation
+			// v7.5.8: Contract 22 - FAIL errors MUST block generation (no soft-fail)
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Delegate pre-validation failed with %d errors - aborting"),
+				*Definition.Name, DelegateValidationErrors.Num());
+			LogGeneration(FString::Printf(TEXT("  FAILED: Delegate pre-validation errors - aborting generation")));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Delegate pre-validation: %d errors"), DelegateValidationErrors.Num()));
+			Result.AssetPath = AssetPath;
+			return Result;
 		}
 
 		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateActorDelegateBindingNodes(Blueprint, Definition.DelegateBindings, Definition.Variables);
