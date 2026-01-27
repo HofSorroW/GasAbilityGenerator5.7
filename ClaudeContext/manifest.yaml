@@ -4470,17 +4470,20 @@ gameplay_abilities:
         - Father.Dome.Active
       # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
       # Equipment granting already ensures this ability is only available in Armor form
-    # v4.21: Delegate bindings - VISUAL TEST: OnDied only (check Self pin existence)
-    delegate_bindings:
-      # DISABLED FOR VISUAL TEST:
-      # - id: BindDomeDamageAbsorption
-      #   delegate: OnDamagedBy
-      #   source: OwnerASC
-      #   handler: HandleDomeDamageAbsorption
-      - id: BindPlayerDeath
-        delegate: OnDied
-        source: OwnerASC
-        handler: HandlePlayerDeathReset
+    # v7.3 AUDIT: Delegate bindings DISABLED pending crash fix
+    # Root cause: UK2Node_CreateDelegate loses Self pin during Blueprint reconstruction
+    # Float delegates (OnDamagedBy) crash in RegisterConvertibleDelegates line 5845
+    # Non-float delegates (OnDied) survive but disabled for consistency
+    # See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
+    # delegate_bindings:
+    #   - id: BindDomeDamageAbsorption
+    #     delegate: OnDamagedBy
+    #     source: OwnerASC
+    #     handler: HandleDomeDamageAbsorption
+    #   - id: BindPlayerDeath
+    #     delegate: OnDied
+    #     source: OwnerASC
+    #     handler: HandlePlayerDeathReset
     variables:
       - name: PlayerRef
         type: Object
