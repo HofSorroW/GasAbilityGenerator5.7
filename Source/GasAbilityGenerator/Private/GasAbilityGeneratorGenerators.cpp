@@ -14518,8 +14518,8 @@ int32 FEventGraphGenerator::GenerateVFXSpawnNodes(
  * Checks if a delegate signature contains BP-hostile struct parameters that require
  * the native bridge workaround.
  *
- * Detection: Any delegate with FGameplayEffectSpec parameter routes through bridge.
- * This is type-based detection (not name-based) for future-proofing.
+ * Detection: Any delegate parameter (not return) with FGameplayEffectSpec routes through bridge.
+ * Type-based detection (not name-based) for future-proofing.
  *
  * See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
  */
@@ -14530,13 +14530,25 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 		return false;
 	}
 
-	// Type-based detection: route any delegate with FGameplayEffectSpec through bridge
-	// This catches OnDamagedBy, OnDealtDamage, OnHealedBy and any future delegates
-	for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+	const UScriptStruct* SpecStruct = FGameplayEffectSpec::StaticStruct();
+	if (!SpecStruct)
 	{
-		if (const FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
+		return false;
+	}
+
+	for (TFieldIterator<FProperty> It(DelegateSignature); It; ++It)
+	{
+		const FProperty* Prop = *It;
+
+		// Only consider real parameters, ignore return params
+		if (!Prop->HasAnyPropertyFlags(CPF_Parm) || Prop->HasAnyPropertyFlags(CPF_ReturnParm))
 		{
-			if (StructProp->Struct == FGameplayEffectSpec::StaticStruct())
+			continue;
+		}
+
+		if (const FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+		{
+			if (StructProp->Struct && StructProp->Struct == SpecStruct)
 			{
 				return true;  // BP-hostile struct detected - requires bridge
 			}
