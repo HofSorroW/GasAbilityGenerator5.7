@@ -1189,6 +1189,7 @@ bool FGeneratorBase::CheckExistsWithMetadata(
 
 	// Try to load the asset to check metadata
 	FString FullAssetPath = AssetPath + TEXT(".") + FPackageName::GetShortName(AssetPath);
+	UE_LOG(LogGasAbilityGenerator, Display, TEXT("[AUDIT] About to StaticLoadObject: %s (CheckExistsWithMetadata)"), *FullAssetPath);
 	ExistingAsset = StaticLoadObject(UObject::StaticClass(), nullptr, *FullAssetPath);
 
 	if (!ExistingAsset)
@@ -3483,6 +3484,21 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		}
 
 		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateActorDelegateBindingNodes(Blueprint, Definition.DelegateBindings, Definition.Variables);
+
+		// v7.3: C1 Save Gate - Negative return indicates connection failures
+		if (DelegateNodesGenerated < 0)
+		{
+			int32 FailCount = -DelegateNodesGenerated;
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Actor delegate binding had %d connection failures - aborting save"),
+				*Definition.Name, FailCount);
+			LogGeneration(FString::Printf(TEXT("  ACTOR DELEGATE FAILED with %d connection failures - aborting save"), FailCount));
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Actor delegate binding: %d connection failures"), FailCount));
+			Result.AssetPath = AssetPath;
+			return Result;
+		}
+
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d actor delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
 	}
 
@@ -14647,6 +14663,9 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		// can resolve the handler function name. Without this sync, CreateDelegate stores
 		// an unresolved name, causing crash-on-open/thumbnail-compile.
 		// Audit: Claude-GPT dual audit 2026-01-27, H4 root cause confirmed
+		// v7.3: Reverted to MarkBlueprintAsStructurallyModified per audit - it does compile
+		// skeleton synchronously in UE5.7. The persistent crash was due to missing C2 in
+		// Actor BP pipeline, not insufficient GA path implementation.
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
 		LogGeneration(TEXT("    Skeleton sync performed (C2: handler registered before CreateDelegate)"));
 
@@ -15483,6 +15502,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 	float CurrentPosX = 2500.0f;  // Position after typical BeginPlay content
 	float CurrentPosY = 0.0f;
 
+	// v7.3: C1 - LOCKED CONTRACT 22 - Track connection failures for Actor BP delegate bindings
+	int32 ConnectionFailures = 0;
+
 	// Track nodes for exec wiring
 	TArray<UK2Node_AddDelegate*> AddDelegateNodes;
 	TArray<UK2Node_RemoveDelegate*> RemoveDelegateNodes;
@@ -15586,6 +15608,12 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 				}
 			}
 
+			// v7.3: C2 - LOCKED CONTRACT 23 - Skeleton sync BEFORE CreateDelegate
+			// CustomEvent handler must exist in Skeleton Generated Class before CreateDelegate
+			// can resolve the handler function name. Audit: Claude-GPT dual audit 2026-01-27
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+			LogGeneration(TEXT("    Skeleton sync performed (C2: handler registered before CreateDelegate)"));
+
 			LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
 				*Binding.Handler, *DelegateSignature->GetName()));
 		}
@@ -15629,11 +15657,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 		// Wire VarGetNodeA → GetASCNodeA.Actor pin
 		UEdGraphPin* VarOutPinA = VarGetNodeA->GetValuePin();
 		UEdGraphPin* GetASCActorPin = GetASCNodeA->FindPin(TEXT("Actor"));
-		if (VarOutPinA && GetASCActorPin)
-		{
-			VarOutPinA->MakeLinkTo(GetASCActorPin);
-			LogGeneration(FString::Printf(TEXT("    Wired %s → GetAbilitySystemComponent.Actor"), *Binding.Source));
-		}
+		// v7.3: C1 - Use validated connection
+		ValidatedMakeLinkTo(VarOutPinA, GetASCActorPin,
+			FString::Printf(TEXT("VarGetA->GetASC.Actor|%s"), *Binding.Source), ConnectionFailures);
 
 		UEdGraphPin* ASCOutPinA = GetASCNodeA->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
 
@@ -15649,9 +15675,11 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 
 		// Wire GetASCNodeA.ReturnValue → CastNodeA.Object
 		UEdGraphPin* CastAInPin = CastNodeA->GetCastSourcePin();
-		if (ASCOutPinA && CastAInPin)
+		// v7.3: C1 - Use validated connection
+		ValidatedMakeLinkTo(ASCOutPinA, CastAInPin,
+			FString::Printf(TEXT("GetASC.ReturnValue->CastA.Object|%s"), *Binding.Source), ConnectionFailures);
+		if (CastAInPin)
 		{
-			ASCOutPinA->MakeLinkTo(CastAInPin);
 			CastNodeA->NotifyPinConnectionListChanged(CastAInPin);
 		}
 		UEdGraphPin* SourceASCPinForAdd = CastNodeA->GetCastResultPin();
@@ -15661,22 +15689,23 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 		DelegateRef.SetFromField<FMulticastDelegateProperty>(DelegateProp, false);
 
 		// 8. CreateDelegate node for Add path
+		// v7.3: SetFunction BEFORE AllocateDefaultPins (matches GA path, per audit)
 		UK2Node_CreateDelegate* CreateDelegateA = NewObject<UK2Node_CreateDelegate>(EventGraph);
+		CreateDelegateA->SetFunction(FName(*Binding.Handler));
 		EventGraph->AddNode(CreateDelegateA, false, false);
 		CreateDelegateA->CreateNewGuid();
 		CreateDelegateA->PostPlacedNewNode();
 		CreateDelegateA->AllocateDefaultPins();
-		CreateDelegateA->SetFunction(FName(*Binding.Handler));
+		// v4.21.2: Do NOT call ReconstructNode() - it clears SelectedFunctionName
 		CreateDelegateA->NodePosX = CurrentPosX + 600.0f;
 		CreateDelegateA->NodePosY = CurrentPosY + 300.0f;
 
 		// Wire Self → CreateDelegateA.PN_Self
 		UEdGraphPin* SelfOutPin = SelfNode->FindPin(UEdGraphSchema_K2::PN_Self);
 		UEdGraphPin* CreateDelegateSelfPinA = CreateDelegateA->FindPin(UEdGraphSchema_K2::PN_Self);
-		if (SelfOutPin && CreateDelegateSelfPinA)
-		{
-			SelfOutPin->MakeLinkTo(CreateDelegateSelfPinA);
-		}
+		// v7.3: C1 - Use validated connection
+		ValidatedMakeLinkTo(SelfOutPin, CreateDelegateSelfPinA,
+			FString::Printf(TEXT("Self->CreateDelegateA.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 		// 9. AddDelegate node
 		UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
@@ -15691,17 +15720,15 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 		// Wire CreateDelegateA.OutputDelegate → AddDelegate.Delegate
 		UEdGraphPin* DelegateAOut = CreateDelegateA->GetDelegateOutPin();
 		UEdGraphPin* AddDelegateIn = AddDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
-		if (DelegateAOut && AddDelegateIn)
-		{
-			DelegateAOut->MakeLinkTo(AddDelegateIn);
-		}
+		// v7.3: C1 - Use validated connection (critical delegate output pin)
+		ValidatedMakeLinkTo(DelegateAOut, AddDelegateIn,
+			FString::Printf(TEXT("CreateDelegateA.OutputDelegate->AddDelegate.Delegate|%s"), *Binding.Handler), ConnectionFailures);
 
 		// Wire SourceASCPinForAdd → AddDelegate.PN_Self (Target)
 		UEdGraphPin* AddSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
-		if (SourceASCPinForAdd && AddSelfPin)
-		{
-			SourceASCPinForAdd->MakeLinkTo(AddSelfPin);
-		}
+		// v7.3: C1 - Use validated connection
+		ValidatedMakeLinkTo(SourceASCPinForAdd, AddSelfPin,
+			FString::Printf(TEXT("SourceASC->AddDelegate.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 		// Track for exec wiring
 		AddDelegateNodes.Add(AddDelegateNode);
@@ -15737,10 +15764,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 			// Wire VarGetNodeB → GetASCNodeB.Actor
 			UEdGraphPin* VarOutPinB = VarGetNodeB->GetValuePin();
 			UEdGraphPin* GetASCActorPinB = GetASCNodeB->FindPin(TEXT("Actor"));
-			if (VarOutPinB && GetASCActorPinB)
-			{
-				VarOutPinB->MakeLinkTo(GetASCActorPinB);
-			}
+			// v7.3: C1 - Use validated connection
+			ValidatedMakeLinkTo(VarOutPinB, GetASCActorPinB,
+				FString::Printf(TEXT("VarGetB->GetASC.Actor|%s"), *Binding.Source), ConnectionFailures);
 
 			UEdGraphPin* ASCOutPinB = GetASCNodeB->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
 
@@ -15755,28 +15781,31 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 			CastNodeB->NodePosY = CurrentPosY + 500.0f;
 
 			UEdGraphPin* CastBInPin = CastNodeB->GetCastSourcePin();
-			if (ASCOutPinB && CastBInPin)
+			// v7.3: C1 - Use validated connection
+			ValidatedMakeLinkTo(ASCOutPinB, CastBInPin,
+				FString::Printf(TEXT("GetASC.ReturnValue->CastB.Object|%s"), *Binding.Source), ConnectionFailures);
+			if (CastBInPin)
 			{
-				ASCOutPinB->MakeLinkTo(CastBInPin);
 				CastNodeB->NotifyPinConnectionListChanged(CastBInPin);
 			}
 			UEdGraphPin* SourceASCPinForRemove = CastNodeB->GetCastResultPin();
 
 			// CreateDelegate for Remove path
+			// v7.3: SetFunction BEFORE AllocateDefaultPins (matches GA path, per audit)
 			UK2Node_CreateDelegate* CreateDelegateB = NewObject<UK2Node_CreateDelegate>(EventGraph);
+			CreateDelegateB->SetFunction(FName(*Binding.Handler));
 			EventGraph->AddNode(CreateDelegateB, false, false);
 			CreateDelegateB->CreateNewGuid();
 			CreateDelegateB->PostPlacedNewNode();
 			CreateDelegateB->AllocateDefaultPins();
-			CreateDelegateB->SetFunction(FName(*Binding.Handler));
+			// v4.21.2: Do NOT call ReconstructNode() - it clears SelectedFunctionName
 			CreateDelegateB->NodePosX = CurrentPosX + 600.0f;
 			CreateDelegateB->NodePosY = CurrentPosY + 600.0f;
 
 			UEdGraphPin* CreateDelegateSelfPinB = CreateDelegateB->FindPin(UEdGraphSchema_K2::PN_Self);
-			if (SelfOutPin && CreateDelegateSelfPinB)
-			{
-				SelfOutPin->MakeLinkTo(CreateDelegateSelfPinB);
-			}
+			// v7.3: C1 - Use validated connection
+			ValidatedMakeLinkTo(SelfOutPin, CreateDelegateSelfPinB,
+				FString::Printf(TEXT("Self->CreateDelegateB.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 			// RemoveDelegate node
 			UK2Node_RemoveDelegate* RemoveDelegateNode = NewObject<UK2Node_RemoveDelegate>(EventGraph);
@@ -15791,17 +15820,15 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 			// Wire CreateDelegateB → RemoveDelegate.Delegate
 			UEdGraphPin* DelegateBOut = CreateDelegateB->GetDelegateOutPin();
 			UEdGraphPin* RemoveDelegateIn = RemoveDelegateNode->FindPin(TEXT("Delegate"), EGPD_Input);
-			if (DelegateBOut && RemoveDelegateIn)
-			{
-				DelegateBOut->MakeLinkTo(RemoveDelegateIn);
-			}
+			// v7.3: C1 - Use validated connection (critical delegate output pin)
+			ValidatedMakeLinkTo(DelegateBOut, RemoveDelegateIn,
+				FString::Printf(TEXT("CreateDelegateB.OutputDelegate->RemoveDelegate.Delegate|%s"), *Binding.Handler), ConnectionFailures);
 
 			// Wire SourceASCPinForRemove → RemoveDelegate.PN_Self
 			UEdGraphPin* RemoveSelfPin = RemoveDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
-			if (SourceASCPinForRemove && RemoveSelfPin)
-			{
-				SourceASCPinForRemove->MakeLinkTo(RemoveSelfPin);
-			}
+			// v7.3: C1 - Use validated connection
+			ValidatedMakeLinkTo(SourceASCPinForRemove, RemoveSelfPin,
+				FString::Printf(TEXT("SourceASC->RemoveDelegate.Self|%s"), *Binding.Handler), ConnectionFailures);
 
 			RemoveDelegateNodes.Add(RemoveDelegateNode);
 			CastNodesForRemove.Add(CastNodeB);
@@ -15872,7 +15899,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 
 						if (CastExecIn && CastExecOut)
 						{
-							LastExecPin->MakeLinkTo(CastExecIn);
+							// v7.3: C1 - Use validated connection for exec flow
+							ValidatedMakeLinkTo(LastExecPin, CastExecIn,
+								TEXT("BeginPlay->Cast.Execute|ActorDelegate"), ConnectionFailures);
 							LastExecPin = CastExecOut;
 						}
 					}
@@ -15881,7 +15910,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 					UEdGraphPin* AddExecIn = AddNode->FindPin(UEdGraphSchema_K2::PN_Execute);
 					if (AddExecIn)
 					{
-						LastExecPin->MakeLinkTo(AddExecIn);
+						// v7.3: C1 - Use validated connection for exec flow
+						ValidatedMakeLinkTo(LastExecPin, AddExecIn,
+							TEXT("Cast.Then->AddDelegate.Execute|ActorDelegate"), ConnectionFailures);
 						LastExecPin = AddNode->FindPin(UEdGraphSchema_K2::PN_Then);
 					}
 				}
@@ -15947,7 +15978,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 
 						if (CastExecIn && CastExecOut)
 						{
-							LastExecPin->MakeLinkTo(CastExecIn);
+							// v7.3: C1 - Use validated connection for exec flow
+							ValidatedMakeLinkTo(LastExecPin, CastExecIn,
+								TEXT("EndPlay->Cast.Execute|ActorDelegate"), ConnectionFailures);
 							LastExecPin = CastExecOut;
 						}
 					}
@@ -15955,7 +15988,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 					UEdGraphPin* RemoveExecIn = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Execute);
 					if (RemoveExecIn)
 					{
-						LastExecPin->MakeLinkTo(RemoveExecIn);
+						// v7.3: C1 - Use validated connection for exec flow
+						ValidatedMakeLinkTo(LastExecPin, RemoveExecIn,
+							TEXT("Cast.Then->RemoveDelegate.Execute|ActorDelegate"), ConnectionFailures);
 						LastExecPin = RemoveNode->FindPin(UEdGraphSchema_K2::PN_Then);
 					}
 				}
@@ -15967,6 +16002,13 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 		{
 			LogGeneration(TEXT("    [W_ACTOR_DELEGATE_NO_ENDPLAY] EndPlay event not found - delegate unbinding will not occur"));
 		}
+	}
+
+	// v7.3: C1 - Return negative count if any connections failed
+	if (ConnectionFailures > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("    [FAIL] Actor delegate binding had %d connection failures"), ConnectionFailures));
+		return -ConnectionFailures;
 	}
 
 	return NodesGenerated;
