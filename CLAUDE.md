@@ -171,6 +171,42 @@ gameplay_abilities:                variables:
 
 **Save Handoffs to ClaudeContext/Handoffs/** - All implementation guides and session handoffs go here only.
 
+### Pre-Validation Error Handling (MANDATORY)
+
+When generation fails with pre-validation errors, Claude MUST automatically investigate and fix them. Do NOT wait for user to prompt.
+
+**Error Format:**
+```
+[PRE-VAL] [E_PREVAL_ATTRIBUTE_NOT_FOUND] A2 | GE_Example |
+Attribute 'SomeSet.WrongName' not found on AttributeSet 'USomeSet'
+```
+
+**Required Workflow:**
+1. **READ** the error message - understand what's wrong (e.g., attribute "Defense" not found)
+2. **RESEARCH** the correct value:
+   - For attributes: Read `NarrativePro_Headers/NarrativeAttributeSetBase.h`
+   - For classes: Search the codebase or Narrative Pro headers
+   - For functions: Check the class definition
+3. **FIX** the manifest with the correct value
+4. **RE-RUN** generation to verify the fix
+
+**Example - Attribute Error:**
+```
+Error: Attribute 'NarrativeAttributeSetBase.Defense' not found
+Action:
+  1. Read NarrativeAttributeSetBase.h
+  2. Find correct attribute name is "Armor" (not "Defense")
+  3. Fix manifest: Defense → Armor
+  4. Re-run generation
+```
+
+**DO NOT:**
+- Show the error and wait for user to tell you what to do
+- Skip investigating and move on to other tasks
+- Assume the error will resolve itself
+
+**Pre-validation blocks generation** - no assets will be created until all errors are fixed. This is intentional fail-fast behavior.
+
 ### Auto-Approved Actions (No Permission Needed)
 
 | Action | Scope |
