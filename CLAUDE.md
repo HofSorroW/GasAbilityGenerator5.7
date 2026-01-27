@@ -171,41 +171,63 @@ gameplay_abilities:                variables:
 
 **Save Handoffs to ClaudeContext/Handoffs/** - All implementation guides and session handoffs go here only.
 
-### Pre-Validation Error Handling (MANDATORY)
+### LOCKED WORKFLOW (MANDATORY)
 
-When generation fails with pre-validation errors, Claude MUST automatically investigate and fix them. Do NOT wait for user to prompt.
+**Full specification:** `ClaudeContext/Handoffs/LOCKED_WORKFLOW.md`
 
-**Error Format:**
+#### Rule 1: Manifest-First Lookup Order
+
+Before adding ANY manifest node/connection/function, follow this order:
+
+1. **Manifest-first:** Search `manifest.yaml` for existing working pattern
+2. **Engine-second:** Verify BP visibility in headers
+3. **Web-third:** Only if engine sources don't answer
+4. **Trial-and-error LAST:** Only after steps 1-3 exhausted
+
+**Every manifest change MUST cite evidence:**
+- `[MANIFEST]` - existing working line/node ID
+- `[ENGINE]` - engine header + signature
+- `[PLUGIN]` - Narrative Pro header + signature
+
+#### Rule 2: Error TODO Queue
+
+On ANY failure, MUST produce Error TODO Queue before retry:
+
 ```
-[PRE-VAL] [E_PREVAL_ATTRIBUTE_NOT_FOUND] A2 | GE_Example |
-Attribute 'SomeSet.WrongName' not found on AttributeSet 'USomeSet'
+=== ERROR TODO QUEUE ===
+Failure type: PRE-VAL
+Blocking items: 1
+
+[1] E_PREVAL_ATTRIBUTE_NOT_FOUND | GE_Example | gameplay_effects[5]
+    Evidence: [PRE-VAL] [E_PREVAL_ATTRIBUTE_NOT_FOUND] A2 | GE_Example | Attribute 'Defense' not found
+    Fix hypothesis: Use 'Armor' instead of 'Defense' (per NarrativeAttributeSetBase.h)
 ```
 
-**Required Workflow:**
-1. **READ** the error message - understand what's wrong (e.g., attribute "Defense" not found)
-2. **RESEARCH** the correct value:
-   - For attributes: Read `NarrativePro_Headers/NarrativeAttributeSetBase.h`
-   - For classes: Search the codebase or Narrative Pro headers
-   - For functions: Check the class definition
-3. **FIX** the manifest with the correct value
-4. **RE-RUN** generation to verify the fix
+**NO rerun until TODO queue is empty.**
 
-**Example - Attribute Error:**
-```
-Error: Attribute 'NarrativeAttributeSetBase.Defense' not found
-Action:
-  1. Read NarrativeAttributeSetBase.h
-  2. Find correct attribute name is "Armor" (not "Defense")
-  3. Fix manifest: Defense → Armor
-  4. Re-run generation
-```
+#### Rule 3: Canonical Pin Names
+
+| Category | Canonical | Wrong |
+|----------|-----------|-------|
+| Exec Input | `Exec` | `exec`, `Execute` |
+| Exec Output | `Then` | `then`, `Exec` |
+| Return | `ReturnValue` | `Return`, `Result` |
+| Cast Output | `AsBP_FatherCompanion` | `As BP_FatherCompanion` (no spaces) |
+| Cast Failed | `CastFailed` | `Cast Failed` (no space) |
+
+#### Rule 4: Fix Completion
+
+A fix is complete ONLY when:
+1. Error line **disappears** from logs
+2. Asset shows **full connections** (e.g., `Connections 45/45`)
 
 **DO NOT:**
-- Show the error and wait for user to tell you what to do
-- Skip investigating and move on to other tasks
-- Assume the error will resolve itself
+- Retry without reading errors
+- Guess pin names without checking manifest
+- Claim "fixed" while error still appears
+- Ignore connection failures (e.g., `44/45`)
 
-**Pre-validation blocks generation** - no assets will be created until all errors are fixed. This is intentional fail-fast behavior.
+**Pre-validation blocks generation** - no assets will be created until all errors are fixed.
 
 ### Auto-Approved Actions (No Permission Needed)
 
