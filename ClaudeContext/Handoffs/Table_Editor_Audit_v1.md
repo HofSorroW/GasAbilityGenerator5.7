@@ -1,7 +1,7 @@
-# Table Editor Pipeline Audit v1.4
+# Table Editor Pipeline Audit v1.5
 
 **Date:** January 2026
-**Plugin Version:** v7.4
+**Plugin Version:** v7.5
 **Auditor:** Claude Code
 
 ---
@@ -465,7 +465,7 @@ if (ParentTab.IsValid()) {
 
 ## Architecture Concerns
 
-1. ~~**No undo/redo**~~ - **RESOLVED (v7.4)**: Transaction-based undo/redo with 50-action history
+1. ~~**No undo/redo**~~ - **RESOLVED (v7.5)**: Transaction-based undo/redo with 50-action history. All Add/Delete/Duplicate operations use undo-aware methods.
 2. ~~**No find/replace**~~ - **RESOLVED (v7.4)**: Find bar with search, replace, replace all
 3. **No cross-table operations** - Cannot copy between tables (low priority)
 
@@ -546,3 +546,4 @@ if (ParentTab.IsValid()) {
 | v1.2 | January 2026 | P2 Undo/Redo implemented. Added TableEditorTransaction.h with transaction stack. All 4 editors have Undo/Redo buttons and Ctrl+Z/Ctrl+Y. Only P3 (Find & Replace) remains. |
 | v1.3 | January 2026 | **ALL GAPS RESOLVED.** P3 Find & Replace implemented. All 4 editors have Find bar with Find/Replace/Replace All. Audit complete - no remaining gaps. |
 | v1.4 | January 2026 | Build verified, committed as v7.4, pushed to origin/master. Fixed UNPCTableData API usage (Rows.Add vs AddRowFromCopy). Final audit - all features operational. |
+| v1.5 | January 2026 | Re-audit found 3 consistency issues: Quest/Item OnAddRowClicked/OnDeleteRowsClicked/OnDuplicateRowClicked bypassed undo system, Dialogue missing TableData null check. All fixed in v7.5. **100% undo/redo coverage achieved.** |

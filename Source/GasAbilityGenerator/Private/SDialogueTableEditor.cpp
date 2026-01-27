@@ -3000,6 +3000,8 @@ void SDialogueTableEditor::OnRowModified()
 
 FReply SDialogueTableEditor::OnAddRowClicked()
 {
+	if (!TableData) return FReply::Handled();
+
 	TSharedPtr<FDialogueTableRowEx> NewRowEx = MakeShared<FDialogueTableRowEx>();
 	NewRowEx->Data = MakeShared<FDialogueTableRow>();
 

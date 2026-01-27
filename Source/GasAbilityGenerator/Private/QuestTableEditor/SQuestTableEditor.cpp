@@ -1549,10 +1549,15 @@ FReply SQuestTableEditor::OnAddRowClicked()
 {
 	if (!TableData) return FReply::Handled();
 
-	FQuestTableRow& NewRow = TableData->AddRow();
-	NewRow.QuestName = TEXT("NewQuest");
-	NewRow.StateID = TEXT("NewState");
+	// Create new row with undo support
+	TSharedPtr<FQuestTableRowEx> NewRowEx = MakeShared<FQuestTableRowEx>();
+	NewRowEx->Data = MakeShared<FQuestTableRow>();
+	NewRowEx->Data->RowId = FGuid::NewGuid();
+	NewRowEx->Data->QuestName = TEXT("NewQuest");
+	NewRowEx->Data->StateID = TEXT("NewState");
+	NewRowEx->Data->Status = EQuestTableRowStatus::New;
 
+	AddRowWithUndo(NewRowEx);
 	MarkDirty();
 	RefreshList();
 	return FReply::Handled();
@@ -1594,23 +1599,8 @@ FReply SQuestTableEditor::OnDeleteRowsClicked()
 	TArray<TSharedPtr<FQuestTableRowEx>> Selected = GetSelectedRows();
 	if (Selected.Num() == 0) return FReply::Handled();
 
-	// Soft delete
-	for (const TSharedPtr<FQuestTableRowEx>& Row : Selected)
-	{
-		if (Row.IsValid() && Row->Data.IsValid())
-		{
-			// Find in TableData and mark deleted
-			for (FQuestTableRow& TableRow : TableData->Rows)
-			{
-				if (TableRow.RowId == Row->Data->RowId)
-				{
-					TableRow.bDeleted = true;
-					break;
-				}
-			}
-		}
-	}
-
+	// Use undo-aware delete
+	DeleteRowsWithUndo(Selected);
 	MarkDirty();
 	RefreshList();
 	return FReply::Handled();
@@ -1627,14 +1617,16 @@ FReply SQuestTableEditor::OnDuplicateRowClicked()
 	{
 		if (Row.IsValid() && Row->Data.IsValid())
 		{
-			FQuestTableRow NewRow = *Row->Data;
-			NewRow.RowId = FGuid::NewGuid();
-			NewRow.StateID += TEXT("_Copy");
-			NewRow.Status = EQuestTableRowStatus::New;
-			NewRow.GeneratedQuest.Reset();
-			NewRow.InvalidateValidation();
+			// Create duplicate with undo support
+			TSharedPtr<FQuestTableRowEx> NewRowEx = MakeShared<FQuestTableRowEx>();
+			NewRowEx->Data = MakeShared<FQuestTableRow>(*Row->Data);
+			NewRowEx->Data->RowId = FGuid::NewGuid();
+			NewRowEx->Data->StateID += TEXT("_Copy");
+			NewRowEx->Data->Status = EQuestTableRowStatus::New;
+			NewRowEx->Data->GeneratedQuest.Reset();
+			NewRowEx->Data->InvalidateValidation();
 
-			TableData->Rows.Add(NewRow);
+			AddRowWithUndo(NewRowEx);
 		}
 	}
 

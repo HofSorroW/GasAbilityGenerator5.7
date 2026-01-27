@@ -2480,10 +2480,14 @@ FReply SItemTableEditor::OnAddRowClicked()
 {
 	if (!TableData) return FReply::Handled();
 
-	FItemTableRow& NewRow = TableData->AddRow();
-	NewRow.ItemName = TEXT("NewItem");
-	NewRow.ItemType = EItemType::Equippable;
+	// Create new row with undo support
+	TSharedPtr<FItemTableRow> NewRow = MakeShared<FItemTableRow>();
+	NewRow->RowId = FGuid::NewGuid();
+	NewRow->ItemName = TEXT("NewItem");
+	NewRow->ItemType = EItemType::Equippable;
+	NewRow->Status = EItemTableRowStatus::New;
 
+	AddRowWithUndo(NewRow);
 	MarkDirty();
 	RefreshList();
 	return FReply::Handled();
@@ -2496,22 +2500,8 @@ FReply SItemTableEditor::OnDeleteRowsClicked()
 	TArray<TSharedPtr<FItemTableRow>> Selected = GetSelectedRows();
 	if (Selected.Num() == 0) return FReply::Handled();
 
-	// Soft delete
-	for (const TSharedPtr<FItemTableRow>& Row : Selected)
-	{
-		if (Row.IsValid())
-		{
-			for (FItemTableRow& TableRow : TableData->Rows)
-			{
-				if (TableRow.RowId == Row->RowId)
-				{
-					TableRow.bDeleted = true;
-					break;
-				}
-			}
-		}
-	}
-
+	// Use undo-aware delete
+	DeleteRowsWithUndo(Selected);
 	MarkDirty();
 	RefreshList();
 	return FReply::Handled();
@@ -2528,14 +2518,15 @@ FReply SItemTableEditor::OnDuplicateRowClicked()
 	{
 		if (Row.IsValid())
 		{
-			FItemTableRow NewRow = *Row;
-			NewRow.RowId = FGuid::NewGuid();
-			NewRow.ItemName += TEXT("_Copy");
-			NewRow.Status = EItemTableRowStatus::New;
-			NewRow.GeneratedItem.Reset();
-			NewRow.InvalidateValidation();
+			// Create duplicate with undo support
+			TSharedPtr<FItemTableRow> NewRow = MakeShared<FItemTableRow>(*Row);
+			NewRow->RowId = FGuid::NewGuid();
+			NewRow->ItemName += TEXT("_Copy");
+			NewRow->Status = EItemTableRowStatus::New;
+			NewRow->GeneratedItem.Reset();
+			NewRow->InvalidateValidation();
 
-			TableData->Rows.Add(NewRow);
+			AddRowWithUndo(NewRow);
 		}
 	}
 
