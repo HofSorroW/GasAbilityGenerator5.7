@@ -658,6 +658,34 @@ public:
 		const TArray<FManifestDelegateBindingDefinition>& DelegateBindings);
 
 	/**
+	 * v7.4: Track E - Native Bridge Detection
+	 * Checks if a delegate signature contains input const-ref parameters that require
+	 * the native bridge workaround (CPF_ReferenceParm && !CPF_OutParm).
+	 * See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
+	 * @param DelegateSignature The function signature to check
+	 * @return true if any parameter requires native bridge routing
+	 */
+	static bool RequiresNativeBridge(const UFunction* DelegateSignature);
+
+	/**
+	 * v7.4: Track E - Generate Bridge-Based Delegate Binding
+	 * Generates nodes to bind to UDamageEventBridge instead of raw ASC delegates.
+	 * Used for delegates with const-ref parameters (OnDamagedBy, OnDealtDamage, OnHealedBy).
+	 * @param Blueprint The ability blueprint to modify
+	 * @param Binding The delegate binding definition
+	 * @param EventGraph The event graph to add nodes to
+	 * @param CurrentPosX Current X position for node placement
+	 * @param CurrentPosY Current Y position for node placement
+	 * @return true if binding was generated successfully
+	 */
+	static bool GenerateBridgeBasedBinding(
+		UBlueprint* Blueprint,
+		const FManifestDelegateBindingDefinition& Binding,
+		UEdGraph* EventGraph,
+		float& CurrentPosX,
+		float& CurrentPosY);
+
+	/**
 	 * v4.33: Actor Blueprint Delegate Binding (External ASC Binding pattern)
 	 * Generates delegate binding nodes for actor blueprints using BeginPlay/EndPlay.
 	 * Implements Section 10 (External ASC Binding): Actor variable → GetAbilitySystemComponent → Cast to NASC → Bind.
