@@ -14530,7 +14530,8 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 		return false;
 	}
 
-	const UScriptStruct* SpecStruct = FGameplayEffectSpec::StaticStruct();
+	// Static cache - singleton lookup, no need to call per binding
+	static const UScriptStruct* SpecStruct = FGameplayEffectSpec::StaticStruct();
 	if (!SpecStruct)
 	{
 		return false;
@@ -14548,7 +14549,8 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 
 		if (const FStructProperty* StructProp = CastField<FStructProperty>(Prop))
 		{
-			if (StructProp->Struct && StructProp->Struct == SpecStruct)
+			const UScriptStruct* S = StructProp->Struct;
+			if (S && S == SpecStruct)
 			{
 				return true;  // BP-hostile struct detected - requires bridge
 			}
