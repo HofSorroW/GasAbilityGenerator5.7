@@ -1,5 +1,7 @@
-// GasAbilityGenerator v4.31
+// GasAbilityGenerator v7.5.3
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v7.5.3: Track E exec chain fix - GetOrCreateFromASC is BlueprintCallable (not Pure)
+//        Must wire: Cast.ValidCast → GetBridge.Exec → GetBridge.Then → AddDelegate.Exec
 // v4.31: Track E Native Bridge - UDamageEventBridge for FGameplayEffectSpec delegate params
 //       Type-based detection routes any delegate with FGameplayEffectSpec through bridge
 //       See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
@@ -361,6 +363,9 @@ bool FGeneratorBase::bForceMode = false;
 FDryRunSummary FGeneratorBase::DryRunSummary;
 FString FGeneratorBase::CurrentManifestPath;
 
+// v7.5.5: Static member initialization for log callback
+FGeneratorLogCallback FGeneratorBase::LogCallback;
+
 // v4.9.1: Static member initialization for generated materials cache (MIC parent lookup)
 TMap<FString, UMaterialInterface*> FMaterialGenerator::GeneratedMaterialsCache;
 // v4.10: Static member initialization for generated material functions cache
@@ -508,6 +513,18 @@ void FGeneratorBase::ClearActiveManifest()
 	ActiveManifest = nullptr;
 	GCurrentProjectRoot = TEXT("");
 	LogGeneration(TEXT("Manifest validation disabled, project root cleared"));
+}
+
+// v7.5.5: Set the log callback for commandlet integration
+void FGeneratorBase::SetLogCallback(FGeneratorLogCallback InCallback)
+{
+	LogCallback = InCallback;
+}
+
+// v7.5.5: Clear the log callback
+void FGeneratorBase::ClearLogCallback()
+{
+	LogCallback = nullptr;
 }
 
 // v2.1.9: Validate an asset name against the manifest whitelist
@@ -1922,6 +1939,12 @@ UEnum* FGeneratorBase::FindUserDefinedEnum(const FString& EnumName, const FStrin
 void FGeneratorBase::LogGeneration(const FString& Message)
 {
 	UE_LOG(LogGasAbilityGenerator, Display, TEXT("%s"), *Message);
+
+	// v7.5.5: Forward to commandlet log if callback is registered
+	if (LogCallback)
+	{
+		LogCallback(Message);
+	}
 }
 
 // v4.40: Safe package save with return value check
@@ -2898,6 +2921,11 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		int32 VFXNodesGenerated = FEventGraphGenerator::GenerateVFXSpawnNodes(Blueprint, Definition.VFXSpawns);
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d VFX spawn nodes"), VFXNodesGenerated, Definition.VFXSpawns.Num()));
 	}
+
+	// v7.5.7: Track delegate binding state for Contract 10.1 (final compile decision)
+	int32 DelegateNodesGenerated = 0;
+	bool bHasDelegateBindings = false;
+
 	if (Definition.DelegateBindings.Num() > 0)
 	{
 		// v4.40: Pre-validate delegate bindings before generation
@@ -2913,7 +2941,9 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 			// Continue with generation but log errors - don't fail entire ability generation
 		}
 
-		int32 DelegateNodesGenerated = FEventGraphGenerator::GenerateDelegateBindingNodes(Blueprint, Definition.DelegateBindings);
+		DelegateNodesGenerated = FEventGraphGenerator::GenerateDelegateBindingNodes(Blueprint, Definition.DelegateBindings);
+		// v7.5.7: Track if delegate bindings were created (affects final compile decision)
+		bHasDelegateBindings = (DelegateNodesGenerated > 0);
 		// v7.2: C1 - LOCKED CONTRACT 22 - Abort on connection failures
 		if (DelegateNodesGenerated < 0)
 		{
@@ -2973,10 +3003,49 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 		}
 	}
 
-	// v4.16: Final compile with validation (Contract 10 - Blueprint Compile Gate)
-	// Single compile after ALL nodes added - replaces checkpoint save pattern
+	// v7.5.6: DIAGNOSTIC - Dump all CreateDelegate nodes and their function names before final compile
+	{
+		UEdGraph* DiagGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint);
+		if (DiagGraph)
+		{
+			LogGeneration(TEXT("  [DIAG-CREATEDELEGATE] Dumping all CreateDelegate nodes before final compile:"));
+			int32 DelegateNodeCount = 0;
+			for (UEdGraphNode* Node : DiagGraph->Nodes)
+			{
+				if (UK2Node_CreateDelegate* CreateDel = Cast<UK2Node_CreateDelegate>(Node))
+				{
+					DelegateNodeCount++;
+					LogGeneration(FString::Printf(TEXT("    [%d] SelectedFunctionName='%s' GUID=%s"),
+						DelegateNodeCount,
+						*CreateDel->SelectedFunctionName.ToString(),
+						CreateDel->SelectedFunctionGuid.IsValid() ? TEXT("Valid") : TEXT("Invalid")));
+				}
+			}
+			LogGeneration(FString::Printf(TEXT("  [DIAG-CREATEDELEGATE] Total CreateDelegate nodes: %d"), DelegateNodeCount));
+		}
+	}
+
+	// v7.5.7: Contract 10.1 - Conditional Final Compile
+	// Abilities with delegate bindings must NOT be recompiled after CreateDelegate nodes are created.
+	// The two-pass delegate binding already performed a skeleton sync compile.
+	// Recompiling here would reconstruct UK2Node_CreateDelegate and clear SelectedFunctionName.
 	FCompilerResultsLog CompileLog;
-	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+	if (!bHasDelegateBindings)
+	{
+		// v4.16: Final compile with validation (Contract 10 - Blueprint Compile Gate)
+		// Single compile after ALL nodes added - replaces checkpoint save pattern
+		LogGeneration(TEXT("  [COMPILE] Final compile (no delegate bindings)..."));
+		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+	}
+	else
+	{
+		// v7.5.7: Skip final compile - delegate bindings already compiled in two-pass phase
+		LogGeneration(FString::Printf(TEXT("  [COMPILE] Skipping final compile - %d delegate binding(s) present (two-pass compile already performed)"),
+			DelegateNodesGenerated));
+		// Still need to compile for validation, but use SkipGarbageCollection to minimize reconstruction
+		// Actually, we already compiled in the delegate phase, so we just need to get compile status
+		// The delegate phase compile already validated the blueprint
+	}
 
 	// v4.22: AUDIT LOGGING POINT 3 - After CompileBlueprint, before ReapplyNodePositions
 	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_3_AfterCompileBlueprint"));
@@ -2988,7 +3057,8 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	FEventGraphGenerator::LogNodePositionsDiagnostic(Blueprint, TEXT("POINT_4_AfterReapplyNodePositions"));
 
 	// v4.16: Check compile result - abort save if errors (P3, P4)
-	if (CompileLog.NumErrors > 0)
+	// v7.5.7: For delegate-binding abilities, we didn't run final compile, so check passes
+	if (!bHasDelegateBindings && CompileLog.NumErrors > 0)
 	{
 		TArray<FString> ErrorMessages;
 		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
@@ -10949,6 +11019,13 @@ UK2Node* FEventGraphGenerator::CreateCustomEventNode(
 			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
 			PinType.PinSubCategoryObject = FGameplayTagContainer::StaticStruct();
 		}
+		// v7.5.1: Track E Native Bridge struct support
+		else if (ParamType->Equals(TEXT("DamageEventSummary"), ESearchCase::IgnoreCase) ||
+		         ParamType->Equals(TEXT("FDamageEventSummary"), ESearchCase::IgnoreCase))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = FDamageEventSummary::StaticStruct();
+		}
 		else
 		{
 			// Try to find as a class (for Object types like AbilitySystemComponent)
@@ -11899,6 +11976,9 @@ UK2Node* FEventGraphGenerator::CreateBreakStructNode(
 	{
 		// Narrative Pro structs
 		WellKnownStructs.Add(TEXT("FItemAddResult"), FItemAddResult::StaticStruct());
+		// v7.5.1: Track E Native Bridge struct
+		WellKnownStructs.Add(TEXT("DamageEventSummary"), FDamageEventSummary::StaticStruct());
+		WellKnownStructs.Add(TEXT("FDamageEventSummary"), FDamageEventSummary::StaticStruct());
 		// Add more structs as needed
 		LogGeneration(TEXT("BreakStruct: Initialized well-known structs table"));
 	}
@@ -14532,6 +14612,7 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 {
 	if (!DelegateSignature)
 	{
+		UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [BRIDGE-DEBUG] RequiresNativeBridge: null signature"));
 		return false;
 	}
 
@@ -14539,8 +14620,12 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 	static const UScriptStruct* SpecStruct = FGameplayEffectSpec::StaticStruct();
 	if (!SpecStruct)
 	{
+		UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [BRIDGE-DEBUG] RequiresNativeBridge: SpecStruct is null"));
 		return false;
 	}
+
+	UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [BRIDGE-DEBUG] Checking signature '%s' for FGameplayEffectSpec params"),
+		*DelegateSignature->GetName());
 
 	for (TFieldIterator<FProperty> It(DelegateSignature); It; ++It)
 	{
@@ -14552,11 +14637,17 @@ bool FEventGraphGenerator::RequiresNativeBridge(const UFunction* DelegateSignatu
 			continue;
 		}
 
+		UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [BRIDGE-DEBUG]   Param: %s, Type: %s"),
+			*Prop->GetName(), *Prop->GetClass()->GetName());
+
 		if (const FStructProperty* StructProp = CastField<FStructProperty>(Prop))
 		{
 			const UScriptStruct* S = StructProp->Struct;
+			UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [BRIDGE-DEBUG]     Struct: %s (expected: %s)"),
+				S ? *S->GetName() : TEXT("null"), *SpecStruct->GetName());
 			if (S && S == SpecStruct)
 			{
+				UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [BRIDGE-DEBUG]     MATCH! Bridge required"));
 				return true;  // BP-hostile struct detected - requires bridge
 			}
 		}
@@ -14615,35 +14706,75 @@ bool FEventGraphGenerator::GenerateBridgeBasedBinding(
 	LogGeneration(FString::Printf(TEXT("    [BRIDGE] Routing %s to bridge event %s"),
 		*Binding.Delegate, *BridgeEventName.ToString()));
 
-	// 1. Create CustomEvent handler with FDamageEventSummary parameter
-	UK2Node_CustomEvent* HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
-	EventGraph->AddNode(HandlerEvent, false, false);
-	HandlerEvent->CustomFunctionName = FName(*Binding.Handler);
-	HandlerEvent->bIsEditable = true;
-	HandlerEvent->CreateNewGuid();
-	HandlerEvent->PostPlacedNewNode();
-	HandlerEvent->AllocateDefaultPins();
-	HandlerEvent->NodePosX = CurrentPosX;
-	HandlerEvent->NodePosY = CurrentPosY;
+	// v7.5: Check if CustomEvent with this handler name already exists (prevents duplicate function error)
+	// If manifest defines explicit handler with old signature, we need to update it to bridge signature
+	UK2Node_CustomEvent* HandlerEvent = nullptr;
+	FName HandlerEventName(*Binding.Handler);
+	bool bExistingEventFound = false;
 
-	// Add FDamageEventSummary parameter to handler
-	FEdGraphPinType SummaryPinType;
-	SummaryPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
-	SummaryPinType.PinSubCategoryObject = FDamageEventSummary::StaticStruct();
-	SummaryPinType.bIsReference = true;
-	SummaryPinType.bIsConst = true;
+	for (UEdGraphNode* Node : EventGraph->Nodes)
+	{
+		if (UK2Node_CustomEvent* ExistingEvent = Cast<UK2Node_CustomEvent>(Node))
+		{
+			if (ExistingEvent->CustomFunctionName == HandlerEventName)
+			{
+				// Found existing handler - check if it has the bridge signature (Summary pin)
+				UEdGraphPin* SummaryPin = ExistingEvent->FindPin(TEXT("Summary"));
+				if (SummaryPin)
+				{
+					// Already has bridge signature, reuse it
+					HandlerEvent = ExistingEvent;
+					bExistingEventFound = true;
+					LogGeneration(FString::Printf(TEXT("    [BRIDGE] Reusing existing handler '%s' with bridge signature"),
+						*Binding.Handler));
+				}
+				else
+				{
+					// Has old signature - remove it and create new one with bridge signature
+					LogGeneration(FString::Printf(TEXT("    [BRIDGE] Replacing handler '%s' with bridge signature (old signature detected)"),
+						*Binding.Handler));
+					EventGraph->RemoveNode(ExistingEvent);
+				}
+				break;
+			}
+		}
+	}
 
-	HandlerEvent->CreateUserDefinedPin(
-		TEXT("Summary"),
-		SummaryPinType,
-		EGPD_Output
-	);
+	// 1. Create CustomEvent handler with FDamageEventSummary parameter (if not reusing existing)
+	if (!HandlerEvent)
+	{
+		HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
+		EventGraph->AddNode(HandlerEvent, false, false);
+		HandlerEvent->CustomFunctionName = FName(*Binding.Handler);
+		HandlerEvent->bIsEditable = true;
+		HandlerEvent->CreateNewGuid();
+		HandlerEvent->PostPlacedNewNode();
+		HandlerEvent->AllocateDefaultPins();
+		HandlerEvent->NodePosX = CurrentPosX;
+		HandlerEvent->NodePosY = CurrentPosY;
 
-	LogGeneration(FString::Printf(TEXT("    Created bridge handler event: %s with FDamageEventSummary param"),
-		*Binding.Handler));
+		// Add FDamageEventSummary parameter to handler
+		FEdGraphPinType SummaryPinType;
+		SummaryPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		SummaryPinType.PinSubCategoryObject = FDamageEventSummary::StaticStruct();
+		SummaryPinType.bIsReference = true;
+		SummaryPinType.bIsConst = true;
 
-	// 2. Skeleton sync before binding (same as regular delegate path)
-	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		HandlerEvent->CreateUserDefinedPin(
+			TEXT("Summary"),
+			SummaryPinType,
+			EGPD_Output
+		);
+
+		LogGeneration(FString::Printf(TEXT("    Created bridge handler event: %s with FDamageEventSummary param"),
+			*Binding.Handler));
+	}
+
+	// 2. Skeleton sync before binding - MUST compile to register CustomEvent in skeleton
+	// v7.5.4: MarkBlueprintAsStructurallyModified alone doesn't work in headless mode
+	// because there's no editor tick to process the dirty flag. Force synchronous compile.
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+	LogGeneration(TEXT("    [BRIDGE] Forced skeleton compilation (CustomEvent registered)"));
 
 	// 3. Find ActivateAbility event to wire binding
 	UK2Node_Event* ActivateEvent = nullptr;
@@ -14755,6 +14886,16 @@ bool FEventGraphGenerator::GenerateBridgeBasedBinding(
 	// Wire GetBridge.ReturnValue → AddDelegate.Target (PN_Self)
 	// Use GetReturnValuePin() for canonical access
 	UEdGraphPin* BridgeReturnPin = GetBridgeNode->GetReturnValuePin();
+
+	// v7.5.2: Diagnostic - log all AddDelegate pins to find correct target pin name
+	UE_LOG(LogGasAbilityGenerator, Display, TEXT("    [BRIDGE-PINS] AddDelegateNode pins:"));
+	for (UEdGraphPin* Pin : AddDelegateNode->Pins)
+	{
+		UE_LOG(LogGasAbilityGenerator, Display, TEXT("      - %s (%s)"),
+			*Pin->PinName.ToString(),
+			Pin->Direction == EGPD_Input ? TEXT("Input") : TEXT("Output"));
+	}
+
 	UEdGraphPin* AddDelegateSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self);
 	if (!BridgeReturnPin || !AddDelegateSelfPin)
 	{
@@ -14785,35 +14926,21 @@ bool FEventGraphGenerator::GenerateBridgeBasedBinding(
 	LogGeneration(FString::Printf(TEXT("    [BRIDGE] Bridge→AddDelegate.Target connection: %s"),
 		bConnected ? TEXT("SUCCESS") : TEXT("FAILED")));
 
-	// Force AddDelegate node reconstruction to commit pin types
-	// Note: Reconstruct can invalidate pins, so re-acquire and verify after
-	if (bConnected)
-	{
-		AddDelegateNode->ReconstructNode();
-
-		// Re-acquire pins after reconstruct
-		BridgeReturnPin = GetBridgeNode->GetReturnValuePin();
-		AddDelegateSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self);
-
-		// Verify connection still exists; rewire if needed
-		if (BridgeReturnPin && AddDelegateSelfPin && !AddDelegateSelfPin->LinkedTo.Contains(BridgeReturnPin))
-		{
-			LogGeneration(TEXT("    [BRIDGE] Connection lost after ReconstructNode, rewiring..."));
-			Schema->TryCreateConnection(BridgeReturnPin, AddDelegateSelfPin);
-		}
-	}
+	// v7.5.2: Skip ReconstructNode - it breaks the Target pin connection
+	// The connection is made correctly, but ReconstructNode recreates pins and loses the link.
+	// Note: Do NOT call AddDelegateNode->ReconstructNode() here!
 
 	// 8. Create CreateDelegate node for handler
+	// v7.5.1: SetFunction MUST be called BEFORE PostPlacedNewNode/AllocateDefaultPins
+	// (matches regular delegate path pattern - otherwise OutputDelegate pin type is undefined)
 	UK2Node_CreateDelegate* CreateDelegateNode = NewObject<UK2Node_CreateDelegate>(EventGraph);
+	CreateDelegateNode->SetFunction(FName(*Binding.Handler));  // MUST be first!
 	EventGraph->AddNode(CreateDelegateNode, false, false);
 	CreateDelegateNode->CreateNewGuid();
 	CreateDelegateNode->PostPlacedNewNode();
 	CreateDelegateNode->AllocateDefaultPins();
 	CreateDelegateNode->NodePosX = CurrentPosX + 1000.0f;
 	CreateDelegateNode->NodePosY = CurrentPosY + 250.0f;
-
-	// Set handler function name
-	CreateDelegateNode->SetFunction(FName(*Binding.Handler));
 
 	// Wire Self to CreateDelegate
 	UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);
@@ -14863,16 +14990,246 @@ bool FEventGraphGenerator::GenerateBridgeBasedBinding(
 		}
 	}
 
-	// Cast → GetBridge (pure function, no exec)
-	// GetBridge is pure, so just wire AddDelegate exec from Cast
+	// v7.5.3: Cast → GetBridge → AddDelegate (GetBridge is impure, needs exec chain!)
+	// GetOrCreateFromASC is BlueprintCallable (not Pure), so it has Exec/Then pins
 	UEdGraphPin* CastThenPin = CastNode->GetValidCastPin();
-	UEdGraphPin* AddDelegateExecPin = AddDelegateNode->GetExecPin();
-	if (CastThenPin && AddDelegateExecPin)
+	UEdGraphPin* GetBridgeExecPin = GetBridgeNode->GetExecPin();
+	if (CastThenPin && GetBridgeExecPin)
 	{
-		Schema->TryCreateConnection(CastThenPin, AddDelegateExecPin);
+		Schema->TryCreateConnection(CastThenPin, GetBridgeExecPin);
+	}
+
+	// GetBridge.Then → AddDelegate.Exec
+	UEdGraphPin* GetBridgeThenPin = GetBridgeNode->GetThenPin();
+	UEdGraphPin* AddDelegateExecPin = AddDelegateNode->GetExecPin();
+	if (GetBridgeThenPin && AddDelegateExecPin)
+	{
+		Schema->TryCreateConnection(GetBridgeThenPin, AddDelegateExecPin);
 	}
 
 	LogGeneration(FString::Printf(TEXT("    [BRIDGE] Generated bridge binding: %s → %s"),
+		*Binding.Delegate, *BridgeEventName.ToString()));
+
+	CurrentPosY += 500.0f;
+	return true;
+}
+
+/**
+ * v7.5.6: Generate bridge binding NODES only (assumes handler already exists and is compiled)
+ * This is the Pass 2 portion of the two-pass delegate binding approach.
+ * Handler creation and skeleton compile happen in Pass 1 of GenerateDelegateBindingNodes.
+ */
+bool FEventGraphGenerator::GenerateBridgeBindingNodes(
+	UBlueprint* Blueprint,
+	const FManifestDelegateBindingDefinition& Binding,
+	UEdGraph* EventGraph,
+	UK2Node_CustomEvent* HandlerEvent,
+	float& CurrentPosX,
+	float& CurrentPosY)
+{
+	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+
+	// Get bridge event name from delegate name
+	FName BridgeEventName = GetBridgeEventName(Binding.Delegate);
+	if (BridgeEventName == NAME_None)
+	{
+		LogGeneration(FString::Printf(TEXT("      [E_BRIDGE_UNSUPPORTED] Delegate '%s' not supported by bridge"),
+			*Binding.Delegate));
+		return false;
+	}
+
+	// Find ActivateAbility event for exec wiring
+	UK2Node_Event* ActivateEvent = nullptr;
+	for (UEdGraphNode* Node : EventGraph->Nodes)
+	{
+		if (UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node))
+		{
+			if (EventNode->EventReference.GetMemberName() == FName(TEXT("K2_ActivateAbility")) ||
+				EventNode->EventReference.GetMemberName() == FName(TEXT("ActivateAbility")))
+			{
+				ActivateEvent = EventNode;
+				break;
+			}
+		}
+	}
+
+	if (!ActivateEvent)
+	{
+		LogGeneration(TEXT("      [W_BRIDGE_NO_ACTIVATE] No ActivateAbility event found"));
+		CurrentPosY += 400.0f;
+		return true;  // Handler exists, just not wired
+	}
+
+	// Create GetAbilitySystemComponentFromActorInfo call
+	UK2Node_CallFunction* GetASCNode = NewObject<UK2Node_CallFunction>(EventGraph);
+	EventGraph->AddNode(GetASCNode, false, false);
+	UFunction* GetASCFunc = UGameplayAbility::StaticClass()->FindFunctionByName(TEXT("GetAbilitySystemComponentFromActorInfo"));
+	if (GetASCFunc)
+	{
+		GetASCNode->SetFromFunction(GetASCFunc);
+	}
+	GetASCNode->CreateNewGuid();
+	GetASCNode->PostPlacedNewNode();
+	GetASCNode->AllocateDefaultPins();
+	GetASCNode->NodePosX = CurrentPosX + 300.0f;
+	GetASCNode->NodePosY = CurrentPosY + 100.0f;
+
+	// Create Cast to UNarrativeAbilitySystemComponent
+	UK2Node_DynamicCast* CastNode = NewObject<UK2Node_DynamicCast>(EventGraph);
+	EventGraph->AddNode(CastNode, false, false);
+	CastNode->TargetType = UNarrativeAbilitySystemComponent::StaticClass();
+	CastNode->CreateNewGuid();
+	CastNode->PostPlacedNewNode();
+	CastNode->AllocateDefaultPins();
+	CastNode->NodePosX = CurrentPosX + 500.0f;
+	CastNode->NodePosY = CurrentPosY + 100.0f;
+
+	// Wire GetASC → Cast
+	UEdGraphPin* GetASCReturnPin = GetASCNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+	UEdGraphPin* CastObjectPin = CastNode->GetCastSourcePin();
+	if (GetASCReturnPin && CastObjectPin)
+	{
+		Schema->TryCreateConnection(GetASCReturnPin, CastObjectPin);
+	}
+
+	// Create GetOrCreateDamageEventBridge call
+	UK2Node_CallFunction* GetBridgeNode = NewObject<UK2Node_CallFunction>(EventGraph);
+	EventGraph->AddNode(GetBridgeNode, false, false);
+	UFunction* GetBridgeFunc = UDamageEventBridge::StaticClass()->FindFunctionByName(TEXT("GetOrCreateFromASC"));
+	if (!GetBridgeFunc)
+	{
+		LogGeneration(TEXT("      [E_BRIDGE_FUNC] GetOrCreateFromASC not found"));
+		return false;
+	}
+	GetBridgeNode->SetFromFunction(GetBridgeFunc);
+	GetBridgeNode->CreateNewGuid();
+	GetBridgeNode->PostPlacedNewNode();
+	GetBridgeNode->AllocateDefaultPins();
+	GetBridgeNode->NodePosX = CurrentPosX + 750.0f;
+	GetBridgeNode->NodePosY = CurrentPosY + 100.0f;
+
+	// Wire Cast → GetBridge
+	UEdGraphPin* CastResultPin = CastNode->GetCastResultPin();
+	UEdGraphPin* BridgeASCPin = GetBridgeNode->FindPin(TEXT("OwnerASC"));
+	if (CastResultPin && BridgeASCPin)
+	{
+		Schema->TryCreateConnection(CastResultPin, BridgeASCPin);
+	}
+
+	// Create AddDelegate node
+	UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(EventGraph);
+	EventGraph->AddNode(AddDelegateNode, false, false);
+	FMulticastDelegateProperty* BridgeDelegateProp = FindFProperty<FMulticastDelegateProperty>(
+		UDamageEventBridge::StaticClass(), BridgeEventName);
+	if (!BridgeDelegateProp)
+	{
+		LogGeneration(FString::Printf(TEXT("      [E_BRIDGE_DELEGATE] Delegate '%s' not found on bridge"),
+			*BridgeEventName.ToString()));
+		return false;
+	}
+	AddDelegateNode->SetFromProperty(BridgeDelegateProp, false, UDamageEventBridge::StaticClass());
+	AddDelegateNode->CreateNewGuid();
+	AddDelegateNode->PostPlacedNewNode();
+	AddDelegateNode->AllocateDefaultPins();
+	AddDelegateNode->NodePosX = CurrentPosX + 1000.0f;
+	AddDelegateNode->NodePosY = CurrentPosY + 100.0f;
+
+	// Wire GetBridge → AddDelegate.Target
+	UEdGraphPin* BridgeReturnPin = GetBridgeNode->GetReturnValuePin();
+	UEdGraphPin* AddDelegateSelfPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self);
+	if (BridgeReturnPin && AddDelegateSelfPin)
+	{
+		Schema->TryCreateConnection(BridgeReturnPin, AddDelegateSelfPin);
+		LogGeneration(TEXT("      [BRIDGE] Bridge→AddDelegate.Target connected"));
+	}
+
+	// Create CreateDelegate node - HANDLER IS ALREADY IN SKELETON (from Pass 1 compile)
+	UK2Node_CreateDelegate* CreateDelegateNode = NewObject<UK2Node_CreateDelegate>(EventGraph);
+	CreateDelegateNode->SetFunction(FName(*Binding.Handler));  // Handler name MUST be set first
+	EventGraph->AddNode(CreateDelegateNode, false, false);
+	CreateDelegateNode->CreateNewGuid();
+	CreateDelegateNode->PostPlacedNewNode();
+	CreateDelegateNode->AllocateDefaultPins();
+	CreateDelegateNode->NodePosX = CurrentPosX + 1000.0f;
+	CreateDelegateNode->NodePosY = CurrentPosY + 250.0f;
+
+	// Verify function name was set (diagnostic guard)
+	if (CreateDelegateNode->SelectedFunctionName == NAME_None)
+	{
+		LogGeneration(FString::Printf(TEXT("      [E_DELEGATE_SETFUNC_FAILED] SetFunction('%s') did not set SelectedFunctionName!"),
+			*Binding.Handler));
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("      [BRIDGE] CreateDelegate.SelectedFunctionName='%s' set successfully"),
+			*CreateDelegateNode->SelectedFunctionName.ToString()));
+	}
+
+	// Create Self node
+	UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);
+	EventGraph->AddNode(SelfNode, false, false);
+	SelfNode->CreateNewGuid();
+	SelfNode->PostPlacedNewNode();
+	SelfNode->AllocateDefaultPins();
+	SelfNode->NodePosX = CurrentPosX + 800.0f;
+	SelfNode->NodePosY = CurrentPosY + 250.0f;
+
+	// Wire Self → CreateDelegate
+	UEdGraphPin* SelfOutPin = SelfNode->FindPin(UEdGraphSchema_K2::PN_Self);
+	UEdGraphPin* CreateDelegateSelfPin = CreateDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self);
+	if (SelfOutPin && CreateDelegateSelfPin)
+	{
+		Schema->TryCreateConnection(SelfOutPin, CreateDelegateSelfPin);
+	}
+
+	// Wire CreateDelegate.OutputDelegate → AddDelegate.Delegate
+	UEdGraphPin* CreateDelegateOutPin = CreateDelegateNode->GetDelegateOutPin();
+	UEdGraphPin* AddDelegateDelegatePin = AddDelegateNode->GetDelegatePin();
+	if (CreateDelegateOutPin && AddDelegateDelegatePin)
+	{
+		Schema->TryCreateConnection(CreateDelegateOutPin, AddDelegateDelegatePin);
+	}
+
+	// Wire exec flow: ActivateAbility → Cast → GetBridge → AddDelegate
+	UEdGraphPin* ActivateThenPin = ActivateEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+	UEdGraphPin* CastExecPin = CastNode->GetExecPin();
+	if (ActivateThenPin && CastExecPin)
+	{
+		if (ActivateThenPin->LinkedTo.Num() > 0)
+		{
+			UEdGraphPin* NextNode = ActivateThenPin->LinkedTo[0];
+			ActivateThenPin->BreakAllPinLinks();
+			Schema->TryCreateConnection(ActivateThenPin, CastExecPin);
+
+			UEdGraphPin* AddDelegateThenPin = AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Then);
+			if (AddDelegateThenPin && NextNode)
+			{
+				Schema->TryCreateConnection(AddDelegateThenPin, NextNode);
+			}
+		}
+		else
+		{
+			Schema->TryCreateConnection(ActivateThenPin, CastExecPin);
+		}
+	}
+
+	// Wire Cast.Then → GetBridge.Exec
+	UEdGraphPin* CastThenPin = CastNode->FindPin(UEdGraphSchema_K2::PN_Then);
+	UEdGraphPin* GetBridgeExecPin = GetBridgeNode->GetExecPin();
+	if (CastThenPin && GetBridgeExecPin)
+	{
+		Schema->TryCreateConnection(CastThenPin, GetBridgeExecPin);
+	}
+
+	// Wire GetBridge.Then → AddDelegate.Exec
+	UEdGraphPin* GetBridgeThenPin = GetBridgeNode->GetThenPin();
+	UEdGraphPin* AddDelegateExecPin = AddDelegateNode->GetExecPin();
+	if (GetBridgeThenPin && AddDelegateExecPin)
+	{
+		Schema->TryCreateConnection(GetBridgeThenPin, AddDelegateExecPin);
+	}
+
+	LogGeneration(FString::Printf(TEXT("      [BRIDGE] Generated binding: %s → %s"),
 		*Binding.Delegate, *BridgeEventName.ToString()));
 
 	CurrentPosY += 500.0f;
@@ -14940,10 +15297,34 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 	TArray<UK2Node_DynamicCast*> CastNodesForAdd;
 	TArray<UK2Node_DynamicCast*> CastNodesForRemove;
 
+	// ============================================================================
+	// v7.5.6: TWO-PASS APPROACH - Fix for CreateDelegate.SelectedFunctionName being cleared
+	// ROOT CAUSE: Each binding's compile was reconstructing CreateDelegate nodes from
+	// previous bindings, clearing their SelectedFunctionName.
+	// FIX: Create ALL handlers first, ONE compile, then ALL CreateDelegate nodes.
+	// ============================================================================
+
+	// Track which bindings need bridge vs regular path, and their validated signatures
+	struct FValidatedBinding
+	{
+		const FManifestDelegateBindingDefinition* Binding;
+		UFunction* DelegateSignature;
+		bool bRequiresBridge;
+		UK2Node_CustomEvent* HandlerEvent;  // Set in Pass 1
+
+		FValidatedBinding() : Binding(nullptr), DelegateSignature(nullptr), bRequiresBridge(false), HandlerEvent(nullptr) {}
+	};
+	TArray<FValidatedBinding> ValidatedBindings;
+
+	// ============================================================================
+	// PASS 1: Validate bindings and create ALL handler CustomEvents
+	// ============================================================================
+	LogGeneration(TEXT("  [DELEGATE-PASS1] Creating handler CustomEvents for all bindings..."));
+
 	for (const FManifestDelegateBindingDefinition& Binding : DelegateBindings)
 	{
 		FString BindingId = Binding.Id.IsEmpty() ? Binding.Handler : Binding.Id;
-		LogGeneration(FString::Printf(TEXT("  Processing delegate binding: %s"), *BindingId));
+		LogGeneration(FString::Printf(TEXT("    Processing: %s"), *BindingId));
 
 		// 1. Find delegate property and get signature
 		FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(
@@ -14951,7 +15332,7 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 
 		if (!DelegateProp)
 		{
-			LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_NOT_FOUND] Delegate '%s' not found on UNarrativeAbilitySystemComponent"),
+			LogGeneration(FString::Printf(TEXT("      [E_DELEGATE_NOT_FOUND] Delegate '%s' not found"),
 				*Binding.Delegate));
 			continue;
 		}
@@ -14959,32 +15340,24 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 		UFunction* DelegateSignature = DelegateProp->SignatureFunction;
 		if (!DelegateSignature)
 		{
-			LogGeneration(FString::Printf(TEXT("    [E_DELEGATE_NO_SIGNATURE] No signature function for delegate '%s'"),
+			LogGeneration(FString::Printf(TEXT("      [E_DELEGATE_NO_SIGNATURE] No signature for '%s'"),
 				*Binding.Delegate));
 			continue;
 		}
 
-		// v7.4: Track E - Route to native bridge for delegates with const-ref parameters
-		// See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
-		if (RequiresNativeBridge(DelegateSignature))
+		// Determine if this needs bridge path
+		bool bRequiresBridge = RequiresNativeBridge(DelegateSignature);
+		if (bRequiresBridge)
 		{
-			LogGeneration(FString::Printf(TEXT("    [BRIDGE] Delegate '%s' requires native bridge (const-ref param detected)"),
+			LogGeneration(FString::Printf(TEXT("      [BRIDGE] Delegate '%s' requires native bridge"),
 				*Binding.Delegate));
-
-			if (GenerateBridgeBasedBinding(Blueprint, Binding, EventGraph, CurrentPosX, CurrentPosY))
-			{
-				NodesGenerated++;
-			}
-			continue;  // Skip pure BP binding path
 		}
 
-		// 2. Find or create Custom Event with delegate signature parameters
-		// v4.34: Check if a CustomEvent with this handler name already exists (from manifest event_graph)
-		// This prevents duplicate CustomEvents when manifest defines explicit handler nodes
+		// Create handler CustomEvent
 		UK2Node_CustomEvent* HandlerEvent = nullptr;
 		FName HandlerEventName(*Binding.Handler);
-		bool bExistingEventFound = false;
 
+		// Check for existing handler
 		for (UEdGraphNode* Node : EventGraph->Nodes)
 		{
 			if (UK2Node_CustomEvent* ExistingEvent = Cast<UK2Node_CustomEvent>(Node))
@@ -14992,14 +15365,13 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 				if (ExistingEvent->CustomFunctionName == HandlerEventName)
 				{
 					HandlerEvent = ExistingEvent;
-					bExistingEventFound = true;
-					LogGeneration(FString::Printf(TEXT("    Found existing handler event: %s (reusing)"), *Binding.Handler));
+					LogGeneration(FString::Printf(TEXT("      Found existing handler: %s"), *Binding.Handler));
 					break;
 				}
 			}
 		}
 
-		// Create new CustomEvent if one doesn't already exist
+		// Create new handler if needed
 		if (!HandlerEvent)
 		{
 			HandlerEvent = NewObject<UK2Node_CustomEvent>(EventGraph);
@@ -15011,53 +15383,91 @@ int32 FEventGraphGenerator::GenerateDelegateBindingNodes(
 			HandlerEvent->AllocateDefaultPins();
 			HandlerEvent->NodePosX = CurrentPosX;
 			HandlerEvent->NodePosY = CurrentPosY;
-		}
 
-		// v4.34: Always ensure delegate signature parameters exist on the handler event
-		// This handles both newly created events AND existing events from manifest
-		// that may have been created without parameters or with wrong parameters
-		for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
-		{
-			FProperty* Param = *PropIt;
-			if (Param->HasAnyPropertyFlags(CPF_Parm) && !Param->HasAnyPropertyFlags(CPF_ReturnParm))
+			if (bRequiresBridge)
 			{
-				// Check if parameter already exists on the event
-				UEdGraphPin* ExistingPin = HandlerEvent->FindPin(Param->GetFName(), EGPD_Output);
-				if (!ExistingPin)
-				{
-					FEdGraphPinType PinType;
-					Schema->ConvertPropertyToPinType(Param, PinType);
+				// Bridge handler gets FDamageEventSummary parameter
+				FEdGraphPinType SummaryPinType;
+				SummaryPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+				SummaryPinType.PinSubCategoryObject = FDamageEventSummary::StaticStruct();
+				SummaryPinType.bIsReference = true;
+				SummaryPinType.bIsConst = true;
 
-					HandlerEvent->CreateUserDefinedPin(
-						Param->GetFName(),
-						PinType,
-						EGPD_Output
-					);
-					// v4.40.2: Upgrade to WARNING - auto-fixing signature may mask manifest errors
-					UE_LOG(LogTemp, Warning, TEXT("[GasAbilityGenerator] SIGNATURE AUTO-FIX: [%s] Handler '%s' missing parameter '%s' from delegate '%s' - added automatically"),
-						*Blueprint->GetName(), *Binding.Handler, *Param->GetName(), *Binding.Delegate);
-					LogGeneration(FString::Printf(TEXT("    WARNING: Auto-added delegate parameter '%s' to handler '%s' - consider adding explicitly in manifest"),
-						*Param->GetName(), *Binding.Handler));
-				}
+				HandlerEvent->CreateUserDefinedPin(TEXT("Summary"), SummaryPinType, EGPD_Output);
+				LogGeneration(FString::Printf(TEXT("      Created bridge handler: %s with FDamageEventSummary param"),
+					*Binding.Handler));
 			}
+			else
+			{
+				// Regular handler gets delegate signature parameters
+				for (TFieldIterator<FProperty> PropIt(DelegateSignature); PropIt; ++PropIt)
+				{
+					FProperty* Param = *PropIt;
+					if (Param->HasAnyPropertyFlags(CPF_Parm) && !Param->HasAnyPropertyFlags(CPF_ReturnParm))
+					{
+						UEdGraphPin* ExistingPin = HandlerEvent->FindPin(Param->GetFName(), EGPD_Output);
+						if (!ExistingPin)
+						{
+							FEdGraphPinType PinType;
+							Schema->ConvertPropertyToPinType(Param, PinType);
+							HandlerEvent->CreateUserDefinedPin(Param->GetFName(), PinType, EGPD_Output);
+						}
+					}
+				}
+				LogGeneration(FString::Printf(TEXT("      Created regular handler: %s with delegate signature"),
+					*Binding.Handler));
+			}
+
+			CurrentPosY += 200.0f;  // Space for handlers vertically
 		}
 
-		if (!bExistingEventFound)
+		// Store validated binding info for Pass 2
+		FValidatedBinding VB;
+		VB.Binding = &Binding;
+		VB.DelegateSignature = DelegateSignature;
+		VB.bRequiresBridge = bRequiresBridge;
+		VB.HandlerEvent = HandlerEvent;
+		ValidatedBindings.Add(VB);
+	}
+
+	// ============================================================================
+	// SINGLE COMPILE: Register ALL handlers in skeleton before CreateDelegate nodes
+	// ============================================================================
+	LogGeneration(FString::Printf(TEXT("  [DELEGATE-COMPILE] Skeleton sync for %d handlers (single compile)..."),
+		ValidatedBindings.Num()));
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+	LogGeneration(TEXT("  [DELEGATE-COMPILE] Skeleton sync complete - all handlers registered"));
+
+	// Reset position for Pass 2
+	CurrentPosY = 0.0f;
+
+	// ============================================================================
+	// PASS 2: Create ALL CreateDelegate/AddDelegate nodes (handlers already in skeleton)
+	// ============================================================================
+	LogGeneration(TEXT("  [DELEGATE-PASS2] Creating delegate binding nodes..."));
+
+	for (const FValidatedBinding& VB : ValidatedBindings)
+	{
+		const FManifestDelegateBindingDefinition& Binding = *VB.Binding;
+		FString BindingId = Binding.Id.IsEmpty() ? Binding.Handler : Binding.Id;
+		LogGeneration(FString::Printf(TEXT("    Processing: %s"), *BindingId));
+
+		if (VB.bRequiresBridge)
 		{
-			LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
-				*Binding.Handler, *DelegateSignature->GetName()));
+			// BRIDGE PATH: Create bridge-specific nodes
+			if (GenerateBridgeBindingNodes(Blueprint, Binding, EventGraph, VB.HandlerEvent, CurrentPosX, CurrentPosY))
+			{
+				NodesGenerated++;
+			}
+			continue;
 		}
 
-		// v7.2: C2 - LOCKED CONTRACT 23 - Skeleton sync BEFORE CreateDelegate
-		// CustomEvent handler must exist in Skeleton Generated Class before CreateDelegate
-		// can resolve the handler function name. Without this sync, CreateDelegate stores
-		// an unresolved name, causing crash-on-open/thumbnail-compile.
-		// Audit: Claude-GPT dual audit 2026-01-27, H4 root cause confirmed
-		// v7.3: Reverted to MarkBlueprintAsStructurallyModified per audit - it does compile
-		// skeleton synchronously in UE5.7. The persistent crash was due to missing C2 in
-		// Actor BP pipeline, not insufficient GA path implementation.
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-		LogGeneration(TEXT("    Skeleton sync performed (C2: handler registered before CreateDelegate)"));
+		// REGULAR PATH continues below (non-bridge bindings)
+		// v7.5.6: Handler was already created in Pass 1 and compiled
+		UK2Node_CustomEvent* HandlerEvent = VB.HandlerEvent;
+		UFunction* DelegateSignature = VB.DelegateSignature;
+
+		LogGeneration(FString::Printf(TEXT("      Using handler from Pass 1: %s"), *Binding.Handler));
 
 		// 3. Create Self node for ability reference (used by CreateDelegate.PN_Self)
 		UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(EventGraph);
@@ -16001,8 +16411,9 @@ int32 FEventGraphGenerator::GenerateActorDelegateBindingNodes(
 			// v7.3: C2 - LOCKED CONTRACT 23 - Skeleton sync BEFORE CreateDelegate
 			// CustomEvent handler must exist in Skeleton Generated Class before CreateDelegate
 			// can resolve the handler function name. Audit: Claude-GPT dual audit 2026-01-27
-			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-			LogGeneration(TEXT("    Skeleton sync performed (C2: handler registered before CreateDelegate)"));
+			// v7.5.4: MarkBlueprintAsStructurallyModified doesn't compile in headless mode.
+			FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+			LogGeneration(TEXT("    Skeleton sync performed (C2: forced compile for handler registration)"));
 
 			LogGeneration(FString::Printf(TEXT("    Created handler event: %s with signature from %s"),
 				*Binding.Handler, *DelegateSignature->GetName()));

@@ -843,6 +843,12 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	LogMessage(TEXT("--- Generating Assets ---"));
 
 	FGeneratorBase::SetActiveManifest(&ManifestData);
+
+	// v7.5.5: Register log callback to capture generator logs in commandlet output
+	FGeneratorBase::SetLogCallback([this](const FString& Message) {
+		LogMessages.Add(Message);
+	});
+
 	FGenerationSummary Summary;
 
 	// v2.6.7: Clear tracking for this run
@@ -1763,6 +1769,7 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	}
 
 	FGeneratorBase::ClearActiveManifest();
+	FGeneratorBase::ClearLogCallback();  // v7.5.5: Stop forwarding logs
 
 	// v4.25: Count unique cascade roots
 	Summary.CascadeRootFailures = CascadeRoots.Num();

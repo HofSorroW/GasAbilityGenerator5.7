@@ -39,12 +39,29 @@ class UEdGraph;
 class UEdGraphPin;
 
 /**
+ * v7.5.5: Callback type for generator log messages
+ * Used to bridge LogGeneration() with commandlet's LogMessages array
+ */
+typedef TFunction<void(const FString&)> FGeneratorLogCallback;
+
+/**
  * Base generator class - all generators inherit from this
  */
 class GASABILITYGENERATOR_API FGeneratorBase
 {
 public:
 	virtual ~FGeneratorBase() = default;
+
+	/**
+	 * v7.5.5: Register a callback to receive LogGeneration messages
+	 * The commandlet uses this to capture generator logs in its output file
+	 */
+	static void SetLogCallback(FGeneratorLogCallback InCallback);
+
+	/**
+	 * v7.5.5: Clear the log callback (called when commandlet finishes)
+	 */
+	static void ClearLogCallback();
 
 	/**
 	 * Set the active manifest for validation
@@ -315,6 +332,9 @@ private:
 	static bool bForceMode;
 	static FDryRunSummary DryRunSummary;
 	static FString CurrentManifestPath;
+
+	// v7.5.5: Log callback for commandlet integration
+	static FGeneratorLogCallback LogCallback;
 };
 
 /**
@@ -682,6 +702,26 @@ public:
 		UBlueprint* Blueprint,
 		const FManifestDelegateBindingDefinition& Binding,
 		UEdGraph* EventGraph,
+		float& CurrentPosX,
+		float& CurrentPosY);
+
+	/**
+	 * v7.5.6: Pass 2 of two-pass delegate binding for bridge path
+	 * Creates CreateDelegate and AddDelegate nodes AFTER all handlers are compiled.
+	 * This prevents SelectedFunctionName from being cleared by subsequent compiles.
+	 * @param Blueprint The ability blueprint to modify
+	 * @param Binding The delegate binding definition
+	 * @param EventGraph The event graph to add nodes to
+	 * @param HandlerEvent The handler CustomEvent created in Pass 1
+	 * @param CurrentPosX Current X position for node placement
+	 * @param CurrentPosY Current Y position for node placement
+	 * @return true if binding nodes were generated successfully
+	 */
+	static bool GenerateBridgeBindingNodes(
+		UBlueprint* Blueprint,
+		const FManifestDelegateBindingDefinition& Binding,
+		UEdGraph* EventGraph,
+		class UK2Node_CustomEvent* HandlerEvent,
 		float& CurrentPosX,
 		float& CurrentPosY);
 
