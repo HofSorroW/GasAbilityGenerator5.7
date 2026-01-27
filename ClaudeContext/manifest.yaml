@@ -166,21 +166,9 @@ tags:
   - tag: Cooldown.Father.Symbiote
     comment: Symbiote form cooldown
 
-  # Data Tags - SetByCaller (13)
+  # Data Tags - SetByCaller (7)
   - tag: Data.Backstab.DamageBonus
     comment: SetByCaller backstab bonus
-  - tag: Data.Damage.DomeExplosion
-    comment: SetByCaller dome damage
-  - tag: Data.Damage.ElectricWeb
-    comment: SetByCaller trap damage
-  - tag: Data.Damage.ProximityStrike
-    comment: SetByCaller proximity damage
-  - tag: Data.Damage.Father
-    comment: SetByCaller father base damage
-  - tag: Data.Damage.Turret
-    comment: SetByCaller turret damage
-  - tag: Data.Dome.Damage
-    comment: SetByCaller dome burst damage
   - tag: Data.Dome.Energy
     comment: SetByCaller dome energy
   - tag: Data.Duration
@@ -383,9 +371,7 @@ tags:
   - tag: Father.Dome.OnCooldown
     comment: Dome burst on cooldown
 
-  # State Tags - General (5)
-  - tag: State.Invulnerable
-    comment: Entity cannot take damage
+  # State Tags - General (4)
   - tag: State.BackstabReady
     comment: Backstab conditions met
   - tag: State.Rooted
@@ -406,8 +392,8 @@ tags:
     comment: Father companion faction
   - tag: Narrative.Factions.Player
     comment: Player faction
-  - tag: Faction.NPC.Returned
-    comment: Returned creatures - neutral until provoked or bonded
+  - tag: Narrative.Factions.Returned
+    comment: Returned faction - hostile to player by default (configure via SetFactionAttitude)
 
   # Equipment Tags (1)
   - tag: Narrative.Equipment.Slot.FatherForm
@@ -704,8 +690,6 @@ gameplay_effects:
     duration_policy: Instant
     execution_calculations:
       - class: NarrativeDamageExecCalc
-    setbycaller_magnitudes:
-      - tag: Data.Damage.Father
     asset_tag: Effect.Father.Damage
 
   - name: GE_LaserDamage
@@ -713,8 +697,6 @@ gameplay_effects:
     duration_policy: Instant
     execution_calculations:
       - class: NarrativeDamageExecCalc
-    setbycaller_magnitudes:
-      - tag: Data.Damage.Laser
     asset_tag: Effect.Damage.Laser
 
   - name: GE_DomeBurstDamage
@@ -722,8 +704,6 @@ gameplay_effects:
     duration_policy: Instant
     execution_calculations:
       - class: NarrativeDamageExecCalc
-    setbycaller_magnitudes:
-      - tag: Data.Dome.Damage
     asset_tag: Effect.Father.DomeBurst
 
   - name: GE_ProximityDamage
@@ -731,8 +711,6 @@ gameplay_effects:
     duration_policy: Instant
     execution_calculations:
       - class: NarrativeDamageExecCalc
-    setbycaller_magnitudes:
-      - tag: Data.Damage.ProximityStrike
     asset_tag: Effect.Father.ProximityDamage
 
   - name: GE_ElectricTrapDamage
@@ -740,8 +718,6 @@ gameplay_effects:
     duration_policy: Instant
     execution_calculations:
       - class: NarrativeDamageExecCalc
-    setbycaller_magnitudes:
-      - tag: Data.Damage.ElectricWeb
     asset_tag: Effect.ElectricWeb.Damage
 
   # Utility Effects (7)
@@ -7627,7 +7603,7 @@ npc_definitions:
     ability_configuration: AC_GathererScout
     activity_configuration: AC_GathererScoutBehavior
     default_factions:
-      - Narrative.Factions.Enemy
+      - Narrative.Factions.Returned
 
   - name: NPC_Reinforcement
     folder: Enemies/Gatherer
@@ -7636,7 +7612,7 @@ npc_definitions:
     ability_configuration: AC_Reinforcement
     activity_configuration: AC_ReinforcementBehavior
     default_factions:
-      - Narrative.Factions.Enemy
+      - Narrative.Factions.Returned
 
   # ============================================================================
   # RETURNED STALKER SYSTEM
@@ -7650,7 +7626,7 @@ npc_definitions:
     activity_configuration: AC_ReturnedStalkerBehavior
     tagged_dialogue_set: TaggedDialogueSet_Returned
     default_factions:
-      - Faction.NPC.Returned
+      - Narrative.Factions.Returned
     default_owned_tags:
       - State.NPC.ReturnedStalker
 
@@ -7664,7 +7640,7 @@ npc_definitions:
     ability_configuration: AC_SupportBuffer
     activity_configuration: AC_SupportBufferBehavior
     default_factions:
-      - Narrative.Factions.Friendly
+      - Narrative.Factions.FatherCompanion
 
   # ============================================================================
   # GUARD FORMATION SYSTEM
@@ -7676,7 +7652,7 @@ npc_definitions:
     ability_configuration: AC_FormationGuard
     activity_configuration: AC_FormationGuardBehavior
     default_factions:
-      - Narrative.Factions.Friendly
+      - Narrative.Factions.FatherCompanion
 
   # ============================================================================
   # POSSESSED EXPLODER SYSTEM
@@ -7688,7 +7664,7 @@ npc_definitions:
     ability_configuration: AC_PossessedExploder
     activity_configuration: AC_PossessedExploderBehavior
     default_factions:
-      - Narrative.Factions.Enemy
+      - Narrative.Factions.Returned
 
   # ============================================================================
   # WARDEN HUSK SYSTEM (Two-Phase Boss)
@@ -7700,7 +7676,7 @@ npc_definitions:
     ability_configuration: AC_WardenHusk
     activity_configuration: AC_WardenHuskBehavior
     default_factions:
-      - Narrative.Factions.Enemy
+      - Narrative.Factions.Returned
 
   - name: NPC_WardenCore
     folder: Enemies/Warden
@@ -7709,7 +7685,7 @@ npc_definitions:
     ability_configuration: AC_WardenCore
     activity_configuration: AC_WardenCoreBehavior
     default_factions:
-      - Narrative.Factions.Enemy
+      - Narrative.Factions.Returned
 
   # ============================================================================
   # BIOMECHANICAL DETACHMENT SYSTEM
@@ -7721,7 +7697,7 @@ npc_definitions:
     ability_configuration: AC_BiomechHost
     activity_configuration: AC_BiomechHostBehavior
     default_factions:
-      - Narrative.Factions.Enemy
+      - Narrative.Factions.Returned
 
   - name: NPC_BiomechCreature
     folder: Enemies/Biomech
@@ -7730,7 +7706,7 @@ npc_definitions:
     ability_configuration: AC_BiomechCreature
     activity_configuration: AC_BiomechCreatureBehavior
     default_factions:
-      - Narrative.Factions.Enemy
+      - Narrative.Factions.Returned
 
 # ============================================================================
 # CHARACTER DEFINITIONS (1)
@@ -11592,7 +11568,7 @@ actor_blueprints:  # STALKER NPC BLUEPRINT
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
             parameters:
-              SingleTag: "Faction.NPC.Returned"
+              SingleTag: "Narrative.Factions.Returned"
           position: [1500, 100]
         - id: AddFactionTag
           type: CallFunction

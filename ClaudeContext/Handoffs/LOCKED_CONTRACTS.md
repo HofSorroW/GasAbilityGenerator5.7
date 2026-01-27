@@ -1127,6 +1127,82 @@ After CustomEvent creation + `CreateUserDefinedPin` loop completes, and before a
 
 ---
 
+## Contract 24: D-DAMAGE-ATTR-1 — Attribute-Based Damage System
+
+**ID:** D-DAMAGE-ATTR-1
+**Status:** LOCKED
+**Severity:** Required
+**Audit:** Claude–GPT manifest audit (2026-01-27)
+
+### Rule
+
+All damage GameplayEffects using `NarrativeDamageExecCalc` rely on the **attribute-based** damage pattern:
+
+1. **Damage source:** Source character's `AttackDamage` attribute (set by form state GEs)
+2. **Defense:** Target character's `Armor` attribute
+3. **SetByCaller tags:** NOT used by NarrativeDamageExecCalc — DO NOT specify `setbycaller_magnitudes` for damage
+
+### Evidence (NarrativeDamageExecCalc.cpp:82-88)
+
+```cpp
+float Damage = 0.0f;
+// Capture optional damage value set on the damage GE as a CalculationModifier
+ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(DamageStatics().AttackDamageDef, EvaluationParameters, Damage);
+
+float AttackRating = 0.f;
+ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(DamageStatics().AttackRatingDef, EvaluationParameters, AttackRating);
+```
+
+### Correct Pattern
+
+```yaml
+gameplay_effects:
+  - name: GE_FatherDamage
+    folder: Effects/Damage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    # NO setbycaller_magnitudes - damage comes from AttackDamage attribute
+```
+
+### Forbidden Pattern
+
+```yaml
+gameplay_effects:
+  - name: GE_FatherDamage
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    setbycaller_magnitudes:
+      - tag: Data.Damage.Father    # WRONG - exec calc ignores this
+```
+
+### Form State GEs Set AttackDamage
+
+Damage values are configured in form state GEs (already locked via Form State Architecture):
+
+| Form | GE | AttackDamage Value |
+|------|----|--------------------|
+| Crawler | GE_CrawlerState | Base melee damage |
+| Armor | GE_ArmorState | Reduced damage (defensive) |
+| Exoskeleton | GE_ExoskeletonState | Backstab multiplier |
+| Symbiote | GE_SymbioteState | Proximity damage |
+| Engineer | GE_EngineerState | Turret/trap damage |
+
+### Alternative (Not Currently Used)
+
+If SetByCaller damage is needed for a specific GE:
+- Use `SetByCaller.Damage` tag (Narrative Pro built-in)
+- Remove `execution_calculations`
+- Apply via `ApplyGameplayEffectToTarget` with `AssignTagSetByCallerMagnitude`
+
+### Reference
+
+- NarrativeDamageExecCalc: `NarrativeArsenal/Private/Abilities/NarrativeDamageExecCalc.cpp:82-88`
+- Form state GEs: `/Content/FatherCompanion/Effects/FormState/`
+- Manifest audit: `Manifest_Audit_Phase_D_Tag_Consistency_v1_0.md` Issue #4
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -1158,3 +1234,4 @@ Any change that touches a LOCKED implementation must:
 | v4.38 | 2026-01-26 | Added Contract 20 — P-BB-KEY-2 NarrativeProSettings BB Key Access (Claude–GPT dual audit): Canonical NP BB keys must use `Get Narrative Pro Settings → BBKey [Name]` pattern, not hardcoded MakeLiteralName. Fixed INC-4/5/6 in BTS_CalculateFormationPosition, BTS_AdjustFormationSpeed, BTS_CheckExplosionProximity. |
 | v7.1 | 2026-01-27 | Added Contract 21 — R-INPUTTAG-1 NPC Combat Ability InputTag Requirement (Claude–GPT dual audit): NPC combat abilities used by BPA_Attack_* activities MUST define valid Narrative.Input.* tag. GA_CoreLaser was non-functional due to missing input_tag (INC-WARDEN-CORELASER-1). Fixed manifest with proper event graph including AI targeting from blackboard and damage GE application. |
 | v7.2 | 2026-01-27 | Added Contracts 22-23 (Claude–GPT dual audit): C1 (C_PIN_CONNECTION_FAILURE_GATE) — All pin connections must pass 3-step gate (existence, schema approval, link integrity); no soft-fail; unsavable on failure. C2 (C_SKELETON_SYNC_BEFORE_CREATEDELEGATE) — Skeleton sync required after CustomEvent creation/modification, before CreateDelegate instantiation; prevents crash-on-open from unresolved handler names. Root cause H4 for GA_ProtectiveDome crash confirmed and fixed. |
+| v7.3 | 2026-01-27 | Added Contract 24 — D-DAMAGE-ATTR-1 Attribute-Based Damage System (Claude–GPT manifest audit): NarrativeDamageExecCalc uses AttackDamage/Armor attributes, NOT SetByCaller tags. Removed redundant setbycaller_magnitudes from 5 damage GEs. |
