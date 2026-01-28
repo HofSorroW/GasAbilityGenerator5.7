@@ -3414,6 +3414,17 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				// Start new node
 				if (TrimmedLine.StartsWith(TEXT("- id:")))
 				{
+					// v7.8.11: Save current service/decorator before saving node
+					if (!CurrentService.Class.IsEmpty())
+					{
+						CurrentNode.Services.Add(CurrentService);
+						CurrentService = FManifestBTServiceDefinition();
+					}
+					if (!CurrentDecorator.Class.IsEmpty())
+					{
+						CurrentNode.Decorators.Add(CurrentDecorator);
+						CurrentDecorator = FManifestBTDecoratorDefinition();
+					}
 					// Save previous node
 					if (!CurrentNode.Id.IsEmpty())
 					{
@@ -3452,6 +3463,12 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				}
 				else if (TrimmedLine.Equals(TEXT("children:")) || TrimmedLine.StartsWith(TEXT("children:")))
 				{
+					// v7.8.11: Save current service before transitioning out of services section
+					if (bInServices && !CurrentService.Class.IsEmpty())
+					{
+						CurrentNode.Services.Add(CurrentService);
+						CurrentService = FManifestBTServiceDefinition();
+					}
 					bInChildren = true;
 					bInDecorators = false;
 					bInServices = false;
@@ -3459,6 +3476,12 @@ void FGasAbilityGeneratorParser::ParseBehaviorTrees(const TArray<FString>& Lines
 				}
 				else if (TrimmedLine.Equals(TEXT("decorators:")) || TrimmedLine.StartsWith(TEXT("decorators:")))
 				{
+					// v7.8.11: Save current service before transitioning out of services section
+					if (bInServices && !CurrentService.Class.IsEmpty())
+					{
+						CurrentNode.Services.Add(CurrentService);
+						CurrentService = FManifestBTServiceDefinition();
+					}
 					bInDecorators = true;
 					bInChildren = false;
 					bInServices = false;

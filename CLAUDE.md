@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v7.8.1) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.8.11) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -330,7 +330,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v7.8.1)
+## GasAbilityGenerator Plugin (v7.8.11)
 
 ### LOCKED: NEVER Simplify Abilities (Contract 25)
 
@@ -1136,9 +1136,10 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
+| **v7.8.11** | BT Service Session Cache Fix: Fixed parser bug where last BT service wasn't saved when transitioning to children/decorators sections. Added session cache lookup for BT services/tasks/decorators before LoadClass. Added error logging for missing BT classes and failed property settings. BT_FormationFollow now correctly receives both BTS_CalculateFormationPosition and BTS_AdjustFormationSpeed services. 194/194 assets verified. |
 | **v7.8.3** | Type-Aware Redundant Cast Detection (RC1): Pre-validation now detects when DynamicCast is used on a value that already has the target type. Reports `E_PREVAL_REDUNDANT_CAST` warning. Known return types tracked: GetActivityComponent→NPCActivityComponent, GetAbilitySystemComponent→AbilitySystemComponent, GetCharacterMovement→CharacterMovementComponent, etc. Note: GetComponentByClass returns base ActorComponent*, so casts after it are NOT redundant. LOCKED_WORKFLOW.md updated: Redundant casts elevated from P3 polish to Type Warning category. |
 | **v7.8.2** | Contract 25 Compliance Audit: Fixed 3 abilities with simplified implementations. GA_StealthField: Added -20% speed reduction via CharacterMovementComponent PropertyGet/Set (guide v3.8). GA_FatherSymbiote: Added +50% speed/+30% jump boosts via CMC multipliers (guide v4.11). GA_ProximityStrike: Converted single-fire to 0.5s timer loop with CustomEvent callback (guide v2.9). All abilities now match implementation guides exactly per Contract 25. |
-| **v7.8.1** | Automation Gap Closure: Audit revealed most "gap" items already implemented in v4.30+. Added NPC Blueprint auto-link by convention (tries BP_{NPCBaseName} in NPCs/, Characters/ folders). Updated TODO_Tracking.md to reflect actual implementation state. |
+| **v7.8.11** | Automation Gap Closure: Audit revealed most "gap" items already implemented in v4.30+. Added NPC Blueprint auto-link by convention (tries BP_{NPCBaseName} in NPCs/, Characters/ folders). Updated TODO_Tracking.md to reflect actual implementation state. |
 | **v7.8.0** | Contract 25 (C_NEVER_SIMPLIFY_ABILITIES): Abilities MUST match implementation guides exactly. Added AbilityAsyncWaitAttributeChanged node type for proper damage-scaled energy absorption. GA_ProtectiveDome restored to guide spec: 30% of damage becomes dome energy (was incorrectly simplified to fixed 50 per hit). Added 4 new node types total (AbilityTaskWaitGameplayEvent, AbilityTaskWaitGEAppliedToSelf, AbilityTaskWaitGEAppliedToTarget, AbilityAsyncWaitAttributeChanged). Contract 10 maintained. |
 | **v7.7** | Track E Removal: Complete removal of native bridge system (UDamageEventBridge, FDamageEventSummary). Contract 10.1 exception removed - all abilities now go through final compilation per Contract 10. Cleaned orphaned handlers from GA_ProtectiveDome and GA_StealthField. 194/194 assets verified. |
 

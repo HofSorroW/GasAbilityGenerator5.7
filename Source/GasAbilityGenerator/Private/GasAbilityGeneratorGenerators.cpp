@@ -5566,18 +5566,31 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						LogGeneration(FString::Printf(TEXT("  Created composite node: %s (%s)"), *NodeDef.Id, *NodeDef.Type));
 
 						// v4.0: Add services to composite nodes
+						// v7.8.11: Added session cache lookup for Blueprint services created in same session
 						for (const FManifestBTServiceDefinition& ServiceDef : NodeDef.Services)
 						{
 							UClass* ServiceClass = nullptr;
-							TArray<FString> SvcPaths;
-							SvcPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *ServiceDef.Class));
-							SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
-							SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
 
-							for (const FString& Path : SvcPaths)
+							// v7.8.11: Check session cache FIRST for BTS_ services created this session
+							if (UClass** CachedClass = GSessionBlueprintClassCache.Find(ServiceDef.Class))
 							{
-								ServiceClass = LoadClass<UBTService>(nullptr, *Path);
-								if (ServiceClass) break;
+								ServiceClass = *CachedClass;
+								LogGeneration(FString::Printf(TEXT("    Found service '%s' in session cache"), *ServiceDef.Class));
+							}
+
+							// Fallback: try LoadClass paths
+							if (!ServiceClass)
+							{
+								TArray<FString> SvcPaths;
+								SvcPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *ServiceDef.Class));
+								SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
+								SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
+
+								for (const FString& Path : SvcPaths)
+								{
+									ServiceClass = LoadClass<UBTService>(nullptr, *Path);
+									if (ServiceClass) break;
+								}
 							}
 
 							if (ServiceClass)
@@ -5604,14 +5617,24 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 									}
 
 									// v4.0: Apply custom properties
+									// v7.8.11: Log failures for debugging
 									for (const auto& Prop : ServiceDef.Properties)
 									{
-										SetBTPropertyByReflection(Service, Prop.Key, Prop.Value);
+										if (!SetBTPropertyByReflection(Service, Prop.Key, Prop.Value))
+										{
+											LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set service property %s = %s"), *Prop.Key, *Prop.Value));
+										}
 									}
 
 									CompositeNode->Services.Add(Service);
 									LogGeneration(FString::Printf(TEXT("    Added service: %s (interval=%.2f)"), *ServiceDef.Class, ServiceDef.Interval));
 								}
+							}
+							else
+							{
+								// v7.8.11: Log error when service class not found
+								LogGeneration(FString::Printf(TEXT("    [E_BT_SERVICE_NOT_FOUND] %s | Service class '%s' not found (checked session cache and %d paths)"),
+									*Definition.Name, *ServiceDef.Class, 3));
 							}
 						}
 					}
@@ -5623,16 +5646,28 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 
 					if (!NodeDef.TaskClass.IsEmpty())
 					{
-						TArray<FString> TaskPaths;
-						TaskPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *NodeDef.TaskClass));
-						TaskPaths.Add(FString::Printf(TEXT("%s/AI/Tasks/%s.%s_C"), *GetProjectRoot(), *NodeDef.TaskClass, *NodeDef.TaskClass));
-						TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
-
 						UClass* TaskClass = nullptr;
-						for (const FString& Path : TaskPaths)
+
+						// v7.8.11: Check session cache FIRST for BTT_ tasks created this session
+						if (UClass** CachedClass = GSessionBlueprintClassCache.Find(NodeDef.TaskClass))
 						{
-							TaskClass = LoadClass<UBTTaskNode>(nullptr, *Path);
-							if (TaskClass) break;
+							TaskClass = *CachedClass;
+							LogGeneration(FString::Printf(TEXT("  Found task '%s' in session cache"), *NodeDef.TaskClass));
+						}
+
+						// Fallback: try LoadClass paths
+						if (!TaskClass)
+						{
+							TArray<FString> TaskPaths;
+							TaskPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *NodeDef.TaskClass));
+							TaskPaths.Add(FString::Printf(TEXT("%s/AI/Tasks/%s.%s_C"), *GetProjectRoot(), *NodeDef.TaskClass, *NodeDef.TaskClass));
+							TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
+
+							for (const FString& Path : TaskPaths)
+							{
+								TaskClass = LoadClass<UBTTaskNode>(nullptr, *Path);
+								if (TaskClass) break;
+							}
 						}
 
 						if (TaskClass)
@@ -5643,7 +5678,7 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						else
 						{
 							// v4.23 FAIL-FAST: Manifest references task class that cannot be resolved
-							LogGeneration(FString::Printf(TEXT("[E_BT_TASK_CLASS_NOT_FOUND] %s | Task class not found: %s"),
+							LogGeneration(FString::Printf(TEXT("[E_BT_TASK_CLASS_NOT_FOUND] %s | Task class not found: %s (checked session cache and 3 paths)"),
 								*Definition.Name, *NodeDef.TaskClass));
 							return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 								FString::Printf(TEXT("BehaviorTree task class '%s' not found - manifest references class but resolution failed"), *NodeDef.TaskClass));
@@ -5667,17 +5702,23 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						}
 
 						// v4.0: Apply task properties via reflection
+						// v7.8.11: Log both success and failure for debugging
 						for (const auto& Prop : NodeDef.Properties)
 						{
 							if (SetBTPropertyByReflection(TaskNode, Prop.Key, Prop.Value))
 							{
 								LogGeneration(FString::Printf(TEXT("    Set property %s = %s"), *Prop.Key, *Prop.Value));
 							}
+							else
+							{
+								LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set task property %s = %s"), *Prop.Key, *Prop.Value));
+							}
 						}
 					}
 				}
 
 				// v4.0: Create decorators for this node
+				// v7.8.11: Added session cache lookup for Blueprint decorators created in same session
 				TArray<UBTDecorator*> NodeDecorators;
 				for (const FManifestBTDecoratorDefinition& DecoratorDef : NodeDef.Decorators)
 				{
@@ -5688,15 +5729,26 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 					}
 					else
 					{
-						TArray<FString> DecPaths;
-						DecPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *DecoratorDef.Class));
-						DecPaths.Add(FString::Printf(TEXT("%s/AI/Decorators/%s.%s_C"), *GetProjectRoot(), *DecoratorDef.Class, *DecoratorDef.Class));
-						DecPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
-
-						for (const FString& Path : DecPaths)
+						// v7.8.11: Check session cache FIRST for BTD_ decorators created this session
+						if (UClass** CachedClass = GSessionBlueprintClassCache.Find(DecoratorDef.Class))
 						{
-							DecoratorClass = LoadClass<UBTDecorator>(nullptr, *Path);
-							if (DecoratorClass) break;
+							DecoratorClass = *CachedClass;
+							LogGeneration(FString::Printf(TEXT("    Found decorator '%s' in session cache"), *DecoratorDef.Class));
+						}
+
+						// Fallback: try LoadClass paths
+						if (!DecoratorClass)
+						{
+							TArray<FString> DecPaths;
+							DecPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *DecoratorDef.Class));
+							DecPaths.Add(FString::Printf(TEXT("%s/AI/Decorators/%s.%s_C"), *GetProjectRoot(), *DecoratorDef.Class, *DecoratorDef.Class));
+							DecPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
+
+							for (const FString& Path : DecPaths)
+							{
+								DecoratorClass = LoadClass<UBTDecorator>(nullptr, *Path);
+								if (DecoratorClass) break;
+							}
 						}
 					}
 
@@ -5800,9 +5852,13 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 							}
 
 							// v4.0: Apply custom properties
+							// v7.8.11: Log failures for debugging
 							for (const auto& Prop : DecoratorDef.Properties)
 							{
-								SetBTPropertyByReflection(Decorator, Prop.Key, Prop.Value);
+								if (!SetBTPropertyByReflection(Decorator, Prop.Key, Prop.Value))
+								{
+									LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set decorator property %s = %s"), *Prop.Key, *Prop.Value));
+								}
 							}
 
 							NodeDecorators.Add(Decorator);
@@ -5810,6 +5866,12 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 								*DecoratorDef.Class,
 								DecoratorDef.bInverseCondition ? TEXT(" (inverted)") : TEXT("")));
 						}
+					}
+					else
+					{
+						// v7.8.11: Log error when decorator class not found
+						LogGeneration(FString::Printf(TEXT("    [E_BT_DECORATOR_NOT_FOUND] %s | Decorator class '%s' not found (checked session cache and 3 paths)"),
+							*Definition.Name, *DecoratorDef.Class));
 					}
 				}
 
