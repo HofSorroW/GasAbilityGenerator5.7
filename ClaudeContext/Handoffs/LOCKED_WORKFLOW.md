@@ -194,10 +194,14 @@ Errors are classified into two categories with different handling requirements.
 | Type mismatch | `CONNECT_RESPONSE_DISALLOW` | Fix connection types |
 | Missing asset refs | `E_PREVAL_ASSET_NOT_FOUND` | Create or fix path |
 
+### Type Warnings (Pre-validation - SHOULD FIX)
+| Issue Type | Example | Action |
+|------------|---------|--------|
+| Redundant cast | `E_PREVAL_REDUNDANT_CAST` "ReturnValue is already type X" | Remove unnecessary cast |
+
 ### Polish Issues (P3 - Track, Don't Block)
 | Issue Type | Example | Action |
 |------------|---------|--------|
-| Redundant cast | "ReturnValue is already type X" | Log, continue |
 | Style warnings | Unused variable | Log, continue |
 | Editor warnings | Non-blocking UE warnings | Log, continue |
 

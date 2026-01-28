@@ -181,6 +181,7 @@ FPreValidationReport FPreValidator::Validate(const FManifestData& Data, const FS
 	ValidateQuestStateMachine(Data, Report, Cache, ManifestPath);
 	ValidateBehaviorTreeNodes(Data, Report, Cache, ManifestPath);
 	ValidateNPCReferences(Data, Report, Cache, ManifestPath);
+	ValidateRedundantCasts(Data, Report, Cache, ManifestPath);  // v7.8.3: Type-aware redundant cast detection
 
 	// Update caching stats
 	Report.TotalChecks = Cache.GetHitCount() + Cache.GetMissCount();
@@ -1663,5 +1664,249 @@ void FPreValidator::ValidateNPCReferences(const FManifestData& Data, FPreValidat
 				}
 			}
 		}
+	}
+}
+
+// ============================================================================
+// v7.8.3: Type-Aware Redundant Cast Detection
+// ============================================================================
+// Detects when DynamicCast is used on a value that already has the target type.
+// Example: GetActivityComponent (returns NPCActivityComponent*) -> CastToNPCActivityComponent = REDUNDANT
+// Note: GetComponentByClass returns ActorComponent* (base type), so cast IS needed there.
+
+void FPreValidator::ValidateRedundantCasts(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath)
+{
+	// Build registry of known function return types (specific types, not base classes)
+	// Only include functions that return specific types (not base ActorComponent, Actor, etc.)
+	static TMap<FString, FString> KnownReturnTypes;
+	if (KnownReturnTypes.Num() == 0)
+	{
+		// Narrative Pro specific getters
+		KnownReturnTypes.Add(TEXT("GetActivityComponent"), TEXT("NPCActivityComponent"));
+		KnownReturnTypes.Add(TEXT("GetTalesComponent"), TEXT("TalesComponent"));
+		KnownReturnTypes.Add(TEXT("GetInventoryComponent"), TEXT("InventoryComponent"));
+		KnownReturnTypes.Add(TEXT("GetInteractionComponent"), TEXT("InteractionComponent"));
+		KnownReturnTypes.Add(TEXT("GetAbilitySystemComponent"), TEXT("AbilitySystemComponent"));
+		KnownReturnTypes.Add(TEXT("GetNPCComponent"), TEXT("NPCComponent"));
+
+		// UE native specific getters
+		KnownReturnTypes.Add(TEXT("GetCharacterMovement"), TEXT("CharacterMovementComponent"));
+		KnownReturnTypes.Add(TEXT("GetMovementComponent"), TEXT("MovementComponent"));
+		KnownReturnTypes.Add(TEXT("GetCapsuleComponent"), TEXT("CapsuleComponent"));
+		KnownReturnTypes.Add(TEXT("GetMesh"), TEXT("SkeletalMeshComponent"));
+
+		// Note: GetComponentByClass with param.ComponentClass is handled specially below
+		// Note: GetController returns AController* (base) - NOT in this list
+	}
+
+	// Helper lambda to check redundant casts in an event graph
+	// Takes pre-built VariableTypes map since different asset types have different variable structs
+	auto ValidateEventGraphRedundantCasts = [&](const TArray<FManifestGraphNodeDefinition>& Nodes,
+	                                            const TArray<FManifestGraphConnectionDefinition>& Connections,
+	                                            const TMap<FString, FString>& VariableTypes,
+	                                            const FString& OwnerName, const FString& YAMLPrefix)
+	{
+		// Step 1: Build node map for quick lookup
+		TMap<FString, const FManifestGraphNodeDefinition*> NodeMap;
+		for (const auto& Node : Nodes)
+		{
+			NodeMap.Add(Node.Id, &Node);
+		}
+
+		// Step 2: Build connection map (what connects to each node's Object pin)
+		// Key: "NodeId:PinName" -> Value: "SourceNodeId:SourcePinName"
+		TMap<FString, FString> IncomingConnections;
+		for (const auto& Conn : Connections)
+		{
+			FString Key = FString::Printf(TEXT("%s:%s"), *Conn.To.NodeId, *Conn.To.PinName.ToLower());
+			FString Value = FString::Printf(TEXT("%s:%s"), *Conn.From.NodeId, *Conn.From.PinName);
+			IncomingConnections.Add(Key, Value);
+		}
+
+		// Step 3: For each DynamicCast node, check for redundancy
+		for (int32 j = 0; j < Nodes.Num(); j++)
+		{
+			const auto& Node = Nodes[j];
+			if (!Node.Type.Equals(TEXT("DynamicCast"), ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+
+			// Get the target class of this cast
+			FString CastTargetClass = Node.Properties.FindRef(TEXT("target_class"));
+			if (CastTargetClass.IsEmpty())
+			{
+				continue;
+			}
+
+			// Normalize class name (remove common prefixes)
+			FString NormalizedTarget = CastTargetClass;
+			if (NormalizedTarget.StartsWith(TEXT("U")) || NormalizedTarget.StartsWith(TEXT("A")))
+			{
+				// Only strip if second char is uppercase (UE naming convention)
+				if (NormalizedTarget.Len() > 1 && FChar::IsUpper(NormalizedTarget[1]))
+				{
+					NormalizedTarget = NormalizedTarget.RightChop(1);
+				}
+			}
+
+			// Find what connects to the Object pin of this DynamicCast
+			FString ObjectPinKey = FString::Printf(TEXT("%s:object"), *Node.Id);
+			FString* SourceConnection = IncomingConnections.Find(ObjectPinKey);
+			if (!SourceConnection)
+			{
+				continue;  // No connection to Object pin
+			}
+
+			// Parse source: "NodeId:PinName"
+			FString SourceNodeId, SourcePinName;
+			if (!SourceConnection->Split(TEXT(":"), &SourceNodeId, &SourcePinName))
+			{
+				continue;
+			}
+
+			// Find the source node
+			const FManifestGraphNodeDefinition** SourceNodePtr = NodeMap.Find(SourceNodeId);
+			if (!SourceNodePtr)
+			{
+				continue;
+			}
+			const FManifestGraphNodeDefinition& SourceNode = **SourceNodePtr;
+
+			// Determine the output type of the source node
+			FString SourceOutputType;
+
+			if (SourceNode.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+			{
+				FString FunctionName = SourceNode.Properties.FindRef(TEXT("function"));
+
+				// Special case: GetComponentByClass with param.ComponentClass specifies return type
+				// In UE5, GetComponentByClass<T>() returns T*, not base ActorComponent*
+				if (FunctionName.Equals(TEXT("GetComponentByClass"), ESearchCase::IgnoreCase))
+				{
+					FString ParamComponentClass = SourceNode.Properties.FindRef(TEXT("param.ComponentClass"));
+					if (!ParamComponentClass.IsEmpty())
+					{
+						SourceOutputType = ParamComponentClass;
+					}
+				}
+				else
+				{
+					// Check if this function is in our known return types
+					FString* KnownType = KnownReturnTypes.Find(FunctionName);
+					if (KnownType)
+					{
+						SourceOutputType = *KnownType;
+					}
+				}
+			}
+			else if (SourceNode.Type.Equals(TEXT("PropertyGet"), ESearchCase::IgnoreCase))
+			{
+				// PropertyGet: target_class defines the return type for component properties
+				FString PropertyTargetClass = SourceNode.Properties.FindRef(TEXT("target_class"));
+				if (!PropertyTargetClass.IsEmpty())
+				{
+					// The property getter typically returns the target_class type
+					// But we need the property name to be sure
+					FString PropertyName = SourceNode.Properties.FindRef(TEXT("property_name"));
+					// For now, treat target_class as the output type if it's a component
+					if (PropertyTargetClass.Contains(TEXT("Component")))
+					{
+						SourceOutputType = PropertyTargetClass;
+					}
+				}
+			}
+			else if (SourceNode.Type.Equals(TEXT("VariableGet"), ESearchCase::IgnoreCase))
+			{
+				// VariableGet: check our variable type map
+				FString VarName = SourceNode.Properties.FindRef(TEXT("variable_name"));
+				const FString* VarType = VariableTypes.Find(VarName);
+				if (VarType)
+				{
+					SourceOutputType = *VarType;
+				}
+			}
+			else if (SourceNode.Type.Equals(TEXT("DynamicCast"), ESearchCase::IgnoreCase))
+			{
+				// Chained cast: output type is the target_class of the source cast
+				SourceOutputType = SourceNode.Properties.FindRef(TEXT("target_class"));
+			}
+
+			// Skip if we couldn't determine source type
+			if (SourceOutputType.IsEmpty())
+			{
+				continue;
+			}
+
+			// Normalize source type
+			FString NormalizedSource = SourceOutputType;
+			if (NormalizedSource.StartsWith(TEXT("U")) || NormalizedSource.StartsWith(TEXT("A")))
+			{
+				if (NormalizedSource.Len() > 1 && FChar::IsUpper(NormalizedSource[1]))
+				{
+					NormalizedSource = NormalizedSource.RightChop(1);
+				}
+			}
+
+			// Compare: if source type equals or inherits from target type, cast is redundant
+			// For exact match only (inheritance check would require full class hierarchy)
+			if (NormalizedSource.Equals(NormalizedTarget, ESearchCase::IgnoreCase))
+			{
+				FPreValidationIssue Issue;
+				Issue.RuleId = TEXT("RC1");
+				Issue.ErrorCode = TEXT("E_PREVAL_REDUNDANT_CAST");
+				Issue.Severity = EValidationSeverity::Warning;
+				Issue.Message = FString::Printf(TEXT("'%s' is already a '%s', you don't need Cast To %s"),
+					*SourcePinName, *SourceOutputType, *CastTargetClass);
+				Issue.ItemId = FString::Printf(TEXT("%s.%s"), *OwnerName, *Node.Id);
+				Issue.YAMLPath = FString::Printf(TEXT("%s.event_graph.nodes[%d]"), *YAMLPrefix, j);
+				Issue.ManifestPath = ManifestPath;
+				Report.AddIssue(Issue);
+			}
+		}
+	};
+
+	// Validate GameplayAbility event graphs
+	for (int32 i = 0; i < Data.GameplayAbilities.Num(); i++)
+	{
+		const auto& GA = Data.GameplayAbilities[i];
+		// Build variable type map from FManifestActorVariableDefinition
+		TMap<FString, FString> VarTypes;
+		for (const auto& Var : GA.Variables)
+		{
+			if (!Var.Class.IsEmpty())
+			{
+				VarTypes.Add(Var.Name, Var.Class);
+			}
+		}
+		ValidateEventGraphRedundantCasts(GA.EventGraphNodes, GA.EventGraphConnections, VarTypes,
+			GA.Name, FString::Printf(TEXT("gameplay_abilities[%d]"), i));
+	}
+
+	// Validate ActorBlueprint event graphs
+	for (int32 i = 0; i < Data.ActorBlueprints.Num(); i++)
+	{
+		const auto& BP = Data.ActorBlueprints[i];
+		// Build variable type map from FManifestActorVariableDefinition
+		TMap<FString, FString> VarTypes;
+		for (const auto& Var : BP.Variables)
+		{
+			if (!Var.Class.IsEmpty())
+			{
+				VarTypes.Add(Var.Name, Var.Class);
+			}
+		}
+		ValidateEventGraphRedundantCasts(BP.EventGraphNodes, BP.EventGraphConnections, VarTypes,
+			BP.Name, FString::Printf(TEXT("actor_blueprints[%d]"), i));
+	}
+
+	// Validate WidgetBlueprint event graphs
+	// Note: FManifestWidgetVariableDefinition doesn't have a Class field, so no type tracking
+	for (int32 i = 0; i < Data.WidgetBlueprints.Num(); i++)
+	{
+		const auto& WBP = Data.WidgetBlueprints[i];
+		TMap<FString, FString> VarTypes;  // Empty - widgets don't track object types
+		ValidateEventGraphRedundantCasts(WBP.EventGraphNodes, WBP.EventGraphConnections, VarTypes,
+			WBP.Name, FString::Printf(TEXT("widget_blueprints[%d]"), i));
 	}
 }

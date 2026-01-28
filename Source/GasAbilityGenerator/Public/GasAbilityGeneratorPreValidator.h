@@ -99,6 +99,8 @@ private:
 	static void ValidateQuestStateMachine(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 	static void ValidateBehaviorTreeNodes(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 	static void ValidateNPCReferences(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
+	// v7.8.3: Type-aware redundant cast detection
+	static void ValidateRedundantCasts(const FManifestData& Data, FPreValidationReport& Report, FPreValidationCache& Cache, const FString& ManifestPath);
 
 	// Helper functions
 	static UClass* FindClassByName(const FString& ClassName, FPreValidationCache& Cache);

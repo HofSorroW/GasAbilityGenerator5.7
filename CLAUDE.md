@@ -1130,16 +1130,17 @@ When looking for classes/enums, the plugin searches:
 | `E_DELEGATE_SIGNATURE_MISMATCH` | Error | Handler signature doesn't match delegate |
 | `E_DELEGATE_SOURCE_INVALID` | Error | Variable source for delegate not found |
 | `W_TRANSITION_INVALID` | Warning | Form transition missing required tags |
+| `E_PREVAL_REDUNDANT_CAST` | Warning | DynamicCast target type matches source type |
 
 ### Plugin Version History (Last 5)
 
 | Version | Summary |
 |---------|---------|
+| **v7.8.3** | Type-Aware Redundant Cast Detection (RC1): Pre-validation now detects when DynamicCast is used on a value that already has the target type. Reports `E_PREVAL_REDUNDANT_CAST` warning. Known return types tracked: GetActivityComponent→NPCActivityComponent, GetAbilitySystemComponent→AbilitySystemComponent, GetCharacterMovement→CharacterMovementComponent, etc. Note: GetComponentByClass returns base ActorComponent*, so casts after it are NOT redundant. LOCKED_WORKFLOW.md updated: Redundant casts elevated from P3 polish to Type Warning category. |
+| **v7.8.2** | Contract 25 Compliance Audit: Fixed 3 abilities with simplified implementations. GA_StealthField: Added -20% speed reduction via CharacterMovementComponent PropertyGet/Set (guide v3.8). GA_FatherSymbiote: Added +50% speed/+30% jump boosts via CMC multipliers (guide v4.11). GA_ProximityStrike: Converted single-fire to 0.5s timer loop with CustomEvent callback (guide v2.9). All abilities now match implementation guides exactly per Contract 25. |
 | **v7.8.1** | Automation Gap Closure: Audit revealed most "gap" items already implemented in v4.30+. Added NPC Blueprint auto-link by convention (tries BP_{NPCBaseName} in NPCs/, Characters/ folders). Updated TODO_Tracking.md to reflect actual implementation state. |
 | **v7.8.0** | Contract 25 (C_NEVER_SIMPLIFY_ABILITIES): Abilities MUST match implementation guides exactly. Added AbilityAsyncWaitAttributeChanged node type for proper damage-scaled energy absorption. GA_ProtectiveDome restored to guide spec: 30% of damage becomes dome energy (was incorrectly simplified to fixed 50 per hit). Added 4 new node types total (AbilityTaskWaitGameplayEvent, AbilityTaskWaitGEAppliedToSelf, AbilityTaskWaitGEAppliedToTarget, AbilityAsyncWaitAttributeChanged). Contract 10 maintained. |
 | **v7.7** | Track E Removal: Complete removal of native bridge system (UDamageEventBridge, FDamageEventSummary). Contract 10.1 exception removed - all abilities now go through final compilation per Contract 10. Cleaned orphaned handlers from GA_ProtectiveDome and GA_StealthField. 194/194 assets verified. |
-| **v7.5.8** | Contract 22 Compliance Fix: Pre-validation errors now block generation (no soft-fail). Fixed GA validator to pass `Definition.Variables` instead of empty array, so FatherASC and other GA-defined variables resolve correctly. Both problems violated Contract 22 (soft-fail forbidden). 194/194 assets verified. |
-| **v7.5.7** | Track E Delegate Binding Fix (Contract 10.1): Fixed 5 failing abilities (GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField). Root cause: v4.16 final compile was clearing CreateDelegate.SelectedFunctionName. Fix: Skip final compile for abilities with delegate bindings (two-pass already compiled). 194/194 assets verified. |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 
