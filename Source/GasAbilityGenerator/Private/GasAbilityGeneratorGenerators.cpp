@@ -5404,25 +5404,32 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 	};
 
 	// v4.0: Helper to set property via reflection
-	auto SetBTPropertyByReflection = [](UObject* Object, const FString& PropName, const FString& PropValue) -> bool
+	// v7.8.12: Enhanced to search parent classes and handle common BT task properties
+	// v7.8.13: Use TFieldIterator for more reliable property lookup; output debug info via reference
+	auto SetBTPropertyByReflection = [](UObject* Object, const FString& PropName, const FString& PropValue, FString& OutDebugInfo) -> bool
 	{
 		if (!Object) return false;
 
-		FProperty* Property = Object->GetClass()->FindPropertyByName(FName(*PropName));
-		if (!Property)
+		FProperty* Property = nullptr;
+
+		// v7.8.13: Use TFieldIterator to find property (more reliable than FindPropertyByName)
+		for (TFieldIterator<FProperty> PropIt(Object->GetClass()); PropIt; ++PropIt)
 		{
-			// Try with 'b' prefix for bools
-			Property = Object->GetClass()->FindPropertyByName(FName(*FString::Printf(TEXT("b%s"), *PropName)));
-		}
-		if (!Property)
-		{
-			// Try removing underscores
-			FString AltName = PropName;
-			AltName.ReplaceInline(TEXT("_"), TEXT(""));
-			Property = Object->GetClass()->FindPropertyByName(FName(*AltName));
+			if (PropIt->GetName().Equals(PropName, ESearchCase::IgnoreCase) ||
+				PropIt->GetName().Equals(FString::Printf(TEXT("b%s"), *PropName), ESearchCase::IgnoreCase))
+			{
+				Property = *PropIt;
+				break;
+			}
 		}
 
-		if (!Property) return false;
+		if (!Property)
+		{
+			OutDebugInfo = FString::Printf(TEXT("Property '%s' not found via TFieldIterator"), *PropName);
+			return false;
+		}
+
+		OutDebugInfo = FString::Printf(TEXT("Found '%s' type: %s"), *PropName, *Property->GetClass()->GetName());
 
 		void* ValuePtr = Property->ContainerPtrToValuePtr<void>(Object);
 
@@ -5457,6 +5464,54 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 			return true;
 		}
 
+		// v7.8.13: Handle FValueOrBBKey_* struct types (UE5.7 BT properties)
+		else if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+		{
+			FString StructName = StructProp->Struct->GetName();
+
+			if (StructName.Equals(TEXT("ValueOrBBKey_Float")) || StructName.Contains(TEXT("ValueOrBBKey_Float")))
+			{
+				// FValueOrBBKey_Float has a DefaultValue property that's a float
+				FProperty* DefaultValueProp = StructProp->Struct->FindPropertyByName(TEXT("DefaultValue"));
+				if (!DefaultValueProp)
+				{
+					// Try alternative names
+					DefaultValueProp = StructProp->Struct->FindPropertyByName(TEXT("Value"));
+				}
+				if (FFloatProperty* InnerFloatProp = CastField<FFloatProperty>(DefaultValueProp))
+				{
+					void* StructPtr = StructProp->ContainerPtrToValuePtr<void>(Object);
+					void* FloatPtr = InnerFloatProp->ContainerPtrToValuePtr<void>(StructPtr);
+					InnerFloatProp->SetPropertyValue(FloatPtr, FCString::Atof(*PropValue));
+					OutDebugInfo = FString::Printf(TEXT("Set %s.DefaultValue = %s"), *StructName, *PropValue);
+					return true;
+				}
+			}
+			else if (StructName.Equals(TEXT("ValueOrBBKey_Bool")) || StructName.Contains(TEXT("ValueOrBBKey_Bool")))
+			{
+				// FValueOrBBKey_Bool has a DefaultValue property that's a bool
+				FProperty* DefaultValueProp = StructProp->Struct->FindPropertyByName(TEXT("DefaultValue"));
+				if (!DefaultValueProp)
+				{
+					DefaultValueProp = StructProp->Struct->FindPropertyByName(TEXT("Value"));
+				}
+				if (FBoolProperty* InnerBoolProp = CastField<FBoolProperty>(DefaultValueProp))
+				{
+					void* StructPtr = StructProp->ContainerPtrToValuePtr<void>(Object);
+					void* BoolPtr = InnerBoolProp->ContainerPtrToValuePtr<void>(StructPtr);
+					InnerBoolProp->SetPropertyValue(BoolPtr, PropValue.ToBool() || PropValue.Equals(TEXT("true"), ESearchCase::IgnoreCase));
+					OutDebugInfo = FString::Printf(TEXT("Set %s.DefaultValue = %s"), *StructName, *PropValue);
+					return true;
+				}
+			}
+
+			OutDebugInfo = FString::Printf(TEXT("Unhandled struct type: %s"), *StructName);
+			return false;
+		}
+
+		// v7.8.13: Debug - log unhandled property type
+		OutDebugInfo = FString::Printf(TEXT("Unhandled type for '%s': %s (CPP: %s)"),
+			*PropName, *Property->GetClass()->GetName(), *Property->GetCPPType());
 		return false;
 	};
 
@@ -5621,9 +5676,10 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 									// v7.8.11: Log failures for debugging
 									for (const auto& Prop : ServiceDef.Properties)
 									{
-										if (!SetBTPropertyByReflection(Service, Prop.Key, Prop.Value))
+										FString DebugInfo;
+										if (!SetBTPropertyByReflection(Service, Prop.Key, Prop.Value, DebugInfo))
 										{
-											LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set service property %s = %s"), *Prop.Key, *Prop.Value));
+											LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set service property %s = %s (%s)"), *Prop.Key, *Prop.Value, *DebugInfo));
 										}
 									}
 
@@ -5710,15 +5766,17 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 
 						// v4.0: Apply task properties via reflection
 						// v7.8.11: Log both success and failure for debugging
+						// v7.8.13: Handle FValueOrBBKey_* struct types (UE5.7)
 						for (const auto& Prop : NodeDef.Properties)
 						{
-							if (SetBTPropertyByReflection(TaskNode, Prop.Key, Prop.Value))
+							FString DebugInfo;
+							if (SetBTPropertyByReflection(TaskNode, Prop.Key, Prop.Value, DebugInfo))
 							{
 								LogGeneration(FString::Printf(TEXT("    Set property %s = %s"), *Prop.Key, *Prop.Value));
 							}
 							else
 							{
-								LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set task property %s = %s"), *Prop.Key, *Prop.Value));
+								LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set task property %s = %s (%s)"), *Prop.Key, *Prop.Value, *DebugInfo));
 							}
 						}
 					}
@@ -5868,9 +5926,10 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 							// v7.8.11: Log failures for debugging
 							for (const auto& Prop : DecoratorDef.Properties)
 							{
-								if (!SetBTPropertyByReflection(Decorator, Prop.Key, Prop.Value))
+								FString DebugInfo;
+								if (!SetBTPropertyByReflection(Decorator, Prop.Key, Prop.Value, DebugInfo))
 								{
-									LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set decorator property %s = %s"), *Prop.Key, *Prop.Value));
+									LogGeneration(FString::Printf(TEXT("    [WARN] Failed to set decorator property %s = %s (%s)"), *Prop.Key, *Prop.Value, *DebugInfo));
 								}
 							}
 

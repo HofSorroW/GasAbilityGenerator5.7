@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v7.8.12) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.8.13) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -330,7 +330,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v7.8.12)
+## GasAbilityGenerator Plugin (v7.8.13)
 
 ### LOCKED: NEVER Simplify Abilities (Contract 25)
 
@@ -1136,11 +1136,11 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
+| **v7.8.13** | UE5.7 BT Property Type Fix: BT task properties (AcceptableRadius, WaitTime, bAllowStrafe, etc.) now use FValueOrBBKey_* wrapper structs in UE5.7. Added struct property handler to set DefaultValue inside these wrappers. Removed non-existent BTS_AdjustFollowSpeed and BTS_SetAIFocus from manifest (BTS_AdjustFormationSpeed exists for formation followers). All BT task properties now set correctly. |
 | **v7.8.12** | BT Blackboard Assignment Fix (CRITICAL): Fixed bug where all BTs showed BB_ReturnToSpawn instead of their configured blackboard. Root cause: UBehaviorTreeGraph::UpdateAsset() was overwriting BlackboardAsset. Fix: Resolve blackboard before node creation, re-assign AFTER graph operations complete. Added NarrativeArsenal module to service/task/decorator search paths for native C++ classes (BTS_SetAIFocus, etc.). All 5 BT assets now have correct blackboards. |
 | **v7.8.11** | BT Service Session Cache Fix: Fixed parser bug where last BT service wasn't saved when transitioning to children/decorators sections. Added session cache lookup for BT services/tasks/decorators before LoadClass. Added error logging for missing BT classes and failed property settings. |
 | **v7.8.3** | Type-Aware Redundant Cast Detection (RC1): Pre-validation now detects when DynamicCast is used on a value that already has the target type. Reports `E_PREVAL_REDUNDANT_CAST` warning. Known return types tracked: GetActivityComponent→NPCActivityComponent, GetAbilitySystemComponent→AbilitySystemComponent, GetCharacterMovement→CharacterMovementComponent, etc. |
 | **v7.8.2** | Contract 25 Compliance Audit: Fixed 3 abilities with simplified implementations. GA_StealthField: Added -20% speed reduction via CharacterMovementComponent PropertyGet/Set. GA_FatherSymbiote: Added +50% speed/+30% jump boosts via CMC multipliers. GA_ProximityStrike: Converted single-fire to 0.5s timer loop with CustomEvent callback. |
-| **v7.8.0** | Contract 25 (C_NEVER_SIMPLIFY_ABILITIES): Abilities MUST match implementation guides exactly. Added AbilityAsyncWaitAttributeChanged node type for proper damage-scaled energy absorption. GA_ProtectiveDome restored to guide spec. |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 

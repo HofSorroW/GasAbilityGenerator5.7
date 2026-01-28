@@ -7391,15 +7391,13 @@ behavior_trees:
           - attack_sequence
           - idle_wait
       # Attack Sequence - Shoot at detected targets
+      # v7.8.12: Removed BTS_SetAIFocus (doesn't exist - AI perception handles focus)
       - id: attack_sequence
         type: Sequence
         decorators:
           - class: BTDecorator_Blackboard
             blackboard_key: AttackTarget
             key_query: IsSet
-        services:
-          - class: BTS_SetAIFocus
-            interval: 0.5
         children:
           - turret_wait
       - id: turret_wait
@@ -11207,9 +11205,8 @@ actor_blueprints:  # SUPPORT BUFFER BT SERVICES
 
 behavior_trees:  # SUPPORT BUFFER
 # NOTE: Uses NarrativePro's BB_FollowCharacter at /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/
-# v4.39: Full guide implementation (INC-SB-1, INC-SB-5 fixes)
-# - Added BTS_SetAIFocus and BTS_AdjustFollowSpeed services per guide
-# - Changed interval from 1.0 to 0.5 per guide
+# v7.8.12: Removed BTS_SetAIFocus and BTS_AdjustFollowSpeed (don't exist)
+# - BTS_HealNearbyAllies is the only custom service (heals nearby allies)
   - name: BT_SupportFollow
     folder: AI/BehaviorTrees
     blackboard: BB_FollowCharacter
@@ -11226,16 +11223,14 @@ behavior_trees:  # SUPPORT BUFFER
         children:
           - follow_heal_sequence
       # Follow Sequence - Move to target while healing nearby allies
-      # v4.39: Full service stack per guide: HealNearbyAllies + SetAIFocus + AdjustFollowSpeed
+      # v7.8.12: Removed BTS_SetAIFocus and BTS_AdjustFollowSpeed (don't exist)
+      # AI perception handles focus, movement speed is default
       - id: follow_heal_sequence
         type: Sequence
         services:
           - class: BTS_HealNearbyAllies
             interval: 0.5
             random_deviation: 0.1
-          - class: BTS_SetAIFocus
-            focus_target_key: FollowTarget
-          - class: BTS_AdjustFollowSpeed
         children:
           - move_to_target
       - id: move_to_target
