@@ -38,6 +38,9 @@ public class GasAbilityGenerator : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			// v7.7: GasAbilityGeneratorRuntime REMOVED - Track E audit
+			// All abilities now use AbilityTasks instead of DamageEventBridge
+
 			// Blueprint generation
 			"BlueprintGraph",
 			"Kismet",

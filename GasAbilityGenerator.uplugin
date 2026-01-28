@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
-	"Version": 7508,
-	"VersionName": "7.5.8",
+	"Version": 7700,
+	"VersionName": "7.7.0",
 	"FriendlyName": "GAS Ability Generator",
-	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v7.5.8: Contract 22 Compliance (Pre-Validation Gate).",
+	"Description": "Generates Gameplay Ability System assets from manifest.yaml. v7.7.0: Track E Removal - delegate_bindings replaced with AbilityTasks.",
 	"Category": "Editor",
 	"CreatedBy": "Erdem - Second Chance RPG",
 	"CreatedByURL": "",
@@ -15,11 +15,6 @@
 	"IsExperimentalVersion": false,
 	"Installed": false,
 	"Modules": [
-		{
-			"Name": "GasAbilityGeneratorRuntime",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		},
 		{
 			"Name": "GasAbilityGenerator",
 			"Type": "Editor",

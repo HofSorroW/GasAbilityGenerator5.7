@@ -834,18 +834,8 @@ gameplay_abilities:
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
         - Cooldown.Father.FormChange
-    # v4.21: Delegate bindings - track damage in default form
-    delegate_bindings:
-      - id: BindCrawlerDamageTaken
-        delegate: OnDamagedBy                    # Fires when Father takes damage
-        source: OwnerASC                         # Father's ASC
-        handler: HandleCrawlerDamageTaken        # Custom Event for damage tracking/UI
-        # Handler params: DamagerCauserASC, Damage, Spec
-      - id: BindCrawlerDamageDealt
-        delegate: OnDealtDamage                  # Fires when Father deals damage
-        source: OwnerASC                         # Father's ASC
-        handler: HandleCrawlerDamageDealt        # Custom Event for combat tracking
-        # Handler params: DamagedASC, Damage, Spec - Ultimate charge accumulation
+    # v7.7: Delegate bindings REMOVED - Track E audit. Use AbilityTasks instead.
+    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
     variables:
       - name: FatherRef
         type: Object
@@ -1299,18 +1289,8 @@ gameplay_abilities:
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
         - Cooldown.Father.FormChange
-    # v4.21: Delegate bindings - auto-bind in ActivateAbility, unbind in EndAbility
-    delegate_bindings:
-      - id: BindArmorDamage
-        delegate: OnDamagedBy                    # Fires when Father takes damage
-        source: OwnerASC                         # Father's ASC (keyword)
-        handler: HandleArmorDamageReceived       # Custom Event (auto-created with signature)
-        # Handler params: DamagerCauserASC, Damage, Spec
-      - id: BindFatherDeath
-        delegate: OnDied                         # Fires when Father dies
-        source: FatherASC                        # Variable source (tests variable resolution)
-        handler: HandleFatherDied                # Custom Event (auto-created with signature)
-        # Handler params: KilledActor, KilledActorASC
+    # v7.7: Delegate bindings REMOVED - Track E audit. Use AbilityTasks instead.
+    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
     variables:
       - name: FatherRef
         type: Object
@@ -2493,18 +2473,8 @@ gameplay_abilities:
         - Father.State.Transitioning
         - Father.State.SymbioteLocked
         - Cooldown.Father.FormChange
-    # v4.21: Delegate bindings - fires when merged Father deals proximity damage
-    delegate_bindings:
-      - id: BindSymbioteDamageDealt
-        delegate: OnDealtDamage                  # Fires when Father deals damage
-        source: OwnerASC                         # Father's ASC
-        handler: HandleSymbioteDamageDealt       # Custom Event (auto-created with signature)
-        # Handler params: DamagedASC, Damage, Spec
-      - id: BindSymbioteHealing
-        delegate: OnHealedBy                     # Fires when Father is healed (symbiote regen)
-        source: OwnerASC                         # Father's ASC
-        handler: HandleSymbioteHealing           # Custom Event (auto-created with signature)
-        # Handler params: Healer, Amount, Spec
+    # v7.7: Delegate bindings REMOVED - Track E audit. Use AbilityTasks instead.
+    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
     variables:
       - name: FatherRef
         type: Object
@@ -4446,18 +4416,8 @@ gameplay_abilities:
         - Father.Dome.Active
       # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
       # Equipment granting already ensures this ability is only available in Armor form
-    # v7.4: Track E Native Bridge enabled - delegate bindings restored
-    # OnDamagedBy now routes through UDamageEventBridge (bypasses K2 const-ref crash)
-    # See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
-    delegate_bindings:
-      - id: BindDomeDamageAbsorption
-        delegate: OnDamagedBy
-        source: OwnerASC
-        handler: HandleDomeDamageAbsorption
-      - id: BindPlayerDeath
-        delegate: OnDied
-        source: OwnerASC
-        handler: HandlePlayerDeathReset
+    # v7.7: Delegate bindings REMOVED - Track E audit. Use AbilityTasks instead.
+    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
     variables:
       - name: PlayerRef
         type: Object
@@ -4582,125 +4542,10 @@ gameplay_abilities:
           properties:
             function: RemoveActiveGameplayEffect
           position: [1200, 400]
-        # === DAMAGE ABSORPTION HANDLER (v3.0: Variable-based architecture) ===
-        # Called when player takes damage via OnDamagedBy delegate binding
-        # Calculates 30% of damage, adds to Father's DomeEnergy, grants FullyCharged tag at 500
-        # v4.34: CustomEvent with params matching delegate signature (required for connections)
-        - id: Event_HandleDomeDamageAbsorption
-          type: CustomEvent
-          properties:
-            event_name: HandleDomeDamageAbsorption
-            parameters:
-              - name: DamagerCauserASC
-                type: NarrativeAbilitySystemComponent
-              - name: Damage
-                type: Float
-              - name: Spec
-                type: GameplayEffectSpec
-          position: [0, 800]
-        # Step 1: Get Father reference
-        - id: GetFatherRef_Absorb
-          type: VariableGet
-          properties:
-            variable_name: FatherRef
-          position: [300, 800]
-        - id: IsValid_Father_Absorb
-          type: CallFunction
-          properties:
-            function: IsValid
-            class: KismetSystemLibrary
-          position: [500, 850]
-        - id: Branch_Valid_Father
-          type: Branch
-          position: [700, 800]
-        # Step 2: Calculate absorbed damage (Damage * 0.3)
-        - id: GetAbsorptionPct
-          type: PropertyGet
-          properties:
-            property_name: AbsorptionPercentage
-            target_class: BP_FatherCompanion
-          position: [900, 900]
-        - id: MultiplyDamage
-          type: CallFunction
-          properties:
-            function: Multiply_DoubleDouble
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1100, 850]
-        # Step 3: Get current DomeEnergy and add absorbed
-        - id: GetCurrentEnergy
-          type: PropertyGet
-          properties:
-            property_name: DomeEnergy
-            target_class: BP_FatherCompanion
-          position: [1300, 900]
-        - id: AddEnergy
-          type: CallFunction
-          properties:
-            function: Add_DoubleDouble
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1500, 850]
-        # Step 4: Clamp to MaxDomeEnergy
-        - id: GetMaxEnergy
-          type: PropertyGet
-          properties:
-            property_name: MaxDomeEnergy
-            target_class: BP_FatherCompanion
-          position: [1700, 950]
-        - id: ClampEnergy
-          type: CallFunction
-          properties:
-            function: FClamp
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [1900, 850]
-        - id: MakeZero
-          type: CallFunction
-          properties:
-            function: MakeLiteralDouble
-            class: KismetSystemLibrary
-            literal_value: 0.0
-          position: [1700, 900]
-        # Step 5: Set new DomeEnergy on Father
-        - id: SetDomeEnergy
-          type: PropertySet
-          properties:
-            property_name: DomeEnergy
-            target_class: BP_FatherCompanion
-          position: [2100, 800]
-        # Step 6: Check if fully charged (NewEnergy >= MaxEnergy)
-        - id: CompareEnergy
-          type: CallFunction
-          properties:
-            function: GreaterEqual_DoubleDouble
-            # class: KismetMathLibrary  # Commented out - let resolver find
-          position: [2300, 900]
-        - id: Branch_FullyCharged
-          type: Branch
-          position: [2500, 800]
-        # Step 7: Add Father.Dome.FullyCharged tag if full
-        - id: GetPlayerRef_Absorb
-          type: VariableGet
-          properties:
-            variable_name: PlayerRef
-          position: [2700, 850]
-        - id: MakeLiteralTag_FullyCharged
-          type: CallFunction
-          properties:
-            function: MakeLiteralGameplayTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
-            literal_value: Father.Dome.FullyCharged
-          position: [2700, 950]
-        - id: MakeTagContainer_FullyCharged
-          type: CallFunction
-          properties:
-            function: MakeGameplayTagContainerFromTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
-          position: [2900, 900]
-        - id: AddFullyChargedTag
-          type: CallFunction
-          properties:
-            function: AddLooseGameplayTags
-            class: AbilitySystemBlueprintLibrary
-          position: [3100, 800]
+        # v7.7: DAMAGE ABSORPTION HANDLER REMOVED - Track E audit
+        # The damage absorption feature (charging dome via OnDamagedBy) required the native bridge
+        # pattern which has been removed. If needed in future, use AbilityTask pattern instead.
+        # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
         # === PLAYER DEATH RESET HANDLER (v4.33: D-DEATH-RESET-1/2) ===
         # Called when player dies via OnDied delegate binding
         # Per D-DEATH-RESET-2: Silent reset - DomeEnergy=0, remove FullyCharged, no burst/VFX
@@ -4828,63 +4673,7 @@ gameplay_abilities:
           to: [RemoveGE, Target]
         - from: [GetDomeHandle, DomeAbsorptionHandle]
           to: [RemoveGE, Handle]
-        # === DAMAGE ABSORPTION HANDLER FLOW (v3.0: Variable-based architecture) ===
-        # Exec: Event → Branch_Valid_Father → SetDomeEnergy → Branch_FullyCharged → AddTag
-        - from: [Event_HandleDomeDamageAbsorption, Then]
-          to: [Branch_Valid_Father, Exec]
-        - from: [Branch_Valid_Father, True]
-          to: [SetDomeEnergy, Exec]
-        - from: [SetDomeEnergy, Exec]
-          to: [Branch_FullyCharged, Exec]
-        - from: [Branch_FullyCharged, True]
-          to: [AddFullyChargedTag, Exec]
-        # Data: Father validation
-        - from: [GetFatherRef_Absorb, FatherRef]
-          to: [IsValid_Father_Absorb, Object]
-        - from: [IsValid_Father_Absorb, ReturnValue]
-          to: [Branch_Valid_Father, Condition]
-        # Data: Calculate absorbed damage (Damage * AbsorptionPercentage)
-        - from: [Event_HandleDomeDamageAbsorption, Damage]
-          to: [MultiplyDamage, A]
-        - from: [GetFatherRef_Absorb, FatherRef]
-          to: [GetAbsorptionPct, Target]
-        - from: [GetAbsorptionPct, AbsorptionPercentage]
-          to: [MultiplyDamage, B]
-        # Data: Add to current energy
-        - from: [GetFatherRef_Absorb, FatherRef]
-          to: [GetCurrentEnergy, Target]
-        - from: [GetCurrentEnergy, DomeEnergy]
-          to: [AddEnergy, A]
-        - from: [MultiplyDamage, ReturnValue]
-          to: [AddEnergy, B]
-        # Data: Clamp to MaxDomeEnergy
-        - from: [AddEnergy, ReturnValue]
-          to: [ClampEnergy, Value]
-        - from: [MakeZero, ReturnValue]
-          to: [ClampEnergy, Min]
-        - from: [GetFatherRef_Absorb, FatherRef]
-          to: [GetMaxEnergy, Target]
-        - from: [GetMaxEnergy, MaxDomeEnergy]
-          to: [ClampEnergy, Max]
-        # Data: Set new energy
-        - from: [GetFatherRef_Absorb, FatherRef]
-          to: [SetDomeEnergy, Target]
-        - from: [ClampEnergy, ReturnValue]
-          to: [SetDomeEnergy, DomeEnergy]
-        # Data: Check if fully charged
-        - from: [ClampEnergy, ReturnValue]
-          to: [CompareEnergy, A]
-        - from: [GetMaxEnergy, MaxDomeEnergy]
-          to: [CompareEnergy, B]
-        - from: [CompareEnergy, ReturnValue]
-          to: [Branch_FullyCharged, Condition]
-        # Data: Add FullyCharged tag to player
-        - from: [GetPlayerRef_Absorb, PlayerRef]
-          to: [AddFullyChargedTag, Actor]
-        - from: [MakeLiteralTag_FullyCharged, ReturnValue]
-          to: [MakeTagContainer_FullyCharged, Tag]
-        - from: [MakeTagContainer_FullyCharged, ReturnValue]
-          to: [AddFullyChargedTag, GameplayTags]
+        # v7.7: DAMAGE ABSORPTION HANDLER FLOW REMOVED - Track E audit
         # === PLAYER DEATH RESET HANDLER FLOW (v4.33: D-DEATH-RESET-1/2) ===
         # Exec: Event → Branch_Valid → SetDomeEnergy_Death → ClearChargedTag_Death
         - from: [Event_HandlePlayerDeathReset, Then]
@@ -5235,18 +5024,8 @@ gameplay_abilities:
       # Equipment granting already ensures this ability is only available in Exoskeleton form
       activation_blocked_tags:
         - Cooldown.Father.StealthField
-    # v4.21: Delegate bindings - break stealth on damage taken or dealt
-    delegate_bindings:
-      - id: BindStealthDamageBreak
-        delegate: OnDamagedBy                    # Fires when player takes damage
-        source: OwnerASC                         # Player's ASC (ability runs on player)
-        handler: HandleStealthDamageBreak        # Custom Event - ends ability on hit
-        # Handler params: DamagerCauserASC, Damage, Spec
-      - id: BindStealthAttackBreak
-        delegate: OnDealtDamage                  # Fires when player deals damage
-        source: OwnerASC                         # Player's ASC
-        handler: HandleStealthAttackBreak        # Custom Event - ends ability on attack
-        # Handler params: DamagedASC, Damage, Spec - stealth breaks on first hit
+    # v7.7: Delegate bindings REMOVED - Track E audit. Use AbilityTasks instead.
+    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
     variables:
       - name: PlayerRef
         type: Object
@@ -5370,45 +5149,11 @@ gameplay_abilities:
           properties:
             function: RemoveActiveGameplayEffect
           position: [900, 400]
-        # === STEALTH BREAK HANDLERS (v4.39.5 - per R-DELEGATE-1 Contract 18) ===
-        # Handler for OnDamagedBy delegate - breaks stealth when player takes damage
-        - id: Event_HandleStealthDamageBreak
-          type: CustomEvent
-          properties:
-            event_name: HandleStealthDamageBreak
-            parameters:
-              - name: DamagerCauserASC
-                type: NarrativeAbilitySystemComponent
-              - name: Damage
-                type: Float
-              - name: Spec
-                type: GameplayEffectSpec
-          position: [0, 800]
-        - id: EndAbility_DamageBreak
-          type: CallFunction
-          properties:
-            function: K2_EndAbility
-            target_self: true
-          position: [400, 800]
-        # Handler for OnDealtDamage delegate - breaks stealth when player attacks
-        - id: Event_HandleStealthAttackBreak
-          type: CustomEvent
-          properties:
-            event_name: HandleStealthAttackBreak
-            parameters:
-              - name: DamagedASC
-                type: NarrativeAbilitySystemComponent
-              - name: Damage
-                type: Float
-              - name: Spec
-                type: GameplayEffectSpec
-          position: [0, 1000]
-        - id: EndAbility_AttackBreak
-          type: CallFunction
-          properties:
-            function: K2_EndAbility
-            target_self: true
-          position: [400, 1000]
+        # v7.7: STEALTH BREAK HANDLERS REMOVED - Track E audit
+        # The stealth break feature (breaking on damage via OnDamagedBy/OnDealtDamage) required the native
+        # bridge pattern which has been removed. Stealth now ends only via duration timeout.
+        # If needed in future, use AbilityTask pattern (WaitGameplayEffectApplied) instead.
+        # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (impure nodes only - pure functions have no exec pins)
@@ -5464,13 +5209,7 @@ gameplay_abilities:
           to: [RemoveGE, Target]
         - from: [GetStealthHandle, StealthEffectHandle]
           to: [RemoveGE, Handle]
-        # === STEALTH BREAK HANDLER CONNECTIONS (v4.39.5) ===
-        # Damage break: Event → EndAbility
-        - from: [Event_HandleStealthDamageBreak, Then]
-          to: [EndAbility_DamageBreak, Exec]
-        # Attack break: Event → EndAbility
-        - from: [Event_HandleStealthAttackBreak, Then]
-          to: [EndAbility_AttackBreak, Exec]
+        # v7.7: STEALTH BREAK HANDLER CONNECTIONS REMOVED - Track E audit
 
   # GA_Backstab - Universal Player Passive Backstab Damage
   # v4.26 (Decision 4): Universal ability - add to player's Default Abilities array, NOT granted via equipment
@@ -7850,13 +7589,9 @@ actor_blueprints:
         type: Bool
         default: false
         replicated: true
-    # v4.33: Delegate bindings for player death reset (D-DEATH-RESET-2)
-    # External ASC Binding: OwnerPlayer → GetAbilitySystemComponent → Cast to NASC → Bind OnDied
-    delegate_bindings:
-      - id: BindPlayerDeath
-        delegate: OnDied                         # Fires when OwnerPlayer dies (HP=0)
-        source: OwnerPlayer                      # Actor variable → External ASC Binding pattern
-        handler: HandlePlayerDeathReset          # Resets SymbioteCharge to 0
+    # v7.7: Delegate bindings REMOVED - Track E audit.
+    # D-DEATH-RESET-2 will use alternative pattern (WaitGameplayEvent or HandleDeath override)
+    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
     event_graph:
       nodes:
         # BeginPlay - Spawn companion VFX
@@ -11563,13 +11298,18 @@ actor_blueprints:  # STALKER NPC BLUEPRINT
           position: [1200, 0]
         # Create tag container from single tag for AddLooseGameplayTags
         # Note: AddLooseGameplayTags takes Actor (not ASC) and internally gets the ASC
+        # v7.5: Use MakeLiteralGameplayTag + MakeGameplayTagContainerFromTag pattern
+        - id: MakeLiteralTag_Faction
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Narrative.Factions.Returned
+          position: [1300, 150]
         - id: MakeFactionTagContainer
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
             class: BlueprintGameplayTagLibrary
-            parameters:
-              SingleTag: "Narrative.Factions.Returned"
           position: [1500, 100]
         - id: AddFactionTag
           type: CallFunction
@@ -11611,6 +11351,9 @@ actor_blueprints:  # STALKER NPC BLUEPRINT
         # Pass Self (the NPC actor) - the function internally gets ASC from the actor
         - from: [SelfRef, Self]
           to: [AddFactionTag, Actor]
+        # v7.5: Connect literal tag to container
+        - from: [MakeLiteralTag_Faction, ReturnValue]
+          to: [MakeFactionTagContainer, SingleTag]
         - from: [MakeFactionTagContainer, ReturnValue]
           to: [AddFactionTag, GameplayTags]
         - from: [AddFactionTag, Then]

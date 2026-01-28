@@ -177,6 +177,40 @@ In dry-run mode, the system **MUST NOT** persist changes:
 
 ---
 
+## LOCKED CONTRACT 10.1 — Delegate Binding Compile Exception (v7.5.7)
+
+### Invariant
+- GameplayAbilities with delegate bindings (`DelegateNodesGenerated > 0`) **MUST NOT** be recompiled after CreateDelegate nodes are created
+- The two-pass delegate binding phase performs its own skeleton sync compile
+- A second compile would reconstruct `UK2Node_CreateDelegate` nodes and clear `SelectedFunctionName`
+
+### Implementation
+```cpp
+if (!bHasDelegateBindings)
+{
+    // Contract 10 - Final compile with validation
+    FKismetEditorUtilities::CompileBlueprint(Blueprint, ...);
+}
+else
+{
+    // Contract 10.1 - Skip final compile for delegate-binding abilities
+    // Two-pass delegate binding already compiled the skeleton
+}
+```
+
+### Forbidden
+- Calling `CompileBlueprint()` after CreateDelegate nodes have been created with `SetFunction()`
+- Any code path that reconstructs delegate nodes post-creation
+
+### Allowed
+- The skeleton sync compile in the two-pass delegate binding phase (required for handler resolution)
+
+### Reference
+- Audit: `ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md`
+- Implementation: v7.5.5 (logging bridge), v7.5.6 (two-pass), v7.5.7 (Contract 10.1)
+
+---
+
 ## P1.3 — Startup Effects Validation (v4.16.2 Locked)
 
 ### Context

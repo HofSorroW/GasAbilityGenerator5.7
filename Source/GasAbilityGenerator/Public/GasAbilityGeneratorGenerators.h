@@ -677,53 +677,9 @@ public:
 		UBlueprint* Blueprint,
 		const TArray<FManifestDelegateBindingDefinition>& DelegateBindings);
 
-	/**
-	 * v7.4: Track E - Native Bridge Detection
-	 * Checks if a delegate signature contains input const-ref parameters that require
-	 * the native bridge workaround (CPF_ReferenceParm && !CPF_OutParm).
-	 * See: ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md
-	 * @param DelegateSignature The function signature to check
-	 * @return true if any parameter requires native bridge routing
-	 */
-	static bool RequiresNativeBridge(const UFunction* DelegateSignature);
-
-	/**
-	 * v7.4: Track E - Generate Bridge-Based Delegate Binding
-	 * Generates nodes to bind to UDamageEventBridge instead of raw ASC delegates.
-	 * Used for delegates with const-ref parameters (OnDamagedBy, OnDealtDamage, OnHealedBy).
-	 * @param Blueprint The ability blueprint to modify
-	 * @param Binding The delegate binding definition
-	 * @param EventGraph The event graph to add nodes to
-	 * @param CurrentPosX Current X position for node placement
-	 * @param CurrentPosY Current Y position for node placement
-	 * @return true if binding was generated successfully
-	 */
-	static bool GenerateBridgeBasedBinding(
-		UBlueprint* Blueprint,
-		const FManifestDelegateBindingDefinition& Binding,
-		UEdGraph* EventGraph,
-		float& CurrentPosX,
-		float& CurrentPosY);
-
-	/**
-	 * v7.5.6: Pass 2 of two-pass delegate binding for bridge path
-	 * Creates CreateDelegate and AddDelegate nodes AFTER all handlers are compiled.
-	 * This prevents SelectedFunctionName from being cleared by subsequent compiles.
-	 * @param Blueprint The ability blueprint to modify
-	 * @param Binding The delegate binding definition
-	 * @param EventGraph The event graph to add nodes to
-	 * @param HandlerEvent The handler CustomEvent created in Pass 1
-	 * @param CurrentPosX Current X position for node placement
-	 * @param CurrentPosY Current Y position for node placement
-	 * @return true if binding nodes were generated successfully
-	 */
-	static bool GenerateBridgeBindingNodes(
-		UBlueprint* Blueprint,
-		const FManifestDelegateBindingDefinition& Binding,
-		UEdGraph* EventGraph,
-		class UK2Node_CustomEvent* HandlerEvent,
-		float& CurrentPosX,
-		float& CurrentPosY);
+	// v7.7: Track E REMOVED - RequiresNativeBridge, GenerateBridgeBasedBinding, GenerateBridgeBindingNodes deleted
+	// GA_ abilities now use AbilityTasks (WaitAttributeChange, WaitGameplayEffectApplied) instead
+	// See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
 
 	/**
 	 * v4.33: Actor Blueprint Delegate Binding (External ASC Binding pattern)
