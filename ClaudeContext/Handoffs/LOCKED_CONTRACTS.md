@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v7.2)
+# LOCKED_CONTRACTS.md (v7.7)
 
 ## Purpose
 
@@ -177,37 +177,19 @@ In dry-run mode, the system **MUST NOT** persist changes:
 
 ---
 
-## LOCKED CONTRACT 10.1 — Delegate Binding Compile Exception (v7.5.7)
+## ~~LOCKED CONTRACT 10.1~~ — REMOVED (v7.7.0)
 
-### Invariant
-- GameplayAbilities with delegate bindings (`DelegateNodesGenerated > 0`) **MUST NOT** be recompiled after CreateDelegate nodes are created
-- The two-pass delegate binding phase performs its own skeleton sync compile
-- A second compile would reconstruct `UK2Node_CreateDelegate` nodes and clear `SelectedFunctionName`
+**Status:** REMOVED in v7.7.0 - Track E (Native Bridge) was completely removed from the generator.
 
-### Implementation
-```cpp
-if (!bHasDelegateBindings)
-{
-    // Contract 10 - Final compile with validation
-    FKismetEditorUtilities::CompileBlueprint(Blueprint, ...);
-}
-else
-{
-    // Contract 10.1 - Skip final compile for delegate-binding abilities
-    // Two-pass delegate binding already compiled the skeleton
-}
-```
+Contract 10.1 was a temporary exception that allowed delegate-binding abilities to skip final compilation. This exception is no longer needed because:
 
-### Forbidden
-- Calling `CompileBlueprint()` after CreateDelegate nodes have been created with `SetFunction()`
-- Any code path that reconstructs delegate nodes post-creation
-
-### Allowed
-- The skeleton sync compile in the two-pass delegate binding phase (required for handler resolution)
+1. **Track E removed**: `UDamageEventBridge`, `FDamageEventSummary`, and all bridge-related code deleted
+2. **Contract 10 restored**: All abilities now go through final compilation
+3. **Manifest cleaned**: Orphaned handlers removed from GA_ProtectiveDome and GA_StealthField
 
 ### Reference
-- Audit: `ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md`
-- Implementation: v7.5.5 (logging bridge), v7.5.6 (two-pass), v7.5.7 (Contract 10.1)
+- Removal audit: `ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md`
+- Historical: `ClaudeContext/Handoffs/Delegate_Binding_Crash_Audit_v7_3.md` (for crash root cause)
 
 ---
 
@@ -1269,3 +1251,4 @@ Any change that touches a LOCKED implementation must:
 | v7.1 | 2026-01-27 | Added Contract 21 — R-INPUTTAG-1 NPC Combat Ability InputTag Requirement (Claude–GPT dual audit): NPC combat abilities used by BPA_Attack_* activities MUST define valid Narrative.Input.* tag. GA_CoreLaser was non-functional due to missing input_tag (INC-WARDEN-CORELASER-1). Fixed manifest with proper event graph including AI targeting from blackboard and damage GE application. |
 | v7.2 | 2026-01-27 | Added Contracts 22-23 (Claude–GPT dual audit): C1 (C_PIN_CONNECTION_FAILURE_GATE) — All pin connections must pass 3-step gate (existence, schema approval, link integrity); no soft-fail; unsavable on failure. C2 (C_SKELETON_SYNC_BEFORE_CREATEDELEGATE) — Skeleton sync required after CustomEvent creation/modification, before CreateDelegate instantiation; prevents crash-on-open from unresolved handler names. Root cause H4 for GA_ProtectiveDome crash confirmed and fixed. |
 | v7.3 | 2026-01-27 | Added Contract 24 — D-DAMAGE-ATTR-1 Attribute-Based Damage System (Claude–GPT manifest audit): NarrativeDamageExecCalc uses AttackDamage/Armor attributes, NOT SetByCaller tags. Removed redundant setbycaller_magnitudes from 5 damage GEs. |
+| v7.7 | 2026-01-28 | **REMOVED Contract 10.1** — Track E (Native Bridge) completely removed from generator. Contract 10.1 (delegate binding compile exception) no longer needed. All abilities now go through final compilation per Contract 10. Affected: GA_ProtectiveDome (damage absorption handler removed), GA_StealthField (stealth break handlers removed). See `Track_E_Removal_Audit_v7_7.md`. |

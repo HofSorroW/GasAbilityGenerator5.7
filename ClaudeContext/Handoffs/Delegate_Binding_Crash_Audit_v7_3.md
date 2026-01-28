@@ -2,7 +2,67 @@
 
 **Date:** 2026-01-27
 **Auditors:** Claude (Opus 4.5) + GPT (consensus)
-**Status:** IMPLEMENTATION PLAN LOCKED - Track E (Native Bridge) selected
+**Status:** ⚠️ SUPERSEDED (v7.7.0) - Track E removed. See `Track_E_Removal_Audit_v7_7.md`
+
+> **NOTE (v7.7.0):** This document describes the Track E implementation that was later **removed** in v7.7.0.
+> The native bridge approach was found to be too complex and brittle. All delegate binding functionality
+> has been removed from the generator. Abilities requiring damage detection should use AbilityTasks
+> (`WaitAttributeChange`, `WaitGameplayEffectApplied`) instead.
+>
+> This document is preserved for historical reference on the crash root cause analysis.
+
+---
+
+## Historical Implementation (v7.5.7 - REMOVED in v7.7.0)
+
+---
+
+## Implementation Summary (v7.5.7)
+
+**Commit:** `47bedd1` (2026-01-27)
+
+### Components Implemented
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `UDamageEventBridge` | GasAbilityGeneratorRuntime | C++ component intercepts unsafe delegates, broadcasts safe struct |
+| `FDamageEventSummary` | GasAbilityGeneratorRuntime | Bridge-safe struct (no const-ref params) |
+| `RequiresNativeBridge()` | FEventGraphGenerator | Detects CPF_ReferenceParm on delegate params |
+| `GenerateBridgeBindingNodes()` | FEventGraphGenerator | Pass 2 of two-pass binding for bridge path |
+| Contract 10.1 | FGameplayAbilityGenerator | Skip final compile for abilities with delegate bindings |
+
+### Two-Pass Delegate Binding (v7.5.6)
+
+1. **Pass 1**: Create ALL handler CustomEvents (bridge-safe signature for Track-E)
+2. **Single Compile**: Skeleton sync - registers handlers in generated class
+3. **Pass 2**: Create ALL CreateDelegate/AddDelegate nodes (handlers now resolvable)
+
+### Contract 10.1 - Conditional Final Compile (v7.5.7)
+
+```cpp
+if (!bHasDelegateBindings)
+{
+    // v4.16 legacy path - safe for abilities without delegate bindings
+    FKismetEditorUtilities::CompileBlueprint(Blueprint, ...);
+}
+else
+{
+    // Skip - delegate bindings already compiled in two-pass phase
+    // Recompiling would reconstruct CreateDelegate nodes and clear SelectedFunctionName
+}
+```
+
+### Fixed Abilities (5)
+
+| Ability | Delegates | Status |
+|---------|-----------|--------|
+| GA_FatherCrawler | OnDamagedBy, OnDealtDamage | ✅ |
+| GA_FatherArmor | OnDied | ✅ |
+| GA_FatherSymbiote | OnDamagedBy, OnHealedBy | ✅ |
+| GA_ProtectiveDome | OnDied | ✅ |
+| GA_StealthField | OnDamagedBy, OnDealtDamage | ✅ |
+
+**Result:** 194/194 assets generate successfully.
 
 ---
 
@@ -767,10 +827,40 @@ bool FStructProperty::SameType(const FProperty* Other) const
 
 ---
 
-## Track E Implementation Status: COMPLETED (v4.31)
+## Track E Implementation Status: REQUIRES MODULE FIX (v7.5.3)
 
 **Implementation Date:** 2026-01-27
-**Status:** VERIFIED WORKING
+**Original Status:** VERIFIED WORKING (generation only)
+**Updated Status:** BLOCKED - Module placement error discovered
+
+### v7.5.3 Audit Finding: Module Placement Error
+
+**Discovery Date:** 2026-01-27
+**Auditors:** Claude (Opus 4.5) + GPT (consensus)
+
+**Error:**
+```
+Cannot use the editor function "GetOrCreateFromASC" in this runtime Blueprint.
+Only for use in Editor Utility Blueprints and Blutilities.
+```
+
+**Root Cause:**
+`UDamageEventBridge` was placed in `GasAbilityGenerator` module which is `Type: "Editor"` in the uplugin. Runtime Blueprints (GameplayAbilities inheriting from `NarrativeGameplayAbility`) cannot call UFUNCTIONs from Editor-only modules.
+
+**What Was Missed in Original Audit:**
+- The audit correctly identified the K2 crash and designed the bridge
+- The audit did NOT verify module type compatibility
+- Test results only verified generation (Editor context), not runtime compilation
+
+**Fix Required:**
+1. Create `GasAbilityGeneratorRuntime` module (Type: "Runtime")
+2. Move `UDamageEventBridge` and `FDamageEventSummary` to Runtime module
+3. Update API macro to `GASABILITYGENERATORRUNTIME_API`
+4. Editor module depends on Runtime module
+
+---
+
+## Track E Implementation Status: COMPLETED (v4.31 - Generation Only)
 
 ### Files Created
 
@@ -870,3 +960,73 @@ ActivateAbility → GetASC → Cast → GetOrCreateBridgeFromASC → AddDelegate
 
 1. Fix unrelated crash in GoalGenerator_RandomAggression (StopFollowing custom function)
 2. Editor cold-start test with GA_ProtectiveDome
+
+---
+
+## Track E Implementation Status: COMPLETE (v7.5.4)
+
+**Date:** 2026-01-27
+**Status:** VERIFIED - All 5 affected abilities now generate successfully
+
+### v7.5.3 Fix: Module Placement
+
+**Problem:** `UDamageEventBridge` was in Editor-only module (`GasAbilityGenerator`), causing "Cannot use the editor function" error when runtime Blueprints called `GetOrCreateFromASC`.
+
+**Solution:** Created `GasAbilityGeneratorRuntime` module (Type: "Runtime"):
+
+| File | Purpose |
+|------|---------|
+| `GasAbilityGeneratorRuntime.Build.cs` | Runtime module dependencies (NO UnrealEd) |
+| `GasAbilityGeneratorRuntime.h/.cpp` | Module class |
+| `DamageEventBridge.h/.cpp` | Moved from Editor module, API macro updated |
+
+**uplugin Update:**
+```json
+"Modules": [
+  { "Name": "GasAbilityGeneratorRuntime", "Type": "Runtime", "LoadingPhase": "Default" },
+  { "Name": "GasAbilityGenerator", "Type": "Editor", "LoadingPhase": "Default" }
+]
+```
+
+### v7.5.4 Fix: CreateDelegate Function Resolution
+
+**Problem:** After module fix, new error appeared:
+```
+Create Event : missing a function/event name.
+Failed to create property K2Node_CreateDelegate_OutputDelegate from <None>
+```
+
+**Root Cause:** `MarkBlueprintAsStructurallyModified` doesn't trigger skeleton compilation in headless/commandlet mode. There's no editor tick to process the dirty flag, so the CustomEvent handler never gets registered in the skeleton class before CreateDelegate tries to resolve it.
+
+**Solution:** Replace `MarkBlueprintAsStructurallyModified` with forced synchronous compilation:
+
+```cpp
+// BEFORE (doesn't work in headless mode)
+FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+
+// AFTER (forces skeleton regeneration)
+FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+```
+
+**Files Modified:**
+- `GasAbilityGeneratorGenerators.cpp` - 3 locations updated:
+  - Line ~14708: Bridge path (GA abilities)
+  - Line ~15126: Regular GA delegate path
+  - Line ~16070: Actor Blueprint delegate path
+
+### Final Verification
+
+```
+=== GENERATION RESULTS ===
+RESULT: New=0 Skipped=194 Failed=0 Total=194 Headless=true
+```
+
+| Previously Failing | Status |
+|--------------------|--------|
+| GA_FatherCrawler | [SKIP] ✅ |
+| GA_FatherArmor | [SKIP] ✅ |
+| GA_FatherSymbiote | [SKIP] ✅ |
+| GA_ProtectiveDome | [SKIP] ✅ |
+| GA_StealthField | [SKIP] ✅ |
+
+All Track E delegate bindings now generate successfully. Assets show [SKIP] because they already exist from the successful run.
