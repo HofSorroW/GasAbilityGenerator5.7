@@ -1,5 +1,7 @@
-// GasAbilityGenerator v7.8.0
+// GasAbilityGenerator v7.8.1
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v7.8.1: Automation Gap Closure - NPC Blueprint auto-link by convention (BP_{NPCBaseName} lookup)
+//        Audit revealed most v4.30 "gap" items already implemented
 // v7.8.0: Path B AbilityTasks - WaitGameplayEvent, WaitGEAppliedToSelf, WaitGEAppliedToTarget
 //        Restores full gameplay functionality (dome damage absorption, stealth break) using Epic's BP-safe patterns
 // v7.7.0: Track E REMOVED - UDamageEventBridge deleted, GA_ abilities use AbilityTasks
@@ -22811,6 +22813,34 @@ FGenerationResult FNPCDefinitionGenerator::Generate(const FManifestNPCDefinition
 		}
 		NPCDef->NPCClassPath = TSoftClassPtr<ANarrativeNPCCharacter>(FSoftObjectPath(ClassPath));
 		LogGeneration(FString::Printf(TEXT("  Set NPCClassPath: %s"), *ClassPath));
+	}
+	else
+	{
+		// v7.8.1: Auto-link NPC Blueprint by convention if npc_blueprint not specified
+		// Extract base name from NPC_ prefix (e.g., NPC_Blacksmith -> Blacksmith)
+		FString NPCBaseName = Definition.Name;
+		if (NPCBaseName.StartsWith(TEXT("NPC_")))
+		{
+			NPCBaseName = NPCBaseName.RightChop(4);
+		}
+
+		// Try convention-based paths in order of likelihood
+		TArray<FString> ConventionPaths = {
+			FString::Printf(TEXT("%s/NPCs/BP_%s.BP_%s"), *GetProjectRoot(), *NPCBaseName, *NPCBaseName),
+			FString::Printf(TEXT("%s/NPCs/BP_NPC_%s.BP_NPC_%s"), *GetProjectRoot(), *NPCBaseName, *NPCBaseName),
+			FString::Printf(TEXT("%s/Characters/BP_%s.BP_%s"), *GetProjectRoot(), *NPCBaseName, *NPCBaseName),
+			FString::Printf(TEXT("%s/Characters/NPCs/BP_%s.BP_%s"), *GetProjectRoot(), *NPCBaseName, *NPCBaseName)
+		};
+
+		for (const FString& ConventionPath : ConventionPaths)
+		{
+			if (FPackageName::DoesPackageExist(ConventionPath))
+			{
+				NPCDef->NPCClassPath = TSoftClassPtr<ANarrativeNPCCharacter>(FSoftObjectPath(ConventionPath));
+				LogGeneration(FString::Printf(TEXT("  Auto-linked NPCClassPath by convention: %s"), *ConventionPath));
+				break;
+			}
+		}
 	}
 
 	// v2.6.0: Set ActivityConfiguration via TSoftObjectPtr

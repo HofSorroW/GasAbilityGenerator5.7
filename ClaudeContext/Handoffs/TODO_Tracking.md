@@ -1,139 +1,37 @@
 # GasAbilityGenerator TODO Tracking
 
 **Created:** 2026-01-18
-**Updated:** 2026-01-23
-**Plugin Version:** v4.22 (includes v4.21.2 fixes)
+**Updated:** 2026-01-28
+**Plugin Version:** v7.8.0
 **Status:** Consolidated tracking file for all pending tasks
 
 ---
 
-## ✅ Recently Completed - Delegate Binding Pin Wiring Fixes (v4.21.2)
+## ⚠️ OBSOLETE - Delegate Binding System (v4.21-v4.22) - REMOVED in v7.7.0
 
-**Source:** Engine header audit (K2Node_Self.cpp, K2Node_DynamicCast.cpp)
-**Date:** 2026-01-22
+> **Track E was removed in v7.7.0.** All delegate binding features documented below were implemented but then removed due to UE5 Blueprint compilation stage ordering bugs with `const FGameplayEffectSpec&` reference parameters.
+>
+> **Current approach:** Use GAS AbilityTasks (`WaitAttributeChange`, `WaitGameplayEffectApplied`) instead of delegate bindings.
+>
+> **Reference:** See `Handoffs/Delegate_Binding_History_FINAL.md` for full history.
 
-| Fix | Root Cause | Solution |
-|-----|------------|----------|
-| UK2Node_Self pin lookup | Uses `PN_Self`, not `PN_ReturnValue` | Changed `FindPin(PN_ReturnValue)` → `FindPin(PN_Self)` |
-| Cast node type propagation | `MakeLinkTo()` doesn't trigger `NotifyPinConnectionListChanged()` | Added `CastNode->NotifyPinConnectionListChanged(CastInPin)` after wiring |
+<details>
+<summary>Historical: Delegate Binding Implementation (v4.21-v4.22) - Click to expand</summary>
 
-**Files Modified:**
-- `GasAbilityGeneratorGenerators.cpp` - Pin wiring fixes in `GenerateDelegateBindingNodes()`
-- `Delegate_Binding_Extensions_Spec_v1_1.md` - Added "Implementation Lessons Learned (v4.21.2)" section
+### v4.21.2 - Pin Wiring Fixes
+- UK2Node_Self uses PN_Self, not PN_ReturnValue
+- Cast node type propagation via NotifyPinConnectionListChanged
 
-**Result:** All 5 abilities with delegate_bindings compile successfully (GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField)
+### v4.22 - Extensions
+- External ASC Binding (Actor→ASC Resolution)
+- Attribute Change Delegates (AbilityTask Pattern)
 
-**Commit:** `ba63c40` fix(v4.21.2): Delegate binding pin wiring and type propagation [LOCKED-CHANGE-APPROVED]
+### v4.21/v4.21.1 - Core Implementation
+- 11 delegate bindings across 5 abilities (all removed in v7.7.0)
+- Features: OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage delegates
+- Two CreateDelegate nodes per binding pattern
 
----
-
-## ✅ Recently Completed - Delegate Binding Extensions (v4.22)
-
-**Source:** `Handoffs/Delegate_Binding_Extensions_Spec_v1_1.md`
-**Audit:** Claude-GPT dual audit PASSED (2026-01-22)
-
-### Section 10: External ASC Binding (Actor→ASC Resolution)
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Actor Type Detection | Detect source variable type via `PinType.PinSubCategoryObject` | ✅ |
-| ASC Extraction | Insert `GetAbilitySystemComponent` node for Actor sources | ✅ |
-| NASC Cast | Auto-cast to `UNarrativeAbilitySystemComponent` after extraction | ✅ |
-| Source Type Validation | Error if explicit `source_type` conflicts with actual type | ✅ |
-
-**Node Generation Order:**
-```
-VariableGet(ActorVar) → GetAbilitySystemComponent(Actor) → Cast to NASC → AddDelegate
-```
-
-### Section 11: Attribute Change Delegates (AbilityTask Pattern)
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| AbilityTask Creation | `UK2Node_LatentAbilityCall` for `UAbilityTask_WaitAttributeChange` | ✅ |
-| Zero-Param Handler | CustomEvent with no parameters per `FWaitAttributeChangeDelegate` | ✅ |
-| Attribute Resolution | `AttributeSet` + `Attribute` → `FGameplayAttribute` | ✅ |
-| Automatic Lifecycle | Task manages unbind via `OnDestroy()` - no EndAbility nodes needed | ✅ |
-| TriggerOnce Support | Default `true` per factory signature | ✅ |
-| Tag Filters | Optional `with_tag` and `without_tag` support | ✅ |
-
-**Error Codes:**
-| Code | Severity | Description |
-|------|----------|-------------|
-| `E_ATTRIBUTE_SET_NOT_FOUND` | FAIL | AttributeSet class not found |
-| `E_ATTRIBUTE_NOT_FOUND` | FAIL | Attribute property not found on AttributeSet |
-| `E_TASK_FACTORY_REQUIRED` | FAIL | AbilityTask created outside official factory |
-
-**Key Technical Detail:**
-- `FDelegateHandle` is NOT Blueprint-serializable - AbilityTask pattern required
-- `FWaitAttributeChangeDelegate` is zero-param: `DECLARE_DYNAMIC_MULTICAST_DELEGATE()`
-
-**Files Modified:**
-- `GasAbilityGeneratorTypes.h` - Added `FManifestAttributeBindingDefinition` struct
-- `GasAbilityGeneratorParser.cpp` - Added `attribute_bindings:` section parsing
-- `GasAbilityGeneratorGenerators.cpp` - Added `GenerateAttributeBindingNodes()` function
-- `GasAbilityGeneratorGenerators.h` - Added function declaration
-
----
-
-## ✅ Recently Completed - Delegate Binding Variable Source (v4.21.1)
-
-**Source:** `Handoffs/Implementation_Plans_Audit_v1.md` Section 9 (P2.1) - Test Case #5
-**Acceptance Criteria:** "Source resolution works for OwnerASC, PlayerASC, and variables"
-
-**Implementation:**
-- Creates UK2Node_VariableGet for Blueprint variable source
-- Searches Blueprint.NewVariables for source name
-- Auto-casts to UNarrativeAbilitySystemComponent if variable type is base ASC
-- Error codes: E_DELEGATE_SOURCE_INVALID (not found), E_DELEGATE_VARIABLE_PIN (pin error)
-
-**Completes v4.21 locked design - all 10 test cases now covered.**
-
----
-
-## ✅ Recently Completed - Delegate Binding Automation (v4.21)
-
-**Source:** `Handoffs/Implementation_Plans_Audit_v1.md` Section 9 (P2.1)
-**Audit:** Claude-GPT dual audit PASSED (2026-01-21)
-
-**Features:**
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Narrative Pro Delegates | OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage | ✅ |
-| Two CreateDelegate Nodes | Separate nodes for Activate and End paths | ✅ |
-| PN_Self Wiring | CreateDelegate→Self, Add/RemoveDelegate→SourceASC | ✅ |
-| Cast to NarrativeASC | Mandatory for OwnerASC/PlayerASC keywords | ✅ |
-| Custom Event Creation | Auto-created with delegate signature parameters | ✅ |
-| Parser Id Field | `id:` field for delegate binding identification | ✅ |
-| Error Codes | E_DELEGATE_NOT_FOUND, E_DELEGATE_SIGNATURE_MISMATCH (FAIL) | ✅ |
-| Variable Source Resolution | UK2Node_VariableGet for custom variables | ✅ (v4.21.1) |
-
-**Architecture Decision (Audit-Approved):**
-- Two CreateDelegate nodes per binding (not shared across exec paths)
-- RemoveDelegate unbinds by (Object, FunctionName) tuple match
-- No guards modified - replaced incomplete stub with full implementation
-
-**Commit:** `4fcab76` feat(v4.21): Delegate Binding Automation [LOCKED-CHANGE-APPROVED]
-
-**Manifest Usage (v4.21.1) - 11 Delegate Bindings:**
-| Ability | Delegate | Source | Handler | Use Case |
-|---------|----------|--------|---------|----------|
-| GA_FatherCrawler | OnDamagedBy | OwnerASC | HandleCrawlerDamageTaken | Damage tracking/UI |
-| GA_FatherCrawler | OnDealtDamage | OwnerASC | HandleCrawlerDamageDealt | Ultimate charge |
-| GA_FatherArmor | OnDamagedBy | OwnerASC | HandleArmorDamageReceived | Damage feedback |
-| GA_FatherArmor | OnDied | FatherASC (var) | HandleFatherDied | Death cleanup |
-| GA_FatherSymbiote | OnDealtDamage | OwnerASC | HandleSymbioteDamageDealt | Proximity damage |
-| GA_FatherSymbiote | OnHealedBy | OwnerASC | HandleSymbioteHealing | Regen tracking |
-| GA_ProtectiveDome | OnDamagedBy | OwnerASC | HandleDomeDamageAbsorption | Dome absorption |
-| GA_StealthField | OnDamagedBy | OwnerASC | HandleStealthDamageBreak | Break on hit |
-| GA_StealthField | OnDealtDamage | OwnerASC | HandleStealthAttackBreak | Break on attack |
-
-**Delegate Coverage:**
-- All 4 Narrative Pro delegates used: OnDied, OnDamagedBy, OnHealedBy, OnDealtDamage
-- OwnerASC keyword: 10 bindings
-- Variable source: 1 binding (FatherASC)
-- Player-owned abilities: GA_ProtectiveDome, GA_StealthField (3 bindings)
-- Father-owned abilities: GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote (8 bindings)
+</details>
 
 ---
 
@@ -664,61 +562,69 @@ These are intentional limitations documented in code:
 
 ---
 
-## Manual Setup Items (By Design)
+## ✅ Automation Gap Closure (v7.8.1 COMPLETE)
 
-These require manual editor configuration - automation is not feasible or not worth the complexity:
+**Updated:** 2026-01-28
+**Status:** Audit revealed most features were already implemented in v4.30+. Only NPC auto-link added.
 
-### Dialogue System
+### Audit Summary
 
-| Item | Location | Reason |
-|------|----------|--------|
-| Dialogue conditions/events | `DialogueTableConverter.cpp:40` | Complex nested structures |
-| PartySpeakerInfo property | `GasAbilityGeneratorGenerators.cpp:13230` | Property not on base UDialogue |
-| DefaultDialogueShot sequences | `GasAbilityGeneratorGenerators.cpp:13086` | Requires manual editor config |
+| Item | Listed Status | Actual Status | Action |
+|------|---------------|---------------|--------|
+| EquipmentAbilities | Needs deferred pass | ✅ **IMPLEMENTED** (v4.30, line 19873-19959) | Session cache + defer working |
+| ActivitiesToGrant | Needs deferred pass | ✅ **IMPLEMENTED** (v4.30) | Session cache + defer working |
+| MeshMaterials | Needs tag validation | ✅ **IMPLEMENTED** (v4.30, lines 19484-19634) | FCreatorMeshMaterial fully automated |
+| Morphs | Needs mesh validation | ✅ **IMPLEMENTED** (v4.30, lines 19636-19699) | FCreatorMeshMorph fully automated |
+| Stats property | Breaking change needed | ✅ **IMPLEMENTED** (v4.8, lines 19842-19904) | FNarrativeItemStat struct populated |
+| Dialogue conditions/events | Phase 2 placeholder | ✅ **IMPLEMENTED** | CreateDialogueConditionFromDefinition/EventFromDefinition |
+| DefaultDialogueShot | Array not populated | ✅ **IMPLEMENTED** (v4.30, lines 17897-18027) | SequenceAssets array automated |
+| BPT_FinishDialogue tasks | Complex lifecycle | ✅ **IMPLEMENTED** (lines 25567-25603) | Quest task creation automated |
+| Quest fail setup | No NE_FailQuest | ❌ **CANNOT AUTOMATE** | UQuest has no FailQuest property |
+| Questgiver linking | Implicit relationship | ❌ **CANNOT AUTOMATE** | UQuest has no Questgiver property |
+| NPC Blueprint auto-link | No auto-assignment | ✅ **IMPLEMENTED** (v7.8.1) | Convention-based lookup added |
 
-### Quest System
+### v7.8.1 Implementation: NPC Blueprint Auto-Link
 
-| Item | Location | Reason |
-|------|----------|--------|
-| Quest dialogue setup (BPT_FinishDialogue) | `GasAbilityGeneratorGenerators.cpp:12692` | Complex task configuration |
-| Quest fail setup (FailQuest call) | `GasAbilityGeneratorGenerators.cpp:12698` | Blueprint call required |
-| Questgiver linking | `GasAbilityGeneratorGenerators.cpp:19667` | NPC dialogue → Quest pattern |
-| XP reward class (NE_GiveXP) | `GasAbilityGeneratorGenerators.cpp:19731` | Class resolution optional |
-| Currency reward class (BPE_AddCurrency) | `GasAbilityGeneratorGenerators.cpp:19766` | Class resolution optional |
-| Item reward class (BPE_AddItemToInventory) | `GasAbilityGeneratorGenerators.cpp:19831` | Class resolution optional |
+When `npc_blueprint:` is not specified in manifest, the generator now auto-discovers Blueprint by convention:
 
-### Item/Equipment System
+**Convention Paths (tried in order):**
+1. `{ProjectRoot}/NPCs/BP_{NPCBaseName}.BP_{NPCBaseName}`
+2. `{ProjectRoot}/NPCs/BP_NPC_{NPCBaseName}.BP_NPC_{NPCBaseName}`
+3. `{ProjectRoot}/Characters/BP_{NPCBaseName}.BP_{NPCBaseName}`
+4. `{ProjectRoot}/Characters/NPCs/BP_{NPCBaseName}.BP_{NPCBaseName}`
 
-| Item | Location | Reason |
-|------|----------|--------|
-| MeshMaterials (complex struct) | `GasAbilityGeneratorGenerators.cpp:14498` | Nested array of structs |
-| Morphs (complex struct) | `GasAbilityGeneratorGenerators.cpp:14516` | Nested array of structs |
-| EquipmentAbilities | `GasAbilityGeneratorGenerators.cpp:14627` | Property not found on base |
-| Stats property | `GasAbilityGeneratorGenerators.cpp:14687` | Property not on UNarrativeItem |
-| ActivitiesToGrant | `GasAbilityGeneratorGenerators.cpp:14750` | Property not found |
-| PickupMeshData | `GasAbilityGeneratorGenerators.cpp:14847` | Property not found |
-| TraceData (RangedWeaponItem) | `GasAbilityGeneratorGenerators.cpp:14895` | Class-specific property |
+**NPCBaseName** is derived by stripping `NPC_` prefix (e.g., `NPC_Blacksmith` → `Blacksmith`).
 
-### NPC/Character System
+**Location:** `GasAbilityGeneratorGenerators.cpp:22815-22842`
 
-| Item | Location | Reason |
-|------|----------|--------|
-| NPCTargets array | `GasAbilityGeneratorGenerators.cpp:15856` | Property not found fallback |
-| CharacterTargets array | `GasAbilityGeneratorGenerators.cpp:15906` | Property not found fallback |
-| NPC Blueprint assignment | `NPCTableValidator.cpp:173` | Requires asset selection |
+### Items That Cannot Be Automated (By Design)
 
-### VFX/Niagara System
+| Item | Reason |
+|------|--------|
+| Quest fail setup | `UQuest` has no `FailQuest` property - fail states are handled via state machine |
+| Questgiver linking | `UQuest` has no `Questgiver` property - questgiver is the NPC whose dialogue starts the quest |
+
+**Note:** Quest fail and questgiver are implicit relationships, not UQuest properties. The `questgiver:` manifest field is for documentation only.
+
+### Already Automated (Reference)
+
+| Item | Generator Location | Status |
+|------|-------------------|--------|
+| Quest XP (NE_GiveXP) | Lines 22098-22130 | ✅ Complete (4 NP paths) |
+| Quest Currency (BPE_AddCurrency) | Lines 22133-22165 | ✅ Complete |
+| Quest Items (BPE_AddItemToInventory) | Lines 22168-22231 | ✅ Complete |
+| NPCTargets | Lines 18182-18256 | ✅ Complete (FSoftObjectProperty + FObjectProperty) |
+| CharacterTargets | Lines 18259-18307 | ✅ Complete (FSoftObjectProperty) |
+| Goal class resolution | Lines 21350-21395 | ✅ Complete (11 search paths) |
+| PickupMeshData | Lines 17191-17252 | ✅ Complete |
+| TraceData | Lines 17254-17298 | ✅ Complete |
+
+### VFX/Niagara (Manual by Design)
 
 | Item | Location | Reason |
 |------|----------|--------|
 | GameplayCue requested values | `GasAbilityGeneratorGenerators.cpp:17302` | VFX configuration manual |
 | Per-quality scalability | `GasAbilityGeneratorGenerators.cpp:18054` | Requires manual verification |
-
-### AI/Goals System
-
-| Item | Location | Reason |
-|------|----------|--------|
-| Goal class resolution failure | `GasAbilityGeneratorGenerators.cpp:18995` | Class path not found |
 
 ---
 
@@ -796,3 +702,6 @@ These are intentionally not implemented:
 | 2026-01-22 | **Fail-Fast Phase 2 START:** Converting 111 Type M Pipeline items to hard fails |
 | 2026-01-23 | **P1.1 FormState Preset Schema:** Manifest updated to use compact `form_state_effects:` syntax (35→12 lines) |
 | 2026-01-23 | **Batch Validation Audit:** Claude-GPT dual audit confirmed FULLY IMPLEMENTED (v4.24 PreValidator + `-dryrun`) |
+| 2026-01-28 | **Consolidation:** Merged `Automation_Gap_Closure_Spec_v1.md` into "Automation Gap Closure" section |
+| 2026-01-28 | **Cleanup:** Marked Delegate Binding sections (v4.21-v4.22) as OBSOLETE - Track E removed in v7.7.0 |
+| 2026-01-28 | **v7.8.1 Automation Gap Audit:** Found most items already implemented (v4.30+). Added NPC Blueprint auto-link by convention. |
