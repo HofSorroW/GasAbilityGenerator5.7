@@ -9918,6 +9918,229 @@ actor_blueprints:  # POSSESSED EXPLODER
           to: [SetMovementMode, Target]
         - from: [SetMovementMode, Then]
           to: [PrintReady, Exec]
+    # v7.8.5: Full custom functions per guide Phase 3 (sections 5, 6, 7)
+    custom_functions:
+      # TriggerAlert - Sets alert state, executes GameplayCue, adds State tag
+      - name: TriggerAlert
+        inputs: []
+        outputs: []
+        nodes:
+          # Check if already alerted
+          - id: GetAlerted
+            type: VariableGet
+            properties:
+              variable_name: bIsAlerted
+          - id: AlreadyAlertedBranch
+            type: Branch
+          # If not alerted, set it
+          - id: SetAlertedTrue
+            type: VariableSet
+            properties:
+              variable_name: bIsAlerted
+          - id: MakeTrueAlert
+            type: CallFunction
+            properties:
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+            data:
+              bool_value: true
+          # Add alert state tag (GameplayCue executed via GE when tag is applied)
+          - id: SelfForCue
+            type: Self
+          - id: MakeAlertStateTag
+            type: CallFunction
+            properties:
+              function: MakeLiteralGameplayTag
+              class: KismetGameplayTagLibrary
+            data:
+              tag_value: State.Enemy.Exploder.Alert
+          - id: MakeAlertTagContainer
+            type: CallFunction
+            properties:
+              function: MakeGameplayTagContainerFromTag
+              class: BlueprintGameplayTagLibrary
+          - id: AddAlertTag
+            type: CallFunction
+            properties:
+              function: AddLooseGameplayTags
+              class: AbilitySystemBlueprintLibrary
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [AlreadyAlertedBranch, Exec]
+          - from: [GetAlerted, bIsAlerted]
+            to: [AlreadyAlertedBranch, Condition]
+          # False = not alerted yet, proceed
+          - from: [AlreadyAlertedBranch, False]
+            to: [SetAlertedTrue, Exec]
+          - from: [MakeTrueAlert, ReturnValue]
+            to: [SetAlertedTrue, bIsAlerted]
+          - from: [SetAlertedTrue, Then]
+            to: [AddAlertTag, Exec]
+          - from: [SelfForCue, self]
+            to: [AddAlertTag, Actor]
+          - from: [MakeAlertStateTag, ReturnValue]
+            to: [MakeAlertTagContainer, SingleTag]
+          - from: [MakeAlertTagContainer, ReturnValue]
+            to: [AddAlertTag, GameplayTags]
+
+      # CheckExplosionProximity - Returns true if target is within ExplosionRadius
+      # Uses AND for: IsValid(Target) AND (Distance <= Radius) - single Return node
+      - name: CheckExplosionProximity
+        inputs:
+          - name: TargetActor
+            type: Actor
+        outputs:
+          - name: bShouldExplode
+            type: Bool
+        nodes:
+          # Validate target
+          - id: ValidTarget
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+          # Get distance to target
+          - id: SelfForDist
+            type: Self
+          - id: GetDistanceTo
+            type: CallFunction
+            properties:
+              function: GetDistanceTo
+              class: Actor
+          # Compare to radius
+          - id: GetRadius
+            type: VariableGet
+            properties:
+              variable_name: ExplosionRadius
+          - id: LessEqual
+            type: CallFunction
+            properties:
+              function: LessEqual_DoubleDouble
+          # AND: valid target AND within radius
+          - id: AndBool
+            type: CallFunction
+            properties:
+              function: BooleanAND
+              class: KismetMathLibrary
+          # Single return
+          - id: ReturnResult
+            type: Return
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [ReturnResult, Exec]
+          - from: [FunctionEntry, TargetActor]
+            to: [ValidTarget, Object]
+          - from: [SelfForDist, self]
+            to: [GetDistanceTo, Target]
+          - from: [FunctionEntry, TargetActor]
+            to: [GetDistanceTo, OtherActor]
+          - from: [GetDistanceTo, ReturnValue]
+            to: [LessEqual, A]
+          - from: [GetRadius, ExplosionRadius]
+            to: [LessEqual, B]
+          - from: [ValidTarget, ReturnValue]
+            to: [AndBool, A]
+          - from: [LessEqual, ReturnValue]
+            to: [AndBool, B]
+          - from: [AndBool, ReturnValue]
+            to: [ReturnResult, bShouldExplode]
+
+      # TriggerExplosion - Simplified AOE damage (no ForEachLoop in custom functions)
+      # Uses ApplyRadialDamage for immediate AOE, then destroys self
+      - name: TriggerExplosion
+        inputs: []
+        outputs: []
+        nodes:
+          # Authority check
+          - id: HasAuth
+            type: CallFunction
+            properties:
+              function: HasAuthority
+              class: Actor
+          - id: AuthBranch
+            type: Branch
+          # Explosion guard
+          - id: GetExploded
+            type: VariableGet
+            properties:
+              variable_name: bHasExploded
+          - id: ExplodedBranch
+            type: Branch
+          # Set exploded flag
+          - id: SetExplodedTrue
+            type: VariableSet
+            properties:
+              variable_name: bHasExploded
+          - id: MakeTrueExploded
+            type: CallFunction
+            properties:
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+            data:
+              bool_value: true
+          # Get location for damage
+          - id: SelfForLoc
+            type: Self
+          - id: GetActorLoc
+            type: CallFunction
+            properties:
+              function: K2_GetActorLocation
+              class: Actor
+          # Get radius and damage values
+          - id: GetRadius
+            type: VariableGet
+            properties:
+              variable_name: ExplosionRadius
+          - id: GetDamage
+            type: VariableGet
+            properties:
+              variable_name: ExplosionDamage
+          # Apply radial damage (GameplayStatics)
+          - id: ApplyRadialDamage
+            type: CallFunction
+            properties:
+              function: ApplyRadialDamage
+              class: GameplayStatics
+          # Destroy self
+          - id: DestroySelf
+            type: CallFunction
+            properties:
+              function: K2_DestroyActor
+              class: Actor
+        connections:
+          # Authority check
+          - from: [FunctionEntry, Then]
+            to: [AuthBranch, Exec]
+          - from: [HasAuth, ReturnValue]
+            to: [AuthBranch, Condition]
+          # If authority, check explosion guard
+          - from: [AuthBranch, True]
+            to: [ExplodedBranch, Exec]
+          - from: [GetExploded, bHasExploded]
+            to: [ExplodedBranch, Condition]
+          # If not exploded, set flag and apply damage
+          - from: [ExplodedBranch, False]
+            to: [SetExplodedTrue, Exec]
+          - from: [MakeTrueExploded, ReturnValue]
+            to: [SetExplodedTrue, bHasExploded]
+          # Apply radial damage
+          - from: [SetExplodedTrue, Then]
+            to: [ApplyRadialDamage, Exec]
+          - from: [GetDamage, ExplosionDamage]
+            to: [ApplyRadialDamage, BaseDamage]
+          - from: [SelfForLoc, self]
+            to: [GetActorLoc, Target]
+          - from: [GetActorLoc, ReturnValue]
+            to: [ApplyRadialDamage, Origin]
+          - from: [GetRadius, ExplosionRadius]
+            to: [ApplyRadialDamage, DamageRadius]
+          - from: [SelfForLoc, self]
+            to: [ApplyRadialDamage, DamageCauser]
+          # Destroy after damage
+          - from: [ApplyRadialDamage, Exec]
+            to: [DestroySelf, Exec]
+          - from: [SelfForLoc, self]
+            to: [DestroySelf, Target]
 
 actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
   # v4.32: Enhanced with ReceiveTickAI event graph for explosion proximity check
@@ -10260,6 +10483,8 @@ actor_blueprints:  # SUPPORT BUFFER
             to: [SetCanHeal, Exec]
           - from: [MakeTrue, ReturnValue]
             to: [SetCanHeal, bCanHeal]
+      # NOTE: RestoreSpeed removed - PropertySet not supported in custom_functions
+      # Logic moved to OnSpeedBoostExpired event in event_graph (v7.8.6)
       # ApplyHealToTarget - Main healing function called by BTS_HealNearbyAllies
       - name: ApplyHealToTarget
         inputs:
@@ -10369,6 +10594,34 @@ actor_blueprints:  # SUPPORT BUFFER
             properties:
               function: BP_ApplyGameplayEffectSpecToTarget
               class: AbilitySystemComponent
+          # v7.8.7: Speed boost via event_graph pattern (PropertySet works in event_graph, not custom_functions)
+          # Store target in LastBoostedActor, then trigger ApplySpeedBoostNow event via 0-delay timer
+          - id: StoreTargetForBoost
+            type: VariableSet
+            properties:
+              variable_name: LastBoostedActor
+          - id: SelfForBoostTrigger
+            type: Self
+          - id: TriggerSpeedBoost
+            type: CallFunction
+            properties:
+              function: K2_SetTimer
+              class: KismetSystemLibrary
+          - id: MakeBoostTriggerName
+            type: CallFunction
+            properties:
+              function: MakeLiteralString
+              class: KismetSystemLibrary
+            data:
+              string_value: ApplySpeedBoostNow
+          # 0-delay timer to trigger the event immediately (next tick)
+          - id: MakeZeroDelay
+            type: CallFunction
+            properties:
+              function: MakeLiteralDouble
+              class: KismetMathLibrary
+            data:
+              double_value: 0.01
         connections:
           # Authority check
           # v4.39.3: FunctionEntry is the entry point for custom functions (not Entry)
@@ -10438,6 +10691,21 @@ actor_blueprints:  # SUPPORT BUFFER
             to: [ApplyToTarget, Target]
           - from: [AssignMagnitude, Exec]
             to: [ApplyToTarget, Exec]
+          # ============================================================================
+          # v7.8.7: Speed Boost Trigger (stores target, triggers event_graph via 0-delay timer)
+          # ============================================================================
+          - from: [ApplyToTarget, Exec]
+            to: [StoreTargetForBoost, Exec]
+          - from: [FunctionEntry, TargetCharacter]
+            to: [StoreTargetForBoost, LastBoostedActor]
+          - from: [StoreTargetForBoost, Then]
+            to: [TriggerSpeedBoost, Exec]
+          - from: [SelfForBoostTrigger, self]
+            to: [TriggerSpeedBoost, Object]
+          - from: [MakeBoostTriggerName, ReturnValue]
+            to: [TriggerSpeedBoost, FunctionName]
+          - from: [MakeZeroDelay, ReturnValue]
+            to: [TriggerSpeedBoost, Time]
     event_graph:
       nodes:
         # BeginPlay - Log spawn
@@ -10454,9 +10722,265 @@ actor_blueprints:  # SUPPORT BUFFER
             parameters:
               InString: "SupportBuffer Active - Full healing support"
           position: [300, 0]
+        # ============================================================================
+        # v7.8.7: ApplySpeedBoostNow CustomEvent (Phase 3, 5.9-5.15 per guide)
+        # Called via timer from ApplyHealToTarget to apply speed boost
+        # PropertySet works in event_graph context
+        # ============================================================================
+        - id: Event_ApplySpeedBoostNow
+          type: CustomEvent
+          properties:
+            event_name: ApplySpeedBoostNow
+          position: [0, 400]
+        # Get LastBoostedActor (set by ApplyHealToTarget)
+        - id: GetTargetForBoost
+          type: VariableGet
+          properties:
+            variable_name: LastBoostedActor
+          position: [200, 400]
+        # Check valid
+        - id: CheckTargetValid
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [400, 400]
+        - id: TargetValidBranch
+          type: Branch
+          position: [600, 400]
+        # Cast to Character
+        - id: CastToCharacter_Boost
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [800, 400]
+        # Get CharacterMovement
+        - id: GetCharMov_Boost
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [1000, 400]
+        # Get current MaxWalkSpeed
+        - id: GetCurrentWalkSpeed
+          type: PropertyGet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [1200, 400]
+        # Store original speed
+        - id: StoreOriginalSpeed
+          type: VariableSet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [1400, 400]
+        # Get SpeedBoostPercent
+        - id: GetBoostPercent
+          type: VariableGet
+          properties:
+            variable_name: SpeedBoostPercent
+          position: [1400, 550]
+        # Calculate boost: (speed * percent) / 100
+        - id: MultiplyPercent
+          type: CallFunction
+          properties:
+            function: Multiply_DoubleDouble
+            class: KismetMathLibrary
+          position: [1600, 400]
+        - id: MakeLiteral100_Boost
+          type: CallFunction
+          properties:
+            function: MakeLiteralDouble
+            class: KismetMathLibrary
+          data:
+            double_value: 100.0
+          position: [1600, 600]
+        - id: DivideByHundred
+          type: CallFunction
+          properties:
+            function: Divide_DoubleDouble
+            class: KismetMathLibrary
+          position: [1800, 400]
+        # Calculate new speed: original + boost
+        - id: AddBoost
+          type: CallFunction
+          properties:
+            function: Add_DoubleDouble
+            class: KismetMathLibrary
+          position: [2000, 400]
+        # Apply boosted speed (PropertySet works in event_graph)
+        - id: SetBoostedWalkSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [2200, 400]
+        # Get SpeedBoostDuration
+        - id: GetBoostDuration
+          type: VariableGet
+          properties:
+            variable_name: SpeedBoostDuration
+          position: [2200, 550]
+        # Self for restore timer
+        - id: SelfForRestoreTimer
+          type: Self
+          position: [2200, 650]
+        # Start timer to restore speed
+        - id: StartRestoreTimer
+          type: CallFunction
+          properties:
+            function: K2_SetTimer
+            class: KismetSystemLibrary
+          position: [2400, 400]
+        - id: MakeRestoreFuncName
+          type: CallFunction
+          properties:
+            function: MakeLiteralString
+            class: KismetSystemLibrary
+          data:
+            string_value: OnSpeedBoostExpired
+          position: [2400, 600]
+        # ============================================================================
+        # v7.8.7: OnSpeedBoostExpired CustomEvent (Phase 3, 5.23-5.27 per guide)
+        # Called by timer when speed boost duration expires - restores original speed
+        # ============================================================================
+        - id: Event_SpeedBoostExpired
+          type: CustomEvent
+          properties:
+            event_name: OnSpeedBoostExpired
+          position: [0, 800]
+        # Get LastBoostedActor to restore
+        - id: GetBoostedActor_Restore
+          type: VariableGet
+          properties:
+            variable_name: LastBoostedActor
+          position: [200, 800]
+        # Check valid
+        - id: CheckBoostedValid
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [400, 800]
+        - id: BoostedValidBranch
+          type: Branch
+          position: [600, 800]
+        # Cast to Character
+        - id: CastToCharacter_Restore
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [800, 800]
+        # Get CharacterMovement
+        - id: GetCharMov_Restore
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [1000, 800]
+        # Get stored original speed
+        - id: GetOriginalSpeed_Restore
+          type: VariableGet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [1000, 950]
+        # Set MaxWalkSpeed back to original
+        - id: SetWalkSpeed_Restore
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [1200, 800]
+        # Clear LastBoostedActor
+        - id: ClearLastBoostedActor
+          type: VariableSet
+          properties:
+            variable_name: LastBoostedActor
+          position: [1400, 800]
       connections:
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
+        # ============================================================================
+        # ApplySpeedBoostNow connections
+        # ============================================================================
+        - from: [Event_ApplySpeedBoostNow, Then]
+          to: [CheckTargetValid, Exec]
+        - from: [GetTargetForBoost, LastBoostedActor]
+          to: [CheckTargetValid, Object]
+        - from: [CheckTargetValid, ReturnValue]
+          to: [TargetValidBranch, Condition]
+        - from: [CheckTargetValid, Exec]
+          to: [TargetValidBranch, Exec]
+        - from: [TargetValidBranch, True]
+          to: [CastToCharacter_Boost, Exec]
+        - from: [GetTargetForBoost, LastBoostedActor]
+          to: [CastToCharacter_Boost, Object]
+        - from: [CastToCharacter_Boost, Then]
+          to: [GetCharMov_Boost, Exec]
+        - from: [CastToCharacter_Boost, AsCharacter]
+          to: [GetCharMov_Boost, Target]
+        - from: [GetCharMov_Boost, CharacterMovement]
+          to: [GetCurrentWalkSpeed, Target]
+        - from: [GetCharMov_Boost, Exec]
+          to: [StoreOriginalSpeed, Exec]
+        - from: [GetCurrentWalkSpeed, MaxWalkSpeed]
+          to: [StoreOriginalSpeed, OriginalWalkSpeed]
+        # Calculate boost
+        - from: [GetCurrentWalkSpeed, MaxWalkSpeed]
+          to: [MultiplyPercent, A]
+        - from: [GetBoostPercent, SpeedBoostPercent]
+          to: [MultiplyPercent, B]
+        - from: [MultiplyPercent, ReturnValue]
+          to: [DivideByHundred, A]
+        - from: [MakeLiteral100_Boost, ReturnValue]
+          to: [DivideByHundred, B]
+        - from: [GetCurrentWalkSpeed, MaxWalkSpeed]
+          to: [AddBoost, A]
+        - from: [DivideByHundred, ReturnValue]
+          to: [AddBoost, B]
+        # Apply boost
+        - from: [StoreOriginalSpeed, Then]
+          to: [SetBoostedWalkSpeed, Exec]
+        - from: [GetCharMov_Boost, CharacterMovement]
+          to: [SetBoostedWalkSpeed, Target]
+        - from: [AddBoost, ReturnValue]
+          to: [SetBoostedWalkSpeed, MaxWalkSpeed]
+        # Start restore timer
+        - from: [SetBoostedWalkSpeed, Then]
+          to: [StartRestoreTimer, Exec]
+        - from: [SelfForRestoreTimer, self]
+          to: [StartRestoreTimer, Object]
+        - from: [MakeRestoreFuncName, ReturnValue]
+          to: [StartRestoreTimer, FunctionName]
+        - from: [GetBoostDuration, SpeedBoostDuration]
+          to: [StartRestoreTimer, Time]
+        # ============================================================================
+        # OnSpeedBoostExpired connections
+        # ============================================================================
+        - from: [Event_SpeedBoostExpired, Then]
+          to: [CheckBoostedValid, Exec]
+        - from: [GetBoostedActor_Restore, LastBoostedActor]
+          to: [CheckBoostedValid, Object]
+        - from: [CheckBoostedValid, ReturnValue]
+          to: [BoostedValidBranch, Condition]
+        - from: [CheckBoostedValid, Exec]
+          to: [BoostedValidBranch, Exec]
+        - from: [BoostedValidBranch, True]
+          to: [CastToCharacter_Restore, Exec]
+        - from: [GetBoostedActor_Restore, LastBoostedActor]
+          to: [CastToCharacter_Restore, Object]
+        - from: [CastToCharacter_Restore, Then]
+          to: [GetCharMov_Restore, Exec]
+        - from: [CastToCharacter_Restore, AsCharacter]
+          to: [GetCharMov_Restore, Target]
+        - from: [GetCharMov_Restore, Exec]
+          to: [SetWalkSpeed_Restore, Exec]
+        - from: [GetCharMov_Restore, CharacterMovement]
+          to: [SetWalkSpeed_Restore, Target]
+        - from: [GetOriginalSpeed_Restore, OriginalWalkSpeed]
+          to: [SetWalkSpeed_Restore, MaxWalkSpeed]
+        - from: [SetWalkSpeed_Restore, Then]
+          to: [ClearLastBoostedActor, Exec]
 
 actor_blueprints:  # SUPPORT BUFFER BT SERVICES
   # v4.39: Full guide implementation (INC-SB-2, INC-SB-5, INC-SB-6 fixes)
@@ -10747,15 +11271,36 @@ gameplay_effects:  # BIOMECH
     duration_policy: Instant
 
 actor_blueprints:  # BIOMECH
-  # v4.34: SpawnNPC for proper NPC initialization on phase transition
+  # v7.8.5: Enhanced per Biomechanical_Detachment_System_Implementation_Guide_v1_2.md (Phase 4-5)
+  # SpawnNPC for proper NPC initialization + detaching state + montage + corpse spawn
   - name: BP_BiomechHost
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
     variables:
-      # NPCDefinition for spawning BiomechCreature on death via SpawnNPC
-      - name: PhaseSpawnDefinition
+      # NPCDefinition for spawning BiomechCreature on death via SpawnNPC (renamed from PhaseSpawnDefinition)
+      - name: CreatureDefinition
         type: Object
         class: NPCDefinition
+        instance_editable: true
+      # v7.8.5: Static mesh for corpse left behind (Phase 4, section 3)
+      - name: CorpseMesh
+        type: Object
+        class: StaticMesh
+        instance_editable: true
+      # v7.8.5: Spawn offset for creature (Phase 4, section 3)
+      - name: SpawnOffset
+        type: Vector
+        default_value: "(X=0.0, Y=0.0, Z=50.0)"
+        instance_editable: true
+      # v7.8.5: Whether to spawn corpse on death (Phase 4, section 3)
+      - name: bSpawnCorpse
+        type: Bool
+        default_value: "true"
+        instance_editable: true
+      # v7.8.5: Animation montage for detachment sequence (Phase 4, section 3)
+      - name: DetachmentMontage
+        type: Object
+        class: AnimMontage
         instance_editable: true
     event_graph:
       nodes:
@@ -10766,11 +11311,13 @@ actor_blueprints:  # BIOMECH
             event_name: ReceiveBeginPlay
           position: [0, 0]
       connections: []
-    # v2.8.3/v4.32: Function override with actual SpawnActor for phase transition
+    # v7.8.5: Enhanced HandleDeath per guide Phase 5 (detaching tag, montage, offset, corpse)
     function_overrides:
       - function: HandleDeath
         nodes:
-          # Authority check - only server spawns the Creature
+          # ============================================================================
+          # Phase 5.2: Authority check - only server executes death logic
+          # ============================================================================
           - id: HasAuth
             type: CallFunction
             properties:
@@ -10781,45 +11328,301 @@ actor_blueprints:  # BIOMECH
           - id: AuthBranch
             type: Branch
             position: [400, 0]
-          # Get transform at death location
-          - id: GetActorTransform
+          # ============================================================================
+          # Phase 5.3: Add State.Biomech.Detaching tag during transition
+          # v7.8.6: Use AddLooseGameplayTags (plural) with AbilitySystemBlueprintLibrary
+          # ============================================================================
+          - id: SelfRefForTag
+            type: Self
+            position: [550, 80]
+          - id: MakeDetachingTag
+            type: CallFunction
+            properties:
+              function: MakeLiteralGameplayTag
+              class: KismetGameplayTagLibrary
+            data:
+              tag_value: State.Biomech.Detaching
+            position: [600, 150]
+          - id: MakeTagContainer_Detaching
+            type: CallFunction
+            properties:
+              function: MakeGameplayTagContainerFromTag
+              class: KismetGameplayTagLibrary
+            position: [700, 100]
+          - id: AddDetachingTag
+            type: CallFunction
+            properties:
+              function: AddLooseGameplayTags
+              class: AbilitySystemBlueprintLibrary
+            position: [800, 0]
+          # ============================================================================
+          # Phase 5.4: Play detachment montage if valid
+          # ============================================================================
+          - id: GetDetachMontage
+            type: VariableGet
+            properties:
+              variable_name: DetachmentMontage
+            position: [1000, 100]
+          - id: CheckMontageValid
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [1000, 0]
+          - id: MontageBranch
+            type: Branch
+            position: [1200, 0]
+          - id: SelfForMontage
+            type: Self
+            position: [1200, 100]
+          - id: PlayMontage
+            type: CallFunction
+            properties:
+              function: PlayAnimMontage
+              class: Character
+            position: [1400, 0]
+          # ============================================================================
+          # Phase 5.6-5.7: Calculate spawn transform with offset
+          # ============================================================================
+          - id: GetActorLocation
+            type: CallFunction
+            properties:
+              function: K2_GetActorLocation
+              class: Actor
+              target_self: true
+            position: [1600, 0]
+          - id: GetSpawnOffset
+            type: VariableGet
+            properties:
+              variable_name: SpawnOffset
+            position: [1600, 100]
+          - id: AddOffset
+            type: CallFunction
+            properties:
+              function: Add_VectorVector
+              class: KismetMathLibrary
+            position: [1800, 0]
+          - id: GetActorRotation
+            type: CallFunction
+            properties:
+              function: K2_GetActorRotation
+              class: Actor
+              target_self: true
+            position: [1600, 200]
+          - id: MakeSpawnTransform
+            type: CallFunction
+            properties:
+              function: MakeTransform
+              class: KismetMathLibrary
+            position: [2000, 0]
+          # ============================================================================
+          # Phase 5.7: Spawn BiomechCreature via SpawnNPC
+          # ============================================================================
+          - id: GetCreatureDefinition
+            type: VariableGet
+            properties:
+              variable_name: CreatureDefinition
+            position: [2000, 150]
+          - id: SpawnCreature
+            type: SpawnNPC
+            properties:
+              npc_definition_variable: CreatureDefinition
+            position: [2200, 0]
+          # ============================================================================
+          # Phase 5.8: Spawn corpse mesh if bSpawnCorpse
+          # ============================================================================
+          - id: GetSpawnCorpseFlag
+            type: VariableGet
+            properties:
+              variable_name: bSpawnCorpse
+            position: [2400, 100]
+          - id: SpawnCorpseBranch
+            type: Branch
+            position: [2400, 0]
+          - id: GetCorpseMesh
+            type: VariableGet
+            properties:
+              variable_name: CorpseMesh
+            position: [2600, 100]
+          - id: CheckCorpseMeshValid
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [2600, 0]
+          - id: CorpseMeshBranch
+            type: Branch
+            position: [2800, 0]
+          - id: GetCorpseTransform
             type: CallFunction
             properties:
               function: GetTransform
               class: Actor
               target_self: true
-            position: [600, 0]
-          # Get the NPCDefinition to spawn (set in editor to NPC_BiomechCreature)
-          - id: GetSpawnDefinition
-            type: VariableGet
+            position: [2800, 150]
+          # Spawn StaticMeshActor for corpse
+          - id: SpawnCorpseActor
+            type: SpawnActor
             properties:
-              variable_name: PhaseSpawnDefinition
-            position: [600, 100]
-          # Spawn the BiomechCreature via SpawnNPC for proper NPC initialization
-          - id: SpawnCreature
-            type: SpawnNPC
+              actor_class: StaticMeshActor
+            position: [3000, 0]
+          # Configure corpse mesh component
+          - id: CastToSMA
+            type: DynamicCast
             properties:
-              npc_definition_variable: PhaseSpawnDefinition
-            position: [800, 0]
+              target_class: StaticMeshActor
+            position: [3200, 0]
+          # v7.8.8: Use GetComponentByClass + Cast pattern (PropertyGet doesn't work in function_overrides)
+          - id: GetStaticMeshComp
+            type: CallFunction
+            properties:
+              function: GetComponentByClass
+              class: Actor
+              param.ComponentClass: StaticMeshComponent
+            position: [3400, 0]
+          # Cast GetComponentByClass result to StaticMeshComponent
+          - id: CastToStaticMeshComp
+            type: DynamicCast
+            properties:
+              target_class: StaticMeshComponent
+            position: [3500, 0]
+          - id: SetCorpseMesh
+            type: CallFunction
+            properties:
+              function: SetStaticMesh
+              class: StaticMeshComponent
+            position: [3600, 0]
+          - id: MakeTrueLiteral
+            type: CallFunction
+            properties:
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+            data:
+              bool_value: true
+            position: [3600, 150]
+          - id: SetSimulatePhysics
+            type: CallFunction
+            properties:
+              function: SetSimulatePhysics
+              class: PrimitiveComponent
+            position: [3800, 0]
+          # ============================================================================
+          # Phase 5.9: Call parent HandleDeath (all paths converge)
+          # ============================================================================
           - id: CallParentDeath
             type: CallParent
-            position: [1000, 0]
+            position: [4000, 0]
         connections:
+          # Authority check
           - from: [FunctionEntry, Then]
             to: [HasAuth, Exec]
           - from: [HasAuth, ReturnValue]
             to: [AuthBranch, Condition]
-          - from: [AuthBranch, True]
-            to: [GetActorTransform, Exec]
-          - from: [GetActorTransform, Exec]
-            to: [SpawnCreature, Exec]
-          - from: [GetSpawnDefinition, PhaseSpawnDefinition]
-            to: [SpawnCreature, NPCData]
-          - from: [GetActorTransform, ReturnValue]
-            to: [SpawnCreature, Transform]
-          - from: [SpawnCreature, Then]
-            to: [CallParentDeath, Exec]
+          - from: [HasAuth, Exec]
+            to: [AuthBranch, Exec]
+          # Non-authority goes straight to parent
           - from: [AuthBranch, False]
+            to: [CallParentDeath, Exec]
+          # Add detaching tag (v7.8.6: AddLooseGameplayTags takes Actor + GameplayTagContainer)
+          - from: [AuthBranch, True]
+            to: [AddDetachingTag, Exec]
+          - from: [SelfRefForTag, self]
+            to: [AddDetachingTag, Actor]
+          - from: [MakeDetachingTag, ReturnValue]
+            to: [MakeTagContainer_Detaching, Tag]
+          - from: [MakeTagContainer_Detaching, ReturnValue]
+            to: [AddDetachingTag, GameplayTags]
+          # Check montage valid
+          - from: [AddDetachingTag, Exec]
+            to: [CheckMontageValid, Exec]
+          - from: [GetDetachMontage, DetachmentMontage]
+            to: [CheckMontageValid, Object]
+          - from: [CheckMontageValid, ReturnValue]
+            to: [MontageBranch, Condition]
+          - from: [CheckMontageValid, Exec]
+            to: [MontageBranch, Exec]
+          # Play montage if valid (True), skip if not (False)
+          - from: [MontageBranch, True]
+            to: [PlayMontage, Exec]
+          - from: [SelfForMontage, self]
+            to: [PlayMontage, Target]
+          - from: [GetDetachMontage, DetachmentMontage]
+            to: [PlayMontage, AnimMontage]
+          # Both branches continue to spawn location calculation
+          - from: [PlayMontage, Exec]
+            to: [GetActorLocation, Exec]
+          - from: [MontageBranch, False]
+            to: [GetActorLocation, Exec]
+          # Calculate spawn location with offset
+          - from: [GetActorLocation, ReturnValue]
+            to: [AddOffset, A]
+          - from: [GetSpawnOffset, SpawnOffset]
+            to: [AddOffset, B]
+          # Make spawn transform
+          - from: [AddOffset, ReturnValue]
+            to: [MakeSpawnTransform, Location]
+          - from: [GetActorRotation, ReturnValue]
+            to: [MakeSpawnTransform, Rotation]
+          - from: [GetActorLocation, Exec]
+            to: [MakeSpawnTransform, Exec]
+          # Spawn creature
+          - from: [MakeSpawnTransform, Exec]
+            to: [SpawnCreature, Exec]
+          - from: [GetCreatureDefinition, CreatureDefinition]
+            to: [SpawnCreature, NPCData]
+          - from: [MakeSpawnTransform, ReturnValue]
+            to: [SpawnCreature, Transform]
+          # Check if should spawn corpse
+          - from: [SpawnCreature, Then]
+            to: [SpawnCorpseBranch, Exec]
+          - from: [GetSpawnCorpseFlag, bSpawnCorpse]
+            to: [SpawnCorpseBranch, Condition]
+          # If should spawn corpse, check mesh valid
+          - from: [SpawnCorpseBranch, True]
+            to: [CheckCorpseMeshValid, Exec]
+          - from: [GetCorpseMesh, CorpseMesh]
+            to: [CheckCorpseMeshValid, Object]
+          - from: [CheckCorpseMeshValid, ReturnValue]
+            to: [CorpseMeshBranch, Condition]
+          - from: [CheckCorpseMeshValid, Exec]
+            to: [CorpseMeshBranch, Exec]
+          # If mesh valid, spawn corpse actor
+          - from: [CorpseMeshBranch, True]
+            to: [SpawnCorpseActor, Exec]
+          - from: [GetCorpseTransform, ReturnValue]
+            to: [SpawnCorpseActor, SpawnTransform]
+          # Cast to StaticMeshActor and configure
+          - from: [SpawnCorpseActor, Exec]
+            to: [CastToSMA, Exec]
+          - from: [SpawnCorpseActor, ReturnValue]
+            to: [CastToSMA, Object]
+          # v7.8.8: GetComponentByClass + Cast pattern
+          - from: [CastToSMA, Then]
+            to: [GetStaticMeshComp, Exec]
+          - from: [CastToSMA, AsStaticMeshActor]
+            to: [GetStaticMeshComp, Target]
+          - from: [GetStaticMeshComp, ReturnValue]
+            to: [CastToStaticMeshComp, Object]
+          - from: [GetStaticMeshComp, Exec]
+            to: [CastToStaticMeshComp, Exec]
+          - from: [CastToStaticMeshComp, Then]
+            to: [SetCorpseMesh, Exec]
+          - from: [CastToStaticMeshComp, AsStaticMeshComponent]
+            to: [SetCorpseMesh, Target]
+          - from: [GetCorpseMesh, CorpseMesh]
+            to: [SetCorpseMesh, NewMesh]
+          - from: [SetCorpseMesh, Exec]
+            to: [SetSimulatePhysics, Exec]
+          - from: [CastToStaticMeshComp, AsStaticMeshComponent]
+            to: [SetSimulatePhysics, Target]
+          - from: [MakeTrueLiteral, ReturnValue]
+            to: [SetSimulatePhysics, bSimulate]
+          # All paths converge to CallParentDeath
+          - from: [SetSimulatePhysics, Exec]
+            to: [CallParentDeath, Exec]
+          - from: [CorpseMeshBranch, False]
+            to: [CallParentDeath, Exec]
+          - from: [SpawnCorpseBranch, False]
             to: [CallParentDeath, Exec]
 
   # v7.8.4: Enhanced per Biomechanical_Detachment_System_Implementation_Guide_v1_2.md
