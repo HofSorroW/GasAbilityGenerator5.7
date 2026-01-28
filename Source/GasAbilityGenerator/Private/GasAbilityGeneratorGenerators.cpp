@@ -5328,14 +5328,15 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create BehaviorTree"));
 	}
 
-	// Link blackboard if specified
+	// v7.8.12: Resolve blackboard BEFORE node creation but ASSIGN AFTER graph ops
+	// The UBehaviorTreeGraph::UpdateAsset() overwrites BlackboardAsset, so we store the
+	// resolved BB and re-assign it after all graph operations are complete.
+	UBlackboardData* ResolvedBlackboard = nullptr;
 	if (!Definition.BlackboardAsset.IsEmpty())
 	{
-		UBlackboardData* BB = nullptr;
-
 		// v4.14: Check session cache first (for blackboards generated in same run)
-		BB = FBlackboardGenerator::FindGeneratedBlackboard(Definition.BlackboardAsset);
-		if (BB)
+		ResolvedBlackboard = FBlackboardGenerator::FindGeneratedBlackboard(Definition.BlackboardAsset);
+		if (ResolvedBlackboard)
 		{
 			LogGeneration(FString::Printf(TEXT("  Found blackboard '%s' in session cache"), *Definition.BlackboardAsset));
 		}
@@ -5359,24 +5360,18 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 
 			for (const FString& BBPath : BBPaths)
 			{
-				BB = LoadObject<UBlackboardData>(nullptr, *BBPath);
-				if (BB)
+				ResolvedBlackboard = LoadObject<UBlackboardData>(nullptr, *BBPath);
+				if (ResolvedBlackboard)
 				{
 					break;
 				}
 			}
 		}
 
-		if (BB)
+		if (ResolvedBlackboard)
 		{
-			BT->BlackboardAsset = BB;
-			LogGeneration(FString::Printf(TEXT("  Linked Blackboard: %s (actual: %s, path: %s)"),
-				*Definition.BlackboardAsset, *BB->GetName(), *BB->GetPathName()));
-			// v4.15: Verify the assignment worked
-			if (BT->BlackboardAsset != BB)
-			{
-				LogGeneration(TEXT("  [ERROR] BlackboardAsset assignment failed!"));
-			}
+			LogGeneration(FString::Printf(TEXT("  Resolved Blackboard: %s (path: %s)"),
+				*Definition.BlackboardAsset, *ResolvedBlackboard->GetPathName()));
 		}
 		else
 		{
@@ -5582,9 +5577,15 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 							if (!ServiceClass)
 							{
 								TArray<FString> SvcPaths;
+								// v7.8.12: Native module paths (C++ services)
 								SvcPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *ServiceDef.Class));
-								SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
+								SvcPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ServiceDef.Class));
+								// v7.8.12: NarrativePro Blueprint service paths
+								SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
+								SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
 								SvcPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Services/%s.%s_C"), *ServiceDef.Class, *ServiceDef.Class));
+								// Project-local services
+								SvcPaths.Add(FString::Printf(TEXT("%s/AI/Services/%s.%s_C"), *GetProjectRoot(), *ServiceDef.Class, *ServiceDef.Class));
 
 								for (const FString& Path : SvcPaths)
 								{
@@ -5659,9 +5660,15 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						if (!TaskClass)
 						{
 							TArray<FString> TaskPaths;
+							// v7.8.12: Native module paths (C++ tasks)
 							TaskPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *NodeDef.TaskClass));
-							TaskPaths.Add(FString::Printf(TEXT("%s/AI/Tasks/%s.%s_C"), *GetProjectRoot(), *NodeDef.TaskClass, *NodeDef.TaskClass));
+							TaskPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *NodeDef.TaskClass));
+							// v7.8.12: NarrativePro Blueprint task paths
+							TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
+							TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
 							TaskPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Tasks/%s.%s_C"), *NodeDef.TaskClass, *NodeDef.TaskClass));
+							// Project-local tasks
+							TaskPaths.Add(FString::Printf(TEXT("%s/AI/Tasks/%s.%s_C"), *GetProjectRoot(), *NodeDef.TaskClass, *NodeDef.TaskClass));
 
 							for (const FString& Path : TaskPaths)
 							{
@@ -5740,9 +5747,15 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 						if (!DecoratorClass)
 						{
 							TArray<FString> DecPaths;
+							// v7.8.12: Native module paths (C++ decorators)
 							DecPaths.Add(FString::Printf(TEXT("/Script/AIModule.%s"), *DecoratorDef.Class));
-							DecPaths.Add(FString::Printf(TEXT("%s/AI/Decorators/%s.%s_C"), *GetProjectRoot(), *DecoratorDef.Class, *DecoratorDef.Class));
+							DecPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *DecoratorDef.Class));
+							// v7.8.12: NarrativePro Blueprint decorator paths
+							DecPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
+							DecPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
 							DecPaths.Add(FString::Printf(TEXT("/NarrativePro/AI/Decorators/%s.%s_C"), *DecoratorDef.Class, *DecoratorDef.Class));
+							// Project-local decorators
+							DecPaths.Add(FString::Printf(TEXT("%s/AI/Decorators/%s.%s_C"), *GetProjectRoot(), *DecoratorDef.Class, *DecoratorDef.Class));
 
 							for (const FString& Path : DecPaths)
 							{
@@ -6021,6 +6034,14 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 			return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
 				TEXT("Failed to create UBehaviorTreeGraph"));
 		}
+	}
+
+	// v7.8.12: Re-assign blackboard AFTER graph operations
+	// UBehaviorTreeGraph::UpdateAsset() overwrites BlackboardAsset, so we must re-assign here
+	if (ResolvedBlackboard)
+	{
+		BT->BlackboardAsset = ResolvedBlackboard;
+		LogGeneration(FString::Printf(TEXT("  Assigned Blackboard (post-graph): %s"), *ResolvedBlackboard->GetName()));
 	}
 
 	// Mark dirty and register

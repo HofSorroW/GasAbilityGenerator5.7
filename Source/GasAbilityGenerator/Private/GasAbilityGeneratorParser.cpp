@@ -3253,8 +3253,10 @@ void FGasAbilityGeneratorParser::ParseBlackboards(const TArray<FString>& Lines, 
 			}
 			else if (bInKeys)
 			{
-				// New key starts with "- name:" or "- type:"
-				if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- type:")))
+				// New key starts with "- name:", "- key_name:", "- type:", or "- key_type:"
+				// v7.8.12: Support both name/type and key_name/key_type aliases
+				if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- key_name:")) ||
+				    TrimmedLine.StartsWith(TEXT("- type:")) || TrimmedLine.StartsWith(TEXT("- key_type:")))
 				{
 					// Save previous key if exists
 					if (bInKeyDef && !CurrentKey.Name.IsEmpty())
@@ -3264,23 +3266,23 @@ void FGasAbilityGeneratorParser::ParseBlackboards(const TArray<FString>& Lines, 
 					CurrentKey = FManifestBlackboardKeyDefinition();
 					bInKeyDef = true;
 
-					if (TrimmedLine.StartsWith(TEXT("- name:")))
+					if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- key_name:")))
 					{
 						CurrentKey.Name = GetLineValue(TrimmedLine.Mid(2));
 					}
-					else if (TrimmedLine.StartsWith(TEXT("- type:")))
+					else if (TrimmedLine.StartsWith(TEXT("- type:")) || TrimmedLine.StartsWith(TEXT("- key_type:")))
 					{
 						CurrentKey.Type = GetLineValue(TrimmedLine.Mid(2));
 					}
 				}
 				else if (bInKeyDef)
 				{
-					// Parse key properties
-					if (TrimmedLine.StartsWith(TEXT("name:")))
+					// Parse key properties - v7.8.12: Support both name/type and key_name/key_type
+					if (TrimmedLine.StartsWith(TEXT("name:")) || TrimmedLine.StartsWith(TEXT("key_name:")))
 					{
 						CurrentKey.Name = GetLineValue(TrimmedLine);
 					}
-					else if (TrimmedLine.StartsWith(TEXT("type:")))
+					else if (TrimmedLine.StartsWith(TEXT("type:")) || TrimmedLine.StartsWith(TEXT("key_type:")))
 					{
 						CurrentKey.Type = GetLineValue(TrimmedLine);
 					}
