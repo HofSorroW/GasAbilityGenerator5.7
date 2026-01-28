@@ -1219,6 +1219,93 @@ If SetByCaller damage is needed for a specific GE:
 
 ---
 
+## LOCKED CONTRACT 25 — C_NEVER_SIMPLIFY_ABILITIES (v7.8.0)
+
+### Context
+
+Abilities in the manifest MUST match their implementation guides exactly. If a generator limitation prevents implementing a required feature, the solution is to ENHANCE the generator—NOT to simplify the ability.
+
+**Discovery (2026-01-28):** GA_ProtectiveDome was incorrectly simplified from "30% of damage becomes energy" (guide specification) to "50 energy per hit" (fixed amount). This violated the designed gameplay mechanic.
+
+### Invariant
+
+1. **Abilities MUST match their implementation guides exactly**
+   - Damage scaling must use the guide-specified formula
+   - Attribute tracking must use the guide-specified method
+   - Duration/cooldown values must match guide specifications
+
+2. **If a generator limitation prevents implementation:**
+   - **STOP** - Do not simplify or work around
+   - **ENHANCE** - Add generator support for the required pattern/node type
+   - **VERIFY** - Ensure the ability matches the guide's gameplay mechanics
+
+3. **Generator serves the design, not the other way around**
+
+### Forbidden Simplifications
+
+| Forbidden | Correct Action |
+|-----------|----------------|
+| Replacing damage-scaled values with fixed amounts | Add attribute tracking support |
+| Removing attribute tracking due to FGameplayAttribute complexity | Implement AbilityAsync_WaitAttributeChanged |
+| Skipping validation steps to avoid new node types | Add required node type to generator |
+| Using "close enough" alternatives that change gameplay | Match guide exactly |
+| Hardcoding values that should be dynamic | Implement proper data flow |
+
+### Examples
+
+**FORBIDDEN (Simplification):**
+```yaml
+# Guide says: "30% of damage becomes energy"
+# WRONG: Using fixed energy per hit
+- id: AddEnergy
+  type: CallFunction
+  properties:
+    function: SetDomeEnergy
+    param.Value: 50.0  # WRONG - ignores damage scaling
+```
+
+**REQUIRED (Match Guide):**
+```yaml
+# Guide says: "30% of damage becomes energy"
+# CORRECT: Calculate 30% of actual damage
+- id: GetDamageParam
+  type: PropertyGet
+  properties:
+    property_name: Damage  # From delegate parameter
+
+- id: MultiplyBy30Percent
+  type: CallFunction
+  properties:
+    function: Multiply_DoubleDouble
+    param.A: # Connected to Damage
+    param.B: 0.3
+
+- id: AddEnergy
+  type: CallFunction
+  properties:
+    function: SetDomeEnergy
+    # Connected to multiplication result
+```
+
+### Severity
+
+FAIL (any ability that doesn't match its implementation guide)
+
+### Error Code
+
+| Code | Meaning |
+|------|---------|
+| `E_ABILITY_SIMPLIFIED` | Ability implementation doesn't match guide specification |
+
+### Reference
+
+- Design Guides: `ClaudeContext/Handoffs/Father_Companion_*.md`
+- Technical Reference: `ClaudeContext/Father_Companion_Technical_Reference_v6_0.md`
+- Audit: Claude session (2026-01-28), GA_ProtectiveDome simplification discovery
+- Implementation: v7.8.0
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -1252,3 +1339,4 @@ Any change that touches a LOCKED implementation must:
 | v7.2 | 2026-01-27 | Added Contracts 22-23 (Claude–GPT dual audit): C1 (C_PIN_CONNECTION_FAILURE_GATE) — All pin connections must pass 3-step gate (existence, schema approval, link integrity); no soft-fail; unsavable on failure. C2 (C_SKELETON_SYNC_BEFORE_CREATEDELEGATE) — Skeleton sync required after CustomEvent creation/modification, before CreateDelegate instantiation; prevents crash-on-open from unresolved handler names. Root cause H4 for GA_ProtectiveDome crash confirmed and fixed. |
 | v7.3 | 2026-01-27 | Added Contract 24 — D-DAMAGE-ATTR-1 Attribute-Based Damage System (Claude–GPT manifest audit): NarrativeDamageExecCalc uses AttackDamage/Armor attributes, NOT SetByCaller tags. Removed redundant setbycaller_magnitudes from 5 damage GEs. |
 | v7.7 | 2026-01-28 | **REMOVED Contract 10.1** — Track E (Native Bridge) completely removed from generator. Contract 10.1 (delegate binding compile exception) no longer needed. All abilities now go through final compilation per Contract 10. Affected: GA_ProtectiveDome (damage absorption handler removed), GA_StealthField (stealth break handlers removed). See `Track_E_Removal_Audit_v7_7.md`. |
+| v7.8.0 | 2026-01-28 | Added Contract 25 — C_NEVER_SIMPLIFY_ABILITIES: Abilities MUST match implementation guides exactly. If generator limitation prevents implementation, ENHANCE the generator—don't simplify the ability. GA_ProtectiveDome was incorrectly simplified from "30% of damage becomes energy" to fixed 50 energy per hit. |

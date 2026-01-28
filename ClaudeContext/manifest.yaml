@@ -43,6 +43,30 @@
 # Claude-GPT Audit (2026-01-24): All MEDIUM severity findings resolved.
 # ============================================================================
 
+# ============================================================================
+# LOCKED RULE: NEVER SIMPLIFY ABILITIES (v7.8.0)
+# ============================================================================
+# Abilities MUST match their implementation guides exactly. The generator serves
+# the design, not the other way around.
+#
+# If a generator limitation prevents implementing a feature:
+#   1. STOP - Do not simplify or work around the limitation
+#   2. ENHANCE - Add generator support for the required pattern/node type
+#   3. VERIFY - Ensure the ability matches the guide's specified gameplay mechanics
+#
+# FORBIDDEN simplifications:
+#   - Replacing damage-scaled values with fixed amounts
+#   - Removing attribute tracking because FGameplayAttribute is complex
+#   - Skipping validation steps to avoid adding new node types
+#   - Using "close enough" alternatives that change gameplay behavior
+#
+# Example violation: GA_ProtectiveDome guide says "30% of damage becomes energy"
+#   WRONG: Use fixed 50 energy per hit (changes gameplay)
+#   RIGHT: Add AbilityAsync_WaitAttributeChanged support to get actual damage
+#
+# This rule is LOCKED and cannot be overridden without explicit user approval.
+# ============================================================================
+
 project_root: /Game/FatherCompanion
 tags_ini_path: Config/DefaultGameplayTags.ini
 
@@ -4404,6 +4428,8 @@ gameplay_abilities:
 
   # GA_ProtectiveDome - Armor Passive Damage Absorption (player-owned toggle)
   # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
+  # v7.8.0: Contract 25 - PROPER damage-scaled absorption (30% of damage becomes energy)
+  # Uses AbilityAsyncWaitAttributeChanged to track Health changes and calculate actual damage
   - name: GA_ProtectiveDome
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -4416,8 +4442,11 @@ gameplay_abilities:
         - Father.Dome.Active
       # activation_required_tags removed - Father.Form.Armor is on Father ASC, not Player ASC
       # Equipment granting already ensures this ability is only available in Armor form
-    # v7.7: Delegate bindings REMOVED - Track E audit. Use AbilityTasks instead.
-    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
+    # v7.8.0: Contract 25 - Proper damage-scaled energy absorption
+    # AbilityAsyncWaitAttributeChanged tracks Player Health changes:
+    # - Changed delegate provides (Attribute, NewValue, OldValue)
+    # - Damage = OldValue - NewValue (when positive)
+    # - Energy = Damage * 0.3 (30% as per implementation guide)
     variables:
       - name: PlayerRef
         type: Object
@@ -4427,6 +4456,11 @@ gameplay_abilities:
         class: BP_FatherCompanion
       - name: DomeAbsorptionHandle
         type: ActiveGameplayEffectHandle
+      - name: DamageToEnergyRatio
+        type: Float
+        default_value: "0.3"
+        instance_editable: true
+        # Per implementation guide: 30% of damage absorbed becomes dome energy
     event_graph:
       nodes:
         - id: Event_Activate
@@ -4483,6 +4517,154 @@ gameplay_abilities:
           properties:
             variable_name: DomeAbsorptionHandle
           position: [2400, 0]
+        # === v7.8.0: Contract 25 - PROPER DAMAGE TRACKING ===
+        # AbilityAsyncWaitAttributeChanged: Tracks Health changes with actual values
+        # Changed delegate provides (Attribute, NewValue, OldValue)
+        - id: GetPlayerRef_ForAsync
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [2700, 0]
+        - id: WaitHealthChange
+          type: AbilityAsyncWaitAttributeChanged
+          properties:
+            attribute_set: NarrativeAttributeSetBase
+            attribute: Health
+            trigger_once: false
+          position: [3000, 0]
+        # WaitGameplayEvent: Fires when player dies (GameplayEvent.Death)
+        - id: WaitDeathEvent
+          type: AbilityTaskWaitGameplayEvent
+          properties:
+            event_tag: GameplayEvent.Death
+            trigger_once: true
+          position: [3000, 200]
+        # === v7.8.0: Contract 25 - DAMAGE-SCALED ENERGY HANDLER ===
+        # Step 1: Calculate damage from Health change
+        # Damage = OldValue - NewValue (only process if positive)
+        - id: CalcDamage
+          type: CallFunction
+          properties:
+            function: Subtract_DoubleDouble
+            class: KismetMathLibrary
+          position: [200, 800]
+        # Step 2: Check if damage is positive (Health decreased)
+        - id: MakeZeroDamageCheck
+          type: CallFunction
+          properties:
+            function: MakeLiteralDouble
+            class: KismetSystemLibrary
+            literal_value: 0.0
+          position: [400, 900]
+        - id: IsDamagePositive
+          type: CallFunction
+          properties:
+            function: Greater_DoubleDouble
+            class: KismetMathLibrary
+          position: [600, 850]
+        - id: Branch_DamagePositive
+          type: Branch
+          position: [800, 800]
+        # Step 3: Validate Father reference
+        - id: GetFatherRef_Absorb
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [1000, 900]
+        - id: IsValid_Father_Absorb
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [1200, 950]
+        - id: Branch_FatherValid_Absorb
+          type: Branch
+          position: [1400, 800]
+        # Step 4: Calculate energy from damage (30% of damage)
+        - id: GetDamageToEnergyRatio
+          type: VariableGet
+          properties:
+            variable_name: DamageToEnergyRatio
+          position: [1600, 900]
+        - id: CalcEnergy
+          type: CallFunction
+          properties:
+            function: Multiply_DoubleDouble
+            class: KismetMathLibrary
+          position: [1800, 850]
+        # Step 5: Get current energy and add calculated energy
+        - id: GetCurrentEnergy
+          type: PropertyGet
+          properties:
+            property_name: DomeEnergy
+            target_class: BP_FatherCompanion
+          position: [2000, 950]
+        - id: AddEnergy
+          type: CallFunction
+          properties:
+            function: Add_DoubleDouble
+            class: KismetMathLibrary
+          position: [2200, 800]
+        # Step 6: Clamp to max energy
+        - id: GetMaxEnergy
+          type: PropertyGet
+          properties:
+            property_name: MaxDomeEnergy
+            target_class: BP_FatherCompanion
+          position: [2400, 900]
+        - id: MakeZeroClamp
+          type: CallFunction
+          properties:
+            function: MakeLiteralDouble
+            class: KismetSystemLibrary
+            literal_value: 0.0
+          position: [2400, 1000]
+        - id: ClampEnergy
+          type: CallFunction
+          properties:
+            function: FClamp
+            class: KismetMathLibrary
+          position: [2600, 800]
+        # Step 7: Set new dome energy
+        - id: SetDomeEnergy
+          type: PropertySet
+          properties:
+            property_name: DomeEnergy
+            target_class: BP_FatherCompanion
+          position: [2800, 800]
+        # Step 8: Check if fully charged
+        - id: CheckFullyCharged
+          type: CallFunction
+          properties:
+            function: GreaterEqual_DoubleDouble
+            class: KismetMathLibrary
+          position: [3000, 850]
+        - id: Branch_FullyCharged
+          type: Branch
+          position: [3200, 800]
+        # Step 9: Grant FullyCharged tag to player
+        - id: GetPlayerRef_Absorb
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [3400, 900]
+        - id: MakeLiteralTag_FullyCharged
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Father.Dome.FullyCharged
+          position: [3400, 1000]
+        - id: MakeTagContainer_FullyCharged
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+          position: [3600, 950]
+        - id: AddFullyChargedTag
+          type: CallFunction
+          properties:
+            function: AddLooseGameplayTags
+            class: AbilitySystemBlueprintLibrary
+          position: [3800, 800]
         # === END ABILITY - Form exit burst (v4.27: Decisions 22-24) ===
         # When ability ends (form unequipped), try to activate GA_DomeBurst
         # GA_DomeBurst requires Father.Dome.FullyCharged tag, so only fires if charged
@@ -4542,24 +4724,12 @@ gameplay_abilities:
           properties:
             function: RemoveActiveGameplayEffect
           position: [1200, 400]
-        # v7.7: DAMAGE ABSORPTION HANDLER REMOVED - Track E audit
-        # The damage absorption feature (charging dome via OnDamagedBy) required the native bridge
-        # pattern which has been removed. If needed in future, use AbilityTask pattern instead.
-        # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
-        # === PLAYER DEATH RESET HANDLER (v4.33: D-DEATH-RESET-1/2) ===
-        # Called when player dies via OnDied delegate binding
+        # v7.8: DAMAGE ABSORPTION RESTORED via Path B AbilityTasks
+        # WaitGEAppliedToSelf detects damage, handler adds fixed energy per hit
+        # === PLAYER DEATH RESET HANDLER (v7.8: via WaitGameplayEvent) ===
+        # Triggered by WaitDeathEvent.EventReceived - connects directly to handler flow
         # Per D-DEATH-RESET-2: Silent reset - DomeEnergy=0, remove FullyCharged, no burst/VFX
-        # v4.34: CustomEvent with params matching delegate signature (required for binding)
-        - id: Event_HandlePlayerDeathReset
-          type: CustomEvent
-          properties:
-            event_name: HandlePlayerDeathReset
-            parameters:
-              - name: KilledActor
-                type: Actor
-              - name: KilledActorASC
-                type: NarrativeAbilitySystemComponent
-          position: [0, 1200]
+        # NOTE: No CustomEvent - WaitDeathEvent.EventReceived connects directly to handler flow
         # Step 1: Get Father reference and validate
         - id: GetFatherRef_Death
           type: VariableGet
@@ -4629,6 +4799,9 @@ gameplay_abilities:
           to: [ApplyGE, Exec]
         - from: [ApplyGE, Exec]
           to: [SetDomeHandle, Exec]
+        # v7.8.0: Continue to async Health tracking setup
+        - from: [SetDomeHandle, Exec]
+          to: [WaitDeathEvent, Exec]
         # Data flow
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
@@ -4647,6 +4820,82 @@ gameplay_abilities:
           to: [ApplyGE, Spec]
         - from: [ApplyGE, ReturnValue]
           to: [SetDomeHandle, DomeAbsorptionHandle]
+        # v7.8.0: AbilityAsync_WaitAttributeChanged - TargetActor connection
+        - from: [GetPlayerRef_ForAsync, PlayerRef]
+          to: [WaitHealthChange, TargetActor]
+        # v7.8.0: Callback connections - Changed fires when Health attribute changes
+        - from: [WaitHealthChange, Changed]
+          to: [Branch_DamagePositive, Exec]
+        - from: [WaitDeathEvent, EventReceived]
+          to: [Branch_Valid_Father_Death, Exec]
+        # === v7.8.0: Contract 25 - DAMAGE-SCALED ENERGY HANDLER FLOW ===
+        # Step 1-2: Calculate damage and check if positive
+        # Damage = OldValue - NewValue (from Changed delegate pins)
+        - from: [WaitHealthChange, OldValue]
+          to: [CalcDamage, A]
+        - from: [WaitHealthChange, NewValue]
+          to: [CalcDamage, B]
+        - from: [CalcDamage, ReturnValue]
+          to: [IsDamagePositive, A]
+        - from: [MakeZeroDamageCheck, ReturnValue]
+          to: [IsDamagePositive, B]
+        - from: [IsDamagePositive, ReturnValue]
+          to: [Branch_DamagePositive, Condition]
+        # Step 3: Exec flow - check damage positive, then validate Father
+        - from: [Branch_DamagePositive, True]
+          to: [Branch_FatherValid_Absorb, Exec]
+        # Step 3: Data - Validate Father
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [IsValid_Father_Absorb, Object]
+        - from: [IsValid_Father_Absorb, ReturnValue]
+          to: [Branch_FatherValid_Absorb, Condition]
+        # Step 4-7: Exec flow - Father valid → CalcEnergy → AddEnergy → SetDomeEnergy → CheckFullyCharged
+        - from: [Branch_FatherValid_Absorb, True]
+          to: [SetDomeEnergy, Exec]
+        - from: [SetDomeEnergy, Exec]
+          to: [Branch_FullyCharged, Exec]
+        - from: [Branch_FullyCharged, True]
+          to: [AddFullyChargedTag, Exec]
+        # Step 4: Data - Calculate energy from damage (Damage * 0.3)
+        - from: [CalcDamage, ReturnValue]
+          to: [CalcEnergy, A]
+        - from: [GetDamageToEnergyRatio, DamageToEnergyRatio]
+          to: [CalcEnergy, B]
+        # Step 5: Data - Get current energy and add calculated energy
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [GetCurrentEnergy, Target]
+        - from: [GetCurrentEnergy, DomeEnergy]
+          to: [AddEnergy, A]
+        - from: [CalcEnergy, ReturnValue]
+          to: [AddEnergy, B]
+        # Step 6: Data - Clamp to max
+        - from: [AddEnergy, ReturnValue]
+          to: [ClampEnergy, Value]
+        - from: [MakeZeroClamp, ReturnValue]
+          to: [ClampEnergy, Min]
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [GetMaxEnergy, Target]
+        - from: [GetMaxEnergy, MaxDomeEnergy]
+          to: [ClampEnergy, Max]
+        # Step 7: Data - Set dome energy
+        - from: [GetFatherRef_Absorb, FatherRef]
+          to: [SetDomeEnergy, Target]
+        - from: [ClampEnergy, ReturnValue]
+          to: [SetDomeEnergy, DomeEnergy]
+        # Step 8: Data - Check if fully charged
+        - from: [ClampEnergy, ReturnValue]
+          to: [CheckFullyCharged, A]
+        - from: [GetMaxEnergy, MaxDomeEnergy]
+          to: [CheckFullyCharged, B]
+        - from: [CheckFullyCharged, ReturnValue]
+          to: [Branch_FullyCharged, Condition]
+        # Step 9: Data - Grant FullyCharged tag
+        - from: [GetPlayerRef_Absorb, PlayerRef]
+          to: [AddFullyChargedTag, Actor]
+        - from: [MakeLiteralTag_FullyCharged, ReturnValue]
+          to: [MakeTagContainer_FullyCharged, Tag]
+        - from: [MakeTagContainer_FullyCharged, ReturnValue]
+          to: [AddFullyChargedTag, GameplayTags]
         # === END ABILITY FLOW (v4.27: Form exit burst) ===
         # Exec: EndAbility → TryActivateBurst → ClearChargedTag → RemoveGE
         - from: [Event_EndAbility, Then]
@@ -4673,11 +4922,9 @@ gameplay_abilities:
           to: [RemoveGE, Target]
         - from: [GetDomeHandle, DomeAbsorptionHandle]
           to: [RemoveGE, Handle]
-        # v7.7: DAMAGE ABSORPTION HANDLER FLOW REMOVED - Track E audit
-        # === PLAYER DEATH RESET HANDLER FLOW (v4.33: D-DEATH-RESET-1/2) ===
-        # Exec: Event → Branch_Valid → SetDomeEnergy_Death → ClearChargedTag_Death
-        - from: [Event_HandlePlayerDeathReset, Then]
-          to: [Branch_Valid_Father_Death, Exec]
+        # === PLAYER DEATH RESET HANDLER FLOW (v7.8: via WaitGameplayEvent) ===
+        # Exec: WaitDeathEvent.EventReceived → Branch_Valid → SetDomeEnergy_Death → ClearChargedTag_Death
+        # NOTE: WaitDeathEvent.EventReceived -> Branch_Valid_Father_Death is connected above in AbilityTask section
         - from: [Branch_Valid_Father_Death, True]
           to: [SetDomeEnergy_Death, Exec]
         - from: [SetDomeEnergy_Death, Exec]
@@ -5007,6 +5254,7 @@ gameplay_abilities:
 
   # GA_StealthField - Exoskeleton Stealth Invisibility (player-owned toggle)
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
+  # v7.8: Path B - Break-on-damage restored via WaitGEAppliedToSelf AbilityTask
   - name: GA_StealthField
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -5024,8 +5272,7 @@ gameplay_abilities:
       # Equipment granting already ensures this ability is only available in Exoskeleton form
       activation_blocked_tags:
         - Cooldown.Father.StealthField
-    # v7.7: Delegate bindings REMOVED - Track E audit. Use AbilityTasks instead.
-    # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
+    # v7.8: AbilityTasks restore full functionality - stealth breaks on damage
     variables:
       - name: PlayerRef
         type: Object
@@ -5087,6 +5334,12 @@ gameplay_abilities:
           properties:
             variable_name: StealthEffectHandle
           position: [2400, 0]
+        # v7.8: Sequence for parallel AbilityTasks (duration timer + damage break)
+        - id: Sequence_Tasks
+          type: Sequence
+          properties:
+            num_outputs: 2
+          position: [2550, 0]
         - id: GetDuration
           type: VariableGet
           properties:
@@ -5096,6 +5349,26 @@ gameplay_abilities:
         - id: Delay
           type: AbilityTaskWaitDelay
           position: [2700, 0]
+        # v7.8: Path B - Break on damage via WaitGEAppliedToSelf
+        # When ANY GE is applied to player (damage), stealth breaks immediately
+        - id: WaitDamageGE_Stealth
+          type: AbilityTaskWaitGEAppliedToSelf
+          properties:
+            trigger_once: true
+          position: [2700, 200]
+        # Stealth break handler - commits cooldown and ends ability
+        - id: CommitCooldown_Break
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [3000, 200]
+        - id: EndAbility_Break
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [3200, 200]
         # === POST-DELAY GUARDS (GAS Audit MED-4) ===
         # Guard: Validate PlayerRef still exists after 8s delay
         - id: GetPlayerRef_Guard
@@ -5149,11 +5422,8 @@ gameplay_abilities:
           properties:
             function: RemoveActiveGameplayEffect
           position: [900, 400]
-        # v7.7: STEALTH BREAK HANDLERS REMOVED - Track E audit
-        # The stealth break feature (breaking on damage via OnDamagedBy/OnDealtDamage) required the native
-        # bridge pattern which has been removed. Stealth now ends only via duration timeout.
-        # If needed in future, use AbilityTask pattern (WaitGameplayEffectApplied) instead.
-        # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
+        # v7.8: STEALTH BREAK RESTORED via Path B AbilityTasks
+        # WaitDamageGE_Stealth triggers CommitCooldown_Break → EndAbility_Break when damage received
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (impure nodes only - pure functions have no exec pins)
@@ -5168,7 +5438,12 @@ gameplay_abilities:
         - from: [ApplyGE, Exec]
           to: [SetStealthHandle, Exec]
         - from: [SetStealthHandle, Exec]
+          to: [Sequence_Tasks, Exec]
+        # v7.8: Sequence outputs - parallel AbilityTasks
+        - from: [Sequence_Tasks, then_0]
           to: [Delay, Exec]
+        - from: [Sequence_Tasks, then_1]
+          to: [WaitDamageGE_Stealth, Exec]
         # v4.14: Route through guard after delay (GAS Audit MED-4)
         - from: [Delay, OnFinish]
           to: [Branch_PlayerValid_Guard, Exec]
@@ -5209,7 +5484,12 @@ gameplay_abilities:
           to: [RemoveGE, Target]
         - from: [GetStealthHandle, StealthEffectHandle]
           to: [RemoveGE, Handle]
-        # v7.7: STEALTH BREAK HANDLER CONNECTIONS REMOVED - Track E audit
+        # === v7.8: STEALTH BREAK FLOW (Path B) ===
+        # When damage GE is applied, break stealth immediately
+        - from: [WaitDamageGE_Stealth, OnApplied]
+          to: [CommitCooldown_Break, Exec]
+        - from: [CommitCooldown_Break, Exec]
+          to: [EndAbility_Break, Exec]
 
   # GA_Backstab - Universal Player Passive Backstab Damage
   # v4.26 (Decision 4): Universal ability - add to player's Default Abilities array, NOT granted via equipment

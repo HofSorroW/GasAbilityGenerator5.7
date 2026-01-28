@@ -783,6 +783,28 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v7.8: Path B AbilityTasks - BP-safe replacements for Track E delegate bindings
+	// WaitGameplayEvent - listens for gameplay events (e.g., GameplayEvent.Death)
+	static UK2Node* CreateAbilityTaskWaitGameplayEventNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// WaitGameplayEffectAppliedToSelf - detects when GE is applied to owner (damage received)
+	static UK2Node* CreateAbilityTaskWaitGEAppliedToSelfNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// WaitGameplayEffectAppliedToTarget - detects when owner applies GE to target (damage dealt)
+	static UK2Node* CreateAbilityTaskWaitGEAppliedToTargetNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// v7.8.0: Contract 25 - AbilityAsync_WaitAttributeChanged for damage-scaled energy absorption
+	// Tracks attribute changes and provides NewValue/OldValue for damage calculation
+	static UK2Node* CreateAbilityAsyncWaitAttributeChangedNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
 	static UK2Node* CreatePrintStringNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);

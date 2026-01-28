@@ -235,6 +235,58 @@ Recommendation: Add to pre-validator alias check
 
 ---
 
+## LOCKED RULE 7 — NEVER Simplify Abilities (v7.8.0)
+
+### Invariant
+Abilities in the manifest MUST match their implementation guides exactly. The generator serves the design, not the other way around.
+
+### If Generator Limitation Prevents Implementation
+
+1. **STOP** - Do not simplify or work around the limitation
+2. **ENHANCE** - Add generator support for the required pattern/node type
+3. **VERIFY** - Ensure the ability matches the guide's specified gameplay mechanics
+
+### Forbidden Simplifications
+
+| Forbidden | Correct Action |
+|-----------|----------------|
+| Replacing damage-scaled values with fixed amounts | Add attribute tracking support |
+| Removing attribute tracking due to complexity | Implement required AbilityTask/Async support |
+| Skipping validation to avoid new node types | Add required node type to generator |
+| Using "close enough" alternatives that change gameplay | Match guide exactly |
+| Hardcoding dynamic values | Implement proper data flow |
+
+### Examples
+
+**FORBIDDEN:**
+```yaml
+# Guide: "30% of damage becomes energy"
+# WRONG: Fixed energy per hit (simplification)
+param.Value: 50.0
+```
+
+**REQUIRED:**
+```yaml
+# Guide: "30% of damage becomes energy"
+# CORRECT: Calculate actual 30% of damage received
+- id: GetDamageParam  # From OnDamagedBy delegate
+- id: MultiplyBy30Percent  # Damage * 0.3
+- id: AddToEnergy  # Add calculated amount
+```
+
+### Enforcement
+
+- If a guide specifies damage scaling → ability MUST use damage scaling
+- If a guide specifies attribute tracking → ability MUST track the attribute
+- Numerical values in guides are requirements, not suggestions
+
+### Reference
+
+- Contract: `LOCKED_CONTRACTS.md` — Contract 25 (C_NEVER_SIMPLIFY_ABILITIES)
+- Design Guides: `ClaudeContext/Handoffs/Father_Companion_*.md`
+
+---
+
 ## Quick Reference Card
 
 ### Before ANY Manifest Edit
@@ -271,6 +323,7 @@ BRANCH: Condition, True, False
 | Version | Date | Changes |
 |---------|------|---------|
 | v1.0 | 2026-01-27 | Initial locked workflow rules (Claude-GPT audit convergence) |
+| v1.1 | 2026-01-28 | Added LOCKED RULE 7 — NEVER Simplify Abilities: Abilities MUST match implementation guides exactly. Generator serves the design, not the other way around. |
 
 ---
 

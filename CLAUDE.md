@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
   - [Mandatory Rules](#mandatory-rules-will-cause-failures)
   - [LOCKED WORKFLOW](#locked-workflow-mandatory)
 - [Troubleshooting](#troubleshooting)
-- [GasAbilityGenerator Plugin](#gasabilitygenerator-plugin-v758)
+- [GasAbilityGenerator Plugin](#gasabilitygenerator-plugin-v780)
   - [Architecture](#architecture)
   - [Table Editors](#table-editors-v48)
   - [Supported Asset Types](#supported-asset-types-generated-by-plugin)
@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v7.5.8) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.8.0) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -191,6 +191,19 @@ gameplay_abilities:                variables:
       - name: Damage
 ```
 
+**NEVER Simplify Abilities (LOCKED RULE)** - Abilities MUST match their implementation guides exactly. If a generator limitation prevents implementing a feature:
+1. **STOP** - Do not simplify or work around the limitation
+2. **ENHANCE** - Add generator support for the required pattern/node type
+3. **VERIFY** - Ensure the ability matches the guide's specified gameplay mechanics
+
+Examples of FORBIDDEN simplifications:
+- Replacing damage-scaled values with fixed amounts
+- Removing attribute tracking because FGameplayAttribute is complex
+- Skipping validation steps to avoid adding new node types
+- Using "close enough" alternatives that change gameplay behavior
+
+The generator serves the design, not the other way around. If the guide says "30% of damage becomes energy", the implementation MUST calculate actual damage, not use a fixed value.
+
 ### Workflow Rules
 
 **Always Push After Commit** - Combine commit and push; don't wait for separate push request.
@@ -317,7 +330,16 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v7.5.8)
+## GasAbilityGenerator Plugin (v7.8.0)
+
+### LOCKED: NEVER Simplify Abilities (Contract 25)
+
+Abilities in the manifest MUST match their implementation guides exactly. If a generator limitation prevents implementing a feature:
+1. **STOP** - Do not simplify or work around the limitation
+2. **ENHANCE** - Add generator support for the required pattern/node type
+3. **VERIFY** - Ensure the ability matches the guide's specified gameplay mechanics
+
+The generator serves the design, not the other way around.
 
 Location: `Plugins/GasAbilityGenerator/`
 
@@ -1056,9 +1078,9 @@ When looking for classes/enums, the plugin searches:
 | `Handoffs/TSoftClassPtr_Investigation.md` | Class pointer resolution research |
 | `manifest.yaml` | Single source of truth for all assets |
 | `Father_Ability_Generator_Plugin_v7_8_2_Specification.md` | Plugin architecture and workflows |
-| `Father_Companion_Technical_Reference_v6_0.md` | GAS patterns, tags, Narrative Pro integration |
+| `Father_Companion_Technical_Reference_v6_8.md` | GAS patterns, tags, Narrative Pro integration |
 | `Father_Companion_Guide_Format_Reference_v3_0.md` | Formatting standards for implementation guides |
-| `Father_Companion_System_Design_Document_v2_0.md` | System overview, 5 forms, abilities |
+| `Father_Companion_System_Design_Document_v2_8.md` | System overview, 5 forms, abilities |
 | `DefaultGameplayTags_FatherCompanion_v4_0.ini` | Actual gameplay tag values |
 | `NarrativePro_Headers/*.h` | Narrative Pro C++ API reference |
 
@@ -1113,11 +1135,11 @@ When looking for classes/enums, the plugin searches:
 
 | Version | Summary |
 |---------|---------|
+| **v7.8.0** | Contract 25 (C_NEVER_SIMPLIFY_ABILITIES): Abilities MUST match implementation guides exactly. Added AbilityAsyncWaitAttributeChanged node type for proper damage-scaled energy absorption. GA_ProtectiveDome restored to guide spec: 30% of damage becomes dome energy (was incorrectly simplified to fixed 50 per hit). Added 4 new node types total (AbilityTaskWaitGameplayEvent, AbilityTaskWaitGEAppliedToSelf, AbilityTaskWaitGEAppliedToTarget, AbilityAsyncWaitAttributeChanged). Contract 10 maintained. |
+| **v7.7** | Track E Removal: Complete removal of native bridge system (UDamageEventBridge, FDamageEventSummary). Contract 10.1 exception removed - all abilities now go through final compilation per Contract 10. Cleaned orphaned handlers from GA_ProtectiveDome and GA_StealthField. 194/194 assets verified. |
 | **v7.5.8** | Contract 22 Compliance Fix: Pre-validation errors now block generation (no soft-fail). Fixed GA validator to pass `Definition.Variables` instead of empty array, so FatherASC and other GA-defined variables resolve correctly. Both problems violated Contract 22 (soft-fail forbidden). 194/194 assets verified. |
-| **v7.5.7** | Track E Delegate Binding Fix (Contract 10.1): Fixed 5 failing abilities (GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField). Root cause: v4.16 final compile was clearing CreateDelegate.SelectedFunctionName. Fix: Skip final compile for abilities with delegate bindings (two-pass already compiled). New GasAbilityGeneratorRuntime module with UDamageEventBridge for Track-E delegates. 194/194 assets verified. |
-| **v7.1** | INC-WARDEN-CORELASER-1 Fix (Claude-GPT dual audit): GA_CoreLaser was non-functional - missing `input_tag` and stub implementation. Added `input_tag: Narrative.Input.Attack` for BPA_Attack_Ranged compatibility. Implemented full event graph with AI targeting (Blackboard→BBKey_AttackTarget via P-BB-KEY-2), SetByCaller damage (GE_CoreLaserDamage with Data.Damage.CoreLaser tag), proper validity checks. New LOCKED Contract 21 (R-INPUTTAG-1): NPC combat abilities used by BPA_Attack_* MUST define valid Narrative.Input.* tag. |
-| **v7.0** | N1 Warning Fix: Pre-validator now checks variable_name as valid pin name, reducing false positive warnings from 57 to 17. Fixed BTS_FormationFollow to use PropertyGet for Blackboard (GetBlackboardComponent is C++ inline, not UFUNCTION). Auto-inference for Cast→VariableSet connections added. AIController class resolution fixed for headless mode. 194/194 assets verified. |
-| **v6.9** | GA_Backstab + GA_FatherEngineer fixes: DynamicCast fuzzy pin matching for space-separated names, TSubclassOf Effects subfolder paths, NarrativePro blackboard mount path fix (`/NarrativePro/` not `/NarrativePro22B57/`). All 156 assets generate successfully. |
+| **v7.5.7** | Track E Delegate Binding Fix (Contract 10.1): Fixed 5 failing abilities (GA_FatherCrawler, GA_FatherArmor, GA_FatherSymbiote, GA_ProtectiveDome, GA_StealthField). Root cause: v4.16 final compile was clearing CreateDelegate.SelectedFunctionName. Fix: Skip final compile for abilities with delegate bindings (two-pass already compiled). 194/194 assets verified. |
+| **v7.1** | INC-WARDEN-CORELASER-1 Fix (Claude-GPT dual audit): GA_CoreLaser was non-functional - missing `input_tag` and stub implementation. Added `input_tag: Narrative.Input.Attack` for BPA_Attack_Ranged compatibility. Implemented full event graph with AI targeting, SetByCaller damage. New LOCKED Contract 21 (R-INPUTTAG-1). |
 
 For complete version history, see [CHANGELOG.md](CHANGELOG.md).
 

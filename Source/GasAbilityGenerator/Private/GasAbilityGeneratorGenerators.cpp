@@ -1,5 +1,7 @@
-// GasAbilityGenerator v7.7.0
+// GasAbilityGenerator v7.8.0
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v7.8.0: Path B AbilityTasks - WaitGameplayEvent, WaitGEAppliedToSelf, WaitGEAppliedToTarget
+//        Restores full gameplay functionality (dome damage absorption, stealth break) using Epic's BP-safe patterns
 // v7.7.0: Track E REMOVED - UDamageEventBridge deleted, GA_ abilities use AbilityTasks
 //        See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
 // v4.30: Automation Gap Closure - MeshMaterials/Morphs struct automation, deferred resolution for
@@ -320,11 +322,16 @@
 #include "K2Node_FunctionResult.h"  // v4.14: Custom function return node
 #include "K2Node_CallParentFunction.h"  // v2.8.3: Call parent function
 #include "K2Node_LatentAbilityCall.h"  // v4.15: AbilityTask node support (Track B GAS Audit)
+#include "K2Node_AsyncAction.h"  // v7.8.0: Contract 25 - AbilityAsync for damage-scaled energy absorption
 #include "K2Node_AddDelegate.h"        // v4.21: Delegate binding automation
 #include "K2Node_RemoveDelegate.h"     // v4.21: Delegate unbinding automation
 #include "K2Node_CreateDelegate.h"     // v4.21: Delegate creation automation
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"  // v4.15: WaitDelay AbilityTask class
 #include "Abilities/Tasks/AbilityTask_WaitAttributeChange.h"  // v4.22: Section 11 Attribute Change Delegate binding
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"  // v7.8: Path B - BP-safe death/event detection
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEffectApplied_Self.h"  // v7.8: Path B - BP-safe damage received detection
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEffectApplied_Target.h"  // v7.8: Path B - BP-safe damage dealt detection
+#include "Abilities/Async/AbilityAsync_WaitAttributeChanged.h"  // v7.8.0: Contract 25 - Damage-scaled energy absorption
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -9509,6 +9516,24 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		{
 			CreatedNode = CreateAbilityTaskWaitDelayNode(EventGraph, NodeDef);
 		}
+		// v7.8: Path B AbilityTasks - BP-safe replacements for Track E delegate bindings
+		else if (NodeDef.Type.Equals(TEXT("AbilityTaskWaitGameplayEvent"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAbilityTaskWaitGameplayEventNode(EventGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("AbilityTaskWaitGEAppliedToSelf"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAbilityTaskWaitGEAppliedToSelfNode(EventGraph, NodeDef);
+		}
+		else if (NodeDef.Type.Equals(TEXT("AbilityTaskWaitGEAppliedToTarget"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAbilityTaskWaitGEAppliedToTargetNode(EventGraph, NodeDef);
+		}
+		// v7.8.0: Contract 25 - AbilityAsync for damage-scaled energy absorption
+		else if (NodeDef.Type.Equals(TEXT("AbilityAsyncWaitAttributeChanged"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAbilityAsyncWaitAttributeChangedNode(EventGraph, NodeDef);
+		}
 		else if (NodeDef.Type.Equals(TEXT("PrintString"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreatePrintStringNode(EventGraph, NodeDef);
@@ -12184,6 +12209,360 @@ UK2Node* FEventGraphGenerator::CreateAbilityTaskWaitDelayNode(
 	}
 
 	return WaitDelayNode;
+}
+
+// v7.8: Path B - WaitGameplayEvent AbilityTask
+// Listens for gameplay events (e.g., GameplayEvent.Death) - BP-safe replacement for OnDied delegate
+// Properties:
+//   - event_tag: The gameplay tag to wait for (e.g., "GameplayEvent.Death")
+//   - external_target: Optional actor to listen on (for cross-ASC monitoring)
+//   - trigger_once: If true, task completes after first event (default: false)
+//   - match_exact: If true, only matches exact tag (default: true)
+// Output pins:
+//   - EventReceived: Fires when event is received, provides FGameplayEventData Payload
+UK2Node* FEventGraphGenerator::CreateAbilityTaskWaitGameplayEventNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_LatentAbilityCall* WaitEventNode = NewObject<UK2Node_LatentAbilityCall>(Graph);
+	Graph->AddNode(WaitEventNode, false, false);
+
+	// Find the WaitGameplayEvent factory function
+	UFunction* WaitEventFunction = UAbilityTask_WaitGameplayEvent::StaticClass()->FindFunctionByName(FName("WaitGameplayEvent"));
+	if (!WaitEventFunction)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to find WaitGameplayEvent function on UAbilityTask_WaitGameplayEvent"));
+		return WaitEventNode;
+	}
+
+	// Set protected base class properties via reflection
+	UClass* NodeClass = WaitEventNode->GetClass();
+
+	if (FNameProperty* FactoryFuncNameProp = FindFProperty<FNameProperty>(NodeClass, TEXT("ProxyFactoryFunctionName")))
+	{
+		FactoryFuncNameProp->SetPropertyValue_InContainer(WaitEventNode, WaitEventFunction->GetFName());
+	}
+
+	if (FObjectProperty* FactoryClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyFactoryClass")))
+	{
+		FactoryClassProp->SetObjectPropertyValue_InContainer(WaitEventNode, UAbilityTask_WaitGameplayEvent::StaticClass());
+	}
+
+	if (FObjectProperty* ProxyClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyClass")))
+	{
+		ProxyClassProp->SetObjectPropertyValue_InContainer(WaitEventNode, UAbilityTask_WaitGameplayEvent::StaticClass());
+	}
+
+	WaitEventNode->CreateNewGuid();
+	WaitEventNode->PostPlacedNewNode();
+	WaitEventNode->AllocateDefaultPins();
+
+	// Set EventTag if specified (required parameter)
+	const FString* EventTagPtr = NodeDef.Properties.Find(TEXT("event_tag"));
+	if (EventTagPtr)
+	{
+		UEdGraphPin* EventTagPin = WaitEventNode->FindPin(FName("EventTag"));
+		if (EventTagPin)
+		{
+			// Format: (TagName="GameplayEvent.Death")
+			EventTagPin->DefaultValue = FString::Printf(TEXT("(TagName=\"%s\")"), **EventTagPtr);
+		}
+	}
+
+	// Set OnlyTriggerOnce if specified
+	const FString* TriggerOncePtr = NodeDef.Properties.Find(TEXT("trigger_once"));
+	if (TriggerOncePtr)
+	{
+		UEdGraphPin* TriggerOncePin = WaitEventNode->FindPin(FName("OnlyTriggerOnce"));
+		if (TriggerOncePin)
+		{
+			TriggerOncePin->DefaultValue = TriggerOncePtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ? TEXT("true") : TEXT("false");
+		}
+	}
+
+	// Set OnlyMatchExact if specified
+	const FString* MatchExactPtr = NodeDef.Properties.Find(TEXT("match_exact"));
+	if (MatchExactPtr)
+	{
+		UEdGraphPin* MatchExactPin = WaitEventNode->FindPin(FName("OnlyMatchExact"));
+		if (MatchExactPin)
+		{
+			MatchExactPin->DefaultValue = MatchExactPtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ? TEXT("true") : TEXT("false");
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Created AbilityTaskWaitGameplayEvent node '%s' for tag '%s'"),
+		*NodeDef.Id, EventTagPtr ? **EventTagPtr : TEXT("(none)")));
+
+	return WaitEventNode;
+}
+
+// v7.8: Path B - WaitGameplayEffectAppliedToSelf AbilityTask
+// Detects when a GameplayEffect is applied TO the ability owner (damage received)
+// Properties:
+//   - asset_tag_filter: Filter by GE asset tags (e.g., "Effect.Damage")
+//   - trigger_once: If true, task completes after first application (default: true for break-on-damage)
+//   - listen_periodic: If true, also fires on periodic effect ticks (default: false)
+// Output pins:
+//   - OnApplied: Fires with (Source AActor*, SpecHandle, ActiveHandle)
+UK2Node* FEventGraphGenerator::CreateAbilityTaskWaitGEAppliedToSelfNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_LatentAbilityCall* WaitGENode = NewObject<UK2Node_LatentAbilityCall>(Graph);
+	Graph->AddNode(WaitGENode, false, false);
+
+	// Find the WaitGameplayEffectAppliedToSelf factory function
+	UFunction* WaitGEFunction = UAbilityTask_WaitGameplayEffectApplied_Self::StaticClass()->FindFunctionByName(FName("WaitGameplayEffectAppliedToSelf"));
+	if (!WaitGEFunction)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to find WaitGameplayEffectAppliedToSelf function on UAbilityTask_WaitGameplayEffectApplied_Self"));
+		return WaitGENode;
+	}
+
+	// Set protected base class properties via reflection
+	UClass* NodeClass = WaitGENode->GetClass();
+
+	if (FNameProperty* FactoryFuncNameProp = FindFProperty<FNameProperty>(NodeClass, TEXT("ProxyFactoryFunctionName")))
+	{
+		FactoryFuncNameProp->SetPropertyValue_InContainer(WaitGENode, WaitGEFunction->GetFName());
+	}
+
+	if (FObjectProperty* FactoryClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyFactoryClass")))
+	{
+		FactoryClassProp->SetObjectPropertyValue_InContainer(WaitGENode, UAbilityTask_WaitGameplayEffectApplied_Self::StaticClass());
+	}
+
+	if (FObjectProperty* ProxyClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyClass")))
+	{
+		ProxyClassProp->SetObjectPropertyValue_InContainer(WaitGENode, UAbilityTask_WaitGameplayEffectApplied_Self::StaticClass());
+	}
+
+	WaitGENode->CreateNewGuid();
+	WaitGENode->PostPlacedNewNode();
+	WaitGENode->AllocateDefaultPins();
+
+	// Set TriggerOnce - default true for break-on-damage patterns
+	const FString* TriggerOncePtr = NodeDef.Properties.Find(TEXT("trigger_once"));
+	UEdGraphPin* TriggerOncePin = WaitGENode->FindPin(FName("TriggerOnce"));
+	if (TriggerOncePin)
+	{
+		if (TriggerOncePtr)
+		{
+			TriggerOncePin->DefaultValue = TriggerOncePtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ? TEXT("true") : TEXT("false");
+		}
+		else
+		{
+			TriggerOncePin->DefaultValue = TEXT("true");  // Default to true for damage detection
+		}
+	}
+
+	// Set ListenForPeriodicEffect if specified
+	const FString* ListenPeriodicPtr = NodeDef.Properties.Find(TEXT("listen_periodic"));
+	if (ListenPeriodicPtr)
+	{
+		UEdGraphPin* ListenPeriodicPin = WaitGENode->FindPin(FName("ListenForPeriodicEffect"));
+		if (ListenPeriodicPin)
+		{
+			ListenPeriodicPin->DefaultValue = ListenPeriodicPtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ? TEXT("true") : TEXT("false");
+		}
+	}
+
+	// Note: AssetTagRequirements, SourceTagRequirements, etc. are struct parameters
+	// that would need MakeStruct nodes to populate. For now we accept all GE applications
+	// and filter in the handler logic if needed.
+
+	LogGeneration(FString::Printf(TEXT("  Created AbilityTaskWaitGEAppliedToSelf node '%s'"), *NodeDef.Id));
+
+	return WaitGENode;
+}
+
+// v7.8: Path B - WaitGameplayEffectAppliedToTarget AbilityTask
+// Detects when the ability owner applies a GameplayEffect TO another actor (damage dealt)
+// Properties:
+//   - asset_tag_filter: Filter by GE asset tags (e.g., "Effect.Damage")
+//   - trigger_once: If true, task completes after first application (default: false for continuous monitoring)
+//   - listen_periodic: If true, also fires on periodic effect ticks (default: false)
+// Output pins:
+//   - OnApplied: Fires with (Target AActor*, SpecHandle, ActiveHandle)
+UK2Node* FEventGraphGenerator::CreateAbilityTaskWaitGEAppliedToTargetNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_LatentAbilityCall* WaitGENode = NewObject<UK2Node_LatentAbilityCall>(Graph);
+	Graph->AddNode(WaitGENode, false, false);
+
+	// Find the WaitGameplayEffectAppliedToTarget factory function
+	UFunction* WaitGEFunction = UAbilityTask_WaitGameplayEffectApplied_Target::StaticClass()->FindFunctionByName(FName("WaitGameplayEffectAppliedToTarget"));
+	if (!WaitGEFunction)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to find WaitGameplayEffectAppliedToTarget function on UAbilityTask_WaitGameplayEffectApplied_Target"));
+		return WaitGENode;
+	}
+
+	// Set protected base class properties via reflection
+	UClass* NodeClass = WaitGENode->GetClass();
+
+	if (FNameProperty* FactoryFuncNameProp = FindFProperty<FNameProperty>(NodeClass, TEXT("ProxyFactoryFunctionName")))
+	{
+		FactoryFuncNameProp->SetPropertyValue_InContainer(WaitGENode, WaitGEFunction->GetFName());
+	}
+
+	if (FObjectProperty* FactoryClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyFactoryClass")))
+	{
+		FactoryClassProp->SetObjectPropertyValue_InContainer(WaitGENode, UAbilityTask_WaitGameplayEffectApplied_Target::StaticClass());
+	}
+
+	if (FObjectProperty* ProxyClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyClass")))
+	{
+		ProxyClassProp->SetObjectPropertyValue_InContainer(WaitGENode, UAbilityTask_WaitGameplayEffectApplied_Target::StaticClass());
+	}
+
+	WaitGENode->CreateNewGuid();
+	WaitGENode->PostPlacedNewNode();
+	WaitGENode->AllocateDefaultPins();
+
+	// Set TriggerOnce - default false for continuous damage dealt monitoring
+	const FString* TriggerOncePtr = NodeDef.Properties.Find(TEXT("trigger_once"));
+	UEdGraphPin* TriggerOncePin = WaitGENode->FindPin(FName("TriggerOnce"));
+	if (TriggerOncePin)
+	{
+		if (TriggerOncePtr)
+		{
+			TriggerOncePin->DefaultValue = TriggerOncePtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ? TEXT("true") : TEXT("false");
+		}
+		else
+		{
+			TriggerOncePin->DefaultValue = TEXT("false");  // Default to false for damage dealt monitoring
+		}
+	}
+
+	// Set ListenForPeriodicEffect if specified
+	const FString* ListenPeriodicPtr = NodeDef.Properties.Find(TEXT("listen_periodic"));
+	if (ListenPeriodicPtr)
+	{
+		UEdGraphPin* ListenPeriodicPin = WaitGENode->FindPin(FName("ListenForPeriodicEffect"));
+		if (ListenPeriodicPin)
+		{
+			ListenPeriodicPin->DefaultValue = ListenPeriodicPtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ? TEXT("true") : TEXT("false");
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Created AbilityTaskWaitGEAppliedToTarget node '%s'"), *NodeDef.Id));
+
+	return WaitGENode;
+}
+
+// v7.8.0: Contract 25 - AbilityAsync_WaitAttributeChanged for damage-scaled energy absorption
+// This is an async action (not AbilityTask) that tracks attribute changes and provides
+// NewValue and OldValue in the Changed delegate, allowing damage calculation.
+// Properties:
+//   - attribute_set: The AttributeSet class (e.g., "NarrativeAttributeSetBase")
+//   - attribute: The attribute name (e.g., "Health")
+//   - trigger_once: If true, only fires once (default: false for continuous damage tracking)
+// Output pins:
+//   - Changed: Fires with (Attribute, NewValue, OldValue) - allows damage = OldValue - NewValue
+UK2Node* FEventGraphGenerator::CreateAbilityAsyncWaitAttributeChangedNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// AbilityAsync actions use UK2Node_AsyncAction (not UK2Node_LatentAbilityCall)
+	UK2Node_AsyncAction* WaitAttrNode = NewObject<UK2Node_AsyncAction>(Graph);
+	Graph->AddNode(WaitAttrNode, false, false);
+
+	// Find the WaitForAttributeChanged factory function
+	UFunction* WaitAttrFunction = UAbilityAsync_WaitAttributeChanged::StaticClass()->FindFunctionByName(FName("WaitForAttributeChanged"));
+	if (!WaitAttrFunction)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to find WaitForAttributeChanged function on UAbilityAsync_WaitAttributeChanged"));
+		return WaitAttrNode;
+	}
+
+	// Initialize the node from the factory function - this sets up ProxyFactoryClass, ProxyClass, etc.
+	WaitAttrNode->InitializeProxyFromFunction(WaitAttrFunction);
+
+	WaitAttrNode->CreateNewGuid();
+	WaitAttrNode->PostPlacedNewNode();
+	WaitAttrNode->AllocateDefaultPins();
+
+	// Set the Attribute pin using the struct literal format
+	// Format: (AttributeOwner="<ClassPath>",Attribute="<PropertyName>")
+	const FString* AttributeSetPtr = NodeDef.Properties.Find(TEXT("attribute_set"));
+	const FString* AttributePtr = NodeDef.Properties.Find(TEXT("attribute"));
+
+	if (AttributeSetPtr && AttributePtr)
+	{
+		UEdGraphPin* AttributePin = WaitAttrNode->FindPin(FName("Attribute"));
+		if (AttributePin)
+		{
+			// Try to find the AttributeSet class
+			FString AttributeSetClassName = *AttributeSetPtr;
+			UClass* AttributeSetClass = nullptr;
+
+			// Try common paths for Narrative Pro attribute sets
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *AttributeSetClassName),
+				FString::Printf(TEXT("/Script/NarrativePro.%s"), *AttributeSetClassName),
+				FString::Printf(TEXT("/Script/GameplayAbilities.%s"), *AttributeSetClassName),
+			};
+
+			for (const FString& Path : SearchPaths)
+			{
+				AttributeSetClass = LoadClass<UAttributeSet>(nullptr, *Path);
+				if (AttributeSetClass)
+				{
+					break;
+				}
+			}
+
+			if (AttributeSetClass)
+			{
+				// Use struct literal format for FGameplayAttribute
+				FString AttributePath = FString::Printf(TEXT("(AttributeOwner=\"%s\",Attribute=\"%s\")"),
+					*AttributeSetClass->GetPathName(), **AttributePtr);
+				AttributePin->DefaultValue = AttributePath;
+				LogGeneration(FString::Printf(TEXT("    Set Attribute pin: %s"), *AttributePath));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("[W_ATTRIBUTE_SET_NOT_FOUND] Could not find AttributeSet class '%s' - using literal format"), *AttributeSetClassName));
+				// Fallback: Use the literal format with the provided names
+				FString AttributePath = FString::Printf(TEXT("(AttributeOwner=\"%s\",Attribute=\"%s\")"),
+					*AttributeSetClassName, **AttributePtr);
+				AttributePin->DefaultValue = AttributePath;
+			}
+		}
+		else
+		{
+			LogGeneration(TEXT("[E_ATTRIBUTE_PIN_NOT_FOUND] Could not find Attribute pin on WaitForAttributeChanged node"));
+		}
+	}
+	else
+	{
+		LogGeneration(TEXT("[E_ATTRIBUTE_CONFIG_MISSING] attribute_set and attribute properties required for AbilityAsyncWaitAttributeChanged"));
+	}
+
+	// Set OnlyTriggerOnce - default false for continuous damage tracking
+	const FString* TriggerOncePtr = NodeDef.Properties.Find(TEXT("trigger_once"));
+	UEdGraphPin* TriggerOncePin = WaitAttrNode->FindPin(FName("OnlyTriggerOnce"));
+	if (TriggerOncePin)
+	{
+		if (TriggerOncePtr)
+		{
+			TriggerOncePin->DefaultValue = TriggerOncePtr->Equals(TEXT("true"), ESearchCase::IgnoreCase) ? TEXT("true") : TEXT("false");
+		}
+		else
+		{
+			TriggerOncePin->DefaultValue = TEXT("false");  // Default to false for continuous damage tracking
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Created AbilityAsyncWaitAttributeChanged node '%s' for %s.%s"),
+		*NodeDef.Id,
+		AttributeSetPtr ? **AttributeSetPtr : TEXT("unknown"),
+		AttributePtr ? **AttributePtr : TEXT("unknown")));
+
+	return WaitAttrNode;
 }
 
 UK2Node* FEventGraphGenerator::CreatePrintStringNode(
