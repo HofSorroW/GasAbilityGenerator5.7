@@ -1695,7 +1695,7 @@ void FPreValidator::ValidateRedundantCasts(const FManifestData& Data, FPreValida
 		KnownReturnTypes.Add(TEXT("GetCapsuleComponent"), TEXT("CapsuleComponent"));
 		KnownReturnTypes.Add(TEXT("GetMesh"), TEXT("SkeletalMeshComponent"));
 
-		// Note: GetComponentByClass with param.ComponentClass is handled specially below
+		// Note: GetComponentByClass returns ActorComponent* in Blueprint - cast IS needed
 		// Note: GetController returns AController* (base) - NOT in this list
 	}
 
@@ -1780,24 +1780,13 @@ void FPreValidator::ValidateRedundantCasts(const FManifestData& Data, FPreValida
 			{
 				FString FunctionName = SourceNode.Properties.FindRef(TEXT("function"));
 
-				// Special case: GetComponentByClass with param.ComponentClass specifies return type
-				// In UE5, GetComponentByClass<T>() returns T*, not base ActorComponent*
-				if (FunctionName.Equals(TEXT("GetComponentByClass"), ESearchCase::IgnoreCase))
+				// Check if this function is in our known return types
+				// Note: GetComponentByClass returns ActorComponent* in Blueprint (base type)
+				// even with param.ComponentClass specified - cast IS needed for typed access
+				FString* KnownType = KnownReturnTypes.Find(FunctionName);
+				if (KnownType)
 				{
-					FString ParamComponentClass = SourceNode.Properties.FindRef(TEXT("param.ComponentClass"));
-					if (!ParamComponentClass.IsEmpty())
-					{
-						SourceOutputType = ParamComponentClass;
-					}
-				}
-				else
-				{
-					// Check if this function is in our known return types
-					FString* KnownType = KnownReturnTypes.Find(FunctionName);
-					if (KnownType)
-					{
-						SourceOutputType = *KnownType;
-					}
+					SourceOutputType = *KnownType;
 				}
 			}
 			else if (SourceNode.Type.Equals(TEXT("PropertyGet"), ESearchCase::IgnoreCase))
