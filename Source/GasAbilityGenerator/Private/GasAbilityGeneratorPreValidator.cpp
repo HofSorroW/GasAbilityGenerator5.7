@@ -1780,9 +1780,12 @@ void FPreValidator::ValidateRedundantCasts(const FManifestData& Data, FPreValida
 			{
 				FString FunctionName = SourceNode.Properties.FindRef(TEXT("function"));
 
-				// Check if this function is in our known return types
-				// Note: GetComponentByClass returns ActorComponent* in Blueprint (base type)
-				// even with param.ComponentClass specified - cast IS needed for typed access
+				// NOTE on GetComponentByClass: UE5.7 compiler warns the cast is "redundant" because at RUNTIME
+				// the value is already the correct type. However, the Blueprint PIN TYPE is still ActorComponent*,
+				// so the cast IS required for Blueprint pin type matching. We intentionally do NOT detect
+				// GetComponentByClass here - the UE5 compiler warning is cosmetic and the cast must stay.
+
+				// Check static registry for known return types (functions that return specific types)
 				FString* KnownType = KnownReturnTypes.Find(FunctionName);
 				if (KnownType)
 				{
