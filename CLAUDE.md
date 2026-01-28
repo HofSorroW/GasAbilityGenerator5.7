@@ -16,11 +16,37 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Project Paths](#project-paths)
+- [Build Commands](#build-commands)
+- [Commandlet Usage](#commandlet-usage)
+- [Automation Workflow](#automation-workflow)
+- [Log File Locations](#log-file-locations)
+- [Important Rules](#important-rules)
+  - [Mandatory Rules](#mandatory-rules-will-cause-failures)
+  - [LOCKED WORKFLOW](#locked-workflow-mandatory)
+- [Troubleshooting](#troubleshooting)
+- [GasAbilityGenerator Plugin](#gasabilitygenerator-plugin-v758)
+  - [Architecture](#architecture)
+  - [Table Editors](#table-editors-v48)
+  - [Supported Asset Types](#supported-asset-types-generated-by-plugin)
+  - [Manifest Structure](#manifest-structure)
+  - [Event Graph Generation](#event-graph-generation)
+- [Narrative Pro Plugin](#narrative-pro-plugin-v22-beta)
+- [Important Reference Patterns](#important-reference-patterns)
+  - [Gameplay Tag Hierarchies](#gameplay-tag-hierarchies-critical)
+  - [Replication Patterns](#replication-patterns-gas-multiplayer)
+  - [Parent Class Matrix](#parent-class-matrix)
+
+---
+
 ## Overview
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v7.1) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.5.8) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -291,7 +317,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ---
 
-## GasAbilityGenerator Plugin (v7.1)
+## GasAbilityGenerator Plugin (v7.5.8)
 
 Location: `Plugins/GasAbilityGenerator/`
 
