@@ -9821,18 +9821,60 @@ tags:  # POSSESSED EXPLODER
     comment: Explosion VFX/SFX trigger
 
 gameplay_effects:  # POSSESSED EXPLODER
+  # v7.8.4: Added modifiers per Possessed_Exploder_Enemy_Implementation_Guide_v2_2.md Phase 2
   - name: GE_ExploderAttributes
     folder: Enemies/Possessed/Effects
     duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 50.0
+      - attribute: NarrativeAttributeSetBase.Health
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 50.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 0.0
 
+  # v7.8.4: Added execution_calculations per guide Phase 2
   - name: GE_ExplosionDamage
     folder: Enemies/Possessed/Effects
     duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    asset_tag: Effect.Enemy.ExplosionDamage
+    gameplay_cues:
+      - GameplayCue.Enemy.Exploder.Explosion
 
 actor_blueprints:  # POSSESSED EXPLODER
+  # v7.8.4: Added variables per Possessed_Exploder_Enemy_Implementation_Guide_v2_2.md
   - name: BP_PossessedExploder
     folder: Enemies/Possessed
     parent_class: NarrativeNPCCharacter
+    variables:
+      # Explosion parameters - used by BTS_CheckExplosionProximity
+      - name: ExplosionRadius
+        type: Float
+        default_value: "300.0"
+        instance_editable: true
+        comment: Radius to trigger explosion
+      - name: ExplosionDamage
+        type: Float
+        default_value: "150.0"
+        instance_editable: true
+        comment: Damage dealt on explosion
+      # State tracking
+      - name: bHasExploded
+        type: Bool
+        default_value: "false"
+        comment: Prevents double explosion
+      - name: bIsAlerted
+        type: Bool
+        default_value: "false"
+        comment: True when player detected
     event_graph:
       nodes:
         # BeginPlay - Set Flying movement mode for hovering behavior
@@ -9858,6 +9900,15 @@ actor_blueprints:  # POSSESSED EXPLODER
             parameters:
               NewMovementMode: Flying
           position: [600, 0]
+        # Debug print
+        - id: PrintReady
+          type: CallFunction
+          properties:
+            function: PrintString
+            class: KismetSystemLibrary
+            parameters:
+              InString: "PossessedExploder Active - Hover mode"
+          position: [800, 0]
       connections:
         - from: [Event_BeginPlay, Then]
           to: [SetMovementMode, Exec]
@@ -9865,6 +9916,8 @@ actor_blueprints:  # POSSESSED EXPLODER
           to: [GetCharMovement, Target]
         - from: [GetCharMovement, CharacterMovement]
           to: [SetMovementMode, Target]
+        - from: [SetMovementMode, Then]
+          to: [PrintReady, Exec]
 
 actor_blueprints:  # POSSESSED EXPLODER BT SERVICES
   # v4.32: Enhanced with ReceiveTickAI event graph for explosion proximity check
@@ -10109,9 +10162,27 @@ tags:  # SUPPORT BUFFER
     comment: Heal VFX/SFX trigger
 
 gameplay_effects:  # SUPPORT BUFFER
+  # v7.8.4: Added modifiers per Support_Buffer_Healer_NPC_Implementation_Guide_v1_2.md Phase 2
   - name: GE_SupporterAttributes
     folder: NPCs/Support/Effects
     duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 150.0
+      - attribute: NarrativeAttributeSetBase.Health
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 150.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 20.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 0.0
 
   # v4.39.1: Heal meta-attribute modifier pattern (Generator doesn't support execution_calculations)
   # PostGameplayEffectExecute processes Heal attribute → HealedBy delegate → Health increase
@@ -10751,27 +10822,91 @@ actor_blueprints:  # BIOMECH
           - from: [AuthBranch, False]
             to: [CallParentDeath, Exec]
 
+  # v7.8.4: Enhanced per Biomechanical_Detachment_System_Implementation_Guide_v1_2.md
+  # BiomechCreature is a fast, agile melee attacker spawned from BiomechHost death
+  # Combat behavior handled by Narrative Pro's default NPC AI via GoalGenerator_Attack
   - name: BP_BiomechCreature
     folder: Enemies/Biomech
     parent_class: NarrativeNPCCharacter
+    variables:
+      # Movement speed boost for agile creature
+      - name: CreatureSpeedMultiplier
+        type: Float
+        default_value: "1.5"
+        instance_editable: true
     event_graph:
       nodes:
-        # BeginPlay - Log spawn (spawned from BiomechHost death)
+        # BeginPlay - Configure fast movement for detached creature
         - id: Event_BeginPlay
           type: Event
           properties:
             event_name: ReceiveBeginPlay
           position: [0, 0]
+        - id: SelfRef
+          type: Self
+          position: [100, 100]
+        # Get CharacterMovement component
+        - id: GetCharMovement
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [300, 0]
+        # Get current max walk speed
+        - id: GetMaxWalkSpeed
+          type: PropertyGet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [500, 0]
+        # Get speed multiplier
+        - id: GetSpeedMult
+          type: VariableGet
+          properties:
+            variable_name: CreatureSpeedMultiplier
+          position: [500, 150]
+        # Multiply for boosted speed
+        - id: MultiplySpeed
+          type: CallFunction
+          properties:
+            function: Multiply_DoubleDouble
+            # class: KismetMathLibrary  # Let resolver find
+          position: [700, 0]
+        # Set boosted max walk speed via PropertySet
+        - id: SetMaxWalkSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [900, 0]
+        # Debug print
         - id: PrintReady
           type: CallFunction
           properties:
             function: PrintString
             class: KismetSystemLibrary
             parameters:
-              InString: "BiomechCreature Detached - Combat mode"
-          position: [300, 0]
+              InString: "BiomechCreature Detached - Fast melee mode"
+          position: [1100, 0]
       connections:
+        # Data flow - Self to CharacterMovement
+        - from: [SelfRef, Self]
+          to: [GetCharMovement, Target]
+        - from: [GetCharMovement, CharacterMovement]
+          to: [GetMaxWalkSpeed, Target]
+        - from: [GetCharMovement, CharacterMovement]
+          to: [SetMaxWalkSpeed, Target]
+        # Data flow - Calculate boosted speed
+        - from: [GetMaxWalkSpeed, MaxWalkSpeed]
+          to: [MultiplySpeed, A]
+        - from: [GetSpeedMult, CreatureSpeedMultiplier]
+          to: [MultiplySpeed, B]
+        - from: [MultiplySpeed, ReturnValue]
+          to: [SetMaxWalkSpeed, MaxWalkSpeed]
+        # Exec flow - BeginPlay directly to SetMaxWalkSpeed (PropertyGet nodes are pure)
         - from: [Event_BeginPlay, Then]
+          to: [SetMaxWalkSpeed, Exec]
+        - from: [SetMaxWalkSpeed, Then]
           to: [PrintReady, Exec]
 
 # ============================================================================
