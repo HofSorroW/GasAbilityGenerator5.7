@@ -3715,7 +3715,10 @@ gameplay_abilities:
   # COMBAT ABILITIES (4)
   # ---------------------------------------------------------------------------
   
-  # GA_FatherAttack - Melee Attack (NarrativeGameplayAbility for custom logic)
+  # GA_FatherAttack - Melee Attack (inherits socket tracing, warp, combo from parent)
+  # MANUAL POST-GENERATION: Reparent to GA_Melee_Unarmed in Editor
+  # (Blueprint parent classes from plugins can't be resolved in headless mode)
+  # Path: /NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/GA_Melee_Unarmed
   # NOTE: Runs on Father ASC, only in Crawler form
   - name: GA_FatherAttack
     folder: Abilities/Combat
