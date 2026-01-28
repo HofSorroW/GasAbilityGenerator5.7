@@ -1,10 +1,10 @@
 # Architecture Reference
 
-**Consolidated:** 2026-01-18
-**Plugin Version:** v4.12.5
-**Status:** Complete reference for plugin architecture, generators, and automation coverage
+**Consolidated:** 2026-01-28
+**Plugin Version:** v7.8.0
+**Status:** Complete reference for plugin architecture, generators, validation, and automation coverage
 
-This document consolidates architecture documentation, generator implementation patterns, coverage analysis, and the report system.
+This document consolidates architecture documentation, generator implementation patterns, fail-fast system, pipeline validation, and coverage analysis.
 
 ---
 
@@ -19,6 +19,10 @@ This document consolidates architecture documentation, generator implementation 
 7. [Future: Design Compiler & Spec DataAssets](#7-future-design-compiler--spec-dataassets)
 8. [Narrative Pro Integration Strategy](#8-narrative-pro-integration-strategy)
 9. [Development Pipeline](#9-development-pipeline)
+10. [Fail-Fast System (v4.23+)](#10-fail-fast-system-v423)
+11. [Pipeline Gap Analysis (v7.0)](#11-pipeline-gap-analysis-v70)
+12. [Function Resolver Parity (v4.31+)](#12-function-resolver-parity-v431)
+13. [Generator Pattern Fixes (v4.31-v4.32.3)](#13-generator-pattern-fixes-v431-v4323)
 
 ---
 
@@ -978,6 +982,224 @@ gameplay_abilities:
 
 ---
 
+## 10. Fail-Fast System (v4.23+)
+
+The fail-fast system ensures assets fail loudly at generation time rather than silently producing broken assets.
+
+### R1/R2/R3 Classification Framework (LOCKED)
+
+| Class | Condition | Action |
+|-------|-----------|--------|
+| **R1** | Manifest explicitly references something → cannot resolve | **HARD FAIL** |
+| **R2** | Manifest omits optional field → documented default | ALLOWED (no warn) |
+| **R3** | Structural invalidity (quests, graphs, etc.) | **HARD FAIL** |
+
+**Key Separator:** "Manifest referenced?" YES/NO
+
+### Fallback Classification
+
+| Type | Description | Action |
+|------|-------------|--------|
+| **Type M (Masking)** | Manifest referenced X → X missing → generation continued | **ELIMINATE** |
+| **Type D (Default)** | Manifest omitted optional X → uses default | ALLOWED if documented |
+
+### Failure Point Summary (118 Total)
+
+| Category | Count | Type M | Type D | Scope |
+|----------|-------|--------|--------|-------|
+| A (INFO Manual Setup) | 12 | 12 | 0 | Pipeline |
+| B (WARN Missing Class) | 28 | 28 | 0 | Pipeline |
+| C (Reward Class) | 3 | 3 | 0 | Pipeline |
+| D (Comment Deferred) | 4 | 4 | 0 | Pipeline |
+| S (Secondary Warnings) | 51 | 51 | 0 | Pipeline |
+| F (Fallback Patterns) | 12 | 11 | 1 | Pipeline |
+| T (Token Registry) | 2 | 2 | 0 | Pipeline |
+| W (Window/Editor) | 6 | 0 | 6 | EditorUX |
+| **TOTAL** | **118** | **111** | **7** | - |
+
+### Phase 3 Failure Report Format
+
+Every hard fail produces structured diagnostic output:
+```
+[E_ERROR_CODE] AssetName | Subsystem: X | Human message | ClassPath: /Script/Module.UClass | SuperClassPath: /Script/Module.UParent | RequestedProperty: PropertyName
+```
+
+**Subsystems:** GAS, Item, NPC, Dialogue, Quest, BT, Material, Niagara, Token, General
+
+### 8 Proven Generator Bugs
+
+Properties exist in NarrativePro source but `FindPropertyByName()` fails at runtime:
+
+| Property | Header | Declaration |
+|----------|--------|-------------|
+| PartySpeakerInfo | Dialogue.h:205 | `TArray<FPlayerSpeakerInfo>` |
+| EquipmentAbilities | EquippableItem.h:136 | `TArray<TSubclassOf<UNarrativeGameplayAbility>>` |
+| Stats | NarrativeItem.h:288 | `TArray<FNarrativeItemStat>` |
+| ActivitiesToGrant | NarrativeItem.h:280 | `TArray<TSubclassOf<UNPCActivity>>` |
+| PickupMeshData | NarrativeItem.h:509 | `FPickupMeshData` |
+| TraceData | RangedWeaponItem.h:86 | `FCombatTraceData` |
+| NPCTargets | NarrativeEvent.h:173 | `TArray<TObjectPtr<UNPCDefinition>>` |
+| CharacterTargets | NarrativeEvent.h:169 | `TArray<TObjectPtr<UCharacterDefinition>>` |
+
+**Root Cause Hypotheses:** H1 (Wrong UClass), H2 (Module timing), H3 (Name mismatch), H4 (WITH_EDITORONLY_DATA guards), H5 (BP-generated class layout)
+
+---
+
+## 11. Pipeline Gap Analysis (v7.0)
+
+Full audit of manifest → parser → pre-validator → generator → logging pipeline.
+
+### Gap Resolution Summary
+
+| Severity | Count | Fixed | Remaining |
+|----------|-------|-------|-----------|
+| **CRITICAL** | 6 | 6 | 0 |
+| **HIGH** | 14 | 14 | 0 |
+| **MEDIUM** | 18 | 18 | 0 |
+| **LOW** | 9 | 0 | 9 |
+
+**Generation Result:** 194/194 assets (0 errors, 17 warnings - down from 57 after v7.0 false positive fix)
+
+### Node Creation Validation
+
+| Node Type | Required Input | Status |
+|-----------|----------------|--------|
+| VariableSet | Value pin | FIXED v4.40 |
+| PropertySet | Value pin | FIXED v4.40 |
+| Branch | Condition pin | FIXED v4.40 |
+| DynamicCast | Object pin | FIXED v4.40 |
+| SpawnActor | Class pin | FIXED v4.40.2 |
+| Sequence | Exec input | FIXED v4.40.2 |
+| Delay | Duration pin | FIXED v4.40.2 |
+| GetArrayItem | Array + Index | FIXED v4.40.2 |
+| MakeArray | Element pins | FIXED v4.40.2 |
+
+### Pre-Validation Rule Coverage
+
+| Rule ID | Category | Status |
+|---------|----------|--------|
+| C1-C2 | Class path/parent resolution | COVERED |
+| F1-F2 | Function resolution | COVERED |
+| A1-A2 | AttributeSet/Attribute | COVERED |
+| R1-R3 | Asset references | COVERED |
+| T1-T2 | Tags (normal/SetByCaller) | COVERED |
+| K1-K2 | Tokens | FIXED v4.40.3 |
+| D1-D2 | Delegate existence/signature | FIXED v4.40 |
+| N1-N2 | Node inputs/Connections | FIXED v4.40.2/v4.40.3 |
+
+### Key Fixes by Version
+
+| Version | Fixes |
+|---------|-------|
+| v4.40 | Stale log deletion, metadata mutex, VariableSet validation, delegate binding validation, MakeLiteral* nodes, SafeSavePackage helper |
+| v4.40.2 | SpawnActor/Delay/GetArrayItem/MakeArray/Sequence validation, asset registry notification, connection pre-validation |
+| v4.40.3 | Token validation, widget/dialogue/quest/BT/NPC pre-validation |
+| v7.0 | N1 false positives fixed (variable_name as valid pin), PropertyGet for Blackboard, Cast→VariableSet auto-inference |
+
+---
+
+## 12. Function Resolver Parity (v4.31+)
+
+Ensures PreValidator and Generator use identical function resolution logic.
+
+### Contract (LOCKED)
+
+> "PreValidator function resolution behavior must be identical to Generator function resolution behavior. Both use `FGasAbilityGeneratorFunctionResolver::ResolveFunction()` as single source of truth."
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│     FGasAbilityGeneratorFunctionResolver                │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │  static WellKnownFunctions (single table)       │    │
+│  │  ResolveFunction() - 4-step cascade             │    │
+│  │    1. WellKnown probe (variants)                │    │
+│  │    2. Explicit class (exact)                    │    │
+│  │    3. Parent chain (exact)                      │    │
+│  │    4. Library fallback (exact, 13 classes)      │    │
+│  └─────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+              │                           │
+              ▼                           ▼
+┌─────────────────────────┐   ┌─────────────────────────┐
+│  Generator              │   │  PreValidator           │
+│  (uses ResolveFunction) │   │  (uses ResolveFunction) │
+└─────────────────────────┘   └─────────────────────────┘
+```
+
+### Resolution Order
+
+1. **WellKnownFunctions probe** - Try variants (Name, K2_Name, BP_Name)
+2. **Explicit class** - If `class:` specified, exact name only
+3. **Parent chain** - If `target_self` or from parent, exact name only
+4. **Library fallback** - 13 classes in order, exact name only
+
+### Library Fallback Classes
+
+UKismetSystemLibrary, UKismetMathLibrary, UGameplayStatics, UGameplayAbility, UAbilitySystemBlueprintLibrary, UAbilitySystemComponent, ACharacter, AActor, APawn, UCharacterMovementComponent, USceneComponent, USkeletalMeshComponent, UPrimitiveComponent
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `Public/GasAbilityGeneratorFunctionResolver.h` | Resolver interface |
+| `Private/GasAbilityGeneratorFunctionResolver.cpp` | Resolution implementation |
+
+---
+
+## 13. Generator Pattern Fixes (v4.31-v4.32.3)
+
+Locked decisions from debugging event graph generation failures.
+
+### Locked Decisions
+
+| ID | Topic | Pattern |
+|----|-------|---------|
+| D1 | `parameters:` block | Parser converts to properties automatically |
+| D2 | Function names | Use `K2_*` prefix (e.g., `K2_ApplyGameplayEffectSpecToOwner`) |
+| D3 | TSubclassOf parsing | `type: Class` + `class: ClassName` → `Class:ClassName` |
+| D4 | By-ref params | Use `MakeLiteralName` nodes for blackboard KeyName params |
+| D5 | Object→Actor cast | Required `DynamicCast` for GetValueAsObject → Actor functions |
+| D6 | Double precision | Arithmetic remapped: `Add_FloatFloat` → `Add_DoubleDouble` |
+| D7 | VariableGet pins | Use variable name as pin name, not "Value" |
+| D8 | Self reference | Use `target_self: true` on CallFunction, not Self node |
+| D9 | Array params | Use `MakeArray` for SphereOverlapActors ObjectTypes/ActorsToIgnore |
+| D10 | Component cast | Use `DynamicCast` after GetComponentByClass for specific types |
+| D11 | Effect search paths | NPC/Enemy subdirectories added for startup_effects |
+
+### Code Changes (v4.32.2-v4.32.3)
+
+**Parser - TSubclassOf Handling** (`GasAbilityGeneratorParser.cpp:2272-2285`):
+```cpp
+else if (TrimmedLine.StartsWith(TEXT("class:")))
+{
+    FString ClassValue = GetLineValue(TrimmedLine);
+    if (!CurrentVar.Type.IsEmpty())
+    {
+        CurrentVar.Type = CurrentVar.Type + TEXT(":") + ClassValue;
+    }
+}
+```
+
+**Function Remapping** (`GasAbilityGeneratorGenerators.cpp:10399-10410`):
+```cpp
+DeprecatedFunctionRemapping.Add(TEXT("Add_FloatFloat"), TEXT("Add_DoubleDouble"));
+DeprecatedFunctionRemapping.Add(TEXT("Subtract_FloatFloat"), TEXT("Subtract_DoubleDouble"));
+DeprecatedFunctionRemapping.Add(TEXT("Multiply_FloatFloat"), TEXT("Multiply_DoubleDouble"));
+DeprecatedFunctionRemapping.Add(TEXT("Divide_FloatFloat"), TEXT("Divide_DoubleDouble"));
+```
+
+**Effect Search Paths** (`GasAbilityGeneratorGenerators.cpp:19580-19591`):
+```cpp
+SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/Support/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Possessed/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Warden/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Biomech/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+```
+
+---
+
 ## Original Documents (Consolidated)
 
 - v4.7_Report_System_Reference.md (merged)
@@ -987,4 +1209,8 @@ gameplay_abilities:
 - Design_Compiler_Architecture_Handoff.md (merged)
 - Spec_DataAsset_UX_Handoff.md (merged)
 - NarrativePro_Asset_Strategy_Log.md (merged v4.12.5)
-- Father_Ability_Generator_Plugin_v7_8_2_Specification.md (relevant content merged v4.12.5)
+- Father_Ability_Generator_Plugin_v7_8_2_Specification.md (merged v4.12.5)
+- Fail_Fast_Audit_FINAL.md (merged v7.8)
+- Pipeline_Gap_Analysis_Audit_v1_0.md (merged v7.8)
+- PreValidator_Generator_Parity_Audit_v1.md (merged v7.8)
+- GA_Backstab_GA_ProtectiveDome_Error_Audit.md (merged v7.8)

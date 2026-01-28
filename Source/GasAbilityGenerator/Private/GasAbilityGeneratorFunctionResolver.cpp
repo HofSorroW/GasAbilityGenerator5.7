@@ -523,8 +523,24 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 		return FResolvedFunction();
 	}
 
+	FResolvedFunction Result;
+
+	// v7.5: When target_self is true, parent chain takes PRIORITY over WellKnown
+	// This allows manifest to call member functions that share names with WellKnown statics
+	// Example: UGameplayAbility::BP_ApplyGameplayEffectSpecToTarget(SpecHandle, ActorTarget)
+	//      vs: UAbilitySystemComponent::BP_ApplyGameplayEffectSpecToTarget(SpecHandle, ASCTarget)
+	// When target_self=true, user wants the member function, not the static library version
+	if (bTargetSelf && ParentClass)
+	{
+		Result = ResolveViaParentChain(FunctionName, ParentClass);
+		if (Result.bFound)
+		{
+			return Result;
+		}
+	}
+
 	// Step 1: WellKnownFunctions probe (WITH variants)
-	FResolvedFunction Result = ResolveViaWellKnown(FunctionName);
+	Result = ResolveViaWellKnown(FunctionName);
 	if (Result.bFound)
 	{
 		return Result;
@@ -552,8 +568,8 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 		}
 	}
 
-	// Step 3: Parent chain (exact name only) - used when target_self or no explicit class
-	if (bTargetSelf || ExplicitClassName.IsEmpty())
+	// Step 3: Parent chain (exact name only) - used when no explicit class (already checked if target_self above)
+	if (!bTargetSelf && ExplicitClassName.IsEmpty())
 	{
 		Result = ResolveViaParentChain(FunctionName, ParentClass);
 		if (Result.bFound)

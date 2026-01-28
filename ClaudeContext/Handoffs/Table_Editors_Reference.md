@@ -2415,6 +2415,84 @@ Files modified during the v4.8.4/v4.9/v4.9.1 safety audit:
 
 ---
 
+## 8 Pipeline Architecture (v7.5 Audit)
+
+All 4 table editors implement these 8 pipelines with **100% feature parity**:
+
+| Pipeline | Purpose | Key Classes |
+|----------|---------|-------------|
+| **1. Import** | XLSX → Table | `F*XLSXReader::ImportFromXLSX()` |
+| **2. Validation** | Data quality checks | `F*TableValidator::ValidateAll()` |
+| **3. Diff/Compare** | Hash-based change detection | `ComputeEditableFieldsHash()`, `AreAssetsOutOfDate()` |
+| **4. 3-Way Sync** | Base/UE/Excel comparison | `F*XLSXSyncEngine::CompareSources()` |
+| **5. Snapshot/State** | Persistence | `U*TableData` (UDataAsset) |
+| **6. Write to UE** | Generation | `F*TableConverter::ConvertRowsToManifest()` |
+| **7. Export** | Table → XLSX | `F*XLSXWriter::ExportToXLSX()` |
+| **8. Status Tracking** | Visual feedback | Color-coded badges, status bar |
+
+**v7.5 Completeness:** 100% undo/redo coverage, Find & Replace implemented, all gaps resolved.
+
+---
+
+## Complete File Locations
+
+### Common Infrastructure
+- `Source/GasAbilityGenerator/Public/TableEditorTransaction.h` - Undo/Redo transaction system
+
+### NPC Table Editor
+| File | Purpose |
+|------|---------|
+| `NPCTableEditor/SNPCTableEditor.cpp` | Main UI (~2584 lines) |
+| `NPCTableEditor/NPCTableEditorTypes.h` | FNPCTableRow, UNPCTableData |
+| `NPCTableEditor/NPCTableConverter.cpp` | Row → Manifest conversion |
+| `NPCTableEditor/NPCTableValidator.cpp` | Validation rules |
+| `NPCTableEditor/NPCAssetSync.cpp` | UNPCDefinition extraction |
+| `NPCTableEditor/NPCXLSXReader.cpp` | XLSX import |
+| `NPCTableEditor/NPCXLSXWriter.cpp` | XLSX export |
+| `NPCTableEditor/NPCXLSXSyncEngine.cpp` | 3-way sync logic |
+| `NPCTableEditor/SNPCXLSXSyncDialog.cpp` | Sync approval UI |
+
+### Dialogue Table Editor
+| File | Purpose |
+|------|---------|
+| `SDialogueTableEditor.cpp` | Main UI (~1847 lines) |
+| `DialogueTableEditorTypes.h` | FDialogueTableRow, UDialogueTableData |
+| `DialogueTableConverter.cpp` | Row → Manifest conversion |
+| `DialogueTableValidator.cpp` | Validation rules |
+| `DialogueAssetSync.cpp` | UDialogue graph extraction |
+| `DialogueXLSXReader.cpp` | XLSX import |
+| `DialogueXLSXWriter.cpp` | XLSX export |
+| `DialogueXLSXSyncEngine.cpp` | 3-way sync logic |
+| `SDialogueXLSXSyncDialog.cpp` | Sync approval UI |
+
+### Quest Table Editor
+| File | Purpose |
+|------|---------|
+| `QuestTableEditor/SQuestTableEditor.cpp` | Main UI (~1299 lines) |
+| `QuestTableEditor/QuestTableEditorTypes.h` | FQuestTableRow, UQuestTableData |
+| `QuestTableEditor/QuestTableConverter.cpp` | Row → Manifest conversion |
+| `QuestTableEditor/QuestTableValidator.cpp` | Validation rules |
+| `QuestTableEditor/QuestAssetSync.cpp` | UQuest state machine extraction |
+| `QuestTableEditor/QuestXLSXReader.cpp` | XLSX import |
+| `QuestTableEditor/QuestXLSXWriter.cpp` | XLSX export |
+| `QuestTableEditor/QuestXLSXSyncEngine.cpp` | 3-way sync logic |
+| `QuestTableEditor/SQuestXLSXSyncDialog.cpp` | Sync approval UI |
+
+### Item Table Editor
+| File | Purpose |
+|------|---------|
+| `ItemTableEditor/SItemTableEditor.cpp` | Main UI (~1289 lines) |
+| `ItemTableEditor/ItemTableEditorTypes.h` | FItemTableRow, UItemTableData |
+| `ItemTableEditor/ItemTableConverter.cpp` | Row → Manifest conversion |
+| `ItemTableEditor/ItemTableValidator.cpp` | Validation rules |
+| `ItemTableEditor/ItemAssetSync.cpp` | UNarrativeItem extraction |
+| `ItemTableEditor/ItemXLSXReader.cpp` | XLSX import |
+| `ItemTableEditor/ItemXLSXWriter.cpp` | XLSX export |
+| `ItemTableEditor/ItemXLSXSyncEngine.cpp` | 3-way sync logic |
+| `ItemTableEditor/SItemXLSXSyncDialog.cpp` | Sync approval UI |
+
+---
+
 ## Original Documents (Consolidated)
 
 - v4.1_DialogueTableEditor_Handoff.md (merged)
@@ -2422,3 +2500,4 @@ Files modified during the v4.8.4/v4.9/v4.9.1 safety audit:
 - Sync_System_Design_v4.11.md (merged)
 - v4.6_UX_Safety_System_ProcessMap.md (merged)
 - v4.8_Coverage_Expansion_Handoff.md (merged - Quest/Item Table Editors)
+- Table_Editor_Audit_v1.md (merged v7.5 - pipeline architecture, file locations)

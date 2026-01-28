@@ -310,15 +310,15 @@ The manifest is ready for production use pending architecture decisions on facti
 
 ---
 
-## DOCUMENT REFERENCES
+## RELATED DOCUMENTS
 
-| Document | Version | Location |
-|----------|---------|----------|
-| Main Audit Report | v1.0 | `Manifest_Audit_Report_v1_0.md` |
-| Phase B2 BP-Exposure | v1.1 | `Manifest_Audit_Phase_B2_BP_Exposure_v1_0.md` |
-| Phase C Connection/Flow | v1.0 | `Manifest_Audit_Phase_C_Connection_Flow_v1_0.md` |
-| Phase D Tag Consistency | v1.1 | `Manifest_Audit_Phase_D_Tag_Consistency_v1_0.md` |
-| Phase E Asset Dependencies | v1.0 | `Manifest_Audit_Phase_E_Asset_Dependencies_v1_0.md` |
+| Document | Location |
+|----------|----------|
+| LOCKED_CONTRACTS.md | `ClaudeContext/Handoffs/LOCKED_CONTRACTS.md` |
+| LOCKED_WORKFLOW.md | `ClaudeContext/Handoffs/LOCKED_WORKFLOW.md` |
+| manifest.yaml | `ClaudeContext/manifest.yaml` |
+
+**Note:** Individual phase reports have been consolidated into this master summary.
 
 ---
 
