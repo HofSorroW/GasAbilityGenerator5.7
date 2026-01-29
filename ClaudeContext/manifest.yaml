@@ -242,6 +242,10 @@ tags:
     comment: Asset tag for GE_ExoskeletonState effect
   - tag: Effect.Father.FormState.Symbiote
     comment: Asset tag for GE_SymbioteState effect
+  - tag: Effect.Father.FormState.Rifle
+    comment: Asset tag for GE_RifleState effect (weapon form)
+  - tag: Effect.Father.FormState.Sword
+    comment: Asset tag for GE_SwordState effect (weapon form)
   - tag: Effect.Father.Mark
     comment: Enemy mark effect
   - tag: Effect.Father.ProximityDamage
@@ -583,6 +587,61 @@ form_state_effects:
 # GAMEPLAY EFFECTS (30) - Stat/Damage/Cooldown effects
 # ============================================================================
 gameplay_effects:
+  # ==========================================================================
+  # FORM STATE EFFECTS (5) - Identity Tags Only (GE Split Rule)
+  # Grants form identity tags + invulnerability for attached forms
+  # Per Form_State_Architecture_Audit_v1_0.md Option B (LOCKED)
+  # ==========================================================================
+  - name: GE_CrawlerState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Crawler
+    # No invulnerability - Crawler is vulnerable
+
+  - name: GE_ArmorState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Armor
+      - Narrative.State.Invulnerable
+
+  - name: GE_ExoskeletonState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Exoskeleton
+      - Narrative.State.Invulnerable
+
+  - name: GE_SymbioteState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Symbiote
+      - Narrative.State.Invulnerable
+
+  - name: GE_EngineerState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Engineer
+    # No invulnerability - Engineer turret is vulnerable
+
+  # Weapon Form States (Rifle/Sword modes per guides v1.7)
+  - name: GE_RifleState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Rifle
+      - Father.State.Wielded
+
+  - name: GE_SwordState
+    folder: Effects/FormState
+    duration_policy: Infinite
+    granted_tags:
+      - Effect.Father.FormState.Sword
+      - Father.State.Wielded
+
   # ==========================================================================
   # FORM EQUIPMENT MODIFIER EFFECTS (7) - Stats Only (GE Split Rule)
   # Child GEs of GE_EquipmentModifier for stat modifications
@@ -14403,7 +14462,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - id: GetNPCPawn
           type: CallFunction
           properties:
-            function: GetControlledPawn
+            function: K2_GetPawn
             class: Controller
           position: [2600, 0]
         - id: CastToNPCChar

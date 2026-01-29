@@ -22151,6 +22151,10 @@ void FAbilityConfigurationGenerator::ValidateStartupEffects(const FManifestAbili
 			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Possessed/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
 			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Warden/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
 			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Biomech/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			// v7.8.24: Additional NPC/enemy effect folders
+			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Formation/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/Enemies/Gatherer/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
+			SearchPaths.Add(FString::Printf(TEXT("%s/NPCs/Returned/Effects/%s.%s_C"), *GetProjectRoot(), *EffectName, *EffectName));
 			// Legacy hardcoded paths
 			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/%s.%s_C"), *EffectName, *EffectName));
 			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Effects/FormState/%s.%s_C"), *EffectName, *EffectName));
