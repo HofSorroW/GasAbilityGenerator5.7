@@ -2109,6 +2109,25 @@ static FEdGraphPinType GetPinTypeFromString(const FString& TypeString)
 		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
 		PinType.PinSubCategoryObject = FindObject<UScriptStruct>(nullptr, TEXT("/Script/GameplayAbilities.ActiveGameplayEffectHandle"));
 	}
+	// v7.8.26: GameplayTag support for tagged dialogue and other tag-based systems
+	else if (TypeString.Equals(TEXT("GameplayTag"), ESearchCase::IgnoreCase))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = FindObject<UScriptStruct>(nullptr, TEXT("/Script/GameplayTags.GameplayTag"));
+	}
+	// v7.8.26: GameplayTagContainer support for tag collections
+	else if (TypeString.Equals(TEXT("GameplayTagContainer"), ESearchCase::IgnoreCase))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = FindObject<UScriptStruct>(nullptr, TEXT("/Script/GameplayTags.GameplayTagContainer"));
+	}
+	// v7.8.26: GameplayEffectSpec support for delegate signatures (e.g., OnDamagedBy)
+	else if (TypeString.Equals(TEXT("GameplayEffectSpec"), ESearchCase::IgnoreCase) ||
+	         TypeString.Equals(TEXT("FGameplayEffectSpec"), ESearchCase::IgnoreCase))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = FindObject<UScriptStruct>(nullptr, TEXT("/Script/GameplayAbilities.GameplayEffectSpec"));
+	}
 	else
 	{
 		// v2.1.8: Check for user-defined enum first (E_ prefix)
@@ -9388,13 +9407,15 @@ bool FEventGraphGenerator::ValidateEventGraph(
 
 	// v2.8.2: Supported node types for validation
 	// v7.8.14: Added ConstructObjectFromClass, MakeLiteral* types
+	// v7.8.25: Added CallParent, Return, FunctionResult, AddDelegate, BindDelegate for function overrides
 	static TSet<FString> SupportedNodeTypes = {
 		TEXT("Event"), TEXT("CustomEvent"), TEXT("CallFunction"), TEXT("Branch"),
 		TEXT("VariableGet"), TEXT("VariableSet"), TEXT("PropertyGet"), TEXT("PropertySet"),
 		TEXT("Sequence"), TEXT("Delay"), TEXT("PrintString"), TEXT("DynamicCast"),
 		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("SpawnNPC"), TEXT("BreakStruct"), TEXT("MakeArray"),
 		TEXT("GetArrayItem"), TEXT("Self"), TEXT("ConstructObjectFromClass"),
-		TEXT("MakeLiteralBool"), TEXT("MakeLiteralFloat"), TEXT("MakeLiteralInt"), TEXT("MakeLiteralByte"), TEXT("MakeLiteralString")
+		TEXT("MakeLiteralBool"), TEXT("MakeLiteralFloat"), TEXT("MakeLiteralInt"), TEXT("MakeLiteralByte"), TEXT("MakeLiteralString"),
+		TEXT("CallParent"), TEXT("Return"), TEXT("FunctionResult"), TEXT("AddDelegate"), TEXT("BindDelegate")
 	};
 
 	for (const FManifestGraphNodeDefinition& Node : GraphDefinition.Nodes)
@@ -9793,19 +9814,49 @@ bool FEventGraphGenerator::GenerateEventGraph(
 	int32 ConnectionsCreated = 0;
 	int32 ConnectionsFailed = 0;
 
-	// Create all nodes first
+	// v7.8.26: Two-pass node creation for proper dependency ordering
+	// Pass 1: Create CustomEvent nodes first (AddDelegate nodes need to find them)
 	for (const FManifestGraphNodeDefinition& NodeDef : GraphDefinition.Nodes)
 	{
+		if (NodeDef.Type.Equals(TEXT("CustomEvent"), ESearchCase::IgnoreCase))
+		{
+			UK2Node* CreatedNode = CreateCustomEventNode(EventGraph, NodeDef, Blueprint);
+			if (CreatedNode)
+			{
+				NodeMap.Add(NodeDef.Id, CreatedNode);
+				NodesCreated++;
+
+				if (NodeDef.bHasPosition)
+				{
+					CreatedNode->NodePosX = static_cast<int32>(NodeDef.PositionX);
+					CreatedNode->NodePosY = static_cast<int32>(NodeDef.PositionY);
+				}
+
+				LogGeneration(FString::Printf(TEXT("  [Pass 1] Created CustomEvent node: %s"),
+					*NodeDef.Id));
+			}
+			else
+			{
+				NodesFailed++;
+			}
+		}
+	}
+
+	// Pass 2: Create all other nodes
+	for (const FManifestGraphNodeDefinition& NodeDef : GraphDefinition.Nodes)
+	{
+		// Skip CustomEvent nodes (already created in Pass 1)
+		if (NodeDef.Type.Equals(TEXT("CustomEvent"), ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+
 		UK2Node* CreatedNode = nullptr;
 
 		// Determine node type and create appropriate node
 		if (NodeDef.Type.Equals(TEXT("Event"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateEventNode(EventGraph, NodeDef, Blueprint);
-		}
-		else if (NodeDef.Type.Equals(TEXT("CustomEvent"), ESearchCase::IgnoreCase))
-		{
-			CreatedNode = CreateCustomEventNode(EventGraph, NodeDef, Blueprint);
 		}
 		else if (NodeDef.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
 		{
@@ -9936,6 +9987,13 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("MakeLiteralString"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateMakeLiteralStringNode(EventGraph, NodeDef);
+		}
+		// v7.8.26: AddDelegate/BindDelegate - bind a CustomEvent to a multicast delegate
+		// Previously only available in function overrides, now available in EventGraph
+		else if (NodeDef.Type.Equals(TEXT("AddDelegate"), ESearchCase::IgnoreCase) ||
+		         NodeDef.Type.Equals(TEXT("BindDelegate"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAddDelegateNode(EventGraph, NodeDef, Blueprint, NodeMap);
 		}
 		else
 		{

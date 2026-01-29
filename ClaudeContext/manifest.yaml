@@ -9205,10 +9205,10 @@ actor_blueprints:  # WARDEN SYSTEM
               variable_name: EjectionMontage
             position: [600, 0]
           - id: GetMesh
-            type: CallFunction
+            type: PropertyGet
             properties:
-              function: GetMesh
-              class: Character
+              property_name: Mesh
+              target_class: Character
               target_self: true
             position: [600, 100]
           - id: GetAnimInstance
@@ -13909,6 +13909,21 @@ actor_blueprints:  # STALKER GOAL GENERATORS
       - name: FollowDurationTimerHandle
         type: TimerHandle
         comment: Timeout for giving up
+      - name: HealthCheckTimerHandle
+        type: TimerHandle
+        comment: Periodic player health check (replaces OnDamagedBy delegate)
+      # ═══════════════════════════════════════════════════════════════
+      # HEALTH POLLING VARIABLES (2) - Replaces OnDamagedBy delegate per Delegate_Binding_History_FINAL.md
+      # ═══════════════════════════════════════════════════════════════
+      - name: HealthCheckInterval
+        type: Float
+        default_value: "0.5"
+        instance_editable: true
+        comment: Seconds between health checks (fast polling for damage detection)
+      - name: LastPlayerHealth
+        type: Float
+        default_value: "0.0"
+        comment: Player's health on last check (for change detection)
       # ═══════════════════════════════════════════════════════════════
       # TAGGED DIALOGUE TAG VARIABLES (7) - Instance Editable
       # ═══════════════════════════════════════════════════════════════
@@ -14181,6 +14196,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [Return, ReturnValue]
       # StopFollowing - Cleanup for TIMEOUT (returns to patrol)
       # PATCH-C: Includes state tag removal for Following, Bonded, Defending
+      # v7.8.27: Added HealthCheckTimer cleanup
       - name: StopFollowing
         nodes:
           - id: GetTalkTimer
@@ -14219,18 +14235,31 @@ actor_blueprints:  # STALKER GOAL GENERATORS
               class: KismetSystemLibrary
               target_self: true
             position: [800, 0]
+          # v7.8.27: Clear health check timer
+          - id: GetHealthTimer
+            type: VariableGet
+            properties:
+              variable_name: HealthCheckTimerHandle
+            position: [800, 100]
+          - id: ClearHealthTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [900, 0]
           - id: SetNotFollowing
             type: VariableSet
             properties:
               variable_name: bIsFollowing
               value: false
-            position: [1000, 0]
+            position: [1100, 0]
           - id: SetNotDefending
             type: VariableSet
             properties:
               variable_name: bIsDefending
               value: false
-            position: [1200, 0]
+            position: [1300, 0]
           - id: ResetTalkCount
             type: VariableSet
             properties:
@@ -14272,7 +14301,12 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [ClearDurationTimer, Exec]
           - from: [GetDurationTimer, FollowDurationTimerHandle]
             to: [ClearDurationTimer, Handle]
+          # v7.8.27: Clear health check timer
           - from: [ClearDurationTimer, Then]
+            to: [ClearHealthTimer, Exec]
+          - from: [GetHealthTimer, HealthCheckTimerHandle]
+            to: [ClearHealthTimer, Handle]
+          - from: [ClearHealthTimer, Then]
             to: [SetNotFollowing, Exec]
           - from: [SetNotFollowing, Then]
             to: [SetNotDefending, Exec]
@@ -14326,28 +14360,41 @@ actor_blueprints:  # STALKER GOAL GENERATORS
               class: KismetSystemLibrary
               target_self: true
             position: [800, 0]
+          # v7.8.27: Clear health check timer
+          - id: GetHealthTimer
+            type: VariableGet
+            properties:
+              variable_name: HealthCheckTimerHandle
+            position: [800, 100]
+          - id: ClearHealthTimer
+            type: CallFunction
+            properties:
+              function: K2_ClearAndInvalidateTimerHandle
+              class: KismetSystemLibrary
+              target_self: true
+            position: [900, 0]
           - id: SetNotFollowing
             type: VariableSet
             properties:
               variable_name: bIsFollowing
               value: false
-            position: [1000, 0]
+            position: [1100, 0]
           - id: ClearFollowGoal
             type: VariableSet
             properties:
               variable_name: CurrentFollowGoal
-            position: [1200, 0]
+            position: [1300, 0]
           - id: ClearPlayer
             type: VariableSet
             properties:
               variable_name: CachedPlayerCharacter
-            position: [1400, 0]
+            position: [1500, 0]
           # NOTE: PATCH-C tag removal removed - GetPawn/RemoveLooseGameplayTag are C++ inline (not UFUNCTION)
           - id: PrintAggressive
             type: PrintString
             properties:
               message: "GoalGenerator_RandomAggression: BECAME PERMANENTLY AGGRESSIVE"
-            position: [1600, 0]
+            position: [1700, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [ClearTalkTimer, Exec]
@@ -14361,7 +14408,12 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             to: [ClearDurationTimer, Exec]
           - from: [GetDurationTimer, FollowDurationTimerHandle]
             to: [ClearDurationTimer, Handle]
+          # v7.8.27: Clear health check timer
           - from: [ClearDurationTimer, Then]
+            to: [ClearHealthTimer, Exec]
+          - from: [GetHealthTimer, HealthCheckTimerHandle]
+            to: [ClearHealthTimer, Handle]
+          - from: [ClearHealthTimer, Then]
             to: [SetNotFollowing, Exec]
           - from: [SetNotFollowing, Then]
             to: [ClearFollowGoal, Exec]
@@ -14478,22 +14530,23 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             class: NarrativeNPCCharacter
           position: [3000, 100]
         # Construct Goal_FollowCharacter (Guide 18.1)
+        # v7.8.26: Use full Narrative Pro Blueprint path
         - id: ConstructFollowGoal
           type: ConstructObjectFromClass
           properties:
-            class: NPCGoalItem
-            class_variable: Goal_FollowCharacter
+            class: /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/Goal_FollowCharacter.Goal_FollowCharacter_C
           position: [3000, 0]
         - id: CastToFollowGoal
           type: DynamicCast
           properties:
-            target_class: Goal_FollowCharacter
+            target_class: /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/Goal_FollowCharacter.Goal_FollowCharacter_C
           position: [3200, 0]
         # Configure goal - set TargetToFollow (Guide 18.2.1)
         - id: SetTargetToFollow
           type: PropertySet
           properties:
             property_name: TargetToFollow
+            target_class: /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/Goal_FollowCharacter.Goal_FollowCharacter_C
           position: [3400, 0]
         # Store goal reference (Guide 18.3)
         - id: StoreFollowGoal
@@ -14521,26 +14574,43 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             function: PlayTaggedDialogue
             class: NarrativeNPCCharacter
           position: [4000, 0]
-        # Get player's ASC for delegate binding (Guide 22.1)
-        - id: GetPlayerASC
-          type: CallFunction
-          properties:
-            function: GetAbilitySystemComponent
-            class: AbilitySystemBlueprintLibrary
-          position: [4200, 0]
-        - id: CastToNarrativeASC
+        # v7.8.27: Health polling replaces OnDamagedBy delegate (per Delegate_Binding_History_FINAL.md)
+        # Get initial player health and start health check timer
+        - id: CastPlayerToNarrativeChar
           type: DynamicCast
           properties:
-            target_class: NarrativeAbilitySystemComponent
-          position: [4400, 0]
-        # Bind OnDamagedBy delegate (Guide 22.1 - Contract 18 R-DELEGATE-1)
-        - id: BindOnDamagedBy
-          type: AddDelegate
+            target_class: NarrativeCharacter
+          position: [4200, 0]
+        - id: GetInitialHealth
+          type: CallFunction
           properties:
-            delegate_name: OnDamagedBy
-            event_name: OnPlayerDamaged
-            source_class: NarrativeAbilitySystemComponent
+            function: GetHealth
+            class: NarrativeCharacter
+          position: [4400, 0]
+        - id: StoreInitialHealth
+          type: VariableSet
+          properties:
+            variable_name: LastPlayerHealth
+          position: [4500, 0]
+        - id: GetHealthCheckInterval
+          type: VariableGet
+          properties:
+            variable_name: HealthCheckInterval
+          position: [4600, 100]
+        - id: SetTimerHealthCheck
+          type: CallFunction
+          properties:
+            function: K2_SetTimer
+            class: KismetSystemLibrary
+            target_self: true
+            param.FunctionName: "OnHealthCheckTimer"
+            param.bLooping: true
           position: [4600, 0]
+        - id: StoreHealthCheckHandle
+          type: VariableSet
+          properties:
+            variable_name: HealthCheckTimerHandle
+          position: [4700, 0]
         # Start TalkCheckTimer (Guide 23)
         - id: GetTalkInterval
           type: VariableGet
@@ -14746,129 +14816,200 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             target_self: true
           position: [2200, 1000]
         # ─────────────────────────────────────────────────────────────
-        # OnPlayerDamaged - AUDIT PATCH-B: Correct delegate signature
+        # OnHealthCheckTimer - v7.8.27: Health polling (replaces OnDamagedBy delegate)
+        # Per Delegate_Binding_History_FINAL.md: OnDamagedBy has const FGameplayEffectSpec& = DO NOT USE
+        # Pattern from Support_Buffer_Healer_NPC_Implementation_Guide_v1_4.md Phase 4.3.9
         # ─────────────────────────────────────────────────────────────
-        - id: Event_OnPlayerDamaged
+        - id: Event_OnHealthCheckTimer
           type: CustomEvent
           properties:
-            event_name: OnPlayerDamaged
-            parameters:
-              - name: DamagerCauserASC
-                type: NarrativeAbilitySystemComponent
-              - name: Damage
-                type: Float
-              - name: Spec
-                type: GameplayEffectSpec
+            event_name: OnHealthCheckTimer
           position: [0, 1500]
+        # Get cached player and check health change
+        - id: GetCachedPlayer_Health
+          type: VariableGet
+          properties:
+            variable_name: CachedPlayerCharacter
+          position: [150, 1500]
+        - id: IsPlayerValid_Health
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [300, 1500]
+        - id: BranchPlayerValid_Health
+          type: Branch
+          position: [450, 1500]
+        # Cast to NarrativeCharacter for GetHealth (per Support Buffer guide 4.3.9)
+        - id: CastPlayerToNarChar
+          type: DynamicCast
+          properties:
+            target_class: NarrativeCharacter
+          position: [600, 1500]
+        - id: GetCurrentHealth
+          type: CallFunction
+          properties:
+            function: GetHealth
+            class: NarrativeCharacter
+          position: [750, 1500]
+        - id: GetLastHealth
+          type: VariableGet
+          properties:
+            variable_name: LastPlayerHealth
+          position: [900, 1600]
+        # Check if health decreased (damage detected)
+        - id: HealthDecreased
+          type: CallFunction
+          properties:
+            function: Less_DoubleDouble
+            class: KismetMathLibrary
+          position: [900, 1500]
+        - id: BranchHealthDecreased
+          type: Branch
+          position: [1050, 1500]
+        # Update LastPlayerHealth for next check
+        - id: UpdateLastHealth
+          type: VariableSet
+          properties:
+            variable_name: LastPlayerHealth
+          position: [1200, 1500]
+        # Check if following (only defend if following)
         - id: GetIsFollowingDef
           type: VariableGet
           properties:
             variable_name: bIsFollowing
-          position: [200, 1500]
+          position: [1350, 1500]
         - id: BranchFollowingDef
           type: Branch
-          position: [400, 1500]
+          position: [1500, 1500]
         - id: GetIsDefendingDef
           type: VariableGet
           properties:
             variable_name: bIsDefending
-          position: [600, 1500]
+          position: [1650, 1500]
         - id: NotDefendingDef
           type: CallFunction
           properties:
             function: Not_PreBool
             class: KismetMathLibrary
-          position: [800, 1500]
+          position: [1800, 1500]
         - id: BranchNotDefendingDef
           type: Branch
-          position: [1000, 1500]
-        # Get attacker actor from DamagerCauserASC using GetOwner
-        # The ASC owner is the actor that dealt the damage (the attacker)
-        - id: GetAttackerActor
+          position: [1950, 1500]
+        # Get perceived hostile actors via AIPerception (already bound in InitializeGoalGenerator)
+        # Use GetCurrentlyPerceivedActors from owner controller's perception component
+        - id: SelfRef_Def
+          type: Self
+          position: [2050, 1600]
+        - id: GetOwnerControllerDef
+          type: PropertyGet
+          properties:
+            property_name: OwnerController
+            target_class: NPCGoalGenerator
+          position: [2100, 1500]
+        - id: GetPerceptionCompDef
           type: CallFunction
           properties:
-            function: GetOwner
-            class: ActorComponent
-          position: [1200, 1500]
+            function: GetComponentByClass
+            class: Actor
+            param.ComponentClass: AIPerceptionComponent
+          position: [2250, 1500]
+        - id: CastToPerceptionDef
+          type: DynamicCast
+          properties:
+            target_class: AIPerceptionComponent
+          position: [2400, 1500]
+        - id: GetPerceivedActors
+          type: CallFunction
+          properties:
+            function: GetCurrentlyPerceivedActors
+            class: AIPerceptionComponent
+          position: [2550, 1500]
+        # Get first perceived actor as attacker
+        # v7.8.28: Skip array size check - rely on IsValid after GetArrayItem
+        # If array is empty, GetArrayItem(0) returns null which fails IsValid check
+        - id: GetFirstPerceived
+          type: GetArrayItem
+          position: [2700, 1500]
         # Cast to NarrativeCharacter for SetDefendTarget.TargetToAttack
         - id: CastToAttacker
           type: DynamicCast
           properties:
             target_class: NarrativeCharacter
-          position: [1300, 1600]
+          position: [3200, 1500]
         - id: IsAttackerValid
           type: CallFunction
           properties:
             function: IsValid
             class: KismetSystemLibrary
-          position: [1400, 1500]
+          position: [3350, 1500]
         - id: BranchAttackerValid
           type: Branch
-          position: [1600, 1500]
+          position: [3500, 1500]
         - id: CallGetDefendChance
           type: CallFunction
           properties:
             function: GetCurrentDefendChance
             target_self: true
-          position: [1800, 1500]
+          position: [3650, 1500]
         - id: RandomDefendRoll
           type: CallFunction
           properties:
             function: RandomFloat
             class: KismetMathLibrary
-          position: [2000, 1500]
+          position: [3800, 1500]
         - id: LessDefendChance
           type: CallFunction
           properties:
             function: Less_DoubleDouble
             class: KismetMathLibrary
-          position: [2200, 1500]
+          position: [3950, 1500]
         - id: BranchDefendRoll
           type: Branch
-          position: [2400, 1500]
+          position: [4100, 1500]
         - id: SetDefendingTrue
           type: VariableSet
           properties:
             variable_name: bIsDefending
             value: true
-          position: [2600, 1500]
+          position: [4250, 1500]
         # Create Goal_Attack for defending using SpawnObject
         - id: GetDefendGoalClass
           type: VariableGet
           properties:
             variable_name: DefendGoalClass
-          position: [2800, 1500]
+          position: [4400, 1500]
         - id: CreateDefendGoal
           type: CallFunction
           properties:
             function: SpawnObject
             class: GameplayStatics
-          position: [3000, 1500]
+          position: [4550, 1500]
         # Cast to Goal_Attack to set target
         - id: CastToDefendGoal
           type: DynamicCast
           properties:
             target_class: Goal_Attack
-          position: [3200, 1500]
+          position: [4700, 1500]
         # Set target on defend goal (attacker is the target to attack)
         - id: SetDefendTarget
           type: PropertySet
           properties:
             property_name: TargetToAttack
             target_class: Goal_Attack
-          position: [3400, 1500]
+          position: [4850, 1500]
         # Store defend goal reference
         - id: StoreDefendGoal
           type: VariableSet
           properties:
             variable_name: CurrentDefendGoal
-          position: [3600, 1500]
+          position: [5000, 1500]
         # Get activity component (OwnerActivityComponent is a BlueprintReadOnly property on NPCGoalGenerator)
         - id: GetActivityCompDef
           type: VariableGet
           properties:
             variable_name: OwnerActivityComponent
-          position: [3800, 1500]
+          position: [5150, 1500]
         # ─────────────────────────────────────────────────────────────
         # OnDefendGoalCompleted - v1.0.2 PATCH-E: Bound to OnGoalRemoved
         # IMPORTANT: CustomEvent MUST be defined BEFORE the binding node (v4.37)
@@ -14911,7 +15052,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             function: AddGoal
             class: NPCActivityComponent
             param.bTriggerReselect: true
-          position: [4000, 1500]
+          position: [5300, 1500]
         # v1.0.2 PATCH-E: Bind to OnGoalRemoved (NOT OnGoalSucceeded + OnGoalFailed)
         # OnGoalRemoved fires in ALL termination cases (success, failure, timeout, cleanup)
         - id: BindDefendGoalRemoved
@@ -15024,21 +15165,30 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [PlayStartDialogue, DialogueInstigator]
         - from: [AddFollowGoal, Then]
           to: [PlayStartDialogue, Exec]
+        # v7.8.27: Health polling connections (replaces OnDamagedBy delegate binding)
         - from: [CastToPlayer, AsNarrativePlayerCharacter]
-          to: [GetPlayerASC, Actor]
+          to: [CastPlayerToNarrativeChar, Object]
         - from: [PlayStartDialogue, Then]
-          to: [GetPlayerASC, Exec]
-        - from: [GetPlayerASC, ReturnValue]
-          to: [CastToNarrativeASC, Object]
-        - from: [GetPlayerASC, Then]
-          to: [CastToNarrativeASC, Exec]
-        - from: [CastToNarrativeASC, AsNarrativeAbilitySystemComponent]
-          to: [BindOnDamagedBy, Target]
-        - from: [CastToNarrativeASC, Then]
-          to: [BindOnDamagedBy, Exec]
+          to: [CastPlayerToNarrativeChar, Exec]
+        - from: [CastPlayerToNarrativeChar, AsNarrativeCharacter]
+          to: [GetInitialHealth, Target]
+        - from: [CastPlayerToNarrativeChar, Then]
+          to: [GetInitialHealth, Exec]
+        - from: [GetInitialHealth, ReturnValue]
+          to: [StoreInitialHealth, LastPlayerHealth]
+        - from: [GetInitialHealth, Then]
+          to: [StoreInitialHealth, Exec]
+        - from: [GetHealthCheckInterval, HealthCheckInterval]
+          to: [SetTimerHealthCheck, Time]
+        - from: [StoreInitialHealth, Then]
+          to: [SetTimerHealthCheck, Exec]
+        - from: [SetTimerHealthCheck, ReturnValue]
+          to: [StoreHealthCheckHandle, HealthCheckTimerHandle]
+        - from: [SetTimerHealthCheck, Then]
+          to: [StoreHealthCheckHandle, Exec]
         - from: [GetTalkInterval, TalkCheckInterval]
           to: [SetTimerTalk, Time]
-        - from: [BindOnDamagedBy, Then]
+        - from: [StoreHealthCheckHandle, Then]
           to: [SetTimerTalk, Exec]
         - from: [SetTimerTalk, ReturnValue]
           to: [StoreTalkHandle, TalkCheckTimerHandle]
@@ -15122,8 +15272,37 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [PrintAttackDecided, Exec]
         - from: [PrintAttackDecided, Then]
           to: [CallBecomeAggressive, Exec]
-        # OnPlayerDamaged connections
-        - from: [Event_OnPlayerDamaged, Then]
+        # OnHealthCheckTimer connections - v7.8.27 (replaces OnPlayerDamaged per Delegate_Binding_History_FINAL.md)
+        - from: [Event_OnHealthCheckTimer, Then]
+          to: [IsPlayerValid_Health, Exec]
+        - from: [GetCachedPlayer_Health, CachedPlayerCharacter]
+          to: [IsPlayerValid_Health, Object]
+        - from: [IsPlayerValid_Health, ReturnValue]
+          to: [BranchPlayerValid_Health, Condition]
+        - from: [IsPlayerValid_Health, Then]
+          to: [BranchPlayerValid_Health, Exec]
+        - from: [BranchPlayerValid_Health, True]
+          to: [CastPlayerToNarChar, Exec]
+        - from: [GetCachedPlayer_Health, CachedPlayerCharacter]
+          to: [CastPlayerToNarChar, Object]
+        - from: [CastPlayerToNarChar, AsNarrativeCharacter]
+          to: [GetCurrentHealth, Target]
+        - from: [CastPlayerToNarChar, Then]
+          to: [GetCurrentHealth, Exec]
+        - from: [GetCurrentHealth, ReturnValue]
+          to: [HealthDecreased, A]
+        - from: [GetLastHealth, LastPlayerHealth]
+          to: [HealthDecreased, B]
+        - from: [HealthDecreased, ReturnValue]
+          to: [BranchHealthDecreased, Condition]
+        - from: [GetCurrentHealth, Then]
+          to: [BranchHealthDecreased, Exec]
+        # Always update LastPlayerHealth after check
+        - from: [BranchHealthDecreased, True]
+          to: [UpdateLastHealth, Exec]
+        - from: [GetCurrentHealth, ReturnValue]
+          to: [UpdateLastHealth, LastPlayerHealth]
+        - from: [UpdateLastHealth, Then]
           to: [BranchFollowingDef, Exec]
         - from: [GetIsFollowingDef, bIsFollowing]
           to: [BranchFollowingDef, Condition]
@@ -15134,12 +15313,34 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         - from: [NotDefendingDef, ReturnValue]
           to: [BranchNotDefendingDef, Condition]
         - from: [BranchNotDefendingDef, True]
-          to: [GetAttackerActor, Exec]
-        - from: [Event_OnPlayerDamaged, DamagerCauserASC]
-          to: [GetAttackerActor, Target]
-        - from: [GetAttackerActor, ReturnValue]
+          to: [GetOwnerControllerDef, Exec]
+        # Self reference for PropertyGet
+        - from: [SelfRef_Def, Self]
+          to: [GetOwnerControllerDef, self]
+        # Get perceived actors for attacker detection
+        - from: [GetOwnerControllerDef, OwnerController]
+          to: [GetPerceptionCompDef, Target]
+        - from: [GetOwnerControllerDef, Then]
+          to: [GetPerceptionCompDef, Exec]
+        - from: [GetPerceptionCompDef, ReturnValue]
+          to: [CastToPerceptionDef, Object]
+        - from: [GetPerceptionCompDef, Then]
+          to: [CastToPerceptionDef, Exec]
+        - from: [CastToPerceptionDef, AsAIPerceptionComponent]
+          to: [GetPerceivedActors, Target]
+        - from: [CastToPerceptionDef, Then]
+          to: [GetPerceivedActors, Exec]
+        # v7.8.28: Skip array size check - GetFirstPerceived returns null for empty array
+        # which fails the downstream IsValid check
+        - from: [GetPerceivedActors, OutActors]
+          to: [GetFirstPerceived, Array]
+        - from: [GetPerceivedActors, Then]
+          to: [CastToAttacker, Exec]
+        - from: [GetFirstPerceived, Output]
+          to: [CastToAttacker, Object]
+        - from: [CastToAttacker, AsNarrativeCharacter]
           to: [IsAttackerValid, Object]
-        - from: [GetAttackerActor, Then]
+        - from: [CastToAttacker, Then]
           to: [BranchAttackerValid, Exec]
         - from: [IsAttackerValid, ReturnValue]
           to: [BranchAttackerValid, Condition]
@@ -15168,14 +15369,10 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [CastToDefendGoal, Exec]
         - from: [CastToDefendGoal, AsGoal_Attack]
           to: [SetDefendTarget, Target]
-        # Cast attacker to NarrativeCharacter before passing to SetDefendTarget
-        - from: [GetAttackerActor, ReturnValue]
-          to: [CastToAttacker, Object]
+        # v7.8.27: Attacker from perceived actors (CastToAttacker already has NarrativeCharacter)
         - from: [CastToAttacker, AsNarrativeCharacter]
           to: [SetDefendTarget, TargetToAttack]
         - from: [CastToDefendGoal, Then]
-          to: [CastToAttacker, Exec]
-        - from: [CastToAttacker, Then]
           to: [SetDefendTarget, Exec]
         - from: [SetDefendTarget, Then]
           to: [StoreDefendGoal, Exec]
