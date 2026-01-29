@@ -859,6 +859,13 @@ private:
 		UBlueprint* Blueprint,
 		TMap<FString, UK2Node*>& OutNodeMap);
 
+	// v7.8.40: FindCharacterFromSubsystem - look up character by CharacterDefinition via NarrativeCharacterSubsystem
+	static UK2Node* CreateFindCharacterFromSubsystemNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef,
+		UBlueprint* Blueprint,
+		TMap<FString, UK2Node*>& OutNodeMap);
+
 	// v2.7.0: BreakStruct - break a struct into individual member pins
 	static UK2Node* CreateBreakStructNode(
 		UEdGraph* Graph,

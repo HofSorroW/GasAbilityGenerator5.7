@@ -1845,7 +1845,8 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 		for (const FString& NameVariant : ClassNameVariants)
 		{
 			FString FullPath = ModulePath + NameVariant;
-			UClass* FoundClass = FindObject<UClass>(nullptr, *FullPath);
+			// v7.8.39: Use StaticLoadClass to load unloaded native classes (fixes NarrativeCharacterSubsystem DynamicCast)
+			UClass* FoundClass = StaticLoadClass(UObject::StaticClass(), nullptr, *FullPath, nullptr, LOAD_None, nullptr);
 			if (FoundClass)
 			{
 				return FoundClass;
@@ -3609,6 +3610,41 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 					FString::Printf(TEXT("Failed to generate function override '%s'"), *OverrideDef.FunctionName));
 			}
 		}
+
+		// v7.8.40: Compile after function overrides to stabilize nodes before final compile
+		// This prevents connections from being lost during node reconstruction
+		FCompilerResultsLog FuncOverrideCompileLog;
+		LogGeneration(TEXT("  [COMPILE] Post-function-override compile to stabilize nodes..."));
+		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &FuncOverrideCompileLog);
+
+		if (FuncOverrideCompileLog.NumErrors > 0)
+		{
+			TArray<FString> ErrorMessages;
+			for (const TSharedRef<FTokenizedMessage>& Msg : FuncOverrideCompileLog.Messages)
+			{
+				if (Msg->GetSeverity() == EMessageSeverity::Error)
+				{
+					ErrorMessages.Add(Msg->ToText().ToString());
+				}
+			}
+
+			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Function override compile failed with %d errors: %s"),
+				*Definition.Name, FuncOverrideCompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+			LogGeneration(FString::Printf(TEXT("  COMPILE FAILED with %d errors:"), FuncOverrideCompileLog.NumErrors));
+			for (const FString& Err : ErrorMessages)
+			{
+				LogGeneration(FString::Printf(TEXT("    - %s"), *Err));
+			}
+
+			Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+				FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+			Result.AssetPath = AssetPath;
+			Result.GeneratorId = TEXT("ActorBlueprint");
+			Result.DetermineCategory();
+			return Result;
+		}
+		LogGeneration(TEXT("  [COMPILE] Post-function-override compile successful"));
 	}
 
 	// v4.33: Generate delegate bindings for actor blueprints (External ASC Binding pattern)
@@ -10266,6 +10302,11 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		{
 			CreatedNode = CreateSpawnNPCNode(EventGraph, NodeDef, Blueprint, NodeMap);
 		}
+		// v7.8.40: FindCharacterFromSubsystem - looks up character by CharacterDefinition via subsystem
+		else if (NodeDef.Type.Equals(TEXT("FindCharacterFromSubsystem"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateFindCharacterFromSubsystemNode(EventGraph, NodeDef, Blueprint, NodeMap);
+		}
 		// v2.4.2: PropertyGet - access properties on external objects (e.g., MaxWalkSpeed on CharacterMovementComponent)
 		else if (NodeDef.Type.Equals(TEXT("PropertyGet"), ESearchCase::IgnoreCase))
 		{
@@ -11281,6 +11322,11 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 		{
 			CreatedNode = CreateSpawnNPCNode(FunctionGraph, NodeDef, Blueprint, NodeMap);
 		}
+		// v7.8.40: FindCharacterFromSubsystem support for function overrides
+		else if (NodeDef.Type.Equals(TEXT("FindCharacterFromSubsystem"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateFindCharacterFromSubsystemNode(FunctionGraph, NodeDef, Blueprint, NodeMap);
+		}
 		// v7.8.14: ConstructObjectFromClass for function overrides (goal creation)
 		else if (NodeDef.Type.Equals(TEXT("ConstructObjectFromClass"), ESearchCase::IgnoreCase))
 		{
@@ -11291,20 +11337,73 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 		{
 			CreatedNode = CreatePropertyGetNode(FunctionGraph, NodeDef, Blueprint);
 		}
-		// v7.8.15: Return/FunctionResult node type - already created, retrieve from map
+		// v7.8.15: Return/FunctionResult node type
+		// v7.8.38: Support multiple Return nodes - each one terminates its execution path
 		else if (NodeDef.Type.Equals(TEXT("Return"), ESearchCase::IgnoreCase) ||
 		         NodeDef.Type.Equals(TEXT("FunctionResult"), ESearchCase::IgnoreCase))
 		{
-			// Return node was created earlier if function has return type
-			CreatedNode = Cast<UK2Node>(NodeMap.FindRef(TEXT("Return")));
-			if (!CreatedNode)
+			// Check if this node ID is already in the map (reusing the first Return node)
+			UK2Node* ExistingNode = Cast<UK2Node>(NodeMap.FindRef(NodeDef.Id));
+			if (ExistingNode)
 			{
-				LogGeneration(FString::Printf(TEXT("  Return node not in NodeMap - function '%s' may not have return type"),
-					*OverrideDefinition.FunctionName));
-				// Not necessarily an error - continue without failing
-				continue;
+				CreatedNode = ExistingNode;
+				LogGeneration(FString::Printf(TEXT("  Using existing Return node for '%s'"), *NodeDef.Id));
 			}
-			LogGeneration(FString::Printf(TEXT("  Using pre-created Return node for '%s'"), *NodeDef.Id));
+			else
+			{
+				// First Return node uses the pre-created FunctionResult
+				UK2Node* FirstReturnNode = Cast<UK2Node>(NodeMap.FindRef(TEXT("Return")));
+
+				// Check if this is the first Return or an additional one
+				bool bIsFirstReturn = false;
+				for (const auto& Pair : NodeMap)
+				{
+					if (Pair.Value == FirstReturnNode && Pair.Key != TEXT("Return") && Pair.Key != TEXT("FunctionResult"))
+					{
+						bIsFirstReturn = false; // A Return node with a manifest ID already exists
+						break;
+					}
+				}
+
+				// Count how many Return nodes are already mapped to check if this is truly the first
+				int32 ReturnNodeCount = 0;
+				for (const auto& Pair : NodeMap)
+				{
+					if (Cast<UK2Node_FunctionResult>(Pair.Value))
+					{
+						ReturnNodeCount++;
+					}
+				}
+				// "Return" and "FunctionResult" aliases count as 1, so first manifest Return makes it 3
+				bIsFirstReturn = (ReturnNodeCount <= 2);
+
+				if (bIsFirstReturn && FirstReturnNode)
+				{
+					CreatedNode = FirstReturnNode;
+					LogGeneration(FString::Printf(TEXT("  Using pre-created Return node for '%s'"), *NodeDef.Id));
+				}
+				else if (ReturnProp)
+				{
+					// Create additional Return node for multi-path returns
+					// v7.8.38: Multiple Return nodes are valid - each terminates its execution path
+					FGraphNodeCreator<UK2Node_FunctionResult> NewResultNodeCreator(*FunctionGraph);
+					UK2Node_FunctionResult* NewResultNode = NewResultNodeCreator.CreateNode();
+					NewResultNode->FunctionReference.SetExternalMember(FunctionName, ParentClass);
+					NewResultNode->NodePosX = 800;  // Offset from first Return node
+					NewResultNode->NodePosY = 200;
+					NewResultNodeCreator.Finalize();
+					NewResultNode->AllocateDefaultPins();
+
+					CreatedNode = NewResultNode;
+					LogGeneration(FString::Printf(TEXT("  Created additional Return node for '%s' (multi-path return)"), *NodeDef.Id));
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  Return node requested but function '%s' has no return type"),
+						*OverrideDefinition.FunctionName));
+					continue;
+				}
+			}
 		}
 		// v7.8.19: AddDelegate/BindDelegate node type for delegate binding in function overrides
 		// Per LOCKED RULE 7: Generator serves the design - add support for required pattern
@@ -11582,19 +11681,70 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 		{
 			CreatedNode = CreatePropertyGetNode(FunctionGraph, NodeDef, Blueprint);
 		}
-		// v4.35: Handle Return/FunctionResult node type - already created, just retrieve from map
+		// v4.35: Handle Return/FunctionResult node type
+		// v7.8.38: Support multiple Return nodes - each terminates its execution path
 		else if (NodeDef.Type.Equals(TEXT("Return"), ESearchCase::IgnoreCase) ||
 		         NodeDef.Type.Equals(TEXT("FunctionResult"), ESearchCase::IgnoreCase))
 		{
-			// Return node is already created as FunctionResult, retrieve it from map
-			CreatedNode = Cast<UK2Node>(NodeMap.FindRef(TEXT("Return")));
-			if (!CreatedNode)
+			// Check if this node ID is already in the map
+			UK2Node* ExistingNode = Cast<UK2Node>(NodeMap.FindRef(NodeDef.Id));
+			if (ExistingNode)
 			{
-				LogGeneration(FString::Printf(TEXT("  Return node not in NodeMap - function may not have return type")));
-				// Not an error if function has no return type
-				continue;
+				CreatedNode = ExistingNode;
+				LogGeneration(FString::Printf(TEXT("  Using existing Return node for '%s'"), *NodeDef.Id));
 			}
-			LogGeneration(FString::Printf(TEXT("  Using pre-created Return node for '%s'"), *NodeDef.Id));
+			else
+			{
+				UK2Node* FirstReturnNode = Cast<UK2Node>(NodeMap.FindRef(TEXT("Return")));
+
+				// Count how many Return nodes are already mapped
+				int32 ReturnNodeCount = 0;
+				for (const auto& Pair : NodeMap)
+				{
+					if (Cast<UK2Node_FunctionResult>(Pair.Value))
+					{
+						ReturnNodeCount++;
+					}
+				}
+				// "Return" and "FunctionResult" aliases count as 1, so first manifest Return makes it 3
+				bool bIsFirstReturn = (ReturnNodeCount <= 2);
+
+				if (bIsFirstReturn && FirstReturnNode)
+				{
+					CreatedNode = FirstReturnNode;
+					LogGeneration(FString::Printf(TEXT("  Using pre-created Return node for '%s'"), *NodeDef.Id));
+				}
+				else if (ResultNode)
+				{
+					// Create additional Return node for multi-path returns
+					// v7.8.38: Multiple Return nodes are valid - each terminates its execution path
+					UK2Node_FunctionResult* NewResultNode = NewObject<UK2Node_FunctionResult>(FunctionGraph);
+					FunctionGraph->AddNode(NewResultNode, false, false);
+					NewResultNode->CreateNewGuid();
+					NewResultNode->PostPlacedNewNode();
+					NewResultNode->NodePosX = 800;
+					NewResultNode->NodePosY = 200;
+
+					// Copy output pins from the original ResultNode
+					for (const TSharedPtr<FUserPinInfo>& PinInfo : ResultNode->UserDefinedPins)
+					{
+						TSharedPtr<FUserPinInfo> NewPinInfo = MakeShareable(new FUserPinInfo());
+						NewPinInfo->PinName = PinInfo->PinName;
+						NewPinInfo->PinType = PinInfo->PinType;
+						NewPinInfo->DesiredPinDirection = PinInfo->DesiredPinDirection;
+						NewResultNode->UserDefinedPins.Add(NewPinInfo);
+					}
+					NewResultNode->ReconstructNode();
+
+					CreatedNode = NewResultNode;
+					LogGeneration(FString::Printf(TEXT("  Created additional Return node for '%s' (multi-path return)"), *NodeDef.Id));
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  Return node requested but function has no return type")));
+					continue;
+				}
+			}
 		}
 		else
 		{
@@ -13823,6 +13973,9 @@ UK2Node* FEventGraphGenerator::CreateDynamicCastNode(
 	if (TargetClass)
 	{
 		CastNode->TargetType = TargetClass;
+		// v7.8.39: Log successful class resolution for debugging
+		LogGeneration(FString::Printf(TEXT("  DynamicCast '%s' target class resolved: %s"),
+			*NodeDef.Id, *TargetClass->GetName()));
 	}
 	else
 	{
@@ -13841,6 +13994,15 @@ UK2Node* FEventGraphGenerator::CreateDynamicCastNode(
 	CastNode->CreateNewGuid();
 	CastNode->PostPlacedNewNode();
 	CastNode->AllocateDefaultPins();
+
+	// v7.8.39: Log available pins for debugging
+	FString PinNames;
+	for (UEdGraphPin* Pin : CastNode->Pins)
+	{
+		if (Pin) PinNames += FString::Printf(TEXT("%s[%s], "), *Pin->PinName.ToString(),
+			Pin->Direction == EGPD_Input ? TEXT("in") : TEXT("out"));
+	}
+	LogGeneration(FString::Printf(TEXT("  DynamicCast '%s' pins: %s"), *NodeDef.Id, *PinNames));
 
 	return CastNode;
 }
@@ -14356,6 +14518,170 @@ UK2Node* FEventGraphGenerator::CreateSpawnNPCNode(
 	return SpawnNPCNode;
 }
 
+// v7.8.40: Create FindCharacterFromSubsystem node using NarrativeCharacterSubsystem
+// This creates: GetSubsystem() -> Cast<NarrativeCharacterSubsystem> -> FindCharacter(CharacterDefinition)
+// Properties:
+//   - character_definition_variable: Name of a variable holding CharacterDefinition*
+// Returns the FindCharacter call node for external connections
+// v7.8.41: Added DynamicCast between GetSubsystem and FindCharacter because GetWorldSubsystem
+// returns UWorldSubsystem* but FindCharacter needs NarrativeCharacterSubsystem*
+UK2Node* FEventGraphGenerator::CreateFindCharacterFromSubsystemNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef,
+	UBlueprint* Blueprint,
+	TMap<FString, UK2Node*>& OutNodeMap)
+{
+	// Step 1: Create GetSubsystem node for UNarrativeCharacterSubsystem
+	UK2Node_CallFunction* GetSubsystemNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(GetSubsystemNode, false, false);
+
+	// Use USubsystemBlueprintLibrary::GetWorldSubsystem
+	UFunction* GetSubsystemFunc = FindObject<UFunction>(nullptr,
+		TEXT("/Script/Engine.SubsystemBlueprintLibrary:GetWorldSubsystem"));
+
+	if (GetSubsystemFunc)
+	{
+		GetSubsystemNode->SetFromFunction(GetSubsystemFunc);
+	}
+	else
+	{
+		// Fallback to setting function reference manually
+		UClass* SubsystemLibClass = FindObject<UClass>(nullptr,
+			TEXT("/Script/Engine.SubsystemBlueprintLibrary"));
+		if (SubsystemLibClass)
+		{
+			GetSubsystemNode->FunctionReference.SetExternalMember(
+				FName(TEXT("GetWorldSubsystem")), SubsystemLibClass);
+		}
+	}
+
+	GetSubsystemNode->CreateNewGuid();
+	GetSubsystemNode->PostPlacedNewNode();
+	GetSubsystemNode->AllocateDefaultPins();
+
+	// Set the Class parameter to NarrativeCharacterSubsystem
+	UClass* NarrativeCharSubsystemClass = FindObject<UClass>(nullptr,
+		TEXT("/Script/NarrativeArsenal.NarrativeCharacterSubsystem"));
+
+	if (NarrativeCharSubsystemClass)
+	{
+		UEdGraphPin* ClassPin = GetSubsystemNode->FindPin(FName(TEXT("Class")));
+		if (ClassPin)
+		{
+			ClassPin->DefaultObject = NarrativeCharSubsystemClass;
+		}
+	}
+
+	// Position GetSubsystem above the main node
+	GetSubsystemNode->NodePosX = NodeDef.bHasPosition ? (int32)NodeDef.PositionX - 300 : 0;
+	GetSubsystemNode->NodePosY = NodeDef.bHasPosition ? (int32)NodeDef.PositionY - 100 : 0;
+
+	// Add GetSubsystem to the node map with a unique ID
+	FString GetSubsystemNodeId = NodeDef.Id + TEXT("_GetSubsystem");
+	OutNodeMap.Add(GetSubsystemNodeId, GetSubsystemNode);
+
+	// Step 2: Create DynamicCast node to NarrativeCharacterSubsystem
+	// v7.8.41: Required because GetWorldSubsystem returns UWorldSubsystem* not NarrativeCharacterSubsystem*
+	// v7.8.42: Use pure cast (no exec pins) - may help connections survive compilation
+	UK2Node_DynamicCast* CastNode = NewObject<UK2Node_DynamicCast>(Graph);
+	Graph->AddNode(CastNode, false, false);
+
+	if (NarrativeCharSubsystemClass)
+	{
+		CastNode->TargetType = NarrativeCharSubsystemClass;
+	}
+
+	// v7.8.42: Set pure cast before allocating pins
+	CastNode->SetPurity(true);
+
+	CastNode->CreateNewGuid();
+	CastNode->PostPlacedNewNode();
+	CastNode->AllocateDefaultPins();
+
+	// Position Cast between GetSubsystem and FindCharacter
+	CastNode->NodePosX = NodeDef.bHasPosition ? (int32)NodeDef.PositionX - 150 : 100;
+	CastNode->NodePosY = NodeDef.bHasPosition ? (int32)NodeDef.PositionY - 50 : 0;
+
+	// Add Cast to the node map
+	FString CastNodeId = NodeDef.Id + TEXT("_Cast");
+	OutNodeMap.Add(CastNodeId, CastNode);
+
+	// Step 3: Create FindCharacter node
+	UK2Node_CallFunction* FindCharacterNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(FindCharacterNode, false, false);
+
+	if (NarrativeCharSubsystemClass)
+	{
+		UFunction* FindCharacterFunc = NarrativeCharSubsystemClass->FindFunctionByName(FName(TEXT("FindCharacter")));
+		if (FindCharacterFunc)
+		{
+			FindCharacterNode->SetFromFunction(FindCharacterFunc);
+		}
+		else
+		{
+			FindCharacterNode->FunctionReference.SetExternalMember(
+				FName(TEXT("FindCharacter")), NarrativeCharSubsystemClass);
+		}
+	}
+
+	FindCharacterNode->CreateNewGuid();
+	FindCharacterNode->PostPlacedNewNode();
+	FindCharacterNode->AllocateDefaultPins();
+
+	// Position at manifest position
+	if (NodeDef.bHasPosition)
+	{
+		FindCharacterNode->NodePosX = (int32)NodeDef.PositionX;
+		FindCharacterNode->NodePosY = (int32)NodeDef.PositionY;
+	}
+
+	// Step 4: Make internal connections using TryCreateConnection (NOT MakeLinkTo)
+	// v7.8.45: AUDIT FIX - TryCreateConnection triggers NotifyPinConnectionListChanged which is
+	// required for DynamicCast wildcard pin type resolution. MakeLinkTo skips these callbacks.
+	const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+
+	// Connect GetSubsystem.ReturnValue -> Cast.Object
+	UEdGraphPin* SubsystemReturnPin = GetSubsystemNode->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+	UEdGraphPin* CastObjectPin = CastNode->GetCastSourcePin();
+
+	if (SubsystemReturnPin && CastObjectPin)
+	{
+		bool bConnected = Schema->TryCreateConnection(SubsystemReturnPin, CastObjectPin);
+		LogGeneration(FString::Printf(TEXT("  FindCharacterFromSubsystem '%s': %s GetSubsystem.ReturnValue -> Cast.Object"),
+			*NodeDef.Id, bConnected ? TEXT("Connected") : TEXT("FAILED to connect")));
+	}
+
+	// Connect Cast.As<NarrativeCharacterSubsystem> -> FindCharacter.Target (self)
+	UEdGraphPin* CastResultPin = CastNode->GetCastResultPin();
+	UEdGraphPin* FindCharSelfPin = FindCharacterNode->FindPin(UEdGraphSchema_K2::PN_Self);
+
+	if (CastResultPin && FindCharSelfPin)
+	{
+		bool bConnected = Schema->TryCreateConnection(CastResultPin, FindCharSelfPin);
+		LogGeneration(FString::Printf(TEXT("  FindCharacterFromSubsystem '%s': %s Cast.As -> FindCharacter.self"),
+			*NodeDef.Id, bConnected ? TEXT("Connected") : TEXT("FAILED to connect")));
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("  FindCharacterFromSubsystem '%s': WARNING - Could not find Cast -> FindCharacter pins"),
+			*NodeDef.Id));
+	}
+
+	// Log the node creation
+	const FString* CharDefVar = NodeDef.Properties.Find(TEXT("character_definition_variable"));
+	if (CharDefVar && !CharDefVar->IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("  FindCharacterFromSubsystem node '%s' will use CharacterDefinition from variable '%s'"),
+			*NodeDef.Id, **CharDefVar));
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Created FindCharacterFromSubsystem composite node '%s' (GetSubsystem -> Cast -> FindCharacter)"),
+		*NodeDef.Id));
+
+	// Return the FindCharacter node - this is the node that external connections will use
+	return FindCharacterNode;
+}
+
 EConnectResult FEventGraphGenerator::ConnectPins(
 	const TMap<FString, UK2Node*>& NodeMap,
 	const FManifestGraphConnectionDefinition& Connection)
@@ -14805,6 +15131,64 @@ UEdGraphPin* FEventGraphGenerator::FindPinByName(
 		}
 	}
 
+	// v7.8.40: DynamicCast output matching BEFORE partial matching
+	// This prevents "CastFailed" from matching "As" via substring (C-as-tFailed contains "as")
+	// UE generates cast output pins as "As {ClassName}" with spaces for readability
+	// Manifest may use "AsClassName" without spaces - need fuzzy matching
+	bool bIsCastOutputRequest = PinName.Equals(TEXT("As"), ESearchCase::IgnoreCase) ||
+	    PinName.Equals(TEXT("AsOutput"), ESearchCase::IgnoreCase) ||
+	    PinName.StartsWith(TEXT("As "), ESearchCase::IgnoreCase) ||
+	    PinName.StartsWith(TEXT("AsBP"), ESearchCase::IgnoreCase) ||
+	    (PinName.Len() > 2 && PinName.StartsWith(TEXT("As"), ESearchCase::IgnoreCase) &&
+	     FChar::IsUpper(PinName[2]));
+
+	if (bIsCastOutputRequest)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[FindPinByName] Cast output request: '%s' Direction=%d"), *PinName, (int32)Direction);
+
+		FString NormalizedRequest = PinName;
+		NormalizedRequest.ReplaceInline(TEXT(" "), TEXT(""));
+		NormalizedRequest.ReplaceInline(TEXT("_"), TEXT(""));
+		NormalizedRequest = NormalizedRequest.ToLower();
+
+		for (UEdGraphPin* Pin : Node->Pins)
+		{
+			if (Pin && Pin->Direction == Direction &&
+			    Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
+			{
+				FString PinNameStr = Pin->PinName.ToString();
+
+				// Check if this looks like a cast output pin (starts with "As")
+				if (PinNameStr.StartsWith(TEXT("As"), ESearchCase::IgnoreCase))
+				{
+					FString NormalizedActual = PinNameStr;
+					NormalizedActual.ReplaceInline(TEXT(" "), TEXT(""));
+					NormalizedActual.ReplaceInline(TEXT("_"), TEXT(""));
+					NormalizedActual = NormalizedActual.ToLower();
+
+					UE_LOG(LogTemp, Display, TEXT("[FindPinByName] As* pin found: '%s' Normalized='%s' Request='%s'"),
+						*PinNameStr, *NormalizedActual, *NormalizedRequest);
+
+					// Exact match after normalization
+					if (NormalizedRequest == NormalizedActual)
+					{
+						UE_LOG(LogTemp, Display, TEXT("[FindPinByName] Exact match! Returning '%s'"), *PinNameStr);
+						return Pin;
+					}
+
+					// Fallback: If request is just "As", return first cast output
+					if (PinName.Equals(TEXT("As"), ESearchCase::IgnoreCase) ||
+					    PinName.Equals(TEXT("AsOutput"), ESearchCase::IgnoreCase))
+					{
+						UE_LOG(LogTemp, Display, TEXT("[FindPinByName] Generic 'As' fallback! Returning '%s'"), *PinNameStr);
+						return Pin;
+					}
+				}
+			}
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[FindPinByName] Cast output NOT found for '%s'"), *PinName);
+	}
+
 	// Second pass: try partial/contains matching
 	for (const FString& SearchName : SearchNames)
 	{
@@ -14823,61 +15207,8 @@ UEdGraphPin* FEventGraphGenerator::FindPinByName(
 		}
 	}
 
-	// Third pass: DynamicCast output - v6.9: Improved As* pattern matching
-	// UE generates cast output pins as "As {ClassName}" with spaces for readability
-	// Manifest may use "AsClassName" without spaces - need fuzzy matching
-	// Examples: Manifest "AsNPCActivityComponent" matches UE pin "AsNPCActivity Component"
-	//           Manifest "AsGoal_Attack" matches UE pin "AsGoal Attack"
-	bool bIsCastOutputRequest = PinName.Equals(TEXT("As"), ESearchCase::IgnoreCase) ||
-	    PinName.Equals(TEXT("AsOutput"), ESearchCase::IgnoreCase) ||
-	    PinName.StartsWith(TEXT("As "), ESearchCase::IgnoreCase) ||
-	    PinName.StartsWith(TEXT("AsBP"), ESearchCase::IgnoreCase) ||
-	    // v6.9: Accept any "As" followed by uppercase letter (e.g., AsNPCActivityComponent, AsGoal_Attack)
-	    (PinName.Len() > 2 && PinName.StartsWith(TEXT("As"), ESearchCase::IgnoreCase) &&
-	     FChar::IsUpper(PinName[2]));
-
-	if (bIsCastOutputRequest)
-	{
-		// v6.9: Normalize the requested name by removing spaces and underscores for comparison
-		FString NormalizedRequest = PinName;
-		NormalizedRequest.ReplaceInline(TEXT(" "), TEXT(""));
-		NormalizedRequest.ReplaceInline(TEXT("_"), TEXT(""));
-		NormalizedRequest = NormalizedRequest.ToLower();
-
-		for (UEdGraphPin* Pin : Node->Pins)
-		{
-			if (Pin && Pin->Direction == Direction &&
-			    Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
-			{
-				FString PinNameStr = Pin->PinName.ToString();
-
-				// Check if this looks like a cast output pin
-				if (PinNameStr.StartsWith(TEXT("As"), ESearchCase::IgnoreCase))
-				{
-					// v6.9: Normalize actual pin name for comparison
-					FString NormalizedActual = PinNameStr;
-					NormalizedActual.ReplaceInline(TEXT(" "), TEXT(""));
-					NormalizedActual.ReplaceInline(TEXT("_"), TEXT(""));
-					NormalizedActual = NormalizedActual.ToLower();
-
-					// Exact match after normalization
-					if (NormalizedRequest == NormalizedActual)
-					{
-						return Pin;
-					}
-
-					// Fallback: If request is just "As", return first cast output
-					if (PinName.Equals(TEXT("As"), ESearchCase::IgnoreCase) ||
-					    PinName.Equals(TEXT("AsOutput"), ESearchCase::IgnoreCase))
-					{
-						return Pin;
-					}
-				}
-			}
-		}
-	}
-
-	// Fourth pass: For input direction, if looking for first exec pin
+	// Third pass: For input direction, if looking for first exec pin
+	// NOTE: v7.8.40 - DynamicCast output matching moved BEFORE partial matching (above)
 	if (Direction == EGPD_Input &&
 	    (PinName.Equals(TEXT("Exec"), ESearchCase::IgnoreCase) ||
 	     PinName.Equals(TEXT("Execute"), ESearchCase::IgnoreCase)))

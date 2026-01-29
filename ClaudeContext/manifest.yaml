@@ -9957,6 +9957,10 @@ actor_blueprints:  # GUARD FORMATION ACTIVITIES
               property_name: BBKey_FollowTarget
               target_class: ArsenalSettings
             position: [250, -100]
+          # v7.8.39: Self reference for PropertyGet in function override
+          - id: SelfRef
+            type: Self
+            position: [50, 0]
           # v7.8.35: ActivityGoal is a PROPERTY on NPCActivity, not a function parameter
           - id: GetActivityGoal
             type: PropertyGet
@@ -10030,20 +10034,13 @@ actor_blueprints:  # GUARD FORMATION ACTIVITIES
               property_name: TargetToFollowAsset
               target_class: /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/Goal_FollowCharacter.Goal_FollowCharacter_C
             position: [1100, 200]
-          # Get NarrativeCharacterSubsystem
-          - id: GetCharSubsystem
-            type: CallFunction
-            properties:
-              function: GetNarrativeCharacterSubsystem
-              class: NarrativeCharacterSubsystem
-            position: [1100, 300]
-          # FindCharacter by CharacterDefinition
+          # v7.8.40: FindCharacterFromSubsystem composite node
+          # [ENGINE] NarrativeCharacterSubsystem::FindCharacter is BlueprintCallable (line 154-155)
+          # [MANIFEST] Uses same internal-connection pattern as SpawnNPC (connections survive compilation)
+          # Internally creates: GetWorldSubsystem<NarrativeCharacterSubsystem>() -> FindCharacter()
           - id: FindCharacter
-            type: CallFunction
-            properties:
-              function: FindCharacter
-              class: NarrativeCharacterSubsystem
-            position: [1300, 250]
+            type: FindCharacterFromSubsystem
+            position: [1200, 300]
           # v7.8.17: GetBBKeyFollow_Invalid removed - using P-BB-KEY-2 PropertyGet at top
           - id: SetFollowTarget_Invalid
             type: CallFunction
@@ -10086,6 +10083,9 @@ actor_blueprints:  # GUARD FORMATION ACTIVITIES
           # Entry -> Cast
           - from: [FunctionEntry, Then]
             to: [CastToFormationGoal, Exec]
+          # v7.8.39: Self -> ActivityGoal PropertyGet
+          - from: [SelfRef, self]
+            to: [GetActivityGoal, Target]
           # v7.8.35: ActivityGoal is accessed via PropertyGet, not function parameter
           - from: [GetActivityGoal, ActivityGoal]
             to: [CastToFormationGoal, Object]
@@ -10134,8 +10134,8 @@ actor_blueprints:  # GUARD FORMATION ACTIVITIES
           # Find character via subsystem
           - from: [SetFormationGoal, FormationGoal]
             to: [GetTargetAsset, Target]
-          - from: [GetCharSubsystem, ReturnValue]
-            to: [FindCharacter, Target]
+          # v7.8.40: FindCharacterFromSubsystem composite node handles GetSubsystem->FindCharacter internally
+          # Only need to provide CharacterDefinition input - Target/self connection is made during node creation
           - from: [GetTargetAsset, ReturnValue]
             to: [FindCharacter, CharacterDefinition]
           # Set FollowTarget from FindCharacter
@@ -10217,6 +10217,10 @@ actor_blueprints:  # GUARD FORMATION ACTIVITIES
               function: K2_GetActorLocation
               class: Actor
             position: [600, 0]
+          # v7.8.39: Self reference for PropertyGet in function override
+          - id: SelfRef
+            type: Self
+            position: [100, 150]
           # Get Owner Controller (Guide 5.2.1)
           # v7.8.37: Changed to PropertyGet - OwnerController is a property on NPCActivity
           - id: GetOwnerController
@@ -10304,7 +10308,9 @@ actor_blueprints:  # GUARD FORMATION ACTIVITIES
             to: [GetTargetActor, Target]
           - from: [GetTargetActor, ReturnValue]
             to: [GetEnemyLocation, Target]
-          # Owner Controller -> Blackboard -> Formation Position (pure chain)
+          # v7.8.39: Self -> Owner Controller -> Blackboard -> Formation Position (pure chain)
+          - from: [SelfRef, self]
+            to: [GetOwnerController, Target]
           - from: [GetOwnerController, ReturnValue]
             to: [GetBlackboard, Target]
           - from: [GetBlackboard, Blackboard]
@@ -13270,6 +13276,10 @@ actor_blueprints:  # GATHERER ACTIVITIES
     function_overrides:
       - function: K2_RunActivity
         nodes:
+          # v7.8.39: Self reference for PropertyGet in function override
+          - id: SelfRef0
+            type: Self
+            position: [50, 0]
           # v7.8.35: ActivityGoal is a PROPERTY on NPCActivity, not a function parameter
           - id: GetActivityGoal
             type: PropertyGet
@@ -13289,34 +13299,57 @@ actor_blueprints:  # GATHERER ACTIVITIES
             properties:
               variable_name: CachedAlertGoal
             position: [400, 0]
-          # Get owner character for ASC (Guide L393-394)
+          # v7.8.39: Get owner character via Self -> OwnerController -> K2_GetPawn pattern
+          # [MANIFEST] Line 13012-13026 shows working pattern with Self + PropertyGet + K2_GetPawn
+          - id: SelfRef1
+            type: Self
+            position: [400, 50]
+          - id: GetOwnerController1
+            type: PropertyGet
+            properties:
+              property_name: OwnerController
+              target_class: NPCActivity
+            position: [500, 0]
           - id: GetOwnerChar1
             type: CallFunction
             properties:
-              function: GetOwnerCharacter
-              target_self: true
-            position: [600, 0]
-          # Get ASC (Guide L395-396)
-          - id: GetASC1
+              function: K2_GetPawn
+              class: Controller
+            position: [700, 0]
+          # v7.8.38: AddLooseGameplayTags (plural) with tag container
+          # [ENGINE] AbilitySystemBlueprintLibrary::AddLooseGameplayTags takes Actor, TagContainer, bReplicate
+          # [MANIFEST] Working pattern from line 999-1010 uses MakeLiteralGameplayTag + MakeGameplayTagContainerFromTag
+          - id: MakeTagContainer_AddSignaling
             type: CallFunction
             properties:
-              function: GetAbilitySystemComponent
-            position: [800, 0]
-          # Add signaling tag (Guide L397-398)
+              function: MakeGameplayTagContainerFromTag
+            position: [700, 100]
+          - id: MakeLiteral_SignalingTag
+            type: CallFunction
+            properties:
+              function: MakeLiteralGameplayTag
+              literal_value: State.NPC.Alert.Signaling
+            position: [500, 100]
           - id: AddSignalingTag
             type: CallFunction
             properties:
-              function: AddLooseGameplayTag
-              parameters:
-                Tag: State.NPC.Alert.Signaling
+              function: AddLooseGameplayTags
+              class: AbilitySystemBlueprintLibrary
             position: [1000, 0]
           # Get owner for montage (Guide L402-403)
+          # v7.8.39: Uses SelfRef1 and GetOwnerController1 (same controller reference)
           - id: GetOwnerChar2
             type: CallFunction
             properties:
-              function: GetOwnerCharacter
-              target_self: true
+              function: K2_GetPawn
+              class: Controller
             position: [1200, 0]
+          # v7.8.43: AUDIT FIX - Cast Pawn to Character for PlayAnimMontage
+          - id: CastPawnToCharacter
+            type: DynamicCast
+            properties:
+              target_class: Character
+            position: [1300, 0]
           # Get signal montage variable
           - id: GetSignalMontage
             type: VariableGet
@@ -13328,7 +13361,7 @@ actor_blueprints:  # GATHERER ACTIVITIES
             type: CallFunction
             properties:
               function: PlayAnimMontage
-            position: [1400, 0]
+            position: [1500, 0]
           # Delay for animation (Guide L407-408)
           - id: Delay
             type: Delay
@@ -13377,13 +13410,23 @@ actor_blueprints:  # GATHERER ACTIVITIES
           - id: ValidBranch
             type: Branch
             position: [3200, 0]
-          # Get owner location for spawn (Guide L425-427)
+          # v7.8.39: Get owner location for spawn (Guide L425-427)
+          # [MANIFEST] Line 13012-13026 shows working Self -> PropertyGet -> K2_GetPawn pattern
+          - id: SelfRef3
+            type: Self
+            position: [3200, 50]
+          - id: GetOwnerController3
+            type: PropertyGet
+            properties:
+              property_name: OwnerController
+              target_class: NPCActivity
+            position: [3300, 0]
           - id: GetOwnerChar3
             type: CallFunction
             properties:
-              function: GetOwnerCharacter
-              target_self: true
-            position: [3400, 0]
+              function: K2_GetPawn
+              class: Controller
+            position: [3500, 0]
           - id: GetOwnerLocation
             type: CallFunction
             properties:
@@ -13429,12 +13472,16 @@ actor_blueprints:  # GATHERER ACTIVITIES
               function: MakeTransform
               class: KismetMathLibrary
             position: [4200, 0]
-          # Get subsystem for spawn (Guide L441)
+          # v7.8.38: Get subsystem for spawn (Guide L441)
+          # [ENGINE] SubsystemBlueprintLibrary::GetWorldSubsystem is BlueprintCallable
+          # NOTE: SpawnNPC node internally creates its own GetSubsystem, so this is redundant
+          # but kept for compatibility - SpawnNPC handles the subsystem access internally
           - id: GetCharSubsystem
             type: CallFunction
             properties:
-              function: GetNarrativeCharacterSubsystem
-              class: NarrativeCharacterSubsystem
+              function: GetWorldSubsystem
+              class: SubsystemBlueprintLibrary
+              param.Class: NarrativeCharacterSubsystem
             position: [4400, 0]
           # SpawnNPC (Guide L443-445)
           - id: SpawnReinforcement
@@ -13461,12 +13508,24 @@ actor_blueprints:  # GATHERER ACTIVITIES
               class: Actor
               param.ComponentClass: NPCActivityComponent
             position: [5200, 0]
+          # v7.8.43: AUDIT FIX - Cast ActorComponent to NPCActivityComponent
+          - id: CastToReinfActivityComp
+            type: DynamicCast
+            properties:
+              target_class: NPCActivityComponent
+            position: [5300, 0]
+          # v7.8.43: AUDIT FIX - Re-cast CachedAlertGoal to Goal_Alert for PropertyGet
+          - id: CastCachedGoalForMove
+            type: DynamicCast
+            properties:
+              target_class: Goal_Alert
+            position: [5350, 100]
           # Construct Goal_MoveToDestination (Guide 4.9.4)
+          # v7.8.44: AUDIT FIX - Use concrete Blueprint class path (NPCGoalItem is abstract)
           - id: ConstructMoveGoal
             type: ConstructObjectFromClass
             properties:
-              class: NPCGoalItem
-              class_variable: Goal_MoveToDestination
+              class: /NarrativePro/Pro/Core/AI/Activities/GoToLocation/Goal_MoveToDestination.Goal_MoveToDestination_C
             position: [5400, 0]
           # Cast to Goal_MoveToDestination (Guide 4.9.5)
           - id: CastToMoveGoal
@@ -13474,18 +13533,26 @@ actor_blueprints:  # GATHERER ACTIVITIES
             properties:
               target_class: Goal_MoveToDestination
             position: [5600, 0]
-          # Get AlertLocation from cached goal (Guide 4.9.6.1)
+          # v7.8.38: Get AlertLocation from cached goal (Guide 4.9.6.1)
+          # [MANIFEST] PropertyGet pattern for Goal properties
           - id: GetAlertLocationForMove
+            type: PropertyGet
+            properties:
+              property_name: AlertLocation
+              target_class: Goal_Alert
+            position: [5600, 100]
+          # Set Destination on move goal (Guide 4.9.6.1)
+          # v7.8.43: AUDIT FIX - Destination is Transform type, need MakeTransform from Vector
+          - id: MakeDestinationTransform
             type: CallFunction
             properties:
-              function: GetAlertLocation
-              class: Goal_Alert
-            position: [5600, 100]
-          # Set TargetLocation on move goal (Guide 4.9.6.1)
+              function: MakeTransform
+              class: KismetMathLibrary
+            position: [5700, 50]
           - id: SetMoveTargetLocation
             type: VariableSet
             properties:
-              variable_name: TargetLocation
+              variable_name: Destination
               target_class: Goal_MoveToDestination
             position: [5800, 0]
           # Set GoalScore = 3.0 (Guide 4.9.6.2)
@@ -13494,10 +13561,11 @@ actor_blueprints:  # GATHERER ACTIVITIES
             properties:
               value: "3.0"
             position: [5800, 150]
+          # v7.8.43: AUDIT FIX - GoalScore → DefaultScore (actual C++ property name)
           - id: SetMoveGoalScore
             type: VariableSet
             properties:
-              variable_name: GoalScore
+              variable_name: DefaultScore
               target_class: NPCGoalItem
             position: [6000, 0]
           # Add Goal to reinforcement (Guide 4.9.7)
@@ -13514,24 +13582,44 @@ actor_blueprints:  # GATHERER ACTIVITIES
             properties:
               message: "BPA_Alert: Spawned reinforcement with move goal"
             position: [6400, 0]
-          # After loop completes - add Goal_Flee to gatherer (Guide L472-494)
+          # v7.8.39: After loop completes - add Goal_Flee to gatherer (Guide L472-494)
+          # [MANIFEST] Line 13012-13026 shows working Self -> PropertyGet -> K2_GetPawn pattern
+          - id: SelfRef4
+            type: Self
+            position: [6400, 50]
+          - id: GetOwnerController4
+            type: PropertyGet
+            properties:
+              property_name: OwnerController
+              target_class: NPCActivity
+            position: [6500, 0]
           - id: GetOwnerChar4
             type: CallFunction
             properties:
-              function: GetOwnerCharacter
-              target_self: true
-            position: [6600, 0]
+              function: K2_GetPawn
+              class: Controller
+            position: [6700, 0]
+          # v7.8.38: GetComponentByClass pattern for ActivityComponent
+          # [MANIFEST] Line 3555-3560 shows working GetComponentByClass pattern
           - id: GetActivityComp
             type: CallFunction
             properties:
-              function: GetActivityComponent
-            position: [6800, 0]
+              function: GetComponentByClass
+              class: Actor
+              param.ComponentClass: NPCActivityComponent
+            position: [6900, 0]
+          # v7.8.43: AUDIT FIX - Cast ActorComponent to NPCActivityComponent
+          - id: CastToGathererActivityComp
+            type: DynamicCast
+            properties:
+              target_class: NPCActivityComponent
+            position: [7000, 0]
           # v7.8.17: Construct Goal_Flee for gatherer (Guide 5.2)
+          # v7.8.44: AUDIT FIX - Use concrete Blueprint class path (NPCGoalItem is abstract)
           - id: ConstructFleeGoal
             type: ConstructObjectFromClass
             properties:
-              class: NPCGoalItem
-              class_variable: Goal_Flee
+              class: /NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/Goal_Flee.Goal_Flee_C
             position: [7000, 0]
           # Cast to Goal_Flee (Guide 5.2.2)
           - id: CastToFleeGoal
@@ -13545,17 +13633,25 @@ actor_blueprints:  # GATHERER ACTIVITIES
             properties:
               variable_name: CachedAlertGoal
             position: [7200, 100]
-          - id: GetSpottedTargetForFlee
-            type: CallFunction
+          # v7.8.43: AUDIT FIX - Re-cast CachedAlertGoal to Goal_Alert for PropertyGet
+          - id: CastCachedGoalForFlee
+            type: DynamicCast
             properties:
-              function: GetSpottedTarget
-              class: Goal_Alert
-            position: [7200, 200]
-          # Set FleeTarget = SpottedTarget (Guide 5.2.3.1)
+              target_class: Goal_Alert
+            position: [7250, 150]
+          # v7.8.38: PropertyGet pattern for Goal properties
+          - id: GetSpottedTargetForFlee
+            type: PropertyGet
+            properties:
+              property_name: SpottedTarget
+              target_class: Goal_Alert
+            position: [7300, 200]
+          # Set FleeFromTarget = SpottedTarget (Guide 5.2.3.1)
+          # v7.8.43: AUDIT FIX - FleeTarget → FleeFromTarget (actual BP variable name)
           - id: SetFleeTarget
             type: VariableSet
             properties:
-              variable_name: FleeTarget
+              variable_name: FleeFromTarget
               target_class: Goal_Flee
             position: [7400, 0]
           # Set GoalScore = 3.0 (Guide 5.2.3.2)
@@ -13564,10 +13660,11 @@ actor_blueprints:  # GATHERER ACTIVITIES
             properties:
               value: "3.0"
             position: [7400, 150]
+          # v7.8.43: AUDIT FIX - GoalScore → DefaultScore (actual C++ property name)
           - id: SetFleeGoalScore
             type: VariableSet
             properties:
-              variable_name: GoalScore
+              variable_name: DefaultScore
               target_class: NPCGoalItem
             position: [7600, 0]
           # Add Goal_Flee to gatherer (Guide 5.3)
@@ -13584,31 +13681,51 @@ actor_blueprints:  # GATHERER ACTIVITIES
             properties:
               variable_name: CachedAlertGoal
             position: [7800, 100]
-          # Remove Goal_Alert (Guide L496-500)
+          # v7.8.38: Remove Goal_Alert (Guide L496-500)
+          # [MANIFEST] Manifest_Audit_Master_Summary shows RemoveGoal is on NPCActivityComponent
           - id: RemoveGoal
             type: CallFunction
             properties:
               function: RemoveGoal
+              class: NPCActivityComponent
             position: [5400, 0]
           # Get ASC for tag removal (Guide L504)
+          # v7.8.39: Get owner for tag removal using Self -> PropertyGet -> K2_GetPawn pattern
+          # [MANIFEST] Line 13012-13026 shows working pattern
+          - id: SelfRef5
+            type: Self
+            position: [5400, 50]
+          - id: GetOwnerController5
+            type: PropertyGet
+            properties:
+              property_name: OwnerController
+              target_class: NPCActivity
+            position: [5500, 0]
           - id: GetOwnerChar5
             type: CallFunction
             properties:
-              function: GetOwnerCharacter
-              target_self: true
-            position: [5600, 0]
-          - id: GetASC2
+              function: K2_GetPawn
+              class: Controller
+            position: [5700, 0]
+          # v7.8.38: RemoveLooseGameplayTags (plural) with tag container
+          # [ENGINE] AbilitySystemBlueprintLibrary::RemoveLooseGameplayTags takes Actor, TagContainer, bReplicate
+          # [MANIFEST] Working pattern from line 999-1010 uses MakeLiteralGameplayTag + MakeGameplayTagContainerFromTag
+          - id: MakeTagContainer_RemoveSignaling
             type: CallFunction
             properties:
-              function: GetAbilitySystemComponent
-            position: [5800, 0]
-          # Remove signaling tag (Guide L505-506)
+              function: MakeGameplayTagContainerFromTag
+            position: [5700, 100]
+          - id: MakeLiteral_RemoveSignalingTag
+            type: CallFunction
+            properties:
+              function: MakeLiteralGameplayTag
+              literal_value: State.NPC.Alert.Signaling
+            position: [5500, 100]
           - id: RemoveSignalingTag
             type: CallFunction
             properties:
-              function: RemoveLooseGameplayTag
-              parameters:
-                Tag: State.NPC.Alert.Signaling
+              function: RemoveLooseGameplayTags
+              class: AbilitySystemBlueprintLibrary
             position: [6000, 0]
           # Print completion
           - id: PrintComplete
@@ -13620,6 +13737,9 @@ actor_blueprints:  # GATHERER ACTIVITIES
           # Entry -> Cast to Goal_Alert
           - from: [FunctionEntry, Then]
             to: [CastToGoalAlert, Exec]
+          # v7.8.39: Self -> ActivityGoal PropertyGet
+          - from: [SelfRef0, self]
+            to: [GetActivityGoal, Target]
           # v7.8.35: ActivityGoal is accessed via PropertyGet, not function parameter
           - from: [GetActivityGoal, ActivityGoal]
             to: [CastToGoalAlert, Object]
@@ -13628,26 +13748,40 @@ actor_blueprints:  # GATHERER ACTIVITIES
             to: [SetCachedGoal, Exec]
           - from: [CastToGoalAlert, AsGoal_Alert]
             to: [SetCachedGoal, CachedAlertGoal]
-          # Set -> Get owner for ASC
+          # v7.8.39: Set -> Get owner via Self -> OwnerController -> K2_GetPawn pattern
           - from: [SetCachedGoal, Then]
             to: [GetOwnerChar1, Exec]
+          - from: [SelfRef1, self]
+            to: [GetOwnerController1, Target]
+          - from: [GetOwnerController1, ReturnValue]
+            to: [GetOwnerChar1, Target]
+          # v7.8.38: AddLooseGameplayTags takes Actor directly (not ASC)
+          # Create tag container from literal tag
+          - from: [MakeLiteral_SignalingTag, ReturnValue]
+            to: [MakeTagContainer_AddSignaling, Tag]
           - from: [GetOwnerChar1, ReturnValue]
-            to: [GetASC1, Target]
+            to: [AddSignalingTag, Actor]
+          - from: [MakeTagContainer_AddSignaling, ReturnValue]
+            to: [AddSignalingTag, GameplayTags]
           - from: [GetOwnerChar1, Exec]
-            to: [GetASC1, Exec]
-          # Get ASC -> Add signaling tag
-          - from: [GetASC1, ReturnValue]
-            to: [AddSignalingTag, Target]
-          - from: [GetASC1, Exec]
             to: [AddSignalingTag, Exec]
-          # Add tag -> Get owner for montage
+          # v7.8.38: Add tag -> Get owner for montage (uses same OwnerController1)
           - from: [AddSignalingTag, Then]
             to: [GetOwnerChar2, Exec]
-          - from: [GetOwnerChar2, ReturnValue]
-            to: [PlayMontage, Target]
-          - from: [GetSignalMontage, SignalMontage]
-            to: [PlayMontage, MontageToPlay]
+          - from: [GetOwnerController1, ReturnValue]
+            to: [GetOwnerChar2, Target]
+          # v7.8.43: AUDIT FIX - Cast Pawn to Character for PlayAnimMontage
           - from: [GetOwnerChar2, Exec]
+            to: [CastPawnToCharacter, Exec]
+          - from: [GetOwnerChar2, ReturnValue]
+            to: [CastPawnToCharacter, Object]
+          - from: [CastPawnToCharacter, AsCharacter]
+            to: [PlayMontage, Target]
+          # v7.8.38: Fix pin name - PlayAnimMontage uses AnimMontage not MontageToPlay
+          - from: [GetSignalMontage, SignalMontage]
+            to: [PlayMontage, AnimMontage]
+          # v7.8.43: AUDIT FIX - Exec now goes through CastPawnToCharacter
+          - from: [CastPawnToCharacter, Then]
             to: [PlayMontage, Exec]
           # Play montage -> Delay
           - from: [PlayMontage, Then]
@@ -13675,9 +13809,13 @@ actor_blueprints:  # GATHERER ACTIVITIES
             to: [ValidBranch, Condition]
           - from: [IsValidDef, Exec]
             to: [ValidBranch, Exec]
-          # Valid true -> Get owner location
+          # v7.8.39: Valid true -> Get owner via Self -> OwnerController -> K2_GetPawn pattern
           - from: [ValidBranch, True]
             to: [GetOwnerChar3, Exec]
+          - from: [SelfRef3, self]
+            to: [GetOwnerController3, Target]
+          - from: [GetOwnerController3, ReturnValue]
+            to: [GetOwnerChar3, Target]
           - from: [GetOwnerChar3, ReturnValue]
             to: [GetOwnerLocation, Target]
           - from: [GetOwnerChar3, ReturnValue]
@@ -13703,8 +13841,9 @@ actor_blueprints:  # GATHERER ACTIVITIES
             to: [GetCharSubsystem, Exec]
           - from: [GetCharSubsystem, Exec]
             to: [SpawnReinforcement, Exec]
+          # v7.8.38: Fix pin name - SpawnNPC uses NPCData not NPCDefinition
           - from: [GetReinforcementDef, ReinforcementDefinition]
-            to: [SpawnReinforcement, NPCDefinition]
+            to: [SpawnReinforcement, NPCData]
           - from: [MakeTransform, ReturnValue]
             to: [SpawnReinforcement, Transform]
           # v7.8.17: Add Goal_MoveToDestination to reinforcement (Guide 4.9)
@@ -13722,10 +13861,15 @@ actor_blueprints:  # GATHERER ACTIVITIES
             to: [GetReinfActivityComp, Exec]
           - from: [SpawnReinforcement, ReturnValue]
             to: [GetReinfActivityComp, Target]
-          # Construct Goal_MoveToDestination
+          # v7.8.43: AUDIT FIX - Cast ActorComponent to NPCActivityComponent
           - from: [GetReinfActivityComp, Exec]
-            to: [ConstructMoveGoal, Exec]
+            to: [CastToReinfActivityComp, Exec]
           - from: [GetReinfActivityComp, ReturnValue]
+            to: [CastToReinfActivityComp, Object]
+          # Construct Goal_MoveToDestination
+          - from: [CastToReinfActivityComp, Then]
+            to: [ConstructMoveGoal, Exec]
+          - from: [CastToReinfActivityComp, AsNPCActivityComponent]
             to: [ConstructMoveGoal, Outer]
           # Cast to Goal_MoveToDestination
           - from: [ConstructMoveGoal, Then]
@@ -13733,26 +13877,33 @@ actor_blueprints:  # GATHERER ACTIVITIES
           - from: [ConstructMoveGoal, ReturnValue]
             to: [CastToMoveGoal, Object]
           # Get AlertLocation from CachedAlertGoal (pure)
+          # v7.8.43: AUDIT FIX - Re-cast NPCGoalItem to Goal_Alert for PropertyGet
           - from: [SetCachedGoal, CachedAlertGoal]
+            to: [CastCachedGoalForMove, Object]
+          - from: [CastCachedGoalForMove, AsGoal_Alert]
             to: [GetAlertLocationForMove, Target]
-          # Set TargetLocation on move goal
+          # Set Destination on move goal (v7.8.43: AUDIT FIX - Vector→Transform via MakeTransform)
           - from: [CastToMoveGoal, Then]
             to: [SetMoveTargetLocation, Exec]
           - from: [CastToMoveGoal, AsGoal_MoveToDestination]
             to: [SetMoveTargetLocation, Target]
           - from: [GetAlertLocationForMove, ReturnValue]
-            to: [SetMoveTargetLocation, TargetLocation]
+            to: [MakeDestinationTransform, Location]
+          - from: [MakeDestinationTransform, ReturnValue]
+            to: [SetMoveTargetLocation, Destination]
           # Set GoalScore = 3.0
           - from: [SetMoveTargetLocation, Then]
             to: [SetMoveGoalScore, Exec]
           - from: [CastToMoveGoal, AsGoal_MoveToDestination]
             to: [SetMoveGoalScore, Target]
+          # v7.8.43: AUDIT FIX - GoalScore → DefaultScore
           - from: [MakeMoveGoalScore, ReturnValue]
-            to: [SetMoveGoalScore, GoalScore]
+            to: [SetMoveGoalScore, DefaultScore]
           # Add Goal to reinforcement
           - from: [SetMoveGoalScore, Then]
             to: [AddMoveGoal, Exec]
-          - from: [GetReinfActivityComp, ReturnValue]
+          # v7.8.43: AUDIT FIX - Use casted NPCActivityComponent
+          - from: [CastToReinfActivityComp, AsNPCActivityComponent]
             to: [AddMoveGoal, Target]
           - from: [CastToMoveGoal, AsGoal_MoveToDestination]
             to: [AddMoveGoal, NewGoal]
@@ -13762,17 +13913,27 @@ actor_blueprints:  # GATHERER ACTIVITIES
           # Invalid reinforcement -> Skip to print
           - from: [BranchValidReinf, False]
             to: [PrintSpawned, Exec]
-          # Loop completed -> Cleanup with Goal_Flee (Guide 5)
+          # v7.8.38: Loop completed -> Cleanup with Goal_Flee (Guide 5)
+          # v7.8.39: Use Self -> OwnerController -> K2_GetPawn pattern
           - from: [SpawnLoop, Completed]
             to: [GetOwnerChar4, Exec]
+          - from: [SelfRef4, self]
+            to: [GetOwnerController4, Target]
+          - from: [GetOwnerController4, ReturnValue]
+            to: [GetOwnerChar4, Target]
           - from: [GetOwnerChar4, ReturnValue]
             to: [GetActivityComp, Target]
           - from: [GetOwnerChar4, Exec]
             to: [GetActivityComp, Exec]
-          # v7.8.17: Construct Goal_Flee for gatherer
+          # v7.8.43: AUDIT FIX - Cast ActorComponent to NPCActivityComponent
           - from: [GetActivityComp, Exec]
-            to: [ConstructFleeGoal, Exec]
+            to: [CastToGathererActivityComp, Exec]
           - from: [GetActivityComp, ReturnValue]
+            to: [CastToGathererActivityComp, Object]
+          # v7.8.17: Construct Goal_Flee for gatherer
+          - from: [CastToGathererActivityComp, Then]
+            to: [ConstructFleeGoal, Exec]
+          - from: [CastToGathererActivityComp, AsNPCActivityComponent]
             to: [ConstructFleeGoal, Outer]
           # Cast to Goal_Flee
           - from: [ConstructFleeGoal, Then]
@@ -13780,46 +13941,58 @@ actor_blueprints:  # GATHERER ACTIVITIES
           - from: [ConstructFleeGoal, ReturnValue]
             to: [CastToFleeGoal, Object]
           # Get SpottedTarget from cached goal (pure)
+          # v7.8.43: AUDIT FIX - Re-cast NPCGoalItem to Goal_Alert for PropertyGet
           - from: [GetCachedGoalForFlee, CachedAlertGoal]
+            to: [CastCachedGoalForFlee, Object]
+          - from: [CastCachedGoalForFlee, AsGoal_Alert]
             to: [GetSpottedTargetForFlee, Target]
           # Set FleeTarget
           - from: [CastToFleeGoal, Then]
             to: [SetFleeTarget, Exec]
           - from: [CastToFleeGoal, AsGoal_Flee]
             to: [SetFleeTarget, Target]
+          # v7.8.43: AUDIT FIX - FleeTarget → FleeFromTarget
           - from: [GetSpottedTargetForFlee, ReturnValue]
-            to: [SetFleeTarget, FleeTarget]
+            to: [SetFleeTarget, FleeFromTarget]
           # Set GoalScore = 3.0
           - from: [SetFleeTarget, Then]
             to: [SetFleeGoalScore, Exec]
           - from: [CastToFleeGoal, AsGoal_Flee]
             to: [SetFleeGoalScore, Target]
+          # v7.8.43: AUDIT FIX - GoalScore → DefaultScore
           - from: [MakeFleeGoalScore, ReturnValue]
-            to: [SetFleeGoalScore, GoalScore]
+            to: [SetFleeGoalScore, DefaultScore]
           # Add Goal_Flee to gatherer
           - from: [SetFleeGoalScore, Then]
             to: [AddFleeGoal, Exec]
-          - from: [GetActivityComp, ReturnValue]
+          # v7.8.43: AUDIT FIX - Use casted NPCActivityComponent
+          - from: [CastToGathererActivityComp, AsNPCActivityComponent]
             to: [AddFleeGoal, Target]
           - from: [CastToFleeGoal, AsGoal_Flee]
             to: [AddFleeGoal, NewGoal]
           # Remove Goal_Alert
           - from: [AddFleeGoal, Then]
             to: [RemoveGoal, Exec]
-          - from: [GetActivityComp, ReturnValue]
+          # v7.8.43: AUDIT FIX - Use casted NPCActivityComponent
+          - from: [CastToGathererActivityComp, AsNPCActivityComponent]
             to: [RemoveGoal, Target]
           - from: [GetCachedGoal, CachedAlertGoal]
             to: [RemoveGoal, GoalToRemove]
-          # Remove signaling tag
+          # v7.8.39: Remove signaling tag via Self -> OwnerController -> K2_GetPawn pattern
           - from: [RemoveGoal, Then]
             to: [GetOwnerChar5, Exec]
+          - from: [SelfRef5, self]
+            to: [GetOwnerController5, Target]
+          - from: [GetOwnerController5, ReturnValue]
+            to: [GetOwnerChar5, Target]
+          # v7.8.38: RemoveLooseGameplayTags takes Actor directly (not ASC)
+          - from: [MakeLiteral_RemoveSignalingTag, ReturnValue]
+            to: [MakeTagContainer_RemoveSignaling, Tag]
           - from: [GetOwnerChar5, ReturnValue]
-            to: [GetASC2, Target]
+            to: [RemoveSignalingTag, Actor]
+          - from: [MakeTagContainer_RemoveSignaling, ReturnValue]
+            to: [RemoveSignalingTag, GameplayTags]
           - from: [GetOwnerChar5, Exec]
-            to: [GetASC2, Exec]
-          - from: [GetASC2, ReturnValue]
-            to: [RemoveSignalingTag, Target]
-          - from: [GetASC2, Exec]
             to: [RemoveSignalingTag, Exec]
           # Print complete
           - from: [RemoveSignalingTag, Then]
