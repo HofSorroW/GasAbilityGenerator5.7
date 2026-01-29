@@ -9174,12 +9174,15 @@ actor_blueprints:  # WARDEN SYSTEM
         class: StaticMesh
         instance_editable: true
     # v7.8.29: Removed empty BeginPlay event - all logic is in HandleDeath override
-    # v2.8.3/v4.32: Function override with actual SpawnActor for phase transition
-    # v7.8.23: WH-4 fix - Added SpawnOffset, EjectionMontage usage per Guide Phase 3.1
+    # v7.8.30: Full guide compliance - added definition/montage validity checks + corpse mesh spawning
+    # Reference: Warden_Husk_System_Implementation_Guide_v1_5.md Phase 6 Steps 25-34
+    # [MANIFEST] Pattern source: BP_BiomechHost HandleDeath (100% guide compliant)
     function_overrides:
       - function: HandleDeath
         nodes:
-          # Authority check - only server spawns the Core
+          # ============================================================================
+          # Guide Step 26: Authority check - only server executes death logic
+          # ============================================================================
           - id: HasAuth
             type: CallFunction
             properties:
@@ -9190,110 +9193,288 @@ actor_blueprints:  # WARDEN SYSTEM
           - id: AuthBranch
             type: Branch
             position: [400, 0]
-          # v7.8.23: WH-4 - Play ejection montage before spawning
+          # ============================================================================
+          # Guide Step 28: Validate PhaseSpawnDefinition before spawning
+          # ============================================================================
+          - id: GetSpawnDefinition
+            type: VariableGet
+            properties:
+              variable_name: PhaseSpawnDefinition
+            position: [600, 100]
+          - id: CheckDefinitionValid
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [600, 0]
+          - id: DefinitionBranch
+            type: Branch
+            position: [800, 0]
+          # ============================================================================
+          # Guide Step 29: Play ejection montage if valid
+          # ============================================================================
           - id: GetEjectionMontage
             type: VariableGet
             properties:
               variable_name: EjectionMontage
-            position: [600, 0]
-          - id: GetMesh
-            type: PropertyGet
-            properties:
-              property_name: Mesh
-              target_class: Character
-              target_self: true
-            position: [600, 100]
-          - id: GetAnimInstance
+            position: [1000, 100]
+          - id: CheckMontageValid
             type: CallFunction
             properties:
-              function: GetAnimInstance
-              class: SkeletalMeshComponent
-            position: [800, 100]
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [1000, 0]
+          - id: MontageBranch
+            type: Branch
+            position: [1200, 0]
+          - id: SelfForMontage
+            type: Self
+            position: [1200, 100]
           - id: PlayMontage
             type: CallFunction
             properties:
-              function: Montage_Play
-              class: AnimInstance
-            position: [1000, 0]
-          # Get actor location + spawn offset for proper spawn position
+              function: PlayAnimMontage
+              class: Character
+            position: [1400, 0]
+          # ============================================================================
+          # Guide Step 30: Calculate spawn transform with offset
+          # ============================================================================
           - id: GetActorLocation
             type: CallFunction
             properties:
               function: K2_GetActorLocation
               class: Actor
               target_self: true
-            position: [1200, 0]
+            position: [1600, 0]
           - id: GetSpawnOffset
             type: VariableGet
             properties:
               variable_name: SpawnOffset
-            position: [1200, 100]
+            position: [1600, 100]
           - id: AddOffset
             type: CallFunction
             properties:
               function: Add_VectorVector
               class: KismetMathLibrary
-            position: [1400, 0]
+            position: [1800, 0]
           - id: GetActorRotation
             type: CallFunction
             properties:
               function: K2_GetActorRotation
               class: Actor
               target_self: true
-            position: [1400, 100]
+            position: [1600, 200]
           - id: MakeSpawnTransform
             type: CallFunction
             properties:
               function: MakeTransform
               class: KismetMathLibrary
-            position: [1600, 0]
-          # Get the NPCDefinition to spawn (set in editor to NPC_WardenCore)
-          - id: GetSpawnDefinition
-            type: VariableGet
-            properties:
-              variable_name: PhaseSpawnDefinition
-            position: [1600, 200]
-          # Spawn the WardenCore via SpawnNPC for proper NPC initialization
+            position: [2000, 0]
+          # ============================================================================
+          # Guide Step 31: Spawn WardenCore via SpawnNPC
+          # ============================================================================
           - id: SpawnCore
             type: SpawnNPC
             properties:
               npc_definition_variable: PhaseSpawnDefinition
-            position: [1800, 0]
+            position: [2200, 0]
+          # ============================================================================
+          # Guide Step 32: Spawn corpse mesh if bSpawnCorpse
+          # ============================================================================
+          - id: GetSpawnCorpseFlag
+            type: VariableGet
+            properties:
+              variable_name: bSpawnCorpse
+            position: [2400, 100]
+          - id: SpawnCorpseBranch
+            type: Branch
+            position: [2400, 0]
+          - id: GetCorpseMesh
+            type: VariableGet
+            properties:
+              variable_name: CorpseMesh
+            position: [2600, 100]
+          - id: CheckCorpseMeshValid
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [2600, 0]
+          - id: CorpseMeshBranch
+            type: Branch
+            position: [2800, 0]
+          - id: GetCorpseTransform
+            type: CallFunction
+            properties:
+              function: GetTransform
+              class: Actor
+              target_self: true
+            position: [2800, 150]
+          # Spawn StaticMeshActor for corpse
+          - id: SpawnCorpseActor
+            type: SpawnActor
+            properties:
+              actor_class: StaticMeshActor
+            position: [3000, 0]
+          # Configure corpse mesh component
+          - id: CastToSMA
+            type: DynamicCast
+            properties:
+              target_class: StaticMeshActor
+            position: [3200, 0]
+          # [MANIFEST] BP_BiomechHost line 12276: GetComponentByClass + Cast pattern
+          - id: GetStaticMeshComp
+            type: CallFunction
+            properties:
+              function: GetComponentByClass
+              class: Actor
+              param.ComponentClass: StaticMeshComponent
+            position: [3400, 0]
+          - id: CastToStaticMeshComp
+            type: DynamicCast
+            properties:
+              target_class: StaticMeshComponent
+            position: [3500, 0]
+          - id: SetCorpseMesh
+            type: CallFunction
+            properties:
+              function: SetStaticMesh
+              class: StaticMeshComponent
+            position: [3600, 0]
+          - id: MakeTrueLiteral
+            type: CallFunction
+            properties:
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+            data:
+              bool_value: true
+            position: [3600, 150]
+          - id: SetSimulatePhysics
+            type: CallFunction
+            properties:
+              function: SetSimulatePhysics
+              class: PrimitiveComponent
+            position: [3800, 0]
+          # ============================================================================
+          # Guide Step 33: Call parent HandleDeath (all paths converge)
+          # ============================================================================
           - id: CallParentDeath
             type: CallParent
-            position: [2000, 0]
+            position: [4000, 0]
         connections:
+          # Authority check
           - from: [FunctionEntry, Then]
             to: [HasAuth, Exec]
           - from: [HasAuth, ReturnValue]
             to: [AuthBranch, Condition]
-          # v7.8.23: Play montage then spawn
+          - from: [HasAuth, Exec]
+            to: [AuthBranch, Exec]
+          # Non-authority goes straight to parent
+          - from: [AuthBranch, False]
+            to: [CallParentDeath, Exec]
+          # Check definition valid (Guide Step 28)
           - from: [AuthBranch, True]
-            to: [PlayMontage, Exec]
+            to: [CheckDefinitionValid, Exec]
+          - from: [GetSpawnDefinition, PhaseSpawnDefinition]
+            to: [CheckDefinitionValid, Object]
+          - from: [CheckDefinitionValid, ReturnValue]
+            to: [DefinitionBranch, Condition]
+          - from: [CheckDefinitionValid, Exec]
+            to: [DefinitionBranch, Exec]
+          # Invalid definition goes to parent (skip spawn)
+          - from: [DefinitionBranch, False]
+            to: [CallParentDeath, Exec]
+          # Check montage valid (Guide Step 29)
+          - from: [DefinitionBranch, True]
+            to: [CheckMontageValid, Exec]
           - from: [GetEjectionMontage, EjectionMontage]
-            to: [PlayMontage, MontageToPlay]
-          - from: [GetMesh, ReturnValue]
-            to: [GetAnimInstance, Target]
-          - from: [GetAnimInstance, ReturnValue]
+            to: [CheckMontageValid, Object]
+          - from: [CheckMontageValid, ReturnValue]
+            to: [MontageBranch, Condition]
+          - from: [CheckMontageValid, Exec]
+            to: [MontageBranch, Exec]
+          # Play montage if valid (True), skip if not (False)
+          - from: [MontageBranch, True]
+            to: [PlayMontage, Exec]
+          - from: [SelfForMontage, self]
             to: [PlayMontage, Target]
-          # v7.8.23: Calculate spawn location with offset
-          - from: [PlayMontage, Then]
-            to: [SpawnCore, Exec]
+          - from: [GetEjectionMontage, EjectionMontage]
+            to: [PlayMontage, AnimMontage]
+          # Both branches continue to spawn location calculation
+          - from: [PlayMontage, Exec]
+            to: [GetActorLocation, Exec]
+          - from: [MontageBranch, False]
+            to: [GetActorLocation, Exec]
+          # Calculate spawn location with offset (Guide Step 30)
           - from: [GetActorLocation, ReturnValue]
             to: [AddOffset, A]
           - from: [GetSpawnOffset, SpawnOffset]
             to: [AddOffset, B]
+          # Make spawn transform
           - from: [AddOffset, ReturnValue]
             to: [MakeSpawnTransform, Location]
           - from: [GetActorRotation, ReturnValue]
             to: [MakeSpawnTransform, Rotation]
-          - from: [MakeSpawnTransform, ReturnValue]
-            to: [SpawnCore, Transform]
+          - from: [GetActorLocation, Exec]
+            to: [MakeSpawnTransform, Exec]
+          # Spawn core (Guide Step 31)
+          - from: [MakeSpawnTransform, Exec]
+            to: [SpawnCore, Exec]
           - from: [GetSpawnDefinition, PhaseSpawnDefinition]
             to: [SpawnCore, NPCData]
+          - from: [MakeSpawnTransform, ReturnValue]
+            to: [SpawnCore, Transform]
+          # Check if should spawn corpse (Guide Step 32)
           - from: [SpawnCore, Then]
+            to: [SpawnCorpseBranch, Exec]
+          - from: [GetSpawnCorpseFlag, bSpawnCorpse]
+            to: [SpawnCorpseBranch, Condition]
+          # If should spawn corpse, check mesh valid
+          - from: [SpawnCorpseBranch, True]
+            to: [CheckCorpseMeshValid, Exec]
+          - from: [GetCorpseMesh, CorpseMesh]
+            to: [CheckCorpseMeshValid, Object]
+          - from: [CheckCorpseMeshValid, ReturnValue]
+            to: [CorpseMeshBranch, Condition]
+          - from: [CheckCorpseMeshValid, Exec]
+            to: [CorpseMeshBranch, Exec]
+          # If mesh valid, spawn corpse actor
+          - from: [CorpseMeshBranch, True]
+            to: [SpawnCorpseActor, Exec]
+          - from: [GetCorpseTransform, ReturnValue]
+            to: [SpawnCorpseActor, SpawnTransform]
+          # Cast to StaticMeshActor and configure
+          - from: [SpawnCorpseActor, Exec]
+            to: [CastToSMA, Exec]
+          - from: [SpawnCorpseActor, ReturnValue]
+            to: [CastToSMA, Object]
+          # [MANIFEST] BP_BiomechHost pattern: GetComponentByClass + Cast
+          - from: [CastToSMA, Then]
+            to: [GetStaticMeshComp, Exec]
+          - from: [CastToSMA, AsStaticMeshActor]
+            to: [GetStaticMeshComp, Target]
+          - from: [GetStaticMeshComp, ReturnValue]
+            to: [CastToStaticMeshComp, Object]
+          - from: [GetStaticMeshComp, Exec]
+            to: [CastToStaticMeshComp, Exec]
+          - from: [CastToStaticMeshComp, Then]
+            to: [SetCorpseMesh, Exec]
+          - from: [CastToStaticMeshComp, AsStaticMeshComponent]
+            to: [SetCorpseMesh, Target]
+          - from: [GetCorpseMesh, CorpseMesh]
+            to: [SetCorpseMesh, NewMesh]
+          - from: [SetCorpseMesh, Exec]
+            to: [SetSimulatePhysics, Exec]
+          - from: [CastToStaticMeshComp, AsStaticMeshComponent]
+            to: [SetSimulatePhysics, Target]
+          - from: [MakeTrueLiteral, ReturnValue]
+            to: [SetSimulatePhysics, bSimulate]
+          # All paths converge to CallParentDeath
+          - from: [SetSimulatePhysics, Exec]
             to: [CallParentDeath, Exec]
-          - from: [AuthBranch, False]
+          - from: [CorpseMeshBranch, False]
+            to: [CallParentDeath, Exec]
+          - from: [SpawnCorpseBranch, False]
             to: [CallParentDeath, Exec]
 
   # v7.8.16: Added missing variables per Warden_Husk_System_Implementation_Guide_v1_4.md Phase 4
