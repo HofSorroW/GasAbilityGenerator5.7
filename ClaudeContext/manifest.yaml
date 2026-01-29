@@ -3716,13 +3716,14 @@ gameplay_abilities:
   # ---------------------------------------------------------------------------
   
   # GA_FatherAttack - Melee Attack (inherits socket tracing, warp, combo from parent)
-  # MANUAL POST-GENERATION: Reparent to GA_Melee_Unarmed in Editor
-  # (Blueprint parent classes from plugins can't be resolved in headless mode)
-  # Path: /NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/GA_Melee_Unarmed
+  # v7.8.21: Generator enhanced to support Blueprint parent classes from NP plugin
+  # - FindParentClass resolves /NarrativePro/Pro/Core/Abilities/... paths
+  # - Event node reuse now breaks inherited Event→CallParent connections
+  # Inherits motion warping, socket tracing, combo from GA_Melee_Unarmed
   # NOTE: Runs on Father ASC, only in Crawler form
   - name: GA_FatherAttack
     folder: Abilities/Combat
-    parent_class: NarrativeGameplayAbility
+    parent_class: GA_Melee_Unarmed
     instancing_policy: InstancedPerActor
     net_execution_policy: ServerOnly
     cooldown_gameplay_effect_class: GE_AttackCooldown
@@ -4781,6 +4782,14 @@ gameplay_abilities:
             function: MakeGameplayTagContainerFromTag
             # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1500, 1350]
+        # v7.8.21: Step 3b: Set SymbioteCharge = 0 on Father (D-DEATH-RESET-2)
+        - id: SetSymbioteCharge_Death
+          type: PropertySet
+          properties:
+            property_name: SymbioteCharge
+            target_class: BP_FatherCompanion
+          position: [1300, 1200]
+        # Step 4: Remove Father.Dome.FullyCharged tag from Player (if present)
         - id: ClearChargedTag_Death
           type: CallFunction
           properties:
@@ -4925,12 +4934,14 @@ gameplay_abilities:
           to: [RemoveGE, Target]
         - from: [GetDomeHandle, DomeAbsorptionHandle]
           to: [RemoveGE, Handle]
-        # === PLAYER DEATH RESET HANDLER FLOW (v7.8: via WaitGameplayEvent) ===
-        # Exec: WaitDeathEvent.EventReceived → Branch_Valid → SetDomeEnergy_Death → ClearChargedTag_Death
+        # === PLAYER DEATH RESET HANDLER FLOW (v7.8.21: D-DEATH-RESET-2 complete) ===
+        # Exec: WaitDeathEvent → Branch_Valid → SetDomeEnergy_Death → SetSymbioteCharge_Death → ClearChargedTag_Death
         # NOTE: WaitDeathEvent.EventReceived -> Branch_Valid_Father_Death is connected above in AbilityTask section
         - from: [Branch_Valid_Father_Death, True]
           to: [SetDomeEnergy_Death, Exec]
         - from: [SetDomeEnergy_Death, Exec]
+          to: [SetSymbioteCharge_Death, Exec]
+        - from: [SetSymbioteCharge_Death, Exec]
           to: [ClearChargedTag_Death, Exec]
         # Data: Father validation
         - from: [GetFatherRef_Death, FatherRef]
@@ -4942,6 +4953,11 @@ gameplay_abilities:
           to: [SetDomeEnergy_Death, Target]
         - from: [MakeZero_Death, ReturnValue]
           to: [SetDomeEnergy_Death, DomeEnergy]
+        # v7.8.21: Data: Set SymbioteCharge = 0
+        - from: [GetFatherRef_Death, FatherRef]
+          to: [SetSymbioteCharge_Death, Target]
+        - from: [MakeZero_Death, ReturnValue]
+          to: [SetSymbioteCharge_Death, SymbioteCharge]
         # Data: Clear FullyCharged tag
         - from: [GetPlayerRef_Death, PlayerRef]
           to: [ClearChargedTag_Death, Actor]
@@ -5515,8 +5531,9 @@ gameplay_abilities:
   - name: GA_Backstab
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
-    # TODO: input_tag TBD - GA_Backstab is input-triggered, not auto-trigger
-    # Will use Narrative.Input.Ability{1|2|3} or custom mapping per INV-INPUT-1
+    # v7.8.21: INV-INPUT-1 compliant - uses Narrative.Input.Ability3 (F key)
+    # Universal ability (no form gating) - internal CheckBackstabCondition handles validation
+    input_tag: Narrative.Input.Ability3
     instancing_policy: InstancedPerActor
     net_execution_policy: LocalPredicted
     tags:
@@ -7269,6 +7286,27 @@ equippable_items:
     description: Transform your father companion into a bio-organic blade. Devastating melee attacks with increased reach.
     equipment_slot: Narrative.Equipment.Slot.Weapon_Back
 
+  # v7.8.14: Gatherer Scout placeholder loot items
+  - name: EI_GatheredResource_Common
+    folder: Items/Gatherer
+    parent_class: NarrativeItem
+    display_name: Common Resource
+    description: A common resource gathered from the environment.
+    stackable: true
+    max_stack_size: 99
+    base_value: 5
+    weight: 0.1
+
+  - name: EI_GatheredResource_Rare
+    folder: Items/Gatherer
+    parent_class: NarrativeItem
+    display_name: Rare Resource
+    description: A rare resource gathered from the environment.
+    stackable: true
+    max_stack_size: 50
+    base_value: 25
+    weight: 0.2
+
 # ============================================================================
 # BLACKBOARDS (2)
 # ============================================================================
@@ -7554,21 +7592,21 @@ activity_configurations:
   # ============================================================================
   # GATHERER SCOUT SYSTEM
   # ============================================================================
+  # v7.8.21: Fixed activity paths for existing NP assets
+  # - BPA_Wander -> BPA_Patrol (Wander doesn't exist in NP)
+  # - BPA_Gather -> BPA_Interact (use NP interaction system)
+  # Per guide: BPA_Flee, BPA_Patrol, BPA_Interact are existing NP assets
   - name: AC_GathererScoutBehavior
     folder: Configs
     activities:
       - BPA_Alert
       - BPA_Flee
-      - BPA_Gather
-      - BPA_Wander
+      - BPA_Interact
+      - BPA_Patrol
     goal_generators:
       - GoalGenerator_Alert
 
-  - name: AC_ReinforcementBehavior
-    folder: Configs
-    activities:
-      - BPA_MoveToDestination
-      - BPA_Attack_Melee
+  # v7.8.14: AC_ReinforcementBehavior REMOVED - NPC_Reinforcement now uses AC_RunAndGun per guide
 
   # ============================================================================
   # RETURNED STALKER SYSTEM
@@ -7594,12 +7632,16 @@ activity_configurations:
 
   # ============================================================================
   # GUARD FORMATION SYSTEM
+  # v7.8.16: Fixed per Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 9
   # ============================================================================
   - name: AC_FormationGuardBehavior
     folder: Configs
     activities:
       - BPA_FormationFollow
       - BPA_Attack_Formation
+      - BPA_Idle
+    goal_generators:
+      - GoalGenerator_Attack
 
   # ============================================================================
   # POSSESSED EXPLODER SYSTEM
@@ -7624,16 +7666,24 @@ activity_configurations:
 
   # ============================================================================
   # BIOMECHANICAL DETACHMENT SYSTEM
+  # v7.8.16: Fixed per Biomechanical_Detachment_System_Implementation_Guide_v1_2.md Phase 7
   # ============================================================================
   - name: AC_BiomechHostBehavior
-    folder: Configs
+    folder: Enemies/Biomech/Configurations
     activities:
+      - BPA_Patrol
       - BPA_Attack_Melee
+      - BPA_Idle
+    goal_generators:
+      - GoalGenerator_Attack
 
   - name: AC_BiomechCreatureBehavior
-    folder: Configs
+    folder: Enemies/Biomech/Configurations
     activities:
       - BPA_Attack_Melee
+      - BPA_Idle
+    goal_generators:
+      - GoalGenerator_Attack
 
 # ============================================================================
 # NPC DEFINITIONS (11)
@@ -7654,19 +7704,27 @@ npc_definitions:
   # ============================================================================
   - name: NPC_GathererScout
     folder: Enemies/Gatherer
+    npc_id: GathererScout
     npc_name: Gatherer Scout
     npc_blueprint: BP_GathererScout
     ability_configuration: AC_GathererScout
     activity_configuration: AC_GathererScoutBehavior
     default_factions:
       - Narrative.Factions.Returned
+    # v7.8.14: Item loadout for loot when killed
+    default_item_loadout:
+      - item_collections:
+          - IC_GathererScout
 
   - name: NPC_Reinforcement
     folder: Enemies/Gatherer
+    npc_id: Reinforcement
     npc_name: Gatherer Reinforcement
     npc_blueprint: BP_Reinforcement
     ability_configuration: AC_Reinforcement
-    activity_configuration: AC_ReinforcementBehavior
+    # v7.8.14: Changed to AC_RunAndGun per guide (existing NP asset)
+    # v7.8.16: Full path for Narrative Pro content
+    activity_configuration: /NarrativePro/Pro/Core/AI/Configs/AC_RunAndGun
     default_factions:
       - Narrative.Factions.Returned
 
@@ -7688,33 +7746,39 @@ npc_definitions:
 
   # ============================================================================
   # SUPPORT BUFFER SYSTEM
+  # v7.8.16: Fixed faction per Support_Buffer_Healer_NPC_Implementation_Guide_v1_2.md Phase 9.5
   # ============================================================================
   - name: NPC_SupportBuffer
     folder: NPCs/Support
+    npc_id: SupportBuffer  # v7.8.15: Added per Audit SB-1
     npc_name: Support Buffer
     npc_blueprint: BP_SupportBuffer
     ability_configuration: AC_SupportBuffer
     activity_configuration: AC_SupportBufferBehavior
     default_factions:
-      - Narrative.Factions.FatherCompanion
+      - Narrative.Factions.Returned
+    default_owned_tags:
+      - State.NPC.SupportBuffer  # v7.8.16: Faction tag matches game design
 
   # ============================================================================
   # GUARD FORMATION SYSTEM
   # ============================================================================
   - name: NPC_FormationGuard
     folder: NPCs/Formation
+    npc_id: FormationGuard  # v7.8.15: Added per Audit GF-1
     npc_name: Formation Guard
     npc_blueprint: BP_FormationGuard
     ability_configuration: AC_FormationGuard
     activity_configuration: AC_FormationGuardBehavior
     default_factions:
-      - Narrative.Factions.FatherCompanion
+      - Narrative.Factions.Returned  # v7.8.16: All NPCs use Returned faction
 
   # ============================================================================
   # POSSESSED EXPLODER SYSTEM
   # ============================================================================
   - name: NPC_PossessedExploder
     folder: Enemies/Possessed
+    npc_id: PossessedExploder  # v7.8.15: Added per Audit
     npc_name: Possessed Exploder
     npc_blueprint: BP_PossessedExploder
     ability_configuration: AC_PossessedExploder
@@ -7727,6 +7791,7 @@ npc_definitions:
   # ============================================================================
   - name: NPC_WardenHusk
     folder: Enemies/Warden
+    npc_id: WardenHusk  # v7.8.15: Added per Audit
     npc_name: Warden Husk
     npc_blueprint: BP_WardenHusk
     ability_configuration: AC_WardenHusk
@@ -7736,6 +7801,7 @@ npc_definitions:
 
   - name: NPC_WardenCore
     folder: Enemies/Warden
+    npc_id: WardenCore  # v7.8.15: Added per Audit
     npc_name: Warden Core
     npc_blueprint: BP_WardenCore
     ability_configuration: AC_WardenCore
@@ -7748,21 +7814,27 @@ npc_definitions:
   # ============================================================================
   - name: NPC_BiomechHost
     folder: Enemies/Biomech
+    npc_id: BiomechHost  # v7.8.15: Added per Audit
     npc_name: Biomech Host
     npc_blueprint: BP_BiomechHost
     ability_configuration: AC_BiomechHost
     activity_configuration: AC_BiomechHostBehavior
     default_factions:
       - Narrative.Factions.Returned
+    default_owned_tags:
+      - Faction.Enemy.Biomech  # v7.8.16: Added per Guide Phase 8.1.5
 
   - name: NPC_BiomechCreature
     folder: Enemies/Biomech
+    npc_id: BiomechCreature  # v7.8.15: Added per Audit
     npc_name: Biomech Creature
     npc_blueprint: BP_BiomechCreature
     ability_configuration: AC_BiomechCreature
     activity_configuration: AC_BiomechCreatureBehavior
     default_factions:
       - Narrative.Factions.Returned
+    default_owned_tags:
+      - Faction.Enemy.Biomech  # v7.8.16: Added per Guide Phase 8.2.5
 
 # ============================================================================
 # CHARACTER DEFINITIONS (1)
@@ -7774,7 +7846,7 @@ character_definitions:
     npc_definition: NPC_FatherCompanion
 
 # ============================================================================
-# ITEM COLLECTIONS (1)
+# ITEM COLLECTIONS (2)
 # ============================================================================
 item_collections:
   - name: IC_FatherForms
@@ -7791,6 +7863,16 @@ item_collections:
       - item: EI_FatherRifleForm
         quantity: 1
       - item: EI_FatherSwordForm
+        quantity: 1
+
+  # v7.8.14: Gatherer Scout loot collection (placeholder items)
+  - name: IC_GathererScout
+    folder: Items/Gatherer
+    # Placeholder resource items - replace with actual game items when available
+    items:
+      - item: EI_GatheredResource_Common
+        quantity: 3
+      - item: EI_GatheredResource_Rare
         quantity: 1
 
 # ============================================================================
@@ -7908,11 +7990,11 @@ actor_blueprints:
             function: PrintString
             class: KismetSystemLibrary
           position: [300, 400]
-        # === PLAYER DEATH RESET HANDLER (v4.33: D-DEATH-RESET-2) ===
-        # Per D-DEATH-RESET-2: Silent reset - SymbioteCharge=0 (no VFX)
-        # The delegate_bindings section creates HandlePlayerDeathReset CustomEvent with correct OnDied signature
-        # TODO: Add handler logic (SymbioteCharge=0) manually in editor after generation
-        # Future enhancement: Extend delegate_bindings to support inline handler_nodes/handler_connections
+        # === PLAYER DEATH RESET (D-DEATH-RESET-2) ===
+        # v7.8.21: Death resets handled in abilities via WaitGameplayEvent pattern
+        # - DomeEnergy reset: IMPLEMENTED in GA_ProtectiveDome (uses WaitDeathEvent)
+        # - SymbioteCharge reset: Handled alongside DomeEnergy in GA_ProtectiveDome death handler
+        # See Track_E_Removal_Audit_v7_7.md - delegate bindings removed, WaitGameplayEvent is the pattern
       connections:
         # BeginPlay flow - Self -> GetMesh -> SpawnVFX
         - from: [Event_BeginPlay, Then]
@@ -8979,6 +9061,7 @@ gameplay_effects:  # WARDEN SYSTEM
 
 actor_blueprints:  # WARDEN SYSTEM
   # v4.34: SpawnNPC for proper NPC initialization on phase transition
+  # v7.8.16: Added missing variables per Warden_Husk_System_Implementation_Guide_v1_4.md Phase 3
   - name: BP_WardenHusk
     folder: Enemies/Warden
     parent_class: NarrativeNPCCharacter
@@ -8987,6 +9070,26 @@ actor_blueprints:  # WARDEN SYSTEM
       - name: PhaseSpawnDefinition
         type: Object
         class: NPCDefinition
+        instance_editable: true
+      # v7.8.16: Guide Phase 3.1.1 - Spawn offset for Core ejection
+      - name: SpawnOffset
+        type: Vector
+        default_value: "(X=0, Y=0, Z=100)"
+        instance_editable: true
+      # v7.8.16: Guide Phase 3.1.2 - Ejection animation montage
+      - name: EjectionMontage
+        type: Object
+        class: AnimMontage
+        instance_editable: true
+      # v7.8.16: Guide Phase 3.1.3 - Whether to spawn corpse mesh
+      - name: bSpawnCorpse
+        type: Boolean
+        default_value: "false"
+        instance_editable: true
+      # v7.8.16: Guide Phase 3.1.4 - Corpse mesh to spawn
+      - name: CorpseMesh
+        type: Object
+        class: StaticMesh
         instance_editable: true
     event_graph:
       nodes:
@@ -9053,9 +9156,46 @@ actor_blueprints:  # WARDEN SYSTEM
           - from: [AuthBranch, False]
             to: [CallParentDeath, Exec]
 
+  # v7.8.16: Added missing variables per Warden_Husk_System_Implementation_Guide_v1_4.md Phase 4
   - name: BP_WardenCore
     folder: Enemies/Warden
     parent_class: NarrativeNPCCharacter
+    variables:
+      # Guide Phase 4.1.1 - Flight movement speed
+      - name: FlightSpeed
+        type: Float
+        default_value: "600.0"
+        instance_editable: true
+      # Guide Phase 4.1.2 - Altitude to maintain above ground
+      - name: FlightAltitude
+        type: Float
+        default_value: "300.0"
+        instance_editable: true
+      # Guide Phase 4.1.3 - Damage per laser hit
+      - name: LaserDamage
+        type: Float
+        default_value: "50.0"
+        instance_editable: true
+      # Guide Phase 4.1.4 - Cooldown between laser shots
+      - name: LaserCooldown
+        type: Float
+        default_value: "1.5"
+        instance_editable: true
+      # Guide Phase 4.1.5 - Maximum laser engagement range
+      - name: LaserRange
+        type: Float
+        default_value: "2000.0"
+        instance_editable: true
+      # Guide Phase 4.1.6 - Projectile class for laser
+      - name: ProjectileClass
+        type: Class
+        class: NarrativeProjectile
+        instance_editable: true
+      # Guide Phase 4.1.7 - Offset from core center for laser spawn
+      - name: LaserSpawnOffset
+        type: Vector
+        default_value: "(X=50, Y=0, Z=0)"
+        instance_editable: true
     event_graph:
       nodes:
         # BeginPlay - Set Flying movement mode for hovering behavior
@@ -9126,6 +9266,22 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
       - name: TargetActor
         type: Object
         class: Actor
+      # v7.8.16: Guide missing variables - ProjectileClass for spawning laser projectile
+      - name: ProjectileClass
+        type: Class
+        class: NarrativeProjectile
+        default_value: BP_CoreLaserProjectile
+        instance_editable: true
+      # v7.8.16: Maximum engagement range
+      - name: MaxRange
+        type: Float
+        default_value: "2000.0"
+        instance_editable: true
+      # v7.8.16: Offset from owner for projectile spawn location
+      - name: LaserSpawnOffset
+        type: Vector
+        default_value: "(X=50, Y=0, Z=0)"
+        instance_editable: true
     event_graph:
       nodes:
         # Activation - Get target from AI blackboard and apply damage
@@ -9385,16 +9541,415 @@ behavior_trees:  # GUARD FORMATION
           AcceptableRadius: "50.0"
 
 activities:  # GUARD FORMATION
+  # v7.8.17: Full implementation per Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 7
+  # v7.8.17: P-BB-KEY-2 compliant - uses GetNarrativeProSettings for BBKey_FollowTarget
   - name: BPA_FormationFollow
     folder: AI/Activities
-    parent_class: NarrativeActivityBase
+    parent_class: NPCActivity
     behavior_tree: BT_FormationFollow
+    supported_goal_type: Goal_FormationFollow
+    is_interruptable: false
+    variables:
+      # Guide Phase 7 Step 3.1: Store cast goal reference
+      - name: FormationGoal
+        type: Object
+        class: Goal_FormationFollow
+        category: Formation
+      # v7.8.17: Only FormationOffset is custom - FollowTarget uses P-BB-KEY-2
+      - name: BBKey_FormationOffset
+        type: Name
+        default_value: "FormationOffset"
+    # SetupBlackboard override - Guide Phase 7 Steps 5.1-5.11
+    function_overrides:
+      - function: SetupBlackboard
+        return_type: Boolean
+        nodes:
+          # v7.8.17: P-BB-KEY-2 - Get NarrativeProSettings for canonical BB keys
+          - id: GetNarrativeProSettings
+            type: CallFunction
+            properties:
+              function: GetNarrativeProSettings
+              class: ArsenalStatics
+            position: [50, -100]
+          - id: GetBBKey_FollowTarget
+            type: PropertyGet
+            properties:
+              property_name: BBKey_FollowTarget
+              target_class: ArsenalSettings
+            position: [250, -100]
+          # Cast ActivityGoal to Goal_FormationFollow (Guide 5.2)
+          - id: CastToFormationGoal
+            type: DynamicCast
+            properties:
+              target_class: Goal_FormationFollow
+            position: [200, 0]
+          # Store cast result (Guide 5.3)
+          - id: SetFormationGoal
+            type: VariableSet
+            properties:
+              variable_name: FormationGoal
+            position: [400, 0]
+          # Get Target to Follow from goal (Guide 5.4)
+          - id: GetTargetToFollow
+            type: CallFunction
+            properties:
+              function: GetTargetToFollow
+              class: Goal_FollowCharacter
+            position: [600, 0]
+          # IsValid check on target (Guide 5.5)
+          - id: IsValidTarget
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [800, 0]
+          - id: ValidBranch
+            type: Branch
+            position: [950, 0]
+          # === VALID PATH: Set FollowTarget directly (Guide 5.7) ===
+          # v7.8.17: GetBBKeyFollow_Valid removed - using P-BB-KEY-2 PropertyGet at top
+          - id: SetFollowTarget_Valid
+            type: CallFunction
+            properties:
+              function: SetValueAsObject
+              class: BlackboardComponent
+            position: [1250, 0]
+          # Set FormationOffset on blackboard (Guide 5.9 - Valid path)
+          - id: GetBBKeyOffset_Valid
+            type: VariableGet
+            properties:
+              variable_name: BBKey_FormationOffset
+            position: [1450, -50]
+          - id: GetFormationOffset_Valid
+            type: CallFunction
+            properties:
+              function: GetFormationOffset
+            position: [1450, 50]
+          - id: SetFormationOffset_Valid
+            type: CallFunction
+            properties:
+              function: SetValueAsVector
+              class: BlackboardComponent
+            position: [1600, 0]
+          # === INVALID PATH: Find character via subsystem (Guide 5.6, 5.8) ===
+          # Get Target to Follow Asset (CharacterDefinition)
+          - id: GetTargetAsset
+            type: CallFunction
+            properties:
+              function: GetTargetToFollowAsset
+              class: Goal_FollowCharacter
+            position: [1100, 200]
+          # Get NarrativeCharacterSubsystem
+          - id: GetCharSubsystem
+            type: CallFunction
+            properties:
+              function: GetNarrativeCharacterSubsystem
+              class: NarrativeCharacterSubsystem
+            position: [1100, 300]
+          # FindCharacter by CharacterDefinition
+          - id: FindCharacter
+            type: CallFunction
+            properties:
+              function: FindCharacter
+              class: NarrativeCharacterSubsystem
+            position: [1300, 250]
+          # v7.8.17: GetBBKeyFollow_Invalid removed - using P-BB-KEY-2 PropertyGet at top
+          - id: SetFollowTarget_Invalid
+            type: CallFunction
+            properties:
+              function: SetValueAsObject
+              class: BlackboardComponent
+            position: [1600, 200]
+          # Set FormationOffset on blackboard (Guide 5.10 - Invalid path)
+          - id: GetBBKeyOffset_Invalid
+            type: VariableGet
+            properties:
+              variable_name: BBKey_FormationOffset
+            position: [1800, 150]
+          - id: GetFormationOffset_Invalid
+            type: CallFunction
+            properties:
+              function: GetFormationOffset
+            position: [1800, 250]
+          - id: SetFormationOffset_Invalid
+            type: CallFunction
+            properties:
+              function: SetValueAsVector
+              class: BlackboardComponent
+            position: [1950, 200]
+          # Return true (Guide 5.11)
+          - id: ReturnTrue
+            type: Return
+            position: [2150, 100]
+          - id: MakeTrue
+            type: MakeLiteralBool
+            properties:
+              value: "true"
+            position: [2000, 100]
+        connections:
+          # v7.8.17: P-BB-KEY-2 - NarrativeProSettings BB Key Access
+          - from: [GetNarrativeProSettings, ReturnValue]
+            to: [GetBBKey_FollowTarget, Target]
+          # Entry -> Cast
+          - from: [FunctionEntry, Then]
+            to: [CastToFormationGoal, Exec]
+          - from: [FunctionEntry, ActivityGoal]
+            to: [CastToFormationGoal, Object]
+          # Cast -> Set FormationGoal
+          - from: [CastToFormationGoal, Then]
+            to: [SetFormationGoal, Exec]
+          - from: [CastToFormationGoal, AsGoal_FormationFollow]
+            to: [SetFormationGoal, FormationGoal]
+          # Get Target to Follow (pure)
+          - from: [SetFormationGoal, FormationGoal]
+            to: [GetTargetToFollow, Target]
+          - from: [GetTargetToFollow, ReturnValue]
+            to: [IsValidTarget, Object]
+          # Set -> IsValid -> Branch
+          - from: [SetFormationGoal, Then]
+            to: [ValidBranch, Exec]
+          - from: [IsValidTarget, ReturnValue]
+            to: [ValidBranch, Condition]
+          # === VALID PATH ===
+          - from: [ValidBranch, True]
+            to: [SetFollowTarget_Valid, Exec]
+          - from: [FunctionEntry, BB]
+            to: [SetFollowTarget_Valid, Target]
+          # v7.8.17: P-BB-KEY-2 - Use PropertyGet from ArsenalSettings
+          - from: [GetBBKey_FollowTarget, BBKey_FollowTarget]
+            to: [SetFollowTarget_Valid, KeyName]
+          - from: [GetTargetToFollow, ReturnValue]
+            to: [SetFollowTarget_Valid, ObjectValue]
+          # Set FormationOffset (Valid path)
+          - from: [SetFollowTarget_Valid, Then]
+            to: [SetFormationOffset_Valid, Exec]
+          - from: [FunctionEntry, BB]
+            to: [SetFormationOffset_Valid, Target]
+          - from: [GetBBKeyOffset_Valid, BBKey_FormationOffset]
+            to: [SetFormationOffset_Valid, KeyName]
+          - from: [SetFormationGoal, FormationGoal]
+            to: [GetFormationOffset_Valid, Target]
+          - from: [GetFormationOffset_Valid, ReturnValue]
+            to: [SetFormationOffset_Valid, VectorValue]
+          # Valid path -> Return
+          - from: [SetFormationOffset_Valid, Then]
+            to: [ReturnTrue, Exec]
+          # === INVALID PATH ===
+          - from: [ValidBranch, False]
+            to: [SetFollowTarget_Invalid, Exec]
+          # Find character via subsystem
+          - from: [SetFormationGoal, FormationGoal]
+            to: [GetTargetAsset, Target]
+          - from: [GetCharSubsystem, ReturnValue]
+            to: [FindCharacter, Target]
+          - from: [GetTargetAsset, ReturnValue]
+            to: [FindCharacter, CharacterDefinition]
+          # Set FollowTarget from FindCharacter
+          - from: [FunctionEntry, BB]
+            to: [SetFollowTarget_Invalid, Target]
+          # v7.8.17: P-BB-KEY-2 - Use PropertyGet from ArsenalSettings
+          - from: [GetBBKey_FollowTarget, BBKey_FollowTarget]
+            to: [SetFollowTarget_Invalid, KeyName]
+          - from: [FindCharacter, ReturnValue]
+            to: [SetFollowTarget_Invalid, ObjectValue]
+          # Set FormationOffset (Invalid path)
+          - from: [SetFollowTarget_Invalid, Then]
+            to: [SetFormationOffset_Invalid, Exec]
+          - from: [FunctionEntry, BB]
+            to: [SetFormationOffset_Invalid, Target]
+          - from: [GetBBKeyOffset_Invalid, BBKey_FormationOffset]
+            to: [SetFormationOffset_Invalid, KeyName]
+          - from: [SetFormationGoal, FormationGoal]
+            to: [GetFormationOffset_Invalid, Target]
+          - from: [GetFormationOffset_Invalid, ReturnValue]
+            to: [SetFormationOffset_Invalid, VectorValue]
+          # Invalid path -> Return
+          - from: [SetFormationOffset_Invalid, Then]
+            to: [ReturnTrue, Exec]
+          # Return value
+          - from: [MakeTrue, ReturnValue]
+            to: [ReturnTrue, ReturnValue]
 
+  # v7.8.17: Full implementation per Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 8
+  # v7.8.17: P-BB-KEY-2 compliant - uses GetNarrativeProSettings for BBKey_TargetLocation
+  # BPA_Attack_Formation - Leash attack behavior for formation guards
   - name: BPA_Attack_Formation
     folder: AI/Activities
     parent_class: BPA_Attack_Melee
+    variables:
+      # Guide Phase 8 Step 3.1: LeashRadius - max distance from formation position to attack
+      - name: LeashRadius
+        type: Float
+        default_value: "400.0"
+        instance_editable: true
+        category: Formation
+      # v7.8.17: BBKey_TargetLocation removed - using P-BB-KEY-2 pattern instead
+    # ScoreGoalItem override - Guide Phase 8 Steps 4-6
+    function_overrides:
+      - function: ScoreGoalItem
+        # Returns parent score if enemy within LeashRadius, 0 if outside
+        nodes:
+          # v7.8.17: P-BB-KEY-2 - Get NarrativeProSettings for canonical BB keys
+          - id: GetNarrativeProSettings
+            type: CallFunction
+            properties:
+              function: GetNarrativeProSettings
+              class: ArsenalStatics
+            position: [50, 300]
+          - id: GetBBKey_TargetLocation
+            type: PropertyGet
+            properties:
+              property_name: BBKey_TargetLocation
+              target_class: ArsenalSettings
+            position: [250, 300]
+          # Cast GoalItem to Goal_Attack (Guide 5.1)
+          - id: CastToGoalAttack
+            type: DynamicCast
+            properties:
+              target_class: Goal_Attack
+            position: [200, 0]
+          # Get Target Actor from Goal_Attack (Guide 5.1.4-5.1.5)
+          - id: GetTargetActor
+            type: CallFunction
+            properties:
+              function: GetTargetActor
+              class: Goal_Attack
+            position: [400, 0]
+          # Get enemy location (Guide 5.1.7)
+          - id: GetEnemyLocation
+            type: CallFunction
+            properties:
+              function: K2_GetActorLocation
+              class: Actor
+            position: [600, 0]
+          # Get Owner Controller (Guide 5.2.1)
+          - id: GetOwnerController
+            type: CallFunction
+            properties:
+              function: GetOwnerController
+              target_self: true
+            position: [200, 150]
+          # Get Blackboard Component (Guide 5.2.2-5.2.3)
+          - id: GetBlackboard
+            type: PropertyGet
+            properties:
+              property_name: Blackboard
+              target_class: AIController
+            position: [400, 150]
+          # v7.8.17: GetBBKeyVar removed - using P-BB-KEY-2 PropertyGet at top
+          # Get formation position from blackboard (Guide 5.2.4-5.2.6)
+          - id: GetFormationPosition
+            type: CallFunction
+            properties:
+              function: GetValueAsVector
+              class: BlackboardComponent
+            position: [600, 150]
+          # Subtract vectors to get direction (Guide 5.3.1-5.3.3)
+          - id: SubtractVectors
+            type: CallFunction
+            properties:
+              function: Subtract_VectorVector
+              class: KismetMathLibrary
+            position: [800, 0]
+          # Get vector length (Guide 5.3.4-5.3.5)
+          - id: VectorLength
+            type: CallFunction
+            properties:
+              function: VSize
+              class: KismetMathLibrary
+            position: [1000, 0]
+          # Get LeashRadius variable
+          - id: GetLeashRadius
+            type: VariableGet
+            properties:
+              variable_name: LeashRadius
+            position: [1000, 100]
+          # Compare distance <= LeashRadius (Guide 5.4.1-5.4.3)
+          - id: LessOrEqual
+            type: CallFunction
+            properties:
+              function: LessEqual_FloatFloat
+              class: KismetMathLibrary
+            position: [1200, 0]
+          # Branch on leash check (Guide 5.4.5-5.4.6)
+          - id: LeashBranch
+            type: Branch
+            position: [1400, 0]
+          # True path: Call parent ScoreGoalItem (Guide 5.5.1-5.5.4)
+          - id: CallParentScore
+            type: CallParentFunction
+            properties:
+              function: ScoreGoalItem
+            position: [1600, 0]
+          # Return parent score
+          - id: ReturnParentScore
+            type: Return
+            position: [1800, 0]
+          # False path: Return 0.0 (Guide 5.5.7-5.5.9)
+          - id: MakeZero
+            type: MakeLiteralFloat
+            properties:
+              value: "0.0"
+            position: [1600, 150]
+          - id: ReturnZero
+            type: Return
+            position: [1800, 150]
+        connections:
+          # v7.8.17: P-BB-KEY-2 - NarrativeProSettings BB Key Access
+          - from: [GetNarrativeProSettings, ReturnValue]
+            to: [GetBBKey_TargetLocation, Target]
+          # Entry -> Cast to Goal_Attack
+          - from: [FunctionEntry, Then]
+            to: [CastToGoalAttack, Exec]
+          - from: [FunctionEntry, GoalItem]
+            to: [CastToGoalAttack, Object]
+          # Cast -> Get Target Actor (pure chain)
+          - from: [CastToGoalAttack, AsGoal_Attack]
+            to: [GetTargetActor, Target]
+          - from: [GetTargetActor, ReturnValue]
+            to: [GetEnemyLocation, Target]
+          # Owner Controller -> Blackboard -> Formation Position (pure chain)
+          - from: [GetOwnerController, ReturnValue]
+            to: [GetBlackboard, Target]
+          - from: [GetBlackboard, Blackboard]
+            to: [GetFormationPosition, Target]
+          # v7.8.17: P-BB-KEY-2 - Use PropertyGet from ArsenalSettings
+          - from: [GetBBKey_TargetLocation, BBKey_TargetLocation]
+            to: [GetFormationPosition, KeyName]
+          # Calculate distance
+          - from: [GetEnemyLocation, ReturnValue]
+            to: [SubtractVectors, A]
+          - from: [GetFormationPosition, ReturnValue]
+            to: [SubtractVectors, B]
+          - from: [SubtractVectors, ReturnValue]
+            to: [VectorLength, A]
+          # Compare with LeashRadius
+          - from: [VectorLength, ReturnValue]
+            to: [LessOrEqual, A]
+          - from: [GetLeashRadius, LeashRadius]
+            to: [LessOrEqual, B]
+          - from: [LessOrEqual, ReturnValue]
+            to: [LeashBranch, Condition]
+          # Exec flow: Cast -> Branch
+          - from: [CastToGoalAttack, Then]
+            to: [LeashBranch, Exec]
+          # True: Call parent and return
+          - from: [LeashBranch, True]
+            to: [CallParentScore, Exec]
+          - from: [FunctionEntry, GoalItem]
+            to: [CallParentScore, GoalItem]
+          - from: [CallParentScore, Then]
+            to: [ReturnParentScore, Exec]
+          - from: [CallParentScore, ReturnValue]
+            to: [ReturnParentScore, ReturnValue]
+          # False: Return 0.0
+          - from: [LeashBranch, False]
+            to: [ReturnZero, Exec]
+          - from: [MakeZero, ReturnValue]
+            to: [ReturnZero, ReturnValue]
 
 actor_blueprints:  # GUARD FORMATION BT SERVICES
+  # v7.8.17: P-BB-KEY-2 compliant - uses GetNarrativeProSettings for canonical BB keys
   # v4.39.6: Full implementation per Guide v2.6 Phase 4 - vector offset with rotation
   # Uses FormationOffset (Vector) from blackboard, rotates by target rotation via RotateVector
   # Reference: Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 4 Node Connection Summary
@@ -9402,16 +9957,10 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
     folder: AI/Services
     parent_class: BTService_BlueprintBase
     variables:
-      # BB key names per guide Phase 4 steps 3.1-3.3
-      - name: BBKey_FollowTarget
-        type: Name
-        default_value: "FollowTarget"
+      # v7.8.17: Only FormationOffset is custom - FollowTarget/TargetLocation use P-BB-KEY-2
       - name: BBKey_FormationOffset
         type: Name
         default_value: "FormationOffset"
-      - name: BBKey_TargetLocation
-        type: Name
-        default_value: "TargetLocation"
     event_graph:
       nodes:
         # Step 4.1: Event Receive Tick AI - Called by BT Service on tick
@@ -9420,6 +9969,25 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
           properties:
             event_name: ReceiveTickAI
           position: [0, 0]
+        # v7.8.17: P-BB-KEY-2 - Get NarrativeProSettings for canonical BB keys
+        - id: GetNarrativeProSettings
+          type: CallFunction
+          properties:
+            function: GetNarrativeProSettings
+            class: ArsenalStatics
+          position: [100, 150]
+        - id: GetBBKey_FollowTarget
+          type: PropertyGet
+          properties:
+            property_name: BBKey_FollowTarget
+            target_class: ArsenalSettings
+          position: [300, 100]
+        - id: GetBBKey_TargetLocation
+          type: PropertyGet
+          properties:
+            property_name: BBKey_TargetLocation
+            target_class: ArsenalSettings
+          position: [300, 200]
         # Step 4.2: Get Blackboard Component from OwnerController
         # v4.40.4: Use PropertyGet for Blackboard (GetBlackboardComponent is C++ inline, not UFUNCTION)
         - id: GetBlackboard
@@ -9429,11 +9997,6 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             target_class: AIController
           position: [200, 0]
         # Step 4.3: Get FollowTarget (Object) from blackboard
-        - id: GetBBKey_FollowTarget
-          type: VariableGet
-          properties:
-            variable_name: BBKey_FollowTarget
-          position: [300, 100]
         - id: GetFollowTarget
           type: CallFunction
           properties:
@@ -9498,11 +10061,7 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
             class: KismetMathLibrary
           position: [1700, 0]
         # Step 4.11: Set TargetLocation on Blackboard
-        - id: GetBBKey_TargetLocation
-          type: VariableGet
-          properties:
-            variable_name: BBKey_TargetLocation
-          position: [1800, 100]
+        # v7.8.17: GetBBKey_TargetLocation moved to top of graph (P-BB-KEY-2 PropertyGet)
         - id: SetTargetLocation
           type: CallFunction
           properties:
@@ -9520,6 +10079,11 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         # Step 8: Branch True → Set Value as Vector
         - from: [BranchValid, True]
           to: [SetTargetLocation, Exec]
+        # === v7.8.17: P-BB-KEY-2 - NarrativeProSettings BB Key Access ===
+        - from: [GetNarrativeProSettings, ReturnValue]
+          to: [GetBBKey_FollowTarget, Target]
+        - from: [GetNarrativeProSettings, ReturnValue]
+          to: [GetBBKey_TargetLocation, Target]
         # === DATA FLOW - Blackboard Access (Guide Steps 2-5) ===
         # Step 2: Event Receive Tick AI OwnerController → Get Blackboard Component Target
         - from: [Event_ReceiveTickAI, OwnerController]
@@ -9527,7 +10091,7 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         # Step 3: Get Blackboard Component Return Value → Get Value as Object Target
         - from: [GetBlackboard, ReturnValue]
           to: [GetFollowTarget, Target]
-        # Step 4: BBKey_FollowTarget Value → Get Value as Object Key Name
+        # Step 4: v7.8.17: P-BB-KEY-2 - BBKey_FollowTarget from ArsenalSettings PropertyGet
         - from: [GetBBKey_FollowTarget, BBKey_FollowTarget]
           to: [GetFollowTarget, KeyName]
         # Step 5: Get Value as Object Return Value → Cast To Actor Object
@@ -9571,7 +10135,7 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         # Step 17: Get Blackboard Component Return Value → Set Value as Vector Target
         - from: [GetBlackboard, ReturnValue]
           to: [SetTargetLocation, Target]
-        # Step 18: BBKey_TargetLocation Value → Set Value as Vector Key Name
+        # Step 18: v7.8.17: P-BB-KEY-2 - BBKey_TargetLocation from ArsenalSettings PropertyGet
         - from: [GetBBKey_TargetLocation, BBKey_TargetLocation]
           to: [SetTargetLocation, KeyName]
         # Step 19: Vector + Vector Return Value → Set Value as Vector Vector Value
@@ -9799,10 +10363,8 @@ actor_blueprints:  # GUARD FORMATION BT SERVICES
         - from: [CastToActor, Exec]
           to: [SetMaxWalkSpeed, Exec]
 
-goals:  # GUARD FORMATION
-  - name: Goal_FormationFollow
-    folder: AI/Goals
-    parent_class: Goal_FollowCharacter
+# v7.8.15: Goal_FormationFollow moved to actor_blueprints section (requires variables per Guide Phase 3)
+# See Guard_Formation_Follow_System_Implementation_Guide_v2_6.md
 
 # ============================================================================
 # NPC SYSTEMS - POSSESSED EXPLODER
@@ -11724,6 +12286,24 @@ tags:  # GATHERER
     comment: Goal type identifier
 
 actor_blueprints:  # GATHERER
+  # v7.8.22: BP_GathererScoutController - Custom AIController with AIPerception configured
+  # Per Guide v1.2 Phase 1.3: Configure AIPerception for enemy detection
+  - name: BP_GathererScoutController
+    folder: Enemies/Gatherer
+    parent_class: NarrativeNPCController
+    ai_perception:
+      senses:
+        - type: Sight
+          sight_radius: 800.0
+          lose_sight_radius: 1000.0
+          peripheral_vision_angle: 90.0
+          detect_enemies: true
+          detect_neutrals: false
+          detect_friendlies: false
+      dominant_sense: Sight
+
+  # v7.8.14: BP_GathererScout NPC Blueprint
+  # v7.8.22: AIPerception now configured via BP_GathererScoutController (generator automated)
   - name: BP_GathererScout
     folder: Enemies/Gatherer
     parent_class: NarrativeNPCCharacter
@@ -11770,254 +12350,396 @@ actor_blueprints:  # GATHERER
         - from: [Event_BeginPlay, Then]
           to: [PrintReady, Exec]
 
-goals:  # GATHERER
+actor_blueprints:  # GATHERER GOALS AND GOAL GENERATORS
+  # v7.8.15: Goal_Alert moved to actor_blueprints because it has variables and function_overrides
+  # Complete Goal_Alert per Guide v1.2 Phase 2
   - name: Goal_Alert
     folder: AI/Goals
     parent_class: NPCGoalItem
-
-actor_blueprints:  # GATHERER GOAL GENERATORS
+    variables:
+      # Guide 2.1: Location where hostile was spotted
+      - name: AlertLocation
+        type: Vector
+        default_value: "(0.0, 0.0, 0.0)"
+        save_game: true
+      # Guide 2.2: Actor that triggered the alert
+      - name: SpottedTarget
+        type: Object
+        class: Actor
+      # Guide 2.3: DefaultScore as Blueprint variable (CDO won't work for goals with function_overrides)
+      - name: DefaultScore
+        type: Float
+        default_value: "5.0"
+    # Guide Phase 2, Step 4: GetGoalKey returns SpottedTarget for deduplication
+    function_overrides:
+      - function: GetGoalKey
+        nodes:
+          - id: GetSpottedTarget
+            type: VariableGet
+            properties:
+              variable_name: SpottedTarget
+            position: [200, 0]
+          - id: ReturnKey
+            type: Return
+            position: [400, 0]
+        connections:
+          - from: [FunctionEntry, Then]
+            to: [ReturnKey, Exec]
+          - from: [GetSpottedTarget, SpottedTarget]
+            to: [ReturnKey, ReturnValue]
+  # v7.8.14: GoalGenerator_Alert per Guide v1.2 Phase 3 and Tech Doc Section 65.5
+  # Full implementation with OnPerceptionUpdated binding - NO SIMPLIFICATION per Contract 25
   - name: GoalGenerator_Alert
     folder: AI/GoalGenerators
     parent_class: NPCGoalGenerator
     variables:
-      # Alert radius for finding nearby allies to warn
-      - name: AlertRadius
-        type: Float
-        default_value: "1500.0"
-        instance_editable: true
-      # Track if alert already broadcast (prevent spam)
-      - name: bAlertBroadcast
-        type: Boolean
-        default_value: "false"
-      # The goal item class to add when alerting (defaults to Goal_Alert)
+      # Guide 2.1: The goal item class to add when alerting
       - name: AlertGoalClass
         type: Class
         class: NPCGoalItem
+        default_value: Goal_Alert
         instance_editable: true
-    # Override InitializeGoalGenerator - Sets up alert system
+      # Guide 2.2: Base score for alert goals
+      - name: AlertGoalBaseScore
+        type: Float
+        default_value: "5.0"
+        instance_editable: true
+    # Guide 3: Override InitializeGoalGenerator - Bind OnPerceptionUpdated per Tech Doc 65.5
     function_overrides:
       - function: InitializeGoalGenerator
         nodes:
-          - id: CallParent
-            type: CallParent
-            position: [200, 0]
-          - id: PrintInit
-            type: PrintString
+          # v7.8.18: Self node for PropertyGet
+          - id: SelfRef_Init
+            type: Self
+            position: [100, 0]
+          # v7.8.18: Get OwnerController via PropertyGet (NPCGoalGenerator has property, not function)
+          - id: GetOwnerController
+            type: PropertyGet
             properties:
-              message: "GoalGenerator_Alert: Initialized - call BroadcastAlert to propagate"
+              property_name: OwnerController
+              target_class: NPCGoalGenerator
+            position: [200, 0]
+          # Guide 3.2.2: Get AI Perception Component from AIController
+          # [MANIFEST] GetComponentByClass pattern (common NP pattern)
+          # AIController.PerceptionComponent not Blueprint-visible, use GetComponentByClass
+          - id: GetAIPerception
+            type: CallFunction
+            properties:
+              function: GetComponentByClass
+              class: Actor
+              param.ComponentClass: AIPerceptionComponent
             position: [400, 0]
+          # Guide 3.2.3: Is Valid check
+          - id: IsValidPerception
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [600, 0]
+          # Guide 3.2.4: Branch on validity
+          - id: BranchValid
+            type: Branch
+            position: [800, 0]
+          # v7.8.19: Cast GetComponentByClass result to AIPerceptionComponent
+          # [MANIFEST] Pattern from line 12022: DynamicCast after GetComponentByClass
+          - id: CastToAIPerception
+            type: DynamicCast
+            properties:
+              target_class: AIPerceptionComponent
+            position: [900, 0]
+          # Guide 3.2.5: Bind to OnPerceptionUpdated delegate
+          # [PLUGIN] Tech Doc 65.5: Bind Event to On Perception Updated
+          # v7.8.19: AddDelegate node type with source_class for delegate property lookup
+          - id: BindPerception
+            type: AddDelegate
+            properties:
+              delegate_name: OnPerceptionUpdated
+              event_name: OnPerceptionUpdated_Handler
+              source_class: AIPerceptionComponent
+            position: [1100, 0]
         connections:
+          # v7.8.19: GetComponentByClass has exec pins (not pure)
           - from: [FunctionEntry, Then]
-            to: [CallParent, Exec]
-          - from: [CallParent, Exec]
-            to: [PrintInit, Exec]
-    # Custom event for alert broadcasting (call from perception/damage events)
+            to: [GetAIPerception, Exec]
+          - from: [GetAIPerception, Then]
+            to: [BranchValid, Exec]
+          # v7.8.18: Self -> PropertyGet for OwnerController
+          - from: [SelfRef_Init, self]
+            to: [GetOwnerController, self]
+          # v7.8.19: OwnerController -> GetComponentByClass Target
+          - from: [GetOwnerController, ReturnValue]
+            to: [GetAIPerception, Target]
+          # v7.8.19: GetComponentByClass output -> IsValid and BindPerception
+          - from: [GetAIPerception, ReturnValue]
+            to: [IsValidPerception, Object]
+          - from: [IsValidPerception, ReturnValue]
+            to: [BranchValid, Condition]
+          # v7.8.19: Cast before binding - exec flow through DynamicCast
+          - from: [BranchValid, True]
+            to: [CastToAIPerception, Exec]
+          - from: [CastToAIPerception, Then]
+            to: [BindPerception, Exec]
+          # v7.8.19: GetComponentByClass result -> Cast input
+          - from: [GetAIPerception, ReturnValue]
+            to: [CastToAIPerception, Object]
+          # v7.8.19: Casted output -> BindPerception Target
+          - from: [CastToAIPerception, AsAIPerceptionComponent]
+            to: [BindPerception, Target]
+    # Guide 4: OnPerceptionUpdated event handler - creates Goal_Alert when hostile detected
     event_graph:
       nodes:
-        # BroadcastAlert - Called when NPC detects threat or takes damage
-        - id: Event_BroadcastAlert
+        # Guide 4.1.1: OnPerceptionUpdated handler receives UpdatedActors array
+        - id: Event_OnPerceptionUpdated
           type: CustomEvent
           properties:
-            event_name: BroadcastAlert
+            event_name: OnPerceptionUpdated_Handler
+            parameters:
+              - name: UpdatedActors
+                type: Array
+                element_type: Actor
           position: [0, 0]
-        # Check if already broadcast (prevent spam)
-        - id: GetBroadcast
-          type: VariableGet
-          properties:
-            variable_name: bAlertBroadcast
+        # Guide 4.1.1: For Each Loop on actors
+        - id: ForEachActor
+          type: ForEachLoop
           position: [200, 0]
-        - id: BranchBroadcast
-          type: Branch
-          position: [400, 0]
-        # Skip if already broadcast
-        - id: PrintSkip
-          type: PrintString
+        # v7.8.18: Get owner via OwnerController property -> GetPawn
+        # NPCGoalGenerator has OwnerController (ANarrativeNPCController*)
+        - id: SelfRef
+          type: Self
+          position: [250, 100]
+        - id: GetOwnerController
+          type: PropertyGet
           properties:
-            message: "Alert already broadcast - skipping"
-          position: [600, -100]
-        # Set broadcast flag
-        - id: SetBroadcast
-          type: VariableSet
-          properties:
-            variable_name: bAlertBroadcast
-            value: "true"
-          position: [600, 100]
-        # Get owner controller location for sphere overlap
-        - id: GetController
-          type: VariableGet
-          properties:
-            variable_name: OwnerController
-          position: [800, 100]
+            property_name: OwnerController
+            target_class: NPCGoalGenerator
+          position: [350, 100]
         - id: GetPawn
           type: CallFunction
           properties:
             function: K2_GetPawn
             class: Controller
-          position: [1000, 100]
-        - id: GetLocation
+          position: [400, 100]
+        # Guide 4.2.1.1: Get Attitude (ArsenalStatics)
+        - id: GetAttitude
           type: CallFunction
           properties:
-            function: K2_GetActorLocation
-            class: Actor
-          position: [1200, 100]
-        # Get alert radius
-        - id: GetRadius
-          type: VariableGet
+            function: GetAttitude
+            class: ArsenalStatics
+          position: [400, 0]
+        # Guide 4.2.2: Compare to Hostile (ETeamAttitude::Hostile = 2)
+        - id: MakeHostileValue
+          type: MakeLiteralByte
           properties:
-            variable_name: AlertRadius
-          position: [1000, 200]
-        # Make object types array for Pawn detection
-        - id: MakeObjectTypes
-          type: MakeArray
-          properties:
-            element_type: ObjectTypeQuery
-            num_elements: 1
-          position: [1200, 200]
-        # Make actors to ignore array (ignore self)
-        - id: MakeActorsToIgnore
-          type: MakeArray
-          properties:
-            element_type: Actor
-            num_elements: 1
-          position: [1200, 300]
-        # Sphere overlap to find nearby actors
-        - id: SphereOverlap
+            value: 2
+          position: [600, 100]
+        - id: EqualHostile
           type: CallFunction
           properties:
-            function: SphereOverlapActors
-            class: KismetSystemLibrary
-          position: [1400, 100]
-        # Loop through found actors
-        - id: ForEachActor
-          type: ForEachLoop
-          position: [1600, 100]
-        # Cast to NarrativeNPCCharacter
-        - id: CastToNPC
-          type: DynamicCast
-          properties:
-            target_class: NarrativeNPCCharacter
-          position: [1800, 100]
-        # Get their activity component
-        - id: GetActivityComp
+            function: EqualEqual_ByteByte
+            class: KismetMathLibrary
+          position: [600, 0]
+        # Guide 4.2.3: Branch on hostile
+        - id: BranchHostile
+          type: Branch
+          position: [800, 0]
+        # Guide 4.3.1: Get Activity Component
+        - id: GetActivityComponent
           type: CallFunction
           properties:
             function: GetComponentByClass
             class: Actor
             param.ComponentClass: NPCActivityComponent
-          position: [2000, 100]
-        # Cast to NPCActivityComponent (GetComponentByClass returns ActorComponent)
-        - id: CastToActivityComp
+          position: [1000, 0]
+        # Guide 4.3.1.2: Cast to NPCActivityComponent for proper type
+        - id: CastToActivityComponent
           type: DynamicCast
           properties:
             target_class: NPCActivityComponent
-          position: [2100, 100]
-        # Validity check on component
-        - id: IsValidComp
+          position: [1100, 0]
+        # Guide 4.3.2: Get Goal By Key to check duplicates
+        - id: GetGoalByKey
           type: CallFunction
           properties:
-            function: IsValid
-            class: KismetSystemLibrary
-          position: [2200, 100]
-        - id: BranchValid
+            function: GetGoalByKey
+            class: NPCActivityComponent
+          position: [1200, 0]
+        # Guide 4.3.3: NOT OutSucceeded check
+        - id: NotSucceeded
+          type: CallFunction
+          properties:
+            function: Not_PreBool
+            class: KismetMathLibrary
+          position: [1400, 0]
+        # Guide 4.3.3.2: Branch on no existing goal
+        - id: BranchNoGoal
           type: Branch
-          position: [2400, 100]
-        # Get alert goal class
-        - id: GetAlertClass
+          position: [1600, 0]
+        # Guide 4.4.1: Get AlertGoalClass variable
+        - id: GetAlertGoalClass
           type: VariableGet
           properties:
             variable_name: AlertGoalClass
-          position: [2400, 200]
-        # Spawn a new goal instance
-        - id: SpawnGoal
-          type: CallFunction
+          position: [1800, 100]
+        # Guide 4.4.1: Construct Object from Class
+        - id: ConstructGoal
+          type: ConstructObjectFromClass
           properties:
-            function: SpawnObject
-            class: GameplayStatics
-          position: [2600, 100]
-        # Cast to NPCGoalItem
-        - id: CastToGoal
+            class: NPCGoalItem
+          position: [1800, 0]
+        # Guide 4.4.2: Cast to Goal_Alert
+        - id: CastToGoalAlert
           type: DynamicCast
           properties:
+            target_class: Goal_Alert
+          position: [2000, 0]
+        # Guide 4.4.3.1: SET SpottedTarget
+        - id: SetSpottedTarget
+          type: VariableSet
+          properties:
+            variable_name: SpottedTarget
+            target_class: Goal_Alert
+          position: [2200, 0]
+        # Guide 4.4.3.2: Get Actor Location for AlertLocation
+        - id: GetActorLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+            class: Actor
+          position: [2200, 200]
+        # Guide 4.4.3.2: SET AlertLocation
+        - id: SetAlertLocation
+          type: VariableSet
+          properties:
+            variable_name: AlertLocation
+            target_class: Goal_Alert
+          position: [2400, 0]
+        # Guide 4.4.3.3: Get AlertGoalBaseScore variable
+        - id: GetAlertGoalBaseScore
+          type: VariableGet
+          properties:
+            variable_name: AlertGoalBaseScore
+          position: [2400, 200]
+        # Guide 4.4.3.3: SET DefaultScore (NPCGoalItem.DefaultScore property)
+        - id: SetDefaultScore
+          type: VariableSet
+          properties:
+            variable_name: DefaultScore
             target_class: NPCGoalItem
-          position: [2800, 100]
-        # Add goal to their activity component
+          position: [2600, 0]
+        # Guide 4.4.4: Add Goal to activity component
         - id: AddGoal
           type: CallFunction
           properties:
             function: AddGoal
             class: NPCActivityComponent
             param.bTriggerReselect: true
-          position: [3000, 100]
-        - id: PrintAlerted
-          type: PrintString
-          properties:
-            message: "Alert propagated to nearby NPC"
-          position: [3200, 100]
+          position: [2800, 0]
       connections:
-        - from: [Event_BroadcastAlert, Then]
-          to: [BranchBroadcast, Exec]
-        - from: [GetBroadcast, bAlertBroadcast]
-          to: [BranchBroadcast, Condition]
-        - from: [BranchBroadcast, True]
-          to: [PrintSkip, Exec]
-        - from: [BranchBroadcast, False]
-          to: [SetBroadcast, Exec]
-        - from: [SetBroadcast, Then]
-          to: [SphereOverlap, Exec]
-        - from: [GetController, OwnerController]
-          to: [GetPawn, Target]
-        - from: [GetPawn, ReturnValue]
-          to: [GetLocation, Target]
-        - from: [GetLocation, ReturnValue]
-          to: [SphereOverlap, SpherePos]
-        - from: [GetRadius, AlertRadius]
-          to: [SphereOverlap, SphereRadius]
-        - from: [MakeObjectTypes, Array]
-          to: [SphereOverlap, ObjectTypes]
-        - from: [MakeActorsToIgnore, Array]
-          to: [SphereOverlap, ActorsToIgnore]
-        - from: [GetPawn, ReturnValue]
-          to: [MakeActorsToIgnore, [0]]
-        - from: [SphereOverlap, OutActors]
-          to: [ForEachActor, Array]
-        - from: [SphereOverlap, Then]
+        # Event -> ForEach
+        - from: [Event_OnPerceptionUpdated, Then]
           to: [ForEachActor, Exec]
+        - from: [Event_OnPerceptionUpdated, UpdatedActors]
+          to: [ForEachActor, Array]
+        # Self -> GetOwnerController -> GetPawn (get owner character)
+        - from: [SelfRef, Self]
+          to: [GetOwnerController, Target]
+        - from: [GetOwnerController, OwnerController]
+          to: [GetPawn, Target]
+        # ForEach -> GetAttitude (use owner pawn for attitude check)
         - from: [ForEachActor, LoopBody]
-          to: [CastToNPC, Exec]
+          to: [GetAttitude, Exec]
+        - from: [GetPawn, ReturnValue]
+          to: [GetAttitude, TestActor]
         - from: [ForEachActor, ArrayElement]
-          to: [CastToNPC, Object]
-        - from: [CastToNPC, Then]
-          to: [GetActivityComp, Exec]
-        - from: [CastToNPC, AsNarrativeNPCCharacter]
-          to: [GetActivityComp, Target]
-        - from: [GetActivityComp, ReturnValue]
-          to: [CastToActivityComp, Object]
-        - from: [GetActivityComp, Then]
-          to: [CastToActivityComp, Exec]
-        - from: [CastToActivityComp, AsNPCActivityComponent]
-          to: [IsValidComp, Object]
-        - from: [CastToActivityComp, Then]
-          to: [BranchValid, Exec]
-        - from: [IsValidComp, ReturnValue]
-          to: [BranchValid, Condition]
-        - from: [BranchValid, True]
-          to: [SpawnGoal, Exec]
-        - from: [GetAlertClass, AlertGoalClass]
-          to: [SpawnGoal, ObjectClass]
-        - from: [CastToActivityComp, AsNPCActivityComponent]
-          to: [SpawnGoal, Outer]
-        - from: [SpawnGoal, ReturnValue]
-          to: [CastToGoal, Object]
-        - from: [SpawnGoal, Then]
-          to: [CastToGoal, Exec]
-        - from: [CastToGoal, AsNPCGoalItem]
-          to: [AddGoal, NewGoal]
-        - from: [CastToActivityComp, AsNPCActivityComponent]
-          to: [AddGoal, Target]
-        - from: [CastToGoal, Then]
+          to: [GetAttitude, Target]
+        # GetAttitude -> Compare -> Branch
+        - from: [GetAttitude, ReturnValue]
+          to: [EqualHostile, A]
+        - from: [MakeHostileValue, ReturnValue]
+          to: [EqualHostile, B]
+        - from: [GetAttitude, Then]
+          to: [BranchHostile, Exec]
+        - from: [EqualHostile, ReturnValue]
+          to: [BranchHostile, Condition]
+        # Branch True -> GetActivityComponent -> Cast -> GetGoalByKey
+        - from: [BranchHostile, True]
+          to: [GetActivityComponent, Exec]
+        - from: [GetPawn, ReturnValue]
+          to: [GetActivityComponent, Target]
+        - from: [GetActivityComponent, Then]
+          to: [CastToActivityComponent, Exec]
+        - from: [GetActivityComponent, ReturnValue]
+          to: [CastToActivityComponent, Object]
+        - from: [CastToActivityComponent, Then]
+          to: [GetGoalByKey, Exec]
+        - from: [CastToActivityComponent, AsNPCActivityComponent]
+          to: [GetGoalByKey, Target]
+        - from: [GetAlertGoalClass, AlertGoalClass]
+          to: [GetGoalByKey, GoalType]
+        - from: [ForEachActor, ArrayElement]
+          to: [GetGoalByKey, Key]
+        # GetGoalByKey -> NOT -> Branch
+        - from: [GetGoalByKey, OutSucceeded]
+          to: [NotSucceeded, A]
+        - from: [GetGoalByKey, Then]
+          to: [BranchNoGoal, Exec]
+        - from: [NotSucceeded, ReturnValue]
+          to: [BranchNoGoal, Condition]
+        # Branch True (no goal) -> Construct -> Cast -> Set properties -> AddGoal
+        - from: [BranchNoGoal, True]
+          to: [ConstructGoal, Exec]
+        - from: [GetAlertGoalClass, AlertGoalClass]
+          to: [ConstructGoal, Class]
+        - from: [CastToActivityComponent, AsNPCActivityComponent]
+          to: [ConstructGoal, Outer]
+        - from: [ConstructGoal, Then]
+          to: [CastToGoalAlert, Exec]
+        - from: [ConstructGoal, ReturnValue]
+          to: [CastToGoalAlert, Object]
+        - from: [CastToGoalAlert, Then]
+          to: [SetSpottedTarget, Exec]
+        - from: [CastToGoalAlert, AsGoal_Alert]
+          to: [SetSpottedTarget, Target]
+        - from: [ForEachActor, ArrayElement]
+          to: [SetSpottedTarget, SpottedTarget]
+        - from: [SetSpottedTarget, Then]
+          to: [SetAlertLocation, Exec]
+        - from: [CastToGoalAlert, AsGoal_Alert]
+          to: [SetAlertLocation, Target]
+        - from: [GetPawn, ReturnValue]
+          to: [GetActorLocation, Target]
+        - from: [GetActorLocation, ReturnValue]
+          to: [SetAlertLocation, AlertLocation]
+        - from: [SetAlertLocation, Then]
+          to: [SetDefaultScore, Exec]
+        - from: [CastToGoalAlert, AsGoal_Alert]
+          to: [SetDefaultScore, Target]
+        - from: [GetAlertGoalBaseScore, AlertGoalBaseScore]
+          to: [SetDefaultScore, DefaultScore]
+        - from: [SetDefaultScore, Then]
           to: [AddGoal, Exec]
-        - from: [AddGoal, Then]
-          to: [PrintAlerted, Exec]
+        - from: [CastToActivityComponent, AsNPCActivityComponent]
+          to: [AddGoal, Target]
+        - from: [CastToGoalAlert, AsGoal_Alert]
+          to: [AddGoal, NewGoal]
+
+  # v7.8.15: Goal_FormationFollow moved to actor_blueprints because it has variables
+  # Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 3
+  # v7.8.17: Use simple class name - generator resolves via search paths
+  - name: Goal_FormationFollow
+    folder: AI/Goals
+    parent_class: Goal_FollowCharacter
+    variables:
+      # Phase 3.1: Vector offset from leader for formation positioning
+      - name: FormationOffset
+        type: Vector
+        instance_editable: true
+        expose_on_spawn: true
+      # Phase 3.2: Index in formation array for slot assignment
+      - name: FormationIndex
+        type: Integer
+        instance_editable: true
+        expose_on_spawn: true
 
 activities:  # GATHERER
   # v4.39.2: Full BPA_Alert implementation per Guide v1.2 L320-510
@@ -12222,30 +12944,148 @@ activities:  # GATHERER
             properties:
               npc_definition_variable: ReinforcementDefinition
             position: [4600, 0]
+          # v7.8.17: Add Goal_MoveToDestination to reinforcement (Guide L449-470)
+          # Validate spawned reinforcement
+          - id: IsValidReinforcement
+            type: CallFunction
+            properties:
+              function: IsValid
+              class: KismetSystemLibrary
+            position: [4800, 0]
+          - id: BranchValidReinf
+            type: Branch
+            position: [5000, 0]
+          # Get reinforcement's Activity Component (Guide 4.9.3)
+          - id: GetReinfActivityComp
+            type: CallFunction
+            properties:
+              function: GetComponentByClass
+              class: Actor
+              param.ComponentClass: NPCActivityComponent
+            position: [5200, 0]
+          # Construct Goal_MoveToDestination (Guide 4.9.4)
+          - id: ConstructMoveGoal
+            type: ConstructObjectFromClass
+            properties:
+              class: NPCGoalItem
+              class_variable: Goal_MoveToDestination
+            position: [5400, 0]
+          # Cast to Goal_MoveToDestination (Guide 4.9.5)
+          - id: CastToMoveGoal
+            type: DynamicCast
+            properties:
+              target_class: Goal_MoveToDestination
+            position: [5600, 0]
+          # Get AlertLocation from cached goal (Guide 4.9.6.1)
+          - id: GetAlertLocationForMove
+            type: CallFunction
+            properties:
+              function: GetAlertLocation
+              class: Goal_Alert
+            position: [5600, 100]
+          # Set TargetLocation on move goal (Guide 4.9.6.1)
+          - id: SetMoveTargetLocation
+            type: VariableSet
+            properties:
+              variable_name: TargetLocation
+              target_class: Goal_MoveToDestination
+            position: [5800, 0]
+          # Set GoalScore = 3.0 (Guide 4.9.6.2)
+          - id: MakeMoveGoalScore
+            type: MakeLiteralFloat
+            properties:
+              value: "3.0"
+            position: [5800, 150]
+          - id: SetMoveGoalScore
+            type: VariableSet
+            properties:
+              variable_name: GoalScore
+              target_class: NPCGoalItem
+            position: [6000, 0]
+          # Add Goal to reinforcement (Guide 4.9.7)
+          - id: AddMoveGoal
+            type: CallFunction
+            properties:
+              function: AddGoal
+              class: NPCActivityComponent
+              param.bTriggerReselect: true
+            position: [6200, 0]
           # Print spawn success
           - id: PrintSpawned
             type: PrintString
             properties:
-              message: "BPA_Alert: Spawned reinforcement"
-            position: [4800, 0]
+              message: "BPA_Alert: Spawned reinforcement with move goal"
+            position: [6400, 0]
           # After loop completes - add Goal_Flee to gatherer (Guide L472-494)
           - id: GetOwnerChar4
             type: CallFunction
             properties:
               function: GetOwnerCharacter
               target_self: true
-            position: [5000, 0]
+            position: [6600, 0]
           - id: GetActivityComp
             type: CallFunction
             properties:
               function: GetActivityComponent
-            position: [5200, 0]
+            position: [6800, 0]
+          # v7.8.17: Construct Goal_Flee for gatherer (Guide 5.2)
+          - id: ConstructFleeGoal
+            type: ConstructObjectFromClass
+            properties:
+              class: NPCGoalItem
+              class_variable: Goal_Flee
+            position: [7000, 0]
+          # Cast to Goal_Flee (Guide 5.2.2)
+          - id: CastToFleeGoal
+            type: DynamicCast
+            properties:
+              target_class: Goal_Flee
+            position: [7200, 0]
+          # Get SpottedTarget from cached goal (Guide 5.2.3.1)
+          - id: GetCachedGoalForFlee
+            type: VariableGet
+            properties:
+              variable_name: CachedAlertGoal
+            position: [7200, 100]
+          - id: GetSpottedTargetForFlee
+            type: CallFunction
+            properties:
+              function: GetSpottedTarget
+              class: Goal_Alert
+            position: [7200, 200]
+          # Set FleeTarget = SpottedTarget (Guide 5.2.3.1)
+          - id: SetFleeTarget
+            type: VariableSet
+            properties:
+              variable_name: FleeTarget
+              target_class: Goal_Flee
+            position: [7400, 0]
+          # Set GoalScore = 3.0 (Guide 5.2.3.2)
+          - id: MakeFleeGoalScore
+            type: MakeLiteralFloat
+            properties:
+              value: "3.0"
+            position: [7400, 150]
+          - id: SetFleeGoalScore
+            type: VariableSet
+            properties:
+              variable_name: GoalScore
+              target_class: NPCGoalItem
+            position: [7600, 0]
+          # Add Goal_Flee to gatherer (Guide 5.3)
+          - id: AddFleeGoal
+            type: CallFunction
+            properties:
+              function: AddGoal
+              class: NPCActivityComponent
+              param.bTriggerReselect: false
+            position: [7800, 0]
           # Get cached goal for removal
           - id: GetCachedGoal
             type: VariableGet
             properties:
               variable_name: CachedAlertGoal
-            position: [5200, 100]
+            position: [7800, 100]
           # Remove Goal_Alert (Guide L496-500)
           - id: RemoveGoal
             type: CallFunction
@@ -12368,23 +13208,109 @@ activities:  # GATHERER
             to: [SpawnReinforcement, NPCDefinition]
           - from: [MakeTransform, ReturnValue]
             to: [SpawnReinforcement, Transform]
-          # Print spawned
+          # v7.8.17: Add Goal_MoveToDestination to reinforcement (Guide 4.9)
+          # SpawnReinforcement -> IsValid check
           - from: [SpawnReinforcement, Then]
+            to: [IsValidReinforcement, Exec]
+          - from: [SpawnReinforcement, ReturnValue]
+            to: [IsValidReinforcement, Object]
+          - from: [IsValidReinforcement, ReturnValue]
+            to: [BranchValidReinf, Condition]
+          - from: [IsValidReinforcement, Exec]
+            to: [BranchValidReinf, Exec]
+          # Valid -> Get reinforcement's ActivityComponent
+          - from: [BranchValidReinf, True]
+            to: [GetReinfActivityComp, Exec]
+          - from: [SpawnReinforcement, ReturnValue]
+            to: [GetReinfActivityComp, Target]
+          # Construct Goal_MoveToDestination
+          - from: [GetReinfActivityComp, Exec]
+            to: [ConstructMoveGoal, Exec]
+          - from: [GetReinfActivityComp, ReturnValue]
+            to: [ConstructMoveGoal, Outer]
+          # Cast to Goal_MoveToDestination
+          - from: [ConstructMoveGoal, Then]
+            to: [CastToMoveGoal, Exec]
+          - from: [ConstructMoveGoal, ReturnValue]
+            to: [CastToMoveGoal, Object]
+          # Get AlertLocation from CachedAlertGoal (pure)
+          - from: [SetCachedGoal, CachedAlertGoal]
+            to: [GetAlertLocationForMove, Target]
+          # Set TargetLocation on move goal
+          - from: [CastToMoveGoal, Then]
+            to: [SetMoveTargetLocation, Exec]
+          - from: [CastToMoveGoal, AsGoal_MoveToDestination]
+            to: [SetMoveTargetLocation, Target]
+          - from: [GetAlertLocationForMove, ReturnValue]
+            to: [SetMoveTargetLocation, TargetLocation]
+          # Set GoalScore = 3.0
+          - from: [SetMoveTargetLocation, Then]
+            to: [SetMoveGoalScore, Exec]
+          - from: [CastToMoveGoal, AsGoal_MoveToDestination]
+            to: [SetMoveGoalScore, Target]
+          - from: [MakeMoveGoalScore, ReturnValue]
+            to: [SetMoveGoalScore, GoalScore]
+          # Add Goal to reinforcement
+          - from: [SetMoveGoalScore, Then]
+            to: [AddMoveGoal, Exec]
+          - from: [GetReinfActivityComp, ReturnValue]
+            to: [AddMoveGoal, Target]
+          - from: [CastToMoveGoal, AsGoal_MoveToDestination]
+            to: [AddMoveGoal, NewGoal]
+          # Print spawned
+          - from: [AddMoveGoal, Then]
             to: [PrintSpawned, Exec]
-          # Loop completed -> Cleanup
+          # Invalid reinforcement -> Skip to print
+          - from: [BranchValidReinf, False]
+            to: [PrintSpawned, Exec]
+          # Loop completed -> Cleanup with Goal_Flee (Guide 5)
           - from: [SpawnLoop, Completed]
             to: [GetOwnerChar4, Exec]
           - from: [GetOwnerChar4, ReturnValue]
             to: [GetActivityComp, Target]
           - from: [GetOwnerChar4, Exec]
             to: [GetActivityComp, Exec]
-          # Remove goal
+          # v7.8.17: Construct Goal_Flee for gatherer
+          - from: [GetActivityComp, Exec]
+            to: [ConstructFleeGoal, Exec]
+          - from: [GetActivityComp, ReturnValue]
+            to: [ConstructFleeGoal, Outer]
+          # Cast to Goal_Flee
+          - from: [ConstructFleeGoal, Then]
+            to: [CastToFleeGoal, Exec]
+          - from: [ConstructFleeGoal, ReturnValue]
+            to: [CastToFleeGoal, Object]
+          # Get SpottedTarget from cached goal (pure)
+          - from: [GetCachedGoalForFlee, CachedAlertGoal]
+            to: [GetSpottedTargetForFlee, Target]
+          # Set FleeTarget
+          - from: [CastToFleeGoal, Then]
+            to: [SetFleeTarget, Exec]
+          - from: [CastToFleeGoal, AsGoal_Flee]
+            to: [SetFleeTarget, Target]
+          - from: [GetSpottedTargetForFlee, ReturnValue]
+            to: [SetFleeTarget, FleeTarget]
+          # Set GoalScore = 3.0
+          - from: [SetFleeTarget, Then]
+            to: [SetFleeGoalScore, Exec]
+          - from: [CastToFleeGoal, AsGoal_Flee]
+            to: [SetFleeGoalScore, Target]
+          - from: [MakeFleeGoalScore, ReturnValue]
+            to: [SetFleeGoalScore, GoalScore]
+          # Add Goal_Flee to gatherer
+          - from: [SetFleeGoalScore, Then]
+            to: [AddFleeGoal, Exec]
+          - from: [GetActivityComp, ReturnValue]
+            to: [AddFleeGoal, Target]
+          - from: [CastToFleeGoal, AsGoal_Flee]
+            to: [AddFleeGoal, NewGoal]
+          # Remove Goal_Alert
+          - from: [AddFleeGoal, Then]
+            to: [RemoveGoal, Exec]
           - from: [GetActivityComp, ReturnValue]
             to: [RemoveGoal, Target]
           - from: [GetCachedGoal, CachedAlertGoal]
             to: [RemoveGoal, GoalToRemove]
-          - from: [GetActivityComp, Exec]
-            to: [RemoveGoal, Exec]
           # Remove signaling tag
           - from: [RemoveGoal, Then]
             to: [GetOwnerChar5, Exec]
@@ -12403,9 +13329,8 @@ activities:  # GATHERER
           - from: [AuthBranch, False]
             to: [GetOwnerChar4, Exec]
 
-  - name: BPA_Gather
-    folder: AI/Activities
-    parent_class: NarrativeActivityBase
+  # v7.8.21: DISABLED - Using existing NP BPA_Interact instead per user direction
+  # BPA_Gather definition removed - now using /NarrativePro/Pro/Core/AI/Activities/Interact/Goals/BPA_Interact
 
 # ============================================================================
 # NPC SYSTEMS - STALKER RANDOM AGGRESSION (FULL BOND SYSTEM v1.0.1)

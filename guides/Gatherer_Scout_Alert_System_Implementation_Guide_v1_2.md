@@ -69,7 +69,7 @@
 | Goal_Alert | NPCGoalItem | Stores alert location and spotted target |
 | GoalGenerator_Alert | NPCGoalGenerator | Creates alert goals from perception |
 | BPA_Alert | NPCActivity | Signal animation + spawn reinforcements |
-| BPA_Gather | NPCActivity | Optional gathering behavior (flavor) |
+| BPA_Interact | NPCActivity | Optional gathering behavior (flavor) |
 | AC_GathererScoutBehavior | ActivityConfiguration | Activities for gatherer |
 | NPC_GathererScout | NPCDefinition | Gatherer character definition |
 | NPC_Reinforcement | NPCDefinition | Reinforcement character definition |
@@ -80,8 +80,8 @@
 |----------|------------|-----------|--------|
 | BPA_Alert | 5.0 | Goal_Alert exists | Runs alert sequence |
 | BPA_Flee | 3.0 | Goal_Flee exists | Runs away (existing system) |
-| BPA_Gather | 2.0 | Near resource point | Gathering animation |
-| BPA_Wander | 1.0 | Default fallback | Random wandering |
+| BPA_Interact | 2.0 | Near resource point | Gathering animation |
+| BPA_Patrol | 1.0 | Default fallback | Random patrol/wandering |
 
 ### Existing Narrative Pro Assets Used
 
@@ -97,7 +97,7 @@
 | BT_Flee | Behavior Tree | Flee navigation |
 | BB_Flee | Blackboard | Flee target keys |
 | EQS_Flee | Environment Query | Find escape location |
-| BPA_Wander | Activity | Default gatherer wandering |
+| BPA_Patrol | Activity | Default patrol/wandering behavior |
 | GoalGenerator_Attack | Goal Generator | Reinforcement combat detection |
 
 ---
@@ -121,7 +121,7 @@
 | Goal_Alert | Blueprint Class | /Game/AI/Goals/ |
 | GoalGenerator_Alert | Blueprint Class | /Game/AI/GoalGenerators/ |
 | BPA_Alert | Blueprint Class | /Game/AI/Activities/ |
-| BPA_Gather | Blueprint Class | /Game/AI/Activities/ |
+| BPA_Interact | Blueprint Class | /Game/AI/Activities/ |
 | AC_GathererScoutBehavior | ActivityConfiguration | /Game/AI/Configurations/ |
 | NPC_GathererScout | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
 | NPC_Reinforcement | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
@@ -521,7 +521,7 @@
 - 1.1.3) Select: Blueprint Class
 - 1.1.4) Search parent: NPCActivity
 - 1.1.5) Select: NPCActivity
-- 1.1.6) Name: BPA_Gather
+- 1.1.6) Name: BPA_Interact
 - 1.1.7) Double-click to open
 
 ### **2) Configure Class Defaults**
@@ -578,8 +578,8 @@
 - 1.2.2) Add elements:
 - 1.2.2.1) [0] BPA_Alert
 - 1.2.2.2) [1] BPA_Flee (existing Narrative Pro asset)
-- 1.2.2.3) [2] BPA_Gather (optional)
-- 1.2.2.4) [3] BPA_Wander (existing Narrative Pro asset)
+- 1.2.2.3) [2] BPA_Interact (optional)
+- 1.2.2.4) [3] BPA_Patrol (existing Narrative Pro asset - default patrol/wandering)
 
 #### 1.3) Configure Goal Generators
 - 1.3.1) Expand: Goal Generators
@@ -714,11 +714,11 @@
 
 | State | Trigger | Activity | Next State |
 |-------|---------|----------|------------|
-| Idle | Default | BPA_Wander | Wander |
-| Wander | No goals | BPA_Wander | Idle or Gather |
-| Gather | Near resource | BPA_Gather | Wander |
+| Idle | Default | BPA_Patrol | Patrol |
+| Patrol | No goals | BPA_Patrol | Idle or Interact |
+| Interact | Near interactable | BPA_Interact | Patrol |
 | Alert | Spots hostile | BPA_Alert | Flee |
-| Flee | Goal_Flee added | BPA_Flee | Despawn or Wander |
+| Flee | Goal_Flee added | BPA_Flee | Despawn or Patrol |
 
 ### Reinforcement Behavior States
 

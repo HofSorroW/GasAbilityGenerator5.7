@@ -813,11 +813,25 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v7.8.19: AddDelegate - bind CustomEvent to multicast delegate (e.g., OnPerceptionUpdated)
+	// Per LOCKED RULE 7: Generator serves the design - support delegate binding pattern
+	static UK2Node* CreateAddDelegateNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef,
+		UBlueprint* Blueprint,
+		TMap<FString, UK2Node*>& NodeMap);
+
 	static UK2Node* CreateForEachLoopNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
 	static UK2Node* CreateSpawnActorNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef,
+		UBlueprint* Blueprint);
+
+	// v7.8.14: ConstructObjectFromClass - create UObject instance (for goals, etc.)
+	static UK2Node* CreateConstructObjectFromClassNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef,
 		UBlueprint* Blueprint);
@@ -861,6 +875,11 @@ private:
 
 	/** v4.40: MakeLiteralInt - create an integer literal value for VariableSet nodes */
 	static UK2Node* CreateMakeLiteralIntNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	/** v7.8.14: MakeLiteralByte - create a byte literal value for enum comparisons */
+	static UK2Node* CreateMakeLiteralByteNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 

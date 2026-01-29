@@ -346,6 +346,30 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 		}
 	}
 
+	// v7.8.18: Try Blueprint asset paths for NarrativePro plugin content
+	// Goal_FollowCharacter and other NP Blueprints live in Content folders, not /Script/
+	if (!FoundClass)
+	{
+		TArray<FString> BlueprintSearchPaths;
+		// NarrativePro Goals/Activities paths
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/Attacks/Melee/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/GameplayAbilities/%s.%s_C"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Abilities/%s.%s_C"), *ClassName, *ClassName));
+
+		for (const FString& Path : BlueprintSearchPaths)
+		{
+			FoundClass = StaticLoadClass(UObject::StaticClass(), nullptr, *Path, nullptr, LOAD_None, nullptr);
+			if (FoundClass)
+			{
+				break;
+			}
+		}
+	}
+
 	// 11. Try loading the class
 	if (!FoundClass)
 	{
@@ -353,6 +377,7 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 	}
 
 	// v4.24.2: Diagnostic logging for failed resolution (shows both raw and normalized names)
+	// v7.8.18: Added NarrativePro Blueprint paths to diagnostics
 	if (!FoundClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PRE-VAL] Class resolution failed for '%s' (script name: '%s'). Attempted paths:"), *ClassName, *ScriptName);
@@ -365,6 +390,10 @@ UClass* FPreValidator::FindClassByName(const FString& ClassName, FPreValidationC
 		UE_LOG(LogTemp, Warning, TEXT("  - /Script/Niagara.%s"), *ScriptName);
 		UE_LOG(LogTemp, Warning, TEXT("  - /Script/UMG.%s"), *ScriptName);
 		UE_LOG(LogTemp, Warning, TEXT("  - /Script/AIModule.%s"), *ScriptName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s_C"), *ClassName, *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *ClassName, *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /NarrativePro/Pro/Core/AI/Activities/%s.%s_C"), *ClassName, *ClassName);
+		UE_LOG(LogTemp, Warning, TEXT("  - /NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), *ClassName, *ClassName);
 		UE_LOG(LogTemp, Warning, TEXT("  - LoadClass<%s> (raw)"), *ClassName);
 	}
 

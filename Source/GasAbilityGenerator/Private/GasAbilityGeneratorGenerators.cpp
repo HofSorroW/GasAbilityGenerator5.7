@@ -133,6 +133,13 @@
 #include "BehaviorTreeGraph.h"
 #include "BehaviorTreeGraphNode_Root.h"
 #include "EdGraphSchema_BehaviorTree.h"
+// v7.8.22: AIPerception includes for controller Blueprint configuration
+#include "AIController.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISenseConfig.h"
+#include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISenseConfig_Hearing.h"
+#include "Perception/AISenseConfig_Damage.h"
 // v2.6.0: Blackboard key types for full key automation
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Bool.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
@@ -328,6 +335,8 @@
 #include "K2Node_AddDelegate.h"        // v4.21: Delegate binding automation
 #include "K2Node_RemoveDelegate.h"     // v4.21: Delegate unbinding automation
 #include "K2Node_CreateDelegate.h"     // v4.21: Delegate creation automation
+#include "K2Node_ConstructObjectFromClass.h"  // v7.8.14: UObject construction base class
+#include "K2Node_GenericCreateObject.h"       // v7.8.14: UObject construction with Outer pin
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"  // v4.15: WaitDelay AbilityTask class
 #include "Abilities/Tasks/AbilityTask_WaitAttributeChange.h"  // v4.22: Section 11 Attribute Change Delegate binding
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"  // v7.8: Path B - BP-safe death/event detection
@@ -1326,8 +1335,48 @@ bool FGeneratorBase::CheckExistsWithMetadata(
 		return false;
 
 	case EDryRunStatus::WillModify:
-		// Safe to regenerate
+		// Safe to regenerate - need to delete the old asset file from disk
 		LogGeneration(FString::Printf(TEXT("[MODIFY] %s - %s"), *AssetName, *Reason));
+		// v7.8.15: Delete physical file instead of in-memory package manipulation
+		// The old approach of renaming/GC left the package in "partially loaded" state
+		if (ExistingAsset)
+		{
+			UPackage* OldPackage = ExistingAsset->GetOutermost();
+			if (OldPackage)
+			{
+				// Get the physical file path BEFORE any cleanup
+				FString PackageName = OldPackage->GetName();
+				FString FilePath;
+				if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, FilePath, FPackageName::GetAssetPackageExtension()))
+				{
+					// Reset loaders to release file handles
+					ResetLoaders(OldPackage);
+
+					// Clear references and mark for GC to release memory
+					ExistingAsset->ClearFlags(RF_Standalone | RF_Public);
+					ExistingAsset->SetFlags(RF_Transient);
+					ExistingAsset->MarkAsGarbage();
+					OldPackage->ClearFlags(RF_Standalone | RF_Public);
+					OldPackage->SetFlags(RF_Transient);
+
+					// Force GC to release memory before file deletion
+					CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+
+					// Delete the physical file from disk
+					if (IFileManager::Get().FileExists(*FilePath))
+					{
+						if (IFileManager::Get().Delete(*FilePath))
+						{
+							LogGeneration(FString::Printf(TEXT("  Deleted asset file for MODIFY: %s"), *FilePath));
+						}
+						else
+						{
+							UE_LOG(LogTemp, Warning, TEXT("Failed to delete asset file: %s"), *FilePath);
+						}
+					}
+				}
+			}
+		}
 		return false; // Proceed with generation
 
 	case EDryRunStatus::WillSkip:
@@ -1734,6 +1783,9 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *ClassName, *ClassName));
 		// v6.6: Add Narrative Pro Goals paths for Goal_Attack and other attack goals
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s"), *ClassName, *ClassName));
+		// v7.8.14: Add project AI paths for generated goals and goal generators
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s"), *Root, *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/AI/GoalGenerators/%s.%s"), *Root, *ClassName, *ClassName));
 
 		for (const FString& Path : BlueprintSearchPaths)
 		{
@@ -3589,6 +3641,128 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		Result.GeneratorId = TEXT("ActorBlueprint");
 		Result.DetermineCategory();
 		return Result;
+	}
+
+	// v7.8.22: Configure AIPerception on controller blueprints
+	// Only applies to AAIController-derived blueprints with ai_perception manifest section
+	if (Definition.bHasAIPerceptionConfig && Blueprint->GeneratedClass)
+	{
+		// Check if parent class derives from AAIController
+		if (Blueprint->GeneratedClass->IsChildOf(AAIController::StaticClass()))
+		{
+			LogGeneration(TEXT("  Configuring AIPerception on controller Blueprint..."));
+
+			// Get the CDO of the generated class
+			AAIController* ControllerCDO = Cast<AAIController>(Blueprint->GeneratedClass->GetDefaultObject());
+			if (ControllerCDO)
+			{
+				// Get the PerceptionComponent from the CDO
+				UAIPerceptionComponent* PerceptionComp = ControllerCDO->GetAIPerceptionComponent();
+				if (!PerceptionComp)
+				{
+					// If no perception component exists, create one as a default subobject
+					// Note: This may need editor-specific handling for Blueprint defaults
+					LogGeneration(TEXT("    No existing PerceptionComponent found - creating one"));
+					PerceptionComp = NewObject<UAIPerceptionComponent>(ControllerCDO, UAIPerceptionComponent::StaticClass(), TEXT("AIPerception"), RF_Transactional);
+					if (PerceptionComp)
+					{
+						ControllerCDO->SetPerceptionComponent(*PerceptionComp);
+					}
+				}
+
+				if (PerceptionComp)
+				{
+					// Configure senses from manifest
+					int32 SensesConfigured = 0;
+					for (const FManifestAISenseConfig& SenseConfig : Definition.AIPerceptionConfig.Senses)
+					{
+						if (SenseConfig.SenseType.Equals(TEXT("Sight"), ESearchCase::IgnoreCase))
+						{
+							// Create and configure UAISenseConfig_Sight
+							UAISenseConfig_Sight* SightConfig = NewObject<UAISenseConfig_Sight>(PerceptionComp, UAISenseConfig_Sight::StaticClass(), NAME_None, RF_Transactional);
+							if (SightConfig)
+							{
+								SightConfig->SightRadius = SenseConfig.SightRadius;
+								SightConfig->LoseSightRadius = SenseConfig.LoseSightRadius;
+								SightConfig->PeripheralVisionAngleDegrees = SenseConfig.PeripheralVisionAngleDegrees;
+								if (SenseConfig.AutoSuccessRangeFromLastSeenLocation >= 0.0f)
+								{
+									SightConfig->AutoSuccessRangeFromLastSeenLocation = SenseConfig.AutoSuccessRangeFromLastSeenLocation;
+								}
+								SightConfig->DetectionByAffiliation.bDetectEnemies = SenseConfig.bDetectEnemies;
+								SightConfig->DetectionByAffiliation.bDetectNeutrals = SenseConfig.bDetectNeutrals;
+								SightConfig->DetectionByAffiliation.bDetectFriendlies = SenseConfig.bDetectFriendlies;
+								SightConfig->SetMaxAge(SenseConfig.MaxAge);
+								SightConfig->SetStartsEnabled(SenseConfig.bStartsEnabled);
+
+								PerceptionComp->ConfigureSense(*SightConfig);
+								SensesConfigured++;
+								LogGeneration(FString::Printf(TEXT("    Configured AISense_Sight: Radius=%.0f, LoseRadius=%.0f, DetectEnemies=%s"),
+									SenseConfig.SightRadius, SenseConfig.LoseSightRadius, SenseConfig.bDetectEnemies ? TEXT("true") : TEXT("false")));
+							}
+						}
+						else if (SenseConfig.SenseType.Equals(TEXT("Hearing"), ESearchCase::IgnoreCase))
+						{
+							// Create and configure UAISenseConfig_Hearing
+							UAISenseConfig_Hearing* HearingConfig = NewObject<UAISenseConfig_Hearing>(PerceptionComp, UAISenseConfig_Hearing::StaticClass(), NAME_None, RF_Transactional);
+							if (HearingConfig)
+							{
+								HearingConfig->DetectionByAffiliation.bDetectEnemies = SenseConfig.bDetectEnemies;
+								HearingConfig->DetectionByAffiliation.bDetectNeutrals = SenseConfig.bDetectNeutrals;
+								HearingConfig->DetectionByAffiliation.bDetectFriendlies = SenseConfig.bDetectFriendlies;
+								HearingConfig->SetMaxAge(SenseConfig.MaxAge);
+								HearingConfig->SetStartsEnabled(SenseConfig.bStartsEnabled);
+
+								PerceptionComp->ConfigureSense(*HearingConfig);
+								SensesConfigured++;
+								LogGeneration(TEXT("    Configured AISense_Hearing"));
+							}
+						}
+						else if (SenseConfig.SenseType.Equals(TEXT("Damage"), ESearchCase::IgnoreCase))
+						{
+							// Create and configure UAISenseConfig_Damage
+							UAISenseConfig_Damage* DamageConfig = NewObject<UAISenseConfig_Damage>(PerceptionComp, UAISenseConfig_Damage::StaticClass(), NAME_None, RF_Transactional);
+							if (DamageConfig)
+							{
+								DamageConfig->SetMaxAge(SenseConfig.MaxAge);
+								DamageConfig->SetStartsEnabled(SenseConfig.bStartsEnabled);
+
+								PerceptionComp->ConfigureSense(*DamageConfig);
+								SensesConfigured++;
+								LogGeneration(TEXT("    Configured AISense_Damage"));
+							}
+						}
+						else
+						{
+							LogGeneration(FString::Printf(TEXT("    [W_UNKNOWN_SENSE_TYPE] Unknown sense type: %s"), *SenseConfig.SenseType));
+						}
+					}
+
+					// Request update to register the listener with the perception system
+					PerceptionComp->RequestStimuliListenerUpdate();
+
+					LogGeneration(FString::Printf(TEXT("  AIPerception configured with %d senses"), SensesConfigured));
+
+					// Recompile to incorporate the perception changes
+					if (SensesConfigured > 0)
+					{
+						FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, nullptr);
+					}
+				}
+				else
+				{
+					LogGeneration(TEXT("    [W_PERCEPTION_NOT_FOUND] Could not create or find PerceptionComponent"));
+				}
+			}
+			else
+			{
+				LogGeneration(TEXT("    [W_CDO_NOT_FOUND] Could not get controller CDO"));
+			}
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  [W_NOT_CONTROLLER] ai_perception specified but parent class '%s' is not an AIController"), *Definition.ParentClass));
+		}
 	}
 
 	// Mark dirty and register
@@ -9213,12 +9387,14 @@ bool FEventGraphGenerator::ValidateEventGraph(
 	TMap<FString, FString> NodeTypes;  // v2.8.2: Map node ID to type for connection validation
 
 	// v2.8.2: Supported node types for validation
+	// v7.8.14: Added ConstructObjectFromClass, MakeLiteral* types
 	static TSet<FString> SupportedNodeTypes = {
 		TEXT("Event"), TEXT("CustomEvent"), TEXT("CallFunction"), TEXT("Branch"),
 		TEXT("VariableGet"), TEXT("VariableSet"), TEXT("PropertyGet"), TEXT("PropertySet"),
 		TEXT("Sequence"), TEXT("Delay"), TEXT("PrintString"), TEXT("DynamicCast"),
 		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("SpawnNPC"), TEXT("BreakStruct"), TEXT("MakeArray"),
-		TEXT("GetArrayItem"), TEXT("Self")
+		TEXT("GetArrayItem"), TEXT("Self"), TEXT("ConstructObjectFromClass"),
+		TEXT("MakeLiteralBool"), TEXT("MakeLiteralFloat"), TEXT("MakeLiteralInt"), TEXT("MakeLiteralByte"), TEXT("MakeLiteralString")
 	};
 
 	for (const FManifestGraphNodeDefinition& Node : GraphDefinition.Nodes)
@@ -9731,6 +9907,11 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		{
 			CreatedNode = CreateSelfNode(EventGraph, NodeDef);
 		}
+		// v7.8.14: ConstructObjectFromClass - create UObject instance (for goals, etc.)
+		else if (NodeDef.Type.Equals(TEXT("ConstructObjectFromClass"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateConstructObjectFromClassNode(EventGraph, NodeDef, Blueprint);
+		}
 		// v4.40: MakeLiteralBool - create a boolean literal value for VariableSet nodes
 		else if (NodeDef.Type.Equals(TEXT("MakeLiteralBool"), ESearchCase::IgnoreCase))
 		{
@@ -9745,6 +9926,11 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("MakeLiteralInt"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateMakeLiteralIntNode(EventGraph, NodeDef);
+		}
+		// v7.8.14: MakeLiteralByte - create a byte literal value (for enum comparisons)
+		else if (NodeDef.Type.Equals(TEXT("MakeLiteralByte"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeLiteralByteNode(EventGraph, NodeDef);
 		}
 		// v4.40: MakeLiteralString - create a string literal value
 		else if (NodeDef.Type.Equals(TEXT("MakeLiteralString"), ESearchCase::IgnoreCase))
@@ -10583,6 +10769,47 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 	// Add the entry node to the map with a special ID
 	NodeMap.Add(TEXT("FunctionEntry"), EntryNode);
 
+	// v7.8.15: Find or create FunctionResult node if parent function has a return value
+	UK2Node_FunctionResult* ResultNode = nullptr;
+
+	// Check if parent function has a return value
+	FProperty* ReturnProp = ParentFunction->GetReturnProperty();
+	if (ReturnProp)
+	{
+		// First check if result node already exists in the graph
+		for (UEdGraphNode* Node : FunctionGraph->Nodes)
+		{
+			if (UK2Node_FunctionResult* ExistingResult = Cast<UK2Node_FunctionResult>(Node))
+			{
+				ResultNode = ExistingResult;
+				LogGeneration(FString::Printf(TEXT("  Found existing FunctionResult node for '%s'"),
+					*OverrideDefinition.FunctionName));
+				break;
+			}
+		}
+
+		// If no result node exists, create one
+		if (!ResultNode)
+		{
+			FGraphNodeCreator<UK2Node_FunctionResult> ResultNodeCreator(*FunctionGraph);
+			ResultNode = ResultNodeCreator.CreateNode();
+			ResultNode->FunctionReference.SetExternalMember(FunctionName, ParentClass);
+			ResultNode->NodePosX = 600;
+			ResultNode->NodePosY = 0;
+			ResultNodeCreator.Finalize();
+
+			// Allocate pins based on function signature
+			ResultNode->AllocateDefaultPins();
+
+			LogGeneration(FString::Printf(TEXT("  Created FunctionResult node for return type in '%s'"),
+				*OverrideDefinition.FunctionName));
+		}
+
+		// Add result node to map with aliases
+		NodeMap.Add(TEXT("FunctionResult"), ResultNode);
+		NodeMap.Add(TEXT("Return"), ResultNode);
+	}
+
 	int32 NodesCreated = 0;
 	int32 NodesFailed = 0;
 
@@ -10647,6 +10874,39 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 		else if (NodeDef.Type.Equals(TEXT("SpawnNPC"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateSpawnNPCNode(FunctionGraph, NodeDef, Blueprint, NodeMap);
+		}
+		// v7.8.14: ConstructObjectFromClass for function overrides (goal creation)
+		else if (NodeDef.Type.Equals(TEXT("ConstructObjectFromClass"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateConstructObjectFromClassNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		// v7.8.18: PropertyGet support for function overrides (delegate binding needs OwnerController property)
+		else if (NodeDef.Type.Equals(TEXT("PropertyGet"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreatePropertyGetNode(FunctionGraph, NodeDef, Blueprint);
+		}
+		// v7.8.15: Return/FunctionResult node type - already created, retrieve from map
+		else if (NodeDef.Type.Equals(TEXT("Return"), ESearchCase::IgnoreCase) ||
+		         NodeDef.Type.Equals(TEXT("FunctionResult"), ESearchCase::IgnoreCase))
+		{
+			// Return node was created earlier if function has return type
+			CreatedNode = Cast<UK2Node>(NodeMap.FindRef(TEXT("Return")));
+			if (!CreatedNode)
+			{
+				LogGeneration(FString::Printf(TEXT("  Return node not in NodeMap - function '%s' may not have return type"),
+					*OverrideDefinition.FunctionName));
+				// Not necessarily an error - continue without failing
+				continue;
+			}
+			LogGeneration(FString::Printf(TEXT("  Using pre-created Return node for '%s'"), *NodeDef.Id));
+		}
+		// v7.8.19: AddDelegate/BindDelegate node type for delegate binding in function overrides
+		// Per LOCKED RULE 7: Generator serves the design - add support for required pattern
+		// Tech Doc 65.5: InitializeGoalGenerator binds to OnPerceptionUpdated
+		else if (NodeDef.Type.Equals(TEXT("AddDelegate"), ESearchCase::IgnoreCase) ||
+		         NodeDef.Type.Equals(TEXT("BindDelegate"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAddDelegateNode(FunctionGraph, NodeDef, Blueprint, NodeMap);
 		}
 		else
 		{
@@ -10994,17 +11254,23 @@ UK2Node* FEventGraphGenerator::CreateEventNode(
 		if (UK2Node_Event* ExistingEvent = Cast<UK2Node_Event>(ExistingNode))
 		{
 			// Check if the event references the same function
-			if (ExistingEvent->EventReference.GetMemberName() == EventName)
+			if (ExistingEvent->EventReference.GetMemberName() == EventName ||
+				ExistingEvent->GetFunctionName() == EventName)
 			{
 				LogGeneration(FString::Printf(TEXT("Event node '%s' already exists for event '%s' - reusing existing node"),
 					*NodeDef.Id, *EventName.ToString()));
-				return ExistingEvent;
-			}
-			// Also check by function name for override events
-			if (ExistingEvent->GetFunctionName() == EventName)
-			{
-				LogGeneration(FString::Printf(TEXT("Event node '%s' already exists for event '%s' (by function name) - reusing existing node"),
-					*NodeDef.Id, *EventName.ToString()));
+
+				// v7.8.21: When reusing existing event (from Blueprint parent inheritance),
+				// break existing exec output connections so manifest can define complete flow.
+				// This handles cases where UE5 auto-creates Event→CallParent for Blueprint parents.
+				UEdGraphPin* ThenPin = ExistingEvent->FindPin(UEdGraphSchema_K2::PN_Then);
+				if (ThenPin && ThenPin->LinkedTo.Num() > 0)
+				{
+					LogGeneration(FString::Printf(TEXT("  Breaking %d existing exec connections from reused event node (Blueprint parent inheritance)"),
+						ThenPin->LinkedTo.Num()));
+					ThenPin->BreakAllPinLinks();
+				}
+
 				return ExistingEvent;
 			}
 		}
@@ -11157,6 +11423,69 @@ UK2Node* FEventGraphGenerator::CreateCustomEventNode(
 		{
 			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
 			PinType.PinSubCategoryObject = FGameplayTagContainer::StaticStruct();
+		}
+		// v7.8.18: Array type support for CustomEvent parameters (e.g., TArray<AActor*>)
+		else if (ParamType->Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			// Get element type from param.N.element_type
+			FString ElementTypeKey = FString::Printf(TEXT("param.%d.element_type"), ParamIndex);
+			const FString* ElementType = NodeDef.Properties.Find(ElementTypeKey);
+
+			PinType.ContainerType = EPinContainerType::Array;
+
+			if (ElementType)
+			{
+				if (ElementType->Equals(TEXT("Actor"), ESearchCase::IgnoreCase))
+				{
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+					PinType.PinSubCategoryObject = AActor::StaticClass();
+				}
+				else if (ElementType->Equals(TEXT("Object"), ESearchCase::IgnoreCase))
+				{
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+					PinType.PinSubCategoryObject = UObject::StaticClass();
+				}
+				else if (ElementType->Equals(TEXT("Float"), ESearchCase::IgnoreCase))
+				{
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+					PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+				}
+				else if (ElementType->Equals(TEXT("Int"), ESearchCase::IgnoreCase) || ElementType->Equals(TEXT("Integer"), ESearchCase::IgnoreCase))
+				{
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+				}
+				else if (ElementType->Equals(TEXT("String"), ESearchCase::IgnoreCase))
+				{
+					PinType.PinCategory = UEdGraphSchema_K2::PC_String;
+				}
+				else
+				{
+					// Try as class name
+					UClass* ElementClass = FGasAbilityGeneratorFunctionResolver::FindClassByName(**ElementType);
+					if (ElementClass)
+					{
+						PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+						PinType.PinSubCategoryObject = ElementClass;
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("CustomEvent '%s' parameter '%s': Unknown array element type '%s', using Actor"),
+							*NodeDef.Id, **ParamName, **ElementType));
+						PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+						PinType.PinSubCategoryObject = AActor::StaticClass();
+					}
+				}
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("CustomEvent '%s' parameter '%s': Array type without element_type, defaulting to Actor"),
+					*NodeDef.Id, **ParamName));
+				PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+				PinType.PinSubCategoryObject = AActor::StaticClass();
+			}
+
+			LogGeneration(FString::Printf(TEXT("  CustomEvent '%s': Added Array<%s> parameter '%s'"),
+				*NodeDef.Id, ElementType ? **ElementType : TEXT("Actor"), **ParamName));
 		}
 		// v7.7: FDamageEventSummary type case REMOVED - Track E audit
 		else
@@ -11904,6 +12233,8 @@ UK2Node* FEventGraphGenerator::CreateVariableSetNode(
 
 	// v2.6.3: Check if target_object is specified - if so, this is an external property set
 	const FString* TargetObjectPtr = NodeDef.Properties.Find(TEXT("target_object"));
+	// v7.8.18: Check if target_class is specified - for pin-connected external property set
+	const FString* TargetClassPtr = NodeDef.Properties.Find(TEXT("target_class"));
 
 	UK2Node_VariableSet* SetNode = NewObject<UK2Node_VariableSet>(Graph);
 	Graph->AddNode(SetNode, false, false);
@@ -11957,6 +12288,57 @@ UK2Node* FEventGraphGenerator::CreateVariableSetNode(
 			return nullptr; // Signal failure to caller
 		}
 	}
+	// v7.8.18: target_class support - for when Target is connected via pin (e.g., from Cast output)
+	else if (TargetClassPtr && !TargetClassPtr->IsEmpty())
+	{
+		// Resolve the class directly by name
+		UClass* TargetClass = FGasAbilityGeneratorFunctionResolver::FindClassByName(**TargetClassPtr);
+
+		if (!TargetClass)
+		{
+			// Try with /Script/NarrativeArsenal prefix
+			FString FullClassName = FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), **TargetClassPtr);
+			TargetClass = StaticLoadClass(UObject::StaticClass(), nullptr, *FullClassName, nullptr, LOAD_None, nullptr);
+		}
+
+		if (!TargetClass)
+		{
+			// Try Blueprint path in NarrativePro content
+			FString BPPath = FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Goals/%s.%s_C"), **TargetClassPtr, **TargetClassPtr);
+			TargetClass = StaticLoadClass(UObject::StaticClass(), nullptr, *BPPath, nullptr, LOAD_None, nullptr);
+		}
+
+		if (!TargetClass)
+		{
+			// Try generated content path
+			FString GenPath = FString::Printf(TEXT("/Game/FatherCompanion/AI/Goals/%s.%s_C"), **TargetClassPtr, **TargetClassPtr);
+			TargetClass = StaticLoadClass(UObject::StaticClass(), nullptr, *GenPath, nullptr, LOAD_None, nullptr);
+		}
+
+		if (TargetClass)
+		{
+			FName PropertyName = FName(*(*VarNamePtr));
+			FProperty* Property = TargetClass->FindPropertyByName(PropertyName);
+			if (Property)
+			{
+				SetNode->VariableReference.SetExternalMember(PropertyName, TargetClass);
+				LogGeneration(FString::Printf(TEXT("VariableSet '%s': External set '%s' on class '%s' (pin-connected Target)"),
+					*NodeDef.Id, **VarNamePtr, *TargetClass->GetName()));
+			}
+			else
+			{
+				LogGeneration(FString::Printf(TEXT("VariableSet '%s': Property '%s' not found on '%s', falling back to self"),
+					*NodeDef.Id, **VarNamePtr, *TargetClass->GetName()));
+				SetNode->VariableReference.SetSelfMember(FName(*(*VarNamePtr)));
+			}
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("[E_VARIABLESET_CLASS_NOT_FOUND] Node '%s' | Could not resolve target_class '%s'"),
+				*NodeDef.Id, **TargetClassPtr));
+			return nullptr;
+		}
+	}
 	else
 	{
 		// Normal self member set
@@ -11966,6 +12348,19 @@ UK2Node* FEventGraphGenerator::CreateVariableSetNode(
 	SetNode->CreateNewGuid();
 	SetNode->PostPlacedNewNode();
 	SetNode->AllocateDefaultPins();
+
+	// v7.8.18: Log available pins for debugging external property sets
+	if ((TargetObjectPtr && !TargetObjectPtr->IsEmpty()) || (TargetClassPtr && !TargetClassPtr->IsEmpty()))
+	{
+		TArray<FString> PinNames;
+		for (UEdGraphPin* Pin : SetNode->Pins)
+		{
+			PinNames.Add(FString::Printf(TEXT("%s(%s)"), *Pin->GetName(),
+				Pin->Direction == EGPD_Input ? TEXT("in") : TEXT("out")));
+		}
+		LogGeneration(FString::Printf(TEXT("  VariableSet '%s': Available pins: [%s]"),
+			*NodeDef.Id, *FString::Join(PinNames, TEXT(", "))));
+	}
 
 	return SetNode;
 }
@@ -12881,6 +13276,48 @@ UK2Node* FEventGraphGenerator::CreateMakeLiteralIntNode(
 	return LiteralNode;
 }
 
+// v7.8.14: MakeLiteralByte - create a byte literal value node
+// Use for enum comparisons (e.g., ETeamAttitude::Hostile = 2)
+UK2Node* FEventGraphGenerator::CreateMakeLiteralByteNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_CallFunction* LiteralNode = NewObject<UK2Node_CallFunction>(Graph);
+	Graph->AddNode(LiteralNode, false, false);
+
+	// Use MakeLiteralByte from UKismetSystemLibrary
+	UFunction* LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralByte"));
+	if (LiteralFunc)
+	{
+		LiteralNode->SetFromFunction(LiteralFunc);
+	}
+	else
+	{
+		LogGeneration(FString::Printf(TEXT("[E_MAKELITERALBYTE_NOT_FOUND] MakeLiteralByte function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	LiteralNode->CreateNewGuid();
+	LiteralNode->PostPlacedNewNode();
+	LiteralNode->AllocateDefaultPins();
+
+	// Set the value from properties
+	const FString* ValuePtr = NodeDef.Properties.Find(TEXT("value"));
+	if (ValuePtr)
+	{
+		UEdGraphPin* ValuePin = LiteralNode->FindPin(FName("Value"));
+		if (ValuePin)
+		{
+			ValuePin->DefaultValue = *ValuePtr;
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("MakeLiteralByte node '%s': Created with value=%s"),
+		*NodeDef.Id, ValuePtr ? **ValuePtr : TEXT("0")));
+
+	return LiteralNode;
+}
+
 // v4.40: MakeLiteralString - create a string literal value node
 // Use for explicit string values to connect to VariableSet Value pins
 UK2Node* FEventGraphGenerator::CreateMakeLiteralStringNode(
@@ -12962,6 +13399,178 @@ UK2Node* FEventGraphGenerator::CreateDynamicCastNode(
 	CastNode->AllocateDefaultPins();
 
 	return CastNode;
+}
+
+// v7.8.19: Create AddDelegate node for binding to multicast delegates in function overrides
+// Per LOCKED RULE 7: Generator serves the design - Tech Doc 65.5 pattern
+// Properties: delegate_name (e.g., OnPerceptionUpdated), event_name (handler), source_class (delegate owner)
+UK2Node* FEventGraphGenerator::CreateAddDelegateNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef,
+	UBlueprint* Blueprint,
+	TMap<FString, UK2Node*>& NodeMap)
+{
+	const FString* DelegateNamePtr = NodeDef.Properties.Find(TEXT("delegate_name"));
+	const FString* EventNamePtr = NodeDef.Properties.Find(TEXT("event_name"));
+	const FString* SourceClassPtr = NodeDef.Properties.Find(TEXT("source_class"));
+
+	if (!DelegateNamePtr || DelegateNamePtr->IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ADDDELEGATE_MISSING_PROPERTY] Node '%s' missing delegate_name property"), *NodeDef.Id));
+		return nullptr;
+	}
+	if (!EventNamePtr || EventNamePtr->IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ADDDELEGATE_MISSING_PROPERTY] Node '%s' missing event_name property"), *NodeDef.Id));
+		return nullptr;
+	}
+	if (!SourceClassPtr || SourceClassPtr->IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ADDDELEGATE_MISSING_PROPERTY] Node '%s' missing source_class property"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Find the source class that owns the delegate
+	UClass* SourceClass = FindParentClass(*SourceClassPtr);
+	if (!SourceClass)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ADDDELEGATE_CLASS_NOT_FOUND] Node '%s' | source_class '%s' not found"),
+			*NodeDef.Id, **SourceClassPtr));
+		return nullptr;
+	}
+
+	// Find the delegate property on the source class
+	FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(SourceClass, **DelegateNamePtr);
+	if (!DelegateProp)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ADDDELEGATE_DELEGATE_NOT_FOUND] Node '%s' | Delegate '%s' not found on class '%s'"),
+			*NodeDef.Id, **DelegateNamePtr, *SourceClass->GetName()));
+		return nullptr;
+	}
+
+	// Find the CustomEvent handler - first check same graph (required for pin wiring)
+	UK2Node_CustomEvent* HandlerEventNode = nullptr;
+	bool bHandlerInSameGraph = false;
+
+	for (UEdGraphNode* Node : Graph->Nodes)
+	{
+		UK2Node_CustomEvent* CustomEvent = Cast<UK2Node_CustomEvent>(Node);
+		if (CustomEvent && CustomEvent->CustomFunctionName == FName(**EventNamePtr))
+		{
+			HandlerEventNode = CustomEvent;
+			bHandlerInSameGraph = true;
+			break;
+		}
+	}
+
+	// Also check Blueprint's event graphs (handler might be there but we can't wire cross-graph)
+	if (!HandlerEventNode)
+	{
+		for (UEdGraph* EventGraph : Blueprint->UbergraphPages)
+		{
+			for (UEdGraphNode* Node : EventGraph->Nodes)
+			{
+				UK2Node_CustomEvent* CustomEvent = Cast<UK2Node_CustomEvent>(Node);
+				if (CustomEvent && CustomEvent->CustomFunctionName == FName(**EventNamePtr))
+				{
+					HandlerEventNode = CustomEvent;
+					bHandlerInSameGraph = false;
+					break;
+				}
+			}
+			if (HandlerEventNode) break;
+		}
+	}
+
+	// Create UK2Node_AddDelegate
+	UK2Node_AddDelegate* AddDelegateNode = NewObject<UK2Node_AddDelegate>(Graph);
+	AddDelegateNode->SetFromProperty(DelegateProp, false, SourceClass);
+	Graph->AddNode(AddDelegateNode, false, false);
+	AddDelegateNode->CreateNewGuid();
+	AddDelegateNode->PostPlacedNewNode();
+	AddDelegateNode->AllocateDefaultPins();
+
+	// Wire delegate input - method depends on whether handler is in same graph
+	// Per Contract 25 (C_NEVER_SIMPLIFY_ABILITIES): Must fully implement, not leave for manual completion
+	if (HandlerEventNode && bHandlerInSameGraph)
+	{
+		// Same graph: Direct pin wiring works
+		UEdGraphPin* EventDelegateOutPin = HandlerEventNode->FindPin(UK2Node_CustomEvent::DelegateOutputName);
+		UEdGraphPin* AddDelegateIn = AddDelegateNode->GetDelegatePin();
+
+		if (EventDelegateOutPin && AddDelegateIn)
+		{
+			EventDelegateOutPin->MakeLinkTo(AddDelegateIn);
+			LogGeneration(FString::Printf(TEXT("  AddDelegate '%s': Wired CustomEvent '%s' delegate output (same graph)"),
+				*NodeDef.Id, **EventNamePtr));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("[W_ADDDELEGATE_PIN_MISSING] Node '%s' | EventDelegateOut=%s, AddDelegateIn=%s"),
+				*NodeDef.Id,
+				EventDelegateOutPin ? TEXT("found") : TEXT("null"),
+				AddDelegateIn ? TEXT("found") : TEXT("null")));
+		}
+	}
+	else if (HandlerEventNode)
+	{
+		// v7.8.20: Cross-graph case - use UK2Node_CreateDelegate as intermediary
+		// CreateDelegate references handler BY NAME, which works across graphs
+		// Per LOCKED RULE 7: Generator must fully implement, not defer to manual completion
+		UK2Node_CreateDelegate* CreateDelegateNode = NewObject<UK2Node_CreateDelegate>(Graph);
+		Graph->AddNode(CreateDelegateNode, false, false);
+		CreateDelegateNode->CreateNewGuid();
+		CreateDelegateNode->PostPlacedNewNode();
+		CreateDelegateNode->AllocateDefaultPins();
+
+		// Set the function to call (the CustomEvent handler name)
+		// Delegate signature is inferred via type propagation when wired to AddDelegate
+		CreateDelegateNode->SetFunction(FName(**EventNamePtr));
+
+		// Wire Self -> CreateDelegate's self pin (object containing the event)
+		// The CreateDelegate needs to reference Self (the blueprint instance)
+		UEdGraphPin* CreateDelegateSelfPin = CreateDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self);
+		if (CreateDelegateSelfPin)
+		{
+			// CreateDelegate's Self pin should be wired to the object containing the handler
+			// For function overrides, this is typically Self (the blueprint instance)
+			// We'll leave it for the connection system to wire via manifest if needed
+		}
+
+		// Wire CreateDelegate's output -> AddDelegate's delegate input
+		UEdGraphPin* CreateDelegateOutPin = CreateDelegateNode->GetDelegateOutPin();
+		UEdGraphPin* AddDelegateIn = AddDelegateNode->GetDelegatePin();
+
+		if (CreateDelegateOutPin && AddDelegateIn)
+		{
+			CreateDelegateOutPin->MakeLinkTo(AddDelegateIn);
+			LogGeneration(FString::Printf(TEXT("  AddDelegate '%s': Created UK2Node_CreateDelegate for cross-graph binding to '%s'"),
+				*NodeDef.Id, **EventNamePtr));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("[E_ADDDELEGATE_CREATEDELEGATE_WIRE_FAILED] Node '%s' | CreateDelegateOut=%s, AddDelegateIn=%s"),
+				*NodeDef.Id,
+				CreateDelegateOutPin ? TEXT("found") : TEXT("null"),
+				AddDelegateIn ? TEXT("found") : TEXT("null")));
+		}
+
+		// Store CreateDelegate node position relative to AddDelegate
+		CreateDelegateNode->NodePosX = AddDelegateNode->NodePosX - 200;
+		CreateDelegateNode->NodePosY = AddDelegateNode->NodePosY + 50;
+	}
+	else
+	{
+		// No handler found anywhere - this is a FAIL per Contract 25
+		LogGeneration(FString::Printf(TEXT("[E_ADDDELEGATE_NO_HANDLER] Node '%s' | CustomEvent '%s' not found - cannot complete binding"),
+			*NodeDef.Id, **EventNamePtr));
+		return nullptr;  // Return nullptr to indicate failure - asset should not be saved
+	}
+
+	LogGeneration(FString::Printf(TEXT("  AddDelegate node '%s': Created for %s.%s -> %s"),
+		*NodeDef.Id, *SourceClass->GetName(), **DelegateNamePtr, **EventNamePtr));
+
+	return AddDelegateNode;
 }
 
 // v2.4.0: Create ForEachLoop macro instance node
@@ -13056,6 +13665,78 @@ UK2Node* FEventGraphGenerator::CreateSpawnActorNode(
 	}
 
 	return CallNode;
+}
+
+// v7.8.14: Create ConstructObjectFromClass node for UObject construction (goals, etc.)
+// Uses UK2Node_GenericCreateObject - has UseOuter()=true for Outer pin support
+// Pins: execute (input), Class (input), Outer (input), then (output), ReturnValue (output)
+UK2Node* FEventGraphGenerator::CreateConstructObjectFromClassNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef,
+	UBlueprint* Blueprint)
+{
+	// Use UK2Node_GenericCreateObject which has UseOuter()=true (provides Outer pin)
+	// UK2Node_ConstructObjectFromClass is abstract base with UseOuter()=false
+	UK2Node_GenericCreateObject* ConstructNode = NewObject<UK2Node_GenericCreateObject>(Graph);
+	Graph->AddNode(ConstructNode, false, false);
+
+	ConstructNode->CreateNewGuid();
+	ConstructNode->PostPlacedNewNode();
+	ConstructNode->AllocateDefaultPins();
+
+	// Log available pins for debugging
+	TArray<FString> PinNames;
+	for (UEdGraphPin* Pin : ConstructNode->Pins)
+	{
+		PinNames.Add(Pin->GetName());
+	}
+	LogGeneration(FString::Printf(TEXT("  ConstructObjectFromClass '%s': Available pins: [%s]"),
+		*NodeDef.Id, *FString::Join(PinNames, TEXT(", "))));
+
+	// If class property is specified, set the default class
+	const FString* ClassProperty = NodeDef.Properties.Find(TEXT("class"));
+	if (ClassProperty && !ClassProperty->IsEmpty())
+	{
+		// Try to find the class
+		UClass* ObjectClass = FindObject<UClass>(nullptr, **ClassProperty);
+		if (!ObjectClass)
+		{
+			// Try loading by path
+			ObjectClass = LoadObject<UClass>(nullptr, **ClassProperty);
+		}
+		if (!ObjectClass)
+		{
+			// Try common search paths
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("/Game/FatherCompanion/AI/Goals/%s.%s_C"), **ClassProperty, **ClassProperty),
+				FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), **ClassProperty)
+			};
+			for (const FString& Path : SearchPaths)
+			{
+				ObjectClass = LoadObject<UClass>(nullptr, *Path);
+				if (ObjectClass) break;
+			}
+		}
+
+		if (ObjectClass)
+		{
+			// Get the Class pin using the node's accessor method
+			UEdGraphPin* ClassPin = ConstructNode->GetClassPin();
+			if (ClassPin)
+			{
+				ClassPin->DefaultObject = ObjectClass;
+				LogGeneration(FString::Printf(TEXT("  ConstructObjectFromClass '%s': Set default class to %s"),
+					*NodeDef.Id, *ObjectClass->GetName()));
+			}
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  ConstructObjectFromClass '%s': Class '%s' will be connected via pin"),
+				*NodeDef.Id, **ClassProperty));
+		}
+	}
+
+	return ConstructNode;
 }
 
 // v4.34: Create SpawnNPC node using NarrativeCharacterSubsystem
@@ -13539,6 +14220,14 @@ UEdGraphPin* FEventGraphGenerator::FindPinByName(
 	{
 		SearchNames.Add(TEXT("Mesh"));
 		SearchNames.Add(TEXT("ReturnValue"));  // GetMesh returns via ReturnValue
+	}
+	// v7.8.18: ConstructObjectFromClass Outer pin aliases
+	// UK2Node_GenericCreateObject uses "self" pin for Outer parameter
+	else if (PinName.Equals(TEXT("Outer"), ESearchCase::IgnoreCase))
+	{
+		SearchNames.Add(TEXT("Outer"));
+		SearchNames.Add(TEXT("self"));  // UK2Node_GenericCreateObject uses this
+		SearchNames.Add(TEXT("WorldContextObject"));  // Some nodes use this instead
 	}
 
 	// DynamicCast specific pins
@@ -21107,6 +21796,12 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 						LogGeneration(FString::Printf(TEXT("  Set SupportedGoalType: %s"), *Definition.SupportedGoalType));
 					}
 				}
+				else
+				{
+					// v7.8.14: Log error when goal class not found
+					UE_LOG(LogTemp, Warning, TEXT("ACTIVITY[%s] SupportedGoalType '%s' not found - ensure goal asset is generated first"),
+						*Definition.Name, *Definition.SupportedGoalType);
+				}
 			}
 			// bIsInterruptable (default is true, only set if false)
 			if (!Definition.bIsInterruptable)
@@ -21636,7 +22331,10 @@ FGenerationResult FActivityConfigurationGenerator::Generate(const FManifestActiv
 			TArray<FString> SearchPaths;
 			SearchPaths.Add(FString::Printf(TEXT("%s/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
 			SearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
+			// v7.8.21: Added GoalGenerators subfolder search path
+			SearchPaths.Add(FString::Printf(TEXT("%s/AI/GoalGenerators/%s.%s_C"), *GetProjectRoot(), *GeneratorName, *GeneratorName));
 			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
+			SearchPaths.Add(FString::Printf(TEXT("/Game/FatherCompanion/AI/GoalGenerators/%s.%s_C"), *GeneratorName, *GeneratorName));
 			// v4.22: Narrative Pro plugin built-in goal generators (correct plugin mount point)
 			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));
 			SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s_C"), *GeneratorName, *GeneratorName));

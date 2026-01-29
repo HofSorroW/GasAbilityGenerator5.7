@@ -1985,12 +1985,15 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 	bool bInEventGraph = false;  // v2.7.6: For inline event graph parsing
 	bool bInComponents = false;
 	bool bInDelegateBindings = false;  // v4.33: For delegate_bindings parsing
+	bool bInAIPerception = false;  // v7.8.22: For ai_perception parsing
+	bool bInAISenses = false;  // v7.8.22: For senses array parsing
 	int32 ItemIndent = -1;      // v2.1.7: Track blueprint item indent level
 	int32 VariablesIndent = 0;
 	int32 ComponentsIndent = 0;
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestActorComponentDefinition CurrentComp;
 	FManifestDelegateBindingDefinition CurrentDelegateBinding;  // v4.33: Current delegate binding
+	FManifestAISenseConfig CurrentSenseConfig;  // v7.8.22: Current sense config
 	
 	while (LineIndex < Lines.Num())
 	{
@@ -2012,6 +2015,11 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 			if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
 			{
 				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+			}
+			// v7.8.22: Save pending sense config
+			if (bInAIPerception && bInAISenses && !CurrentSenseConfig.SenseType.IsEmpty())
+			{
+				CurrentDef.AIPerceptionConfig.Senses.Add(CurrentSenseConfig);
 			}
 			// v2.6.14: Prefix validation - valid prefixes: BP_, BTS_, BPA_, Goal_, GoalGenerator_
 			if (bInItem && !CurrentDef.Name.IsEmpty() &&
@@ -2059,9 +2067,17 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 				CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
 				CurrentDelegateBinding = FManifestDelegateBindingDefinition();
 			}
+			// v7.8.22: Save pending sense config
+			if (bInAIPerception && bInAISenses && !CurrentSenseConfig.SenseType.IsEmpty())
+			{
+				CurrentDef.AIPerceptionConfig.Senses.Add(CurrentSenseConfig);
+				CurrentSenseConfig = FManifestAISenseConfig();
+			}
 			bInVariables = false;
 			bInComponents = false;
 			bInDelegateBindings = false;
+			bInAIPerception = false;
+			bInAISenses = false;
 
 			// Save current blueprint and start new one - v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() &&
@@ -2291,6 +2307,100 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 					CurrentDelegateBinding.bUnbindOnEnd = GetLineValue(TrimmedLine).ToBool();
 				}
 			}
+			// v7.8.22: Parse ai_perception section for controller blueprints
+			else if (TrimmedLine.Equals(TEXT("ai_perception:")) || TrimmedLine.StartsWith(TEXT("ai_perception:")))
+			{
+				bInEventGraph = false;
+				// Save pending variable/component before switching to ai_perception
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInComponents && !CurrentComp.Name.IsEmpty())
+				{
+					CurrentDef.Components.Add(CurrentComp);
+					CurrentComp = FManifestActorComponentDefinition();
+				}
+				if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
+				{
+					CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+					CurrentDelegateBinding = FManifestDelegateBindingDefinition();
+				}
+				bInAIPerception = true;
+				bInAISenses = false;
+				bInVariables = false;
+				bInComponents = false;
+				bInDelegateBindings = false;
+				CurrentDef.bHasAIPerceptionConfig = true;
+				CurrentSenseConfig = FManifestAISenseConfig();
+			}
+			else if (bInAIPerception)
+			{
+				// v7.8.22: Parse ai_perception subsections
+				if (TrimmedLine.Equals(TEXT("senses:")) || TrimmedLine.StartsWith(TEXT("senses:")))
+				{
+					bInAISenses = true;
+				}
+				else if (TrimmedLine.StartsWith(TEXT("dominant_sense:")))
+				{
+					CurrentDef.AIPerceptionConfig.DominantSense = GetLineValue(TrimmedLine);
+				}
+				else if (bInAISenses)
+				{
+					// Parse sense config items
+					if (TrimmedLine.StartsWith(TEXT("- type:")) || TrimmedLine.StartsWith(TEXT("- sense_type:")))
+					{
+						// Save previous sense config
+						if (!CurrentSenseConfig.SenseType.IsEmpty())
+						{
+							CurrentDef.AIPerceptionConfig.Senses.Add(CurrentSenseConfig);
+						}
+						CurrentSenseConfig = FManifestAISenseConfig();
+						CurrentSenseConfig.SenseType = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("type:")) || TrimmedLine.StartsWith(TEXT("sense_type:")))
+					{
+						CurrentSenseConfig.SenseType = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("sight_radius:")))
+					{
+						CurrentSenseConfig.SightRadius = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("lose_sight_radius:")))
+					{
+						CurrentSenseConfig.LoseSightRadius = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("peripheral_vision_angle:")))
+					{
+						CurrentSenseConfig.PeripheralVisionAngleDegrees = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("auto_success_range:")))
+					{
+						CurrentSenseConfig.AutoSuccessRangeFromLastSeenLocation = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("detect_enemies:")))
+					{
+						CurrentSenseConfig.bDetectEnemies = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("detect_neutrals:")))
+					{
+						CurrentSenseConfig.bDetectNeutrals = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("detect_friendlies:")))
+					{
+						CurrentSenseConfig.bDetectFriendlies = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("max_age:")))
+					{
+						CurrentSenseConfig.MaxAge = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("starts_enabled:")))
+					{
+						CurrentSenseConfig.bStartsEnabled = GetLineValue(TrimmedLine).ToBool();
+					}
+				}
+			}
 			else if (bInVariables)
 			{
 				if (TrimmedLine.StartsWith(TEXT("- name:")))
@@ -2364,6 +2474,11 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 	if (bInDelegateBindings && !CurrentDelegateBinding.Delegate.IsEmpty())
 	{
 		CurrentDef.DelegateBindings.Add(CurrentDelegateBinding);
+	}
+	// v7.8.22: Save pending sense config
+	if (bInAIPerception && bInAISenses && !CurrentSenseConfig.SenseType.IsEmpty())
+	{
+		CurrentDef.AIPerceptionConfig.Senses.Add(CurrentSenseConfig);
 	}
 	// v2.6.14: Prefix validation - valid prefixes: BP_, BTS_, BPA_, Goal_, GoalGenerator_
 	if (bInItem && !CurrentDef.Name.IsEmpty() &&

@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
   - [Mandatory Rules](#mandatory-rules-will-cause-failures)
   - [LOCKED WORKFLOW](#locked-workflow-mandatory)
 - [Troubleshooting](#troubleshooting)
-- [GasAbilityGenerator Plugin](#gasabilitygenerator-plugin-v781)
+- [GasAbilityGenerator Plugin](#gasabilitygenerator-plugin-v7813)
   - [Architecture](#architecture)
   - [Table Editors](#table-editors-v48)
   - [Supported Asset Types](#supported-asset-types-generated-by-plugin)
@@ -332,16 +332,9 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ## GasAbilityGenerator Plugin (v7.8.13)
 
-### LOCKED: NEVER Simplify Abilities (Contract 25)
-
-Abilities in the manifest MUST match their implementation guides exactly. If a generator limitation prevents implementing a feature:
-1. **STOP** - Do not simplify or work around the limitation
-2. **ENHANCE** - Add generator support for the required pattern/node type
-3. **VERIFY** - Ensure the ability matches the guide's specified gameplay mechanics
-
-The generator serves the design, not the other way around.
-
 Location: `Plugins/GasAbilityGenerator/`
+
+**LOCKED: Contract 25** - See [NEVER Simplify Abilities](#mandatory-rules-will-cause-failures) in Mandatory Rules.
 
 **No automated tests.** Validation is performed via the `-dryrun` flag and generation log analysis.
 

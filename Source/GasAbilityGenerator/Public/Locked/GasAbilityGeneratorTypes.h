@@ -1406,6 +1406,66 @@ struct FManifestActorComponentDefinition
 };
 
 /**
+ * v7.8.22: AI Sense configuration for AIPerceptionComponent
+ * Supports Sight, Hearing, Damage sense types
+ */
+struct FManifestAISenseConfig
+{
+	FString SenseType;  // Sight, Hearing, Damage (empty = not configured)
+
+	// Sight sense properties (UE5 defaults: 3000, 3500)
+	// Our defaults match UE5's UAISenseConfig_Sight defaults
+	float SightRadius = 3000.0f;
+	float LoseSightRadius = 3500.0f;
+	float PeripheralVisionAngleDegrees = 90.0f;
+	float AutoSuccessRangeFromLastSeenLocation = -1.0f;  // -1 = disabled
+
+	// Detection by affiliation
+	bool bDetectEnemies = true;
+	bool bDetectNeutrals = false;
+	bool bDetectFriendlies = false;
+
+	// Common sense properties
+	float MaxAge = 0.0f;  // 0 = never expires
+	bool bStartsEnabled = true;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(SenseType);
+		Hash ^= GetTypeHash(FMath::RoundToInt(SightRadius * 10)) << 4;
+		Hash ^= GetTypeHash(FMath::RoundToInt(LoseSightRadius * 10)) << 8;
+		Hash ^= GetTypeHash(FMath::RoundToInt(PeripheralVisionAngleDegrees * 10)) << 12;
+		Hash ^= (bDetectEnemies ? 1ULL : 0ULL) << 16;
+		Hash ^= (bDetectNeutrals ? 1ULL : 0ULL) << 17;
+		Hash ^= (bDetectFriendlies ? 1ULL : 0ULL) << 18;
+		Hash ^= GetTypeHash(FMath::RoundToInt(MaxAge * 10)) << 20;
+		Hash ^= (bStartsEnabled ? 1ULL : 0ULL) << 24;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.22: AIPerception configuration for controller blueprints
+ * Configures inherited AIPerceptionComponent from AAIController
+ */
+struct FManifestAIPerceptionConfig
+{
+	TArray<FManifestAISenseConfig> Senses;
+	FString DominantSense;  // Optional: "Sight", "Hearing", etc.
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(DominantSense);
+		for (const auto& Sense : Senses)
+		{
+			Hash ^= Sense.ComputeHash();
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+		return Hash;
+	}
+};
+
+/**
  * Function override definition
  * v2.8.3: Used for overriding parent class functions (e.g., HandleDeath)
  */
@@ -1467,6 +1527,11 @@ struct FManifestActorBlueprintDefinition
 	// Same as GameplayAbility custom_functions - creates new function graphs
 	TArray<FManifestCustomFunctionDefinition> CustomFunctions;
 
+	// v7.8.22: AIPerception configuration for controller blueprints
+	// Configures inherited AIPerceptionComponent (only for AAIController-derived blueprints)
+	FManifestAIPerceptionConfig AIPerceptionConfig;
+	bool bHasAIPerceptionConfig = false;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -1522,6 +1587,13 @@ struct FManifestActorBlueprintDefinition
 		{
 			Hash ^= Func.ComputeHash();
 			Hash = (Hash << 16) | (Hash >> 48);
+		}
+
+		// v7.8.22: AIPerception config
+		if (bHasAIPerceptionConfig)
+		{
+			Hash ^= AIPerceptionConfig.ComputeHash();
+			Hash = (Hash << 17) | (Hash >> 47);
 		}
 
 		return Hash;
