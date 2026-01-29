@@ -9173,15 +9173,7 @@ actor_blueprints:  # WARDEN SYSTEM
         type: Object
         class: StaticMesh
         instance_editable: true
-    event_graph:
-      nodes:
-        # BeginPlay - Initialize for phase transition
-        - id: Event_BeginPlay
-          type: Event
-          properties:
-            event_name: ReceiveBeginPlay
-          position: [0, 0]
-      connections: []
+    # v7.8.29: Removed empty BeginPlay event - all logic is in HandleDeath override
     # v2.8.3/v4.32: Function override with actual SpawnActor for phase transition
     # v7.8.23: WH-4 fix - Added SpawnOffset, EjectionMontage usage per Guide Phase 3.1
     function_overrides:
@@ -12118,15 +12110,7 @@ actor_blueprints:  # BIOMECH
         type: Object
         class: AnimMontage
         instance_editable: true
-    event_graph:
-      nodes:
-        # BeginPlay - Initialize for phase transition
-        - id: Event_BeginPlay
-          type: Event
-          properties:
-            event_name: ReceiveBeginPlay
-          position: [0, 0]
-      connections: []
+    # v7.8.29: Removed empty BeginPlay event - all logic is in HandleDeath override
     # v7.8.5: Enhanced HandleDeath per guide Phase 5 (detaching tag, montage, offset, corpse)
     function_overrides:
       - function: HandleDeath
@@ -15088,20 +15072,20 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           position: [400, 2500]
       connections:
         # OnFollowCheckTimer connections
+        # v7.8.29: Clean pattern - direct exec bypassing pure nodes (RandomFloat, Less_DoubleDouble)
         - from: [Event_OnFollowCheckTimer, Then]
           to: [BranchNotFollowing, Exec]
         - from: [GetIsFollowing, bIsFollowing]
           to: [BranchNotFollowing, Condition]
         - from: [BranchNotFollowing, False]
-          to: [RandomFollowRoll, Exec]
+          to: [BranchFollowRoll, Exec]
+        # Data flow through pure nodes
         - from: [RandomFollowRoll, ReturnValue]
           to: [LessFollowChance, A]
         - from: [GetFollowChance, FollowChance]
           to: [LessFollowChance, B]
         - from: [LessFollowChance, ReturnValue]
           to: [BranchFollowRoll, Condition]
-        - from: [RandomFollowRoll, Then]
-          to: [BranchFollowRoll, Exec]
         - from: [BranchFollowRoll, True]
           to: [GetPlayerPawn, Exec]
         - from: [GetPlayerPawn, ReturnValue]
@@ -15227,16 +15211,15 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [LessTalkMax, B]
         - from: [LessTalkMax, ReturnValue]
           to: [BranchTalkMax, Condition]
+        # v7.8.29: Clean pattern - direct exec bypassing pure RandomFloat
         - from: [BranchTalkMax, True]
-          to: [RandomTalkRoll, Exec]
+          to: [BranchTalkRoll, Exec]
         - from: [RandomTalkRoll, ReturnValue]
           to: [LessTalkChance, A]
         - from: [GetTalkChance, TalkChance]
           to: [LessTalkChance, B]
         - from: [LessTalkChance, ReturnValue]
           to: [BranchTalkRoll, Condition]
-        - from: [RandomTalkRoll, Then]
-          to: [BranchTalkRoll, Exec]
         - from: [BranchTalkRoll, True]
           to: [SetTalkCount, Exec]
         - from: [GetTalkCountInc, TalkCount]
@@ -15258,16 +15241,15 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [BranchNotDefending, Condition]
         - from: [BranchNotDefending, True]
           to: [CallGetAttackChance, Exec]
+        # v7.8.29: Clean pattern - direct exec bypassing pure RandomFloat
         - from: [CallGetAttackChance, Then]
-          to: [RandomAttackRoll, Exec]
+          to: [BranchAttackRoll, Exec]
         - from: [RandomAttackRoll, ReturnValue]
           to: [LessAttackChance, A]
         - from: [CallGetAttackChance, ReturnValue]
           to: [LessAttackChance, B]
         - from: [LessAttackChance, ReturnValue]
           to: [BranchAttackRoll, Condition]
-        - from: [RandomAttackRoll, Then]
-          to: [BranchAttackRoll, Exec]
         - from: [BranchAttackRoll, True]
           to: [PrintAttackDecided, Exec]
         - from: [PrintAttackDecided, Then]
@@ -15346,16 +15328,15 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [BranchAttackerValid, Condition]
         - from: [BranchAttackerValid, True]
           to: [CallGetDefendChance, Exec]
+        # v7.8.29: Clean pattern - direct exec bypassing pure RandomFloat
         - from: [CallGetDefendChance, Then]
-          to: [RandomDefendRoll, Exec]
+          to: [BranchDefendRoll, Exec]
         - from: [RandomDefendRoll, ReturnValue]
           to: [LessDefendChance, A]
         - from: [CallGetDefendChance, ReturnValue]
           to: [LessDefendChance, B]
         - from: [LessDefendChance, ReturnValue]
           to: [BranchDefendRoll, Condition]
-        - from: [RandomDefendRoll, Then]
-          to: [BranchDefendRoll, Exec]
         - from: [BranchDefendRoll, True]
           to: [SetDefendingTrue, Exec]
         # v1.0.2: Defend goal creation and OnGoalRemoved binding (PATCH-E)
