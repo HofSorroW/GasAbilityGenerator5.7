@@ -39,6 +39,17 @@ class UEdGraph;
 class UEdGraphPin;
 
 /**
+ * v7.8.31: Result of pin connection attempt
+ * Distinguishes between actual connections and skipped pure-node exec connections
+ */
+enum class EConnectResult : uint8
+{
+	Connected,     // Actual connection was made
+	SkippedPure,   // Exec-to-pure connection was skipped (expected behavior)
+	Failed         // Connection failed (error)
+};
+
+/**
  * v7.5.5: Callback type for generator log messages
  * Used to bridge LogGeneration() with commandlet's LogMessages array
  */
@@ -888,7 +899,7 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
-	static bool ConnectPins(
+	static EConnectResult ConnectPins(
 		const TMap<FString, UK2Node*>& NodeMap,
 		const FManifestGraphConnectionDefinition& Connection);
 

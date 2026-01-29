@@ -10140,35 +10140,44 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		}
 	}
 
-	// Create all connections (skipping exec connections to/from pure nodes - they'll be handled by reroutes)
+	// v7.8.31: Create all connections with accurate logging for Connected vs SkippedPure vs Failed
+	int32 ConnectionsSkippedPure = 0;
 	for (const FManifestGraphConnectionDefinition& Connection : GraphDefinition.Connections)
 	{
-		if (ConnectPins(NodeMap, Connection))
+		EConnectResult Result = ConnectPins(NodeMap, Connection);
+		switch (Result)
 		{
+		case EConnectResult::Connected:
 			ConnectionsCreated++;
 			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
-		}
-		else
-		{
+			break;
+		case EConnectResult::SkippedPure:
+			ConnectionsSkippedPure++;
+			// Already logged inside ConnectPins with "Skipped (pure bypass):" prefix
+			break;
+		case EConnectResult::Failed:
 			ConnectionsFailed++;
 			LogGeneration(FString::Printf(TEXT("  FAILED to connect: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
+			break;
 		}
 	}
 
 	// Apply rerouted exec connections
 	for (const FManifestGraphConnectionDefinition& Reroute : ReroutedConnections)
 	{
-		if (ConnectPins(NodeMap, Reroute))
+		EConnectResult Result = ConnectPins(NodeMap, Reroute);
+		if (Result == EConnectResult::Connected)
 		{
 			ConnectionsCreated++;
 			LogGeneration(FString::Printf(TEXT("  Rerouted: %s.%s -> %s.%s"),
 				*Reroute.From.NodeId, *Reroute.From.PinName,
 				*Reroute.To.NodeId, *Reroute.To.PinName));
 		}
+		// SkippedPure and Failed are already logged inside ConnectPins
 	}
 
 	// ============================================================
@@ -10637,11 +10646,12 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		}
 	}
 
-	// Log summary
-	LogGeneration(FString::Printf(TEXT("Event graph '%s' summary: Nodes %d/%d, Connections %d/%d"),
+	// v7.8.31: Log summary with skipped pure count for accurate verification
+	LogGeneration(FString::Printf(TEXT("Event graph '%s' summary: Nodes %d/%d, Connections %d/%d (skipped pure: %d)"),
 		*GraphDefinition.Name,
 		NodesCreated, NodesCreated + NodesFailed,
-		ConnectionsCreated, ConnectionsCreated + ConnectionsFailed));
+		ConnectionsCreated, ConnectionsCreated + ConnectionsFailed,
+		ConnectionsSkippedPure));
 
 	// v2.7.4: Enhanced error reporting
 	// v4.40: Added ValuePinErrors for VariableSet/Branch/Cast validation
@@ -10997,30 +11007,36 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
 	AutoLayoutNodes(NodeMap, OverrideDefinition.Nodes, OverrideDefinition.Connections);
 
-	// Create connections
+	// v7.8.31: Create connections with accurate logging
 	int32 ConnectionsCreated = 0;
 	int32 ConnectionsFailed = 0;
+	int32 ConnectionsSkippedPure = 0;
 
 	for (const FManifestGraphConnectionDefinition& Connection : OverrideDefinition.Connections)
 	{
-		if (ConnectPins(NodeMap, Connection))
+		EConnectResult Result = ConnectPins(NodeMap, Connection);
+		switch (Result)
 		{
+		case EConnectResult::Connected:
 			ConnectionsCreated++;
 			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
-		}
-		else
-		{
+			break;
+		case EConnectResult::SkippedPure:
+			ConnectionsSkippedPure++;
+			break;
+		case EConnectResult::Failed:
 			ConnectionsFailed++;
 			LogGeneration(FString::Printf(TEXT("  FAILED to connect: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
+			break;
 		}
 	}
 
-	LogGeneration(FString::Printf(TEXT("Function override '%s': %d nodes created, %d failed, %d connections, %d failed"),
-		*OverrideDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsFailed));
+	LogGeneration(FString::Printf(TEXT("Function override '%s': %d nodes created, %d failed, %d connections, %d skipped pure, %d failed"),
+		*OverrideDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsSkippedPure, ConnectionsFailed));
 
 	// Mark blueprint as modified
 	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
@@ -11252,30 +11268,36 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
 	AutoLayoutNodes(NodeMap, FunctionDefinition.Nodes, FunctionDefinition.Connections);
 
-	// Create connections
+	// v7.8.31: Create connections with accurate logging
 	int32 ConnectionsCreated = 0;
 	int32 ConnectionsFailed = 0;
+	int32 ConnectionsSkippedPure = 0;
 
 	for (const FManifestGraphConnectionDefinition& Connection : FunctionDefinition.Connections)
 	{
-		if (ConnectPins(NodeMap, Connection))
+		EConnectResult Result = ConnectPins(NodeMap, Connection);
+		switch (Result)
 		{
+		case EConnectResult::Connected:
 			ConnectionsCreated++;
 			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
-		}
-		else
-		{
+			break;
+		case EConnectResult::SkippedPure:
+			ConnectionsSkippedPure++;
+			break;
+		case EConnectResult::Failed:
 			ConnectionsFailed++;
 			LogGeneration(FString::Printf(TEXT("  FAILED to connect: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
+			break;
 		}
 	}
 
-	LogGeneration(FString::Printf(TEXT("Custom function '%s': %d nodes created, %d failed, %d connections, %d failed"),
-		*FunctionDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsFailed));
+	LogGeneration(FString::Printf(TEXT("Custom function '%s': %d nodes created, %d failed, %d connections, %d skipped pure, %d failed"),
+		*FunctionDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsSkippedPure, ConnectionsFailed));
 
 	// v4.14: Mark blueprint as STRUCTURALLY modified (required for function graph changes)
 	// This tells the Blueprint system that the class structure has changed (new function added)
@@ -13901,7 +13923,7 @@ UK2Node* FEventGraphGenerator::CreateSpawnNPCNode(
 	return SpawnNPCNode;
 }
 
-bool FEventGraphGenerator::ConnectPins(
+EConnectResult FEventGraphGenerator::ConnectPins(
 	const TMap<FString, UK2Node*>& NodeMap,
 	const FManifestGraphConnectionDefinition& Connection)
 {
@@ -13911,7 +13933,7 @@ bool FEventGraphGenerator::ConnectPins(
 	{
 		LogGeneration(FString::Printf(TEXT("Connection failed: Source node '%s' not found"),
 			*Connection.From.NodeId));
-		return false;
+		return EConnectResult::Failed;
 	}
 
 	// Find target node
@@ -13920,7 +13942,7 @@ bool FEventGraphGenerator::ConnectPins(
 	{
 		LogGeneration(FString::Printf(TEXT("Connection failed: Target node '%s' not found"),
 			*Connection.To.NodeId));
-		return false;
+		return EConnectResult::Failed;
 	}
 
 	UK2Node* FromNode = *FromNodePtr;
@@ -13941,12 +13963,12 @@ bool FEventGraphGenerator::ConnectPins(
 
 		if (bFromNodeIsPure || bToNodeIsPure)
 		{
-			// v2.5.2: Skip exec connections on pure nodes - they'll be handled by the rerouting logic
+			// v2.5.2/v7.8.31: Skip exec connections on pure nodes - they'll be handled by the rerouting logic
 			// in GenerateEventGraph which creates direct connections that bypass pure nodes
-			LogGeneration(FString::Printf(TEXT("    SKIP exec on pure node: %s.%s -> %s.%s"),
+			LogGeneration(FString::Printf(TEXT("    Skipped (pure bypass): %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
-			return true; // Return true - this is expected, not a failure
+			return EConnectResult::SkippedPure; // v7.8.31: Distinct from Connected for accurate logging
 		}
 	}
 
@@ -13966,7 +13988,7 @@ bool FEventGraphGenerator::ConnectPins(
 		}
 		LogGeneration(FString::Printf(TEXT("Connection failed: Output pin '%s' not found on node '%s'. Available outputs: [%s]"),
 			*Connection.From.PinName, *Connection.From.NodeId, *AvailablePins));
-		return false;
+		return EConnectResult::Failed;
 	}
 
 	// Find target pin (input)
@@ -13985,7 +14007,7 @@ bool FEventGraphGenerator::ConnectPins(
 		}
 		LogGeneration(FString::Printf(TEXT("Connection failed: Input pin '%s' not found on node '%s'. Available inputs: [%s]"),
 			*Connection.To.PinName, *Connection.To.NodeId, *AvailablePins));
-		return false;
+		return EConnectResult::Failed;
 	}
 
 	// v2.7.3: Helper lambda to get full pin type description including class names
@@ -14031,7 +14053,7 @@ bool FEventGraphGenerator::ConnectPins(
 	if (FromPin->LinkedTo.Contains(ToPin))
 	{
 		LogGeneration(TEXT("      Already connected"));
-		return true;
+		return EConnectResult::Connected;
 	}
 
 	// v2.7.3: Check pin type compatibility BEFORE attempting connection
@@ -14056,7 +14078,7 @@ bool FEventGraphGenerator::ConnectPins(
 
 			LogGeneration(FString::Printf(TEXT("      ERROR: Can't connect pins - %s"), *Response.Message.ToString()));
 			LogGeneration(FString::Printf(TEXT("        '%s' is not compatible with '%s'"), *FromTypeDesc, *ToTypeDesc));
-			return false;
+			return EConnectResult::Failed;
 		}
 		else if (Response.Response == CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE)
 		{
@@ -14070,7 +14092,7 @@ bool FEventGraphGenerator::ConnectPins(
 
 			LogGeneration(FString::Printf(TEXT("      ERROR: Type mismatch - %s -> %s requires conversion"), *FromTypeDesc, *ToTypeDesc));
 			LogGeneration(TEXT("      Fix manifest types or add explicit conversion node in event graph"));
-			return false;
+			return EConnectResult::Failed;
 		}
 		else if (Response.Response == CONNECT_RESPONSE_BREAK_OTHERS_A ||
 		         Response.Response == CONNECT_RESPONSE_BREAK_OTHERS_B ||
@@ -14092,7 +14114,7 @@ bool FEventGraphGenerator::ConnectPins(
 			*Connection.From.NodeId, *FromPin->PinName.ToString(), *FromTypeDesc,
 			*Connection.To.NodeId, *ToPin->PinName.ToString(), *ToTypeDesc);
 		LogGeneration(FString::Printf(TEXT("      ERROR: MakeLinkTo failed - connection not established")));
-		return false;
+		return EConnectResult::Failed;
 	}
 
 	// v2.5.4: Notify nodes about the connection change
@@ -14101,7 +14123,7 @@ bool FEventGraphGenerator::ConnectPins(
 	FromNode->NotifyPinConnectionListChanged(FromPin);
 	ToNode->NotifyPinConnectionListChanged(ToPin);
 
-	return true;
+	return EConnectResult::Connected;
 }
 
 // v7.2: C1 - LOCKED CONTRACT 22 - Validated pin connection for direct pin-to-pin wiring
