@@ -1306,6 +1306,110 @@ FAIL (any ability that doesn't match its implementation guide)
 
 ---
 
+## LOCKED CONTRACT 26 — C_COMPOSITE_NODE_CONNECTIONS (v7.8.45)
+
+### Context
+
+Composite nodes (like `SpawnNPC`, `FindCharacterFromSubsystem`) create multiple internal Blueprint nodes and connect them programmatically. These internal connections must trigger proper pin type propagation for nodes like `DynamicCast` that have wildcard output pins.
+
+**Discovery (Claude-GPT dual audit 2026-01-30):** `FindCharacterFromSubsystem` composite node failed with "The type of Object is undetermined. Connect something to Cast To NarrativeCharacterSubsystem to imply a specific type." The root cause: internal connections made via `MakeLinkTo()` do NOT trigger `NotifyPinConnectionListChanged()`, which is required for DynamicCast wildcard pin type resolution.
+
+### Invariant
+
+1. All internal connections within composite nodes **MUST** use:
+   ```cpp
+   const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+   Schema->TryCreateConnection(OutputPin, InputPin);
+   ```
+
+2. **NEVER** use `MakeLinkTo()` for internal composite node connections:
+   ```cpp
+   // FORBIDDEN - skips necessary callbacks
+   OutputPin->MakeLinkTo(InputPin);
+   ```
+
+### Technical Evidence
+
+**Why MakeLinkTo fails:**
+- `UEdGraphPin::MakeLinkTo()` directly adds to `LinkedTo` array
+- Does NOT call `NotifyPinConnectionListChanged()`
+- Does NOT trigger pin type propagation callbacks
+
+**Why TryCreateConnection works:**
+- `UEdGraphSchema_K2::TryCreateConnection()` validates connection
+- Calls `BreakAllPinLinks()` if needed (for single-connection pins)
+- Triggers `NotifyPinConnectionListChanged()` on both pins
+- Allows nodes to update their pin types based on connections
+
+**DynamicCast specifically requires this:**
+- DynamicCast output pin (`As<ClassName>`) starts as wildcard
+- Type resolution happens in `NotifyPinConnectionListChanged()`
+- Without callback, output pin remains undetermined → compile error
+
+### Affected Composite Node Types
+
+| Node Type | Internal Connections | Status |
+|-----------|---------------------|--------|
+| `SpawnNPC` | GetSubsystem → SpawnNPC | Uses TryCreateConnection ✅ |
+| `FindCharacterFromSubsystem` | GetSubsystem → Cast → FindCharacter | Fixed v7.8.45 ✅ |
+
+### Correct Pattern
+
+```cpp
+UK2Node* FEventGraphGenerator::CreateCompositeNode(...)
+{
+    // Create internal nodes...
+    UK2Node_CallFunction* NodeA = ...;
+    UK2Node_DynamicCast* CastNode = ...;
+    UK2Node_CallFunction* NodeB = ...;
+
+    // v7.8.45: Use TryCreateConnection for internal connections
+    const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+
+    UEdGraphPin* OutputPin = NodeA->FindPin(UEdGraphSchema_K2::PN_ReturnValue);
+    UEdGraphPin* CastInputPin = CastNode->GetCastSourcePin();
+
+    if (OutputPin && CastInputPin)
+    {
+        bool bConnected = Schema->TryCreateConnection(OutputPin, CastInputPin);
+        // Log success/failure
+    }
+
+    // Continue with remaining connections using TryCreateConnection...
+}
+```
+
+### Forbidden Pattern
+
+```cpp
+// WRONG - MakeLinkTo skips callbacks
+OutputPin->MakeLinkTo(CastInputPin);
+CastOutputPin->MakeLinkTo(NextNodeInput);
+```
+
+### Severity
+
+FAIL (compile error on generated Blueprint)
+
+### Error Symptoms
+
+When this contract is violated, the generated Blueprint will fail compilation with:
+```
+Error: The type of Object is undetermined. Connect something to Cast To <ClassName> to imply a specific type.
+```
+
+### Reference
+
+- Generator: `GasAbilityGeneratorGenerators.cpp` — `CreateFindCharacterFromSubsystemNode()` (lines 14528-14665)
+- Generator: `GasAbilityGeneratorGenerators.cpp` — `CreateSpawnNPCNode()` (lines 14417-14520)
+- UE5.7: `EdGraphSchema_K2.cpp` — `TryCreateConnection()` implementation
+- UE5.7: `K2Node_DynamicCast.cpp` — Wildcard pin type resolution
+- Audit: Claude–GPT dual audit session (2026-01-30), BPA_FormationFollow failure
+- Handoff: `FindCharacter_Composite_Node_Investigation_v1_0.md` (v1.2)
+- Implementation: v7.8.45
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -1340,3 +1444,4 @@ Any change that touches a LOCKED implementation must:
 | v7.3 | 2026-01-27 | Added Contract 24 — D-DAMAGE-ATTR-1 Attribute-Based Damage System (Claude–GPT manifest audit): NarrativeDamageExecCalc uses AttackDamage/Armor attributes, NOT SetByCaller tags. Removed redundant setbycaller_magnitudes from 5 damage GEs. |
 | v7.7 | 2026-01-28 | **REMOVED Contract 10.1** — Track E (Native Bridge) completely removed from generator. Contract 10.1 (delegate binding compile exception) no longer needed. All abilities now go through final compilation per Contract 10. Affected: GA_ProtectiveDome (damage absorption handler removed), GA_StealthField (stealth break handlers removed). See `Track_E_Removal_Audit_v7_7.md`. |
 | v7.8.0 | 2026-01-28 | Added Contract 25 — C_NEVER_SIMPLIFY_ABILITIES: Abilities MUST match implementation guides exactly. If generator limitation prevents implementation, ENHANCE the generator—don't simplify the ability. GA_ProtectiveDome was incorrectly simplified from "30% of damage becomes energy" to fixed 50 energy per hit. |
+| v7.8.45 | 2026-01-30 | Added Contract 26 — C_COMPOSITE_NODE_CONNECTIONS: All internal composite node connections MUST use `Schema->TryCreateConnection()`, never `MakeLinkTo()`. MakeLinkTo skips NotifyPinConnectionListChanged callbacks required for DynamicCast wildcard pin type resolution. |
