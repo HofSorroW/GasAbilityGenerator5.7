@@ -858,7 +858,9 @@
 
 #### 41.4) Configure Faction
    - 41.4.1) Expand: Factions array
-   - 41.4.2) Add: Faction.Enemy.Warden
+   - 41.4.2) Add: Narrative.Factions.Returned
+
+> **NOTE:** Both NPC_WardenHusk and NPC_WardenCore use `Narrative.Factions.Returned` for faction consistency. The Core inherits hostility from the same faction as the Husk.
 
 #### 41.5) Save Asset
 

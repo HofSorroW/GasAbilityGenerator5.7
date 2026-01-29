@@ -122,12 +122,24 @@
 | GoalGenerator_Alert | Blueprint Class | /Game/AI/GoalGenerators/ |
 | BPA_Alert | Blueprint Class | /Game/AI/Activities/ |
 | BPA_Interact | Blueprint Class | /Game/AI/Activities/ |
+| GE_GathererScoutAttributes | GameplayEffect | /Game/Enemies/Gatherer/Effects/ |
 | GE_ReinforcementAttributes | GameplayEffect | /Game/Enemies/Gatherer/Effects/ |
 | AC_GathererScout | AbilityConfiguration | /Game/Enemies/Gatherer/Configurations/ |
 | AC_Reinforcement | AbilityConfiguration | /Game/Enemies/Gatherer/Configurations/ |
 | AC_GathererScoutBehavior | ActivityConfiguration | /Game/AI/Configurations/ |
 | NPC_GathererScout | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
 | NPC_Reinforcement | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
+
+### Gatherer Scout Attributes (GS-2)
+
+| Attribute | Value | Description |
+|-----------|-------|-------------|
+| MaxHealth | 75 | Low health - easy to kill for loot |
+| Health | 75 | Starting health |
+| AttackDamage | 0 | Non-combatant (flees, doesn't fight) |
+| Armor | 0 | No protection |
+
+> **NOTE:** AC_GathererScout has `startup_effects: [GE_GathererScoutAttributes]` for attribute initialization. The Scout is a passive NPC that can be killed for resources.
 
 ### Reinforcement Attributes (GS-1)
 
