@@ -836,6 +836,11 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v7.8.35: Unified ForLoop/ForEachLoop creation for function overrides
+	static UK2Node* CreateForLoopOrEachNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
 	static UK2Node* CreateSpawnActorNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef,

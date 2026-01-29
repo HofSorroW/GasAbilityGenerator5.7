@@ -4,6 +4,56 @@ Full version history for versions prior to v4.14. For recent versions, see `CLAU
 
 ---
 
+## v7.8.35 - Remove Redundant DynamicCast Nodes (Manifest)
+
+**Issue:** GoalGenerator_Alert and GoalGenerator_RandomAggression had compiler warnings about redundant DynamicCast nodes.
+
+**Root Cause:** GetComponentByClass<T> already returns a typed `T*` component. Casting the result to `T` again is redundant and causes E_PREVAL_REDUNDANT_CAST warnings.
+
+**Fix:** Removed redundant DynamicCast nodes from manifest and updated connections:
+- **GoalGenerator_Alert:** Removed CastToAIPerception (after GetComponentByClass<AIPerceptionComponent>)
+- **GoalGenerator_Alert:** Removed CastToActivityComponent (after GetComponentByClass<NPCActivityComponent>)
+- **GoalGenerator_RandomAggression:** Removed CastToPerceptionDef (after GetComponentByClass<AIPerceptionComponent>)
+
+**Files Changed:**
+- ClaudeContext/manifest.yaml: Updated GoalGenerator_Alert and GoalGenerator_RandomAggression definitions
+
+---
+
+## v7.8.34 - BT Root Graph Node Blackboard Fix
+
+**Issue:** BehaviorTree assets showed wrong blackboard (BB_ReturnToSpawn) even after v7.8.33 session cache fix.
+
+**Root Cause:** `UBehaviorTreeGraphNode_Root` has its own `BlackboardAsset` property that is SEPARATE from `UBehaviorTree::BlackboardAsset`. When the BT is loaded in the editor, the root node's `UpdateBlackboard()` overwrites the BT's blackboard with the root node's value.
+
+**Fix:** After setting `BT->BlackboardAsset`, also find and set the root graph node's `BlackboardAsset` property to match.
+
+**Files Changed:**
+- GasAbilityGeneratorGenerators.cpp: Set root graph node blackboard after BT blackboard assignment
+
+---
+
+## v7.8.33 - Session Cache Fix for Skipped Assets (BB + GE)
+
+**Issue:**
+1. BehaviorTree assets showed wrong blackboard (BB_ReturnToSpawn) and decorators/services showed "Class not found" errors
+2. Abilities with cooldown GEs in nested folders showed `E_COOLDOWNGE_NOT_FOUND` errors
+
+**Root Cause:** When assets were SKIPPED (already existed), they weren't registered in the session cache. Subsequent generators that depend on them couldn't find them via cache lookup, and fallback LoadObject paths might not include all folder structures.
+
+**Fix:** Register existing assets in session cache even when skipped:
+- Blackboards: Registered for BT generator lookup
+- GameplayEffects: Registered for GA cooldown class lookup
+
+**How to Apply:**
+1. Delete existing BT assets: `/Content/FatherCompanion/AI/BehaviorTrees/`
+2. Regenerate with `-force` flag or delete entire Content folder
+
+**Files Changed:**
+- GasAbilityGeneratorGenerators.cpp: Blackboard and GE generator session cache registration
+
+---
+
 ## v7.5.8 - Contract 22 Compliance Fix (Pre-Validation Gate)
 
 **Root Cause:** Delegate pre-validation had two contract violations:

@@ -986,6 +986,19 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
+	// v7.8.36: Goal Items BEFORE Actor Blueprints (activities reference goals via DynamicCast)
+	// Activities like BPA_FormationFollow need Goal_FormationFollow to exist first
+	for (const auto& Definition : ManifestData.GoalItems)
+	{
+		FGenerationResult Result = FGoalItemGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	// PHASE 3: Blueprint Assets - Actor Blueprints (before abilities that reference them)
 	for (int32 i = 0; i < ManifestData.ActorBlueprints.Num(); ++i)
 	{
@@ -1657,18 +1670,6 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	for (const auto& Definition : ManifestData.ActivitySchedules)
 	{
 		FGenerationResult Result = FActivityScheduleGenerator::Generate(Definition);
-		Summary.AddResult(Result);
-		TrackProcessedAsset(Result.AssetName);
-		LogMessage(FString::Printf(TEXT("[%s] %s"),
-			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
-			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
-			*Result.AssetName));
-	}
-
-	// v3.9: Goal Items (AI objectives)
-	for (const auto& Definition : ManifestData.GoalItems)
-	{
-		FGenerationResult Result = FGoalItemGenerator::Generate(Definition);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),

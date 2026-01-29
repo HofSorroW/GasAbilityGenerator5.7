@@ -9889,15 +9889,46 @@ behavior_trees:  # GUARD FORMATION
         properties:
           AcceptableRadius: "50.0"
 
-activities:  # GUARD FORMATION
+actor_blueprints:  # GUARD FORMATION GOALS (must come before activities that reference them)
+  # v7.8.36: Goal_FormationFollow moved here so it's generated BEFORE BPA_FormationFollow
+  # Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 3
+  # v7.8.17: Use simple class name - generator resolves via search paths
+  - name: Goal_FormationFollow
+    folder: AI/Goals
+    parent_class: Goal_FollowCharacter
+    # v7.8.35: CDO properties for NPCGoalItem
+    default_score: 50.0
+    goal_lifetime: -1.0
+    remove_on_succeeded: false
+    save_goal: false
+    owned_tags:
+      - State.NPC.FormationFollow
+    variables:
+      # Phase 3.1: Vector offset from leader for formation positioning
+      - name: FormationOffset
+        type: Vector
+        instance_editable: true
+        expose_on_spawn: true
+      # Phase 3.2: Index in formation array for slot assignment
+      - name: FormationIndex
+        type: Integer
+        instance_editable: true
+        expose_on_spawn: true
+
+actor_blueprints:  # GUARD FORMATION ACTIVITIES
+  # v7.8.35: Moved to actor_blueprints for variables/function_overrides support
   # v7.8.17: Full implementation per Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 7
   # v7.8.17: P-BB-KEY-2 compliant - uses GetNarrativeProSettings for BBKey_FollowTarget
   - name: BPA_FormationFollow
     folder: AI/Activities
     parent_class: NPCActivity
+    # v7.8.35: CDO properties for NPCActivity
+    activity_name: "Formation Follow"
     behavior_tree: BT_FormationFollow
     supported_goal_type: Goal_FormationFollow
     is_interruptable: false
+    owned_tags:
+      - State.NPC.FormationFollow
     variables:
       # Guide Phase 7 Step 3.1: Store cast goal reference
       - name: FormationGoal
@@ -9926,6 +9957,13 @@ activities:  # GUARD FORMATION
               property_name: BBKey_FollowTarget
               target_class: ArsenalSettings
             position: [250, -100]
+          # v7.8.35: ActivityGoal is a PROPERTY on NPCActivity, not a function parameter
+          - id: GetActivityGoal
+            type: PropertyGet
+            properties:
+              property_name: ActivityGoal
+              target_class: NPCActivity
+            position: [100, 0]
           # Cast ActivityGoal to Goal_FormationFollow (Guide 5.2)
           - id: CastToFormationGoal
             type: DynamicCast
@@ -9939,11 +9977,12 @@ activities:  # GUARD FORMATION
               variable_name: FormationGoal
             position: [400, 0]
           # Get Target to Follow from goal (Guide 5.4)
+          # v7.8.37: Changed to PropertyGet - TargetToFollow is a property on Goal_FollowCharacter
           - id: GetTargetToFollow
-            type: CallFunction
+            type: PropertyGet
             properties:
-              function: GetTargetToFollow
-              class: Goal_FollowCharacter
+              property_name: TargetToFollow
+              target_class: /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/Goal_FollowCharacter.Goal_FollowCharacter_C
             position: [600, 0]
           # IsValid check on target (Guide 5.5)
           - id: IsValidTarget
@@ -9969,10 +10008,12 @@ activities:  # GUARD FORMATION
             properties:
               variable_name: BBKey_FormationOffset
             position: [1450, -50]
+          # v7.8.37: Changed to PropertyGet - FormationOffset is a variable on Goal_FormationFollow
           - id: GetFormationOffset_Valid
-            type: CallFunction
+            type: PropertyGet
             properties:
-              function: GetFormationOffset
+              property_name: FormationOffset
+              target_class: Goal_FormationFollow
             position: [1450, 50]
           - id: SetFormationOffset_Valid
             type: CallFunction
@@ -9982,11 +10023,12 @@ activities:  # GUARD FORMATION
             position: [1600, 0]
           # === INVALID PATH: Find character via subsystem (Guide 5.6, 5.8) ===
           # Get Target to Follow Asset (CharacterDefinition)
+          # v7.8.37: Changed to PropertyGet - TargetToFollowAsset is a property on Goal_FollowCharacter
           - id: GetTargetAsset
-            type: CallFunction
+            type: PropertyGet
             properties:
-              function: GetTargetToFollowAsset
-              class: Goal_FollowCharacter
+              property_name: TargetToFollowAsset
+              target_class: /NarrativePro/Pro/Core/AI/Activities/FollowCharacter/Goal_FollowCharacter.Goal_FollowCharacter_C
             position: [1100, 200]
           # Get NarrativeCharacterSubsystem
           - id: GetCharSubsystem
@@ -10015,10 +10057,12 @@ activities:  # GUARD FORMATION
             properties:
               variable_name: BBKey_FormationOffset
             position: [1800, 150]
+          # v7.8.37: Changed to PropertyGet - FormationOffset is a variable on Goal_FormationFollow
           - id: GetFormationOffset_Invalid
-            type: CallFunction
+            type: PropertyGet
             properties:
-              function: GetFormationOffset
+              property_name: FormationOffset
+              target_class: Goal_FormationFollow
             position: [1800, 250]
           - id: SetFormationOffset_Invalid
             type: CallFunction
@@ -10042,7 +10086,8 @@ activities:  # GUARD FORMATION
           # Entry -> Cast
           - from: [FunctionEntry, Then]
             to: [CastToFormationGoal, Exec]
-          - from: [FunctionEntry, ActivityGoal]
+          # v7.8.35: ActivityGoal is accessed via PropertyGet, not function parameter
+          - from: [GetActivityGoal, ActivityGoal]
             to: [CastToFormationGoal, Object]
           # Cast -> Set FormationGoal
           - from: [CastToFormationGoal, Then]
@@ -10124,7 +10169,7 @@ activities:  # GUARD FORMATION
   # BPA_Attack_Formation - Leash attack behavior for formation guards
   - name: BPA_Attack_Formation
     folder: AI/Activities
-    parent_class: BPA_Attack_Melee
+    parent_class: /NarrativePro/Pro/Core/AI/Activities/Attacks/MeleeAttack/BPA_Attack_Melee.BPA_Attack_Melee_C
     variables:
       # Guide Phase 8 Step 3.1: LeashRadius - max distance from formation position to attack
       - name: LeashRadius
@@ -10158,11 +10203,12 @@ activities:  # GUARD FORMATION
               target_class: Goal_Attack
             position: [200, 0]
           # Get Target Actor from Goal_Attack (Guide 5.1.4-5.1.5)
+          # v7.8.37: Changed to PropertyGet - TargetToAttack is the property on Goal_Attack
           - id: GetTargetActor
-            type: CallFunction
+            type: PropertyGet
             properties:
-              function: GetTargetActor
-              class: Goal_Attack
+              property_name: TargetToAttack
+              target_class: Goal_Attack
             position: [400, 0]
           # Get enemy location (Guide 5.1.7)
           - id: GetEnemyLocation
@@ -10172,11 +10218,12 @@ activities:  # GUARD FORMATION
               class: Actor
             position: [600, 0]
           # Get Owner Controller (Guide 5.2.1)
+          # v7.8.37: Changed to PropertyGet - OwnerController is a property on NPCActivity
           - id: GetOwnerController
-            type: CallFunction
+            type: PropertyGet
             properties:
-              function: GetOwnerController
-              target_self: true
+              property_name: OwnerController
+              target_class: NPCActivity
             position: [200, 150]
           # Get Blackboard Component (Guide 5.2.2-5.2.3)
           - id: GetBlackboard
@@ -10226,7 +10273,7 @@ activities:  # GUARD FORMATION
             position: [1400, 0]
           # True path: Call parent ScoreGoalItem (Guide 5.5.1-5.5.4)
           - id: CallParentScore
-            type: CallParentFunction
+            type: CallParent
             properties:
               function: ScoreGoalItem
             position: [1600, 0]
@@ -12804,6 +12851,13 @@ actor_blueprints:  # GATHERER GOALS AND GOAL GENERATORS
   - name: Goal_Alert
     folder: AI/Goals
     parent_class: NPCGoalItem
+    # v7.8.35: CDO properties for NPCGoalItem
+    default_score: 5.0
+    goal_lifetime: -1.0
+    remove_on_succeeded: true
+    save_goal: true
+    owned_tags:
+      - State.Enemy.Alert
     variables:
       # Guide 2.1: Location where hostile was spotted
       - name: AlertLocation
@@ -13171,33 +13225,22 @@ actor_blueprints:  # GATHERER GOALS AND GOAL GENERATORS
         - from: [CastToGoalAlert, AsGoal_Alert]
           to: [AddGoal, NewGoal]
 
-  # v7.8.15: Goal_FormationFollow moved to actor_blueprints because it has variables
-  # Guard_Formation_Follow_System_Implementation_Guide_v2_6.md Phase 3
-  # v7.8.17: Use simple class name - generator resolves via search paths
-  - name: Goal_FormationFollow
-    folder: AI/Goals
-    parent_class: Goal_FollowCharacter
-    variables:
-      # Phase 3.1: Vector offset from leader for formation positioning
-      - name: FormationOffset
-        type: Vector
-        instance_editable: true
-        expose_on_spawn: true
-      # Phase 3.2: Index in formation array for slot assignment
-      - name: FormationIndex
-        type: Integer
-        instance_editable: true
-        expose_on_spawn: true
+  # v7.8.36: Goal_FormationFollow moved earlier in manifest (before BPA_FormationFollow)
+  # See GUARD FORMATION GOALS section above
 
-activities:  # GATHERER
+actor_blueprints:  # GATHERER ACTIVITIES
+  # v7.8.35: Moved to actor_blueprints for variables/function_overrides support
   # v4.39.2: Full BPA_Alert implementation per Guide v1.2 L320-510
   # Spawns reinforcements when Gatherer detects threat, then flees
   - name: BPA_Alert
     folder: AI/Activities
     parent_class: NPCActivity
-    # Class properties per Guide L374-375
+    # v7.8.35: CDO properties for NPCActivity
+    activity_name: "Alert and Signal"
     supported_goal_type: Goal_Alert
     is_interruptable: false
+    owned_tags:
+      - State.NPC.Alert.Active
     variables:
       # Guide L333-339: NPCDefinition for reinforcement spawning
       - name: ReinforcementDefinition
@@ -13227,6 +13270,13 @@ activities:  # GATHERER
     function_overrides:
       - function: K2_RunActivity
         nodes:
+          # v7.8.35: ActivityGoal is a PROPERTY on NPCActivity, not a function parameter
+          - id: GetActivityGoal
+            type: PropertyGet
+            properties:
+              property_name: ActivityGoal
+              target_class: NPCActivity
+            position: [100, 0]
           # Cast ActivityGoal to Goal_Alert (Guide L385-389)
           - id: CastToGoalAlert
             type: DynamicCast
@@ -13570,7 +13620,8 @@ activities:  # GATHERER
           # Entry -> Cast to Goal_Alert
           - from: [FunctionEntry, Then]
             to: [CastToGoalAlert, Exec]
-          - from: [FunctionEntry, ActivityGoal]
+          # v7.8.35: ActivityGoal is accessed via PropertyGet, not function parameter
+          - from: [GetActivityGoal, ActivityGoal]
             to: [CastToGoalAlert, Object]
           # Cast -> Set cached goal
           - from: [CastToGoalAlert, Then]
@@ -15507,6 +15558,7 @@ actor_blueprints:  # STALKER GOAL GENERATORS
         # Self reference for PropertyGet
         - from: [SelfRef_Def, Self]
           to: [GetOwnerControllerDef, self]
+        # Get perceived actors for attacker detection
         # Get perceived actors for attacker detection
         - from: [GetOwnerControllerDef, OwnerController]
           to: [GetPerceptionCompDef, Target]

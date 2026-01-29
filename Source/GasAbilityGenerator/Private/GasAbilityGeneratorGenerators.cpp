@@ -1741,13 +1741,24 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 		UE_LOG(LogTemp, Display, TEXT("[GasAbilityGenerator] Scanned NarrativePro22B57 content paths for parent class resolution"));
 	}
 
+	// v7.8.36: Check session cache FIRST for Blueprints created in this generation session
+	// This allows DynamicCast/CallFunction to find Goal_FormationFollow etc. generated earlier
+	if (UClass** CachedClass = GSessionBlueprintClassCache.Find(ClassName))
+	{
+		return *CachedClass;
+	}
+
 	// First check if it's a Blueprint class name (starts with BP_, WBP_, etc.)
 	// v6.6: Added Goal_ prefix for Narrative Pro goal classes (e.g., Goal_Attack)
+	// v7.8.36: Added BPA_, BTS_, GoalGenerator_ for activity/service/goal generator Blueprints
 	bool bIsBlueprintClass = ClassName.StartsWith(TEXT("BP_")) ||
 	                         ClassName.StartsWith(TEXT("WBP_")) ||
 	                         ClassName.StartsWith(TEXT("GA_")) ||
 	                         ClassName.StartsWith(TEXT("BT_")) ||
-	                         ClassName.StartsWith(TEXT("Goal_"));
+	                         ClassName.StartsWith(TEXT("BPA_")) ||
+	                         ClassName.StartsWith(TEXT("BTS_")) ||
+	                         ClassName.StartsWith(TEXT("Goal_")) ||
+	                         ClassName.StartsWith(TEXT("GoalGenerator_"));
 
 	// For Blueprint classes, search using Asset Registry
 	if (bIsBlueprintClass)
@@ -1783,9 +1794,17 @@ UClass* FGeneratorBase::FindParentClass(const FString& ClassName)
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/FollowCharacter/%s.%s"), *ClassName, *ClassName));
 		// v6.6: Add Narrative Pro Goals paths for Goal_Attack and other attack goals
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Attacks/Goals/%s.%s"), *ClassName, *ClassName));
+		// v7.8.36: Add more NarrativePro activity and goal paths
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/GoToLocation/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Idle/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Patrol/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/Interact/Goals/%s.%s"), *ClassName, *ClassName));
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/AI/Activities/DriveToDestination/%s.%s"), *ClassName, *ClassName));
 		// v7.8.14: Add project AI paths for generated goals and goal generators
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/AI/Goals/%s.%s"), *Root, *ClassName, *ClassName));
 		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/AI/GoalGenerators/%s.%s"), *Root, *ClassName, *ClassName));
+		// v7.8.36: Add project AI/Activities path for generated activities
+		BlueprintSearchPaths.Add(FString::Printf(TEXT("%s/AI/Activities/%s.%s"), *Root, *ClassName, *ClassName));
 
 		for (const FString& Path : BlueprintSearchPaths)
 		{
@@ -2453,6 +2472,15 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 	// v3.0: Check existence with metadata-aware logic for MODIFY/CONFLICT detection
 	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Gameplay Effect"), Definition.ComputeHash(), Result))
 	{
+		// v7.8.33: Even when skipped, register existing GE Blueprint class in session cache
+		// GA generator uses session cache for CooldownGameplayEffectClass lookup
+		FString FullAssetPath = AssetPath + TEXT(".") + Definition.Name;
+		UBlueprint* ExistingBP = LoadObject<UBlueprint>(nullptr, *FullAssetPath);
+		if (ExistingBP && ExistingBP->GeneratedClass)
+		{
+			GSessionBlueprintClassCache.Add(Definition.Name, ExistingBP->GeneratedClass);
+			LogGeneration(FString::Printf(TEXT("  Registered existing GE '%s' in session cache (skipped asset)"), *Definition.Name));
+		}
 		return Result;
 	}
 
@@ -3624,6 +3652,291 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		}
 
 		LogGeneration(FString::Printf(TEXT("  Generated %d/%d actor delegate binding handler events"), DelegateNodesGenerated, Definition.DelegateBindings.Num()));
+	}
+
+	// v7.8.35: Set CDO properties for Activity/Goal parent classes
+	// This must happen before compilation so the Blueprint compiles with correct values
+	if (Blueprint->GeneratedClass)
+	{
+		UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
+
+		// Check for NarrativeActivityBase properties (ActivityName, OwnedTags, BlockTags, RequireTags)
+		static UClass* ActivityBaseClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.NarrativeActivityBase"));
+		if (ActivityBaseClass && Blueprint->GeneratedClass->IsChildOf(ActivityBaseClass))
+		{
+			LogGeneration(TEXT("  Setting NarrativeActivityBase CDO properties..."));
+
+			// ActivityName (FText)
+			if (!Definition.ActivityName.IsEmpty())
+			{
+				if (FTextProperty* Prop = FindFProperty<FTextProperty>(ActivityBaseClass, TEXT("ActivityName")))
+				{
+					Prop->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.ActivityName));
+					LogGeneration(FString::Printf(TEXT("    ActivityName: %s"), *Definition.ActivityName));
+				}
+			}
+
+			// OwnedTags (FGameplayTagContainer)
+			if (Definition.OwnedTags.Num() > 0)
+			{
+				if (FStructProperty* Prop = FindFProperty<FStructProperty>(ActivityBaseClass, TEXT("OwnedTags")))
+				{
+					FGameplayTagContainer* Container = Prop->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (Container)
+					{
+						for (const FString& TagStr : Definition.OwnedTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+							if (Tag.IsValid())
+							{
+								Container->AddTag(Tag);
+							}
+						}
+						LogGeneration(FString::Printf(TEXT("    OwnedTags: %d tags"), Definition.OwnedTags.Num()));
+					}
+				}
+			}
+
+			// BlockTags (FGameplayTagContainer)
+			if (Definition.BlockTags.Num() > 0)
+			{
+				if (FStructProperty* Prop = FindFProperty<FStructProperty>(ActivityBaseClass, TEXT("BlockTags")))
+				{
+					FGameplayTagContainer* Container = Prop->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (Container)
+					{
+						for (const FString& TagStr : Definition.BlockTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+							if (Tag.IsValid())
+							{
+								Container->AddTag(Tag);
+							}
+						}
+						LogGeneration(FString::Printf(TEXT("    BlockTags: %d tags"), Definition.BlockTags.Num()));
+					}
+				}
+			}
+
+			// RequireTags (FGameplayTagContainer)
+			if (Definition.RequireTags.Num() > 0)
+			{
+				if (FStructProperty* Prop = FindFProperty<FStructProperty>(ActivityBaseClass, TEXT("RequireTags")))
+				{
+					FGameplayTagContainer* Container = Prop->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (Container)
+					{
+						for (const FString& TagStr : Definition.RequireTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+							if (Tag.IsValid())
+							{
+								Container->AddTag(Tag);
+							}
+						}
+						LogGeneration(FString::Printf(TEXT("    RequireTags: %d tags"), Definition.RequireTags.Num()));
+					}
+				}
+			}
+		}
+
+		// Check for NPCActivity properties (BehaviourTree, SupportedGoalType, bIsInterruptable, bSaveActivity)
+		static UClass* NPCActivityClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.NPCActivity"));
+		if (NPCActivityClass && Blueprint->GeneratedClass->IsChildOf(NPCActivityClass))
+		{
+			LogGeneration(TEXT("  Setting NPCActivity CDO properties..."));
+
+			// BehaviourTree (TSoftObjectPtr<UBehaviorTree>)
+			if (!Definition.BehaviorTree.IsEmpty())
+			{
+				// Try to load the BehaviorTree
+				UBehaviorTree* BT = nullptr;
+				FString BTPath = Definition.BehaviorTree;
+				if (!BTPath.StartsWith(TEXT("/")))
+				{
+					// Search common paths
+					TArray<FString> SearchPaths = {
+						FString::Printf(TEXT("%s/AI/BehaviorTrees/%s.%s"), *GetProjectRoot(), *Definition.BehaviorTree, *Definition.BehaviorTree),
+						FString::Printf(TEXT("/Game/AI/BehaviorTrees/%s.%s"), *Definition.BehaviorTree, *Definition.BehaviorTree)
+					};
+					for (const FString& SearchPath : SearchPaths)
+					{
+						BT = LoadObject<UBehaviorTree>(nullptr, *SearchPath);
+						if (BT) break;
+					}
+				}
+				else
+				{
+					BT = LoadObject<UBehaviorTree>(nullptr, *BTPath);
+				}
+
+				if (BT)
+				{
+					if (FObjectProperty* BTProperty = FindFProperty<FObjectProperty>(NPCActivityClass, TEXT("BehaviourTree")))
+					{
+						BTProperty->SetObjectPropertyValue_InContainer(CDO, BT);
+						LogGeneration(FString::Printf(TEXT("    BehaviourTree: %s"), *BT->GetName()));
+					}
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("    WARNING: BehaviourTree not found: %s"), *Definition.BehaviorTree));
+				}
+			}
+
+			// SupportedGoalType (TSubclassOf<UNPCGoalItem>)
+			if (!Definition.SupportedGoalType.IsEmpty())
+			{
+				if (FClassProperty* Prop = FindFProperty<FClassProperty>(NPCActivityClass, TEXT("SupportedGoalType")))
+				{
+					FString GoalPath = Definition.SupportedGoalType;
+					UClass* GoalClass = nullptr;
+					if (!GoalPath.StartsWith(TEXT("/")))
+					{
+						// Search common paths
+						TArray<FString> SearchPaths = {
+							FString::Printf(TEXT("%s/AI/Goals/%s.%s_C"), *GetProjectRoot(), *Definition.SupportedGoalType, *Definition.SupportedGoalType),
+							FString::Printf(TEXT("/Game/AI/Goals/%s.%s_C"), *Definition.SupportedGoalType, *Definition.SupportedGoalType)
+						};
+						for (const FString& SearchPath : SearchPaths)
+						{
+							GoalClass = LoadClass<UObject>(nullptr, *SearchPath);
+							if (GoalClass) break;
+						}
+					}
+					else
+					{
+						if (!GoalPath.EndsWith(TEXT("_C")))
+						{
+							GoalPath += TEXT("_C");
+						}
+						GoalClass = LoadClass<UObject>(nullptr, *GoalPath);
+					}
+
+					if (GoalClass)
+					{
+						Prop->SetPropertyValue_InContainer(CDO, GoalClass);
+						LogGeneration(FString::Printf(TEXT("    SupportedGoalType: %s"), *GoalClass->GetName()));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("    WARNING: Could not load SupportedGoalType: %s"), *Definition.SupportedGoalType));
+					}
+				}
+			}
+
+			// bIsInterruptable (bool)
+			if (FBoolProperty* Prop = FindFProperty<FBoolProperty>(NPCActivityClass, TEXT("bIsInterruptable")))
+			{
+				Prop->SetPropertyValue_InContainer(CDO, Definition.bIsInterruptable);
+				LogGeneration(FString::Printf(TEXT("    bIsInterruptable: %s"), Definition.bIsInterruptable ? TEXT("true") : TEXT("false")));
+			}
+
+			// bSaveActivity (bool)
+			if (FBoolProperty* Prop = FindFProperty<FBoolProperty>(NPCActivityClass, TEXT("bSaveActivity")))
+			{
+				Prop->SetPropertyValue_InContainer(CDO, Definition.bSaveActivity);
+				LogGeneration(FString::Printf(TEXT("    bSaveActivity: %s"), Definition.bSaveActivity ? TEXT("true") : TEXT("false")));
+			}
+		}
+
+		// Check for NPCGoalItem properties (DefaultScore, GoalLifetime, bRemoveOnSucceeded, bSaveGoal)
+		static UClass* GoalItemClass = FindObject<UClass>(nullptr, TEXT("/Script/NarrativeArsenal.NPCGoalItem"));
+		if (GoalItemClass && Blueprint->GeneratedClass->IsChildOf(GoalItemClass))
+		{
+			LogGeneration(TEXT("  Setting NPCGoalItem CDO properties..."));
+
+			// OwnedTags (FGameplayTagContainer) - inherited from DataAsset
+			if (Definition.OwnedTags.Num() > 0)
+			{
+				if (FStructProperty* Prop = FindFProperty<FStructProperty>(GoalItemClass, TEXT("OwnedTags")))
+				{
+					FGameplayTagContainer* Container = Prop->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (Container)
+					{
+						for (const FString& TagStr : Definition.OwnedTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+							if (Tag.IsValid())
+							{
+								Container->AddTag(Tag);
+							}
+						}
+						LogGeneration(FString::Printf(TEXT("    OwnedTags: %d tags"), Definition.OwnedTags.Num()));
+					}
+				}
+			}
+
+			// BlockTags (FGameplayTagContainer)
+			if (Definition.BlockTags.Num() > 0)
+			{
+				if (FStructProperty* Prop = FindFProperty<FStructProperty>(GoalItemClass, TEXT("BlockTags")))
+				{
+					FGameplayTagContainer* Container = Prop->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (Container)
+					{
+						for (const FString& TagStr : Definition.BlockTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+							if (Tag.IsValid())
+							{
+								Container->AddTag(Tag);
+							}
+						}
+						LogGeneration(FString::Printf(TEXT("    BlockTags: %d tags"), Definition.BlockTags.Num()));
+					}
+				}
+			}
+
+			// RequireTags (FGameplayTagContainer)
+			if (Definition.RequireTags.Num() > 0)
+			{
+				if (FStructProperty* Prop = FindFProperty<FStructProperty>(GoalItemClass, TEXT("RequireTags")))
+				{
+					FGameplayTagContainer* Container = Prop->ContainerPtrToValuePtr<FGameplayTagContainer>(CDO);
+					if (Container)
+					{
+						for (const FString& TagStr : Definition.RequireTags)
+						{
+							FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagStr), false);
+							if (Tag.IsValid())
+							{
+								Container->AddTag(Tag);
+							}
+						}
+						LogGeneration(FString::Printf(TEXT("    RequireTags: %d tags"), Definition.RequireTags.Num()));
+					}
+				}
+			}
+
+			// DefaultScore (float)
+			if (FFloatProperty* Prop = FindFProperty<FFloatProperty>(GoalItemClass, TEXT("DefaultScore")))
+			{
+				Prop->SetPropertyValue_InContainer(CDO, Definition.DefaultScore);
+				LogGeneration(FString::Printf(TEXT("    DefaultScore: %.1f"), Definition.DefaultScore));
+			}
+
+			// GoalLifetime (float)
+			if (FFloatProperty* Prop = FindFProperty<FFloatProperty>(GoalItemClass, TEXT("GoalLifetime")))
+			{
+				Prop->SetPropertyValue_InContainer(CDO, Definition.GoalLifetime);
+				LogGeneration(FString::Printf(TEXT("    GoalLifetime: %.1f"), Definition.GoalLifetime));
+			}
+
+			// bRemoveOnSucceeded (bool)
+			if (FBoolProperty* Prop = FindFProperty<FBoolProperty>(GoalItemClass, TEXT("bRemoveOnSucceeded")))
+			{
+				Prop->SetPropertyValue_InContainer(CDO, Definition.bRemoveOnSucceeded);
+				LogGeneration(FString::Printf(TEXT("    bRemoveOnSucceeded: %s"), Definition.bRemoveOnSucceeded ? TEXT("true") : TEXT("false")));
+			}
+
+			// bSaveGoal (bool)
+			if (FBoolProperty* Prop = FindFProperty<FBoolProperty>(GoalItemClass, TEXT("bSaveGoal")))
+			{
+				Prop->SetPropertyValue_InContainer(CDO, Definition.bSaveGoal);
+				LogGeneration(FString::Printf(TEXT("    bSaveGoal: %s"), Definition.bSaveGoal ? TEXT("true") : TEXT("false")));
+			}
+		}
 	}
 
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
@@ -5263,6 +5576,15 @@ FGenerationResult FBlackboardGenerator::Generate(const FManifestBlackboardDefini
 	// v3.0: Check existence with metadata-aware logic
 	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Blackboard"), Definition.ComputeHash(), Result))
 	{
+		// v7.8.33: Even when skipped, register existing blackboard in session cache for BT lookup
+		// BT generator uses session cache first, so we need to populate it with existing BBs
+		FString FullAssetPath = AssetPath + TEXT(".") + Definition.Name;
+		UBlackboardData* ExistingBB = LoadObject<UBlackboardData>(nullptr, *FullAssetPath);
+		if (ExistingBB)
+		{
+			RegisterGeneratedBlackboard(Definition.Name, ExistingBB);
+			LogGeneration(FString::Printf(TEXT("  Registered existing blackboard '%s' in session cache (skipped asset)"), *Definition.Name));
+		}
 		return Result;
 	}
 
@@ -6290,10 +6612,26 @@ FGenerationResult FBehaviorTreeGenerator::Generate(const FManifestBehaviorTreeDe
 
 	// v7.8.12: Re-assign blackboard AFTER graph operations
 	// UBehaviorTreeGraph::UpdateAsset() overwrites BlackboardAsset, so we must re-assign here
+	// v7.8.34: ALSO set root graph node's BlackboardAsset - it has its own copy that can
+	// overwrite BT->BlackboardAsset when UpdateBlackboard() is called during editor load
 	if (ResolvedBlackboard)
 	{
 		BT->BlackboardAsset = ResolvedBlackboard;
 		LogGeneration(FString::Printf(TEXT("  Assigned Blackboard (post-graph): %s"), *ResolvedBlackboard->GetName()));
+
+		// v7.8.34: Find and set root graph node's blackboard to prevent overwrite on load
+		if (BT->BTGraph)
+		{
+			for (UEdGraphNode* Node : BT->BTGraph->Nodes)
+			{
+				if (UBehaviorTreeGraphNode_Root* RootGraphNode = Cast<UBehaviorTreeGraphNode_Root>(Node))
+				{
+					RootGraphNode->BlackboardAsset = ResolvedBlackboard;
+					LogGeneration(FString::Printf(TEXT("  Set root graph node BlackboardAsset: %s"), *ResolvedBlackboard->GetName()));
+					break;
+				}
+			}
+		}
 	}
 
 	// Mark dirty and register
@@ -10976,6 +11314,27 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 		{
 			CreatedNode = CreateAddDelegateNode(FunctionGraph, NodeDef, Blueprint, NodeMap);
 		}
+		// v7.8.35: MakeLiteralFloat support for function overrides
+		else if (NodeDef.Type.Equals(TEXT("MakeLiteralFloat"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeLiteralFloatNode(FunctionGraph, NodeDef);
+		}
+		// v7.8.35: MakeLiteralBool support for function overrides
+		else if (NodeDef.Type.Equals(TEXT("MakeLiteralBool"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateMakeLiteralBoolNode(FunctionGraph, NodeDef);
+		}
+		// v7.8.35: Delay support for function overrides
+		else if (NodeDef.Type.Equals(TEXT("Delay"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateDelayNode(FunctionGraph, NodeDef);
+		}
+		// v7.8.35: ForLoop/ForEachLoop support for function overrides
+		else if (NodeDef.Type.Equals(TEXT("ForLoop"), ESearchCase::IgnoreCase) ||
+		         NodeDef.Type.Equals(TEXT("ForEachLoop"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateForLoopOrEachNode(FunctionGraph, NodeDef);
+		}
 		else
 		{
 			LogGeneration(FString::Printf(TEXT("  Unknown/unsupported node type '%s' for function override node '%s'"),
@@ -13281,15 +13640,20 @@ UK2Node* FEventGraphGenerator::CreateMakeLiteralFloatNode(
 	UK2Node_CallFunction* LiteralNode = NewObject<UK2Node_CallFunction>(Graph);
 	Graph->AddNode(LiteralNode, false, false);
 
-	// Use MakeLiteralFloat from UKismetSystemLibrary
-	UFunction* LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralFloat"));
+	// v7.8.37: UE5 uses MakeLiteralDouble instead of MakeLiteralFloat
+	// Try MakeLiteralDouble first (UE5), then fall back to MakeLiteralFloat (UE4)
+	UFunction* LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralDouble"));
+	if (!LiteralFunc)
+	{
+		LiteralFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName("MakeLiteralFloat"));
+	}
 	if (LiteralFunc)
 	{
 		LiteralNode->SetFromFunction(LiteralFunc);
 	}
 	else
 	{
-		LogGeneration(FString::Printf(TEXT("[E_MAKELITERALFLOAT_NOT_FOUND] MakeLiteralFloat function not found for node '%s'"), *NodeDef.Id));
+		LogGeneration(FString::Printf(TEXT("[E_MAKELITERALFLOAT_NOT_FOUND] MakeLiteralFloat/Double function not found for node '%s'"), *NodeDef.Id));
 		return nullptr;
 	}
 
@@ -13694,6 +14058,75 @@ UK2Node* FEventGraphGenerator::CreateForEachLoopNode(
 	{
 		// v4.23 FAIL-FAST: S46 - ForEachLoop macro not found in engine
 		LogGeneration(FString::Printf(TEXT("[E_FOREACHLOOP_MACRO_NOT_FOUND] ForEachLoop macro not found for node '%s'"), *NodeDef.Id));
+		return nullptr; // Signal failure to caller
+	}
+
+	MacroNode->CreateNewGuid();
+	MacroNode->PostPlacedNewNode();
+	MacroNode->AllocateDefaultPins();
+
+	return MacroNode;
+}
+
+// v7.8.35: Create ForLoop or ForEachLoop node (unified function for both macros)
+UK2Node* FEventGraphGenerator::CreateForLoopOrEachNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// Determine which macro to use
+	bool bIsForLoop = NodeDef.Type.Equals(TEXT("ForLoop"), ESearchCase::IgnoreCase);
+	FName MacroName = bIsForLoop ? FName(TEXT("ForLoop")) : FName(TEXT("ForEachLoop"));
+
+	// ForLoop and ForEachLoop are implemented as macros in UE5
+	// We use UK2Node_MacroInstance to instantiate them
+	UK2Node_MacroInstance* MacroNode = NewObject<UK2Node_MacroInstance>(Graph);
+	Graph->AddNode(MacroNode, false, false);
+
+	// Load the standard macro library (cached)
+	static UBlueprint* MacroLibrary = nullptr;
+	static UEdGraph* ForLoopMacro = nullptr;
+	static UEdGraph* ForEachLoopMacro = nullptr;
+
+	if (!MacroLibrary)
+	{
+		// Load the standard macro library
+		MacroLibrary = LoadObject<UBlueprint>(nullptr, TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"));
+	}
+
+	if (MacroLibrary)
+	{
+		// Find both macros if not already cached
+		if (!ForLoopMacro || !ForEachLoopMacro)
+		{
+			for (UEdGraph* MacroGraph : MacroLibrary->MacroGraphs)
+			{
+				if (MacroGraph)
+				{
+					if (MacroGraph->GetFName() == FName(TEXT("ForLoop")))
+					{
+						ForLoopMacro = MacroGraph;
+					}
+					else if (MacroGraph->GetFName() == FName(TEXT("ForEachLoop")))
+					{
+						ForEachLoopMacro = MacroGraph;
+					}
+				}
+			}
+		}
+	}
+
+	// Set the appropriate macro
+	UEdGraph* TargetMacro = bIsForLoop ? ForLoopMacro : ForEachLoopMacro;
+
+	if (TargetMacro)
+	{
+		MacroNode->SetMacroGraph(TargetMacro);
+	}
+	else
+	{
+		// v7.8.35 FAIL-FAST: Macro not found in engine
+		LogGeneration(FString::Printf(TEXT("[E_LOOP_MACRO_NOT_FOUND] %s macro not found for node '%s'"),
+			bIsForLoop ? TEXT("ForLoop") : TEXT("ForEachLoop"), *NodeDef.Id));
 		return nullptr; // Signal failure to caller
 	}
 

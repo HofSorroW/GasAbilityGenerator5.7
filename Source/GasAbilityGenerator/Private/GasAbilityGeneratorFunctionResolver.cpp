@@ -485,7 +485,25 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveViaBlueprintAsset
 				UE_LOG(LogTemp, Display, TEXT("[FunctionResolver] Found Blueprint asset '%s', searching FunctionGraphs for '%s'"),
 					*BlueprintName, *FunctionName);
 
-				// Search its FunctionGraphs
+				// v7.8.37: First check GeneratedClass for inherited/native functions
+				UClass* BPClass = FoundBlueprint->GeneratedClass ? FoundBlueprint->GeneratedClass : FoundBlueprint->SkeletonGeneratedClass;
+				if (BPClass)
+				{
+					UFunction* Function = BPClass->FindFunctionByName(*FunctionName);
+					if (Function)
+					{
+						FResolvedFunction Result;
+						Result.Function = Function;
+						Result.OwnerClass = BPClass;
+						Result.bFound = true;
+						Result.ResolutionPath = FString::Printf(TEXT("BlueprintAsset[%s::%s](GeneratedClass)"), *BlueprintName, *FunctionName);
+						UE_LOG(LogTemp, Display, TEXT("[FunctionResolver] Found function '%s' on Blueprint '%s' GeneratedClass"),
+							*FunctionName, *BlueprintName);
+						return Result;
+					}
+				}
+
+				// Search its FunctionGraphs for custom Blueprint functions
 				for (UEdGraph* Graph : FoundBlueprint->FunctionGraphs)
 				{
 					if (Graph && Graph->GetFName() == FName(*FunctionName))
@@ -494,15 +512,15 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveViaBlueprintAsset
 						// The function will be resolved at compile time via SetExternalMember
 						FResolvedFunction Result;
 						Result.Function = nullptr;  // Will be resolved at runtime
-						Result.OwnerClass = FoundBlueprint->GeneratedClass ? FoundBlueprint->GeneratedClass : FoundBlueprint->SkeletonGeneratedClass;
+						Result.OwnerClass = BPClass;
 						Result.bFound = true;
 						Result.ResolutionPath = FString::Printf(TEXT("BlueprintAsset[%s::%s]"), *BlueprintName, *FunctionName);
 						return Result;
 					}
 				}
 
-				UE_LOG(LogTemp, Warning, TEXT("[FunctionResolver] Blueprint '%s' found but function '%s' not in FunctionGraphs (count: %d)"),
-					*BlueprintName, *FunctionName, FoundBlueprint->FunctionGraphs.Num());
+				UE_LOG(LogTemp, Warning, TEXT("[FunctionResolver] Blueprint '%s' found but function '%s' not in GeneratedClass or FunctionGraphs"),
+					*BlueprintName, *FunctionName);
 			}
 			break;
 		}
@@ -557,8 +575,11 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveFunction(
 
 		// v4.40.1: If explicit class is a Blueprint name (BP_, BTS_, etc.), try loading it as an asset
 		// This handles cross-Blueprint function calls where the target was just generated
+		// v7.8.37: Added Goal_, GoalGenerator_, BPA_ prefixes for NarrativePro plugin Blueprints
 		if (ExplicitClassName.StartsWith(TEXT("BP_")) || ExplicitClassName.StartsWith(TEXT("BTS_")) ||
-		    ExplicitClassName.StartsWith(TEXT("WBP_")) || ExplicitClassName.StartsWith(TEXT("GA_")))
+		    ExplicitClassName.StartsWith(TEXT("WBP_")) || ExplicitClassName.StartsWith(TEXT("GA_")) ||
+		    ExplicitClassName.StartsWith(TEXT("Goal_")) || ExplicitClassName.StartsWith(TEXT("GoalGenerator_")) ||
+		    ExplicitClassName.StartsWith(TEXT("BPA_")))
 		{
 			Result = ResolveViaBlueprintAsset(FunctionName, ExplicitClassName);
 			if (Result.bFound)
@@ -610,6 +631,29 @@ UClass* FGasAbilityGeneratorFunctionResolver::FindClassByName(const FString& Cla
 	if (ClassName.IsEmpty())
 	{
 		return nullptr;
+	}
+
+	// v7.8.37: If ClassName is a full path (contains /), try loading directly first
+	if (ClassName.Contains(TEXT("/")))
+	{
+		// This might be a full Blueprint class path like /NarrativePro/.../Goal_FollowCharacter.Goal_FollowCharacter_C
+		UClass* Class = LoadObject<UClass>(nullptr, *ClassName);
+		if (Class)
+		{
+			UE_LOG(LogTemp, Display, TEXT("[FindClassByName] Loaded class from full path: %s"), *ClassName);
+			return Class;
+		}
+		// Try without _C suffix if it looks like a Blueprint path
+		if (!ClassName.EndsWith(TEXT("_C")))
+		{
+			FString ClassPath = ClassName + TEXT("_C");
+			Class = LoadObject<UClass>(nullptr, *ClassPath);
+			if (Class)
+			{
+				UE_LOG(LogTemp, Display, TEXT("[FindClassByName] Loaded class from path with _C: %s"), *ClassPath);
+				return Class;
+			}
+		}
 	}
 
 	// Try native class first (strip U/A prefix if present)
@@ -664,6 +708,7 @@ UClass* FGasAbilityGeneratorFunctionResolver::FindClassByName(const FString& Cla
 	// Try Asset Registry for Blueprint classes
 	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 
+	// First try specific /Game/ paths
 	TArray<FString> SearchPaths = {
 		FString::Printf(TEXT("/Game/Blueprints/%s.%s_C"), *ClassName, *ClassName),
 		FString::Printf(TEXT("/Game/Characters/%s.%s_C"), *ClassName, *ClassName),
@@ -677,6 +722,31 @@ UClass* FGasAbilityGeneratorFunctionResolver::FindClassByName(const FString& Cla
 		{
 			Class = LoadObject<UClass>(nullptr, *Path);
 			if (Class) return Class;
+		}
+	}
+
+	// v7.8.37: Search ALL Blueprints by name (includes plugin content like NarrativePro)
+	// This is similar to what ResolveViaBlueprintAsset does
+	FARFilter Filter;
+	Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+	Filter.bRecursiveClasses = true;
+	Filter.bRecursivePaths = true;
+
+	TArray<FAssetData> BlueprintAssets;
+	AssetRegistry.GetAssets(Filter, BlueprintAssets);
+
+	for (const FAssetData& AssetData : BlueprintAssets)
+	{
+		if (AssetData.AssetName.ToString().Equals(ClassName, ESearchCase::IgnoreCase))
+		{
+			// Found Blueprint asset - load its GeneratedClass
+			UBlueprint* FoundBlueprint = Cast<UBlueprint>(AssetData.GetAsset());
+			if (FoundBlueprint && FoundBlueprint->GeneratedClass)
+			{
+				UE_LOG(LogTemp, Display, TEXT("[FindClassByName] Found Blueprint '%s' via Asset Registry: %s"),
+					*ClassName, *AssetData.GetObjectPathString());
+				return FoundBlueprint->GeneratedClass;
+			}
 		}
 	}
 

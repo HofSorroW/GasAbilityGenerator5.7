@@ -2110,6 +2110,146 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 			{
 				CurrentDef.Folder = GetLineValue(TrimmedLine);
 			}
+			// v7.8.35: Goal/Activity CDO properties
+			else if (TrimmedLine.StartsWith(TEXT("activity_name:")))
+			{
+				CurrentDef.ActivityName = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("behavior_tree:")))
+			{
+				CurrentDef.BehaviorTree = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("supported_goal_type:")))
+			{
+				CurrentDef.SupportedGoalType = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("is_interruptable:")))
+			{
+				CurrentDef.bIsInterruptable = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("save_activity:")))
+			{
+				CurrentDef.bSaveActivity = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("default_score:")))
+			{
+				CurrentDef.DefaultScore = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("goal_lifetime:")))
+			{
+				CurrentDef.GoalLifetime = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("remove_on_succeeded:")))
+			{
+				CurrentDef.bRemoveOnSucceeded = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("save_goal:")))
+			{
+				CurrentDef.bSaveGoal = GetLineValue(TrimmedLine).ToBool();
+			}
+			// v7.8.35: Tag arrays for Goal/Activity
+			else if (TrimmedLine.StartsWith(TEXT("- ")) && !bInVariables && !bInComponents && !bInEventGraph && !bInDelegateBindings && !bInAIPerception)
+			{
+				// Could be owned_tags, block_tags, or require_tags array item
+				// The tag arrays need special handling - they're parsed in-place
+			}
+			else if (TrimmedLine.Equals(TEXT("owned_tags:")) || TrimmedLine.StartsWith(TEXT("owned_tags:")))
+			{
+				// Parse owned_tags array inline - collect subsequent "- Tag" items
+				int32 TagIndent = CurrentIndent;
+				LineIndex++;
+				while (LineIndex < Lines.Num())
+				{
+					const FString& TagLine = Lines[LineIndex];
+					FString TrimmedTagLine = TagLine.TrimStart();
+					int32 TagLineIndent = GetIndentLevel(TagLine);
+
+					if (TagLineIndent <= TagIndent && !TrimmedTagLine.StartsWith(TEXT("-")))
+					{
+						LineIndex--;
+						break;
+					}
+					if (TrimmedTagLine.StartsWith(TEXT("- ")))
+					{
+						FString TagValue = TrimmedTagLine.Mid(2).TrimStartAndEnd();
+						if (!TagValue.IsEmpty())
+						{
+							CurrentDef.OwnedTags.Add(TagValue);
+						}
+					}
+					else if (!TrimmedTagLine.IsEmpty() && !TrimmedTagLine.StartsWith(TEXT("#")))
+					{
+						LineIndex--;
+						break;
+					}
+					LineIndex++;
+				}
+				continue;
+			}
+			else if (TrimmedLine.Equals(TEXT("block_tags:")) || TrimmedLine.StartsWith(TEXT("block_tags:")))
+			{
+				int32 TagIndent = CurrentIndent;
+				LineIndex++;
+				while (LineIndex < Lines.Num())
+				{
+					const FString& TagLine = Lines[LineIndex];
+					FString TrimmedTagLine = TagLine.TrimStart();
+					int32 TagLineIndent = GetIndentLevel(TagLine);
+
+					if (TagLineIndent <= TagIndent && !TrimmedTagLine.StartsWith(TEXT("-")))
+					{
+						LineIndex--;
+						break;
+					}
+					if (TrimmedTagLine.StartsWith(TEXT("- ")))
+					{
+						FString TagValue = TrimmedTagLine.Mid(2).TrimStartAndEnd();
+						if (!TagValue.IsEmpty())
+						{
+							CurrentDef.BlockTags.Add(TagValue);
+						}
+					}
+					else if (!TrimmedTagLine.IsEmpty() && !TrimmedTagLine.StartsWith(TEXT("#")))
+					{
+						LineIndex--;
+						break;
+					}
+					LineIndex++;
+				}
+				continue;
+			}
+			else if (TrimmedLine.Equals(TEXT("require_tags:")) || TrimmedLine.StartsWith(TEXT("require_tags:")))
+			{
+				int32 TagIndent = CurrentIndent;
+				LineIndex++;
+				while (LineIndex < Lines.Num())
+				{
+					const FString& TagLine = Lines[LineIndex];
+					FString TrimmedTagLine = TagLine.TrimStart();
+					int32 TagLineIndent = GetIndentLevel(TagLine);
+
+					if (TagLineIndent <= TagIndent && !TrimmedTagLine.StartsWith(TEXT("-")))
+					{
+						LineIndex--;
+						break;
+					}
+					if (TrimmedTagLine.StartsWith(TEXT("- ")))
+					{
+						FString TagValue = TrimmedTagLine.Mid(2).TrimStartAndEnd();
+						if (!TagValue.IsEmpty())
+						{
+							CurrentDef.RequireTags.Add(TagValue);
+						}
+					}
+					else if (!TrimmedTagLine.IsEmpty() && !TrimmedTagLine.StartsWith(TEXT("#")))
+					{
+						LineIndex--;
+						break;
+					}
+					LineIndex++;
+				}
+				continue;
+			}
 			// v2.7.6: Parse inline event_graph subsection (like GA abilities)
 			else if (TrimmedLine.Equals(TEXT("event_graph:")) || TrimmedLine.StartsWith(TEXT("event_graph:")))
 			{

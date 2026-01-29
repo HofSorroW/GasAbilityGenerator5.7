@@ -1532,6 +1532,25 @@ struct FManifestActorBlueprintDefinition
 	FManifestAIPerceptionConfig AIPerceptionConfig;
 	bool bHasAIPerceptionConfig = false;
 
+	// v7.8.35: CDO Properties for Goal/Activity parent classes
+	// These are set on the Class Default Object when ParentClass derives from NPCGoalItem or NarrativeActivityBase
+
+	// Activity properties (UNarrativeActivityBase / UNPCActivity)
+	FString ActivityName;
+	TArray<FString> OwnedTags;
+	TArray<FString> BlockTags;
+	TArray<FString> RequireTags;
+	FString BehaviorTree;
+	FString SupportedGoalType;
+	bool bIsInterruptable = true;
+	bool bSaveActivity = false;
+
+	// Goal properties (UNPCGoalItem)
+	float DefaultScore = 1.0f;
+	float GoalLifetime = -1.0f;
+	bool bRemoveOnSucceeded = true;
+	bool bSaveGoal = false;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -1595,6 +1614,20 @@ struct FManifestActorBlueprintDefinition
 			Hash ^= AIPerceptionConfig.ComputeHash();
 			Hash = (Hash << 17) | (Hash >> 47);
 		}
+
+		// v7.8.35: Goal/Activity CDO properties
+		Hash ^= GetTypeHash(ActivityName) << 18;
+		Hash ^= GetTypeHash(BehaviorTree) << 19;
+		Hash ^= GetTypeHash(SupportedGoalType) << 20;
+		Hash ^= (bIsInterruptable ? 1ULL : 0ULL) << 21;
+		Hash ^= (bSaveActivity ? 1ULL : 0ULL) << 22;
+		Hash ^= GetTypeHash(FMath::RoundToInt(DefaultScore * 100)) << 23;
+		Hash ^= GetTypeHash(FMath::RoundToInt(GoalLifetime * 100)) << 24;
+		Hash ^= (bRemoveOnSucceeded ? 1ULL : 0ULL) << 25;
+		Hash ^= (bSaveGoal ? 1ULL : 0ULL) << 26;
+		for (const auto& Tag : OwnedTags) { Hash ^= GetTypeHash(Tag); }
+		for (const auto& Tag : BlockTags) { Hash ^= GetTypeHash(Tag); }
+		for (const auto& Tag : RequireTags) { Hash ^= GetTypeHash(Tag); }
 
 		return Hash;
 	}
