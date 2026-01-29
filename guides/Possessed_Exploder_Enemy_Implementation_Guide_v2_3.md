@@ -1,6 +1,6 @@
 # Possessed Exploder Enemy Implementation Guide
 
-## VERSION 2.2
+## VERSION 2.3
 
 ## Unreal Engine 5.7 + Narrative Pro v2.2
 
@@ -779,7 +779,9 @@
 
 #### 3.1) Find Factions Array
    - 3.1.1) Click + to add element
-   - 3.1.2) Add tag: Faction.Enemy.Possessed
+   - 3.1.2) Add tag: Narrative.Factions.Returned
+
+> **NOTE:** All enemy NPCs use `Narrative.Factions.Returned` for consistency with the Narrative Pro faction system. Custom tags like `Faction.Enemy.Possessed` can be used in `default_owned_tags` for additional identification.
 
 ### **4) Configure Default Owned Tags
 
@@ -841,6 +843,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.3 | January 2026 | **PE-2 Audit:** Updated faction from `Faction.Enemy.Possessed` to `Narrative.Factions.Returned` for consistency with other NPCs. Per NPC_Systems_Comprehensive_Audit_v1_0.md. |
 | 2.2 | January 2026 | Updated to Narrative Pro v2.2 naming conventions: ActConfig_ → AC_*Behavior suffix (AC_PossessedExploderBehavior), NPCDef_ → NPC_* prefix (NPC_PossessedExploder). |
 | 2.1 | January 2026 | Fixed SetByCaller tag: Changed Data.Damage to SetByCaller.Damage per Narrative Pro standard (NarrativeGameplayTags.cpp). |
 | 2.0 | January 2026 | Streamlined to use existing Narrative Pro systems: BB_Attack blackboard, Goal_Attack goal, GoalGenerator_Attack generator. Reduced custom assets from 9 to 6. Simplified BT structure. |
@@ -848,7 +851,7 @@
 
 ---
 
-**END OF POSSESSED EXPLODER ENEMY IMPLEMENTATION GUIDE v2.2**
+**END OF POSSESSED EXPLODER ENEMY IMPLEMENTATION GUIDE v2.3**
 
 **Unreal Engine 5.7 + Narrative Pro v2.2**
 

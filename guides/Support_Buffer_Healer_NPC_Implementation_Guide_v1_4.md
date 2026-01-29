@@ -1,6 +1,6 @@
 # Support Buffer Healer NPC Implementation Guide
 
-## VERSION 1.2
+## VERSION 1.4
 
 ## Unreal Engine 5.7 + Narrative Pro v2.2
 
@@ -15,7 +15,7 @@
 | Document Type | Support NPC Implementation Guide |
 | NPC Name | Support Buffer |
 | Last Updated | January 2026 |
-| Version | 1.2 |
+| Version | 1.4 |
 
 ---
 
@@ -550,22 +550,21 @@ Note: MovementSpeed is NOT an attribute - must modify CharacterMovement componen
    - 3.8.4) From Branch False:
       - 3.8.4.1) Do nothing (continue loop)
 
-#### 3.9) Get Health Attributes
+#### 3.9) Get Health Values (Simplified Pattern)
    - 3.9.1) From Branch True execution:
-      - 3.9.1.1) Add Get Ability System Component node
+      - 3.9.1.1) Add Get Health node (NarrativeCharacter)
       - 3.9.1.2) Target: As Narrative Character
-   - 3.9.2) From Get ASC Return Value:
-      - 3.9.2.1) Add Get Numeric Attribute node
-      - 3.9.2.2) Attribute: NarrativeAttributeSetBase.Health
-   - 3.9.3) From Get ASC Return Value:
-      - 3.9.3.1) Add Get Numeric Attribute node
-      - 3.9.3.2) Attribute: NarrativeAttributeSetBase.MaxHealth
+   - 3.9.2) From Get Health execution:
+      - 3.9.2.1) Add Get Max Health node (NarrativeCharacter)
+      - 3.9.2.2) Target: As Narrative Character
+
+Note: NarrativeCharacter provides GetHealth/GetMaxHealth wrapper functions that internally access the attribute system. This is simpler than using GetAbilitySystemComponent → GetNumericAttribute.
 
 #### 3.10) Calculate Health Ratio
-   - 3.10.1) From Health value:
+   - 3.10.1) From health values:
       - 3.10.1.1) Add Divide (Float / Float) node
-      - 3.10.1.2) A: Health value
-      - 3.10.1.3) B: MaxHealth value
+      - 3.10.1.2) A: Get Health Return Value
+      - 3.10.1.3) B: Get Max Health Return Value
 
 #### 3.11) Check if Damaged
    - 3.11.1) From Divide Return Value:
@@ -580,10 +579,9 @@ Note: MovementSpeed is NOT an attribute - must modify CharacterMovement componen
       - 3.12.1.1) Add Apply Heal To Target node
       - 3.12.1.2) Target: As BP Support Buffer
       - 3.12.1.3) Target Character: As Narrative Character
-   - 3.12.2) From Apply Heal To Target execution:
-      - 3.12.2.1) Add Break node
+   - 3.12.2) NO Break node needed - continue ForEach loop
 
-Note: Break exits the loop after healing one target per tick
+Note: The ApplyHealToTarget function has an internal cooldown that prevents multiple heals per tick. The ForEach loop continues but only the first ally that needs healing is actually healed per service tick interval (0.5s).
 
 ### **4) Configure Service Settings**
 
@@ -793,7 +791,9 @@ Note: Support NPC does not attack, so no attack goal generator
 
 #### 5.1) Set Faction Tags
    - 5.1.1) Find Faction Tags property
-   - 5.1.2) Add tag: Faction.Friendly.Support
+   - 5.1.2) Add tag: Narrative.Factions.Returned
+
+> **NOTE (SB-1 RESOLVED):** All NPCs use `Narrative.Factions.Returned` for consistency. Support Buffer heals other Returned faction NPCs (enemies). Per NPC_Systems_Comprehensive_Audit_v1_0.md blanket rule.
 
 ### **6) Save Data Asset**
 
@@ -809,19 +809,7 @@ Note: Support NPC does not attack, so no attack goal generator
 
 ### **2) Configure Faction Attitudes**
 
-#### 2.1) Add Faction Relationship
-   - 2.1.1) Find Faction Attitudes array
-   - 2.1.2) Add entry for Faction.Friendly.Support
-
-#### 2.2) Set Friendly Factions
-   - 2.2.1) Faction.Friendly.Support is Friendly to:
-      - 2.2.1.1) Narrative.Factions.Heroes
-      - 2.2.1.2) Faction.Friendly.Support
-
-#### 2.3) Set Hostile Factions
-   - 2.3.1) Faction.Friendly.Support is Hostile to:
-      - 2.3.1.1) Narrative.Factions.Bandits
-      - 2.3.1.2) Any enemy faction tags
+> **NOTE:** Support Buffer uses `Narrative.Factions.Returned` which is pre-configured in Narrative Pro. No additional faction attitude setup required - the Returned faction is already hostile to player factions.
 
 ### **3) Save Settings**
 
@@ -860,6 +848,20 @@ Note: Support NPC does not attack, so no attack goal generator
 
 ## CHANGELOG
 
+### Version 1.4 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| SB-2 VERIFIED | BTS_HealNearbyAllies implementation confirmed complete in manifest (lines 11666-11879). |
+| Phase 4 Section 3.9 Update | Changed from ASC.GetNumericAttribute pattern to simplified NarrativeCharacter.GetHealth/GetMaxHealth wrapper functions. Verified against NarrativeCharacter.h lines 471-475 (BlueprintCallable). |
+| Phase 4 Section 3.12 Update | Removed BreakLoop after heal - ApplyHealToTarget has internal cooldown that prevents multiple heals per tick. ForEach loop continues but only first ally healed per service interval. |
+
+### Version 1.3 - January 2026
+
+| Change | Description |
+|--------|-------------|
+| SB-1 RESOLVED | Updated faction from `Faction.Friendly.Support` to `Narrative.Factions.Returned`. All NPCs use Returned faction per blanket rule. Support Buffer now heals other Returned faction NPCs (enemies). Simplified faction attitude section. |
+
 ### Version 1.2 - January 2026
 
 | Change | Description |
@@ -886,4 +888,4 @@ Note: Support NPC does not attack, so no attack goal generator
 
 ---
 
-**END OF GUIDE**
+**END OF GUIDE v1.4**

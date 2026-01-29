@@ -7494,18 +7494,24 @@ ability_configurations:
     folder: Configs
     abilities: []  # Non-combatant
 
+  # v7.8.23: GS-1 fix - Added startup_effects for Reinforcement attributes
   - name: AC_Reinforcement
     folder: Configs
     abilities:
       - GA_Death
+    startup_effects:
+      - GE_ReinforcementAttributes
 
   # ============================================================================
   # RETURNED STALKER SYSTEM
   # ============================================================================
+  # v7.8.23: RS-2 fix - Added startup_effects for Returned Stalker attributes
   - name: AC_ReturnedStalker
     folder: Configs
     abilities:
       - GA_Death
+    startup_effects:
+      - GE_ReturnedStalkerAttributes
 
   # ============================================================================
   # SUPPORT BUFFER SYSTEM
@@ -7519,11 +7525,14 @@ ability_configurations:
 
   # ============================================================================
   # GUARD FORMATION SYSTEM
+  # v7.8.23: GF-2 fix - Added startup_effects for attribute initialization
   # ============================================================================
   - name: AC_FormationGuard
     folder: Configs
     abilities:
       - GA_Death
+    startup_effects:
+      - GE_FormationGuardAttributes
 
   # ============================================================================
   # POSSESSED EXPLODER SYSTEM
@@ -7646,23 +7655,37 @@ activity_configurations:
   # ============================================================================
   # POSSESSED EXPLODER SYSTEM
   # ============================================================================
+  # v7.8.23: PE-3 fix - Add GoalGenerator_Attack for perception → attack
+  # v7.8.23: PE-2 fix - Added BPA_Idle per Possessed_Exploder_Enemy_Implementation_Guide_v2_2.md
   - name: AC_PossessedExploderBehavior
     folder: Configs
     activities:
       - BPA_Explode
+      - BPA_Idle
+    goal_generators:
+      - GoalGenerator_Attack
 
   # ============================================================================
   # WARDEN HUSK SYSTEM (Two-Phase Boss)
   # ============================================================================
+  # v7.8.23: WH-3 fix - Add GoalGenerator_Attack for perception → attack
+  # v7.8.23: WH-2 fix - Added BPA_Patrol, BPA_Idle per Warden_Husk_System_Implementation_Guide_v1_4.md
   - name: AC_WardenHuskBehavior
     folder: Configs
     activities:
       - BPA_Attack_Melee
+      - BPA_Patrol
+      - BPA_Idle
+    goal_generators:
+      - GoalGenerator_Attack
 
+  # v7.8.23: WH-3 fix - Add GoalGenerator_Attack for perception → attack
   - name: AC_WardenCoreBehavior
     folder: Configs
     activities:
       - BPA_Attack_Ranged
+    goal_generators:
+      - GoalGenerator_Attack
 
   # ============================================================================
   # BIOMECHANICAL DETACHMENT SYSTEM
@@ -9101,6 +9124,7 @@ actor_blueprints:  # WARDEN SYSTEM
           position: [0, 0]
       connections: []
     # v2.8.3/v4.32: Function override with actual SpawnActor for phase transition
+    # v7.8.23: WH-4 fix - Added SpawnOffset, EjectionMontage usage per Guide Phase 3.1
     function_overrides:
       - function: HandleDeath
         nodes:
@@ -9115,42 +9139,107 @@ actor_blueprints:  # WARDEN SYSTEM
           - id: AuthBranch
             type: Branch
             position: [400, 0]
-          # Get transform at death location
-          - id: GetActorTransform
+          # v7.8.23: WH-4 - Play ejection montage before spawning
+          - id: GetEjectionMontage
+            type: VariableGet
+            properties:
+              variable_name: EjectionMontage
+            position: [600, 0]
+          - id: GetMesh
             type: CallFunction
             properties:
-              function: GetTransform
+              function: GetMesh
+              class: Character
+              target_self: true
+            position: [600, 100]
+          - id: GetAnimInstance
+            type: CallFunction
+            properties:
+              function: GetAnimInstance
+              class: SkeletalMeshComponent
+            position: [800, 100]
+          - id: PlayMontage
+            type: CallFunction
+            properties:
+              function: Montage_Play
+              class: AnimInstance
+            position: [1000, 0]
+          # Get actor location + spawn offset for proper spawn position
+          - id: GetActorLocation
+            type: CallFunction
+            properties:
+              function: K2_GetActorLocation
               class: Actor
               target_self: true
-            position: [600, 0]
+            position: [1200, 0]
+          - id: GetSpawnOffset
+            type: VariableGet
+            properties:
+              variable_name: SpawnOffset
+            position: [1200, 100]
+          - id: AddOffset
+            type: CallFunction
+            properties:
+              function: Add_VectorVector
+              class: KismetMathLibrary
+            position: [1400, 0]
+          - id: GetActorRotation
+            type: CallFunction
+            properties:
+              function: K2_GetActorRotation
+              class: Actor
+              target_self: true
+            position: [1400, 100]
+          - id: MakeSpawnTransform
+            type: CallFunction
+            properties:
+              function: MakeTransform
+              class: KismetMathLibrary
+            position: [1600, 0]
           # Get the NPCDefinition to spawn (set in editor to NPC_WardenCore)
           - id: GetSpawnDefinition
             type: VariableGet
             properties:
               variable_name: PhaseSpawnDefinition
-            position: [600, 100]
+            position: [1600, 200]
           # Spawn the WardenCore via SpawnNPC for proper NPC initialization
           - id: SpawnCore
             type: SpawnNPC
             properties:
               npc_definition_variable: PhaseSpawnDefinition
-            position: [800, 0]
+            position: [1800, 0]
           - id: CallParentDeath
             type: CallParent
-            position: [1000, 0]
+            position: [2000, 0]
         connections:
           - from: [FunctionEntry, Then]
             to: [HasAuth, Exec]
           - from: [HasAuth, ReturnValue]
             to: [AuthBranch, Condition]
+          # v7.8.23: Play montage then spawn
           - from: [AuthBranch, True]
-            to: [GetActorTransform, Exec]
-          - from: [GetActorTransform, Exec]
+            to: [PlayMontage, Exec]
+          - from: [GetEjectionMontage, EjectionMontage]
+            to: [PlayMontage, MontageToPlay]
+          - from: [GetMesh, ReturnValue]
+            to: [GetAnimInstance, Target]
+          - from: [GetAnimInstance, ReturnValue]
+            to: [PlayMontage, Target]
+          # v7.8.23: Calculate spawn location with offset
+          - from: [PlayMontage, Then]
             to: [SpawnCore, Exec]
+          - from: [GetActorLocation, ReturnValue]
+            to: [AddOffset, A]
+          - from: [GetSpawnOffset, SpawnOffset]
+            to: [AddOffset, B]
+          - from: [AddOffset, ReturnValue]
+            to: [MakeSpawnTransform, Location]
+          - from: [GetActorRotation, ReturnValue]
+            to: [MakeSpawnTransform, Rotation]
+          - from: [MakeSpawnTransform, ReturnValue]
+            to: [SpawnCore, Transform]
           - from: [GetSpawnDefinition, PhaseSpawnDefinition]
             to: [SpawnCore, NPCData]
-          - from: [GetActorTransform, ReturnValue]
-            to: [SpawnCore, Transform]
           - from: [SpawnCore, Then]
             to: [CallParentDeath, Exec]
           - from: [AuthBranch, False]
@@ -9490,6 +9579,30 @@ gameplay_abilities:  # WARDEN SYSTEM (NOT Father Companion - see Warden_Husk_Sys
 tags:  # GUARD FORMATION
   - tag: Narrative.State.NPC.Activity.FormationFollow
     comment: NPC is following in formation
+
+gameplay_effects:  # GUARD FORMATION
+  # v7.8.23: GF-2 fix - Guard attributes per Guard_Formation_Follow_System_Implementation_Guide_v2_6.md
+  # Formation Guards are balanced defensive NPCs (150 HP, 20 ATK, 15 Armor)
+  - name: GE_FormationGuardAttributes
+    folder: Enemies/Formation/Effects
+    duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 150.0
+      - attribute: NarrativeAttributeSetBase.Health
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 150.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 20.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        magnitude_value: 15.0
 
 blackboards:  # GUARD FORMATION
   - name: BB_FormationFollow
@@ -11822,13 +11935,97 @@ tags:  # BIOMECH
     comment: Biomech faction identifier
 
 gameplay_effects:  # BIOMECH
+  # v7.8.23: BM-2 fix - Add modifiers per Guide v1.2 (250 HP, 28 ATK, 12 Armor)
   - name: GE_BiomechHostAttributes
     folder: Enemies/Biomech/Effects
     duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 250.0
+      - attribute: NarrativeAttributeSetBase.Health
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 250.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 28.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 12.0
 
+  # v7.8.23: BM-2 fix - Add modifiers per Guide v1.2 (85 HP, 38 ATK, 0 Armor)
   - name: GE_BiomechCreatureAttributes
     folder: Enemies/Biomech/Effects
     duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 85.0
+      - attribute: NarrativeAttributeSetBase.Health
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 85.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 38.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 0.0
+
+gameplay_effects:  # GATHERER SCOUT
+  # v7.8.23: GS-1 fix - Reinforcement attributes per Gatherer_Scout_Alert_System_Implementation_Guide_v1_2.md
+  # Combat-capable reinforcements (120 HP, 25 ATK, 5 Armor) - moderate fighter
+  - name: GE_ReinforcementAttributes
+    folder: Enemies/Gatherer/Effects
+    duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 120.0
+      - attribute: NarrativeAttributeSetBase.Health
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 120.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 25.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 5.0
+
+gameplay_effects:  # RETURNED STALKER
+  # v7.8.23: RS-2 fix - Returned Stalker attributes per Random_Aggression_Stalker_System_Implementation_Guide_v2_3.md
+  # Glass cannon profile (100 HP, 30 ATK, 0 Armor) - high damage but fragile
+  - name: GE_ReturnedStalkerAttributes
+    folder: NPCs/Returned/Effects
+    duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 100.0
+      - attribute: NarrativeAttributeSetBase.Health
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 100.0
+      - attribute: NarrativeAttributeSetBase.AttackDamage
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 30.0
+      - attribute: NarrativeAttributeSetBase.Armor
+        operation: Override
+        magnitude_type: ScalableFloat
+        scalable_float_magnitude: 0.0
 
 actor_blueprints:  # BIOMECH
   # v7.8.5: Enhanced per Biomechanical_Detachment_System_Implementation_Guide_v1_2.md (Phase 4-5)
@@ -14194,6 +14391,164 @@ actor_blueprints:  # STALKER GOAL GENERATORS
             message: "GoalGenerator_RandomAggression: Started following player"
           position: [2400, 0]
         # ─────────────────────────────────────────────────────────────
+        # Follow Setup - Goal creation, delegate binding, timer setup
+        # Per Guide v2.3 Phase 4 Steps 18-25
+        # ─────────────────────────────────────────────────────────────
+        # Get NPC pawn from OwnerController (inherited from NPCGoalGenerator)
+        - id: GetOwnerController
+          type: VariableGet
+          properties:
+            variable_name: OwnerController
+          position: [2600, 100]
+        - id: GetNPCPawn
+          type: CallFunction
+          properties:
+            function: GetControlledPawn
+            class: Controller
+          position: [2600, 0]
+        - id: CastToNPCChar
+          type: DynamicCast
+          properties:
+            target_class: NarrativeNPCCharacter
+          position: [2800, 0]
+        # Get Activity Component (pure function on NPC)
+        - id: GetActivityComp
+          type: CallFunction
+          properties:
+            function: GetActivityComponent
+            class: NarrativeNPCCharacter
+          position: [3000, 100]
+        # Construct Goal_FollowCharacter (Guide 18.1)
+        - id: ConstructFollowGoal
+          type: ConstructObjectFromClass
+          properties:
+            class: NPCGoalItem
+            class_variable: Goal_FollowCharacter
+          position: [3000, 0]
+        - id: CastToFollowGoal
+          type: DynamicCast
+          properties:
+            target_class: Goal_FollowCharacter
+          position: [3200, 0]
+        # Configure goal - set TargetToFollow (Guide 18.2.1)
+        - id: SetTargetToFollow
+          type: PropertySet
+          properties:
+            property_name: TargetToFollow
+          position: [3400, 0]
+        # Store goal reference (Guide 18.3)
+        - id: StoreFollowGoal
+          type: VariableSet
+          properties:
+            variable_name: CurrentFollowGoal
+          position: [3600, 0]
+        # Add goal to activity component (Guide 19.1)
+        - id: AddFollowGoal
+          type: CallFunction
+          properties:
+            function: AddGoal
+            class: NPCActivityComponent
+            param.bTriggerReselect: true
+          position: [3800, 0]
+        # Play StartFollowing dialogue (Guide 21.2)
+        - id: GetStartFollowTag
+          type: VariableGet
+          properties:
+            variable_name: Tag_StartFollowing
+          position: [4000, 100]
+        - id: PlayStartDialogue
+          type: CallFunction
+          properties:
+            function: PlayTaggedDialogue
+            class: NarrativeNPCCharacter
+          position: [4000, 0]
+        # Get player's ASC for delegate binding (Guide 22.1)
+        - id: GetPlayerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+            class: AbilitySystemBlueprintLibrary
+          position: [4200, 0]
+        - id: CastToNarrativeASC
+          type: DynamicCast
+          properties:
+            target_class: NarrativeAbilitySystemComponent
+          position: [4400, 0]
+        # Bind OnDamagedBy delegate (Guide 22.1 - Contract 18 R-DELEGATE-1)
+        - id: BindOnDamagedBy
+          type: AddDelegate
+          properties:
+            delegate_name: OnDamagedBy
+            event_name: OnPlayerDamaged
+            source_class: NarrativeAbilitySystemComponent
+          position: [4600, 0]
+        # Start TalkCheckTimer (Guide 23)
+        - id: GetTalkInterval
+          type: VariableGet
+          properties:
+            variable_name: TalkCheckInterval
+          position: [4800, 100]
+        - id: SetTimerTalk
+          type: CallFunction
+          properties:
+            function: K2_SetTimer
+            class: KismetSystemLibrary
+            target_self: true
+            param.FunctionName: "OnTalkCheckTimer"
+            param.bLooping: true
+          position: [4800, 0]
+        - id: StoreTalkHandle
+          type: VariableSet
+          properties:
+            variable_name: TalkCheckTimerHandle
+          position: [5000, 0]
+        # Start AttackCheckTimer (Guide 24)
+        - id: GetAttackInterval
+          type: VariableGet
+          properties:
+            variable_name: AttackCheckInterval
+          position: [5200, 100]
+        - id: SetTimerAttack
+          type: CallFunction
+          properties:
+            function: K2_SetTimer
+            class: KismetSystemLibrary
+            target_self: true
+            param.FunctionName: "OnAttackCheckTimer"
+            param.bLooping: true
+          position: [5200, 0]
+        - id: StoreAttackHandle
+          type: VariableSet
+          properties:
+            variable_name: AttackCheckTimerHandle
+          position: [5400, 0]
+        # Start FollowDurationTimer (Guide 25) - non-looping
+        - id: CallGetDuration
+          type: CallFunction
+          properties:
+            function: GetCurrentFollowDuration
+            target_self: true
+          position: [5600, 0]
+        - id: SetTimerDuration
+          type: CallFunction
+          properties:
+            function: K2_SetTimer
+            class: KismetSystemLibrary
+            target_self: true
+            param.FunctionName: "OnFollowDurationExpired"
+            param.bLooping: false
+          position: [5800, 0]
+        - id: StoreDurationHandle
+          type: VariableSet
+          properties:
+            variable_name: FollowDurationTimerHandle
+          position: [6000, 0]
+        - id: PrintSetupComplete
+          type: PrintString
+          properties:
+            message: "GoalGenerator_RandomAggression: Follow setup complete - goal added, timers started"
+          position: [6200, 0]
+        # ─────────────────────────────────────────────────────────────
         # OnTalkCheckTimer - Periodic talk roll
         # ─────────────────────────────────────────────────────────────
         - id: Event_OnTalkCheckTimer
@@ -14567,6 +14922,89 @@ actor_blueprints:  # STALKER GOAL GENERATORS
           to: [SetFollowingTrue, Exec]
         - from: [SetFollowingTrue, Then]
           to: [PrintStartFollow, Exec]
+        # Follow Setup connections (Guide v2.3 Phase 4 Steps 18-25)
+        - from: [PrintStartFollow, Then]
+          to: [GetNPCPawn, Exec]
+        - from: [GetOwnerController, OwnerController]
+          to: [GetNPCPawn, Target]
+        - from: [GetNPCPawn, ReturnValue]
+          to: [CastToNPCChar, Object]
+        - from: [GetNPCPawn, Then]
+          to: [CastToNPCChar, Exec]
+        - from: [CastToNPCChar, AsNarrativeNPCCharacter]
+          to: [GetActivityComp, Target]
+        - from: [CastToNPCChar, Then]
+          to: [ConstructFollowGoal, Exec]
+        - from: [GetActivityComp, ReturnValue]
+          to: [ConstructFollowGoal, Outer]
+        - from: [ConstructFollowGoal, ReturnValue]
+          to: [CastToFollowGoal, Object]
+        - from: [ConstructFollowGoal, Then]
+          to: [CastToFollowGoal, Exec]
+        - from: [CastToFollowGoal, AsGoal_FollowCharacter]
+          to: [SetTargetToFollow, Target]
+        - from: [CastToPlayer, AsNarrativePlayerCharacter]
+          to: [SetTargetToFollow, TargetToFollow]
+        - from: [CastToFollowGoal, Then]
+          to: [SetTargetToFollow, Exec]
+        - from: [CastToFollowGoal, AsGoal_FollowCharacter]
+          to: [StoreFollowGoal, CurrentFollowGoal]
+        - from: [SetTargetToFollow, Then]
+          to: [StoreFollowGoal, Exec]
+        - from: [GetActivityComp, ReturnValue]
+          to: [AddFollowGoal, Target]
+        - from: [CastToFollowGoal, AsGoal_FollowCharacter]
+          to: [AddFollowGoal, NewGoal]
+        - from: [StoreFollowGoal, Then]
+          to: [AddFollowGoal, Exec]
+        - from: [CastToNPCChar, AsNarrativeNPCCharacter]
+          to: [PlayStartDialogue, Target]
+        - from: [GetStartFollowTag, Tag_StartFollowing]
+          to: [PlayStartDialogue, Tag]
+        - from: [CastToPlayer, AsNarrativePlayerCharacter]
+          to: [PlayStartDialogue, DialogueInstigator]
+        - from: [AddFollowGoal, Then]
+          to: [PlayStartDialogue, Exec]
+        - from: [CastToPlayer, AsNarrativePlayerCharacter]
+          to: [GetPlayerASC, Actor]
+        - from: [PlayStartDialogue, Then]
+          to: [GetPlayerASC, Exec]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [CastToNarrativeASC, Object]
+        - from: [GetPlayerASC, Then]
+          to: [CastToNarrativeASC, Exec]
+        - from: [CastToNarrativeASC, AsNarrativeAbilitySystemComponent]
+          to: [BindOnDamagedBy, Target]
+        - from: [CastToNarrativeASC, Then]
+          to: [BindOnDamagedBy, Exec]
+        - from: [GetTalkInterval, TalkCheckInterval]
+          to: [SetTimerTalk, Time]
+        - from: [BindOnDamagedBy, Then]
+          to: [SetTimerTalk, Exec]
+        - from: [SetTimerTalk, ReturnValue]
+          to: [StoreTalkHandle, TalkCheckTimerHandle]
+        - from: [SetTimerTalk, Then]
+          to: [StoreTalkHandle, Exec]
+        - from: [GetAttackInterval, AttackCheckInterval]
+          to: [SetTimerAttack, Time]
+        - from: [StoreTalkHandle, Then]
+          to: [SetTimerAttack, Exec]
+        - from: [SetTimerAttack, ReturnValue]
+          to: [StoreAttackHandle, AttackCheckTimerHandle]
+        - from: [SetTimerAttack, Then]
+          to: [StoreAttackHandle, Exec]
+        - from: [StoreAttackHandle, Then]
+          to: [CallGetDuration, Exec]
+        - from: [CallGetDuration, ReturnValue]
+          to: [SetTimerDuration, Time]
+        - from: [CallGetDuration, Then]
+          to: [SetTimerDuration, Exec]
+        - from: [SetTimerDuration, ReturnValue]
+          to: [StoreDurationHandle, FollowDurationTimerHandle]
+        - from: [SetTimerDuration, Then]
+          to: [StoreDurationHandle, Exec]
+        - from: [StoreDurationHandle, Then]
+          to: [PrintSetupComplete, Exec]
         # OnTalkCheckTimer connections
         - from: [Event_OnTalkCheckTimer, Then]
           to: [BranchFollowingTalk, Exec]

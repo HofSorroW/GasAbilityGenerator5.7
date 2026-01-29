@@ -1,6 +1,6 @@
 # Warden Husk System Implementation Guide
 ## Two-Phase Enemy with Death Transition
-## Version 1.4
+## Version 1.5
 
 ---
 
@@ -786,8 +786,10 @@
    - 38.2.1) Expand: Default Activities
    - 38.2.2) Add existing melee activities:
    - 38.2.2.1) BPA_Attack_Melee
-   - 38.2.2.2) BPA_Wander
+   - 38.2.2.2) BPA_Patrol
    - 38.2.2.3) BPA_Idle
+
+> **NOTE (WH-2):** BPA_Patrol replaces BPA_Wander per manifest audit. Provides consistent patrol behavior with other NPCs.
 
 #### 38.3) Configure Goal Generators
    - 38.3.1) Expand: Goal Generators
@@ -835,7 +837,9 @@
 
 #### 40.4) Configure Faction
    - 40.4.1) Expand: Factions array
-   - 40.4.2) Add: Faction.Enemy.Warden
+   - 40.4.2) Add: Narrative.Factions.Returned
+
+> **NOTE:** All enemy NPCs use `Narrative.Factions.Returned` for consistency with the Narrative Pro faction system.
 
 #### 40.5) Save Asset
 
@@ -1090,6 +1094,8 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5 | January 2026 | **WH-2/WH-4 Audit:** Updated activities from BPA_Wander to BPA_Patrol for consistency. Updated faction from `Faction.Enemy.Warden` to `Narrative.Factions.Returned`. HandleDeath uses SpawnOffset and EjectionMontage per manifest. Per NPC_Systems_Comprehensive_Audit_v1_0.md. |
+| 1.4 | January 2026 | Variable Rename: `CoreDefinition` → `PhaseSpawnDefinition` to match manifest.yaml (authoritative source). |
 | 1.3 | January 2026 | **Naming Convention Alignment (Claude-GPT Audit):** Updated all asset names to match Narrative Pro conventions. NPCDef_* → NPC_* (per Narrative Pro Content folder standard). ActConfig_* → AC_*Behavior (to distinguish from AbilityConfiguration AC_*). Added critical note about SpawnNPC vs raw SpawnActor pattern. Updated UE version to 5.7, Narrative Pro to v2.2. |
 | 1.2 | January 2026 | Fixed SetByCaller tag: Changed Data.Damage to SetByCaller.Damage in GE_CoreLaserDamage config (Section 10.4) and GA_CoreLaser ability (Section 52.1) per Narrative Pro standard (NarrativeGameplayTags.cpp). |
 | 1.1 | January 2026 | Simplified Has Authority pattern. Removed manual aggro transfer (faction system handles automatically via GoalGenerator_Attack). Verified ActivityConfiguration, GoalGenerator, and Default Activities are complete. |
@@ -1097,4 +1103,4 @@
 
 ---
 
-**END OF GUIDE**
+**END OF GUIDE v1.5**

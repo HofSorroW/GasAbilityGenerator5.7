@@ -1,6 +1,6 @@
 # Random Aggression Stalker System Implementation Guide
 ## Passive NPCs with Stacking Bond, Tagged Dialogue, and Defend Mechanics
-## Version 2.3
+## Version 2.4
 
 ---
 
@@ -128,8 +128,21 @@
 |-------|------|----------|
 | GoalGenerator_RandomAggression | NPCGoalGenerator | /Game/AI/GoalGenerators/ |
 | TaggedDialogueSet_Returned | TaggedDialogueSet | /Game/Dialogue/TaggedSets/ |
+| GE_ReturnedStalkerAttributes | GameplayEffect | /Game/NPCs/Returned/Effects/ |
+| AC_ReturnedStalker | AbilityConfiguration | /Game/NPCs/Returned/Configurations/ |
 | AC_ReturnedStalkerBehavior | ActivityConfiguration | /Game/AI/Configurations/ |
 | NPC_ReturnedStalker | NPCDefinition | /Game/NPCs/Returned/ |
+
+### Returned Stalker Attributes (RS-2)
+
+| Attribute | Value | Description |
+|-----------|-------|-------------|
+| MaxHealth | 100 | Glass cannon profile |
+| Health | 100 | Starting health |
+| AttackDamage | 30 | High damage output |
+| Armor | 0 | No protection |
+
+> **NOTE:** AC_ReturnedStalker has `startup_effects: [GE_ReturnedStalkerAttributes]` for attribute initialization.
 
 ### Existing Assets Reused
 
@@ -1379,6 +1392,8 @@ With TalkCount = 5 (max):
 | Version | Date | Changes |
 |---------|------|---------|
 | 2.3 | January 2026 | **AUDIT FIXES:** (PATCH-B) Fixed OnPlayerDamaged delegate signature to match FOnDamagedBy(ASC, Float, Spec). (PATCH-D) Added BecomeAggressive function for attack path - separates permanent aggression from timeout cleanup. (PATCH-E) Changed defend goal binding from OnGoalSucceeded to OnGoalRemoved - fires in ALL termination cases. Added state tag removal to StopFollowing. Added GetOwner pattern to extract attacker actor from ASC. |
+| 2.4 | January 2026 | **RS-2/RS-3 Audit:** Added GE_ReturnedStalkerAttributes (100 HP, 30 ATK, 0 Armor - glass cannon profile). Added AC_ReturnedStalker AbilityConfiguration with startup_effects. GoalGenerator_RandomAggression fully implemented in manifest with 23 nodes, 60+ connections. Per NPC_Systems_Comprehensive_Audit_v1_0.md. |
+| 2.3 | January 2026 | Minor formatting fixes. |
 | 2.2 | January 2026 | Updated to Narrative Pro v2.2 naming conventions: ActConfig_ → AC_*Behavior suffix (AC_ReturnedStalkerBehavior), NPCDef_ → NPC_* prefix (NPC_ReturnedStalker). |
 | 2.1 | January 2026 | Fixed ActivityConfiguration type name in Assets Created table for consistency. |
 | 2.0 | January 2026 | Added stacking bond system with TalkCount. Added periodic talk rolls. Added defend player mechanic with player damage binding. Added return to following after defending. Added dynamic stat calculations. Integrated TaggedDialogueSet for all outcomes. Renamed from Stalker to Returned. |
@@ -1386,4 +1401,4 @@ With TalkCount = 5 (max):
 
 ---
 
-**END OF GUIDE**
+**END OF GUIDE v2.4**

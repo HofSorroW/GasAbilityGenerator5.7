@@ -1,6 +1,6 @@
 # Biomechanical Detachment System Implementation Guide
 ## Enemy Phase Transition on Death
-## Version 1.2
+## Version 1.3
 
 ---
 
@@ -92,10 +92,19 @@
 | BP_BiomechCreature | Blueprint Class | /Game/Enemies/Biomech/ |
 | NPC_BiomechHost | NPCDefinition | /Game/Enemies/Biomech/Definitions/ |
 | NPC_BiomechCreature | NPCDefinition | /Game/Enemies/Biomech/Definitions/ |
+| GE_BiomechHostAttributes | GameplayEffect | /Game/Enemies/Biomech/Effects/ |
+| GE_BiomechCreatureAttributes | GameplayEffect | /Game/Enemies/Biomech/Effects/ |
 | AC_BiomechHost | AbilityConfiguration | /Game/Enemies/Biomech/Configurations/ |
 | AC_BiomechCreature | AbilityConfiguration | /Game/Enemies/Biomech/Configurations/ |
 | AC_BiomechHostBehavior | ActivityConfiguration | /Game/Enemies/Biomech/Configurations/ |
 | AC_BiomechCreatureBehavior | ActivityConfiguration | /Game/Enemies/Biomech/Configurations/ |
+
+### Attribute Values (BM-2)
+
+| NPC | MaxHealth | Health | AttackDamage | Armor | Profile |
+|-----|-----------|--------|--------------|-------|---------|
+| BiomechHost | 250 | 250 | 28 | 12 | Slow, armored phase 1 |
+| BiomechCreature | 85 | 85 | 38 | 0 | Fast, aggressive phase 2 |
 
 > **NAMING CONVENTION:** Narrative Pro uses `NPC_` prefix for NPCDefinition assets (not `NPCDef_`). ActivityConfiguration assets use `AC_*Behavior` suffix to distinguish from AbilityConfiguration which uses plain `AC_` prefix.
 
@@ -398,8 +407,12 @@
 - 1.1.4) Name: AC_BiomechCreature
 - 1.1.5) Double-click to open
 
-#### 1.2) Configure Default Attributes
-- 1.2.1) Default Attributes: GE_DefaultAttributes (or custom)
+#### 1.2) Configure Startup Effects
+- 1.2.1) Expand: Startup Effects
+- 1.2.2) Click + to add element
+- 1.2.3) Set to: GE_BiomechCreatureAttributes
+
+> **NOTE:** GE_BiomechCreatureAttributes applies: MaxHealth 85, Health 85, AttackDamage 38, Armor 0 (fast aggressive phase)
 
 #### 1.3) Save Asset
 
@@ -411,8 +424,12 @@
 - 2.1.3) Name: AC_BiomechHost
 - 2.1.4) Double-click to open
 
-#### 2.2) Configure Default Attributes
-- 2.2.1) Default Attributes: GE_DefaultAttributes (or custom)
+#### 2.2) Configure Startup Effects
+- 2.2.1) Expand: Startup Effects
+- 2.2.2) Click + to add element
+- 2.2.3) Set to: GE_BiomechHostAttributes
+
+> **NOTE:** GE_BiomechHostAttributes applies: MaxHealth 250, Health 250, AttackDamage 28, Armor 12 (slow armored phase)
 
 #### 2.3) Save Asset
 
@@ -630,10 +647,11 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | January 2026 | **BM-2 Audit:** Added specific attribute GEs (GE_BiomechHostAttributes: 250/28/12 HP/ATK/Armor, GE_BiomechCreatureAttributes: 85/38/0). Changed AbilityConfig from Default Attributes to startup_effects pattern. Updated faction to use `Narrative.Factions.Returned`. Per NPC_Systems_Comprehensive_Audit_v1_0.md. |
 | 1.2 | January 2026 | **Naming convention fix:** NPCDef_ → NPC_ prefix for NPCDefinition assets, ActConfig_ → AC_*Behavior suffix for ActivityConfiguration assets. Added critical note about SpawnNPC vs SpawnActor (SpawnNPC is required for NPC initialization). Updated UE 5.6 → 5.7, Narrative Pro v2.1 → v2.2. |
 | 1.1 | January 2026 | Added PHASE 7 for ActivityConfiguration creation. Added GoalGenerator_Attack references. Added existing Narrative Pro asset documentation. Added faction configuration phase. Added DetachmentMontage variable for animation. Simplified Has Authority pattern. Removed manual aggro transfer (faction system handles automatically via GoalGenerator_Attack). |
 | 1.0 | January 2026 | Initial implementation guide |
 
 ---
 
-**END OF GUIDE**
+**END OF GUIDE v1.3**

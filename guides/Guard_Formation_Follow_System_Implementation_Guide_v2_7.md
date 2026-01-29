@@ -1,6 +1,6 @@
 # Guard Formation Follow System Implementation Guide
 
-## VERSION 2.6
+## VERSION 2.7
 
 ## Unreal Engine 5.7 + Narrative Pro v2.2
 
@@ -64,6 +64,8 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
 | BT_FormationFollow | None (new) | Uses TargetLocation for MoveTo |
 | BPA_FormationFollow | NPCActivity | Runs formation behavior tree |
 | BPA_Attack_Formation | BPA_Attack_Melee | Attack with leash radius check |
+| GE_FormationGuardAttributes | GameplayEffect | Guard base stats (150 HP, 20 ATK, 15 Armor) |
+| AC_FormationGuard | NPCAbilityConfiguration | Guard abilities + startup_effects |
 | AC_FormationGuardBehavior | NPCActivityConfiguration | Guard-specific activity config |
 
 ### Leash System Overview
@@ -90,6 +92,8 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
 | BT_FormationFollow | Behavior Tree | Content/AI/BehaviorTrees/ |
 | BPA_FormationFollow | Blueprint Class | Content/AI/Activities/ |
 | BPA_Attack_Formation | Blueprint Class | Content/AI/Activities/ |
+| GE_FormationGuardAttributes | Gameplay Effect | Content/Enemies/Formation/Effects/ |
+| AC_FormationGuard | Data Asset | Content/AI/Configurations/ |
 | AC_FormationGuardBehavior | Data Asset | Content/AI/Configurations/ |
 
 ### Leash Radius Reference
@@ -1221,6 +1225,19 @@ The Guard Formation Follow System extends Narrative Pro's native Goal_FollowChar
 ---
 
 ## CHANGELOG
+
+### VERSION 2.7 - Attribute GE and AbilityConfiguration (GF-2)
+
+**Release Date:** January 2026
+
+| Change | Description |
+|--------|-------------|
+| GF-2 | Added GE_FormationGuardAttributes (150 HP, 20 ATK, 15 Armor) for guard attribute initialization |
+| GF-2 | Added AC_FormationGuard AbilityConfiguration with startup_effects referencing the attribute GE |
+| Audit | Per NPC_Systems_Comprehensive_Audit_v1_0.md decision GF-2 (MEDIUM priority) |
+| Faction | Guards use `Narrative.Factions.Returned` consistent with other NPCs |
+
+---
 
 ### VERSION 2.6 - Audit Compliance Update
 

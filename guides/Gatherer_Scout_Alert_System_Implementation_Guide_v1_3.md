@@ -1,6 +1,6 @@
 # Gatherer Scout Alert System Implementation Guide
 ## Passive Enemy with Reinforcement Summoning
-## Version 1.2
+## Version 1.3
 
 ---
 
@@ -122,9 +122,23 @@
 | GoalGenerator_Alert | Blueprint Class | /Game/AI/GoalGenerators/ |
 | BPA_Alert | Blueprint Class | /Game/AI/Activities/ |
 | BPA_Interact | Blueprint Class | /Game/AI/Activities/ |
+| GE_ReinforcementAttributes | GameplayEffect | /Game/Enemies/Gatherer/Effects/ |
+| AC_GathererScout | AbilityConfiguration | /Game/Enemies/Gatherer/Configurations/ |
+| AC_Reinforcement | AbilityConfiguration | /Game/Enemies/Gatherer/Configurations/ |
 | AC_GathererScoutBehavior | ActivityConfiguration | /Game/AI/Configurations/ |
 | NPC_GathererScout | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
 | NPC_Reinforcement | NPCDefinition | /Game/Enemies/Gatherer/Definitions/ |
+
+### Reinforcement Attributes (GS-1)
+
+| Attribute | Value | Description |
+|-----------|-------|-------------|
+| MaxHealth | 120 | Moderate health |
+| Health | 120 | Starting health |
+| AttackDamage | 25 | Standard damage |
+| Armor | 5 | Light protection |
+
+> **NOTE:** AC_Reinforcement has `startup_effects: [GE_ReinforcementAttributes]` for attribute initialization.
 
 ### Variable Summary (Goal_Alert)
 
@@ -744,10 +758,11 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | January 2026 | **GS-1 Audit:** Added GE_ReinforcementAttributes (120 HP, 25 ATK, 5 Armor). Added AC_Reinforcement AbilityConfiguration with startup_effects. Per NPC_Systems_Comprehensive_Audit_v1_0.md. |
 | 1.2 | January 2026 | Updated to Narrative Pro v2.2 naming conventions: ActConfig_ → AC_*Behavior suffix (AC_GathererScoutBehavior), NPCDef_ → NPC_* prefix (NPC_GathererScout, NPC_Reinforcement). |
 | 1.1 | January 2026 | Fixed ActivityConfiguration naming from AC_ prefix to ActConfig_ prefix for consistency with Narrative Pro conventions. Fixed ActivityConfiguration type name from NPCActivityConfiguration to ActivityConfiguration. Replaced smart quotes with ASCII equivalents. |
 | 1.0 | January 2026 | Initial implementation guide |
 
 ---
 
-**END OF GUIDE**
+**END OF GUIDE v1.3**
