@@ -6815,12 +6815,16 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 	bool bInWeaponAbilities = false;
 	bool bInMainhandAbilities = false;
 	bool bInOffhandAbilities = false;
-	// v3.9.6: Weapon attachment parsing states
+	// v3.9.6: Weapon attachment parsing states (legacy parallel arrays)
 	bool bInHolsterAttachments = false;
 	bool bInWieldAttachments = false;
 	// v3.10: Weapon attachment slots TMap parsing
 	bool bInWeaponAttachmentSlots = false;
 	FManifestWeaponAttachmentSlot CurrentAttachmentSlot;
+	// v7.8.52: TMap-style attachment config parsing
+	bool bInHolsterAttachmentConfigs = false;
+	bool bInWieldAttachmentConfigs = false;
+	FManifestWeaponAttachmentConfigEntry CurrentAttachmentConfig;
 	// v3.9.8: Clothing mesh parsing states
 	bool bInClothingMesh = false;
 	bool bInClothingMaterials = false;
@@ -6859,6 +6863,14 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			{
 				CurrentDef.Fragments.Add(CurrentFragment);
 			}
+			// v7.8.52: Save pending attachment config before adding item
+			if ((bInHolsterAttachmentConfigs || bInWieldAttachmentConfigs) && !CurrentAttachmentConfig.Slot.IsEmpty())
+			{
+				if (bInHolsterAttachmentConfigs)
+					CurrentDef.HolsterAttachmentConfigs.Add(CurrentAttachmentConfig);
+				else
+					CurrentDef.WieldAttachmentConfigs.Add(CurrentAttachmentConfig);
+			}
 			// v2.6.14: Prefix validation - only add if EI_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
 			{
@@ -6880,6 +6892,14 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			if (bInFragments && !CurrentFragment.Class.IsEmpty())
 			{
 				CurrentDef.Fragments.Add(CurrentFragment);
+			}
+			// v7.8.52: Save pending attachment config before switching to new item
+			if ((bInHolsterAttachmentConfigs || bInWieldAttachmentConfigs) && !CurrentAttachmentConfig.Slot.IsEmpty())
+			{
+				if (bInHolsterAttachmentConfigs)
+					CurrentDef.HolsterAttachmentConfigs.Add(CurrentAttachmentConfig);
+				else
+					CurrentDef.WieldAttachmentConfigs.Add(CurrentAttachmentConfig);
 			}
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("EI_")))
@@ -6919,6 +6939,10 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			bInFragmentProperties = false;
 			CurrentFragment = FManifestFragmentDefinition();
 			bInSetByCallerValues = false;
+			// v7.8.52: Reset TMap-style attachment config states
+			bInHolsterAttachmentConfigs = false;
+			bInWieldAttachmentConfigs = false;
+			CurrentAttachmentConfig = FManifestWeaponAttachmentConfigEntry();
 		}
 		else if (bInItem)
 		{
@@ -7325,6 +7349,121 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 					}
 				}
 			}
+			// v7.8.52: TMap-style holster_attachment_configs section (preferred over legacy parallel arrays)
+			else if (TrimmedLine.Equals(TEXT("holster_attachment_configs:")) || TrimmedLine.StartsWith(TEXT("holster_attachment_configs:")))
+			{
+				// Save pending attachment config before switching sections
+				if ((bInHolsterAttachmentConfigs || bInWieldAttachmentConfigs) && !CurrentAttachmentConfig.Slot.IsEmpty())
+				{
+					if (bInHolsterAttachmentConfigs)
+						CurrentDef.HolsterAttachmentConfigs.Add(CurrentAttachmentConfig);
+					else
+						CurrentDef.WieldAttachmentConfigs.Add(CurrentAttachmentConfig);
+				}
+				CurrentAttachmentConfig = FManifestWeaponAttachmentConfigEntry();
+				bInHolsterAttachmentConfigs = true;
+				bInWieldAttachmentConfigs = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+			}
+			// v7.8.52: TMap-style wield_attachment_configs section
+			else if (TrimmedLine.Equals(TEXT("wield_attachment_configs:")) || TrimmedLine.StartsWith(TEXT("wield_attachment_configs:")))
+			{
+				// Save pending attachment config before switching sections
+				if ((bInHolsterAttachmentConfigs || bInWieldAttachmentConfigs) && !CurrentAttachmentConfig.Slot.IsEmpty())
+				{
+					if (bInHolsterAttachmentConfigs)
+						CurrentDef.HolsterAttachmentConfigs.Add(CurrentAttachmentConfig);
+					else
+						CurrentDef.WieldAttachmentConfigs.Add(CurrentAttachmentConfig);
+				}
+				CurrentAttachmentConfig = FManifestWeaponAttachmentConfigEntry();
+				bInWieldAttachmentConfigs = true;
+				bInHolsterAttachmentConfigs = false;
+				bInHolsterAttachments = false;
+				bInWieldAttachments = false;
+				bInAbilities = false;
+				bInItemTags = false;
+				bInWeaponAbilities = false;
+				bInMainhandAbilities = false;
+				bInOffhandAbilities = false;
+			}
+			// v7.8.52: Parse TMap-style attachment config entries
+			else if (bInHolsterAttachmentConfigs || bInWieldAttachmentConfigs)
+			{
+				// New entry starts with slot tag followed by colon (e.g., "Narrative.Equipment.Slot.Weapon.BackA:")
+				if (TrimmedLine.Contains(TEXT("Narrative.Equipment.")) && TrimmedLine.EndsWith(TEXT(":")))
+				{
+					// Save previous config if valid
+					if (!CurrentAttachmentConfig.Slot.IsEmpty())
+					{
+						if (bInHolsterAttachmentConfigs)
+							CurrentDef.HolsterAttachmentConfigs.Add(CurrentAttachmentConfig);
+						else
+							CurrentDef.WieldAttachmentConfigs.Add(CurrentAttachmentConfig);
+					}
+					// Start new config entry
+					CurrentAttachmentConfig = FManifestWeaponAttachmentConfigEntry();
+					CurrentAttachmentConfig.Slot = TrimmedLine.LeftChop(1); // Remove trailing colon
+				}
+				else if (TrimmedLine.StartsWith(TEXT("socket_name:")) || TrimmedLine.StartsWith(TEXT("socket:")))
+				{
+					CurrentAttachmentConfig.SocketName = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("location:")))
+				{
+					FString VecStr = GetLineValue(TrimmedLine);
+					VecStr.ReplaceInline(TEXT("["), TEXT(""));
+					VecStr.ReplaceInline(TEXT("]"), TEXT(""));
+					TArray<FString> Parts;
+					VecStr.ParseIntoArray(Parts, TEXT(","), true);
+					if (Parts.Num() >= 3)
+					{
+						CurrentAttachmentConfig.Location = FVector(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd())
+						);
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("rotation:")))
+				{
+					FString RotStr = GetLineValue(TrimmedLine);
+					RotStr.ReplaceInline(TEXT("["), TEXT(""));
+					RotStr.ReplaceInline(TEXT("]"), TEXT(""));
+					TArray<FString> Parts;
+					RotStr.ParseIntoArray(Parts, TEXT(","), true);
+					if (Parts.Num() >= 3)
+					{
+						CurrentAttachmentConfig.Rotation = FRotator(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),  // Pitch
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),  // Yaw
+							FCString::Atof(*Parts[2].TrimStartAndEnd())   // Roll
+						);
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("scale:")))
+				{
+					FString VecStr = GetLineValue(TrimmedLine);
+					VecStr.ReplaceInline(TEXT("["), TEXT(""));
+					VecStr.ReplaceInline(TEXT("]"), TEXT(""));
+					TArray<FString> Parts;
+					VecStr.ParseIntoArray(Parts, TEXT(","), true);
+					if (Parts.Num() >= 3)
+					{
+						CurrentAttachmentConfig.Scale = FVector(
+							FCString::Atof(*Parts[0].TrimStartAndEnd()),
+							FCString::Atof(*Parts[1].TrimStartAndEnd()),
+							FCString::Atof(*Parts[2].TrimStartAndEnd())
+						);
+					}
+				}
+			}
 			// v3.4: Weapon ability arrays
 			else if (TrimmedLine.Equals(TEXT("weapon_abilities:")) || TrimmedLine.StartsWith(TEXT("weapon_abilities:")))
 			{
@@ -7433,6 +7572,15 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			// v4.8: Stats section (UI stat display)
 			else if (TrimmedLine.Equals(TEXT("stats:")) || TrimmedLine.StartsWith(TEXT("stats:")))
 			{
+				// v7.8.52: Save pending attachment config before switching sections
+				if ((bInHolsterAttachmentConfigs || bInWieldAttachmentConfigs) && !CurrentAttachmentConfig.Slot.IsEmpty())
+				{
+					if (bInHolsterAttachmentConfigs)
+						CurrentDef.HolsterAttachmentConfigs.Add(CurrentAttachmentConfig);
+					else
+						CurrentDef.WieldAttachmentConfigs.Add(CurrentAttachmentConfig);
+					CurrentAttachmentConfig = FManifestWeaponAttachmentConfigEntry();
+				}
 				bInAbilities = false;
 				bInItemTags = false;
 				bInWeaponAbilities = false;
@@ -7440,6 +7588,8 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInOffhandAbilities = false;
 				bInHolsterAttachments = false;
 				bInWieldAttachments = false;
+				bInHolsterAttachmentConfigs = false;
+				bInWieldAttachmentConfigs = false;
 				bInClothingMesh = false;
 				bInEquipmentEffectValues = false;
 				bInEquipmentAbilities = false;
@@ -7447,32 +7597,33 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 				bInActivitiesToGrant = false;
 			}
 			// v4.8: Stats array item parsing
+			// v7.8.52: Updated to match FNarrativeItemStat (StatDisplayName, StringVariable, StatTooltip)
 			else if (bInStats)
 			{
-				if (TrimmedLine.StartsWith(TEXT("- stat_name:")) || TrimmedLine.StartsWith(TEXT("- name:")))
+				if (TrimmedLine.StartsWith(TEXT("- stat_display_name:")) || TrimmedLine.StartsWith(TEXT("- display_name:")))
 				{
 					// Save previous stat if valid
-					if (!CurrentStat.StatName.IsEmpty())
+					if (!CurrentStat.StatDisplayName.IsEmpty())
 					{
 						CurrentDef.Stats.Add(CurrentStat);
 					}
 					CurrentStat = FManifestItemStatDefinition();
-					CurrentStat.StatName = GetLineValue(TrimmedLine.Mid(2));
+					CurrentStat.StatDisplayName = GetLineValue(TrimmedLine.Mid(2));
 				}
-				else if (TrimmedLine.StartsWith(TEXT("stat_value:")) || TrimmedLine.StartsWith(TEXT("value:")))
+				else if (TrimmedLine.StartsWith(TEXT("string_variable:")) || TrimmedLine.StartsWith(TEXT("variable:")))
 				{
-					CurrentStat.StatValue = FCString::Atof(*GetLineValue(TrimmedLine));
+					CurrentStat.StringVariable = GetLineValue(TrimmedLine);
 				}
-				else if (TrimmedLine.StartsWith(TEXT("stat_icon:")) || TrimmedLine.StartsWith(TEXT("icon:")))
+				else if (TrimmedLine.StartsWith(TEXT("stat_tooltip:")) || TrimmedLine.StartsWith(TEXT("tooltip:")))
 				{
-					CurrentStat.StatIcon = GetLineValue(TrimmedLine);
+					CurrentStat.StatTooltip = GetLineValue(TrimmedLine);
 				}
 			}
 			// v4.8: ActivitiesToGrant section
 			else if (TrimmedLine.Equals(TEXT("activities_to_grant:")) || TrimmedLine.StartsWith(TEXT("activities_to_grant:")))
 			{
 				// Save pending stat before switching sections
-				if (bInStats && !CurrentStat.StatName.IsEmpty())
+				if (bInStats && !CurrentStat.StatDisplayName.IsEmpty())
 				{
 					CurrentDef.Stats.Add(CurrentStat);
 					CurrentStat = FManifestItemStatDefinition();
@@ -7712,7 +7863,7 @@ void FGasAbilityGeneratorParser::ParseEquippableItems(const TArray<FString>& Lin
 			else if (TrimmedLine.Equals(TEXT("function_overrides:")) || TrimmedLine.StartsWith(TEXT("function_overrides:")))
 			{
 				// Save pending stat if we were in stats section
-				if (bInStats && !CurrentStat.StatName.IsEmpty())
+				if (bInStats && !CurrentStat.StatDisplayName.IsEmpty())
 				{
 					CurrentDef.Stats.Add(CurrentStat);
 					CurrentStat = FManifestItemStatDefinition();

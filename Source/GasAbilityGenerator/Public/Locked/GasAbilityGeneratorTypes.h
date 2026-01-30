@@ -3180,6 +3180,30 @@ struct FManifestWeaponAttachmentSlot
 };
 
 /**
+ * v7.8.52: Weapon attachment config entry for TMap-style holster/wield configs
+ * Maps to TMap<FGameplayTag, FWeaponAttachmentConfig> in WeaponItem
+ * Each entry represents a slot tag -> attachment config mapping
+ */
+struct FManifestWeaponAttachmentConfigEntry
+{
+	FString Slot;           // GameplayTag string (e.g., "Narrative.Equipment.Slot.Weapon.BackA")
+	FString SocketName;     // Socket name on mesh (FName in NP)
+	FVector Location = FVector::ZeroVector;    // Translation offset
+	FRotator Rotation = FRotator::ZeroRotator; // Rotation offset
+	FVector Scale = FVector::OneVector;        // Scale (defaults to 1,1,1)
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Slot);
+		Hash ^= GetTypeHash(SocketName) << 4;
+		Hash ^= GetTypeHash(Location.ToString()) << 8;
+		Hash ^= GetTypeHash(Rotation.ToString()) << 12;
+		Hash ^= GetTypeHash(Scale.ToString()) << 16;
+		return Hash;
+	}
+};
+
+/**
  * v4.8.2: Pickup mesh data for dropped items
  * Maps to FPickupMeshData - defines visual when item is dropped in world
  */
@@ -3226,18 +3250,19 @@ struct FManifestCombatTraceDataDefinition
 /**
  * v4.8: Item stat definition for UI display
  * Maps to FNarrativeItemStat used in item tooltips
+ * v7.8.52: Corrected to match Narrative Pro structure (StringVariable binding, not static values)
  */
 struct FManifestItemStatDefinition
 {
-	FString StatName;        // Display name (e.g., "Damage", "Fire Rate")
-	float StatValue = 0.0f;  // Stat value
-	FString StatIcon;        // TSoftObjectPtr<UTexture2D> - icon path
+	FString StatDisplayName;  // FText - Display name (e.g., "Damage", "Weight")
+	FString StringVariable;   // Variable name for GetStringVariable binding (e.g., "Damage", "Weight")
+	FString StatTooltip;      // FText - Tooltip (e.g., "The base damage this weapon deals.")
 
 	uint64 ComputeHash() const
 	{
-		uint64 Hash = GetTypeHash(StatName);
-		Hash ^= static_cast<uint64>(FMath::RoundToInt(StatValue * 1000.f)) << 8;
-		Hash ^= GetTypeHash(StatIcon) << 16;
+		uint64 Hash = GetTypeHash(StatDisplayName);
+		Hash ^= GetTypeHash(StringVariable) << 8;
+		Hash ^= GetTypeHash(StatTooltip) << 16;
 		return Hash;
 	}
 };
@@ -3363,7 +3388,7 @@ struct FManifestEquippableItemDefinition
 	bool bToggleActiveOnUse = false;     // Toggle active state on use
 	FString UseSound;                    // Sound to play on use (asset path)
 
-	// v3.9.6: Weapon attachment configurations
+	// v3.9.6: Weapon attachment configurations (legacy parallel arrays - kept for backward compatibility)
 	TArray<FString> HolsterAttachmentSlots;     // Slot tags for holster configs
 	TArray<FString> HolsterAttachmentSockets;   // Socket names (parallel array)
 	TArray<FVector> HolsterAttachmentOffsets;   // Location offsets (parallel array)
@@ -3372,6 +3397,11 @@ struct FManifestEquippableItemDefinition
 	TArray<FString> WieldAttachmentSockets;     // Socket names (parallel array)
 	TArray<FVector> WieldAttachmentOffsets;     // Location offsets (parallel array)
 	TArray<FRotator> WieldAttachmentRotations;  // Rotation offsets (parallel array)
+
+	// v7.8.52: TMap-style holster/wield attachment configs (preferred, matches NP structure)
+	// Takes precedence over legacy parallel arrays if both are specified
+	TArray<FManifestWeaponAttachmentConfigEntry> HolsterAttachmentConfigs;
+	TArray<FManifestWeaponAttachmentConfigEntry> WieldAttachmentConfigs;
 
 	// v3.9.8: Clothing mesh configuration (for EquippableItem_Clothing parent class)
 	FManifestClothingMeshConfig ClothingMesh;
@@ -3540,7 +3570,7 @@ struct FManifestEquippableItemDefinition
 		Hash ^= GetTypeHash(UseSound);
 		Hash = (Hash << 5) | (Hash >> 59);
 
-		// v3.9.6: Hash weapon attachment configs
+		// v3.9.6: Hash weapon attachment configs (legacy parallel arrays)
 		for (int32 i = 0; i < HolsterAttachmentSlots.Num(); i++)
 		{
 			Hash ^= GetTypeHash(HolsterAttachmentSlots[i]);
@@ -3552,6 +3582,18 @@ struct FManifestEquippableItemDefinition
 			Hash ^= GetTypeHash(WieldAttachmentSlots[i]);
 			if (WieldAttachmentSockets.IsValidIndex(i)) Hash ^= GetTypeHash(WieldAttachmentSockets[i]);
 			Hash = (Hash << 3) | (Hash >> 61);
+		}
+
+		// v7.8.52: Hash TMap-style attachment configs
+		for (const auto& Config : HolsterAttachmentConfigs)
+		{
+			Hash ^= Config.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+		for (const auto& Config : WieldAttachmentConfigs)
+		{
+			Hash ^= Config.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
 		}
 
 		// v3.9.8: Hash clothing mesh config

@@ -21789,6 +21789,113 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 				}
 			}
 
+			// v7.8.52: TMap-style attachment configs (preferred over legacy parallel arrays)
+			// Uses new FManifestWeaponAttachmentConfigEntry format with Scale support
+			auto PopulateAttachmentTMapFromConfigs = [&CDO](
+				const TArray<FManifestWeaponAttachmentConfigEntry>& Configs,
+				const TCHAR* MapPropertyName) -> int32
+			{
+				if (Configs.Num() == 0) return 0;
+
+				FMapProperty* MapProp = CastField<FMapProperty>(CDO->GetClass()->FindPropertyByName(MapPropertyName));
+				if (!MapProp)
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] TMap property %s not found on %s"), MapPropertyName, *CDO->GetClass()->GetName()));
+					return 0;
+				}
+
+				// Verify it's TMap<FGameplayTag, FWeaponAttachmentConfig>
+				FStructProperty* KeyProp = CastField<FStructProperty>(MapProp->KeyProp);
+				FStructProperty* ValueProp = CastField<FStructProperty>(MapProp->ValueProp);
+				if (!KeyProp || !ValueProp)
+				{
+					LogGeneration(FString::Printf(TEXT("  [WARNING] %s key or value is not struct type"), MapPropertyName));
+					return 0;
+				}
+
+				// Get the map helper
+				void* MapPtr = MapProp->ContainerPtrToValuePtr<void>(CDO);
+				FScriptMapHelper MapHelper(MapProp, MapPtr);
+
+				int32 EntriesAdded = 0;
+				for (const FManifestWeaponAttachmentConfigEntry& Config : Configs)
+				{
+					// Create FGameplayTag from slot string
+					FGameplayTag SlotTag = FGameplayTag::RequestGameplayTag(FName(*Config.Slot), false);
+					if (!SlotTag.IsValid())
+					{
+						LogGeneration(FString::Printf(TEXT("    [WARNING] Invalid gameplay tag: %s"), *Config.Slot));
+						continue;
+					}
+
+					// Add new entry to the map
+					int32 NewIndex = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+					uint8* PairPtr = MapHelper.GetPairPtr(NewIndex);
+
+					// Set the key (FGameplayTag)
+					FGameplayTag* KeyPtr = (FGameplayTag*)PairPtr;
+					*KeyPtr = SlotTag;
+
+					// Set the value (FWeaponAttachmentConfig)
+					void* ValuePtr = PairPtr + MapProp->MapLayout.ValueOffset;
+
+					// FWeaponAttachmentConfig has: SocketName (FName), Offset (FTransform)
+					if (ValueProp->Struct)
+					{
+						// Set SocketName
+						FNameProperty* SocketProp = CastField<FNameProperty>(ValueProp->Struct->FindPropertyByName(TEXT("SocketName")));
+						if (SocketProp)
+						{
+							SocketProp->SetPropertyValue_InContainer(ValuePtr, FName(*Config.SocketName));
+						}
+
+						// Set Offset (FTransform) - includes Location, Rotation, and Scale
+						FStructProperty* OffsetProp = CastField<FStructProperty>(ValueProp->Struct->FindPropertyByName(TEXT("Offset")));
+						if (OffsetProp && OffsetProp->Struct == TBaseStructure<FTransform>::Get())
+						{
+							FTransform* TransformPtr = OffsetProp->ContainerPtrToValuePtr<FTransform>(ValuePtr);
+							if (TransformPtr)
+							{
+								*TransformPtr = FTransform(Config.Rotation, Config.Location, Config.Scale);
+							}
+						}
+					}
+
+					EntriesAdded++;
+					LogGeneration(FString::Printf(TEXT("    Added %s[%s] = Socket:%s, Loc:(%s), Rot:(%s), Scale:(%s)"),
+						MapPropertyName, *Config.Slot, *Config.SocketName,
+						*Config.Location.ToString(), *Config.Rotation.ToString(), *Config.Scale.ToString()));
+				}
+
+				// Rehash the map after all additions
+				MapHelper.Rehash();
+				return EntriesAdded;
+			};
+
+			// Populate HolsterAttachmentConfigs from new TMap-style format (takes precedence)
+			if (Definition.HolsterAttachmentConfigs.Num() > 0)
+			{
+				int32 Count = PopulateAttachmentTMapFromConfigs(
+					Definition.HolsterAttachmentConfigs,
+					TEXT("HolsterAttachmentConfigs"));
+				if (Count > 0)
+				{
+					LogGeneration(FString::Printf(TEXT("  Set HolsterAttachmentConfigs (v7.8.52 format): %d entries"), Count));
+				}
+			}
+
+			// Populate WieldAttachmentConfigs from new TMap-style format (takes precedence)
+			if (Definition.WieldAttachmentConfigs.Num() > 0)
+			{
+				int32 Count = PopulateAttachmentTMapFromConfigs(
+					Definition.WieldAttachmentConfigs,
+					TEXT("WieldAttachmentConfigs"));
+				if (Count > 0)
+				{
+					LogGeneration(FString::Printf(TEXT("  Set WieldAttachmentConfigs (v7.8.52 format): %d entries"), Count));
+				}
+			}
+
 			// v3.9.8: ClothingMeshData population for EquippableItem_Clothing parent classes
 			if (!Definition.ClothingMesh.IsEmpty())
 			{
@@ -22254,6 +22361,7 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 			}
 
 			// v4.8: Handle Stats TArray<FNarrativeItemStat>
+			// v7.8.52: Updated to use correct Narrative Pro field names (StatDisplayName, StringVariable, StatTooltip)
 			if (Definition.Stats.Num() > 0)
 			{
 				FArrayProperty* StatsArrayProp = CastField<FArrayProperty>(
@@ -22271,35 +22379,31 @@ FGenerationResult FEquippableItemGenerator::Generate(const FManifestEquippableIt
 							int32 NewIndex = ArrayHelper.AddValue();
 							void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
 
-							// Set StatName (FText)
-							FTextProperty* StatNameProp = CastField<FTextProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatName")));
-							if (StatNameProp)
+							// Set StatDisplayName (FText)
+							FTextProperty* StatDisplayNameProp = CastField<FTextProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatDisplayName")));
+							if (StatDisplayNameProp)
 							{
-								StatNameProp->SetPropertyValue_InContainer(ElementPtr, FText::FromString(StatDef.StatName));
+								StatDisplayNameProp->SetPropertyValue_InContainer(ElementPtr, FText::FromString(StatDef.StatDisplayName));
 							}
 
-							// Set StatValue (float)
-							FFloatProperty* StatValueProp = CastField<FFloatProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatValue")));
-							if (StatValueProp)
+							// Set StringVariable (FString) - used for GetStringVariable binding
+							FStrProperty* StringVariableProp = CastField<FStrProperty>(StructProp->Struct->FindPropertyByName(TEXT("StringVariable")));
+							if (StringVariableProp)
 							{
-								StatValueProp->SetPropertyValue_InContainer(ElementPtr, StatDef.StatValue);
+								StringVariableProp->SetPropertyValue_InContainer(ElementPtr, StatDef.StringVariable);
 							}
 
-							// Set StatIcon (TSoftObjectPtr<UTexture2D>)
-							if (!StatDef.StatIcon.IsEmpty())
+							// Set StatTooltip (FText)
+							if (!StatDef.StatTooltip.IsEmpty())
 							{
-								FSoftObjectProperty* StatIconProp = CastField<FSoftObjectProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatIcon")));
-								if (StatIconProp)
+								FTextProperty* StatTooltipProp = CastField<FTextProperty>(StructProp->Struct->FindPropertyByName(TEXT("StatTooltip")));
+								if (StatTooltipProp)
 								{
-									FSoftObjectPtr* SoftPtr = StatIconProp->GetPropertyValuePtr_InContainer(ElementPtr);
-									if (SoftPtr)
-									{
-										*SoftPtr = FSoftObjectPath(StatDef.StatIcon);
-									}
+									StatTooltipProp->SetPropertyValue_InContainer(ElementPtr, FText::FromString(StatDef.StatTooltip));
 								}
 							}
 
-							LogGeneration(FString::Printf(TEXT("  Added Stat: %s = %.2f"), *StatDef.StatName, StatDef.StatValue));
+							LogGeneration(FString::Printf(TEXT("  Added Stat: %s -> %s"), *StatDef.StatDisplayName, *StatDef.StringVariable));
 						}
 					}
 				}

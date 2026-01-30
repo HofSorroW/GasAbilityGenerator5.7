@@ -4,6 +4,84 @@ Complete version history for the GasAbilityGenerator plugin.
 
 ---
 
+## v7.8.52 - Item Generator Enhancement: Narrative Pro Structure Alignment
+
+**Issue:** Item stat definitions and weapon attachment configs didn't match Narrative Pro's actual structure.
+
+### FManifestItemStatDefinition - Corrected Structure
+
+**Before (incorrect):**
+```cpp
+struct FManifestItemStatDefinition {
+    FString StatName;        // Display name
+    float StatValue = 0.0f;  // Static value
+    FString StatIcon;        // Icon path
+};
+```
+
+**After (matches FNarrativeItemStat):**
+```cpp
+struct FManifestItemStatDefinition {
+    FString StatDisplayName;  // FText - Display name
+    FString StringVariable;   // Variable name for GetStringVariable binding
+    FString StatTooltip;      // FText - Tooltip text
+};
+```
+
+Narrative Pro uses dynamic `StringVariable` binding (calls `GetStringVariable()` at runtime), not static values.
+
+### Weapon Attachment Configs - New TMap-Style Format
+
+**New struct:**
+```cpp
+struct FManifestWeaponAttachmentConfigEntry {
+    FString Slot;           // GameplayTag (e.g., "Narrative.Equipment.Slot.Weapon.BackA")
+    FString SocketName;     // Socket name on mesh
+    FVector Location;       // Translation offset
+    FRotator Rotation;      // Rotation offset
+    FVector Scale;          // Scale (defaults to 1,1,1)
+};
+```
+
+**New YAML syntax:**
+```yaml
+holster_attachment_configs:
+  Narrative.Equipment.Slot.Weapon.BackA:
+    socket_name: Socket_BackA
+    location: [-0.82, -9.97, 28.73]
+    rotation: [179.96, 0.0, 179.99]
+    scale: [1.0, 1.0, 1.0]
+
+wield_attachment_configs:
+  Narrative.Equipment.WieldSlot.Mainhand:
+    socket_name: weapon_r
+    location: [0, 0, 0]
+    rotation: [-90, 0, 0]
+```
+
+### Files Changed
+
+- `GasAbilityGeneratorTypes.h`:
+  - Updated FManifestItemStatDefinition (StatDisplayName, StringVariable, StatTooltip)
+  - Added FManifestWeaponAttachmentConfigEntry struct
+  - Added HolsterAttachmentConfigs/WieldAttachmentConfigs arrays to FManifestEquippableItemDefinition
+  - Updated ComputeHash() for new fields
+- `GasAbilityGeneratorParser.cpp`:
+  - Updated Stats parsing for new field names (stat_display_name, string_variable, stat_tooltip)
+  - Added holster_attachment_configs/wield_attachment_configs TMap-style parsing
+  - Added state management for attachment config parsing
+- `GasAbilityGeneratorGenerators.cpp`:
+  - Updated Stats generation to set StatDisplayName, StringVariable, StatTooltip
+  - Added PopulateAttachmentTMapFromConfigs lambda for new format with Scale support
+
+### Backward Compatibility
+
+- Legacy parallel arrays (HolsterAttachmentSlots, etc.) still work
+- New TMap-style configs take precedence if both are specified
+- Stats struct change is NOT backward compatible - existing stats definitions need updating
+
+---
+
 ## v7.8.52 - Contract 25 Compliance: Array Operation Node Types
 
 **Issue:** GA_FatherAttack uses `CachedHitActors` array for hit deduplication, but manifest used `CallFunction` nodes for `Contains`, `Add`, and `Clear` which don't exist as standard library functions.
