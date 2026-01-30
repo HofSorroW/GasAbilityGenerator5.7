@@ -1,5 +1,5 @@
 # Father Companion - GA_TurretShoot Implementation Guide
-## VERSION 3.1 - Manifest Alignment
+## VERSION 3.2 - Contract 24/27 Compliant
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -15,8 +15,9 @@
 | Spawn Task | AbilityTask_SpawnProjectile |
 | Form | Engineer (Stationary Turret) |
 | Input | None (AI Autonomous) |
-| Version | 3.1 |
+| Version | 3.2 |
 | Last Updated | January 2026 |
+| Contract Compliance | Contract 24 (attribute-based damage), Contract 27 (hierarchical cooldown) |
 
 ---
 
@@ -52,6 +53,8 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Ranged Attack | Engages enemies at 500-1500 unit range |
 | NarrativeProjectile System | Uses v2.2 native projectile base class |
 | AbilityTask_SpawnProjectile | Native task handles spawn and target data |
+| Contract 24 Compliant | Damage via NarrativeDamageExecCalc with captured AttackDamage (NOT SetByCaller) |
+| Contract 27 Compliant | Uses Cooldown.Father.Engineer.TurretShoot hierarchical tag |
 | Rotation Tracking | Turret rotates to face targets within arc |
 | Fire Rate Control | Consistent shots per second |
 | Target Prioritization | Engages closest or highest threat |
@@ -128,19 +131,21 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
 | ProjectileClass | Class Ref (NarrativeProjectile) | BP_TurretProjectile | Projectile to spawn |
-| DamagePerShot | Float | 15.0 | Damage per projectile |
+| DamagePerShot | Float | 15.0 | Documentation only (Contract 24: actual damage from AttackDamage) |
 | ProjectileSpeed | Float | 3000.0 | Projectile velocity |
 | MuzzleSocketName | Name | MuzzleSocket | Socket for projectile spawn |
 | FatherRef | Actor Ref | None | Father reference |
 | AttackTarget | Actor Ref | None | Current target (AI-set) |
 | ShootMontage | Anim Montage | None | Optional shoot animation |
 
-### Gameplay Effect Summary
+### Gameplay Effect Summary (Contract 24 Compliant)
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
-| GE_TurretProjectileDamage | Instant | 15 damage per hit via NarrativeDamageExecCalc |
+| GE_TurretProjectileDamage | Instant | Damage via NarrativeDamageExecCalc (captures AttackDamage, NOT SetByCaller) |
 | GE_TurretShootCooldown | 0.5 seconds | Fire rate limiter |
+
+**Contract 24 Note:** GE_TurretProjectileDamage uses captured AttackDamage attribute. Father's AttackDamage should be set to 15 via GE_FatherEngineerStats initialization effect.
 
 ### Projectile Parameters
 
@@ -217,8 +222,9 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Father.State.Shooting | Father turret is actively firing |
 | Father.State.Targeting | Father turret is tracking a target |
 | Effect.Father.TurretDamage | Target hit by turret projectile |
-| Data.Damage.Turret | Damage type identifier for turret shots |
-| Cooldown.Father.Engineer.TurretShoot | Fire rate cooldown between shots |
+| Cooldown.Father.Engineer.TurretShoot | Fire rate cooldown between shots (Contract 27 hierarchical) |
+
+**Note:** Data.Damage.Turret tag removed per Contract 24 - SetByCaller forbidden for damage with NarrativeDamageExecCalc.
 
 ### **Verify Existing Tags**
 
@@ -491,12 +497,14 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
 | ProjectileClass | Class Reference (NarrativeProjectile) | BP_TurretProjectile | Yes |
-| DamagePerShot | Float | 15.0 | Yes |
+| DamagePerShot | Float | 15.0 | Yes (documentation only - Contract 24) |
 | ProjectileSpeed | Float | 3000.0 | Yes |
 | MuzzleSocketName | Name | MuzzleSocket | Yes |
 | FatherRef | BP_FatherCompanion (Object Reference) | None | No |
 | AttackTarget | Actor (Object Reference) | None | No |
 | ShootMontage | Anim Montage (Object Reference) | None | Yes |
+
+**Contract 24 Note:** DamagePerShot is for documentation only. Actual damage comes from Father's AttackDamage attribute captured by NarrativeDamageExecCalc.
 
 ---
 
@@ -625,7 +633,7 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
    - 8.2.3) From Get (Copy) Return Value:
    - 8.2.3.1) Add Cast To NarrativeCharacter node
 
-#### 8.3) Apply Damage Effect to Hit Target
+#### 8.3) Apply Damage Effect to Hit Target (Contract 24 Compliant)
    - 8.3.1) From Cast successful execution:
    - 8.3.1.1) Add Get Ability System Component node
    - 8.3.1.2) Target: Connect As Narrative Character
@@ -633,17 +641,15 @@ GA_TurretShoot is an AI-controlled ranged attack ability for the Engineer form. 
    - 8.3.2.1) Add Is Valid node
    - 8.3.3) From Is Valid Is Valid pin:
    - 8.3.3.1) Add Make Outgoing Spec node
-   - 8.3.3.2) Target: Get Ability System Component from FatherRef
+   - 8.3.3.2) Target: Get Ability System Component from FatherRef (source ASC)
    - 8.3.3.3) Gameplay Effect Class: GE_TurretProjectileDamage
    - 8.3.3.4) Level: 1.0
    - 8.3.4) From Make Outgoing Spec:
-   - 8.3.4.1) Add Assign Tag Set By Caller Magnitude node
-   - 8.3.4.2) Data Tag: Data.Damage.Turret
-   - 8.3.4.3) Magnitude: Connect DamagePerShot getter
-   - 8.3.5) From Assign Tag Set By Caller:
-   - 8.3.5.1) Add Apply Gameplay Effect Spec to Target node
-   - 8.3.5.2) Spec Handle: Connect from Assign node output
-   - 8.3.5.3) Target: Connect target ASC
+   - 8.3.4.1) Add Apply Gameplay Effect Spec to Target node
+   - 8.3.4.2) Spec Handle: Connect Make Outgoing Spec Return Value
+   - 8.3.4.3) Target: Connect target ASC
+
+**Contract 24 Note:** Do NOT add SetByCaller for damage. NarrativeDamageExecCalc captures AttackDamage from Father (source ASC). Father's AttackDamage attribute (set via GE_FatherEngineerStats) determines damage output.
 
 ### 9) Handle Projectile Destroyed (No Hit)
 
@@ -901,6 +907,22 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 
 ## CHANGELOG
 
+### VERSION 3.2 - Contract 24/27 Compliance
+
+**Release Date:** January 2026
+
+| Change | Description |
+|--------|-------------|
+| Contract 24 | Removed SetByCaller damage pattern - FORBIDDEN with NarrativeDamageExecCalc |
+| Damage Source | Changed from SetByCaller (Data.Damage.Turret) to captured AttackDamage attribute |
+| DamagePerShot | Variable now documentation-only; actual damage from Father's AttackDamage (15) |
+| Tag Removal | Removed Data.Damage.Turret tag (SetByCaller forbidden per Contract 24) |
+| Contract 27 | Documented compliance - already uses Cooldown.Father.Engineer.TurretShoot hierarchical tag |
+| PHASE 5 Section 8.3 | Removed SetByCaller assignment, simplified to direct Apply GE Spec |
+| Key Features | Added Contract 24/27 compliance entries |
+
+---
+
 ### VERSION 3.1 - Manifest Alignment
 
 **Release Date:** January 2026
@@ -1070,10 +1092,10 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 
 ---
 
-**END OF GA_TURRETSHOOT IMPLEMENTATION GUIDE v2.5**
+**END OF GA_TURRETSHOOT IMPLEMENTATION GUIDE v3.2**
 
 **Engineer Form - AI Ranged Attack**
 
 **Unreal Engine 5.7 + Narrative Pro v2.2**
 
-**Blueprint-Only Implementation**
+**Blueprint-Only Implementation - Contract 24/27 Compliant**

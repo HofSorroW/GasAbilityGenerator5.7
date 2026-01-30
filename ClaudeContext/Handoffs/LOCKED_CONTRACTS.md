@@ -1,4 +1,4 @@
-# LOCKED_CONTRACTS.md (v7.7)
+# LOCKED_CONTRACTS.md (v7.8.49)
 
 ## Purpose
 
@@ -1498,6 +1498,91 @@ Error: The type of Object is undetermined. Connect something to Cast To <ClassNa
 
 ---
 
+## LOCKED CONTRACT 27 — C_COOLDOWN_TAG_HIERARCHY (v7.8.49)
+
+### Context
+
+Father Companion abilities use cooldown tags for GAS cooldown mechanics. Prior to this contract, cooldown tags were inconsistently mixed between flat (`Cooldown.Father.Attack`) and hierarchical (`Cooldown.Father.Exoskeleton.Dash`) patterns, causing:
+- Inability to perform blanket "form-wide cooldown" queries
+- Mismatch between ability tags (hierarchical) and cooldown tags (flat)
+- Tags used in manifest not defined in INI
+
+**Discovery (Claude-GPT dual audit 2026-01-30):** UE5 `HasAny()` checks `ParentTags` (verified in `GameplayTagContainer.h:346`), enabling parent tag queries. Hierarchical cooldown tags unlock blanket operations.
+
+### Invariant
+
+1. All Father ability cooldown tags **MUST** use hierarchical format:
+   ```
+   Cooldown.Father.{Form}.{Ability}
+   ```
+
+2. Canonical cooldown tags:
+   | Ability | Cooldown Tag |
+   |---------|--------------|
+   | GA_FatherAttack | `Cooldown.Father.Crawler.Attack` |
+   | GA_FatherLaserShot | `Cooldown.Father.Crawler.LaserShot` |
+   | GA_DomeBurst | `Cooldown.Father.Armor.DomeBurst` |
+   | GA_FatherExoskeletonDash | `Cooldown.Father.Exoskeleton.Dash` |
+   | GA_StealthField | `Cooldown.Father.Exoskeleton.StealthField` |
+   | GA_ProximityStrike | `Cooldown.Father.Symbiote.ProximityStrike` |
+   | GA_Sacrifice | `Cooldown.Father.Symbiote.Sacrifice` |
+   | GA_FatherElectricTrap | `Cooldown.Father.Engineer.ElectricTrap` |
+   | GA_TurretShoot | `Cooldown.Father.Engineer.TurretShoot` |
+
+3. **Exception:** Shared cooldowns may remain flat:
+   - `Cooldown.Father.FormChange` (intentionally shared across all forms)
+
+4. **Excluded:** Toggle abilities without cooldowns:
+   - GA_FatherExoskeletonSprint (hold-to-activate, no cooldown)
+
+### Technical Evidence
+
+**UE5 Source (GameplayTagContainer.h:332-346):**
+```cpp
+/**
+ * Checks if this container contains ANY of the tags, also checks against parent tags
+ * {"A.1"}.HasAny({"A","B"}) will return True
+ */
+inline bool HasAny(const FGameplayTagContainer& ContainerToCheck) const
+{
+    for (const FGameplayTag& OtherTag : ContainerToCheck.GameplayTags)
+    {
+        if (GameplayTags.Contains(OtherTag) || ParentTags.Contains(OtherTag))
+            return true;
+    }
+}
+```
+
+**Blanket Query Capability:**
+- ASC has `Cooldown.Father.Crawler.Attack` → Query for `Cooldown.Father` matches ✅
+- ASC has `Cooldown.Father.Crawler.Attack` → Query for `Cooldown.Father.Crawler` matches ✅
+- Enables: "Clear all Crawler cooldowns on form exit", "Block if any Father cooldown active"
+
+### Forbidden
+
+- Flat cooldown tags for form-specific abilities (e.g., `Cooldown.Father.Attack`)
+- Cooldown tags not matching ability tag hierarchy
+- Orphan cooldown tags (used but not defined in INI)
+
+### Audit Gates
+
+1. **manifest.yaml tags section** must define all cooldown tags used
+2. **Every cooldown tag** in GE/ability blocked_tags must exist in tags section
+3. **Future cooldown tags** must follow `Cooldown.Father.{Form}.{Ability}` pattern
+
+### Severity
+
+WARNING (generation proceeds but logged for audit)
+
+### Reference
+
+- UE5.7: `GameplayTagContainer.h` — `HasAny()` parent tag matching
+- Narrative Pro: Does not define cooldown tags (project-specific)
+- Audit: Claude–GPT dual audit session (2026-01-30)
+- Implementation: v7.8.49
+
+---
+
 ## Enforcement
 
 ### Code Review Rule
@@ -1534,3 +1619,4 @@ Any change that touches a LOCKED implementation must:
 | v7.8.0 | 2026-01-28 | Added Contract 25 — C_NEVER_SIMPLIFY_ABILITIES: Abilities MUST match implementation guides exactly. If generator limitation prevents implementation, ENHANCE the generator—don't simplify the ability. GA_ProtectiveDome was incorrectly simplified from "30% of damage becomes energy" to fixed 50 energy per hit. |
 | v7.8.45 | 2026-01-30 | Added Contract 26 — C_COMPOSITE_NODE_CONNECTIONS: All internal composite node connections MUST use `Schema->TryCreateConnection()`, never `MakeLinkTo()`. MakeLinkTo skips NotifyPinConnectionListChanged callbacks required for DynamicCast wildcard pin type resolution. |
 | v7.8.48 | 2026-01-30 | Added Contract 24 Addendum A — D-DAMAGE-ATTR-1A SetByCaller Restrictions (Claude–GPT dual audit): Formalizes that SetByCaller for damage with NarrativeDamageExecCalc is FORBIDDEN; allowed for duration/secondary modifiers. Pre-validation error: `E_PREVAL_SETBYCALLER_DAMAGE_FORBIDDEN`. Also implemented v1.0C Patch Plan (RF-1 remediation): P1-BP.X (BP_FatherCompanion.MarkEnemy function), P1-MK.X (GA_FatherMark reads PendingMarkTarget from owner), P1-LS.X (GA_FatherLaserShot Mark integration restored). |
+| v7.8.49 | 2026-01-30 | Added Contract 27 — C_COOLDOWN_TAG_HIERARCHY (Claude–GPT dual audit): All Father cooldown tags MUST use hierarchical format `Cooldown.Father.{Form}.{Ability}`. Enables blanket parent tag queries via UE5 `HasAny()` checking `ParentTags`. Exception: `Cooldown.Father.FormChange` (shared). Excluded: GA_FatherExoskeletonSprint (toggle, no cooldown). |

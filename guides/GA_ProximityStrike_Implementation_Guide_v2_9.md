@@ -1,6 +1,6 @@
 # Father Companion - GA_ProximityStrike Implementation Guide
-## VERSION 2.9 - Manifest Alignment (INV-INPUT-1 Compliant)
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## VERSION 2.10 - Contract 24/27 Compliant
+## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
 
@@ -13,7 +13,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Symbiote (Full Body Merge) |
 | Input | Q Key (Narrative.Input.Ability1) - Symbiote-gated |
-| Version | 2.9 |
+| Version | 2.10 |
 | Granting Method | EquippableItem (BP_FatherSymbioteForm) |
 | Activation Method | Player Q input (INV-INPUT-1 compliant) |
 
@@ -49,8 +49,9 @@ GA_ProximityStrike is a passive AOE damage ability that automatically damages al
 - Unlimited Targets: No cap on simultaneous targets
 - Knockback: Small push effect on each tick
 - Form Restriction: Only active during Symbiote form
-- Proper Damage System: Uses NarrativeDamageExecCalc with SetByCaller for Armor/AttackRating scaling
+- Contract 24 Compliant: Uses NarrativeDamageExecCalc with captured AttackDamage attribute (NOT SetByCaller)
 - Hierarchical Tag: Uses Ability.Father.Symbiote.ProximityStrike for blanket cancel support
+- Hierarchical Cooldown: Uses Cooldown.Father.Symbiote.ProximityStrike (Contract 27)
 - Recruited Gate: Requires Father.State.Recruited for activation
 
 ### **Symbiote Form Context**
@@ -74,20 +75,22 @@ In Symbiote form, the father fully merges with the player body, creating a berse
 | State Required | Merged, Recruited |
 | Form Duration | 30 seconds |
 
-### **Damage Flow**
+### **Damage Flow (Contract 24 Compliant)**
 
 | Step | Component | Action |
 |------|-----------|--------|
 | 1 | GA_FatherSymbiote | Activates GA_ProximityStrike after merge |
 | 2 | GA_ProximityStrike | Timer triggers DealProximityDamage |
 | 3 | Sphere Overlap | Detects enemies in radius |
-| 4 | Make Outgoing Spec | Creates GE spec with SetByCaller damage |
+| 4 | Make Outgoing Spec | Creates GE spec (source: Father ASC) |
 | 5 | GE_ProximityDamage | Applied to each target |
-| 6 | NarrativeDamageExecCalc | Calculates final damage |
+| 6 | NarrativeDamageExecCalc | Captures AttackDamage from Father (source) |
 | 7 | ExecCalc | Applies AttackRating multiplier |
 | 8 | ExecCalc | Applies target Armor reduction |
 | 9 | ExecCalc | Checks State.Invulnerable |
 | 10 | Attribute System | Modifies target Health |
+
+**Contract 24 Note:** Damage comes from Father's captured AttackDamage attribute, NOT SetByCaller. Father's AttackDamage should be set to 50 via GE_FatherSymbioteStats initialization effect.
 
 ### **Activation Flow**
 
@@ -140,9 +143,11 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Symbiote.ProximityStrike | Father proximity AOE damage - Symbiote form passive |
+| Cooldown.Father.Symbiote.ProximityStrike | Hierarchical cooldown tag (Contract 27) |
 | Father.State.ProximityActive | Proximity strike aura is active |
 | Effect.Father.ProximityDamage | Target is being damaged by proximity aura |
-| Data.Damage.ProximityStrike | SetByCaller tag for proximity strike damage value |
+
+**Note:** Data.Damage.ProximityStrike tag removed per Contract 24 - SetByCaller forbidden for damage with NarrativeDamageExecCalc.
 
 ### **Verify Existing Tags**
 
@@ -195,7 +200,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 2.3.3) Search: `Executions`
    - 2.3.4) Select: **ExecutionsGameplayEffectComponent**
 
-#### 2.4) Configure Damage Execution
+#### 2.4) Configure Damage Execution (Contract 24 Compliant)
    - 2.4.1) Click Executions component to expand
    - 2.4.2) Find **Execution Definitions** array
    - 2.4.3) Click **+ (Plus)** to add element [0]
@@ -205,38 +210,22 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 2.4.7) Search: `NarrativeDamageExecCalc`
    - 2.4.8) Select: **UNarrativeDamageExecCalc**
 
-#### 2.5) Configure SetByCaller Damage Modifier
-   - 2.5.1) In element [0], find **Calculation Modifiers** array
-   - 2.5.2) Click **+ (Plus)** to add modifier
-   - 2.5.3) Expand the modifier element
-   - 2.5.4) Configure Backing Capture Definition:
-      - 2.5.4.1) Find **Backing Capture Definition** section
-      - 2.5.4.2) **Capture Attribute**: Select `NarrativeAttributeSetBase.AttackDamage`
-      - 2.5.4.3) **Attribute Source**: `Source`
-   - 2.5.5) Configure Modifier Operation:
-      - 2.5.5.1) **Modifier Op**: `Override`
-   - 2.5.6) Configure SetByCaller Magnitude:
-      - 2.5.6.1) Find **Modifier Magnitude** section
-      - 2.5.6.2) **Magnitude Calculation Type**: Select `Set By Caller`
-      - 2.5.6.3) Expand **Set By Caller Magnitude** section
-      - 2.5.6.4) **Data Tag**: Click dropdown
-      - 2.5.6.5) Search: `Data.Damage.ProximityStrike`
-      - 2.5.6.6) Select: `Data.Damage.ProximityStrike`
+**Contract 24 Note:** Do NOT add SetByCaller modifiers for damage. NarrativeDamageExecCalc automatically captures AttackDamage from the source (Father). Father's AttackDamage attribute (set via GE_FatherSymbioteStats) determines damage output.
 
-#### 2.6) Add Asset Tags Component
-   - 2.6.1) Click **+ (Plus)** in Components section
-   - 2.6.2) Search: `Asset Tags`
-   - 2.6.3) Select: **AssetTagsGameplayEffectComponent**
+#### 2.5) Add Asset Tags Component
+   - 2.5.1) Click **+ (Plus)** in Components section
+   - 2.5.2) Search: `Asset Tags`
+   - 2.5.3) Select: **AssetTagsGameplayEffectComponent**
 
-#### 2.7) Configure Asset Tags
-   - 2.7.1) Click component to expand
-   - 2.7.2) Find **Added** section
-   - 2.7.3) Click **+ (Plus)**
-   - 2.7.4) Add tag: `Effect.Father.ProximityDamage`
+#### 2.6) Configure Asset Tags
+   - 2.6.1) Click component to expand
+   - 2.6.2) Find **Added** section
+   - 2.6.3) Click **+ (Plus)**
+   - 2.6.4) Add tag: `Effect.Father.ProximityDamage`
 
-#### 2.8) Compile and Save
-   - 2.8.1) Click **Compile** button
-   - 2.8.2) Click **Save** button
+#### 2.7) Compile and Save
+   - 2.7.1) Click **Compile** button
+   - 2.7.2) Click **Save** button
 
 ---
 
@@ -353,7 +342,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 #### 1.1) Open Event Graph
    - 1.1.1) In GA_ProximityStrike Blueprint, click **Event Graph** tab
 
-#### 1.2) Create DamagePerTick Variable
+#### 1.2) Create DamagePerTick Variable (Documentation Only)
    - 1.2.1) In **My Blueprint** panel, click **+ (Plus)** next to Variables
    - 1.2.2) Name: `DamagePerTick`
    - 1.2.3) Press **Enter**
@@ -361,8 +350,10 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
       - 1.2.4.1) **Variable Type**: `Float`
       - 1.2.4.2) **Instance Editable**: Check
    - 1.2.5) Click **Compile**
-   - 1.2.6) Set **Default Value**: `40.0`
+   - 1.2.6) Set **Default Value**: `50.0`
    - 1.2.7) Set **Category**: `Proximity Config`
+
+   **Contract 24 Note:** This variable is for documentation/reference only. Actual damage comes from Father's AttackDamage attribute captured by NarrativeDamageExecCalc.
 
 #### 1.3) Create TickRate Variable
    - 1.3.1) Click **+ (Plus)** next to Variables
@@ -379,7 +370,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 1.4.3) **Variable Type**: `Float`
    - 1.4.4) **Instance Editable**: Check
    - 1.4.5) Click **Compile**
-   - 1.4.6) Set **Default Value**: `350.0`
+   - 1.4.6) Set **Default Value**: `400.0`
    - 1.4.7) Set **Category**: `Proximity Config`
 
 #### 1.5) Create KnockbackForce Variable
@@ -647,7 +638,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 8.2.3) Connect Is Valid Return Value to Branch Condition
    - 8.2.4) From Branch **False**: Leave disconnected (skip actor)
 
-#### 8.3) Make Outgoing Gameplay Effect Spec
+#### 8.3) Make Outgoing Gameplay Effect Spec (Contract 24 Compliant)
    - 8.3.1) From Branch **True** execution:
       - 8.3.1.1) Drag outward and search: `Make Outgoing Spec`
       - 8.3.1.2) Add **Make Outgoing Spec** node
@@ -657,25 +648,16 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
       - 8.3.3.2) **Gameplay Effect Class**: Select `GE_ProximityDamage`
       - 8.3.3.3) **Level**: `1.0`
 
-#### 8.4) Assign SetByCaller Damage Value
+**Contract 24 Note:** Do NOT add SetByCaller assignment. NarrativeDamageExecCalc captures AttackDamage from Father (source ASC). Damage is determined by Father's AttackDamage attribute value.
+
+#### 8.4) Apply Gameplay Effect Spec to Target
    - 8.4.1) From Make Outgoing Spec execution:
-      - 8.4.1.1) Drag from **Return Value** (Spec Handle)
-      - 8.4.1.2) Search: `Assign Tag Set By Caller Magnitude`
-      - 8.4.1.3) Add **Assign Tag Set By Caller Magnitude** node
+      - 8.4.1.1) Drag outward and search: `Apply Gameplay Effect Spec to Target`
+      - 8.4.1.2) Add **Apply Gameplay Effect Spec to Target** node
    - 8.4.2) Connect execution
    - 8.4.3) Configure:
-      - 8.4.3.1) **Spec Handle**: Already connected from Make Outgoing Spec
-      - 8.4.3.2) **Data Tag**: Click dropdown, search and select `Data.Damage.ProximityStrike`
-      - 8.4.3.3) **Magnitude**: Connect **DamagePerTick** getter
-
-#### 8.5) Apply Gameplay Effect Spec to Target
-   - 8.5.1) From Assign Tag Set By Caller execution:
-      - 8.5.1.1) Drag outward and search: `Apply Gameplay Effect Spec to Target`
-      - 8.5.1.2) Add **Apply Gameplay Effect Spec to Target** node
-   - 8.5.2) Connect execution
-   - 8.5.3) Configure:
-      - 8.5.3.1) **Target**: Connect Target ASC (from step 8.1)
-      - 8.5.3.2) **Spec Handle**: Connect from Assign Tag Set By Caller **Return Value**
+      - 8.4.3.1) **Target**: Connect Target ASC (from step 8.1)
+      - 8.4.3.2) **Spec Handle**: Connect Make Outgoing Spec **Return Value**
 
 ### **9) Apply Knockback to Each Enemy**
 
@@ -708,7 +690,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 9.4.2) Array Element is AActor* but Launch Character requires ACharacter*
 
 #### 9.5) Apply Knockback Impulse
-   - 9.5.1) From Apply Gameplay Effect Spec execution:
+   - 9.5.1) From Apply Gameplay Effect Spec (section 8.4) execution:
       - 9.5.1.1) Connect to Cast To Character execution input
    - 9.5.2) From Cast success execution pin:
       - 9.5.2.1) Search: `Launch Character`
@@ -870,6 +852,24 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 ## **CHANGELOG**
 
+### **VERSION 2.10 - Contract 24/27 Compliance**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Contract 24 | Removed SetByCaller damage pattern - FORBIDDEN with NarrativeDamageExecCalc |
+| Damage Source | Changed from SetByCaller (Data.Damage.ProximityStrike) to captured AttackDamage attribute |
+| DamagePerTick | Variable now documentation-only; actual damage from Father's AttackDamage (50) |
+| DamageRadius | Updated default from 350.0 to 400.0 (matching tech spec) |
+| Contract 27 | Added Cooldown.Father.Symbiote.ProximityStrike hierarchical cooldown tag |
+| Tag Removal | Removed Data.Damage.ProximityStrike tag (SetByCaller forbidden) |
+| GE_ProximityDamage | Simplified - no Calculation Modifiers, uses default attribute capture |
+| PHASE 5 | Removed Section 8.4 (Assign SetByCaller) - no longer needed |
+| Documentation | Added Contract 24 notes throughout guide |
+
+---
+
 ### **VERSION 2.7 - Blueprint Node Consistency Fixes**
 
 **Release Date:** January 2026
@@ -984,9 +984,9 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 | Variable | Type | Category | Instance Editable | Default | Purpose |
 |----------|------|----------|-------------------|---------|---------|
-| DamagePerTick | Float | Proximity Config | Yes | 40.0 | Base damage per tick (SetByCaller) |
+| DamagePerTick | Float | Proximity Config | Yes | 50.0 | Documentation only (Contract 24: actual damage from AttackDamage) |
 | TickRate | Float | Proximity Config | Yes | 0.5 | Seconds between damage ticks |
-| DamageRadius | Float | Proximity Config | Yes | 350.0 | AOE radius in units |
+| DamageRadius | Float | Proximity Config | Yes | 400.0 | AOE radius in units |
 | KnockbackForce | Float | Proximity Config | Yes | 200.0 | Push force on enemies |
 | PlayerRef | Actor Ref | Runtime | No | None | Merged player reference |
 | FatherRef | Actor Ref | Runtime | No | None | Father companion reference |
@@ -994,24 +994,28 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | DamageTimerHandle | Timer Handle | Runtime | No | None | Looping timer reference |
 | IsActive | Boolean | Runtime | No | false | Ability active state |
 
-### **Gameplay Effect Summary**
+### **Gameplay Effect Summary (Contract 24 Compliant)**
 
-| Effect | Type | Execution Class | SetByCaller Tag |
-|--------|------|-----------------|-----------------|
-| GE_ProximityDamage | Instant | NarrativeDamageExecCalc | Data.Damage.ProximityStrike |
+| Effect | Type | Execution Class | Damage Source |
+|--------|------|-----------------|---------------|
+| GE_ProximityDamage | Instant | NarrativeDamageExecCalc | Father's AttackDamage (captured) |
 
-### **Damage Calculation**
+**Note:** SetByCaller forbidden per Contract 24. Damage from captured AttackDamage attribute.
+
+### **Damage Calculation (Contract 24 Compliant)**
 
 | Parameter | Value |
 |-----------|-------|
-| Base Damage Per Tick | 40 (from DamagePerTick variable) |
+| Base Damage Per Tick | 50 (from Father's AttackDamage attribute) |
 | Tick Rate | 0.5 seconds |
 | Ticks Per Second | 2 |
-| Base DPS (per enemy) | 80 |
+| Base DPS (per enemy) | 100 |
 | Total Duration | 30 seconds |
 | Total Ticks | 60 |
-| Total Base Damage (per enemy) | 2,400 |
-| Actual Damage | (DamagePerTick * AttackMultiplier) / DefenseMultiplier |
+| Total Base Damage (per enemy) | 3,000 |
+| Actual Damage | (AttackDamage * AttackMultiplier) / DefenseMultiplier |
+
+**Contract 24 Note:** Damage comes from Father's AttackDamage attribute (set to 50 via GE_FatherSymbioteStats), NOT SetByCaller.
 
 ### **Replication Summary**
 
@@ -1053,10 +1057,10 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 ---
 
-**END OF GA_PROXIMITYSTRIKE IMPLEMENTATION GUIDE v2.7**
+**END OF GA_PROXIMITYSTRIKE IMPLEMENTATION GUIDE v2.10**
 
 **Symbiote Form - Berserker AOE Damage Aura**
 
-**Unreal Engine 5.6 + Narrative Pro v2.2**
+**Unreal Engine 5.7 + Narrative Pro v2.2**
 
-**Blueprint-Only Implementation**
+**Blueprint-Only Implementation - Contract 24/27 Compliant**

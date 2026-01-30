@@ -47,12 +47,13 @@ Any party with access to this document acknowledges the intellectual property ri
 
 | Field | Value |
 |-------|-------|
-| Version | 2.8 |
+| Version | 2.9 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only |
 | Multiplayer | Compatible |
 | Owner | Erdem Halacoglu |
+| Contract Compliance | Contract 24 (attribute-based damage), Contract 27 (hierarchical cooldowns) |
 
 ---
 
@@ -136,16 +137,20 @@ The Father Companion is a mechanical/energy hybrid entity that bonds with the pl
 | Bonus | +10% damage to marked targets |
 | Max Active | 3 marks |
 
-#### 2.1.5) GA_FatherAttack Parameters
+#### 2.1.5) GA_FatherAttack Parameters (Contract 24 Compliant)
 
 | Parameter | Value |
 |-----------|-------|
-| Base Damage | 10.0 |
+| Base Damage | 8.0 (balanced for multi-hit, from AttackDamage attribute) |
 | Parent Class | GA_Melee_Unarmed |
 | Attack Sockets | father_right, father_left |
 | Warp to Target | Yes |
 | Damage Effect | GE_WeaponDamage |
-| Damage System | NarrativeDamageExecCalc |
+| Damage System | NarrativeDamageExecCalc (captured AttackDamage) |
+| Multi-Hit | Enabled (CachedHitActors prevents double-hits) |
+| Cooldown Tag | Cooldown.Father.Crawler.Attack (Contract 27 hierarchical) |
+
+**Contract 24 Note:** Damage from captured AttackDamage attribute, NOT SetByCaller.
 
 #### 2.1.6) Use Cases
 
@@ -421,14 +426,17 @@ When switching forms via T wheel while dome is fully charged:
 | GA_FatherSymbiote | Form Activation | T (Wheel) when charged |
 | GA_ProximityStrike | Passive | Auto (enemies nearby) |
 
-#### 2.4.7) Proximity Strike Parameters
+#### 2.4.7) Proximity Strike Parameters (Contract 24 Compliant)
 
 | Parameter | Value |
 |-----------|-------|
-| Damage | 40 per tick |
-| Radius | 350 units |
+| Damage | 50 per tick (from Father AttackDamage attribute) |
+| Radius | 400 units |
 | Tick Rate | Every 0.5 seconds |
 | Max Targets | Unlimited |
+| Damage Source | Captured AttackDamage (NOT SetByCaller) |
+
+**Contract 24 Note:** Damage comes from Father's AttackDamage attribute captured by NarrativeDamageExecCalc, not SetByCaller.
 
 #### 2.4.8) Gameplay Loop
 
@@ -733,15 +741,20 @@ Effect.Father.Shield
 Effect.Father.Stealth
 Effect.Father.ProximityDamage
 
-### 7.5) Cooldown Tags
+### 7.5) Cooldown Tags (Contract 27 - Hierarchical Format)
 
-Cooldown.Father.Dash
-Cooldown.Father.Stealth
-Cooldown.Father.DomeBurst
-Cooldown.Father.ElectricTrap
-Cooldown.Father.Symbiote
-Cooldown.Father.Sacrifice
-Cooldown.Father.FormChange
+Cooldown.Father.Exoskeleton.Dash
+Cooldown.Father.Exoskeleton.StealthField
+Cooldown.Father.Armor.DomeBurst
+Cooldown.Father.Engineer.ElectricTrap
+Cooldown.Father.Engineer.TurretShoot
+Cooldown.Father.Crawler.Attack
+Cooldown.Father.Crawler.LaserShot
+Cooldown.Father.Symbiote.ProximityStrike
+Cooldown.Father.Symbiote.Sacrifice
+Cooldown.Father.FormChange (flat exception - shared across forms)
+
+**Contract 27 Note:** Cooldown tags use hierarchical format `Cooldown.Father.{Form}.{Ability}` for blanket cancel support via parent tag matching.
 
 ### 7.6) Input Tags
 
@@ -871,15 +884,17 @@ Narrative.Input.Father.Ability3      (E)
 | CharacterMovement Component Direct | All movement speed changes |
 | Attribute-Based | NOT USED (NarrativeAttributeSetBase lacks MovementSpeed) |
 
-### 10.5) Damage System
+### 10.5) Damage System (Contract 24 Compliant)
 
 | Ability Type | Damage Method |
 |--------------|---------------|
-| All Father Attacks | NarrativeDamageExecCalc |
-| ProximityStrike | NarrativeDamageExecCalc with SetByCaller |
-| ElectricTrap | NarrativeDamageExecCalc |
-| TurretShoot | NarrativeDamageExecCalc |
-| DomeBurst | NarrativeDamageExecCalc |
+| All Father Attacks | NarrativeDamageExecCalc (captured AttackDamage) |
+| ProximityStrike | NarrativeDamageExecCalc (captured AttackDamage - NOT SetByCaller) |
+| ElectricTrap | NarrativeDamageExecCalc (captured AttackDamage) |
+| TurretShoot | NarrativeDamageExecCalc (captured AttackDamage) |
+| DomeBurst | NarrativeDamageExecCalc (captured AttackDamage) |
+
+**Contract 24 Note:** SetByCaller is FORBIDDEN for damage values when using NarrativeDamageExecCalc. All damage comes from captured AttackDamage attribute from the source ASC.
 
 ### 10.6) Form Transition System
 
@@ -1030,6 +1045,7 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.9 | January 2026 | **Contract 24/27 Compliance (Claude-GPT dual audit):** Contract 24 - SetByCaller FORBIDDEN for damage with NarrativeDamageExecCalc. All damage now from captured AttackDamage attribute. Section 2.1.5 GA_FatherAttack updated (8.0 damage, multi-hit). Section 2.4.7 ProximityStrike updated (50 damage, 400 radius). Section 7.5 Cooldown Tags updated to hierarchical format (Contract 27). Section 10.5 Damage System updated - removed SetByCaller references. |
 | 2.8 | January 2026 | **GA_DomeBurst Input/Auto-burst Alignment (Claude-GPT dual audit):** Section 2.2.4 Abilities table: Changed GA_DomeBurst from "Active/Auto, Q (Tap) or auto at threshold" to "Active, Q (Tap) or Form Exit (T wheel)". Aligns with Section 2.2.6 locked decision (Auto-burst: DISABLED). Added input_tag to manifest. |
 | 2.7 | January 2026 | **Exoskeleton Speed Correction (Claude-GPT dual audit):** Section 1.4 Form Overview: Exoskeleton stat changed from +50% Speed to +25% Speed. Section 2.3.3 Stat Parameters: Base Speed Bonus corrected from +50% to +25%, Sprint Speed from +75% to +87.5%. Manifest SpeedBoostMultiplier (1.25) is authoritative. Design Doc had outdated +50% values from original specification. |
 | 2.6 | January 2026 | **v5.1 Goal_Attack Backstab Detection:** Section 3.1 GA_Backstab updated - replaced ViewedCharacter detection with Goal_Attack query approach. Uses Narrative Pro's built-in GoalGenerator_Attack system. CheckBackstabCondition now queries NPCActivityComponent → GetCurrentActivityGoal → Cast to Goal_Attack → TargetToAttack. No custom perception binding required. Added Section 3.1.1 Goal_Attack Detection table. BP_BackstabNPCController removed from manifest (no longer needed). |
@@ -1056,16 +1072,18 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Field | Value |
 |-------|-------|
-| Audit Date | 2026-01-24 |
+| Audit Date | 2026-01-30 |
 | Audit Type | Claude-GPT Dual Audit |
-| Decisions Locked | 26 (Previous 25 + Speed value correction) |
+| Decisions Locked | 28 (Previous 26 + Contract 24/27) |
 | Key Decisions | D22: Form exit via TryActivateAbilityByClass |
 | | D23: EI_FatherArmorForm.HandleUnequip override |
 | | D24: Father.Dome.FullyCharged activation_required_tag |
 | | **Contract 11: C_SYMBIOTE_STRICT_CANCEL** |
+| | **Contract 24: D-DAMAGE-ATTR-1 (SetByCaller forbidden for damage with ExecCalc)** |
+| | **Contract 27: C_COOLDOWN_TAG_HIERARCHY (hierarchical cooldown tags)** |
 | | **Exoskeleton Speed: +25% base (manifest authoritative)** |
 | Manifest Aligned | Yes |
-| Contract Reference | LOCKED_CONTRACTS.md v4.31 |
+| Contract Reference | LOCKED_CONTRACTS.md v7.8.49 |
 | GAS Audit Reference | Father_Companion_GAS_Abilities_Audit.md v6.4 |
 
 ---

@@ -79,6 +79,8 @@ tags:
     comment: Form activation ability
   - tag: Ability.Father.Attack
     comment: Crawler melee attack
+  - tag: Ability.Father.Crawler.Attack
+    comment: Hierarchical child - crawler melee attack
   - tag: Ability.Father.Backstab
     comment: Passive backstab damage bonus
   - tag: Ability.Father.Crawler
@@ -170,25 +172,27 @@ tags:
   - tag: Companion.State.WheelOpen
     comment: Companion wheel is open
 
-  # Cooldown Tags (9)
-  - tag: Cooldown.Father.DomeBurst
-    comment: Dome burst cooldown
-  - tag: Cooldown.Father.ElectricTrap
-    comment: Electric trap cooldown
+  # Cooldown Tags (10) - Contract 27: Hierarchical format Cooldown.Father.{Form}.{Ability}
+  - tag: Cooldown.Father.Armor.DomeBurst
+    comment: Dome burst cooldown - hierarchical
+  - tag: Cooldown.Father.Crawler.Attack
+    comment: Crawler attack cooldown - hierarchical
+  - tag: Cooldown.Father.Crawler.LaserShot
+    comment: Laser shot cooldown - hierarchical
+  - tag: Cooldown.Father.Engineer.ElectricTrap
+    comment: Electric trap cooldown - hierarchical
+  - tag: Cooldown.Father.Engineer.TurretShoot
+    comment: Turret shoot cooldown - hierarchical
   - tag: Cooldown.Father.Exoskeleton.Dash
-    comment: Dash ability cooldown
+    comment: Dash ability cooldown - hierarchical
+  - tag: Cooldown.Father.Exoskeleton.StealthField
+    comment: Stealth field cooldown - hierarchical
   - tag: Cooldown.Father.FormChange
-    comment: Shared 15s form transition cooldown
-  - tag: Cooldown.Father.LaserShot
-    comment: Laser shot cooldown
-  - tag: Cooldown.Father.ProximityStrike
-    comment: Proximity strike cooldown
-  - tag: Cooldown.Father.Sacrifice
-    comment: Sacrifice ability cooldown
-  - tag: Cooldown.Father.StealthField
-    comment: Stealth field cooldown
-  - tag: Cooldown.Father.Symbiote
-    comment: Symbiote form cooldown
+    comment: Shared 15s form transition cooldown - flat exception
+  - tag: Cooldown.Father.Symbiote.ProximityStrike
+    comment: Proximity strike cooldown - hierarchical
+  - tag: Cooldown.Father.Symbiote.Sacrifice
+    comment: Sacrifice ability cooldown - hierarchical
 
   # Data Tags - SetByCaller (4)
   - tag: Data.Mark.ArmorReduction
@@ -702,10 +706,12 @@ gameplay_effects:
   # v4.26: Removed GE_SymbioteBoost (Decision 3 - orphan, misconfigured, stats via EI + GE_EquipmentModifier_FatherSymbiote)
 
   # Cooldown Effects (8)
+  # Contract 27: Cooldown GEs with hierarchical tags
   - name: GE_FormChangeCooldown
     folder: Effects/Cooldowns
     duration_policy: HasDuration
     duration_magnitude: 15.0
+    # Exception: shared cooldown stays flat (no hierarchy)
     granted_tags:
       - Cooldown.Father.FormChange
 
@@ -714,21 +720,21 @@ gameplay_effects:
     duration_policy: HasDuration
     duration_magnitude: 1.5
     granted_tags:
-      - Cooldown.Father.Attack
+      - Cooldown.Father.Crawler.Attack
 
   - name: GE_LaserCooldown
     folder: Effects/Cooldowns
     duration_policy: HasDuration
     duration_magnitude: 3.0
     granted_tags:
-      - Cooldown.Father.LaserShot
+      - Cooldown.Father.Crawler.LaserShot
 
   - name: GE_DomeBurstCooldown
     folder: Effects/Cooldowns
     duration_policy: HasDuration
     duration_magnitude: 12.0
     granted_tags:
-      - Cooldown.Father.DomeBurst
+      - Cooldown.Father.Armor.DomeBurst
 
   - name: GE_ExoskeletonDashCooldown
     folder: Effects/Cooldowns
@@ -742,28 +748,28 @@ gameplay_effects:
     duration_policy: HasDuration
     duration_magnitude: 20.0
     granted_tags:
-      - Cooldown.Father.StealthField
+      - Cooldown.Father.Exoskeleton.StealthField
 
   - name: GE_ProximityStrikeCooldown
     folder: Effects/Cooldowns
     duration_policy: HasDuration
     duration_magnitude: 8.0
     granted_tags:
-      - Cooldown.Father.ProximityStrike
+      - Cooldown.Father.Symbiote.ProximityStrike
 
   - name: GE_ElectricTrapCooldown
     folder: Effects/Cooldowns
     duration_policy: HasDuration
     duration_magnitude: 10.0
     granted_tags:
-      - Cooldown.Father.ElectricTrap
+      - Cooldown.Father.Engineer.ElectricTrap
 
   - name: GE_TurretShootCooldown
     folder: Effects/Cooldowns
     duration_policy: HasDuration
     duration_magnitude: 0.5
     granted_tags:
-      - Cooldown.Father.TurretShoot
+      - Cooldown.Father.Engineer.TurretShoot
 
   # Damage Effects (5)
   - name: GE_FatherDamage
@@ -1274,19 +1280,19 @@ gameplay_abilities:
         # Data flow - Cast
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetCurrentForm, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetIsAttached, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [DetachFromActor, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetCurrentForm_Switch, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetIsAttached_Switch, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherASC_Transition, Actor]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
@@ -1296,16 +1302,16 @@ gameplay_abilities:
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [RemoveTransitioningTag, Actor]
         # Data flow - VFX spawn
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherMesh, Target]
         - from: [GetFatherMesh, Mesh]
           to: [SpawnTransitionVFX, AttachToComponent]
@@ -1812,17 +1818,17 @@ gameplay_abilities:
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         # Data flow - Cast output to SetFatherRef INPUT and other destinations
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [AttachToComponent, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetCurrentForm, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetIsAttached, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherASC_Transition, Actor]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
@@ -1840,16 +1846,16 @@ gameplay_abilities:
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [RemoveTransitioningTag, Actor]
         # Data flow - VFX spawn
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherMesh, Target]
         - from: [GetFatherMesh, Mesh]
           to: [SpawnTransitionVFX, AttachToComponent]
@@ -2414,15 +2420,15 @@ gameplay_abilities:
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         # Data flow - Cast output to SetFatherRef INPUT and other destinations
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [AttachToComponent, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetCurrentForm, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetIsAttached, Target]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
@@ -2436,15 +2442,15 @@ gameplay_abilities:
         - from: [MakeTagContainer_FormState, ReturnValue]
           to: [RemovePriorFormState, WithGrantedTags]
         # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherASC_Transition, Actor]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [RemoveTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
@@ -2473,7 +2479,7 @@ gameplay_abilities:
         - from: [HasFormStateTag_Guard, ReturnValue]
           to: [Branch_FormState_Guard, Condition]
         # Data flow - VFX spawn
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherMesh, Target]
         - from: [GetFatherMesh, Mesh]
           to: [SpawnTransitionVFX, AttachToComponent]
@@ -3116,19 +3122,19 @@ gameplay_abilities:
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         # Data flow - Cast output to SetFatherRef INPUT and other destinations
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [HideFather, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [DisableCollision, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetCurrentForm, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetIsAttached, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherASC_Transition, Actor]
         # Data flow - Branch condition
         - from: [GetFirstActivation, bIsFirstActivation]
@@ -3146,13 +3152,13 @@ gameplay_abilities:
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [RemoveTransitioningTag, Actor]
         # === GUARD DATA FLOW (v5.0 NL-GUARD-IDENTITY L1) ===
         # Guard 1: IsValid(FatherRef)
@@ -3177,7 +3183,7 @@ gameplay_abilities:
         - from: [HasFormStateTag_Guard, ReturnValue]
           to: [Branch_FormState_Guard, Condition]
         # Data flow - VFX spawn
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherMesh, Target]
         - from: [GetFatherMesh, Mesh]
           to: [SpawnTransitionVFX, AttachToComponent]
@@ -3684,20 +3690,20 @@ gameplay_abilities:
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         # Data flow - Cast output to SetFatherRef INPUT and other destinations
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherLocation, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetCurrentForm, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetIsAttached, Target]
         # Data flow - R-AI-1 turret AI (v4.30)
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherController, Target]
         - from: [GetFatherController, ReturnValue]
           to: [CastToAIController, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetActivityComponent, Target]
         - from: [GetActivityComponent, ReturnValue]
           to: [CastToActivityComponent, Object]
@@ -3739,22 +3745,22 @@ gameplay_abilities:
         - from: [HasFormStateTag_Guard, ReturnValue]
           to: [Branch_FormState_Guard, Condition]
         # v4.13.5: Data flow for Transitioning tag (AddLooseGameplayTag/RemoveLooseGameplayTag)
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherASC_Transition, Actor]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [AddTransitioningTag, Actor]
         - from: [MakeLiteralTag_AddTransitioning, ReturnValue]
           to: [MakeTagContainer_AddTransitioning, Tag]
         - from: [MakeTagContainer_AddTransitioning, ReturnValue]
           to: [AddTransitioningTag, GameplayTags]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [RemoveTransitioningTag, Actor]
         - from: [MakeLiteralTag_RemoveTransitioning, ReturnValue]
           to: [MakeTagContainer_RemoveTransitioning, Tag]
         - from: [MakeTagContainer_RemoveTransitioning, ReturnValue]
           to: [RemoveTransitioningTag, GameplayTags]
         # Data flow - VFX spawn
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherMesh, Target]
         - from: [GetFatherMesh, Mesh]
           to: [SpawnTransitionVFX, AttachToComponent]
@@ -3768,14 +3774,16 @@ gameplay_abilities:
         - from: [Event_EndAbility, bWasCancelled]
           to: [Branch_WasCancelled, Condition]
         # TRUE path (was cancelled by form switch) - do cleanup
-        - from: [Branch_WasCancelled, then]
+        - from: [Branch_WasCancelled, True]
           to: [Branch_Valid_End, Exec]
-        - from: [Branch_Valid_End, then]
+        - from: [Branch_Valid_End, True]
           to: [SetIsDeployed_End, Exec]
         # FALSE path (normal end after setup) - skip cleanup (no connection needed)
         # Data flow - FatherRef to IsValid (pure nodes)
         - from: [GetFatherRef_End, FatherRef]
           to: [IsValid_Father_End, Object]
+        - from: [IsValid_Father_End, ReturnValue]
+          to: [Branch_Valid_End, Condition]
         - from: [IsValid_Father_End, ReturnValue]
           to: [Branch_Valid_End, Condition]
         # Data flow - FatherRef to SetIsDeployed target
@@ -3790,8 +3798,10 @@ gameplay_abilities:
   # v7.8.21: Generator enhanced to support Blueprint parent classes from NP plugin
   # - FindParentClass resolves /NarrativePro/Pro/Core/Abilities/... paths
   # - Event node reuse now breaks inherited Event→CallParent connections
+  # GA_FatherAttack - Crawler Melee Multi-Hit Attack
   # Inherits motion warping, socket tracing, combo from GA_Melee_Unarmed
   # NOTE: Runs on Father ASC, only in Crawler form
+  # v7.8.49: Contract 27 hierarchical cooldown tags + recruited gate + multi-hit
   - name: GA_FatherAttack
     folder: Abilities/Combat
     parent_class: GA_Melee_Unarmed
@@ -3801,12 +3811,14 @@ gameplay_abilities:
     tags:
       ability_tags:
         - Ability.Father.Attack
+        - Ability.Father.Crawler.Attack  # v7.8.49: Hierarchical for blanket cancel
       activation_owned_tags:
         - Father.State.Attacking
       activation_required_tags:
         - Effect.Father.FormState.Crawler  # Uses GE-granted tag (Option B)
+        - Father.State.Recruited  # v7.8.49: All Father abilities require recruited
       activation_blocked_tags:
-        - Cooldown.Father.Attack
+        - Cooldown.Father.Crawler.Attack  # v7.8.49: Contract 27 hierarchical
         - Father.State.Transitioning
     variables:
       - name: FatherRef
@@ -3823,8 +3835,13 @@ gameplay_abilities:
         type: Object
         class: AnimMontage
         instance_editable: true
+      # v7.8.49: Multi-hit support per Narrative Pro WeaponVisual pattern
+      - name: CachedHitActors
+        type: Actor
+        container: Array
     event_graph:
       nodes:
+        # Activation flow
         - id: Event_Activate
           type: Event
           properties:
@@ -3862,14 +3879,78 @@ gameplay_abilities:
             function: K2_CommitAbilityCooldown
             target_self: true
           position: [1500, 0]
-        - id: EndAbility
+        # v7.8.49: Multi-hit HandleTargetData override
+        - id: Event_HandleTargetData
+          type: Event
+          properties:
+            event_name: HandleTargetData
+          position: [0, 400]
+        - id: GetTargetDataNum
           type: CallFunction
           properties:
-            function: K2_EndAbility
+            function: GetDataCountFromTargetData
+            class: AbilitySystemBlueprintLibrary
+          position: [300, 400]
+        - id: ForEachLoop
+          type: ForEachLoop
+          position: [600, 400]
+        - id: GetHitActor
+          type: CallFunction
+          properties:
+            function: GetHitResultFromTargetData
+            class: AbilitySystemBlueprintLibrary
+          position: [900, 400]
+        - id: IsValid_HitActor
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [1200, 400]
+        - id: Branch_Valid
+          type: Branch
+          position: [1500, 400]
+        - id: GetCachedHitActors
+          type: VariableGet
+          properties:
+            variable_name: CachedHitActors
+          position: [1800, 500]
+        - id: ContainsActor
+          type: CallFunction
+          properties:
+            function: Contains
+          position: [1800, 400]
+        - id: Branch_NotCached
+          type: Branch
+          position: [2100, 400]
+        - id: AddToCachedHitActors
+          type: CallFunction
+          properties:
+            function: Add
+          position: [2400, 400]
+        - id: CallParentHandleTargetData
+          type: CallFunction
+          properties:
+            function: HandleTargetData
             target_self: true
-          position: [1800, 0]
+          position: [2700, 400]
+        # v7.8.49: EndAbility cache clear
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+          position: [0, 800]
+        - id: ClearCachedHitActors
+          type: CallFunction
+          properties:
+            function: Clear
+          position: [300, 800]
+        - id: GetCachedHitActors_End
+          type: VariableGet
+          properties:
+            variable_name: CachedHitActors
+          position: [300, 900]
       connections:
-        # Exec flow (GetAvatarActor is pure - no exec pins)
+        # Activation exec flow
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
@@ -3886,8 +3967,46 @@ gameplay_abilities:
           to: [PlayMontage, AnimMontage]
         - from: [PlayMontage, Exec]
           to: [CommitCooldown, Exec]
-        - from: [CommitCooldown, Exec]
-          to: [EndAbility, Exec]
+        # Multi-hit HandleTargetData flow
+        - from: [Event_HandleTargetData, Then]
+          to: [ForEachLoop, Exec]
+        - from: [Event_HandleTargetData, TargetData]
+          to: [GetTargetDataNum, TargetData]
+        - from: [GetTargetDataNum, ReturnValue]
+          to: [ForEachLoop, Array]
+        - from: [ForEachLoop, LoopBody]
+          to: [GetHitActor, Exec]
+        - from: [ForEachLoop, ArrayElement]
+          to: [GetHitActor, Index]
+        - from: [GetHitActor, HitActor]
+          to: [IsValid_HitActor, Object]
+        - from: [GetHitActor, Exec]
+          to: [Branch_Valid, Exec]
+        - from: [IsValid_HitActor, ReturnValue]
+          to: [Branch_Valid, Condition]
+        - from: [Branch_Valid, True]
+          to: [ContainsActor, Exec]
+        - from: [GetCachedHitActors, CachedHitActors]
+          to: [ContainsActor, Target]
+        - from: [GetHitActor, HitActor]
+          to: [ContainsActor, Item]
+        - from: [ContainsActor, Exec]
+          to: [Branch_NotCached, Exec]
+        - from: [ContainsActor, ReturnValue]
+          to: [Branch_NotCached, Condition]
+        - from: [Branch_NotCached, False]
+          to: [AddToCachedHitActors, Exec]
+        - from: [GetCachedHitActors, CachedHitActors]
+          to: [AddToCachedHitActors, Target]
+        - from: [GetHitActor, HitActor]
+          to: [AddToCachedHitActors, Item]
+        - from: [AddToCachedHitActors, Exec]
+          to: [CallParentHandleTargetData, Exec]
+        # EndAbility cache clear flow
+        - from: [Event_EndAbility, Then]
+          to: [ClearCachedHitActors, Exec]
+        - from: [GetCachedHitActors_End, CachedHitActors]
+          to: [ClearCachedHitActors, Target]
 
   # GA_FatherLaserShot - Ranged Laser Attack
   # NOTE: Runs on Father ASC, only in Crawler form
@@ -3908,7 +4027,7 @@ gameplay_abilities:
         - Father.State.Detached            # P1-LS.5: Guide requires detached state
         - Father.State.Recruited           # P1-LS.5: Guide requires recruited state
       activation_blocked_tags:
-        - Cooldown.Father.LaserShot
+        - Cooldown.Father.Crawler.LaserShot  # v7.8.49: Contract 27 hierarchical
         - Father.State.Transitioning
     variables:
       - name: FatherRef
@@ -4076,7 +4195,7 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -4164,8 +4283,9 @@ gameplay_abilities:
       activation_required_tags:
         - Effect.Father.FormState.Engineer  # Uses GE-granted tag (Option B)
         - Father.State.TurretDeployed
+        - Father.State.Recruited  # v7.8.49: All Father abilities require recruited
       activation_blocked_tags:
-        - Cooldown.Father.TurretShoot
+        - Cooldown.Father.Engineer.TurretShoot  # v7.8.49: Contract 27 hierarchical
     variables:
       - name: FatherRef
         type: Object
@@ -4259,7 +4379,7 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -4485,7 +4605,7 @@ gameplay_abilities:
           to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
@@ -4586,7 +4706,7 @@ gameplay_abilities:
         - Father.Dome.FullyCharged     # Only burst when dome is FULL (Decision 24)
         # Father.Form.Armor removed - cross-ASC gate, equipment granting handles this
       activation_blocked_tags:
-        - Cooldown.Father.DomeBurst
+        - Cooldown.Father.Armor.DomeBurst  # v7.8.49: Contract 27 hierarchical
     variables:
       - name: PlayerRef
         type: Object
@@ -4863,9 +4983,9 @@ gameplay_abilities:
         # === DATA FLOW: SETUP ===
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -5323,9 +5443,9 @@ gameplay_abilities:
         # Data flow
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -5724,7 +5844,7 @@ gameplay_abilities:
         # Data flow
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -6073,7 +6193,7 @@ gameplay_abilities:
         # Data flow - Cast
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
         # Data flow - PlayerRef
         - from: [GetOwnerPlayer, OwnerPlayer]
@@ -6179,7 +6299,7 @@ gameplay_abilities:
       # activation_required_tags removed - Father.Form.Exoskeleton is cross-ASC gate
       # Equipment granting already ensures this ability is only available in Exoskeleton form
       activation_blocked_tags:
-        - Cooldown.Father.StealthField
+        - Cooldown.Father.Exoskeleton.StealthField  # v7.8.49: Contract 27 hierarchical
     # v7.8: AbilityTasks restore full functionality - stealth breaks on damage
     variables:
       - name: PlayerRef
@@ -6367,7 +6487,7 @@ gameplay_abilities:
         # Data flow
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -6730,7 +6850,7 @@ gameplay_abilities:
       # activation_required_tags removed - Father.Form.Symbiote is cross-ASC gate
       # Equipment granting already ensures this ability is only available in Symbiote form
       activation_blocked_tags:
-        - Cooldown.Father.ProximityStrike
+        - Cooldown.Father.Symbiote.ProximityStrike  # v7.8.49: Contract 27 hierarchical
     variables:
       - name: PlayerRef
         type: Object
@@ -6883,7 +7003,7 @@ gameplay_abilities:
         # Data flow
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetOwnerPlayer, Target]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
@@ -6934,10 +7054,14 @@ gameplay_abilities:
       # P1-MK.1: Require Recruited state
       activation_required_tags:
         - Father.State.Recruited
-      # P1-MK.2: Block if dead
+      # P1-MK.2: Block if dead or in non-marking forms (Armor/Exo/Symbiote)
+      # Crawler and Engineer are the only forms where marking is active
       activation_blocked_tags:
         - Father.State.Transitioning
         - Narrative.State.IsDead
+        - Effect.Father.FormState.Armor
+        - Effect.Father.FormState.Exoskeleton
+        - Effect.Father.FormState.Symbiote
     variables:
       - name: TargetEnemy
         type: Object
@@ -7072,7 +7196,7 @@ gameplay_abilities:
           to: [CastToFather, Object]
         - from: [CastToFather, Exec]
           to: [SetTargetEnemy, Exec]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [GetPendingTarget, Target]
         - from: [GetPendingTarget, PendingMarkTarget]
           to: [SetTargetEnemy, TargetEnemy]
@@ -7141,7 +7265,7 @@ gameplay_abilities:
       activation_required_tags:
         - Father.State.Recruited
       activation_blocked_tags:
-        - Cooldown.Father.Sacrifice
+        - Cooldown.Father.Symbiote.Sacrifice  # v7.8.49: Contract 27 hierarchical
         - Father.State.Dormant
     variables:
       - name: FatherRef
@@ -7446,7 +7570,7 @@ gameplay_abilities:
         # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [SetFatherRef, FatherRef]
           to: [GetOwnerPlayer, Target]
@@ -7760,7 +7884,7 @@ gameplay_abilities:
         # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [SetFatherRef, FatherRef]
           to: [HideFather, Target]
@@ -8038,7 +8162,7 @@ gameplay_abilities:
         # Data flow - Activation
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP_FatherCompanion]
+        - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [SetFatherRef, FatherRef]
           to: [HideFather, Target]

@@ -1,8 +1,8 @@
 # Father Companion - GA_FatherAttack Implementation Guide
 
-## VERSION 3.6 - Manifest Alignment (INV-INPUT-ASC-1 Compliant)
+## VERSION 3.7 - Contract 24/27 Compliant
 
-## Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
 
@@ -12,16 +12,17 @@
 |----------|-------|
 | Ability Name | GA_FatherAttack |
 | Ability Type | AI Combat - Melee (Multi-Hit) |
-| Parent Class | NarrativeGameplayAbility |
+| Parent Class | GA_Melee_Unarmed (NarrativeGameplayAbility) |
 | Form | Crawler (Active only in Crawler form) |
 | Input | None (AI-controlled via BTTask) |
-| Version | 3.6 |
-| Last Updated | December 2025 |
-| Engine | Unreal Engine 5.6 |
+| Version | 3.7 |
+| Last Updated | January 2026 |
+| Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 | Implementation | Blueprint Only (Child Blueprint + Override) |
 | Multiplayer | Compatible (Server Only) |
 | Dependencies | BP_FatherCompanion, GE_WeaponDamage |
+| Contract Compliance | Contract 24 (attribute-based damage), Contract 27 (hierarchical cooldown) |
 
 ---
 
@@ -89,6 +90,15 @@ Version 3.3 adds multi-hit support using Narrative Pro v2.2's CachedHitActors pa
 ### **Recruitment Gate**
 
 This ability requires Father.State.Recruited tag to activate. This prevents wild (unrecruited) fathers from using player-specific attack abilities.
+
+### **Contract Compliance**
+
+| Contract | Status | Implementation |
+|----------|--------|----------------|
+| Contract 24 | Compliant | Damage via GE_WeaponDamage + NarrativeDamageExecCalc with captured AttackDamage (NOT SetByCaller) |
+| Contract 27 | Compliant | Uses Cooldown.Father.Crawler.Attack hierarchical cooldown tag |
+
+**Contract 24 Note:** This ability inherits from GA_Melee_Unarmed which uses the standard Narrative Pro damage flow. The DefaultAttackDamage property (8.0) sets the source's AttackDamage attribute, which is then captured by NarrativeDamageExecCalc. No SetByCaller is used for damage.
 
 ---
 
@@ -450,6 +460,18 @@ This ability requires Father.State.Recruited tag to activate. This prevents wild
 
 ## **CHANGELOG**
 
+### **Version 3.7 - January 2026**
+
+| Change | Description |
+|--------|-------------|
+| Contract 24 | Documented compliance - uses inherited attribute-based damage (NOT SetByCaller) |
+| Contract 27 | Documented compliance - uses Cooldown.Father.Crawler.Attack hierarchical tag |
+| Engine Version | Updated from UE 5.6 to UE 5.7 |
+| Parent Class | Clarified parent is GA_Melee_Unarmed (child of NarrativeGameplayAbility) |
+| Contract Compliance | Added section documenting Contract 24/27 status |
+
+---
+
 ### **Version 3.5 - January 2026**
 
 | Change | Description |
@@ -617,4 +639,10 @@ This ability requires Father.State.Recruited tag to activate. This prevents wild
 
 ---
 
-**END OF GUIDE**
+**END OF GA_FATHERATTACK IMPLEMENTATION GUIDE v3.7**
+
+**Crawler Form - AI Melee Combat**
+
+**Unreal Engine 5.7 + Narrative Pro v2.2**
+
+**Blueprint-Only Implementation - Contract 24/27 Compliant**
