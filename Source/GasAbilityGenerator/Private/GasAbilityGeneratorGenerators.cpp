@@ -13123,20 +13123,66 @@ UK2Node* FEventGraphGenerator::CreatePropertyGetNode(
 	// Verify property exists on target class
 	FName PropertyName = FName(*(*PropertyNamePtr));
 	FProperty* Property = TargetClass->FindPropertyByName(PropertyName);
+
+	// v7.8.51: If native property not found, check for Blueprint variable
+	bool bIsBlueprintVariable = false;
 	if (!Property)
 	{
-		LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Property '%s' not found on class '%s'"),
-			*NodeDef.Id, **PropertyNamePtr, *TargetClass->GetName()));
-		// v2.6.7: Property missing on existing class - this could mean the class needs regeneration
-		AddMissingDependency(*TargetClassPtr, TEXT("ActorBlueprint"),
-			FString::Printf(TEXT("Property '%s' missing on class - may need regeneration"), **PropertyNamePtr));
-		return nullptr;
+		// Check if target class is a Blueprint-generated class
+		if (TargetClass->GetName().EndsWith(TEXT("_C")))
+		{
+			// Find the source Blueprint for this generated class
+			FString BlueprintPath = TargetClass->GetPathName();
+			BlueprintPath = BlueprintPath.Replace(TEXT("_C"), TEXT(""));  // Remove _C suffix
+
+			// Also check session cache for Blueprints created this session
+			extern TMap<FString, UClass*> GSessionBlueprintClassCache;
+			FString ClassName = TargetClass->GetName();
+			ClassName = ClassName.Left(ClassName.Len() - 2);  // Remove _C suffix
+
+			UBlueprint* TargetBlueprint = nullptr;
+			UClass** CachedClass = GSessionBlueprintClassCache.Find(ClassName);
+			if (CachedClass && *CachedClass)
+			{
+				TargetBlueprint = Cast<UBlueprint>((*CachedClass)->ClassGeneratedBy);
+			}
+
+			if (!TargetBlueprint)
+			{
+				TargetBlueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
+			}
+
+			if (TargetBlueprint)
+			{
+				// Check Blueprint's NewVariables for the property
+				for (const FBPVariableDescription& VarDesc : TargetBlueprint->NewVariables)
+				{
+					if (VarDesc.VarName == PropertyName)
+					{
+						bIsBlueprintVariable = true;
+						LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Found Blueprint variable '%s' on '%s'"),
+							*NodeDef.Id, **PropertyNamePtr, *ClassName));
+						break;
+					}
+				}
+			}
+		}
+
+		if (!bIsBlueprintVariable)
+		{
+			LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Property '%s' not found on class '%s'"),
+				*NodeDef.Id, **PropertyNamePtr, *TargetClass->GetName()));
+			// v2.6.7: Property missing on existing class - this could mean the class needs regeneration
+			AddMissingDependency(*TargetClassPtr, TEXT("ActorBlueprint"),
+				FString::Printf(TEXT("Property '%s' missing on class - may need regeneration"), **PropertyNamePtr));
+			return nullptr;
+		}
 	}
 
 	UK2Node_VariableGet* GetNode = NewObject<UK2Node_VariableGet>(Graph);
 	Graph->AddNode(GetNode, false, false);
 
-	// Set up external member reference to the property
+	// Set up external member reference to the property (works for both native and Blueprint variables)
 	GetNode->VariableReference.SetExternalMember(PropertyName, TargetClass);
 	GetNode->CreateNewGuid();
 	GetNode->PostPlacedNewNode();
@@ -13180,17 +13226,63 @@ UK2Node* FEventGraphGenerator::CreatePropertySetNode(
 	// Verify property exists on target class
 	FName PropertyName = FName(*(*PropertyNamePtr));
 	FProperty* Property = TargetClass->FindPropertyByName(PropertyName);
+
+	// v7.8.51: If native property not found, check for Blueprint variable
+	bool bIsBlueprintVariable = false;
 	if (!Property)
 	{
-		LogGeneration(FString::Printf(TEXT("PropertySet node '%s': Property '%s' not found on class '%s'"),
-			*NodeDef.Id, **PropertyNamePtr, *TargetClass->GetName()));
-		return nullptr;
+		// Check if target class is a Blueprint-generated class
+		if (TargetClass->GetName().EndsWith(TEXT("_C")))
+		{
+			// Find the source Blueprint for this generated class
+			FString BlueprintPath = TargetClass->GetPathName();
+			BlueprintPath = BlueprintPath.Replace(TEXT("_C"), TEXT(""));  // Remove _C suffix
+
+			// Also check session cache for Blueprints created this session
+			extern TMap<FString, UClass*> GSessionBlueprintClassCache;
+			FString ClassName = TargetClass->GetName();
+			ClassName = ClassName.Left(ClassName.Len() - 2);  // Remove _C suffix
+
+			UBlueprint* TargetBlueprint = nullptr;
+			UClass** CachedClass = GSessionBlueprintClassCache.Find(ClassName);
+			if (CachedClass && *CachedClass)
+			{
+				TargetBlueprint = Cast<UBlueprint>((*CachedClass)->ClassGeneratedBy);
+			}
+
+			if (!TargetBlueprint)
+			{
+				TargetBlueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
+			}
+
+			if (TargetBlueprint)
+			{
+				// Check Blueprint's NewVariables for the property
+				for (const FBPVariableDescription& VarDesc : TargetBlueprint->NewVariables)
+				{
+					if (VarDesc.VarName == PropertyName)
+					{
+						bIsBlueprintVariable = true;
+						LogGeneration(FString::Printf(TEXT("PropertySet node '%s': Found Blueprint variable '%s' on '%s'"),
+							*NodeDef.Id, **PropertyNamePtr, *ClassName));
+						break;
+					}
+				}
+			}
+		}
+
+		if (!bIsBlueprintVariable)
+		{
+			LogGeneration(FString::Printf(TEXT("PropertySet node '%s': Property '%s' not found on class '%s'"),
+				*NodeDef.Id, **PropertyNamePtr, *TargetClass->GetName()));
+			return nullptr;
+		}
 	}
 
 	UK2Node_VariableSet* SetNode = NewObject<UK2Node_VariableSet>(Graph);
 	Graph->AddNode(SetNode, false, false);
 
-	// Set up external member reference to the property
+	// Set up external member reference to the property (works for both native and Blueprint variables)
 	SetNode->VariableReference.SetExternalMember(PropertyName, TargetClass);
 	SetNode->CreateNewGuid();
 	SetNode->PostPlacedNewNode();

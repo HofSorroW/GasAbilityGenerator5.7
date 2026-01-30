@@ -4,6 +4,48 @@ Complete version history for the GasAbilityGenerator plugin.
 
 ---
 
+## v7.8.51 - Blueprint Variable Support for PropertyGet/PropertySet + Manifest Fixes
+
+**Issue:** PropertyGet/PropertySet nodes failed for Blueprint variables (CurrentForm, IsAttached, IsDeployed) on BP_FatherCompanion, causing GA form abilities to have missing connections.
+
+### Generator Enhancement
+
+**PropertyGet/PropertySet Blueprint Variable Support:**
+- PropertyGet and PropertySet now check for Blueprint variables when native FProperty* is not found
+- Looks up UBlueprint::NewVariables for Blueprint-generated classes (*_C suffix)
+- Uses GSessionBlueprintClassCache to find Blueprints created in the current session
+- SetExternalMember works correctly for both native and Blueprint variables
+
+**Files Changed:**
+- GasAbilityGeneratorGenerators.cpp: CreatePropertyGetNode, CreatePropertySetNode
+
+### Manifest Fixes
+
+1. **Cast Output Pin Names** - Changed `AsBP_FatherCompanion` to `AsBP Father Companion` (64 occurrences)
+   - UE5.7 DynamicCast nodes use spaces between class name words
+
+2. **Branch Pin Names** - Changed `then` to `True` for Branch node outputs
+   - Branch nodes have `True`/`False` pins, not `Then`
+
+3. **Function Name Corrections:**
+   - `GetNumActors` → `GetDataCountFromTargetData`
+   - `GetHitResult` → `GetHitResultFromTargetData`
+   - `GameplayAbilityTargetDataHandle` → `AbilitySystemBlueprintLibrary`
+
+4. **YAML Comment Fix** - Moved inline comment that was being parsed as part of tag value
+
+### Results
+
+All form abilities now generate with full node/connection counts:
+- GA_FatherCrawler: 48/48 nodes, 59/59 connections
+- GA_FatherArmor: 58/58 nodes, 74/74 connections
+- GA_FatherSymbiote: 77/77 nodes, 96/96 connections
+- GA_FatherEngineer: 51/51 nodes, 65/65 connections
+
+**Generation Summary:** New=202, Failed=2 (GA_FatherAttack needs target data manifest work)
+
+---
+
 ## v7.8.50 - GA_DomeBurst Contract 24/24A Compliance + Missing Features
 
 **Audit:** Comprehensive Dome System Audit (2026-01-30)
