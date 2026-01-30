@@ -1,5 +1,8 @@
-// GasAbilityGenerator v7.8.46
+// GasAbilityGenerator v7.8.52
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v7.8.52: Contract 25 Compliance - Array operation node types (ArrayContains, ArrayAdd, ArrayClear)
+//        Enables GA_FatherAttack hit deduplication: CachedHitActors array management
+//        Uses UK2Node_CallArrayFunction with UKismetArrayLibrary for proper wildcard type propagation
 // v7.8.46: Phase 7 Father Combat Abilities - AbilityTask_SpawnProjectile support (Contract 25)
 //        Enables guide-required projectile sequencing: OnTargetData (hit→damage→MarkEnemy), OnDestroyed (miss)
 //        Fixes GA_FatherLaserShot and GA_FatherElectricTrap to use task pattern instead of SpawnActor
@@ -329,6 +332,8 @@
 #include "K2Node_BreakStruct.h"  // v2.7.0: BreakStruct support
 #include "K2Node_MakeArray.h"  // v2.7.0: MakeArray support
 #include "K2Node_GetArrayItem.h"  // v2.7.0: GetArrayItem support
+#include "K2Node_CallArrayFunction.h"  // v7.8.52: Array operations (Contains, Add, Clear)
+#include "Kismet/KismetArrayLibrary.h"  // v7.8.52: Array library for function lookup
 #include "K2Node_Self.h"  // v2.7.8: Self reference support
 #include "K2Node_FunctionEntry.h"  // v2.8.3: Function override entry
 #include "K2Node_FunctionResult.h"  // v4.14: Custom function return node
@@ -2949,6 +2954,13 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 	{
 		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
 
+		// v7.8.51: Set container type for array variables
+		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Array;
+			LogGeneration(FString::Printf(TEXT("  Variable '%s' is array of %s"), *VarDef.Name, *VarDef.Type));
+		}
+
 		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
 
 		if (bSuccess)
@@ -2972,7 +2984,8 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 				}
 			}
 
-			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s%s)"), *VarDef.Name, *VarDef.Type,
+				!VarDef.Container.IsEmpty() ? *FString::Printf(TEXT(" [%s]"), *VarDef.Container) : TEXT("")));
 		}
 		else
 		{
@@ -3436,6 +3449,12 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 	{
 		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
 
+		// v7.8.51: Set container type for array variables
+		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Array;
+		}
+
 		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
 
 		if (bSuccess)
@@ -3459,7 +3478,8 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 				}
 			}
 
-			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s%s)"), *VarDef.Name, *VarDef.Type,
+				!VarDef.Container.IsEmpty() ? *FString::Printf(TEXT(" [%s]"), *VarDef.Container) : TEXT("")));
 		}
 	}
 
@@ -3518,6 +3538,11 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		{
 			ComponentClass = FindObject<UClass>(nullptr, TEXT("/Script/UMG.WidgetComponent"));
 		}
+		else if (CompDef.Type == TEXT("ProjectileMovementComponent"))
+		{
+			// v7.8.51: Add ProjectileMovementComponent support for projectile homing
+			ComponentClass = FindObject<UClass>(nullptr, TEXT("/Script/Engine.ProjectileMovementComponent"));
+		}
 		else
 		{
 			// Try to find custom component class
@@ -3531,6 +3556,20 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 			{
 				Blueprint->SimpleConstructionScript->AddNode(NewNode);
 				LogGeneration(FString::Printf(TEXT("  Added component: %s (%s)"), *CompDef.Name, *CompDef.Type));
+
+				// v7.8.51: Also register component as Blueprint variable for VariableGet access
+				// Without this, VariableGet nodes cannot access SCS components before compilation
+				FName VarName = FName(*CompDef.Name);
+				if (FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, VarName) == INDEX_NONE)
+				{
+					FEdGraphPinType ComponentPinType;
+					ComponentPinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+					ComponentPinType.PinSubCategoryObject = ComponentClass;
+
+					FBlueprintEditorUtils::AddMemberVariable(Blueprint, VarName, ComponentPinType);
+					LogGeneration(FString::Printf(TEXT("    Registered as variable for graph access: %s (%s)"),
+						*CompDef.Name, *ComponentClass->GetName()));
+				}
 			}
 		}
 		else
@@ -9885,7 +9924,8 @@ bool FEventGraphGenerator::ValidateEventGraph(
 		TEXT("VariableGet"), TEXT("VariableSet"), TEXT("PropertyGet"), TEXT("PropertySet"),
 		TEXT("Sequence"), TEXT("Delay"), TEXT("PrintString"), TEXT("DynamicCast"),
 		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("SpawnNPC"), TEXT("BreakStruct"), TEXT("MakeArray"),
-		TEXT("GetArrayItem"), TEXT("Self"), TEXT("ConstructObjectFromClass"),
+		TEXT("GetArrayItem"), TEXT("ArrayContains"), TEXT("ArrayAdd"), TEXT("ArrayClear"),  // v7.8.52: Array operations
+		TEXT("Self"), TEXT("ConstructObjectFromClass"),
 		TEXT("MakeLiteralBool"), TEXT("MakeLiteralFloat"), TEXT("MakeLiteralInt"), TEXT("MakeLiteralByte"), TEXT("MakeLiteralString"),
 		TEXT("CallParent"), TEXT("Return"), TEXT("FunctionResult"), TEXT("AddDelegate"), TEXT("BindDelegate"),
 		TEXT("AbilityTaskSpawnProjectile"), TEXT("AbilityTaskRepeat"), TEXT("AbilityTaskWaitDelay"), TEXT("AbilityTaskWaitGameplayEvent"),
@@ -10442,6 +10482,21 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("GetArrayItem"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateGetArrayItemNode(EventGraph, NodeDef);
+		}
+		// v7.8.52: ArrayContains - check if array contains item (pure function)
+		else if (NodeDef.Type.Equals(TEXT("ArrayContains"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateArrayContainsNode(EventGraph, NodeDef);
+		}
+		// v7.8.52: ArrayAdd - add item to array (returns index)
+		else if (NodeDef.Type.Equals(TEXT("ArrayAdd"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateArrayAddNode(EventGraph, NodeDef);
+		}
+		// v7.8.52: ArrayClear - clear all items from array
+		else if (NodeDef.Type.Equals(TEXT("ArrayClear"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateArrayClearNode(EventGraph, NodeDef);
 		}
 		// v2.7.8: Self - reference to the blueprint self
 		else if (NodeDef.Type.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
@@ -12928,12 +12983,58 @@ UK2Node* FEventGraphGenerator::CreateVariableGetNode(
 	}
 	else
 	{
-		GetNode->VariableReference.SetSelfMember(FName(*(*VarNamePtr)));
+		// v7.8.51: Check if this is an SCS component variable before using SetSelfMember
+		// SCS components are added via SimpleConstructionScript and need special handling
+		FName VarName = FName(*(*VarNamePtr));
+		bool bFoundSCSComponent = false;
+		UClass* ComponentClass = nullptr;
+
+		if (Blueprint->SimpleConstructionScript)
+		{
+			TArray<USCS_Node*> AllNodes = Blueprint->SimpleConstructionScript->GetAllNodes();
+			for (USCS_Node* SCSNode : AllNodes)
+			{
+				if (SCSNode && SCSNode->GetVariableName() == VarName)
+				{
+					bFoundSCSComponent = true;
+					ComponentClass = SCSNode->ComponentClass;
+					LogGeneration(FString::Printf(TEXT("VariableGet '%s': Found SCS component '%s' of type '%s'"),
+						*NodeDef.Id, *VarName.ToString(), ComponentClass ? *ComponentClass->GetName() : TEXT("Unknown")));
+					break;
+				}
+			}
+		}
+
+		GetNode->VariableReference.SetSelfMember(VarName);
+
+		if (bFoundSCSComponent)
+		{
+			LogGeneration(FString::Printf(TEXT("  SCS component variable will be resolved at pin allocation")));
+		}
 	}
 
 	GetNode->CreateNewGuid();
 	GetNode->PostPlacedNewNode();
 	GetNode->AllocateDefaultPins();
+
+	// v7.8.51: Log output pins for SCS component debugging
+	if (GetNode->Pins.Num() == 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  WARNING: VariableGet '%s' has no pins after allocation"), *NodeDef.Id));
+	}
+	else
+	{
+		FString OutputPins;
+		for (UEdGraphPin* Pin : GetNode->Pins)
+		{
+			if (Pin && Pin->Direction == EGPD_Output)
+			{
+				if (!OutputPins.IsEmpty()) OutputPins += TEXT(", ");
+				OutputPins += Pin->PinName.ToString();
+			}
+		}
+		LogGeneration(FString::Printf(TEXT("  VariableGet '%s' output pins: [%s]"), *NodeDef.Id, *OutputPins));
+	}
 
 	return GetNode;
 }
@@ -13416,6 +13517,96 @@ UK2Node* FEventGraphGenerator::CreateGetArrayItemNode(
 	LogGeneration(FString::Printf(TEXT("GetArrayItem node '%s': Created"), *NodeDef.Id));
 
 	return GetItemNode;
+}
+
+// v7.8.52: ArrayContains - check if array contains item (pure function)
+// Uses UK2Node_CallArrayFunction for proper wildcard type handling
+// Pins: TargetArray (input array), ItemToFind (input, type matches array element), ReturnValue (bool)
+UK2Node* FEventGraphGenerator::CreateArrayContainsNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// Find the Array_Contains function from KismetArrayLibrary
+	UFunction* ContainsFunc = UKismetArrayLibrary::StaticClass()->FindFunctionByName(FName(TEXT("Array_Contains")));
+
+	if (!ContainsFunc)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ARRAY_CONTAINS_NOT_FOUND] Array_Contains function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Use UK2Node_CallArrayFunction for proper array type propagation
+	UK2Node_CallArrayFunction* ArrayNode = NewObject<UK2Node_CallArrayFunction>(Graph);
+	Graph->AddNode(ArrayNode, false, false);
+
+	ArrayNode->SetFromFunction(ContainsFunc);
+	ArrayNode->CreateNewGuid();
+	ArrayNode->PostPlacedNewNode();
+	ArrayNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("ArrayContains node '%s': Created (pure function - no exec pins)"), *NodeDef.Id));
+
+	return ArrayNode;
+}
+
+// v7.8.52: ArrayAdd - add item to array
+// Uses UK2Node_CallArrayFunction for proper wildcard type handling
+// Pins: execute (input), TargetArray (ref input), NewItem (input), then (output), ReturnValue (int32 - new index)
+UK2Node* FEventGraphGenerator::CreateArrayAddNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// Find the Array_Add function from KismetArrayLibrary
+	UFunction* AddFunc = UKismetArrayLibrary::StaticClass()->FindFunctionByName(FName(TEXT("Array_Add")));
+
+	if (!AddFunc)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ARRAY_ADD_NOT_FOUND] Array_Add function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Use UK2Node_CallArrayFunction for proper array type propagation
+	UK2Node_CallArrayFunction* ArrayNode = NewObject<UK2Node_CallArrayFunction>(Graph);
+	Graph->AddNode(ArrayNode, false, false);
+
+	ArrayNode->SetFromFunction(AddFunc);
+	ArrayNode->CreateNewGuid();
+	ArrayNode->PostPlacedNewNode();
+	ArrayNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("ArrayAdd node '%s': Created"), *NodeDef.Id));
+
+	return ArrayNode;
+}
+
+// v7.8.52: ArrayClear - clear all items from array
+// Uses UK2Node_CallArrayFunction for proper array type handling
+// Pins: execute (input), TargetArray (ref input), then (output)
+UK2Node* FEventGraphGenerator::CreateArrayClearNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// Find the Array_Clear function from KismetArrayLibrary
+	UFunction* ClearFunc = UKismetArrayLibrary::StaticClass()->FindFunctionByName(FName(TEXT("Array_Clear")));
+
+	if (!ClearFunc)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ARRAY_CLEAR_NOT_FOUND] Array_Clear function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Use UK2Node_CallArrayFunction for proper array type handling
+	UK2Node_CallArrayFunction* ArrayNode = NewObject<UK2Node_CallArrayFunction>(Graph);
+	Graph->AddNode(ArrayNode, false, false);
+
+	ArrayNode->SetFromFunction(ClearFunc);
+	ArrayNode->CreateNewGuid();
+	ArrayNode->PostPlacedNewNode();
+	ArrayNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("ArrayClear node '%s': Created"), *NodeDef.Id));
+
+	return ArrayNode;
 }
 
 // v2.7.8: Self - reference to the blueprint self
@@ -15512,6 +15703,26 @@ UEdGraphPin* FEventGraphGenerator::FindPinByName(
 	{
 		SearchNames.Add(TEXT("Array"));
 		SearchNames.Add(TEXT("InArray"));
+	}
+
+	// v7.8.52: Array function pin aliases (ArrayContains, ArrayAdd, ArrayClear)
+	if (PinName.Equals(TEXT("TargetArray"), ESearchCase::IgnoreCase))
+	{
+		SearchNames.Add(TEXT("TargetArray"));
+		SearchNames.Add(TEXT("Target Array"));
+		SearchNames.Add(TEXT("Array"));  // Some nodes may just use "Array"
+	}
+	else if (PinName.Equals(TEXT("ItemToFind"), ESearchCase::IgnoreCase))
+	{
+		SearchNames.Add(TEXT("ItemToFind"));
+		SearchNames.Add(TEXT("Item To Find"));
+		SearchNames.Add(TEXT("Item"));
+	}
+	else if (PinName.Equals(TEXT("NewItem"), ESearchCase::IgnoreCase))
+	{
+		SearchNames.Add(TEXT("NewItem"));
+		SearchNames.Add(TEXT("New Item"));
+		SearchNames.Add(TEXT("Item"));
 	}
 
 	// Sequence pins

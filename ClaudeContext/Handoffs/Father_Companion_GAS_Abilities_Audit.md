@@ -830,7 +830,7 @@ GE.GrantedTags.Add(FString::Printf(TEXT("Effect.Father.FormState.%s"), *Form));
 | GA_FatherSymbiote | 3-layer guards + Event_EndAbility + bWasCancelled | Reference implementation (except CommitCooldown) |
 | GA_FatherAttack | Instant (Rule 1) | No Event_EndAbility needed |
 | GA_TurretShoot | Instant (Rule 1) | No Event_EndAbility needed |
-| GA_ProximityStrike | Instant (Rule 1) | No Event_EndAbility needed |
+| GA_ProximityStrike | Timer (Rule 2) | v7.8.50: Looping timer pattern, Event_EndAbility clears timer |
 | GA_DomeBurst | Instant (Rule 1) | No Event_EndAbility needed |
 | GA_ProtectiveDome | Toggle (Rule 3) | Event_EndAbility for cleanup |
 | GA_FatherExoskeletonSprint | Toggle (Rule 3) | Event_EndAbility for cleanup |

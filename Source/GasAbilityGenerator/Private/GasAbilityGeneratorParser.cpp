@@ -1851,6 +1851,11 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 						CurrentVar.Type = CurrentVar.Type + TEXT(":") + ClassValue;
 					}
 				}
+				// v7.8.51: Parse container type for array support
+				else if (TrimmedLine.StartsWith(TEXT("container:")))
+				{
+					CurrentVar.Container = GetLineValue(TrimmedLine);
+				}
 				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
 				{
 					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
@@ -2565,6 +2570,11 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 					{
 						CurrentVar.Type = CurrentVar.Type + TEXT(":") + ClassValue;
 					}
+				}
+				// v7.8.51: Parse container type for array support
+				else if (TrimmedLine.StartsWith(TEXT("container:")))
+				{
+					CurrentVar.Container = GetLineValue(TrimmedLine);
 				}
 				else if (TrimmedLine.StartsWith(TEXT("default:")))
 				{

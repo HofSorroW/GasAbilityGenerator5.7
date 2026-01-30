@@ -7224,13 +7224,16 @@ gameplay_abilities:
             function: IsValid
         - id: Branch_EnemyASCValid
           type: Branch
-        # Contract 24: MakeOutgoingSpec on ability (uses owner ASC = Father) - captures AttackDamage
-        # v7.8.51: Fixed - MakeOutgoingGameplayEffectSpec is a method on UGameplayAbility, use target_self
+        - id: GetFatherASC_ForSpec
+          type: VariableGet
+          properties:
+            variable_name: FatherASC
+        # Contract 24: MakeOutgoingSpec on Father ASC (source) - captures AttackDamage
+        # v7.8.51: MakeOutgoingGameplayEffectSpec requires ASC target connection
         - id: MakeGESpec
           type: CallFunction
           properties:
             function: MakeOutgoingGameplayEffectSpec
-            target_self: true
             param.GameplayEffectClass: GE_ProximityDamage
         - id: ApplyGE
           type: CallFunction
@@ -7369,7 +7372,9 @@ gameplay_abilities:
           to: [IsValid_EnemyASC, Object]
         - from: [IsValid_EnemyASC, ReturnValue]
           to: [Branch_EnemyASCValid, Condition]
-        # v7.8.51: Removed - MakeGESpec uses target_self (ability's owner ASC = Father)
+        # v7.8.51: Connect FatherASC to MakeGESpec Target (Contract 24 compliance)
+        - from: [GetFatherASC_ForSpec, FatherASC]
+          to: [MakeGESpec, Target]
         - from: [MakeGESpec, ReturnValue]
           to: [ApplyGE, Spec]
         - from: [GetEnemyASC, ReturnValue]

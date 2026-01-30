@@ -4,6 +4,41 @@ Complete version history for the GasAbilityGenerator plugin.
 
 ---
 
+## v7.8.52 - Contract 25 Compliance: Array Operation Node Types
+
+**Issue:** GA_FatherAttack uses `CachedHitActors` array for hit deduplication, but manifest used `CallFunction` nodes for `Contains`, `Add`, and `Clear` which don't exist as standard library functions.
+
+**Contract 25 Mandate:** Cannot simplify abilities - must enhance generator to support required patterns.
+
+### Generator Enhancement
+
+**New Node Types:**
+- `ArrayContains` - Check if array contains item (pure function, no exec pins)
+  - Pins: `TargetArray` (input), `ItemToFind` (input), `ReturnValue` (bool output)
+- `ArrayAdd` - Add item to array
+  - Pins: `execute` (input), `TargetArray` (ref input), `NewItem` (input), `then` (output), `ReturnValue` (int32 index)
+- `ArrayClear` - Clear all items from array
+  - Pins: `execute` (input), `TargetArray` (ref input), `then` (output)
+
+**Implementation:**
+- Uses `UK2Node_CallArrayFunction` for proper wildcard type propagation
+- Calls `UKismetArrayLibrary::Array_Contains`, `Array_Add`, `Array_Clear` functions
+- Added include for `K2Node_CallArrayFunction.h` and `KismetArrayLibrary.h`
+
+**Files Changed:**
+- GasAbilityGeneratorGenerators.cpp: Added CreateArrayContainsNode, CreateArrayAddNode, CreateArrayClearNode
+- GasAbilityGeneratorGenerators.h: Added function declarations
+
+### Manifest Updates (GA_FatherAttack)
+
+- `ContainsActor`: Changed from `type: CallFunction` to `type: ArrayContains`
+- `AddToCachedHitActors`: Changed from `type: CallFunction` to `type: ArrayAdd`
+- `ClearCachedHitActors`: Changed from `type: CallFunction` to `type: ArrayClear`
+- Fixed pin names: `Target`/`Item` → `TargetArray`/`ItemToFind`/`NewItem`
+- Updated exec flow: ArrayContains is pure, so Branch_Valid.True → Branch_NotCached directly
+
+---
+
 ## v7.8.51 - Blueprint Variable Support for PropertyGet/PropertySet + Manifest Fixes
 
 **Issue:** PropertyGet/PropertySet nodes failed for Blueprint variables (CurrentForm, IsAttached, IsDeployed) on BP_FatherCompanion, causing GA form abilities to have missing connections.

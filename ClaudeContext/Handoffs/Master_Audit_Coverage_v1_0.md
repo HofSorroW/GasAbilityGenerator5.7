@@ -407,7 +407,7 @@ UnrealHeaderTool automatically adds `FUNC_BlueprintPure` to functions meeting AL
 | GA_StealthField | Rule 2, VTF-10 | COMPLIANT |
 | GA_FatherExoskeletonDash | Rule 2 | COMPLIANT |
 | GA_FatherExoskeletonSprint | Rule 3, VTF-10 | COMPLIANT |
-| GA_ProximityStrike | Rule 1, VTF-10 | COMPLIANT |
+| GA_ProximityStrike | Rule 2, VTF-10 | COMPLIANT (v7.8.50: Changed to looping timer) |
 | GA_FatherSacrifice | Special (INV-1) | COMPLIANT |
 | GA_TurretShoot | Rule 1 | COMPLIANT |
 | GA_FatherElectricTrap | Rule 1 | COMPLIANT |

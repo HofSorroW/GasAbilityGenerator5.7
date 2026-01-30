@@ -1046,12 +1046,14 @@ struct FManifestAbilityTagsDefinition
 
 /**
  * Actor blueprint variable definition
+ * v7.8.51: Added Container field for array support (container: Array in YAML)
  */
 struct FManifestActorVariableDefinition
 {
 	FString Name;
 	FString Type;
 	FString Class;  // Class name for Object/Class types
+	FString Container;  // v7.8.51: "Array", "Set", "Map" or empty for single value
 	FString DefaultValue;
 	bool bReplicated = false;
 	bool bInstanceEditable = false;
@@ -1062,6 +1064,7 @@ struct FManifestActorVariableDefinition
 		uint64 Hash = GetTypeHash(Name);
 		Hash ^= GetTypeHash(Type) << 4;
 		Hash ^= GetTypeHash(Class) << 8;
+		Hash ^= GetTypeHash(Container) << 10;  // v7.8.51: Include container in hash
 		Hash ^= GetTypeHash(DefaultValue) << 12;
 		Hash ^= (bReplicated ? 1ULL : 0ULL) << 16;
 		Hash ^= (bInstanceEditable ? 1ULL : 0ULL) << 17;

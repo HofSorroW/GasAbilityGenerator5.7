@@ -918,6 +918,24 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v7.8.52: ArrayContains - check if array contains item (pure function)
+	// Pins: TargetArray, ItemToFind, ReturnValue (bool)
+	static UK2Node* CreateArrayContainsNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// v7.8.52: ArrayAdd - add item to array
+	// Pins: execute, TargetArray, NewItem, then, ReturnValue (int32)
+	static UK2Node* CreateArrayAddNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// v7.8.52: ArrayClear - clear all items from array
+	// Pins: execute, TargetArray, then
+	static UK2Node* CreateArrayClearNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
 	// v2.7.8: Self - reference to the blueprint self
 	static UK2Node* CreateSelfNode(
 		UEdGraph* Graph,
