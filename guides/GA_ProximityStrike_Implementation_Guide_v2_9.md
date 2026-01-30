@@ -1,5 +1,5 @@
 # Father Companion - GA_ProximityStrike Implementation Guide
-## VERSION 2.10 - Contract 24/27 Compliant
+## VERSION 2.11 - Contract 24/27 Compliant, Knockback Removed
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -12,8 +12,8 @@
 | Ability Type | Passive AOE Damage |
 | Parent Class | NarrativeGameplayAbility |
 | Form | Symbiote (Full Body Merge) |
-| Input | Q Key (Narrative.Input.Ability1) - Symbiote-gated |
-| Version | 2.10 |
+| Input | Passive (activated by GA_FatherSymbiote) |
+| Version | 2.11 |
 | Granting Method | EquippableItem (BP_FatherSymbioteForm) |
 | Activation Method | Player Q input (INV-INPUT-1 compliant) |
 
@@ -47,7 +47,6 @@ GA_ProximityStrike is a passive AOE damage ability that automatically damages al
 - AOE Damage: Damages all enemies within 400 unit radius
 - Rapid Ticks: Deals damage every 0.5 seconds
 - Unlimited Targets: No cap on simultaneous targets
-- Knockback: Small push effect on each tick
 - Form Restriction: Only active during Symbiote form
 - Contract 24 Compliant: Uses NarrativeDamageExecCalc with captured AttackDamage attribute (NOT SetByCaller)
 - Hierarchical Tag: Uses Ability.Father.Symbiote.ProximityStrike for blanket cancel support
@@ -70,7 +69,6 @@ In Symbiote form, the father fully merges with the player body, creating a berse
 | Tick Rate | 0.5 seconds |
 | Damage Radius | 400 units |
 | Max Targets | Unlimited |
-| Knockback Force | 200 units |
 | Form Required | Symbiote |
 | State Required | Merged, Recruited |
 | Form Duration | 30 seconds |
@@ -373,52 +371,43 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 1.4.6) Set **Default Value**: `400.0`
    - 1.4.7) Set **Category**: `Proximity Config`
 
-#### 1.5) Create KnockbackForce Variable
+#### 1.5) Create PlayerRef Variable
    - 1.5.1) Click **+ (Plus)** next to Variables
-   - 1.5.2) Name: `KnockbackForce`
-   - 1.5.3) **Variable Type**: `Float`
-   - 1.5.4) **Instance Editable**: Check
-   - 1.5.5) Click **Compile**
-   - 1.5.6) Set **Default Value**: `200.0`
-   - 1.5.7) Set **Category**: `Proximity Config`
+   - 1.5.2) Name: `PlayerRef`
+   - 1.5.3) **Variable Type**: `Actor` -> `Object Reference`
+   - 1.5.4) Click **Compile**
+   - 1.5.5) Set **Category**: `Runtime`
 
-#### 1.6) Create PlayerRef Variable
+#### 1.6) Create FatherRef Variable
    - 1.6.1) Click **+ (Plus)** next to Variables
-   - 1.6.2) Name: `PlayerRef`
+   - 1.6.2) Name: `FatherRef`
    - 1.6.3) **Variable Type**: `Actor` -> `Object Reference`
    - 1.6.4) Click **Compile**
    - 1.6.5) Set **Category**: `Runtime`
 
-#### 1.7) Create FatherRef Variable
+#### 1.7) Create PlayerASC Variable
    - 1.7.1) Click **+ (Plus)** next to Variables
-   - 1.7.2) Name: `FatherRef`
-   - 1.7.3) **Variable Type**: `Actor` -> `Object Reference`
+   - 1.7.2) Name: `PlayerASC`
+   - 1.7.3) **Variable Type**: Search `NarrativeAbilitySystemComponent`
+      - 1.7.3.1) Select: `NarrativeAbilitySystemComponent` -> `Object Reference`
    - 1.7.4) Click **Compile**
    - 1.7.5) Set **Category**: `Runtime`
 
-#### 1.8) Create PlayerASC Variable
+#### 1.8) Create DamageTimerHandle Variable
    - 1.8.1) Click **+ (Plus)** next to Variables
-   - 1.8.2) Name: `PlayerASC`
-   - 1.8.3) **Variable Type**: Search `NarrativeAbilitySystemComponent`
-      - 1.8.3.1) Select: `NarrativeAbilitySystemComponent` -> `Object Reference`
+   - 1.8.2) Name: `DamageTimerHandle`
+   - 1.8.3) **Variable Type**: Search `Timer Handle`
+      - 1.8.3.1) Select: `Timer Handle` (structure type)
    - 1.8.4) Click **Compile**
    - 1.8.5) Set **Category**: `Runtime`
 
-#### 1.9) Create DamageTimerHandle Variable
+#### 1.9) Create IsActive Variable
    - 1.9.1) Click **+ (Plus)** next to Variables
-   - 1.9.2) Name: `DamageTimerHandle`
-   - 1.9.3) **Variable Type**: Search `Timer Handle`
-      - 1.9.3.1) Select: `Timer Handle` (structure type)
+   - 1.9.2) Name: `IsActive`
+   - 1.9.3) **Variable Type**: `Boolean`
    - 1.9.4) Click **Compile**
-   - 1.9.5) Set **Category**: `Runtime`
-
-#### 1.10) Create IsActive Variable
-   - 1.10.1) Click **+ (Plus)** next to Variables
-   - 1.10.2) Name: `IsActive`
-   - 1.10.3) **Variable Type**: `Boolean`
-   - 1.10.4) Click **Compile**
-   - 1.10.5) Set **Default Value**: Unchecked (false)
-   - 1.10.6) Set **Category**: `Runtime`
+   - 1.9.5) Set **Default Value**: Unchecked (false)
+   - 1.9.6) Set **Category**: `Runtime`
 
 ### **2) Implement ActivateAbility Event**
 
@@ -659,53 +648,11 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
       - 8.4.3.1) **Target**: Connect Target ASC (from step 8.1)
       - 8.4.3.2) **Spec Handle**: Connect Make Outgoing Spec **Return Value**
 
-### **9) Apply Knockback to Each Enemy**
+### **9) Compile and Save**
 
-#### 9.1) Calculate Knockback Direction
-   - 9.1.1) From For Each **Array Element** pin:
-      - 9.1.1.1) Drag outward and search: `Get Actor Location`
-      - 9.1.1.2) Add **Get Actor Location** node (for enemy position)
-
-#### 9.2) Calculate Direction Away from Player
-   - 9.2.1) Add **Vector - Vector** (Subtract) node
-   - 9.2.2) Connect:
-      - 9.2.2.1) Enemy Location to **A** input
-      - 9.2.2.2) Player Location (from step 4.1) to **B** input
-
-#### 9.3) Normalize Direction
-   - 9.3.1) From Subtract Return Value:
-      - 9.3.1.1) Drag outward and search: `Normalize`
-      - 9.3.1.2) Add **Normalize** node
-
-#### 9.4) Scale by Knockback Force
-   - 9.4.1) Add **Vector * Float** (Multiply) node
-   - 9.4.2) Connect:
-      - 9.4.2.1) Normalize Return Value to vector input
-      - 9.4.2.2) **KnockbackForce** getter to float input
-
-#### 9.4) Cast to Character (Required)
-   - 9.4.1) From For Each **Array Element**:
-      - 9.4.1.1) Drag outward and search: `Cast To Character`
-      - 9.4.1.2) Add **Cast To Character** node
-   - 9.4.2) Array Element is AActor* but Launch Character requires ACharacter*
-
-#### 9.5) Apply Knockback Impulse
-   - 9.5.1) From Apply Gameplay Effect Spec (section 8.4) execution:
-      - 9.5.1.1) Connect to Cast To Character execution input
-   - 9.5.2) From Cast success execution pin:
-      - 9.5.2.1) Search: `Launch Character`
-      - 9.5.2.2) Add **Launch Character** node
-   - 9.5.3) Configure:
-      - 9.5.3.1) **Target**: Connect **As Character** pin from Cast node
-      - 9.5.3.2) **Launch Velocity**: Connect scaled knockback direction
-      - 9.5.3.3) **XY Override**: Unchecked
-      - 9.5.3.4) **Z Override**: Unchecked
-
-### **10) Compile and Save**
-
-#### 10.1) Save Function
-   - 10.1.1) Click **Compile** button
-   - 10.1.2) Click **Save** button
+#### 9.1) Save Function
+   - 9.1.1) Click **Compile** button
+   - 9.1.2) Click **Save** button
 
 ---
 
@@ -852,6 +799,20 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 ## **CHANGELOG**
 
+### **VERSION 2.11 - Knockback Removal**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Knockback Removed | Removed knockback feature per Erdem decision (Design Doc v1.3 already documented this) |
+| PHASE 5 Section 9 | Removed "Apply Knockback to Each Enemy" section entirely |
+| KnockbackForce Variable | Removed from Variables section and Variable Summary |
+| Input Method | Changed from "Q Key (Narrative.Input.Ability1)" to "Passive (activated by GA_FatherSymbiote)" |
+| Variable Numbering | Fixed incorrect numbering in PHASE 4 (1.5.x through 1.9.x) |
+
+---
+
 ### **VERSION 2.10 - Contract 24/27 Compliance**
 
 **Release Date:** January 2026
@@ -964,7 +925,6 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | Damage Per Tick | 40 (base) |
 | Damage Radius | 400 units |
 | Max Targets | Unlimited |
-| Knockback Effect | On each tick |
 
 ---
 
@@ -987,7 +947,6 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | DamagePerTick | Float | Proximity Config | Yes | 50.0 | Documentation only (Contract 24: actual damage from AttackDamage) |
 | TickRate | Float | Proximity Config | Yes | 0.5 | Seconds between damage ticks |
 | DamageRadius | Float | Proximity Config | Yes | 400.0 | AOE radius in units |
-| KnockbackForce | Float | Proximity Config | Yes | 200.0 | Push force on enemies |
 | PlayerRef | Actor Ref | Runtime | No | None | Merged player reference |
 | FatherRef | Actor Ref | Runtime | No | None | Father companion reference |
 | PlayerASC | NarrativeAbilitySystemComponent Ref | Runtime | No | None | Player ASC for validation |
@@ -1057,7 +1016,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 ---
 
-**END OF GA_PROXIMITYSTRIKE IMPLEMENTATION GUIDE v2.10**
+**END OF GA_PROXIMITYSTRIKE IMPLEMENTATION GUIDE v2.11**
 
 **Symbiote Form - Berserker AOE Damage Aura**
 

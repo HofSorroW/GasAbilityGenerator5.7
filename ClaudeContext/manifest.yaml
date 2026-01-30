@@ -3881,58 +3881,60 @@ gameplay_abilities:
             function: K2_CommitAbilityCooldown
             target_self: true
           position: [1500, 0]
-        # v7.8.49: Multi-hit HandleTargetData override
+        # v7.8.51: Multi-hit HandleTargetData override
+        # Fixed: Use GetActorsFromTargetData to get array of actors for ForEachLoop
+        # [MANIFEST] Pattern from GA_FatherLaserShot:4123-4246
         - id: Event_HandleTargetData
           type: Event
           properties:
             event_name: HandleTargetData
           position: [0, 400]
-        - id: GetTargetDataNum
+        - id: GetActorsFromTargetData
           type: CallFunction
           properties:
-            function: GetDataCountFromTargetData
+            function: GetActorsFromTargetData
             class: AbilitySystemBlueprintLibrary
           position: [300, 400]
         - id: ForEachLoop
           type: ForEachLoop
           position: [600, 400]
-        - id: GetHitActor
-          type: CallFunction
-          properties:
-            function: GetHitResultFromTargetData
-            class: AbilitySystemBlueprintLibrary
-          position: [900, 400]
+        # ForEachLoop.ArrayElement is the hit actor directly
         - id: IsValid_HitActor
           type: CallFunction
           properties:
             function: IsValid
             class: KismetSystemLibrary
-          position: [1200, 400]
+          position: [900, 400]
         - id: Branch_Valid
           type: Branch
-          position: [1500, 400]
+          position: [1200, 400]
         - id: GetCachedHitActors
           type: VariableGet
           properties:
             variable_name: CachedHitActors
-          position: [1800, 500]
+          position: [1500, 500]
         # v7.8.52: ArrayContains is a PURE function - no exec pins
         - id: ContainsActor
           type: ArrayContains
-          position: [1800, 400]
+          position: [1500, 400]
         - id: Branch_NotCached
           type: Branch
-          position: [2100, 400]
+          position: [1800, 400]
         # v7.8.52: ArrayAdd - adds item to array
         - id: AddToCachedHitActors
           type: ArrayAdd
-          position: [2400, 400]
+          position: [2100, 400]
+        - id: GetCachedHitActors_Add
+          type: VariableGet
+          properties:
+            variable_name: CachedHitActors
+          position: [2100, 500]
         - id: CallParentHandleTargetData
           type: CallFunction
           properties:
             function: HandleTargetData
             target_self: true
-          position: [2700, 400]
+          position: [2400, 400]
         # v7.8.49: EndAbility cache clear
         - id: Event_EndAbility
           type: Event
@@ -3966,21 +3968,21 @@ gameplay_abilities:
           to: [PlayMontage, AnimMontage]
         - from: [PlayMontage, Exec]
           to: [CommitCooldown, Exec]
-        # Multi-hit HandleTargetData flow
+        # v7.8.51: Multi-hit HandleTargetData flow
+        # [MANIFEST] Pattern from GA_FatherLaserShot - GetActorsFromTargetData returns array
         - from: [Event_HandleTargetData, Then]
-          to: [ForEachLoop, Exec]
+          to: [GetActorsFromTargetData, Exec]
         - from: [Event_HandleTargetData, TargetData]
-          to: [GetTargetDataNum, TargetData]
-        - from: [GetTargetDataNum, ReturnValue]
+          to: [GetActorsFromTargetData, TargetData]
+        - from: [GetActorsFromTargetData, Exec]
+          to: [ForEachLoop, Exec]
+        - from: [GetActorsFromTargetData, ReturnValue]
           to: [ForEachLoop, Array]
+        # ForEachLoop.ArrayElement is the hit actor directly
         - from: [ForEachLoop, LoopBody]
-          to: [GetHitActor, Exec]
-        - from: [ForEachLoop, ArrayElement]
-          to: [GetHitActor, Index]
-        - from: [GetHitActor, HitActor]
-          to: [IsValid_HitActor, Object]
-        - from: [GetHitActor, Exec]
           to: [Branch_Valid, Exec]
+        - from: [ForEachLoop, ArrayElement]
+          to: [IsValid_HitActor, Object]
         - from: [IsValid_HitActor, ReturnValue]
           to: [Branch_Valid, Condition]
         # v7.8.52: ArrayContains is PURE (no exec) - exec goes directly to Branch_NotCached
@@ -3989,16 +3991,16 @@ gameplay_abilities:
         # ArrayContains data connections (pure function)
         - from: [GetCachedHitActors, CachedHitActors]
           to: [ContainsActor, TargetArray]
-        - from: [GetHitActor, HitActor]
+        - from: [ForEachLoop, ArrayElement]
           to: [ContainsActor, ItemToFind]
         - from: [ContainsActor, ReturnValue]
           to: [Branch_NotCached, Condition]
         # ArrayAdd exec and data connections
         - from: [Branch_NotCached, False]
           to: [AddToCachedHitActors, execute]
-        - from: [GetCachedHitActors, CachedHitActors]
+        - from: [GetCachedHitActors_Add, CachedHitActors]
           to: [AddToCachedHitActors, TargetArray]
-        - from: [GetHitActor, HitActor]
+        - from: [ForEachLoop, ArrayElement]
           to: [AddToCachedHitActors, NewItem]
         - from: [AddToCachedHitActors, then]
           to: [CallParentHandleTargetData, Exec]
@@ -7038,8 +7040,7 @@ gameplay_abilities:
     net_execution_policy: ServerOnly
     tags:
       ability_tags:
-        - Ability.Father.ProximityStrike
-        - Ability.Father.Symbiote.ProximityStrike
+        - Ability.Father.Symbiote.ProximityStrike  # v7.8.51: Removed redundant flat tag per guide
       activation_owned_tags:
         - Father.State.ProximityActive
       activation_blocked_tags:
@@ -7119,10 +7120,10 @@ gameplay_abilities:
           type: VariableSet
           properties:
             variable_name: IsActive
+        # v7.8.51: Fixed - use MakeLiteralBool instead of MakeLiteral
         - id: MakeLiteral_True
-          type: MakeLiteral
+          type: MakeLiteralBool
           properties:
-            literal_type: Boolean
             value: true
         - id: GetSelf
           type: Self
@@ -7130,20 +7131,17 @@ gameplay_abilities:
           type: VariableGet
           properties:
             variable_name: TickRate
+        # v7.8.51: Fixed - use MakeLiteralBool for looping flag
         - id: MakeLiteral_Looping
-          type: MakeLiteral
+          type: MakeLiteralBool
           properties:
-            literal_type: Boolean
             value: true
-        - id: MakeLiteral_FunctionName
-          type: MakeLiteral
-          properties:
-            literal_type: String
-            value: DealProximityDamage
+        # v7.8.51: Fixed - set FunctionName as param (no MakeLiteralName node type)
         - id: SetTimerByFunctionName
           type: CallFunction
           properties:
             function: K2_SetTimer
+            param.FunctionName: DealProximityDamage
         - id: SetDamageTimerHandle
           type: VariableSet
           properties:
@@ -7203,12 +7201,13 @@ gameplay_abilities:
           type: VariableGet
           properties:
             variable_name: FatherRef
+        # v7.8.51: Fixed - generator uses num_inputs, not num_elements
         - id: MakeIgnoreArray
           type: MakeArray
           properties:
             array_type: object
             class: Actor
-            num_elements: 2
+            num_inputs: 2
         - id: SphereOverlap
           type: CallFunction
           properties:
@@ -7225,15 +7224,13 @@ gameplay_abilities:
             function: IsValid
         - id: Branch_EnemyASCValid
           type: Branch
-        - id: GetFatherASC_ForSpec
-          type: VariableGet
-          properties:
-            variable_name: FatherASC
-        # Contract 24: MakeOutgoingSpec on Father ASC (source) - captures AttackDamage
+        # Contract 24: MakeOutgoingSpec on ability (uses owner ASC = Father) - captures AttackDamage
+        # v7.8.51: Fixed - MakeOutgoingGameplayEffectSpec is a method on UGameplayAbility, use target_self
         - id: MakeGESpec
           type: CallFunction
           properties:
             function: MakeOutgoingGameplayEffectSpec
+            target_self: true
             param.GameplayEffectClass: GE_ProximityDamage
         - id: ApplyGE
           type: CallFunction
@@ -7248,10 +7245,10 @@ gameplay_abilities:
           type: VariableSet
           properties:
             variable_name: IsActive
+        # v7.8.51: Fixed - use MakeLiteralBool instead of MakeLiteral
         - id: MakeLiteral_False
-          type: MakeLiteral
+          type: MakeLiteralBool
           properties:
-            literal_type: Boolean
             value: false
         - id: GetTimerHandle
           type: VariableGet
@@ -7303,8 +7300,9 @@ gameplay_abilities:
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetOwnerPlayer, Target]
+        # v7.8.51: Fixed - GetAbilitySystemComponent has Actor pin, not Target
         - from: [CastToFather, AsBP_FatherCompanion]
-          to: [GetFatherASC, Target]
+          to: [GetFatherASC, Actor]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
@@ -7317,8 +7315,7 @@ gameplay_abilities:
           to: [SetIsActive_True, IsActive]
         - from: [GetSelf, self]
           to: [SetTimerByFunctionName, Object]
-        - from: [MakeLiteral_FunctionName, ReturnValue]
-          to: [SetTimerByFunctionName, FunctionName]
+        # v7.8.51: FunctionName set via param.FunctionName, no connection needed
         - from: [GetTickRate, TickRate]
           to: [SetTimerByFunctionName, Time]
         - from: [MakeLiteral_Looping, ReturnValue]
@@ -7365,14 +7362,14 @@ gameplay_abilities:
           to: [SphereOverlap, ActorsToIgnore]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
+        # v7.8.51: Fixed - GetAbilitySystemComponent has Actor pin, not Target
         - from: [ForEachActor, ArrayElement]
-          to: [GetEnemyASC, Target]
+          to: [GetEnemyASC, Actor]
         - from: [GetEnemyASC, ReturnValue]
           to: [IsValid_EnemyASC, Object]
         - from: [IsValid_EnemyASC, ReturnValue]
           to: [Branch_EnemyASCValid, Condition]
-        - from: [GetFatherASC_ForSpec, FatherASC]
-          to: [MakeGESpec, Target]
+        # v7.8.51: Removed - MakeGESpec uses target_self (ability's owner ASC = Father)
         - from: [MakeGESpec, ReturnValue]
           to: [ApplyGE, Spec]
         - from: [GetEnemyASC, ReturnValue]
