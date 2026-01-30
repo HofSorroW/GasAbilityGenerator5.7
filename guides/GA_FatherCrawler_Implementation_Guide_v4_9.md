@@ -1,14 +1,15 @@
 # GA_FatherCrawler - Crawler Form Ability Implementation Guide
-## VERSION 4.8 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Updated)
+## VERSION 4.9 - Audit Clarifications (Manifest Traceability)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.8
+**Version:** 4.9
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
 **Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Audit_v1_0.md
+**Manifest Reference:** `manifest.yaml` line ~915 (GA_FatherCrawler definition)
 
 ---
 
@@ -36,6 +37,7 @@ This guide provides step-by-step instructions for implementing GA_FatherCrawler,
 - Detached from player (free movement)
 - Default form via bActivateAbilityOnGranted
 - **Form identity via GE_CrawlerState** (Infinite-duration GE grants Effect.Father.FormState.Crawler)
+- **IMPORTANT:** Default activation depends on `AC_FatherCompanion.startup_effects` including `GE_CrawlerState` to establish form identity at spawn
 - Mutual exclusivity via Cancel Abilities With Tag
 - **Transition prelude removes prior form state before applying new** (Option B)
 - 5-second transition animation with VFX (when switching TO Crawler)
@@ -847,6 +849,7 @@ GA_FatherCrawler is a baseline ability granted via the Narrative Pro AbilityConf
 
 | Version | Changes |
 |---------|---------|
+| 4.9 | **Audit Clarifications (2026-01-30):** Added manifest reference (line ~915) for traceability. Added explicit note about `AC_FatherCompanion.startup_effects` dependency for default form identity at spawn. Version bump for documentation improvements. |
 | 4.8 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Updated 3-layer guards to use LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Removed enum-based Guard 2, now uses tag-based phase/identity checks per GAS truth source principle. |
 | 4.7 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 6 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Crawler, (3) HasMatchingGameplayTag(Effect.Father.FormState.Crawler). Note: Crawler uses form identity GE tag as proxy since it has no Activation Owned Tag. Renumbered subsequent sections 7-13. |
 | 4.6 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide complies with: INV-1 (no transition invulnerability), Rule 2 (Event_EndAbility required for delays), Rule 4 (First Activation path merges into setup chain). Added post-delay guards and Event_EndAbility handler. Updated Technical Reference to v6.2. |

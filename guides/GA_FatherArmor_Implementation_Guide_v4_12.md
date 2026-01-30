@@ -1,15 +1,16 @@
 # GA_FatherArmor - Armor Form Ability Implementation Guide
-## VERSION 4.11 - NL-GUARD-IDENTITY L1 Compliant (3-Layer Guards Updated)
+## VERSION 4.12 - Audit Clarifications (EndAbility Order, Manifest Traceability)
 ## For Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 4.11
+**Version:** 4.12
 **Date:** January 2026
-**Last Audit:** 2026-01-24 (Claude-GPT dual audit v5.0 - NL-GUARD-IDENTITY L1)
+**Last Audit:** 2026-01-30 (Comprehensive multi-level audit v1.0)
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
 **Implementation:** Blueprint Only
 **Parent Class:** NarrativeGameplayAbility
 **Architecture:** Option B (GE-Based Form Identity) - See Form_State_Architecture_Audit_v1_0.md
+**Manifest Reference:** `manifest.yaml` line ~1368 (GA_FatherArmor definition)
 
 ---
 
@@ -1296,9 +1297,12 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 | 8 | Is Valid (Owner) | Validate player exists |
 | 9 | Get Character Movement | Access movement component |
 | 10 | Set Max Walk Speed | Restore original speed |
-| 11 | Form Tags Auto-Removed | Activation Owned Tags cleanup (automatic) |
-| 12 | Stat/Ability Cleanup | Handled by EquippableItem HandleUnequip |
-| 13 | Set Is Attached (false) | Reset attachment state |
+| 11 | K2_DetachFromActor | Detach Father from player |
+| 12 | Form Tags Auto-Removed | Activation Owned Tags cleanup (automatic) |
+| 13 | Stat/Ability Cleanup | Handled by EquippableItem HandleUnequip |
+| 14 | Set Is Attached (false) | Reset attachment state |
+
+> **IMPORTANT (v4.12):** Speed restoration (step 10) MUST occur BEFORE detachment (step 11). This ensures the player regains full mobility before Father physically separates. If detachment occurs first, there is a brief window where the player is still speed-penalized but Father is no longer providing armor protection.
 
 ---
 
@@ -1461,6 +1465,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 
 | Version | Changes |
 |---------|---------|
+| 4.12 | **Audit Clarifications (2026-01-30):** Added manifest reference (line ~1368) for traceability. Added K2_DetachFromActor step to EndAbility cleanup flow table. Added IMPORTANT note: speed restoration MUST occur BEFORE detachment to ensure player regains mobility before Father separates. Version bump for documentation improvements. |
 | 4.11 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Updated 3-layer guards to use LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Removed enum-based Guard 2, now uses tag-based phase/identity checks per GAS truth source principle. |
 | 4.10 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 5 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Armor, (3) HasMatchingGameplayTag(Father.State.Attached). Resolves MEDIUM severity audit finding "Guard (Branch_Valid) executes AFTER GE operations". Renumbered subsequent sections 6-15. |
 | 4.9 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |
