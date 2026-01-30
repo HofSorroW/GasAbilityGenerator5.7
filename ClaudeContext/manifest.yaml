@@ -313,6 +313,9 @@ tags:
     comment: Engineer turret muzzle flash VFX
   - tag: GameplayCue.Father.Death
     comment: Death effect VFX/SFX
+  # v7.8.50: Dome burst VFX cue (Contract 25 compliance - proper GAS pattern)
+  - tag: GameplayCue.Father.DomeBurst
+    comment: Armor dome burst expansion ring VFX
 
   # Form Tags (7)
   - tag: Father.Form.Armor
@@ -797,6 +800,14 @@ gameplay_effects:
     execution_calculations:
       - class: NarrativeDamageExecCalc
     asset_tag: Effect.ElectricWeb.Damage
+
+  # v7.8.50: Dash damage per Guide v3.10
+  - name: GE_DashDamage
+    folder: Effects/Damage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    asset_tag: Effect.Father.DashDamage
 
   # Utility Effects (7)
   - name: GE_MarkEffect
@@ -4020,8 +4031,20 @@ gameplay_abilities:
           properties:
             function: BP_ApplyGameplayEffectSpecToTarget
           position: [2700, 0]
-        # v7.8.47: MarkEnemy removed - requires ability activation pattern (future enhancement)
-        # P1-LS.4: Commit cooldown in success path (after damage)
+        # v7.8.48 P1-LS.X: Restore Mark integration (RF-1 fix)
+        # Get FatherRef and call MarkEnemy(HitActor) after damage
+        - id: GetFatherRefForMark
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2900, 0]
+        - id: CallMarkEnemy
+          type: CallFunction
+          properties:
+            function: MarkEnemy
+            class: BP_FatherCompanion
+          position: [3100, 0]
+        # P1-LS.4: Commit cooldown in success path (after mark)
         - id: CommitCooldown_Hit
           type: CallFunction
           properties:
@@ -4106,9 +4129,15 @@ gameplay_abilities:
           to: [ApplyDamage, self]
         - from: [GetTargetASC, ReturnValue]
           to: [ApplyDamage, Target]
-        # v7.8.47: Simplified - MarkEnemy removed (requires ability activation)
-        # Commit and end (hit path) - directly after damage
+        # v7.8.48 P1-LS.X: Restore Mark integration (RF-1 fix)
+        # Flow: ApplyDamage → CallMarkEnemy → CommitCooldown_Hit
         - from: [ApplyDamage, Exec]
+          to: [CallMarkEnemy, Exec]
+        - from: [GetFatherRefForMark, FatherRef]
+          to: [CallMarkEnemy, Target]
+        - from: [CastToCharacter, AsCharacter]
+          to: [CallMarkEnemy, TargetActor]
+        - from: [CallMarkEnemy, Exec]
           to: [CommitCooldown_Hit, Exec]
         - from: [CommitCooldown_Hit, Exec]
           to: [EndAbility_Hit, Exec]
@@ -4537,6 +4566,8 @@ gameplay_abilities:
   # GA_DomeBurst - Armor Active AOE Damage (player-owned instant)
   # NOTE: Runs on Player ASC, granted via EI_FatherArmorForm - no cross-ASC gates
   # v6.5: Added input_tag for Q-key manual activation (Narrative Pro input system)
+  # v7.8.50: Contract 24/24A compliance - removed SetByCaller (damage from AttackDamage attribute)
+  # v7.8.50: Added knockback (1000 units), VFX spawn, energy reset, FullyCharged tag removal
   - name: GA_DomeBurst
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -4560,16 +4591,23 @@ gameplay_abilities:
       - name: PlayerRef
         type: Object
         class: NarrativePlayerCharacter
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
       - name: BurstRadius
         type: Float
         default_value: 500.0
         instance_editable: true
-      - name: BurstDamage
+      # v7.8.50: BurstDamage removed - Contract 24/24A compliance
+      # Damage now comes from player's AttackDamage attribute via NarrativeDamageExecCalc
+      - name: KnockbackForce
         type: Float
-        default_value: 75.0
+        default_value: 1000.0
         instance_editable: true
+      # v7.8.50: BurstVFX variable removed - using param.SystemTemplate directly (generator limitation)
     event_graph:
       nodes:
+        # === SETUP ===
         - id: Event_Activate
           type: Event
           properties:
@@ -4597,11 +4635,17 @@ gameplay_abilities:
           properties:
             variable_name: PlayerRef
           position: [1200, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [1350, 0]
         - id: GetPlayerLocation
           type: CallFunction
           properties:
             function: K2_GetActorLocation
           position: [1500, 0]
+        # === SPHERE OVERLAP ===
         - id: GetRadius
           type: VariableGet
           properties:
@@ -4625,6 +4669,7 @@ gameplay_abilities:
           properties:
             function: SphereOverlapActors
           position: [1800, 0]
+        # === DAMAGE LOOP ===
         - id: ForEachActor
           type: ForEachLoop
           position: [2100, 0]
@@ -4647,6 +4692,7 @@ gameplay_abilities:
             function: GetAbilitySystemComponentFromActorInfo
             target_self: true
           position: [3000, 150]
+        # v7.8.50: Contract 24/24A - NO SetByCaller, damage from AttackDamage attribute
         - id: MakeGESpec
           type: CallFunction
           properties:
@@ -4654,66 +4700,178 @@ gameplay_abilities:
             target_self: true
             param.GameplayEffectClass: GE_DomeBurstDamage
           position: [3300, 0]
-        - id: GetDamage
-          type: VariableGet
-          properties:
-            variable_name: BurstDamage
-          position: [3300, 100]
-        - id: SetByCaller
-          type: CallFunction
-          properties:
-            function: AssignTagSetByCallerMagnitude
-          position: [3600, 0]
         - id: ApplyGE
           type: CallFunction
           properties:
             function: BP_ApplyGameplayEffectSpecToTarget
+          position: [3600, 0]
+        # === KNOCKBACK (v7.8.50) ===
+        - id: GetEnemyLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
           position: [3900, 0]
+        - id: GetPlayerLocation_KB
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [3900, 100]
+        - id: GetPlayerLoc_ForKB
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [4100, 100]
+        - id: SubtractVectors
+          type: CallFunction
+          properties:
+            function: Subtract_VectorVector
+            class: KismetMathLibrary
+          position: [4200, 0]
+        - id: NormalizeVector
+          type: CallFunction
+          properties:
+            function: Normal
+            class: KismetMathLibrary
+          position: [4400, 0]
+        - id: GetKnockbackForce
+          type: VariableGet
+          properties:
+            variable_name: KnockbackForce
+          position: [4400, 100]
+        - id: MultiplyVectorFloat
+          type: CallFunction
+          properties:
+            function: Multiply_VectorFloat
+            class: KismetMathLibrary
+          position: [4600, 0]
+        - id: CastToCharacter
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [4800, 0]
+        - id: LaunchCharacter
+          type: CallFunction
+          properties:
+            function: LaunchCharacter
+          position: [5000, 0]
+        # === POST-LOOP: VFX + RESET (v7.8.50) ===
+        # v7.8.50: Use GameplayCue (proper GAS pattern - generator doesn't support NiagaraSystem variables)
+        - id: MakeCueTag
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: GameplayCue.Father.DomeBurst
+          position: [1800, 300]
+        - id: ExecuteBurstCue
+          type: CallFunction
+          properties:
+            function: K2_ExecuteGameplayCue
+            target_self: true
+          position: [2100, 300]
+        # === ENERGY RESET (v7.8.50: INC-DOME-6) ===
+        - id: GetFatherRef_Reset
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2400, 300]
+        - id: MakeZeroEnergy
+          type: CallFunction
+          properties:
+            function: MakeLiteralDouble
+            class: KismetSystemLibrary
+            literal_value: 0.0
+          position: [2400, 400]
+        - id: SetDomeEnergyZero
+          type: PropertySet
+          properties:
+            property_name: DomeEnergy
+            target_class: BP_FatherCompanion
+          position: [2600, 300]
+        # === CLEAR FULLYCHARGED TAG (v7.8.50: INC-DOME-7) ===
+        - id: GetPlayerRef_Tag
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [2800, 400]
+        # v7.8.50: GetPlayerASC_Tag removed - RemoveLooseGameplayTags takes Actor directly
+        - id: MakeLiteralTag_Charged
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Father.Dome.FullyCharged
+          position: [3000, 450]
+        - id: MakeTagContainer_Charged
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+          position: [3200, 400]
+        - id: RemoveChargedTag
+          type: CallFunction
+          properties:
+            function: RemoveLooseGameplayTags
+            class: AbilitySystemBlueprintLibrary
+          position: [3400, 300]
+        # === COOLDOWN + END ===
         - id: CommitCooldown
           type: CallFunction
           properties:
             function: K2_CommitAbilityCooldown
             target_self: true
-          position: [2100, 200]
+          position: [3600, 300]
         - id: EndAbility
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [2400, 200]
+          position: [3800, 300]
       connections:
         # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - pure functions have no exec pins)
         - from: [Event_Activate, Then]
-          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
+          to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
           to: [SphereOverlap, Exec]
         - from: [SphereOverlap, Exec]
           to: [ForEachActor, Exec]
-        # v7.2: Direct exec - ActorHasTag is pure (no exec pins)
+        # === DAMAGE LOOP ===
         - from: [ForEachActor, LoopBody]
           to: [Branch_Enemy, Exec]
         - from: [Branch_Enemy, then]
           to: [MakeGESpec, Exec]
+        # v7.8.50: Contract 24/24A - MakeGESpec directly to ApplyGE (no SetByCaller)
         - from: [MakeGESpec, Exec]
-          to: [SetByCaller, Exec]
-        - from: [SetByCaller, Exec]
           to: [ApplyGE, Exec]
+        # === KNOCKBACK AFTER DAMAGE ===
+        - from: [ApplyGE, Exec]
+          to: [CastToCharacter, Exec]
+        - from: [CastToCharacter, Exec]
+          to: [LaunchCharacter, Exec]
+        # === POST-LOOP FLOW ===
         - from: [ForEachActor, Completed]
+          to: [ExecuteBurstCue, Exec]
+        - from: [ExecuteBurstCue, Exec]
+          to: [SetDomeEnergyZero, Exec]
+        - from: [SetDomeEnergyZero, Exec]
+          to: [RemoveChargedTag, Exec]
+        - from: [RemoveChargedTag, Exec]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
-        # Data flow
+        # === DATA FLOW: SETUP ===
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
         - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetOwnerPlayer, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
           to: [GetPlayerLocation, Target]
+        # === DATA FLOW: SPHERE OVERLAP ===
         - from: [GetPlayerLocation, ReturnValue]
           to: [SphereOverlap, SpherePos]
         - from: [GetRadius, BurstRadius]
@@ -4724,10 +4882,12 @@ gameplay_abilities:
           to: [SphereOverlap, ActorsToIgnore]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
+        # === DATA FLOW: ENEMY CHECK ===
         - from: [ForEachActor, ArrayElement]
           to: [HasTag, Target]
         - from: [HasTag, ReturnValue]
           to: [Branch_Enemy, Condition]
+        # === DATA FLOW: DAMAGE ===
         - from: [ForEachActor, ArrayElement]
           to: [GetEnemyASC, Actor]
         - from: [GetEnemyASC, ReturnValue]
@@ -4735,11 +4895,45 @@ gameplay_abilities:
         - from: [GetOwnASC, ReturnValue]
           to: [ApplyGE, self]
         - from: [MakeGESpec, ReturnValue]
-          to: [SetByCaller, SpecHandle]
-        - from: [GetDamage, BurstDamage]
-          to: [SetByCaller, Magnitude]
-        - from: [SetByCaller, ReturnValue]
           to: [ApplyGE, Spec]
+        # === DATA FLOW: KNOCKBACK ===
+        - from: [ForEachActor, ArrayElement]
+          to: [GetEnemyLocation, Target]
+        - from: [GetEnemyLocation, ReturnValue]
+          to: [SubtractVectors, A]
+        - from: [GetPlayerLocation_KB, PlayerRef]
+          to: [GetPlayerLoc_ForKB, Target]
+        - from: [GetPlayerLoc_ForKB, ReturnValue]
+          to: [SubtractVectors, B]
+        - from: [SubtractVectors, ReturnValue]
+          to: [NormalizeVector, A]
+        - from: [NormalizeVector, ReturnValue]
+          to: [MultiplyVectorFloat, A]
+        - from: [GetKnockbackForce, KnockbackForce]
+          to: [MultiplyVectorFloat, B]
+        - from: [ForEachActor, ArrayElement]
+          to: [CastToCharacter, Object]
+        - from: [CastToCharacter, AsCharacter]
+          to: [LaunchCharacter, Target]
+        - from: [MultiplyVectorFloat, ReturnValue]
+          to: [LaunchCharacter, LaunchVelocity]
+        # === DATA FLOW: VFX ===
+        # v7.8.50: Use GameplayCue (proper GAS pattern)
+        - from: [MakeCueTag, ReturnValue]
+          to: [ExecuteBurstCue, GameplayCueTag]
+        # === DATA FLOW: ENERGY RESET ===
+        - from: [GetFatherRef_Reset, FatherRef]
+          to: [SetDomeEnergyZero, Target]
+        - from: [MakeZeroEnergy, ReturnValue]
+          to: [SetDomeEnergyZero, DomeEnergy]
+        # === DATA FLOW: TAG REMOVAL ===
+        # v7.8.50: RemoveLooseGameplayTags takes Actor directly (not ASC)
+        - from: [GetPlayerRef_Tag, PlayerRef]
+          to: [RemoveChargedTag, Actor]
+        - from: [MakeLiteralTag_Charged, ReturnValue]
+          to: [MakeTagContainer_Charged, Tag]
+        - from: [MakeTagContainer_Charged, ReturnValue]
+          to: [RemoveChargedTag, GameplayTags]
 
 
   # GA_ProtectiveDome - Armor Passive Damage Absorption (player-owned toggle)
@@ -5304,9 +5498,10 @@ gameplay_abilities:
         type: Float
         default_value: 800.0
         instance_editable: true
+      # v7.8.50: Dash Duration per Guide v3.10 (0.5s)
       - name: DashDuration
         type: Float
-        default_value: 0.3
+        default_value: 0.5
         instance_editable: true
     event_graph:
       nodes:
@@ -5443,7 +5638,17 @@ gameplay_abilities:
         type: Float
         default_value: 0.0
         instance_editable: true
+      # v7.8.50: Sprint Speed per Guide v2.9 (1.75x = +75%)
       - name: SprintSpeedMultiplier
+        type: Float
+        default_value: 1.75
+        instance_editable: true
+      # v7.8.50: Sprint Jump Boost per Design Doc Section 2.3.3 (+50%)
+      - name: OriginalJumpZVelocity
+        type: Float
+        default_value: 0.0
+        instance_editable: true
+      - name: JumpBoostMultiplier
         type: Float
         default_value: 1.5
         instance_editable: true
@@ -5510,6 +5715,34 @@ gameplay_abilities:
             property_name: MaxWalkSpeed
             target_class: CharacterMovementComponent
           position: [2700, 0]
+        # v7.8.50: Sprint Jump Boost nodes (+50% per Design Doc)
+        - id: GetJumpZ
+          type: PropertyGet
+          properties:
+            property_name: JumpZVelocity
+            target_class: CharacterMovementComponent
+          position: [3000, 0]
+        - id: SetOrigJump
+          type: VariableSet
+          properties:
+            variable_name: OriginalJumpZVelocity
+          position: [3300, 0]
+        - id: GetJumpMultiplier
+          type: VariableGet
+          properties:
+            variable_name: JumpBoostMultiplier
+          position: [3300, 100]
+        - id: MultiplyJump
+          type: CallFunction
+          properties:
+            function: Multiply_DoubleDouble
+          position: [3600, 0]
+        - id: SetJumpZ
+          type: PropertySet
+          properties:
+            property_name: JumpZVelocity
+            target_class: CharacterMovementComponent
+          position: [3900, 0]
         - id: Event_EndAbility
           type: Event
           properties:
@@ -5537,6 +5770,18 @@ gameplay_abilities:
             property_name: MaxWalkSpeed
             target_class: CharacterMovementComponent
           position: [900, 400]
+        # v7.8.50: Sprint Jump Boost restore nodes
+        - id: GetOrigJump
+          type: VariableGet
+          properties:
+            variable_name: OriginalJumpZVelocity
+          position: [1200, 500]
+        - id: RestoreJump
+          type: PropertySet
+          properties:
+            property_name: JumpZVelocity
+            target_class: CharacterMovementComponent
+          position: [1200, 400]
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (impure nodes only - pure functions have no exec pins)
@@ -5548,6 +5793,11 @@ gameplay_abilities:
           to: [SetOrigSpeed, Exec]
         - from: [SetOrigSpeed, Exec]
           to: [SetMaxSpeed, Exec]
+        # v7.8.50: Sprint Jump Boost exec flow
+        - from: [SetMaxSpeed, Exec]
+          to: [SetOrigJump, Exec]
+        - from: [SetOrigJump, Exec]
+          to: [SetJumpZ, Exec]
         # Data flow - Cast
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
@@ -5572,9 +5822,25 @@ gameplay_abilities:
           to: [MultiplySpeed, B]
         - from: [MultiplySpeed, ReturnValue]
           to: [SetMaxSpeed, NewMaxWalkSpeed]
+        # v7.8.50: Data flow - Jump boost calculation
+        - from: [GetCharMov, CharacterMovement]
+          to: [GetJumpZ, Target]
+        - from: [GetCharMov, CharacterMovement]
+          to: [SetJumpZ, Target]
+        - from: [GetJumpZ, JumpZVelocity]
+          to: [SetOrigJump, OriginalJumpZVelocity]
+        - from: [GetJumpZ, JumpZVelocity]
+          to: [MultiplyJump, A]
+        - from: [GetJumpMultiplier, JumpBoostMultiplier]
+          to: [MultiplyJump, B]
+        - from: [MultiplyJump, ReturnValue]
+          to: [SetJumpZ, NewJumpZVelocity]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [RestoreSpeed, Exec]
+        # v7.8.50: Chain jump restore after speed restore
+        - from: [RestoreSpeed, Exec]
+          to: [RestoreJump, Exec]
         # Data flow - End
         - from: [GetPlayerRef_End, PlayerRef]
           to: [GetCharMov_End, Target]
@@ -5582,6 +5848,11 @@ gameplay_abilities:
           to: [RestoreSpeed, Target]
         - from: [GetOrigSpeed, OriginalMaxWalkSpeed]
           to: [RestoreSpeed, NewMaxWalkSpeed]
+        # v7.8.50: Data flow - Jump restore
+        - from: [GetCharMov_End, CharacterMovement]
+          to: [RestoreJump, Target]
+        - from: [GetOrigJump, OriginalJumpZVelocity]
+          to: [RestoreJump, NewJumpZVelocity]
 
   # GA_StealthField - Exoskeleton Stealth Invisibility (player-owned toggle)
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
@@ -5855,16 +6126,12 @@ gameplay_abilities:
         - State.BackstabReady
       # No activation_required_tags - universal ability, internal conditions handle gating
     variables:
-      - name: BackstabDamageMultiplier
-        type: Float
-        default_value: 2.0
-        instance_editable: true
       - name: TargetEnemy
         type: Object
         class: Actor
         instance_editable: true
     event_graph:
-      # Option 1: Input triggers condition check → applies 2x damage bonus to next attack
+      # Option 1: Input triggers condition check → applies +25 AttackRating bonus via GE_BackstabBonus
       # Flow: Activate → CheckBackstabCondition → Branch → Apply GE_BackstabBonus → EndAbility
       nodes:
         - id: Event_Activate
@@ -6344,7 +6611,8 @@ gameplay_abilities:
           to: [ApplyGE, Spec]
 
   # GA_FatherMark - Mark Enemy for Bonus Damage
-  # NOTE: Runs on Father ASC, only in Crawler form
+  # NOTE: Runs on Father ASC, only in Crawler and Engineer forms
+  # v7.8.48 P1-MK.X: Reads PendingMarkTarget from owner BP_FatherCompanion
   - name: GA_FatherMark
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -6356,7 +6624,7 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Marking
       # Mark works in both Crawler and Engineer forms (ERDEM DECISION)
-      # Called internally by attack abilities (GA_FatherAttack, GA_FatherLaserShot, GA_TurretShoot, GA_FatherElectricTrap)
+      # Called internally by attack abilities via BP_FatherCompanion.MarkEnemy()
       # P1-MK.1: Require Recruited state
       activation_required_tags:
         - Father.State.Recruited
@@ -6383,19 +6651,43 @@ gameplay_abilities:
           properties:
             event_name: K2_ActivateAbility
           position: [0, 0]
+        # v7.8.48 P1-MK.X: Get PendingMarkTarget from owner BP_FatherCompanion
+        - id: GetAvatarActor
+          type: CallFunction
+          properties:
+            function: GetAvatarActorFromActorInfo
+            target_self: true
+          position: [200, 0]
+        - id: CastToFather
+          type: DynamicCast
+          properties:
+            target_class: BP_FatherCompanion
+          position: [400, 0]
+        - id: GetPendingTarget
+          type: PropertyGet
+          properties:
+            property_name: PendingMarkTarget
+            target_class: BP_FatherCompanion
+          position: [600, 0]
+        - id: SetTargetEnemy
+          type: VariableSet
+          properties:
+            variable_name: TargetEnemy
+          position: [800, 0]
+        # Original validation flow continues
         - id: GetTarget
           type: VariableGet
           properties:
             variable_name: TargetEnemy
-          position: [300, 0]
+          position: [1000, 0]
         - id: IsValid
           type: CallFunction
           properties:
             function: IsValid
-          position: [600, 0]
+          position: [1200, 0]
         - id: Branch_Valid
           type: Branch
-          position: [900, 0]
+          position: [1500, 0]
         - id: GetEnemyASC
           type: CallFunction
           properties:
@@ -6467,9 +6759,23 @@ gameplay_abilities:
             target_self: true
           position: [1200, 200]
       connections:
-        # Exec flow (skip pure IsValid, VariableGet, and GetAbilitySystemComponent)
+        # v7.8.48 P1-MK.X: Exec flow - Get PendingMarkTarget from owner first
         - from: [Event_Activate, Then]
+          to: [CastToFather, Exec]
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, Exec]
+          to: [SetTargetEnemy, Exec]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetPendingTarget, Target]
+        - from: [GetPendingTarget, PendingMarkTarget]
+          to: [SetTargetEnemy, TargetEnemy]
+        - from: [SetTargetEnemy, Exec]
           to: [Branch_Valid, Exec]
+        # Cast failure - end ability
+        - from: [CastToFather, CastFailed]
+          to: [EndAbility_Invalid, Exec]
+        # Original exec flow continues
         - from: [Branch_Valid, True]
           to: [MakeGESpec, Exec]
         - from: [MakeGESpec, Exec]
@@ -6547,7 +6853,7 @@ gameplay_abilities:
         instance_editable: true
       - name: DormantDuration
         type: Float
-        default_value: 60.0
+        default_value: 180.0  # v7.8.49: Fixed 180s per Erdem (was 60s, design doc said 150-210s random)
         instance_editable: true
       - name: DormantTimerHandle
         type: TimerHandle
@@ -8295,6 +8601,116 @@ actor_blueprints:
         type: Bool
         default: false
         replicated: true
+      # v7.8.48 P1-BP.X: PendingMarkTarget for centralized Mark integration
+      - name: PendingMarkTarget
+        type: Object
+        class: Actor
+        replicated: false
+    # v7.8.48 P1-BP.X: MarkEnemy function for centralized Mark integration
+    # Called by attack abilities (GA_FatherLaserShot, GA_TurretShoot, GA_FatherElectricTrap)
+    # Sets PendingMarkTarget then activates GA_FatherMark
+    custom_functions:
+      - function_name: MarkEnemy
+        pure: false
+        inputs:
+          - name: TargetActor
+            type: Actor
+        outputs:
+          - name: MarkApplied
+            type: Boolean
+        nodes:
+          # Step 1: Validate target is valid and not self
+          - id: IsValidTarget
+            type: CallFunction
+            properties:
+              function: IsValid
+            position: [0, 0]
+          - id: GetSelf
+            type: Self
+            position: [0, 100]
+          - id: NotEqualSelf
+            type: CallFunction
+            properties:
+              function: NotEqual_ObjectObject
+              class: KismetMathLibrary
+            position: [200, 50]
+          - id: AndCheck
+            type: CallFunction
+            properties:
+              function: BooleanAND
+              class: KismetMathLibrary
+            position: [400, 0]
+          - id: Branch_Valid
+            type: Branch
+            position: [600, 0]
+          # Step 2: Set PendingMarkTarget
+          - id: SetPendingTarget
+            type: VariableSet
+            properties:
+              variable_name: PendingMarkTarget
+            position: [800, 0]
+          # Step 3: Get ASC and activate GA_FatherMark
+          - id: GetASC
+            type: CallFunction
+            properties:
+              function: GetAbilitySystemComponent
+              class: AbilitySystemBlueprintLibrary
+            position: [1000, 0]
+          - id: TryActivateMark
+            type: CallFunction
+            properties:
+              function: TryActivateAbilityByClass
+              class: AbilitySystemComponent
+              param.InAbilityToActivate: GA_FatherMark
+            position: [1200, 0]
+          # Step 4: Set literal bool for output
+          - id: MakeLiteralTrue
+            type: CallFunction
+            properties:
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+              param.Value: true
+            position: [1400, 0]
+          - id: MakeLiteralFalse
+            type: CallFunction
+            properties:
+              function: MakeLiteralBool
+              class: KismetSystemLibrary
+              param.Value: false
+            position: [800, 200]
+        connections:
+          # Validation flow - use FunctionEntry for input parameters
+          - from: [FunctionEntry, TargetActor]
+            to: [IsValidTarget, Object]
+          - from: [FunctionEntry, TargetActor]
+            to: [NotEqualSelf, A]
+          - from: [GetSelf, Self]
+            to: [NotEqualSelf, B]
+          - from: [IsValidTarget, ReturnValue]
+            to: [AndCheck, A]
+          - from: [NotEqualSelf, ReturnValue]
+            to: [AndCheck, B]
+          - from: [AndCheck, ReturnValue]
+            to: [Branch_Valid, Condition]
+          # Success path
+          - from: [Branch_Valid, True]
+            to: [SetPendingTarget, Exec]
+          - from: [FunctionEntry, TargetActor]
+            to: [SetPendingTarget, PendingMarkTarget]
+          - from: [SetPendingTarget, Exec]
+            to: [GetASC, Exec]
+          - from: [GetSelf, Self]
+            to: [GetASC, Actor]
+          - from: [GetASC, Exec]
+            to: [TryActivateMark, Exec]
+          - from: [GetASC, ReturnValue]
+            to: [TryActivateMark, Target]
+          # Output true on success - use FunctionResult
+          - from: [MakeLiteralTrue, ReturnValue]
+            to: [FunctionResult, MarkApplied]
+          # Failure path - output false
+          - from: [MakeLiteralFalse, ReturnValue]
+            to: [FunctionResult, MarkApplied]
     # v7.7: Delegate bindings REMOVED - Track E audit.
     # D-DEATH-RESET-2 will use alternative pattern (WaitGameplayEvent or HandleDeath override)
     # See: ClaudeContext/Handoffs/Track_E_Removal_Audit_v7_7.md
@@ -8877,6 +9293,18 @@ niagara_systems:
 #   - name: NAS_FatherAttack
 #     folder: Animations
 #     montage: AM_FatherAttack
+
+# ============================================================================
+# GAMEPLAY CUES - v7.8.50 VFX/SFX triggers via GAS Gameplay Cue system
+# ============================================================================
+gameplay_cues:
+  # v7.8.50: Dome burst expansion ring VFX (Contract 25 compliance - proper GAS pattern)
+  # NOTE: particle_system requires NS_DomeBurst which needs editor mode (real RHI) to generate
+  # Link VFX manually in editor: BurstEffects.BurstParticles -> NS_DomeBurst
+  - name: GC_DomeBurst
+    folder: FX/GameplayCues
+    cue_type: Burst
+    gameplay_cue_tag: GameplayCue.Father.DomeBurst
 
 # ============================================================================
 # MATERIAL FUNCTIONS (3) - v2.6.12 VFX helper functions

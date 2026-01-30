@@ -2,7 +2,7 @@
 
 ## Active Damage Bonus Ability - Input-Triggered with Goal_Attack Query
 
-**Option 1 Implementation:** Player presses input → checks if behind enemy → applies 2x damage bonus to next attack
+**Option 1 Implementation:** Player presses input → checks if behind enemy → applies +25 AttackRating bonus to next attack
 
 ### Unreal Engine 5.7 + Narrative Pro v2.2
 
@@ -31,7 +31,7 @@
 |--------|---------|
 | **Ability Type** | Changed from Passive to Active (Input-Triggered) |
 | **Input Tag** | TBD - will use Narrative.Input.* per INV-INPUT-1 |
-| **Damage Bonus** | Changed from +25 AttackRating to 2.0x multiplier |
+| **Damage Bonus** | +25 AttackRating (Contract 24 compliant - captured by NarrativeDamageExecCalc) |
 | **Event Graph** | Now calls CheckBackstabCondition → Apply GE_BackstabBonus |
 | **TargetEnemy Variable** | Added - must be set before activation |
 
@@ -123,9 +123,9 @@ If NO Goal_Attack OR target != player → BACKSTAB VALID
 
 ### Gameplay Effect Summary
 
-| Effect | Duration | Damage Multiplier |
-|--------|----------|-------------------|
-| GE_BackstabBonus | Instant | 2.0x (100% bonus) |
+| Effect | Duration | Damage Bonus |
+|--------|----------|--------------|
+| GE_BackstabBonus | Instant | +25 AttackRating |
 
 ### Ability Configuration Summary
 
@@ -145,29 +145,29 @@ If NO Goal_Attack OR target != player → BACKSTAB VALID
 |-----------|-------|
 | Detection Method | Goal_Attack Query via NPCActivityComponent |
 | Backstab Condition | Enemy has no Goal_Attack targeting the player |
-| Backstab Bonus | 2.0x damage multiplier (100% bonus) |
+| Backstab Bonus | +25 AttackRating (Contract 24 compliant) |
 | Decoy Mechanic | Father distracts enemy (enemy's Goal_Attack targets Father, not player) |
 
 ---
 
 ## DAMAGE STACKING SYSTEM
 
-| Bonus Source | Damage Multiplier | Managed By |
+| Bonus Source | AttackRating Bonus | Managed By |
 |--------------|-------------------|------------|
-| Backstab (enemy not targeting player) | 2.0x | GA_Backstab |
-| Stealth (first attack from stealth) | +50 AttackRating | GA_StealthField |
-| Combined (multiplicative) | 2.0x base + AttackRating bonus | Independent systems |
+| Backstab (enemy not targeting player) | +25 | GA_Backstab |
+| Stealth (first attack from stealth) | +50 | GA_StealthField |
+| Combined (additive) | +75 | Independent systems |
 
 ---
 
-## DAMAGE MULTIPLIER TABLE
+## DAMAGE BONUS TABLE
 
-| Condition | Enemy Goal_Attack Targeting | Player Stealthed | Multiplier |
-|-----------|---------------------------|------------------|------------|
-| Normal Attack | Player | No | 1.0x (100%) |
-| Backstab Only | Not Player (or none) | No | 2.0x (200%) |
-| Stealth Only | Player | Yes | 1.0x + AttackRating bonus |
-| Stealth + Backstab | Not Player (or none) | Yes | 2.0x + AttackRating bonus |
+| Condition | Enemy Goal_Attack Targeting | Player Stealthed | AttackRating Bonus |
+|-----------|---------------------------|------------------|-------------------|
+| Normal Attack | Player | No | +0 |
+| Backstab Only | Not Player (or none) | No | +25 |
+| Stealth Only | Player | Yes | +50 |
+| Stealth + Backstab | Not Player (or none) | Yes | +75 |
 
 ---
 
@@ -195,7 +195,7 @@ If NO Goal_Attack OR target != player → BACKSTAB VALID
 | 6 | Player attacks enemy | CheckBackstabCondition runs |
 | 7 | Query: Enemy.Goal_Attack.TargetToAttack | Returns Father (not Player) |
 | 8 | Compare: Father != Player | TRUE |
-| 9 | BACKSTAB VALID | Apply GE_BackstabBonus (2.0x) |
+| 9 | BACKSTAB VALID | Apply GE_BackstabBonus (+25 AttackRating) |
 
 ---
 

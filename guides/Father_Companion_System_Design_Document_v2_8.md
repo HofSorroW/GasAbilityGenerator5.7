@@ -335,7 +335,7 @@ When switching forms via T wheel while dome is fully charged:
 
 | Parameter | Value |
 |-----------|-------|
-| Duration | 10 seconds |
+| Duration | 8 seconds |
 | Cooldown | 15 seconds |
 | Speed Penalty | -20% while stealthed |
 | Break Conditions | Attack, take damage, timer, form change |
@@ -579,7 +579,7 @@ Uses Narrative Pro's built-in GoalGenerator_Attack system. No custom perception 
 |-------|-------------|
 | **PHASE 1: TRIGGER** | Triggered when player HP drops below 15%. Current form breaks immediately, father moves to chest (Armor position), energy surge begins. |
 | **PHASE 2: SACRIFICE** | Father channels all remaining energy to grant player 10 seconds of invulnerability. State.Invulnerable tag blocks all damage. Father enters DORMANT state. Attack tokens increase from 3 to 6. |
-| **PHASE 3: DORMANT STATE** | Father remains attached to chest appearing dark and lifeless. All lights OFF, energy lines DARK, eyes UNLIT. HUD completely HIDDEN. Duration: 150-210 seconds (variable). Player fights alone without father abilities. |
+| **PHASE 3: DORMANT STATE** | Father remains attached to chest appearing dark and lifeless. All lights OFF, energy lines DARK, eyes UNLIT. HUD completely HIDDEN. Duration: 180 seconds (fixed). Player fights alone without father abilities. |
 | **PHASE 4: REACTIVATION** | Subtle eye flicker signals reactivation. Energy lines power up with wave effect, eyes illuminate. Full Armor form activates, HUD reappears. Attack tokens normalize from 6 back to 3. Reactivation sound effect plays. |
 
 #### 3.2.2) Dormant State Parameters
@@ -587,7 +587,7 @@ Uses Narrative Pro's built-in GoalGenerator_Attack system. No custom perception 
 | Parameter | Value |
 |-----------|-------|
 | Invulnerability Duration | 10 seconds |
-| Dormant Duration | 150-210 seconds (random) |
+| Dormant Duration | 180 seconds (fixed) |
 | Countdown Visible | No (hidden from player) |
 | HUD Visible | No (completely removed) |
 | Attack Tokens | Increased to 5-6 |
@@ -826,7 +826,7 @@ Narrative.Input.Father.Ability3      (E)
 | Dome Burst | 12 seconds |
 | Electric Trap | 8 seconds |
 | Symbiote (post-form) | 120 seconds |
-| Sacrifice | 150-210 seconds |
+| Sacrifice | 180 seconds |
 | Form Change | 15 seconds |
 
 ---

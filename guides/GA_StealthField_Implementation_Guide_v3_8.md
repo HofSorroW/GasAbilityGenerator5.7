@@ -88,12 +88,12 @@
 
 ### Damage Synergy
 
-| Condition | Bonus | Total Damage |
-|-----------|-------|--------------|
-| Normal Attack | 0% | 100% |
-| Behind Enemy (Backstab) | +25% | 125% |
-| First Attack from Stealth | +50% | 150% |
-| Stealth + Behind Combined | +75% | 175% |
+| Condition | AttackRating Bonus | Source |
+|-----------|-------------------|--------|
+| Normal Attack | +0 | Base |
+| Behind Enemy (Backstab) | +25 | GA_Backstab |
+| First Attack from Stealth | +50 | GA_StealthField |
+| Stealth + Behind Combined | +75 | Both (additive) |
 
 ---
 

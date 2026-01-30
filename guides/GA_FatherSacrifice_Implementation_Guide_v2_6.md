@@ -45,7 +45,7 @@
 |-----------|-------|
 | Trigger Condition | Player Health drops below 15% of MaxHealth |
 | Protection | 10 seconds of complete invulnerability |
-| Dormant Duration | 150-210 seconds (random, hidden from player) |
+| Dormant Duration | 180 seconds (fixed, hidden from player) |
 | Recovery Form | Armor |
 | Cooldown | Duration of dormant state |
 | Form During Dormant | Offline (enum value) |
@@ -70,7 +70,7 @@
 |-------|-------------|
 | Phase 1: Trigger | Player Health < 15%, health monitoring delegate fires |
 | Phase 2: Sacrifice | Cancel all forms, attach to chest, apply 8s invulnerability, father enters DORMANT |
-| Phase 3: Dormant | Father dark/lifeless on chest, Father.State.Offline tag active, 150-210 seconds |
+| Phase 3: Dormant | Father dark/lifeless on chest, Father.State.Offline tag active, 180 seconds |
 | Phase 4: Reactivation | Father awakens, Armor form activates |
 
 ---
@@ -263,25 +263,16 @@
    - 11.5.6) Set **Default Value**: `10.0` (10 seconds)
    - 11.5.7) Set **Category**: `Configuration`
 
-#### 11.6) Create MinDormantTime Variable
+#### 11.6) Create DormantDuration Variable
    - 11.6.1) Click **+** next to Variables
-   - 11.6.2) Name: `MinDormantTime`
+   - 11.6.2) Name: `DormantDuration`
    - 11.6.3) Set **Variable Type**: `Float`
    - 11.6.4) Click **Compile**
    - 11.6.5) Set **Instance Editable**: Checked
-   - 11.6.6) Set **Default Value**: `150.0`
+   - 11.6.6) Set **Default Value**: `180.0` (180 seconds fixed)
    - 11.6.7) Set **Category**: `Configuration`
 
-#### 11.7) Create MaxDormantTime Variable
-   - 11.7.1) Click **+** next to Variables
-   - 11.7.2) Name: `MaxDormantTime`
-   - 11.7.3) Set **Variable Type**: `Float`
-   - 11.7.4) Click **Compile**
-   - 11.7.5) Set **Instance Editable**: Checked
-   - 11.7.6) Set **Default Value**: `210.0`
-   - 11.7.7) Set **Category**: `Configuration`
-
-#### 11.8) Create OfflineEffectHandle Variable
+#### 11.7) Create OfflineEffectHandle Variable
    - 11.8.1) Click **+** next to Variables
    - 11.8.2) Name: `OfflineEffectHandle`
    - 11.8.3) Set **Variable Type**: Search `Active Gameplay Effect Handle`
@@ -325,8 +316,7 @@
 | PlayerASC | NarrativeAbilitySystemComponent Ref | Unchecked | None | Runtime |
 | HealthThreshold | Float | Checked | 0.15 | Configuration |
 | InvulnerabilityDuration | Float | Checked | 10.0 | Configuration |
-| MinDormantTime | Float | Checked | 150.0 | Configuration |
-| MaxDormantTime | Float | Checked | 210.0 | Configuration |
+| DormantDuration | Float | Checked | 180.0 | Configuration |
 | OfflineEffectHandle | Active GE Handle | Unchecked | None | Runtime |
 | DormantTimerHandle | Timer Handle | Unchecked | None | Runtime |
 | IsMonitoring | Boolean | Unchecked | false | Runtime |
@@ -645,30 +635,24 @@
       - 31.3.1.2) Add **Set OfflineEffectHandle** node
    - 31.3.2) Connect Return Value to handle input
 
-### **32) Calculate Random Dormant Duration**
+### **32) Start Dormant Timer**
 
-#### 32.1) Generate Random Duration
-   - 32.1.1) From **Set OfflineEffectHandle** execution pin:
-      - 32.1.1.1) Drag outward and search: `Random Float in Range`
-      - 32.1.1.2) Add **Random Float in Range** node
-   - 32.1.2) Connect **MinDormantTime** variable to **Min** input
-   - 32.1.3) Connect **MaxDormantTime** variable to **Max** input
+#### 32.1) Get Dormant Duration
+   - 32.1.1) Drag **DormantDuration** variable getter into graph
 
-### **33) Start Dormant Timer**
+#### 32.2) Set Timer for Reactivation
+   - 32.2.1) From **Set OfflineEffectHandle** execution pin:
+      - 32.2.1.1) Drag outward and search: `Set Timer by Function Name`
+      - 32.2.1.2) Add **Set Timer by Function Name** node
+   - 32.2.2) Configure timer:
+      - 32.2.2.1) **Function Name**: `ReactivateFather`
+      - 32.2.2.2) **Time**: Connect **DormantDuration** variable (180 seconds fixed)
+      - 32.2.2.3) **Looping**: Unchecked
 
-#### 33.1) Set Timer for Reactivation
-   - 33.1.1) From Random Float execution:
-      - 33.1.1.1) Drag outward and search: `Set Timer by Function Name`
-      - 33.1.1.2) Add **Set Timer by Function Name** node
-   - 33.1.2) Configure timer:
-      - 33.1.2.1) **Function Name**: `ReactivateFather`
-      - 33.1.2.2) **Time**: Connect Random Float result
-      - 33.1.2.3) **Looping**: Unchecked
-
-#### 33.2) Store Timer Handle
-   - 33.2.1) From Set Timer **Return Value**:
-      - 33.2.1.1) Drag outward and search: `Set DormantTimerHandle`
-      - 33.2.1.2) Add **Set DormantTimerHandle** node
+#### 32.3) Store Timer Handle
+   - 32.3.1) From Set Timer **Return Value**:
+      - 32.3.1.1) Drag outward and search: `Set DormantTimerHandle`
+      - 32.3.1.2) Add **Set DormantTimerHandle** node
 
 ---
 
@@ -941,8 +925,7 @@
 | PlayerASC | NarrativeASC Ref | Unchecked | None | Runtime |
 | HealthThreshold | Float | Checked | 0.15 | Configuration |
 | InvulnerabilityDuration | Float | Checked | 10.0 | Configuration |
-| MinDormantTime | Float | Checked | 150.0 | Configuration |
-| MaxDormantTime | Float | Checked | 210.0 | Configuration |
+| DormantDuration | Float | Checked | 180.0 | Configuration |
 | OfflineEffectHandle | Active GE Handle | Unchecked | None | Runtime |
 | DormantTimerHandle | Timer Handle | Unchecked | None | Runtime |
 | IsMonitoring | Boolean | Unchecked | false | Runtime |
