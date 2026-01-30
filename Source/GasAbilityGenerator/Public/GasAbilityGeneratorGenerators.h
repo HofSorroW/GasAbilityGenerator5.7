@@ -335,6 +335,16 @@ protected:
 	 */
 	static const FManifestData* GetActiveManifest() { return ActiveManifest; }
 
+	/**
+	 * v7.8.49: Deferral tracking for cross-asset dependencies
+	 * When TSubclassOf resolution finds a class that's in manifest but not yet generated,
+	 * it sets this flag so the calling generator can return Deferred status.
+	 */
+	static void SetDeferralNeeded(const FString& DependencyName);
+	static void ClearDeferralState();
+	static bool IsDeferralNeeded() { return bDeferralNeeded; }
+	static FString GetDeferredDependency() { return DeferredDependencyName; }
+
 private:
 	static const FManifestData* ActiveManifest;
 
@@ -346,6 +356,10 @@ private:
 
 	// v7.5.5: Log callback for commandlet integration
 	static FGeneratorLogCallback LogCallback;
+
+	// v7.8.49: Deferral tracking for pending manifest dependencies
+	static bool bDeferralNeeded;
+	static FString DeferredDependencyName;
 };
 
 /**

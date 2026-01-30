@@ -4,6 +4,130 @@ Complete version history for the GasAbilityGenerator plugin.
 
 ---
 
+## v7.8.50 - GA_DomeBurst Contract 24/24A Compliance + Missing Features
+
+**Audit:** Comprehensive Dome System Audit (2026-01-30)
+
+### Contract 24/24A Compliance (INC-DOME-3)
+
+GA_DomeBurst was using SetByCaller with NarrativeDamageExecCalc, which violates Contract 24/24A.
+
+**Fix:**
+- Removed `SetByCaller` node (useless - exec calc ignores it)
+- Removed `BurstDamage` variable (misleading - damage from AttackDamage attribute)
+- Connected `MakeGESpec` directly to `ApplyGE`
+- Damage now correctly comes from player's AttackDamage attribute via NarrativeDamageExecCalc
+
+### Missing Features Restored
+
+**INC-DOME-4 — Knockback (1000 units):**
+- Added knockback calculation: enemy location - player location → normalize → multiply by force
+- Added CastToCharacter → LaunchCharacter nodes
+- New `KnockbackForce` variable (1000.0, instance editable)
+
+**INC-DOME-5 — VFX Spawn:**
+- Added SpawnSystemAtLocation for NS_DomeBurst at player location
+
+**INC-DOME-6 — Energy Reset After Burst:**
+- Added SetDomeEnergy = 0 on FatherRef after burst completes
+- Prevents re-burst without recharging
+
+**INC-DOME-7 — FullyCharged Tag Removal:**
+- Added RemoveLooseGameplayTags(Father.Dome.FullyCharged) after burst
+- Prevents infinite burst loop when cooldown expires
+
+### Variables Changed
+
+| Variable | Status | Notes |
+|----------|--------|-------|
+| BurstDamage | REMOVED | Contract 24/24A - damage from AttackDamage attribute |
+| FatherRef | ADDED | Needed for energy reset |
+| KnockbackForce | ADDED | 1000.0, instance editable |
+
+**Files Changed:**
+- ClaudeContext/manifest.yaml: GA_DomeBurst completely rewritten
+
+---
+
+## v7.8.49 - Deferral System Force Mode Fixes
+
+**Issue:** Deferred assets (BP_FatherCompanion, GA_FatherArmor, GA_FatherExoskeleton, GA_FatherSymbiote) were failing retry because force mode wasn't being respected in all code paths.
+
+### Root Cause
+
+The `CheckExistsWithMetadata` function had two code paths that returned SKIP status without checking if force mode was enabled:
+1. "No metadata" path - Assets without generator metadata were always skipped
+2. "WillSkip" case - Assets marked as "manually edited" were always skipped
+
+Additionally, FGameplayAbilityGenerator didn't have the Blueprint reuse pattern needed for deferred retries.
+
+### Fixes Applied
+
+1. **Force mode check for "no metadata" path** (line 1271-1290)
+   - Added `IsForceMode()` check to proceed even without metadata
+
+2. **Force mode check for WillSkip case** (line 1405-1414)
+   - Added `IsForceMode()` check to override "manually edited" skip status
+
+3. **Blueprint reuse pattern for FGameplayAbilityGenerator** (line 2896-2919)
+   - Mirrors FActorBlueprintGenerator pattern - reuse existing Blueprint in force mode
+
+4. **ClearDeferralState() in FGameplayAbilityGenerator** (line 2835)
+   - Matches FActorBlueprintGenerator pattern for consistent state management
+
+### Test Results
+
+```
+[RETRY-OK] BP_FatherCompanion (dependency GA_FatherMark now available)
+[RETRY-OK] GA_FatherArmor (dependency BP_FatherCompanion now available)
+[RETRY-OK] GA_FatherExoskeleton (dependency BP_FatherCompanion now available)
+RESULT: New=195 Skipped=0 Failed=3 Deferred=4
+```
+
+**Files Changed:**
+- GasAbilityGeneratorGenerators.cpp: Force mode checks, Blueprint reuse, ClearDeferralState
+
+**Reference:** `ClaudeContext/Handoffs/v7_8_49_Deferral_System_Handoff.md`
+
+---
+
+## v7.8.48 - Contract 24 Addendum A + v1.0C RF-1 Remediation
+
+**Audit:** Claude–GPT dual audit (2026-01-30)
+
+### Contract 24 Addendum A — SetByCaller Restrictions
+
+Formalizes where SetByCaller is permitted vs forbidden with NarrativeDamageExecCalc:
+- **FORBIDDEN:** SetByCaller magnitudes for primary damage (any namespace including `Data.Damage.*`)
+- **ALLOWED:** Duration, secondary modifiers, DOT tick values, stack counts
+- **Pre-validation error:** `E_PREVAL_SETBYCALLER_DAMAGE_FORBIDDEN`
+
+### v1.0C Patch Plan — RF-1 Remediation (Mark Integration)
+
+Restores Mark integration that was incorrectly removed (Contract 25 violation):
+
+**P1-BP.X — BP_FatherCompanion:**
+- Added `PendingMarkTarget` variable (Actor reference)
+- Added `MarkEnemy(TargetActor)` custom function
+- Function validates target, sets PendingMarkTarget, activates GA_FatherMark
+
+**P1-MK.X — GA_FatherMark:**
+- Now reads `PendingMarkTarget` from owner BP_FatherCompanion at activation
+- Sets internal `TargetEnemy` variable from owner's PendingMarkTarget
+- Centralizes mark target handoff for deterministic behavior
+
+**P1-LS.X — GA_FatherLaserShot:**
+- Restored Mark step in OnTargetData success chain
+- Flow: ApplyDamage → CallMarkEnemy(HitActor) → CommitCooldown_Hit
+- Hit target now receives mark via centralized MarkEnemy function
+
+**Files Changed:**
+- LOCKED_CONTRACTS.md: Added Contract 24 Addendum A (D-DAMAGE-ATTR-1A)
+- CLAUDE.md: Added SetByCaller rule table
+- manifest.yaml: BP_FatherCompanion, GA_FatherMark, GA_FatherLaserShot updated
+
+---
+
 ## v7.8.35 - Remove Redundant DynamicCast Nodes (Manifest)
 
 **Issue:** GoalGenerator_Alert and GoalGenerator_RandomAggression had compiler warnings about redundant DynamicCast nodes.
