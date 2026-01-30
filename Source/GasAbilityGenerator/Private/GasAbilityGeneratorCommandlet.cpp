@@ -1853,6 +1853,13 @@ void UGasAbilityGeneratorCommandlet::ProcessDeferredAssets(const FManifestData& 
 	LogMessage(TEXT("--- Processing Deferred Assets ---"));
 	LogMessage(FString::Printf(TEXT("%d asset(s) deferred due to missing dependencies"), DeferredAssets.Num()));
 
+	// v7.8.49: Enable force mode for deferred retries to handle CONFLICT status
+	// When an asset is deferred, a partial Blueprint may have been created on disk.
+	// Force mode ensures the retry overwrites this partial asset.
+	const bool bPreviousForceMode = FGeneratorBase::IsForceMode();
+	FGeneratorBase::SetForceMode(true);
+	LogMessage(TEXT("Force mode enabled for deferred asset retries"));
+
 	int32 Pass = 0;
 	int32 ResolvedThisPass = 0;
 
@@ -1866,9 +1873,17 @@ void UGasAbilityGeneratorCommandlet::ProcessDeferredAssets(const FManifestData& 
 
 		for (FDeferredAsset& Deferred : DeferredAssets)
 		{
+			// v7.8.49: Debug logging for deferred asset processing
+			LogMessage(FString::Printf(TEXT("  [RETRY] Checking deferred: %s (waiting for: %s)"),
+				*Deferred.AssetName, *Deferred.MissingDependency));
+			LogMessage(FString::Printf(TEXT("    GeneratedAssets count: %d, contains dependency: %s"),
+				GeneratedAssets.Num(),
+				GeneratedAssets.Contains(Deferred.MissingDependency) ? TEXT("YES") : TEXT("NO")));
+
 			// Check if dependency is now resolved
 			if (IsDependencyResolved(Deferred.MissingDependency, Deferred.MissingDependencyType))
 			{
+				LogMessage(FString::Printf(TEXT("    Dependency resolved! Attempting retry for: %s"), *Deferred.AssetName));
 				FGenerationResult Result;
 				if (TryGenerateDeferredAsset(Deferred, ManifestData, Result))
 				{
@@ -1879,11 +1894,16 @@ void UGasAbilityGeneratorCommandlet::ProcessDeferredAssets(const FManifestData& 
 				}
 				else
 				{
+					// v7.8.49: Log the actual result status
+					LogMessage(FString::Printf(TEXT("    Retry attempt returned status=%d, message=%s"),
+						static_cast<int32>(Result.Status), *Result.Message));
 					// Still failed after retry
 					Deferred.RetryCount++;
 					if (Deferred.RetryCount < MaxRetryAttempts)
 					{
 						StillDeferred.Add(Deferred);
+						LogMessage(FString::Printf(TEXT("    Re-deferring %s (retry %d/%d)"),
+							*Deferred.AssetName, Deferred.RetryCount, MaxRetryAttempts));
 					}
 					else
 					{
@@ -1921,6 +1941,9 @@ void UGasAbilityGeneratorCommandlet::ProcessDeferredAssets(const FManifestData& 
 	{
 		LogMessage(TEXT("All deferred assets resolved successfully"));
 	}
+
+	// v7.8.49: Restore previous force mode
+	FGeneratorBase::SetForceMode(bPreviousForceMode);
 }
 
 // v2.6.7: Check if a dependency has been generated
@@ -1928,6 +1951,13 @@ bool UGasAbilityGeneratorCommandlet::IsDependencyResolved(const FString& Depende
 {
 	// Check if it was generated in this session
 	if (GeneratedAssets.Contains(DependencyName))
+	{
+		return true;
+	}
+
+	// v7.8.49: Also check the session Blueprint cache
+	extern TMap<FString, UClass*> GSessionBlueprintClassCache;
+	if (GSessionBlueprintClassCache.Contains(DependencyName))
 	{
 		return true;
 	}

@@ -345,6 +345,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"  // v7.8: Path B - BP-safe death/event detection
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEffectApplied_Self.h"  // v7.8: Path B - BP-safe damage received detection
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEffectApplied_Target.h"  // v7.8: Path B - BP-safe damage dealt detection
+#include "Abilities/Tasks/AbilityTask_Repeat.h"  // v7.8.50: Sprint push loop - repeating actions at interval
 #include "GAS/AbilityTasks/AbilityTask_SpawnProjectile.h"  // v7.8.46: Phase 7 - SpawnProjectile task for projectile abilities
 #include "Abilities/Async/AbilityAsync_WaitAttributeChanged.h"  // v7.8.0: Contract 25 - Damage-scaled energy absorption
 #include "EdGraph/EdGraph.h"
@@ -9887,7 +9888,7 @@ bool FEventGraphGenerator::ValidateEventGraph(
 		TEXT("GetArrayItem"), TEXT("Self"), TEXT("ConstructObjectFromClass"),
 		TEXT("MakeLiteralBool"), TEXT("MakeLiteralFloat"), TEXT("MakeLiteralInt"), TEXT("MakeLiteralByte"), TEXT("MakeLiteralString"),
 		TEXT("CallParent"), TEXT("Return"), TEXT("FunctionResult"), TEXT("AddDelegate"), TEXT("BindDelegate"),
-		TEXT("AbilityTaskSpawnProjectile"), TEXT("AbilityTaskWaitDelay"), TEXT("AbilityTaskWaitGameplayEvent"),
+		TEXT("AbilityTaskSpawnProjectile"), TEXT("AbilityTaskRepeat"), TEXT("AbilityTaskWaitDelay"), TEXT("AbilityTaskWaitGameplayEvent"),
 		TEXT("AbilityTaskWaitGEAppliedToSelf"), TEXT("AbilityTaskWaitGEAppliedToTarget"), TEXT("AbilityAsyncWaitAttributeChanged")
 	};
 
@@ -10378,6 +10379,11 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("AbilityTaskSpawnProjectile"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateAbilityTaskSpawnProjectileNode(EventGraph, NodeDef);
+		}
+		// v7.8.50: AbilityTask_Repeat for repeating actions at interval (Sprint push loop)
+		else if (NodeDef.Type.Equals(TEXT("AbilityTaskRepeat"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAbilityTaskRepeatNode(EventGraph, NodeDef);
 		}
 		// v7.8.0: Contract 25 - AbilityAsync for damage-scaled energy absorption
 		else if (NodeDef.Type.Equals(TEXT("AbilityAsyncWaitAttributeChanged"), ESearchCase::IgnoreCase))
@@ -13794,6 +13800,100 @@ UK2Node* FEventGraphGenerator::CreateAbilityTaskSpawnProjectileNode(
 	// OnTargetData and OnDestroyed delegate pins will be available for handler connections
 
 	return SpawnProjectileNode;
+}
+
+// v7.8.50: AbilityTask_Repeat for repeating actions at interval (Sprint push loop)
+// Uses UK2Node_LatentAbilityCall which properly handles AbilityTask lifecycle
+// Properties:
+//   - interval: Time between actions in seconds (float, maps to TimeBetweenActions)
+//   - total_count: Number of times to repeat (-1 for infinite until EndAbility, maps to TotalActionCount)
+// Output pins:
+//   - OnPerformAction: Fires each time an action should be performed (with ActionNumber int32)
+//   - OnFinished: Fires when all repetitions complete (with final ActionNumber int32)
+UK2Node* FEventGraphGenerator::CreateAbilityTaskRepeatNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_LatentAbilityCall* RepeatNode = NewObject<UK2Node_LatentAbilityCall>(Graph);
+	Graph->AddNode(RepeatNode, false, false);
+
+	// Find the RepeatAction factory function on UAbilityTask_Repeat
+	UFunction* RepeatActionFunction = UAbilityTask_Repeat::StaticClass()->FindFunctionByName(FName("RepeatAction"));
+	if (!RepeatActionFunction)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to find RepeatAction function on UAbilityTask_Repeat"));
+		return RepeatNode;
+	}
+
+	// Set the protected base class properties via reflection (UK2Node_BaseAsyncTask members)
+	UClass* NodeClass = RepeatNode->GetClass();
+
+	// ProxyFactoryFunctionName = "RepeatAction"
+	if (FNameProperty* FactoryFuncNameProp = FindFProperty<FNameProperty>(NodeClass, TEXT("ProxyFactoryFunctionName")))
+	{
+		FactoryFuncNameProp->SetPropertyValue_InContainer(RepeatNode, RepeatActionFunction->GetFName());
+	}
+
+	// ProxyFactoryClass = UAbilityTask_Repeat::StaticClass()
+	if (FObjectProperty* FactoryClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyFactoryClass")))
+	{
+		FactoryClassProp->SetObjectPropertyValue_InContainer(RepeatNode, UAbilityTask_Repeat::StaticClass());
+	}
+
+	// ProxyClass = UAbilityTask_Repeat::StaticClass() (the return type)
+	if (FObjectProperty* ProxyClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyClass")))
+	{
+		ProxyClassProp->SetObjectPropertyValue_InContainer(RepeatNode, UAbilityTask_Repeat::StaticClass());
+	}
+
+	RepeatNode->CreateNewGuid();
+	RepeatNode->PostPlacedNewNode();
+	RepeatNode->AllocateDefaultPins();
+
+	// Set interval (TimeBetweenActions) if specified in properties
+	const FString* IntervalPtr = NodeDef.Properties.Find(TEXT("interval"));
+	if (IntervalPtr)
+	{
+		UEdGraphPin* TimeBetweenActionsPin = RepeatNode->FindPin(FName("TimeBetweenActions"));
+		if (TimeBetweenActionsPin)
+		{
+			TimeBetweenActionsPin->DefaultValue = *IntervalPtr;
+			LogGeneration(FString::Printf(TEXT("    Set TimeBetweenActions to %s"), **IntervalPtr));
+		}
+	}
+
+	// Set total_count (TotalActionCount) if specified in properties
+	const FString* TotalCountPtr = NodeDef.Properties.Find(TEXT("total_count"));
+	if (TotalCountPtr)
+	{
+		UEdGraphPin* TotalActionCountPin = RepeatNode->FindPin(FName("TotalActionCount"));
+		if (TotalActionCountPin)
+		{
+			TotalActionCountPin->DefaultValue = *TotalCountPtr;
+			LogGeneration(FString::Printf(TEXT("    Set TotalActionCount to %s"), **TotalCountPtr));
+		}
+	}
+
+	LogGeneration(FString::Printf(TEXT("  Created AbilityTaskRepeat node '%s'"), *NodeDef.Id));
+
+	// Log available pins for debugging
+	if (UE_LOG_ACTIVE(LogGasAbilityGenerator, Verbose))
+	{
+		LogGeneration(TEXT("    Available pins:"));
+		for (UEdGraphPin* Pin : RepeatNode->Pins)
+		{
+			LogGeneration(FString::Printf(TEXT("      - %s [%s] %s"),
+				*Pin->GetName(),
+				Pin->Direction == EGPD_Input ? TEXT("IN") : TEXT("OUT"),
+				*Pin->PinType.PinCategory.ToString()));
+		}
+	}
+
+	// Note: OnPerformAction and OnFinished delegate pins will be available for handler connections
+	// OnPerformAction fires with ActionNumber (int32) each interval
+	// OnFinished fires with final ActionNumber when TotalActionCount is reached (or never if -1)
+
+	return RepeatNode;
 }
 
 // v7.8.0: Contract 25 - AbilityAsync_WaitAttributeChanged for damage-scaled energy absorption

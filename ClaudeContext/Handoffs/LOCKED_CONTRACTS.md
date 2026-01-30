@@ -1219,6 +1219,94 @@ If SetByCaller damage is needed for a specific GE:
 
 ---
 
+## Contract 24 Addendum A: D-DAMAGE-ATTR-1A — SetByCaller Restrictions
+
+**ID:** D-DAMAGE-ATTR-1A
+**Parent Contract:** D-DAMAGE-ATTR-1
+**Status:** LOCKED
+**Severity:** FAIL
+**Audit:** Claude–GPT dual audit (2026-01-30)
+
+### Rule
+
+This addendum formalizes where SetByCaller is permitted and where it is forbidden in systems governed by `NarrativeDamageExecCalc`.
+
+#### 24.A.1 — Primary Damage Source (REQUIRED)
+
+For any GameplayEffect using `NarrativeDamageExecCalc`:
+- Primary damage magnitude **MUST** come from captured attributes
+- Source: `AttackDamage`
+- Target: `Armor` (if mitigation is part of the exec calc)
+- The execution calculation is the sole authority for damage magnitude.
+
+#### 24.A.2 — Forbidden Pattern (HARD FAIL)
+
+GameplayEffects using `NarrativeDamageExecCalc` **MUST NOT** define SetByCaller magnitudes intended to drive primary damage, regardless of tag namespace.
+
+This includes (but is not limited to):
+- `Data.Damage.*`
+- Any SetByCaller value semantically used as base damage
+
+**Rationale:** `NarrativeDamageExecCalc` ignores SetByCaller magnitudes for damage. Mixing SetByCaller damage with ExecCalc produces ambiguous authoring, PIE vs packaged divergence, and capture-related runtime warnings.
+
+#### 24.A.3 — Allowed SetByCaller Usage (NON-DAMAGE)
+
+SetByCaller **REMAINS ALLOWED** for non-damage values, including:
+- Effect duration
+- Secondary modifiers not processed by ExecCalc (e.g., armor shred magnitude)
+- DOT tick values without ExecCalc
+- Stack counts and metadata
+- Scaling coefficients applied outside ExecCalc
+
+These usages do not conflict with the attribute-capture damage architecture.
+
+### Pre-Validation Enforcement
+
+If a GameplayEffect satisfies **both** conditions:
+1. Uses `NarrativeDamageExecCalc`
+2. Defines a SetByCaller magnitude intended for damage
+
+→ **FAIL** asset generation
+
+**Error Code:** `E_PREVAL_SETBYCALLER_DAMAGE_FORBIDDEN`
+**Severity:** FAIL
+
+**Error Message Format (single-line):**
+```
+E_PREVAL_SETBYCALLER_DAMAGE_FORBIDDEN | FAIL | GE=<EffectName> | ExecCalc=NarrativeDamageExecCalc | Tag=<SetByCallerTag> | Reason=Primary damage must be attribute-captured
+```
+
+### Correct Pattern
+
+```yaml
+gameplay_effects:
+  - name: GE_FatherDamage
+    duration_policy: Instant
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    # NO setbycaller_magnitudes
+    # Damage derived from captured AttackDamage attribute
+```
+
+### Forbidden Pattern
+
+```yaml
+gameplay_effects:
+  - name: GE_FatherDamage
+    execution_calculations:
+      - class: NarrativeDamageExecCalc
+    setbycaller_magnitudes:
+      - tag: Data.Damage.Father   # FORBIDDEN — ignored by exec calc
+```
+
+### Reference
+
+- NarrativeDamageExecCalc: `NarrativeArsenal/Private/Abilities/NarrativeDamageExecCalc.cpp:82-88`
+- Contract 24: D-DAMAGE-ATTR-1 — Attribute-Based Damage System
+- Dual Audit RF-1 & Packaged Build Investigation (January 2026)
+
+---
+
 ## LOCKED CONTRACT 25 — C_NEVER_SIMPLIFY_ABILITIES (v7.8.0)
 
 ### Context
@@ -1445,3 +1533,4 @@ Any change that touches a LOCKED implementation must:
 | v7.7 | 2026-01-28 | **REMOVED Contract 10.1** — Track E (Native Bridge) completely removed from generator. Contract 10.1 (delegate binding compile exception) no longer needed. All abilities now go through final compilation per Contract 10. Affected: GA_ProtectiveDome (damage absorption handler removed), GA_StealthField (stealth break handlers removed). See `Track_E_Removal_Audit_v7_7.md`. |
 | v7.8.0 | 2026-01-28 | Added Contract 25 — C_NEVER_SIMPLIFY_ABILITIES: Abilities MUST match implementation guides exactly. If generator limitation prevents implementation, ENHANCE the generator—don't simplify the ability. GA_ProtectiveDome was incorrectly simplified from "30% of damage becomes energy" to fixed 50 energy per hit. |
 | v7.8.45 | 2026-01-30 | Added Contract 26 — C_COMPOSITE_NODE_CONNECTIONS: All internal composite node connections MUST use `Schema->TryCreateConnection()`, never `MakeLinkTo()`. MakeLinkTo skips NotifyPinConnectionListChanged callbacks required for DynamicCast wildcard pin type resolution. |
+| v7.8.48 | 2026-01-30 | Added Contract 24 Addendum A — D-DAMAGE-ATTR-1A SetByCaller Restrictions (Claude–GPT dual audit): Formalizes that SetByCaller for damage with NarrativeDamageExecCalc is FORBIDDEN; allowed for duration/secondary modifiers. Pre-validation error: `E_PREVAL_SETBYCALLER_DAMAGE_FORBIDDEN`. Also implemented v1.0C Patch Plan (RF-1 remediation): P1-BP.X (BP_FatherCompanion.MarkEnemy function), P1-MK.X (GA_FatherMark reads PendingMarkTarget from owner), P1-LS.X (GA_FatherLaserShot Mark integration restored). |

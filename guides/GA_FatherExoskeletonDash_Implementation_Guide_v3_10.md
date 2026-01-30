@@ -19,12 +19,6 @@
 
 ---
 
-## **AUTHORITY NOTE**
-
-This document is explanatory. Runtime behavior and generation are defined by `manifest.yaml`. In case of conflict, the manifest takes precedence.
-
----
-
 ## **AUDIT STATUS**
 
 | Field | Value |

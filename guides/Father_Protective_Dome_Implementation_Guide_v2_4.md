@@ -98,7 +98,7 @@
 | Father.Dome.OnCooldown | Dome ability is on cooldown after burst |
 | Ability.Father.Armor.ProtectiveDome | Main dome management ability that handles absorption and charging |
 | Ability.Father.Armor.DomeBurst | Ability that triggers the AoE explosion when dome is fully charged |
-| Father.State.Bursting | Dome burst ability is currently executing |
+| Father.State.Attacking | Dome burst ability is currently executing |
 | Effect.Father.DomeAbsorption | Effect that reduces incoming player damage and stores it |
 | Effect.Father.DomeEnergy | Effect that modifies dome energy attribute |
 | Effect.Father.DomeBurst | Damage effect applied to enemies in burst radius |
@@ -931,7 +931,7 @@
 
 ##### **26.2.7) InputTag Configuration**
 26.2.7.1) Find: InputTag property
-26.2.7.2) Set: Narrative.Input.Father.Ability1
+26.2.7.2) Set: Narrative.Input.Ability1
 
 ##### **26.2.8) Network Settings**
 26.2.8.1) Net Execution Policy: Local Predicted
@@ -1257,7 +1257,7 @@
 34.2.1) Find Input Tag Bindings array
 34.2.2) Add entry:
    - 34.2.2.1) **Input Action**: IA_FatherAbility1
-   - 34.2.2.2) **Gameplay Tag**: Narrative.Input.Father.Ability1
+   - 34.2.2.2) **Gameplay Tag**: Narrative.Input.Ability1
 34.2.3) Save data asset
 
 ### **35) Save All Assets**
@@ -1320,7 +1320,7 @@
 | Activation Required | Father.Dome.Active, Father.Dome.FullyCharged |
 | Activation Owned | Father.State.Attacking |
 | Activation Blocked | Cooldown.Father.DomeBurst |
-| InputTag | Narrative.Input.Father.Ability1 |
+| InputTag | Narrative.Input.Ability1 |
 
 ---
 

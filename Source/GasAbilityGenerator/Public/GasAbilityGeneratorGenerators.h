@@ -836,6 +836,17 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v7.8.50: AbilityTask_Repeat for repeating actions at interval (Sprint push loop)
+	// Properties:
+	//   - interval: Time between actions in seconds (float, maps to TimeBetweenActions)
+	//   - total_count: Number of times to repeat (-1 for infinite, maps to TotalActionCount)
+	// Output pins:
+	//   - OnPerformAction: Fires each time an action should be performed (with ActionNumber)
+	//   - OnFinished: Fires when all repetitions complete (with final ActionNumber)
+	static UK2Node* CreateAbilityTaskRepeatNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
 	// v7.8.0: Contract 25 - AbilityAsync_WaitAttributeChanged for damage-scaled energy absorption
 	// Tracks attribute changes and provides NewValue/OldValue for damage calculation
 	static UK2Node* CreateAbilityAsyncWaitAttributeChangedNode(

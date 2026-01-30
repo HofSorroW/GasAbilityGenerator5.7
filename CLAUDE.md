@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
   - [Mandatory Rules](#mandatory-rules-will-cause-failures)
   - [LOCKED WORKFLOW](#locked-workflow-mandatory)
 - [Troubleshooting](#troubleshooting)
-- [GasAbilityGenerator Plugin](#gasabilitygenerator-plugin-v7813)
+- [GasAbilityGenerator Plugin](#gasabilitygenerator-plugin-v7848)
   - [Architecture](#architecture)
   - [Table Editors](#table-editors-v48)
   - [Supported Asset Types](#supported-asset-types-generated-by-plugin)
@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v7.8.13) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.8.48) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -204,6 +204,30 @@ Examples of FORBIDDEN simplifications:
 
 The generator serves the design, not the other way around. If the guide says "30% of damage becomes energy", the implementation MUST calculate actual damage, not use a fixed value.
 
+**SetByCaller Usage (Contract 24 Compliance)** - SetByCaller is a core GAS feature, but has specific restrictions when used with NarrativeDamageExecCalc.
+
+| Scenario | SetByCaller | Attribute Capture | Rationale |
+|----------|-------------|-------------------|-----------|
+| Primary damage with ExecCalc | FORBIDDEN | REQUIRED | ExecCalc ignores SetByCaller; uses captured AttackDamage |
+| Effect duration | ALLOWED | Not needed | No capture dependency |
+| Armor/stat modifiers | ALLOWED | Not needed | Secondary values outside ExecCalc |
+| DOT tick (no ExecCalc) | ALLOWED | Not needed | Simple periodic, no capture |
+| Stack counts | ALLOWED | Not needed | Metadata, not magnitude |
+| Scaling coefficients | ALLOWED | Not needed | Multipliers applied outside ExecCalc |
+
+**Rule:** If `NarrativeDamageExecCalc` is used, damage MUST come from captured `AttackDamage` attribute.
+
+**Valid SetByCaller tags:**
+- `Data.Mark.Duration` - allowed
+- `Data.Mark.ArmorReduction` - allowed
+- `Data.Duration.*` - allowed
+
+**Forbidden:** Any SetByCaller magnitude intended to drive primary damage on GEs using `NarrativeDamageExecCalc` (including `Data.Damage.*` tags).
+
+**Why:** Prevents PIE vs Packaged divergence, capture-related warnings, and silent zero-damage failures observed during audits.
+
+**Reference:** LOCKED Contract 24 Addendum A (`E_PREVAL_SETBYCALLER_DAMAGE_FORBIDDEN`)
+
 ### Workflow Rules
 
 **Always Push After Commit** - Combine commit and push; don't wait for separate push request.
@@ -253,6 +277,8 @@ Blocking items: 1
 | Return | `ReturnValue` | `Return`, `Result` |
 | Cast Output | `AsBP_FatherCompanion` | `As BP_FatherCompanion` (no spaces) |
 | Cast Failed | `CastFailed` | `Cast Failed` (no space) |
+| GetArrayItem Output | `Output` | `ReturnValue`, `Element` |
+| AbilityTask Delegates | `OnTargetData`, `OnDestroyed` | `On Target Data` (no spaces) |
 
 #### Rule 4: Fix Completion
 
@@ -332,9 +358,17 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ## GasAbilityGenerator Plugin
 
-Location: `Plugins/GasAbilityGenerator/` | Version history: [CHANGELOG.md](CHANGELOG.md)
+Location: `Plugins/GasAbilityGenerator/` | Current version: v7.8.48 | Version history: [CHANGELOG.md](CHANGELOG.md)
+
+**LOCKED: Contract 24 (D-DAMAGE-ATTR-1)** - NarrativeDamageExecCalc captures AttackDamage/Armor attributes. SetByCaller is FORBIDDEN for damage values with this exec calc - use attribute-based damage instead.
 
 **LOCKED: Contract 25** - See [NEVER Simplify Abilities](#mandatory-rules-will-cause-failures) in Mandatory Rules.
+
+**Projectile Pattern (v7.8.46):** For projectile abilities, use `AbilityTaskSpawnProjectile` instead of `SpawnActor`:
+- Node type: `AbilityTaskSpawnProjectile`
+- Delegate outputs: `OnTargetData` (hit), `OnDestroyed` (miss/expire)
+- Data output: `Data` (FGameplayAbilityTargetDataHandle)
+- Use `GetActorsFromTargetData` → `GetArrayItem` (Output pin) → `CastToCharacter` to get hit target
 
 **No automated tests.** Validation is performed via the `-dryrun` flag and generation log analysis.
 

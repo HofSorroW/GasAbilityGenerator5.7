@@ -5503,6 +5503,15 @@ gameplay_abilities:
         type: Float
         default_value: 0.5
         instance_editable: true
+      # v7.8.50: Dash Damage/Knockback per Guide v3.10
+      - name: DashDamageRadius
+        type: Float
+        default_value: 200.0
+        instance_editable: true
+      - name: DashKnockbackForce
+        type: Float
+        default_value: 800.0
+        instance_editable: true
     event_graph:
       nodes:
         - id: Event_Activate
@@ -5563,6 +5572,112 @@ gameplay_abilities:
         - id: Delay
           type: AbilityTaskWaitDelay
           position: [3300, 0]
+        # v7.8.50: Dash Damage/Knockback per Guide v3.10 - applied at dash end
+        - id: GetDashLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [3600, 0]
+        - id: GetDashRadius
+          type: VariableGet
+          properties:
+            variable_name: DashDamageRadius
+          position: [3600, 100]
+        - id: MakeDashObjectTypes
+          type: MakeArray
+          properties:
+            array_type: byte
+            num_inputs: 1
+          position: [3600, 150]
+        - id: MakeDashIgnoreActors
+          type: MakeArray
+          properties:
+            array_type: object
+            class: Actor
+            num_inputs: 1
+          position: [3600, 200]
+        - id: SphereDashOverlap
+          type: CallFunction
+          properties:
+            function: SphereOverlapActors
+          position: [3900, 0]
+        - id: ForEachDashHit
+          type: ForEachLoop
+          position: [4200, 0]
+        - id: HasEnemyTag
+          type: CallFunction
+          properties:
+            function: ActorHasTag
+          position: [4500, 0]
+        - id: MakeLiteralName_Enemy
+          type: CallFunction
+          properties:
+            function: MakeLiteralName
+            param.Value: Enemy
+          position: [4500, 100]
+        - id: Branch_DashEnemy
+          type: Branch
+          position: [4800, 0]
+        - id: GetEnemyASC_Dash
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [5100, 0]
+        - id: GetOwnASC_Dash
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponentFromActorInfo
+            target_self: true
+          position: [5100, 150]
+        # Contract 24: GE_DashDamage uses NarrativeDamageExecCalc - damage from AttackDamage attribute, NO SetByCaller
+        - id: MakeDashGESpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+            param.GameplayEffectClass: GE_DashDamage
+          position: [5400, 0]
+        - id: ApplyDashGE
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToTarget
+          position: [5700, 0]
+        # Knockback
+        - id: CastToDashChar
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [6000, 0]
+        - id: GetKnockbackForce
+          type: VariableGet
+          properties:
+            variable_name: DashKnockbackForce
+          position: [6000, 100]
+        - id: GetKnockbackDir
+          type: CallFunction
+          properties:
+            function: GetActorForwardVector
+          position: [6000, 150]
+        - id: MultiplyKnockback
+          type: CallFunction
+          properties:
+            function: Multiply_VectorFloat
+          position: [6300, 100]
+        - id: MakeLiteralBool_KnockXY
+          type: MakeLiteralBool
+          properties:
+            value: "true"
+          position: [6300, 200]
+        - id: MakeLiteralBool_KnockZ
+          type: MakeLiteralBool
+          properties:
+            value: "false"
+          position: [6300, 250]
+        - id: LaunchKnockback
+          type: CallFunction
+          properties:
+            function: LaunchCharacter
+          position: [6600, 0]
         - id: CommitCooldown
           type: CallFunction
           properties:
@@ -5587,7 +5702,22 @@ gameplay_abilities:
           to: [LaunchCharacter, Exec]
         - from: [LaunchCharacter, Exec]
           to: [Delay, Exec]
+        # v7.8.50: Dash Damage/Knockback exec flow per Guide v3.10
         - from: [Delay, OnFinish]
+          to: [SphereDashOverlap, Exec]
+        - from: [SphereDashOverlap, Exec]
+          to: [ForEachDashHit, Exec]
+        - from: [ForEachDashHit, LoopBody]
+          to: [Branch_DashEnemy, Exec]
+        - from: [Branch_DashEnemy, True]
+          to: [MakeDashGESpec, Exec]
+        - from: [MakeDashGESpec, Exec]
+          to: [ApplyDashGE, Exec]
+        - from: [ApplyDashGE, Exec]
+          to: [CastToDashChar, Exec]
+        - from: [CastToDashChar, Exec]
+          to: [LaunchKnockback, Exec]
+        - from: [ForEachDashHit, Completed]
           to: [CommitCooldown, Exec]
         - from: [CommitCooldown, Exec]
           to: [EndAbility, Exec]
@@ -5611,6 +5741,55 @@ gameplay_abilities:
           to: [LaunchCharacter, LaunchVelocity]
         - from: [GetDuration, DashDuration]
           to: [Delay, Time]
+        # v7.8.50: Data flow - Dash Damage/Knockback per Guide v3.10
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetDashLocation, Target]
+        - from: [GetDashLocation, ReturnValue]
+          to: [SphereDashOverlap, SpherePos]
+        - from: [GetDashRadius, DashDamageRadius]
+          to: [SphereDashOverlap, SphereRadius]
+        - from: [MakeDashObjectTypes, Array]
+          to: [SphereDashOverlap, ObjectTypes]
+        # Ignore player in overlap
+        - from: [SetPlayerRef, PlayerRef]
+          to: [MakeDashIgnoreActors, 0]
+        - from: [MakeDashIgnoreActors, Array]
+          to: [SphereDashOverlap, ActorsToIgnore]
+        - from: [SphereDashOverlap, OutActors]
+          to: [ForEachDashHit, Array]
+        - from: [ForEachDashHit, ArrayElement]
+          to: [HasEnemyTag, Target]
+        - from: [MakeLiteralName_Enemy, ReturnValue]
+          to: [HasEnemyTag, Tag]
+        - from: [HasEnemyTag, ReturnValue]
+          to: [Branch_DashEnemy, Condition]
+        # GE application per GA_ProximityStrike pattern (Contract 24 compliant)
+        - from: [ForEachDashHit, ArrayElement]
+          to: [GetEnemyASC_Dash, Actor]
+        - from: [GetOwnASC_Dash, ReturnValue]
+          to: [ApplyDashGE, self]
+        - from: [GetEnemyASC_Dash, ReturnValue]
+          to: [ApplyDashGE, Target]
+        - from: [MakeDashGESpec, ReturnValue]
+          to: [ApplyDashGE, Spec]
+        # Knockback wiring
+        - from: [ForEachDashHit, ArrayElement]
+          to: [CastToDashChar, Object]
+        - from: [CastToDashChar, AsCharacter]
+          to: [LaunchKnockback, Target]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetKnockbackDir, Target]
+        - from: [GetKnockbackDir, ReturnValue]
+          to: [MultiplyKnockback, A]
+        - from: [GetKnockbackForce, DashKnockbackForce]
+          to: [MultiplyKnockback, B]
+        - from: [MultiplyKnockback, ReturnValue]
+          to: [LaunchKnockback, LaunchVelocity]
+        # LaunchCharacter booleans (bXYOverride=true, bZOverride=false)
+        - from: [MakeLiteralBool_KnockXY, ReturnValue]
+          to: [LaunchKnockback, bXYOverride]
+        - from: [MakeLiteralBool_KnockZ, ReturnValue]
+          to: [LaunchKnockback, bZOverride]
 
   # GA_FatherExoskeletonSprint - Exoskeleton Sprint Speed Boost
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
@@ -5651,6 +5830,15 @@ gameplay_abilities:
       - name: JumpBoostMultiplier
         type: Float
         default_value: 1.5
+        instance_editable: true
+      # v7.8.50: Sprint Push Loop per Guide v2.9 - push nearby enemies
+      - name: PushRadius
+        type: Float
+        default_value: 300.0
+        instance_editable: true
+      - name: PushForce
+        type: Float
+        default_value: 500.0
         instance_editable: true
     event_graph:
       nodes:
@@ -5743,6 +5931,79 @@ gameplay_abilities:
             property_name: JumpZVelocity
             target_class: CharacterMovementComponent
           position: [3900, 0]
+        # v7.8.50: Sprint Push Loop - push nearby enemies every 0.25s
+        - id: RepeatPush
+          type: AbilityTaskRepeat
+          properties:
+            interval: "0.25"
+            total_count: "-1"
+          position: [4200, 0]
+        - id: GetSprintLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [4500, 0]
+        - id: GetPushRadius
+          type: VariableGet
+          properties:
+            variable_name: PushRadius
+          position: [4500, 100]
+        - id: MakePushObjectTypes
+          type: MakeArray
+          properties:
+            array_type: byte
+            values:
+              - ObjectTypeQuery3
+          position: [4500, 150]
+        - id: MakePushIgnoreActors
+          type: MakeArray
+          properties:
+            array_type: object
+            class: Actor
+          position: [4500, 200]
+        - id: SpherePushOverlap
+          type: CallFunction
+          properties:
+            function: SphereOverlapActors
+          position: [4800, 0]
+        - id: ForEachPush
+          type: ForEachLoop
+          position: [5100, 0]
+        - id: CastToCharPush
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [5400, 0]
+        - id: GetPushForce
+          type: VariableGet
+          properties:
+            variable_name: PushForce
+          position: [5400, 100]
+        - id: GetPushDirection
+          type: CallFunction
+          properties:
+            function: GetActorForwardVector
+          position: [5400, 150]
+        - id: MultiplyPushVector
+          type: CallFunction
+          properties:
+            function: Multiply_VectorFloat
+          position: [5700, 100]
+        - id: MakeLiteralBool_PushXY
+          type: MakeLiteralBool
+          properties:
+            value: "true"
+          position: [5700, 200]
+        - id: MakeLiteralBool_PushZ
+          type: MakeLiteralBool
+          properties:
+            value: "false"
+          position: [5700, 250]
+        - id: LaunchPush
+          type: CallFunction
+          properties:
+            function: LaunchCharacter
+          position: [6000, 0]
         - id: Event_EndAbility
           type: Event
           properties:
@@ -5798,6 +6059,17 @@ gameplay_abilities:
           to: [SetOrigJump, Exec]
         - from: [SetOrigJump, Exec]
           to: [SetJumpZ, Exec]
+        # v7.8.50: Sprint Push Loop exec flow
+        - from: [SetJumpZ, Exec]
+          to: [RepeatPush, Exec]
+        - from: [RepeatPush, OnPerformAction]
+          to: [SpherePushOverlap, Exec]
+        - from: [SpherePushOverlap, Exec]
+          to: [ForEachPush, Exec]
+        - from: [ForEachPush, LoopBody]
+          to: [CastToCharPush, Exec]
+        - from: [CastToCharPush, Exec]
+          to: [LaunchPush, Exec]
         # Data flow - Cast
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
@@ -5835,6 +6107,40 @@ gameplay_abilities:
           to: [MultiplyJump, B]
         - from: [MultiplyJump, ReturnValue]
           to: [SetJumpZ, NewJumpZVelocity]
+        # v7.8.50: Data flow - Sprint Push Loop
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetSprintLocation, Target]
+        - from: [GetSprintLocation, ReturnValue]
+          to: [SpherePushOverlap, SpherePos]
+        - from: [GetPushRadius, PushRadius]
+          to: [SpherePushOverlap, SphereRadius]
+        - from: [MakePushObjectTypes, Array]
+          to: [SpherePushOverlap, ObjectTypes]
+        # GPT Correction: Ignore player in overlap - add PlayerRef to ignore array
+        - from: [SetPlayerRef, PlayerRef]
+          to: [MakePushIgnoreActors, 0]
+        - from: [MakePushIgnoreActors, Array]
+          to: [SpherePushOverlap, ActorsToIgnore]
+        - from: [SpherePushOverlap, OutActors]
+          to: [ForEachPush, Array]
+        - from: [ForEachPush, ArrayElement]
+          to: [CastToCharPush, Object]
+        - from: [CastToCharPush, AsCharacter]
+          to: [LaunchPush, Target]
+        # Push direction and force
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPushDirection, Target]
+        - from: [GetPushDirection, ReturnValue]
+          to: [MultiplyPushVector, A]
+        - from: [GetPushForce, PushForce]
+          to: [MultiplyPushVector, B]
+        - from: [MultiplyPushVector, ReturnValue]
+          to: [LaunchPush, LaunchVelocity]
+        # LaunchCharacter boolean params (bXYOverride=true, bZOverride=false)
+        - from: [MakeLiteralBool_PushXY, ReturnValue]
+          to: [LaunchPush, bXYOverride]
+        - from: [MakeLiteralBool_PushZ, ReturnValue]
+          to: [LaunchPush, bZOverride]
         # === END ABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [RestoreSpeed, Exec]
@@ -8807,6 +9113,34 @@ actor_blueprints:
       - name: Lifetime
         type: Float
         default: 15.0
+
+# ============================================================================
+# COMPONENT BLUEPRINTS (1)
+# v7.8.50: BPC_DoublePressInput for double-tap W/A/S/D dash activation
+# ============================================================================
+component_blueprints:
+  - name: BPC_DoublePressInput
+    folder: Components
+    parent_class: ActorComponent
+    variables:
+      - name: DoubleTapWindow
+        type: Float
+        default_value: "0.3"
+        instance_editable: true
+      - name: OwningCharacter
+        type: Object
+        class: NarrativePlayerCharacter
+    event_dispatchers:
+      - name: OnDoubleTapForward
+        parameters: []
+      - name: OnDoubleTapBackward
+        parameters: []
+      - name: OnDoubleTapLeft
+        parameters: []
+      - name: OnDoubleTapRight
+        parameters: []
+    tick:
+      can_ever_tick: false
 
 # ============================================================================
 # WIDGET BLUEPRINTS (3)

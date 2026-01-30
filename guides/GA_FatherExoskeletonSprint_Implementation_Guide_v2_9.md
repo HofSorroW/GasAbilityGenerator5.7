@@ -163,7 +163,7 @@ Before implementing GA_FatherExoskeletonSprint, ensure the following are complet
 3.2.2.1.2) Find property: InputTag
 3.2.2.1.3) Click dropdown arrow
 3.2.2.1.4) Navigate to: Narrative -> Input -> Father
-3.2.2.1.5) Select: Narrative.Input.Father.Ability2
+3.2.2.1.5) Select: Narrative.Input.Ability1
 
 #### 3.2.3) Configure Ability Tags (Class Defaults)
 
@@ -743,22 +743,22 @@ Before implementing GA_FatherExoskeletonSprint, ensure the following are complet
 
 #### 10.2.1) Check Input Abilities Array
 10.2.1.1) In Details panel, find: Input Abilities array
-10.2.1.2) Look for entry with Input Tag: Narrative.Input.Father.Ability2
+10.2.1.2) Look for entry with Input Tag: Narrative.Input.Ability1
 
-#### 10.2.2) Add Entry if Missing
-10.2.2.1) If entry missing, click: + button to add element
-10.2.2.2) Input Action: Select IA_FatherAbility2 (or equivalent)
-10.2.2.3) Input Tag: Select Narrative.Input.Father.Ability2
+#### 10.2.2) Verify Default Mapping Exists
+10.2.2.1) Narrative Pro's DA_DefaultAbilityInputs maps Q → Narrative.Input.Ability1
+10.2.2.2) No custom mapping required - uses Narrative Pro defaults
+10.2.2.3) Per INV-INPUT-1/Contract 14: Built-in tags only
 
 ### 10.3) Verify Input Mapping Context
 
 #### 10.3.1) Open Input Mapping Context
 10.3.1.1) Navigate to: /Content/Input/ (or project input folder)
-10.3.1.2) Open: IMC_Father (or player's Input Mapping Context)
+10.3.1.2) Open: IMC_Default (or player's Input Mapping Context)
 
 #### 10.3.2) Verify Key Binding
-10.3.2.1) Find mapping for: IA_FatherAbility2
-10.3.2.2) Verify key is bound (default: E key or project-specific)
+10.3.2.1) Find mapping for: IA_Ability1 (Narrative Pro default)
+10.3.2.2) Verify Q key is bound (Narrative Pro default)
 
 ### 10.4) Save Input Configuration
 10.4.1) Save: DA_FatherInputMapping
@@ -818,7 +818,7 @@ Before implementing GA_FatherExoskeletonSprint, ensure the following are complet
 | Property | Value |
 |----------|-------|
 | Parent Class | NarrativeGameplayAbility |
-| InputTag | Narrative.Input.Father.Ability2 |
+| InputTag | Narrative.Input.Ability1 |
 | Instancing Policy | Instanced Per Actor |
 | Net Execution Policy | Local Predicted |
 | Replication Policy | Replicate Yes |
@@ -883,9 +883,9 @@ The following items require future discussion and may result in guide updates:
 
 | Item | Current State | Notes |
 |------|---------------|-------|
-| InputTag | Narrative.Input.Father.Ability2 | Placeholder value |
-| Physical Key | TBD | Requires input mapping discussion |
-| Decision Status | DEFERRED | Will be addressed in input configuration session |
+| InputTag | Narrative.Input.Ability1 | Q key per INV-INPUT-1/Contract 14 |
+| Physical Key | Q | Narrative Pro default mapping |
+| Decision Status | RESOLVED | Aligned with manifest and locked contracts |
 
 ### Jump Boost Stacking Behavior
 

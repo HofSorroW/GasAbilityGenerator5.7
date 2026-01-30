@@ -1,5 +1,5 @@
 # Father Companion - GA_DomeBurst Implementation Guide
-## VERSION 2.11 - Auto-Burst Removed, Input Tag Added (Claude-GPT Audit)
+## VERSION 2.12 - Contract 24/24A Compliance + Complete Feature Set
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -36,7 +36,7 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 | Audit Type | Claude-GPT Dual Audit |
 | Manifest Alignment | Verified (v6.5: input_tag added, SetByCaller tag fixed) |
 | Auto-burst | REMOVED - Design Doc v2.7 Section 2.2.6 locks as DISABLED |
-| Input System | Narrative Pro input_tag system (Narrative.Input.Father.Ability1) |
+| Input System | Narrative Pro input_tag system (Narrative.Input.Ability1) |
 
 ---
 
@@ -296,7 +296,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
    - 6.1.1) In Details panel, find Narrative Ability category
    - 6.1.2) Find Input Tag property
    - 6.1.3) Click dropdown or tag picker
-   - 6.1.4) Search: `Narrative.Input.Father.Ability1`
+   - 6.1.4) Search: `Narrative.Input.Ability1`
    - 6.1.5) Select the tag
 
 ### **7) Compile and Save**
@@ -697,7 +697,7 @@ If creating assets manually without the generator:
    - 3.2.1) Find Input Tag Bindings array
    - 3.2.2) Add entry:
       - 3.2.2.1) Input Action: `IA_FatherAbility1`
-      - 3.2.2.2) Gameplay Tag: `Narrative.Input.Father.Ability1`
+      - 3.2.2.2) Gameplay Tag: `Narrative.Input.Ability1`
    - 3.2.3) Save data asset
 
 ### **4) Save All Assets**
@@ -710,6 +710,25 @@ If creating assets manually without the generator:
 
 ## **CHANGELOG**
 
+### **VERSION 2.12 - Contract 24/24A Compliance + Complete Feature Set**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| Contract 24/24A | **BREAKING:** Removed SetByCaller damage mechanism - NarrativeDamageExecCalc ignores it |
+| Damage Source | Damage now comes from player's AttackDamage attribute (captured by exec calc) |
+| BurstDamage Variable | **REMOVED** - was misleading since exec calc ignores SetByCaller |
+| FatherRef Variable | **ADDED** - needed for energy reset |
+| INC-DOME-4 | Knockback (1000 units) now properly implemented in manifest |
+| INC-DOME-5 | VFX spawn (NS_DomeBurst) now properly implemented in manifest |
+| INC-DOME-6 | Energy reset (DomeEnergy = 0) added after burst |
+| INC-DOME-7 | FullyCharged tag removal added after burst |
+| Burst Flow | Steps 8-9 added for proper state reset after manual burst |
+| Audit | Comprehensive Dome System Audit (2026-01-30) |
+
+---
+
 ### **VERSION 2.11 - Auto-Burst Removed, Input Tag Added (Claude-GPT Audit)**
 
 **Release Date:** January 2026
@@ -718,7 +737,7 @@ If creating assets manually without the generator:
 |-------------|-------------|
 | Auto-burst Content | Removed Phase 5 auto-burst implementation sections (auto-burst DISABLED per Design Doc) |
 | Phase 5 | Renamed to "Form Exit Burst Reference" - now contains only form exit documentation |
-| Input Tag | Added `Narrative.Input.Father.Ability1` to Quick Reference and manifest |
+| Input Tag | Added `Narrative.Input.Ability1` to Quick Reference and manifest |
 | SetByCaller Tag | Fixed from `Data.Damage.DomeBurst` to `Data.Dome.Damage` (manifest alignment) |
 | Introduction | Removed auto-burst language, clarified manual + form exit triggers |
 | Key Features | Changed "Automatic (threshold)" to "Form Exit (T wheel)" |
@@ -910,17 +929,18 @@ If creating assets manually without the generator:
 | Activation Required | `Father.Dome.Active`, `Father.Dome.FullyCharged` |
 | Activation Owned | `Father.State.Attacking` |
 | Activation Blocked | `Cooldown.Father.DomeBurst` |
-| InputTag | `Narrative.Input.Father.Ability1` |
+| InputTag | `Narrative.Input.Ability1` |
 
 ### **Variable Summary**
 
 | Variable | Type | Default | Instance Editable | Purpose |
 |----------|------|---------|-------------------|---------|
-| BurstDamage | Float | 75.0 | Yes | Flat burst damage |
+| PlayerRef | Object (NarrativePlayerCharacter) | None | No | Player reference |
+| FatherRef | Object (BP_FatherCompanion) | None | No | Father reference for energy reset |
 | BurstRadius | Float | 500.0 | Yes | AOE explosion radius |
 | KnockbackForce | Float | 1000.0 | Yes | Push force on enemies |
-| PlayerRef | Actor Reference | None | No | Player reference |
-| PlayerASC | NarrativeAbilitySystemComponent Reference | None | No | Player ASC for validation |
+
+> **Note (v2.12):** `BurstDamage` variable removed per Contract 24/24A. Damage now comes from player's AttackDamage attribute via NarrativeDamageExecCalc.
 
 ### **Gameplay Effect Summary**
 
@@ -930,13 +950,16 @@ If creating assets manually without the generator:
 | GE_DomeBurstCooldown | 12 seconds | Grants cooldown tags |
 | GE_DomeEnergyReset | Instant | Resets DomeEnergy to 0 |
 
-### **NarrativeDamageExecCalc Formula**
+### **NarrativeDamageExecCalc Formula (v2.12 - Contract 24/24A)**
 
 | Step | Formula |
 |------|---------|
+| Base Damage | Player's `AttackDamage` attribute (captured from source) |
 | Attack Multiplier | 1.0 + (AttackRating / 100.0) |
 | Defence Multiplier | 1.0 + (Armor / 100.0) |
-| Final Damage | (BurstDamage x AttackMultiplier) / DefenceMultiplier |
+| Final Damage | (AttackDamage x AttackMultiplier) / DefenceMultiplier |
+
+> **Note:** Per Contract 24/24A, NarrativeDamageExecCalc ignores SetByCaller magnitudes. Damage is derived entirely from captured attributes.
 
 ### **Activation Modes**
 
@@ -945,7 +968,7 @@ If creating assets manually without the generator:
 | Manual | Q Key | 500 (FULL) |
 | Form Exit | T Wheel (via GA_ProtectiveDome.EndAbility) | 500 (FULL) |
 
-### **Burst Flow Summary**
+### **Burst Flow Summary (v2.12)**
 
 | Step | Action |
 |------|--------|
@@ -953,13 +976,15 @@ If creating assets manually without the generator:
 | 2 | Validate Dome Active AND FullyCharged tags |
 | 3 | Sphere Overlap (500 radius) |
 | 4 | For Each Enemy with Character.Enemy tag |
-| 5 | Apply GE_DomeBurstDamage (75 flat damage) via NarrativeDamageExecCalc |
+| 5 | Apply GE_DomeBurstDamage (AttackDamage-scaled) via NarrativeDamageExecCalc |
 | 6 | Launch Character (1000 unit knockback) |
 | 7 | Spawn NS_DomeBurst VFX |
-| 8 | Apply GE_DomeEnergyReset |
-| 9 | Apply GE_DomeBurstCooldown (12s) |
-| 10 | Clear References (PlayerRef, PlayerASC) |
+| 8 | **Set DomeEnergy = 0 on Father** (v2.12: energy reset) |
+| 9 | **Remove Father.Dome.FullyCharged tag** (v2.12: prevents re-burst) |
+| 10 | Apply GE_DomeBurstCooldown (12s) |
 | 11 | End Ability |
+
+> **v2.12 Changes:** Steps 8-9 added to properly reset dome state after manual burst. Previously only form exit (via GA_ProtectiveDome.EndAbility) handled reset.
 
 ### **Replication Settings**
 
@@ -989,10 +1014,10 @@ If creating assets manually without the generator:
 
 ---
 
-**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.10**
+**END OF GA_DOMEBURST IMPLEMENTATION GUIDE v2.12**
 
-**Armor Form - Active/Auto AOE Explosion**
+**Armor Form - Active AOE Explosion (Contract 24/24A Compliant)**
 
 **Unreal Engine 5.7 + Narrative Pro v2.2**
 
-**Blueprint-Only Implementation**
+**Blueprint-Only Implementation - Manifest Automated**
