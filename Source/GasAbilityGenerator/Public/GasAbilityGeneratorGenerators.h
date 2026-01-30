@@ -810,6 +810,18 @@ private:
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 
+	// v7.8.46: Phase 7 - SpawnProjectile task for projectile abilities (Contract 25)
+	// Creates AbilityTask_SpawnProjectile node with OnTargetData/OnDestroyed delegate outputs
+	// Properties:
+	//   - task_instance_name: Name for the task instance (default: "SpawnProjectile")
+	//   - class_variable: Variable name containing TSubclassOf<ANarrativeProjectile>
+	// Output pins:
+	//   - OnTargetData: Fires when projectile hits and broadcasts target data
+	//   - OnDestroyed: Fires when projectile is destroyed without hitting
+	static UK2Node* CreateAbilityTaskSpawnProjectileNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
 	// v7.8.0: Contract 25 - AbilityAsync_WaitAttributeChanged for damage-scaled energy absorption
 	// Tracks attribute changes and provides NewValue/OldValue for damage calculation
 	static UK2Node* CreateAbilityAsyncWaitAttributeChangedNode(

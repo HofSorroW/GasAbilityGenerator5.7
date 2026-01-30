@@ -1,5 +1,5 @@
 # Father Companion - GA_FatherElectricTrap Implementation Guide
-## VERSION 3.2 - Form State Tag Update (INV-1 Compliant)
+## VERSION 3.3 - Contract 24 Compliance (Attribute-Based Damage)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -14,7 +14,7 @@
 | Trap Parent Class | NarrativeProjectile |
 | Form | Engineer (Deployed Turret) |
 | Input | None (AI Automatic) |
-| Version | 3.1 |
+| Version | 3.3 |
 
 ---
 
@@ -123,7 +123,6 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 | Father.State.ThrowingWeb | Father turret is deploying electric web trap |
 | Effect.ElectricWeb.Active | Target is affected by electric web trap |
 | Cooldown.Father.Engineer.ElectricTrap | Electric trap ability cooldown |
-| Data.Damage.ElectricWeb | SetByCaller tag for electric web damage magnitude |
 | Data.Duration.ElectricWebRoot | SetByCaller tag for electric web root duration |
 
 ### **Verify Existing Tags**
@@ -436,8 +435,9 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 | Component | Configuration |
 |-----------|---------------|
 | Custom Execution Calculation | Calculation Class: NarrativeDamageExecCalc |
-| Calculation Modifiers [0] | Modifier Op: Override, Magnitude Type: Set By Caller, Tag: Data.Damage.ElectricWeb |
 | Tags This Effect Has (Asset Tags) | Effect.ElectricWeb.Damage |
+
+> **Contract 24 Note (v3.3):** NarrativeDamageExecCalc captures the source's AttackDamage attribute and applies it with target Armor mitigation. Do NOT use SetByCaller for damage magnitude with this exec calc - damage is derived from the Father's AttackDamage attribute (set by Engineer form state GE).
 
 #### 2.4) Compile and Save
 
@@ -514,11 +514,12 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
 | ProjectileClass | Class Reference (NarrativeProjectile) | BP_ElectricWeb | Yes |
-| DamagePerTick | Float | 15.0 | Yes |
 | RootDuration | Float | 5.0 | Yes |
 | TrapSpawnDistance | Float | 200.0 | Yes |
 | TargetEnemy | Actor Reference | None | Yes |
 | SpawnedProjectileTask | AbilityTask_SpawnProjectile (Object Reference) | None | No |
+
+> **Note (v3.3):** DamagePerTick variable removed - damage is now derived from Father's AttackDamage attribute via NarrativeDamageExecCalc (Contract 24 compliance).
 
 ### **5) Compile and Save**
 
@@ -823,6 +824,8 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 
 ### **6) Apply Damage Effect to Target**
 
+> **Contract 24 Note (v3.3):** NarrativeDamageExecCalc captures the source's AttackDamage attribute automatically. Do NOT use SetByCaller for damage magnitude - the damage is derived from Father's AttackDamage attribute (set by Engineer form state GE, typically 15-25 for Engineer form).
+
 #### 6.1) Create Damage Effect Spec
    - 6.1.1) From Apply Root Effect execution:
       - 6.1.1.1) From Owner Father ASC
@@ -830,20 +833,12 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
    - 6.1.2) **Gameplay Effect Class**: `GE_ElectricWebDamage`
    - 6.1.3) **Level**: `1.0`
 
-#### 6.2) Assign Damage Magnitude via SetByCaller
+#### 6.2) Apply Damage Effect to Target
    - 6.2.1) From **Make Outgoing Spec** (Damage) execution:
-      - 6.2.1.1) Add **Assign Tag Set By Caller Magnitude** node
-   - 6.2.2) Connect Damage **Spec Handle**
-   - 6.2.3) **Data Tag**: `Data.Damage.ElectricWeb`
-   - 6.2.4) Drag **DamagePerTick** variable getter
-   - 6.2.5) Connect **DamagePerTick** to **Magnitude** pin
-
-#### 6.3) Apply Damage Effect to Target
-   - 6.3.1) From **Assign Tag Set By Caller Magnitude** (Damage) execution:
-      - 6.3.1.1) From Target ASC
-      - 6.3.1.2) Add **Apply Gameplay Effect Spec to Self** node
-   - 6.3.2) Connect execution
-   - 6.3.3) Connect Damage **Spec Handle**
+      - 6.2.1.1) From Target ASC
+      - 6.2.1.2) Add **Apply Gameplay Effect Spec to Self** node
+   - 6.2.2) Connect execution
+   - 6.2.3) Connect **Make Outgoing Spec** Spec Handle to Apply node
 
 ### **7) Handle OnDestroyed Delegate**
 
@@ -989,6 +984,37 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 
 ## **CHANGELOG**
 
+### **VERSION 3.3 - Contract 24 Compliance (Attribute-Based Damage)**
+
+**Release Date:** January 2026
+
+**Changes from v3.2:**
+
+1. **Contract 24 Compliance Fix**
+   - PHASE 3 Section 2.3 - Removed SetByCaller damage modifier from GE_ElectricWebDamage
+   - NarrativeDamageExecCalc captures AttackDamage attribute directly; SetByCaller is FORBIDDEN
+   - Added Contract 24 Note explaining attribute-based damage pattern
+
+2. **Tag Cleanup**
+   - Removed `Data.Damage.ElectricWeb` from required tags list (no longer used)
+   - Updated SetByCaller Tags Summary
+
+3. **Version Normalization**
+   - Aligned header, document info, and footer to v3.3
+
+---
+
+### **VERSION 3.2 - Form State Tag Update (INV-1 Compliant)**
+
+**Release Date:** January 2026
+
+**Changes from v3.1:**
+
+1. **INV-1 Compliance**
+   - Updated form state tag reference
+
+---
+
 ### **VERSION 3.1 - BTTask_ActivateAbilityByClass Integration**
 
 **Release Date:** January 2026
@@ -1130,15 +1156,15 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 
 | Tag | Purpose | Default Value |
 |-----|---------|---------------|
-| `Data.Damage.ElectricWeb` | Damage per tick magnitude | 15.0 |
 | `Data.Duration.ElectricWebRoot` | Root effect duration | 5.0 |
+
+> **Note (v3.3):** Damage is no longer set via SetByCaller. NarrativeDamageExecCalc captures Father's AttackDamage attribute directly (Contract 24 compliance).
 
 ### **Ability Variable Summary**
 
 | Variable | Type | Instance Editable | Default | Purpose |
 |----------|------|-------------------|---------|---------|
 | ProjectileClass | Class Ref (NarrativeProjectile) | Yes | BP_ElectricWeb | Trap actor to spawn |
-| DamagePerTick | Float | Yes | 15.0 | Damage per second (SetByCaller) |
 | RootDuration | Float | Yes | 5.0 | Root duration in seconds (SetByCaller) |
 | TrapSpawnDistance | Float | Yes | 200.0 | Distance from turret to spawn |
 | TargetEnemy | Actor Ref | Yes | None | AI-provided target |
@@ -1164,7 +1190,7 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 | Effect | Duration | Purpose |
 |--------|----------|---------|
 | GE_ElectricWebRoot | SetByCaller (default 5s) | Immobilizes target via Narrative.State.Movement.Lock |
-| GE_ElectricWebDamage | 5 seconds | 15 damage/second via NarrativeDamageExecCalc |
+| GE_ElectricWebDamage | 5 seconds | Attribute-based damage via NarrativeDamageExecCalc (captures AttackDamage) |
 | GE_ElectricTrapCooldown | 8 seconds | Ability cooldown |
 
 ### **Homing Configuration**
@@ -1210,7 +1236,7 @@ In Engineer form, the father deploys as a stationary turret with two AI behavior
 
 ---
 
-**END OF GA_FATHERELECTRICTRAP IMPLEMENTATION GUIDE v2.8**
+**END OF GA_FATHERELECTRICTRAP IMPLEMENTATION GUIDE v3.3**
 
 **Engineer Form - NarrativeProjectile Integration**
 

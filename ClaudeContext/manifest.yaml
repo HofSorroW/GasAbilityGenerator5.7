@@ -3880,6 +3880,7 @@ gameplay_abilities:
 
   # GA_FatherLaserShot - Ranged Laser Attack
   # NOTE: Runs on Father ASC, only in Crawler form
+  # v7.8.46: Phase 7 remediation - AbilityTask_SpawnProjectile + OnTargetData/OnDestroyed handlers
   - name: GA_FatherLaserShot
     folder: Abilities/Combat
     parent_class: NarrativeGameplayAbility
@@ -3890,9 +3891,11 @@ gameplay_abilities:
       ability_tags:
         - Ability.Father.LaserShot
       activation_owned_tags:
-        - Father.State.Attacking
+        - Father.State.ShootingLaser
       activation_required_tags:
         - Effect.Father.FormState.Crawler  # Uses GE-granted tag (Option B)
+        - Father.State.Detached            # P1-LS.5: Guide requires detached state
+        - Father.State.Recruited           # P1-LS.5: Guide requires recruited state
       activation_blocked_tags:
         - Cooldown.Father.LaserShot
         - Father.State.Transitioning
@@ -3904,16 +3907,13 @@ gameplay_abilities:
         type: Class
         class: NarrativeProjectile
         instance_editable: true
-      - name: LaserDamage
-        type: Float
-        default_value: 40.0
-        instance_editable: true
       - name: MuzzleSocketName
         type: Name
         default_value: MuzzleSocket
         instance_editable: true
     event_graph:
       nodes:
+        # Activation and Father Reference
         - id: Event_Activate
           type: Event
           properties:
@@ -3924,67 +3924,131 @@ gameplay_abilities:
           properties:
             function: GetAvatarActorFromActorInfo
             target_self: true
-          position: [300, 0]
+          position: [200, 0]
         - id: CastToFather
           type: DynamicCast
           properties:
             target_class: BP_FatherCompanion
-          position: [600, 0]
+          position: [400, 0]
         - id: SetFatherRef
           type: VariableSet
           properties:
             variable_name: FatherRef
-          position: [900, 0]
+          position: [600, 0]
+        # Cast failure path - end ability
+        - id: EndAbility_CastFail
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [600, 200]
+        # Get spawn transform from muzzle socket
         - id: GetMesh
           type: PropertyGet
           properties:
             property_name: Mesh
             target_class: Character
-          position: [1200, 0]
+          position: [800, 0]
         - id: GetSocketName
           type: VariableGet
           properties:
             variable_name: MuzzleSocketName
-          position: [1200, 100]
+          position: [800, 100]
         - id: GetSocketLocation
           type: CallFunction
           properties:
             function: GetSocketLocation
-          position: [1500, 0]
+          position: [1000, 0]
         - id: GetSocketRotation
           type: CallFunction
           properties:
             function: GetSocketRotation
-          position: [1500, 100]
+          position: [1000, 100]
         - id: MakeSpawnTransform
           type: CallFunction
           properties:
             function: MakeTransform
-          position: [1650, 50]
+          position: [1200, 50]
+        # P1-LS.1: AbilityTask_SpawnProjectile replaces SpawnActor
         - id: GetProjectileClass
           type: VariableGet
           properties:
             variable_name: ProjectileClass
-          position: [1800, 100]
-        - id: SpawnProjectile
-          type: SpawnActor
+          position: [1400, 100]
+        - id: SpawnProjectileTask
+          type: AbilityTaskSpawnProjectile
           properties:
-            actor_class_variable: ProjectileClass
-          position: [1800, 0]
-        - id: CommitCooldown
+            task_instance_name: LaserProjectileTask
+          position: [1400, 0]
+        # P1-LS.2: OnTargetData handler chain (hit path)
+        # Get hit actor from target data
+        - id: GetActorsFromTargetData
+          type: CallFunction
+          properties:
+            function: GetActorsFromTargetData
+            class: AbilitySystemBlueprintLibrary
+          position: [1700, 0]
+        - id: GetHitActor
+          type: GetArrayItem
+          position: [1900, 0]
+        - id: CastToCharacter
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [2100, 0]
+        # Get target ASC and apply damage
+        - id: GetTargetASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [2300, 0]
+        - id: GetOwnerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponentFromActorInfo
+            target_self: true
+          position: [2300, 100]
+        - id: MakeDamageSpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+            param.GameplayEffectClass: GE_LaserDamage
+          position: [2500, 0]
+        - id: ApplyDamage
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToTarget
+          position: [2700, 0]
+        # v7.8.47: MarkEnemy removed - requires ability activation pattern (future enhancement)
+        # P1-LS.4: Commit cooldown in success path (after damage)
+        - id: CommitCooldown_Hit
           type: CallFunction
           properties:
             function: K2_CommitAbilityCooldown
             target_self: true
-          position: [2100, 0]
-        - id: EndAbility
+          position: [3100, 0]
+        - id: EndAbility_Hit
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [2400, 0]
+          position: [3300, 0]
+        # P1-LS.3: OnDestroyed handler chain (miss/expire path)
+        - id: CommitCooldown_Miss
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [1700, 300]
+        - id: EndAbility_Miss
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1900, 300]
       connections:
-        # Exec flow (GetAvatarActor is pure - no exec pins)
+        # Exec flow - activation to spawn
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
@@ -3993,8 +4057,12 @@ gameplay_abilities:
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
+        # Cast failure - end ability
+        - from: [CastToFather, CastFailed]
+          to: [EndAbility_CastFail, Exec]
+        # Get spawn transform
         - from: [SetFatherRef, Exec]
-          to: [GetMesh, Exec]
+          to: [SpawnProjectileTask, Exec]
         - from: [SetFatherRef, FatherRef]
           to: [GetMesh, Target]
         - from: [GetMesh, Mesh]
@@ -4005,20 +4073,50 @@ gameplay_abilities:
           to: [GetSocketRotation, Target]
         - from: [GetSocketName, MuzzleSocketName]
           to: [GetSocketRotation, InSocketName]
-        - from: [GetMesh, Exec]
-          to: [SpawnProjectile, Exec]
-        - from: [GetProjectileClass, ProjectileClass]
-          to: [SpawnProjectile, Class]
         - from: [GetSocketLocation, ReturnValue]
           to: [MakeSpawnTransform, Location]
         - from: [GetSocketRotation, ReturnValue]
           to: [MakeSpawnTransform, Rotation]
+        # Spawn projectile task connections
+        - from: [GetProjectileClass, ProjectileClass]
+          to: [SpawnProjectileTask, Class]
         - from: [MakeSpawnTransform, ReturnValue]
-          to: [SpawnProjectile, SpawnTransform]
-        - from: [SpawnProjectile, Exec]
-          to: [CommitCooldown, Exec]
-        - from: [CommitCooldown, Exec]
-          to: [EndAbility, Exec]
+          to: [SpawnProjectileTask, ProjectileSpawnTransform]
+        # P1-LS.2: OnTargetData handler chain
+        - from: [SpawnProjectileTask, OnTargetData]
+          to: [GetActorsFromTargetData, Exec]
+        - from: [SpawnProjectileTask, Data]
+          to: [GetActorsFromTargetData, TargetData]
+        - from: [GetActorsFromTargetData, ReturnValue]
+          to: [GetHitActor, Array]
+        - from: [GetActorsFromTargetData, Exec]
+          to: [CastToCharacter, Exec]
+        # v7.8.47: Fixed GetArrayItem output pin name (Output, not ReturnValue)
+        - from: [GetHitActor, Output]
+          to: [CastToCharacter, Object]
+        - from: [CastToCharacter, Exec]
+          to: [MakeDamageSpec, Exec]
+        - from: [CastToCharacter, AsCharacter]
+          to: [GetTargetASC, Actor]
+        - from: [MakeDamageSpec, Exec]
+          to: [ApplyDamage, Exec]
+        - from: [MakeDamageSpec, ReturnValue]
+          to: [ApplyDamage, Spec]
+        - from: [GetOwnerASC, ReturnValue]
+          to: [ApplyDamage, self]
+        - from: [GetTargetASC, ReturnValue]
+          to: [ApplyDamage, Target]
+        # v7.8.47: Simplified - MarkEnemy removed (requires ability activation)
+        # Commit and end (hit path) - directly after damage
+        - from: [ApplyDamage, Exec]
+          to: [CommitCooldown_Hit, Exec]
+        - from: [CommitCooldown_Hit, Exec]
+          to: [EndAbility_Hit, Exec]
+        # P1-LS.3: OnDestroyed handler chain (miss path)
+        - from: [SpawnProjectileTask, OnDestroyed]
+          to: [CommitCooldown_Miss, Exec]
+        - from: [CommitCooldown_Miss, Exec]
+          to: [EndAbility_Miss, Exec]
 
   # GA_TurretShoot - Engineer Turret Auto-Fire
   # NOTE: Runs on Father ASC, only in Engineer form when deployed
@@ -4164,7 +4262,9 @@ gameplay_abilities:
           to: [EndAbility, Exec]
 
   # GA_FatherElectricTrap - Engineer Electric Web Trap
-  # NOTE: Runs on Father ASC, only in Engineer form
+  # NOTE: Runs on Father ASC, only in Engineer form when deployed
+  # v7.8.46: Phase 7 remediation - AbilityTask_SpawnProjectile + OnTargetData handlers + deployed gate
+  # Contract 24: Damage is attribute-based via NarrativeDamageExecCalc (no SetByCaller)
   - name: GA_FatherElectricTrap
     folder: Abilities/Combat
     parent_class: NarrativeGameplayAbility
@@ -4176,29 +4276,33 @@ gameplay_abilities:
         - Ability.Father.ElectricTrap
         - Ability.Father.Engineer.ElectricTrap
       activation_owned_tags:
-        - Father.State.Attacking
+        - Father.State.ThrowingWeb
       activation_required_tags:
         - Effect.Father.FormState.Engineer  # Uses GE-granted tag (Option B)
+        - Father.State.TurretDeployed       # P1-ET.6: Consistent with GA_TurretShoot
+        - Father.State.Recruited            # P1-ET.6: Guide requires recruited state
       activation_blocked_tags:
-        - Cooldown.Father.ElectricTrap
+        - Cooldown.Father.Engineer.ElectricTrap
+        - Narrative.State.IsDead            # Guide Section 4.2
     variables:
       - name: FatherRef
         type: Object
         class: BP_FatherCompanion
+      # P1-ET.1: Fixed TrapClass type to NarrativeProjectile
       - name: TrapClass
         type: Class
+        class: NarrativeProjectile
+        instance_editable: true
+      - name: RootDuration
+        type: Float
+        default_value: 5.0
+        instance_editable: true
+      - name: TargetEnemy
+        type: Object
         class: Actor
-        instance_editable: true
-      - name: TrapDamage
-        type: Float
-        default_value: 30.0
-        instance_editable: true
-      - name: TrapDuration
-        type: Float
-        default_value: 10.0
-        instance_editable: true
     event_graph:
       nodes:
+        # Activation and Father Reference
         - id: Event_Activate
           type: Event
           properties:
@@ -4209,51 +4313,145 @@ gameplay_abilities:
           properties:
             function: GetAvatarActorFromActorInfo
             target_self: true
-          position: [300, 0]
+          position: [200, 0]
         - id: CastToFather
           type: DynamicCast
           properties:
             target_class: BP_FatherCompanion
-          position: [600, 0]
+          position: [400, 0]
         - id: SetFatherRef
           type: VariableSet
           properties:
             variable_name: FatherRef
-          position: [900, 0]
-        - id: GetActorLocation
-          type: CallFunction
-          properties:
-            function: K2_GetActorLocation
-          position: [1200, 0]
-        - id: MakeSpawnTransform
-          type: CallFunction
-          properties:
-            function: MakeTransform
-          position: [1350, 0]
-        - id: GetTrapClass
-          type: VariableGet
-          properties:
-            variable_name: TrapClass
-          position: [1500, 100]
-        - id: SpawnTrap
-          type: SpawnActor
-          properties:
-            actor_class_variable: TrapClass
-          position: [1500, 0]
-        - id: CommitCooldown
-          type: CallFunction
-          properties:
-            function: K2_CommitAbilityCooldown
-            target_self: true
-          position: [1800, 0]
-        - id: EndAbility
+          position: [600, 0]
+        # Cast failure path
+        - id: EndAbility_CastFail
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
+          position: [600, 200]
+        # Calculate spawn transform from father location
+        - id: GetActorLocation
+          type: CallFunction
+          properties:
+            function: K2_GetActorLocation
+          position: [800, 0]
+        - id: MakeSpawnTransform
+          type: CallFunction
+          properties:
+            function: MakeTransform
+          position: [1000, 0]
+        # P1-ET.2: AbilityTask_SpawnProjectile replaces SpawnActor
+        - id: GetTrapClass
+          type: VariableGet
+          properties:
+            variable_name: TrapClass
+          position: [1200, 100]
+        - id: SpawnTrapTask
+          type: AbilityTaskSpawnProjectile
+          properties:
+            task_instance_name: SpawnElectricWeb
+          position: [1200, 0]
+        # P1-ET.3: OnTargetData handler chain - apply effects
+        # v7.8.47: Fixed to use GetActorsFromTargetData pattern (matching LaserShot)
+        - id: GetActorsFromTargetData
+          type: CallFunction
+          properties:
+            function: GetActorsFromTargetData
+            class: AbilitySystemBlueprintLibrary
+          position: [1500, 0]
+        - id: GetHitActor
+          type: GetArrayItem
+          position: [1700, 0]
+        - id: CastToCharacter
+          type: DynamicCast
+          properties:
+            target_class: Character
+          position: [1900, 0]
+        # Get ASC references
+        - id: GetTargetASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1900, 0]
+        - id: GetOwnerASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponentFromActorInfo
+            target_self: true
+          position: [1900, 100]
+        # Apply GE_ElectricTrapRoot (CC/immobilize)
+        - id: MakeRootSpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+            param.GameplayEffectClass: GE_ElectricTrapRoot
           position: [2100, 0]
+        - id: GetRootDuration
+          type: VariableGet
+          properties:
+            variable_name: RootDuration
+          position: [2100, 150]
+        - id: MakeRootDurationTag
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Data.Duration.ElectricTrapRoot
+          position: [2100, 200]
+        - id: SetRootDuration
+          type: CallFunction
+          properties:
+            function: AssignTagSetByCallerMagnitude
+            class: AbilitySystemBlueprintLibrary
+          position: [2300, 0]
+        - id: ApplyRootEffect
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToTarget
+          position: [2500, 0]
+        # Apply GE_ElectricTrapDamage (damage via NarrativeDamageExecCalc - attribute-based per Contract 24)
+        - id: MakeDamageSpec
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+            param.GameplayEffectClass: GE_ElectricTrapDamage
+          position: [2700, 0]
+        - id: ApplyDamageEffect
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToTarget
+          position: [2900, 0]
+        # Commit cooldown and end (hit path)
+        - id: CommitCooldown_Hit
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [3100, 0]
+        - id: EndAbility_Hit
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [3300, 0]
+        # P1-ET.3: OnDestroyed handler chain (miss/expire path)
+        - id: CommitCooldown_Miss
+          type: CallFunction
+          properties:
+            function: K2_CommitAbilityCooldown
+            target_self: true
+          position: [1500, 300]
+        - id: EndAbility_Miss
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [1700, 300]
       connections:
-        # Exec flow (GetAvatarActor is pure - no exec pins)
+        # Exec flow - activation to spawn
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
@@ -4262,21 +4460,75 @@ gameplay_abilities:
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, Exec]
           to: [SetFatherRef, Exec]
-        # v7.2: Direct exec - K2_GetActorLocation is pure (no exec pins)
+        # Cast failure - end ability
+        - from: [CastToFather, CastFailed]
+          to: [EndAbility_CastFail, Exec]
+        # Get spawn transform
         - from: [SetFatherRef, Exec]
-          to: [SpawnTrap, Exec]
+          to: [SpawnTrapTask, Exec]
         - from: [SetFatherRef, FatherRef]
           to: [GetActorLocation, Target]
-        - from: [GetTrapClass, TrapClass]
-          to: [SpawnTrap, Class]
         - from: [GetActorLocation, ReturnValue]
           to: [MakeSpawnTransform, Location]
+        # Spawn trap task connections
+        - from: [GetTrapClass, TrapClass]
+          to: [SpawnTrapTask, Class]
         - from: [MakeSpawnTransform, ReturnValue]
-          to: [SpawnTrap, SpawnTransform]
-        - from: [SpawnTrap, Exec]
-          to: [CommitCooldown, Exec]
-        - from: [CommitCooldown, Exec]
-          to: [EndAbility, Exec]
+          to: [SpawnTrapTask, ProjectileSpawnTransform]
+        # OnTargetData handler chain
+        # v7.8.47: Fixed to use GetActorsFromTargetData pattern
+        - from: [SpawnTrapTask, OnTargetData]
+          to: [GetActorsFromTargetData, Exec]
+        - from: [SpawnTrapTask, Data]
+          to: [GetActorsFromTargetData, TargetData]
+        - from: [GetActorsFromTargetData, ReturnValue]
+          to: [GetHitActor, Array]
+        - from: [GetActorsFromTargetData, Exec]
+          to: [CastToCharacter, Exec]
+        - from: [GetHitActor, Output]
+          to: [CastToCharacter, Object]
+        - from: [CastToCharacter, AsCharacter]
+          to: [GetTargetASC, Actor]
+        # Apply root effect with SetByCaller duration
+        - from: [CastToCharacter, Exec]
+          to: [MakeRootSpec, Exec]
+        - from: [MakeRootSpec, Exec]
+          to: [SetRootDuration, Exec]
+        - from: [MakeRootSpec, ReturnValue]
+          to: [SetRootDuration, SpecHandle]
+        - from: [GetRootDuration, RootDuration]
+          to: [SetRootDuration, Magnitude]
+        - from: [MakeRootDurationTag, ReturnValue]
+          to: [SetRootDuration, DataTag]
+        - from: [SetRootDuration, Exec]
+          to: [ApplyRootEffect, Exec]
+        - from: [SetRootDuration, ReturnValue]
+          to: [ApplyRootEffect, Spec]
+        - from: [GetOwnerASC, ReturnValue]
+          to: [ApplyRootEffect, self]
+        - from: [GetTargetASC, ReturnValue]
+          to: [ApplyRootEffect, Target]
+        # Apply damage effect (attribute-based via NarrativeDamageExecCalc)
+        - from: [ApplyRootEffect, Exec]
+          to: [MakeDamageSpec, Exec]
+        - from: [MakeDamageSpec, Exec]
+          to: [ApplyDamageEffect, Exec]
+        - from: [MakeDamageSpec, ReturnValue]
+          to: [ApplyDamageEffect, Spec]
+        - from: [GetOwnerASC, ReturnValue]
+          to: [ApplyDamageEffect, self]
+        - from: [GetTargetASC, ReturnValue]
+          to: [ApplyDamageEffect, Target]
+        # Commit and end (hit path)
+        - from: [ApplyDamageEffect, Exec]
+          to: [CommitCooldown_Hit, Exec]
+        - from: [CommitCooldown_Hit, Exec]
+          to: [EndAbility_Hit, Exec]
+        # OnDestroyed handler chain (miss path)
+        - from: [SpawnTrapTask, OnDestroyed]
+          to: [CommitCooldown_Miss, Exec]
+        - from: [CommitCooldown_Miss, Exec]
+          to: [EndAbility_Miss, Exec]
 
   # ---------------------------------------------------------------------------
   # ACTION ABILITIES (9)
@@ -6103,10 +6355,15 @@ gameplay_abilities:
         - Ability.Father.Mark
       activation_owned_tags:
         - Father.State.Marking
-      # activation_required_tags removed - Mark works in both Crawler and Engineer forms
+      # Mark works in both Crawler and Engineer forms (ERDEM DECISION)
       # Called internally by attack abilities (GA_FatherAttack, GA_FatherLaserShot, GA_TurretShoot, GA_FatherElectricTrap)
+      # P1-MK.1: Require Recruited state
+      activation_required_tags:
+        - Father.State.Recruited
+      # P1-MK.2: Block if dead
       activation_blocked_tags:
         - Father.State.Transitioning
+        - Narrative.State.IsDead
     variables:
       - name: TargetEnemy
         type: Object

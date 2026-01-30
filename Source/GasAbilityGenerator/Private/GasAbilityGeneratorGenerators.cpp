@@ -1,5 +1,8 @@
-// GasAbilityGenerator v7.8.1
+// GasAbilityGenerator v7.8.46
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v7.8.46: Phase 7 Father Combat Abilities - AbilityTask_SpawnProjectile support (Contract 25)
+//        Enables guide-required projectile sequencing: OnTargetData (hit→damage→MarkEnemy), OnDestroyed (miss)
+//        Fixes GA_FatherLaserShot and GA_FatherElectricTrap to use task pattern instead of SpawnActor
 // v7.8.1: Automation Gap Closure - NPC Blueprint auto-link by convention (BP_{NPCBaseName} lookup)
 //        Audit revealed most v4.30 "gap" items already implemented
 // v7.8.0: Path B AbilityTasks - WaitGameplayEvent, WaitGEAppliedToSelf, WaitGEAppliedToTarget
@@ -342,6 +345,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"  // v7.8: Path B - BP-safe death/event detection
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEffectApplied_Self.h"  // v7.8: Path B - BP-safe damage received detection
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEffectApplied_Target.h"  // v7.8: Path B - BP-safe damage dealt detection
+#include "GAS/AbilityTasks/AbilityTask_SpawnProjectile.h"  // v7.8.46: Phase 7 - SpawnProjectile task for projectile abilities
 #include "Abilities/Async/AbilityAsync_WaitAttributeChanged.h"  // v7.8.0: Contract 25 - Damage-scaled energy absorption
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphPin.h"
@@ -9782,6 +9786,7 @@ bool FEventGraphGenerator::ValidateEventGraph(
 	// v2.8.2: Supported node types for validation
 	// v7.8.14: Added ConstructObjectFromClass, MakeLiteral* types
 	// v7.8.25: Added CallParent, Return, FunctionResult, AddDelegate, BindDelegate for function overrides
+	// v7.8.46: Added AbilityTaskSpawnProjectile for projectile abilities (Phase 7)
 	static TSet<FString> SupportedNodeTypes = {
 		TEXT("Event"), TEXT("CustomEvent"), TEXT("CallFunction"), TEXT("Branch"),
 		TEXT("VariableGet"), TEXT("VariableSet"), TEXT("PropertyGet"), TEXT("PropertySet"),
@@ -9789,7 +9794,9 @@ bool FEventGraphGenerator::ValidateEventGraph(
 		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("SpawnNPC"), TEXT("BreakStruct"), TEXT("MakeArray"),
 		TEXT("GetArrayItem"), TEXT("Self"), TEXT("ConstructObjectFromClass"),
 		TEXT("MakeLiteralBool"), TEXT("MakeLiteralFloat"), TEXT("MakeLiteralInt"), TEXT("MakeLiteralByte"), TEXT("MakeLiteralString"),
-		TEXT("CallParent"), TEXT("Return"), TEXT("FunctionResult"), TEXT("AddDelegate"), TEXT("BindDelegate")
+		TEXT("CallParent"), TEXT("Return"), TEXT("FunctionResult"), TEXT("AddDelegate"), TEXT("BindDelegate"),
+		TEXT("AbilityTaskSpawnProjectile"), TEXT("AbilityTaskWaitDelay"), TEXT("AbilityTaskWaitGameplayEvent"),
+		TEXT("AbilityTaskWaitGEAppliedToSelf"), TEXT("AbilityTaskWaitGEAppliedToTarget"), TEXT("AbilityAsyncWaitAttributeChanged")
 	};
 
 	for (const FManifestGraphNodeDefinition& Node : GraphDefinition.Nodes)
@@ -10273,6 +10280,12 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("AbilityTaskWaitGEAppliedToTarget"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateAbilityTaskWaitGEAppliedToTargetNode(EventGraph, NodeDef);
+		}
+		// v7.8.46: Phase 7 - AbilityTask_SpawnProjectile for projectile abilities
+		// Spawns NarrativeProjectile with OnTargetData and OnDestroyed delegate outputs
+		else if (NodeDef.Type.Equals(TEXT("AbilityTaskSpawnProjectile"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateAbilityTaskSpawnProjectileNode(EventGraph, NodeDef);
 		}
 		// v7.8.0: Contract 25 - AbilityAsync for damage-scaled energy absorption
 		else if (NodeDef.Type.Equals(TEXT("AbilityAsyncWaitAttributeChanged"), ESearchCase::IgnoreCase))
@@ -13579,6 +13592,97 @@ UK2Node* FEventGraphGenerator::CreateAbilityTaskWaitGEAppliedToTargetNode(
 	LogGeneration(FString::Printf(TEXT("  Created AbilityTaskWaitGEAppliedToTarget node '%s'"), *NodeDef.Id));
 
 	return WaitGENode;
+}
+
+// v7.8.46: Phase 7 - AbilityTask_SpawnProjectile for projectile abilities (Contract 25)
+// Spawns a NarrativeProjectile and provides OnTargetData/OnDestroyed delegate outputs.
+// This enables guide-required sequencing where the GA handles hit processing:
+//   - OnTargetData: Apply damage, call MarkEnemy, end ability (success path)
+//   - OnDestroyed: Cleanup, end ability (miss/expire path)
+// Properties:
+//   - task_instance_name: Name for the task instance (default: "SpawnProjectile")
+//   - class_variable: Variable name containing TSubclassOf<ANarrativeProjectile> (for connection)
+// Manifest usage:
+//   - type: AbilityTaskSpawnProjectile
+//   - properties:
+//       task_instance_name: SpawnLaserProjectile (optional)
+//   - Connect Class pin from a VariableGet node (ProjectileClass variable)
+//   - Connect ProjectileSpawnTransform pin from MakeTransform node
+// Output pins:
+//   - OnTargetData: Delegate fires with FGameplayAbilityTargetDataHandle when projectile hits
+//   - OnDestroyed: Delegate fires when projectile is destroyed without hitting
+UK2Node* FEventGraphGenerator::CreateAbilityTaskSpawnProjectileNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	UK2Node_LatentAbilityCall* SpawnProjectileNode = NewObject<UK2Node_LatentAbilityCall>(Graph);
+	Graph->AddNode(SpawnProjectileNode, false, false);
+
+	// Find the SpawnProjectile factory function on UAbilityTask_SpawnProjectile
+	UFunction* SpawnProjectileFunction = UAbilityTask_SpawnProjectile::StaticClass()->FindFunctionByName(FName("SpawnProjectile"));
+	if (!SpawnProjectileFunction)
+	{
+		UE_LOG(LogGasAbilityGenerator, Error, TEXT("Failed to find SpawnProjectile function on UAbilityTask_SpawnProjectile"));
+		return SpawnProjectileNode;
+	}
+
+	// Set protected base class properties via reflection
+	UClass* NodeClass = SpawnProjectileNode->GetClass();
+
+	// ProxyFactoryFunctionName = "SpawnProjectile"
+	if (FNameProperty* FactoryFuncNameProp = FindFProperty<FNameProperty>(NodeClass, TEXT("ProxyFactoryFunctionName")))
+	{
+		FactoryFuncNameProp->SetPropertyValue_InContainer(SpawnProjectileNode, SpawnProjectileFunction->GetFName());
+	}
+
+	// ProxyFactoryClass = UAbilityTask_SpawnProjectile::StaticClass()
+	if (FObjectProperty* FactoryClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyFactoryClass")))
+	{
+		FactoryClassProp->SetObjectPropertyValue_InContainer(SpawnProjectileNode, UAbilityTask_SpawnProjectile::StaticClass());
+	}
+
+	// ProxyClass = UAbilityTask_SpawnProjectile::StaticClass() (the return type)
+	if (FObjectProperty* ProxyClassProp = FindFProperty<FObjectProperty>(NodeClass, TEXT("ProxyClass")))
+	{
+		ProxyClassProp->SetObjectPropertyValue_InContainer(SpawnProjectileNode, UAbilityTask_SpawnProjectile::StaticClass());
+	}
+
+	SpawnProjectileNode->CreateNewGuid();
+	SpawnProjectileNode->PostPlacedNewNode();
+	SpawnProjectileNode->AllocateDefaultPins();
+
+	// Set TaskInstanceName if specified (otherwise leave at default)
+	const FString* TaskInstanceNamePtr = NodeDef.Properties.Find(TEXT("task_instance_name"));
+	if (TaskInstanceNamePtr && !TaskInstanceNamePtr->IsEmpty())
+	{
+		UEdGraphPin* TaskNamePin = SpawnProjectileNode->FindPin(FName("TaskInstanceName"));
+		if (TaskNamePin)
+		{
+			TaskNamePin->DefaultValue = *TaskInstanceNamePtr;
+			LogGeneration(FString::Printf(TEXT("    Set TaskInstanceName to '%s'"), **TaskInstanceNamePtr));
+		}
+	}
+
+	// Log pin availability for connection troubleshooting
+	LogGeneration(FString::Printf(TEXT("  Created AbilityTaskSpawnProjectile node '%s'"), *NodeDef.Id));
+	LogGeneration(TEXT("    Available pins:"));
+	for (UEdGraphPin* Pin : SpawnProjectileNode->Pins)
+	{
+		if (Pin)
+		{
+			LogGeneration(FString::Printf(TEXT("      - %s [%s] %s"),
+				*Pin->GetName(),
+				Pin->Direction == EGPD_Input ? TEXT("IN") : TEXT("OUT"),
+				*Pin->PinType.PinCategory.ToString()));
+		}
+	}
+
+	// Note: Class and ProjectileSpawnTransform pins must be connected via manifest connections
+	// - Class: Connect from a VariableGet node for the ProjectileClass variable
+	// - ProjectileSpawnTransform: Connect from a MakeTransform node
+	// OnTargetData and OnDestroyed delegate pins will be available for handler connections
+
+	return SpawnProjectileNode;
 }
 
 // v7.8.0: Contract 25 - AbilityAsync_WaitAttributeChanged for damage-scaled energy absorption
