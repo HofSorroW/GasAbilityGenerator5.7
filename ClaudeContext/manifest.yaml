@@ -101,6 +101,8 @@ tags:
     comment: Hierarchical child - dash ability
   - tag: Ability.Father.Exoskeleton.Sprint
     comment: Hierarchical child - sprint ability
+  - tag: Ability.Father.Exoskeleton.StealthField
+    comment: Hierarchical child - stealth field ability (v7.8.50)
   - tag: Ability.Father.LaserShot
     comment: Crawler ranged laser attack
   - tag: Ability.Father.Mark
@@ -3914,18 +3916,16 @@ gameplay_abilities:
           properties:
             variable_name: CachedHitActors
           position: [1800, 500]
+        # v7.8.52: ArrayContains is a PURE function - no exec pins
         - id: ContainsActor
-          type: CallFunction
-          properties:
-            function: Contains
+          type: ArrayContains
           position: [1800, 400]
         - id: Branch_NotCached
           type: Branch
           position: [2100, 400]
+        # v7.8.52: ArrayAdd - adds item to array
         - id: AddToCachedHitActors
-          type: CallFunction
-          properties:
-            function: Add
+          type: ArrayAdd
           position: [2400, 400]
         - id: CallParentHandleTargetData
           type: CallFunction
@@ -3939,10 +3939,9 @@ gameplay_abilities:
           properties:
             event_name: K2_OnEndAbility
           position: [0, 800]
+        # v7.8.52: ArrayClear - clears all items from array
         - id: ClearCachedHitActors
-          type: CallFunction
-          properties:
-            function: Clear
+          type: ArrayClear
           position: [300, 800]
         - id: GetCachedHitActors_End
           type: VariableGet
@@ -3984,29 +3983,30 @@ gameplay_abilities:
           to: [Branch_Valid, Exec]
         - from: [IsValid_HitActor, ReturnValue]
           to: [Branch_Valid, Condition]
+        # v7.8.52: ArrayContains is PURE (no exec) - exec goes directly to Branch_NotCached
         - from: [Branch_Valid, True]
-          to: [ContainsActor, Exec]
-        - from: [GetCachedHitActors, CachedHitActors]
-          to: [ContainsActor, Target]
-        - from: [GetHitActor, HitActor]
-          to: [ContainsActor, Item]
-        - from: [ContainsActor, Exec]
           to: [Branch_NotCached, Exec]
+        # ArrayContains data connections (pure function)
+        - from: [GetCachedHitActors, CachedHitActors]
+          to: [ContainsActor, TargetArray]
+        - from: [GetHitActor, HitActor]
+          to: [ContainsActor, ItemToFind]
         - from: [ContainsActor, ReturnValue]
           to: [Branch_NotCached, Condition]
+        # ArrayAdd exec and data connections
         - from: [Branch_NotCached, False]
-          to: [AddToCachedHitActors, Exec]
+          to: [AddToCachedHitActors, execute]
         - from: [GetCachedHitActors, CachedHitActors]
-          to: [AddToCachedHitActors, Target]
+          to: [AddToCachedHitActors, TargetArray]
         - from: [GetHitActor, HitActor]
-          to: [AddToCachedHitActors, Item]
-        - from: [AddToCachedHitActors, Exec]
+          to: [AddToCachedHitActors, NewItem]
+        - from: [AddToCachedHitActors, then]
           to: [CallParentHandleTargetData, Exec]
         # EndAbility cache clear flow
         - from: [Event_EndAbility, Then]
-          to: [ClearCachedHitActors, Exec]
+          to: [ClearCachedHitActors, execute]
         - from: [GetCachedHitActors_End, CachedHitActors]
-          to: [ClearCachedHitActors, Target]
+          to: [ClearCachedHitActors, TargetArray]
 
   # GA_FatherLaserShot - Ranged Laser Attack
   # NOTE: Runs on Father ASC, only in Crawler form
@@ -4040,6 +4040,14 @@ gameplay_abilities:
       - name: MuzzleSocketName
         type: Name
         default_value: MuzzleSocket
+        instance_editable: true
+      # v7.8.51: Target from AI blackboard for range validation
+      - name: TargetEnemy
+        type: Object
+        class: Actor
+      - name: MaxRange
+        type: Float
+        default_value: 1500.0
         instance_editable: true
     event_graph:
       nodes:
@@ -6283,6 +6291,7 @@ gameplay_abilities:
   # GA_StealthField - Exoskeleton Stealth Invisibility (player-owned toggle)
   # NOTE: Runs on Player ASC, granted via EI_FatherExoskeletonForm - no cross-ASC gates
   # v7.8: Path B - Break-on-damage restored via WaitGEAppliedToSelf AbilityTask
+  # v7.8.50: Father invisibility restored - both Player AND Father become invisible
   - name: GA_StealthField
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -6293,7 +6302,7 @@ gameplay_abilities:
     cooldown_gameplay_effect_class: GE_StealthCooldown
     tags:
       ability_tags:
-        - Ability.Father.StealthField
+        - Ability.Father.Exoskeleton.StealthField  # v7.8.50: Hierarchical tag per locked design
       activation_owned_tags:
         - Father.State.Stealthed
       # activation_required_tags removed - Father.Form.Exoskeleton is cross-ASC gate
@@ -6301,15 +6310,29 @@ gameplay_abilities:
       activation_blocked_tags:
         - Cooldown.Father.Exoskeleton.StealthField  # v7.8.49: Contract 27 hierarchical
     # v7.8: AbilityTasks restore full functionality - stealth breaks on damage
+    # v7.8.50: Added FatherRef and FatherStealthHandle for Father invisibility
     variables:
       - name: PlayerRef
         type: Object
         class: NarrativePlayerCharacter
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
       - name: StealthEffectHandle
+        type: ActiveGameplayEffectHandle
+      - name: FatherStealthHandle
         type: ActiveGameplayEffectHandle
       - name: StealthDuration
         type: Float
         default_value: 8.0
+        instance_editable: true
+      - name: OriginalWalkSpeed
+        type: Float
+        default_value: 0.0
+      # v7.8.51: Speed multiplier variable (MakeLiteralFloat doesn't exist in UE5)
+      - name: StealthSpeedMultiplier
+        type: Float
+        default_value: 0.8
         instance_editable: true
     event_graph:
       nodes:
@@ -6362,12 +6385,79 @@ gameplay_abilities:
           properties:
             variable_name: StealthEffectHandle
           position: [2400, 0]
+        # v7.8.50: Store Father reference for invisibility
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [2400, 100]
+        # v7.8.50: Apply invisibility to Father
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [2550, 100]
+        - id: MakeGESpec_Father
+          type: CallFunction
+          properties:
+            function: MakeOutgoingGameplayEffectSpec
+            target_self: true
+            param.GameplayEffectClass: GE_StealthActive
+          position: [2700, 100]
+        - id: ApplyGE_Father
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectSpecToTarget
+          position: [2850, 100]
+        - id: SetFatherStealthHandle
+          type: VariableSet
+          properties:
+            variable_name: FatherStealthHandle
+          position: [3000, 100]
+        # v7.8.51: [MANIFEST] Lines 1652-1660: Use PropertyGet for CharacterMovement chain
+        - id: GetCharMov
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [3150, 0]
+        - id: GetOriginalSpeed
+          type: PropertyGet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [3300, 0]
+        # [MANIFEST] Lines 1674-1679: Multiply_DoubleDouble, class commented out
+        - id: MultiplySpeed
+          type: CallFunction
+          properties:
+            function: Multiply_DoubleDouble
+            # class: KismetMathLibrary  # Commented out - let resolver find
+          position: [3450, 0]
+        # v7.8.51: VariableGet for speed multiplier (MakeLiteralFloat doesn't exist)
+        - id: GetSpeedMultiplier
+          type: VariableGet
+          properties:
+            variable_name: StealthSpeedMultiplier
+          position: [3300, 50]
+        - id: SetOriginalWalkSpeed
+          type: VariableSet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [3450, 50]
+        # [MANIFEST] Lines 1680-1685: PropertySet for MaxWalkSpeed
+        - id: SetReducedSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [3600, 0]
         # v7.8: Sequence for parallel AbilityTasks (duration timer + damage break)
         - id: Sequence_Tasks
           type: Sequence
           properties:
             num_outputs: 2
-          position: [2550, 0]
+          position: [3750, 0]
         - id: GetDuration
           type: VariableGet
           properties:
@@ -6430,26 +6520,68 @@ gameplay_abilities:
           properties:
             event_name: K2_OnEndAbility
           position: [0, 400]
+        # v7.8.50: Restore original walk speed
         - id: GetPlayerRef_End
           type: VariableGet
           properties:
             variable_name: PlayerRef
-          position: [300, 400]
+          position: [200, 400]
+        # [MANIFEST] Lines 1746-1751: PropertyGet for CharacterMovement
+        - id: GetCharMov_End
+          type: PropertyGet
+          properties:
+            property_name: CharacterMovement
+            target_class: Character
+          position: [400, 400]
+        - id: GetOriginalWalkSpeed_End
+          type: VariableGet
+          properties:
+            variable_name: OriginalWalkSpeed
+          position: [600, 450]
+        # [MANIFEST] Lines 1757-1762: PropertySet for MaxWalkSpeed
+        - id: RestoreSpeed
+          type: PropertySet
+          properties:
+            property_name: MaxWalkSpeed
+            target_class: CharacterMovementComponent
+          position: [600, 400]
+        # Remove Player stealth GE
         - id: GetPlayerASC_End
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
-          position: [600, 400]
+          position: [800, 400]
         - id: GetStealthHandle
           type: VariableGet
           properties:
             variable_name: StealthEffectHandle
-          position: [900, 500]
+          position: [1000, 450]
         - id: RemoveGE
           type: CallFunction
           properties:
             function: RemoveActiveGameplayEffect
-          position: [900, 400]
+          position: [1000, 400]
+        # v7.8.50: Remove Father stealth GE
+        - id: GetFatherRef_End
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [1200, 400]
+        - id: GetFatherASC_End
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [1400, 400]
+        - id: GetFatherStealthHandle
+          type: VariableGet
+          properties:
+            variable_name: FatherStealthHandle
+          position: [1600, 450]
+        - id: RemoveGE_Father
+          type: CallFunction
+          properties:
+            function: RemoveActiveGameplayEffect
+          position: [1600, 400]
         # v7.8: STEALTH BREAK RESTORED via Path B AbilityTasks
         # WaitDamageGE_Stealth triggers CommitCooldown_Break → EndAbility_Break when damage received
       connections:
@@ -6460,12 +6592,26 @@ gameplay_abilities:
         - from: [CastToFather, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
+          to: [SetFatherRef, Exec]  # v7.8.50: Store Father reference
+        - from: [SetFatherRef, Exec]
           to: [MakeGESpec, Exec]
         - from: [MakeGESpec, Exec]
           to: [ApplyGE, Exec]
         - from: [ApplyGE, Exec]
           to: [SetStealthHandle, Exec]
+        # v7.8.50: Apply stealth to Father
         - from: [SetStealthHandle, Exec]
+          to: [MakeGESpec_Father, Exec]
+        - from: [MakeGESpec_Father, Exec]
+          to: [ApplyGE_Father, Exec]
+        - from: [ApplyGE_Father, Exec]
+          to: [SetFatherStealthHandle, Exec]
+        # v7.8.50: Store original speed and apply reduction
+        - from: [SetFatherStealthHandle, Exec]
+          to: [SetOriginalWalkSpeed, Exec]
+        - from: [SetOriginalWalkSpeed, Exec]
+          to: [SetReducedSpeed, Exec]
+        - from: [SetReducedSpeed, Exec]
           to: [Sequence_Tasks, Exec]
         # v7.8: Sequence outputs - parallel AbilityTasks
         - from: [Sequence_Tasks, then_0]
@@ -6484,34 +6630,82 @@ gameplay_abilities:
           to: [IsValid_PlayerRef_Guard, Object]
         - from: [IsValid_PlayerRef_Guard, ReturnValue]
           to: [Branch_PlayerValid_Guard, Condition]
-        # Data flow
+        # Data flow - Player references
         - from: [GetOwningActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP Father Companion]
+        - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetOwnerPlayer, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]  # v7.8.50: Store Father ref
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
           to: [GetPlayerASC, Actor]
-        # BP_ApplyGameplayEffectSpecToSelf is called on the player's ASC
+        # Player stealth GE application
         - from: [GetPlayerASC, ReturnValue]
           to: [ApplyGE, Target]
         - from: [MakeGESpec, ReturnValue]
           to: [ApplyGE, Spec]
         - from: [ApplyGE, ReturnValue]
           to: [SetStealthHandle, StealthEffectHandle]
+        # v7.8.50: Father stealth GE application
+        - from: [SetFatherRef, FatherRef]
+          to: [GetFatherASC, Actor]
+        - from: [GetFatherASC, ReturnValue]
+          to: [ApplyGE_Father, Target]
+        - from: [MakeGESpec_Father, ReturnValue]
+          to: [ApplyGE_Father, Spec]
+        - from: [ApplyGE_Father, ReturnValue]
+          to: [SetFatherStealthHandle, FatherStealthHandle]
+        # v7.8.51: Speed reduction data flow - PropertyGet uses property names
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetCharMov, Target]
+        - from: [GetCharMov, CharacterMovement]
+          to: [GetOriginalSpeed, Target]
+        - from: [GetOriginalSpeed, MaxWalkSpeed]
+          to: [SetOriginalWalkSpeed, OriginalWalkSpeed]
+        - from: [GetOriginalSpeed, MaxWalkSpeed]
+          to: [MultiplySpeed, A]
+        # v7.8.51: Changed from MakeLiteral_SpeedMult to GetSpeedMultiplier
+        - from: [GetSpeedMultiplier, StealthSpeedMultiplier]
+          to: [MultiplySpeed, B]
+        # [MANIFEST] Line 1913: PropertySet value pin uses property name
+        - from: [MultiplySpeed, ReturnValue]
+          to: [SetReducedSpeed, MaxWalkSpeed]
+        - from: [GetCharMov, CharacterMovement]
+          to: [SetReducedSpeed, Target]
         - from: [GetDuration, StealthDuration]
           to: [Delay, Time]
         # === END ABILITY FLOW ===
+        # v7.8.50: Restore speed first, then remove GEs
         - from: [Event_EndAbility, Then]
+          to: [RestoreSpeed, Exec]
+        - from: [RestoreSpeed, Exec]
           to: [RemoveGE, Exec]
-        # Data flow - End
+        - from: [RemoveGE, Exec]
+          to: [RemoveGE_Father, Exec]  # v7.8.50: Remove Father GE
+        # Data flow - Speed restoration (PropertyGet uses property name)
+        - from: [GetPlayerRef_End, PlayerRef]
+          to: [GetCharMov_End, Target]
+        - from: [GetCharMov_End, CharacterMovement]
+          to: [RestoreSpeed, Target]
+        # [MANIFEST] Line 1913: PropertySet value pin uses property name
+        - from: [GetOriginalWalkSpeed_End, OriginalWalkSpeed]
+          to: [RestoreSpeed, MaxWalkSpeed]
+        # Data flow - Player GE removal
         - from: [GetPlayerRef_End, PlayerRef]
           to: [GetPlayerASC_End, Actor]
         - from: [GetPlayerASC_End, ReturnValue]
           to: [RemoveGE, Target]
         - from: [GetStealthHandle, StealthEffectHandle]
           to: [RemoveGE, Handle]
+        # v7.8.50: Data flow - Father GE removal
+        - from: [GetFatherRef_End, FatherRef]
+          to: [GetFatherASC_End, Actor]
+        - from: [GetFatherASC_End, ReturnValue]
+          to: [RemoveGE_Father, Target]
+        - from: [GetFatherStealthHandle, FatherStealthHandle]
+          to: [RemoveGE_Father, Handle]
         # === v7.8: STEALTH BREAK FLOW (Path B) ===
         # When damage GE is applied, break stealth immediately
         - from: [WaitDamageGE_Stealth, OnApplied]
@@ -6831,210 +7025,374 @@ gameplay_abilities:
           - from: [FunctionEntry, Then]
             to: [ApplyGEToOwner, Exec]
 
-  # GA_ProximityStrike - Symbiote AOE Damage
-  # NOTE: Runs on Player ASC, granted via EI_FatherSymbioteForm - no cross-ASC gates
+  # GA_ProximityStrike - Symbiote AOE Damage (v7.8.50 Looping Timer Pattern)
+  # Passive ability activated by GA_FatherSymbiote, runs for 30s Symbiote duration
+  # Contract 24 compliant: NO SetByCaller - damage from Father's captured AttackDamage
+  # v7.8.50: Changed from instant single-shot to looping timer (60 ticks, 3000 damage/enemy)
   - name: GA_ProximityStrike
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
-    # v6.5: Use Narrative Pro default input tag (INV-INPUT-1) - Q key, Symbiote-gated
-    input_tag: Narrative.Input.Ability1
+    # v7.8.50: No input tag - passive ability activated by GA_FatherSymbiote
+    # v7.8.50: No cooldown - runs for Symbiote form duration (30s)
     instancing_policy: InstancedPerActor
     net_execution_policy: ServerOnly
-    cooldown_gameplay_effect_class: GE_ProximityStrikeCooldown
     tags:
       ability_tags:
         - Ability.Father.ProximityStrike
         - Ability.Father.Symbiote.ProximityStrike
       activation_owned_tags:
         - Father.State.ProximityActive
-      # activation_required_tags removed - Father.Form.Symbiote is cross-ASC gate
-      # Equipment granting already ensures this ability is only available in Symbiote form
       activation_blocked_tags:
-        - Cooldown.Father.Symbiote.ProximityStrike  # v7.8.49: Contract 27 hierarchical
+        - Father.State.ProximityActive  # Prevent double activation
     variables:
       - name: PlayerRef
         type: Object
-        class: NarrativePlayerCharacter
+        class: Actor
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+      - name: FatherASC
+        type: Object
+        class: AbilitySystemComponent
+      - name: DamageTimerHandle
+        type: TimerHandle
+      - name: IsActive
+        type: Boolean
+        default_value: false
       - name: ProximityRadius
         type: Float
         default_value: 400.0
+        instance_editable: true
+      - name: TickRate
+        type: Float
+        default_value: 0.5
         instance_editable: true
       - name: ProximityDamage
         type: Float
         default_value: 50.0
         instance_editable: true
+        # Contract 24: Documentation only - actual damage from Father's AttackDamage attribute
     event_graph:
       nodes:
+        # === EVENT: ACTIVATE ABILITY ===
         - id: Event_Activate
           type: Event
           properties:
             event_name: K2_ActivateAbility
-          position: [0, 0]
-        - id: GetOwningActor
+        - id: GetAvatarActor
           type: CallFunction
           properties:
-            function: GetOwningActorFromActorInfo
+            function: GetAvatarActorFromActorInfo
             target_self: true
-          position: [300, 0]
         - id: CastToFather
           type: DynamicCast
           properties:
             target_class: BP_FatherCompanion
-          position: [600, 0]
+        - id: SetFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
         - id: GetOwnerPlayer
           type: PropertyGet
           properties:
             property_name: OwnerPlayer
             target_class: BP_FatherCompanion
-          position: [900, 0]
         - id: SetPlayerRef
           type: VariableSet
           properties:
             variable_name: PlayerRef
-          position: [1200, 0]
+        - id: IsValid_Player
+          type: CallFunction
+          properties:
+            function: IsValid
+        - id: Branch_PlayerValid
+          type: Branch
+        - id: GetFatherASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+        - id: SetFatherASC
+          type: VariableSet
+          properties:
+            variable_name: FatherASC
+        - id: SetIsActive_True
+          type: VariableSet
+          properties:
+            variable_name: IsActive
+        - id: MakeLiteral_True
+          type: MakeLiteral
+          properties:
+            literal_type: Boolean
+            value: true
+        - id: GetSelf
+          type: Self
+        - id: GetTickRate
+          type: VariableGet
+          properties:
+            variable_name: TickRate
+        - id: MakeLiteral_Looping
+          type: MakeLiteral
+          properties:
+            literal_type: Boolean
+            value: true
+        - id: MakeLiteral_FunctionName
+          type: MakeLiteral
+          properties:
+            literal_type: String
+            value: DealProximityDamage
+        - id: SetTimerByFunctionName
+          type: CallFunction
+          properties:
+            function: K2_SetTimer
+        - id: SetDamageTimerHandle
+          type: VariableSet
+          properties:
+            variable_name: DamageTimerHandle
+        - id: EndAbility_CastFailed
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+        - id: EndAbility_PlayerInvalid
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+        # === CUSTOM EVENT: DEAL PROXIMITY DAMAGE (Called by timer) ===
+        - id: Event_DealProximityDamage
+          type: CustomEvent
+          properties:
+            event_name: DealProximityDamage
+        - id: GetIsActive
+          type: VariableGet
+          properties:
+            variable_name: IsActive
+        - id: Branch_IsActive
+          type: Branch
+        - id: GetPlayerRef
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+        - id: IsValid_PlayerRef
+          type: CallFunction
+          properties:
+            function: IsValid
+        - id: Branch_PlayerRefValid
+          type: Branch
         - id: GetPlayerLocation
           type: CallFunction
           properties:
             function: K2_GetActorLocation
-          position: [1500, 0]
         - id: GetRadius
           type: VariableGet
           properties:
             variable_name: ProximityRadius
-          position: [1800, 100]
+        - id: GetSelf_Overlap
+          type: Self
         - id: MakeObjectTypes
           type: MakeArray
           properties:
             array_type: byte
             values:
               - ObjectTypeQuery3
-          position: [1600, 150]
-        - id: MakeActorsToIgnore
+        - id: GetPlayerRef_Ignore
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+        - id: GetFatherRef_Ignore
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+        - id: MakeIgnoreArray
           type: MakeArray
           properties:
             array_type: object
             class: Actor
-          position: [1600, 200]
+            num_elements: 2
         - id: SphereOverlap
           type: CallFunction
           properties:
             function: SphereOverlapActors
-          position: [1800, 0]
         - id: ForEachActor
           type: ForEachLoop
-          position: [2100, 0]
-        - id: HasTag
-          type: CallFunction
-          properties:
-            function: ActorHasTag
-          position: [2400, 0]
-        - id: Branch_Enemy
-          type: Branch
-          position: [2700, 0]
         - id: GetEnemyASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
-          position: [3000, 0]
-        - id: GetOwnASC
+        - id: IsValid_EnemyASC
           type: CallFunction
           properties:
-            function: GetAbilitySystemComponentFromActorInfo
-            target_self: true
-          position: [3000, 150]
+            function: IsValid
+        - id: Branch_EnemyASCValid
+          type: Branch
+        - id: GetFatherASC_ForSpec
+          type: VariableGet
+          properties:
+            variable_name: FatherASC
+        # Contract 24: MakeOutgoingSpec on Father ASC (source) - captures AttackDamage
         - id: MakeGESpec
           type: CallFunction
           properties:
             function: MakeOutgoingGameplayEffectSpec
-            target_self: true
             param.GameplayEffectClass: GE_ProximityDamage
-          position: [3300, 0]
-        - id: GetDamage
-          type: VariableGet
-          properties:
-            variable_name: ProximityDamage
-          position: [3300, 100]
-        - id: SetByCaller
-          type: CallFunction
-          properties:
-            function: AssignTagSetByCallerMagnitude
-          position: [3600, 0]
         - id: ApplyGE
           type: CallFunction
           properties:
             function: BP_ApplyGameplayEffectSpecToTarget
-          position: [3900, 0]
-        - id: CommitCooldown
+        # === EVENT: END ABILITY ===
+        - id: Event_EndAbility
+          type: Event
+          properties:
+            event_name: K2_OnEndAbility
+        - id: SetIsActive_False
+          type: VariableSet
+          properties:
+            variable_name: IsActive
+        - id: MakeLiteral_False
+          type: MakeLiteral
+          properties:
+            literal_type: Boolean
+            value: false
+        - id: GetTimerHandle
+          type: VariableGet
+          properties:
+            variable_name: DamageTimerHandle
+        - id: ClearTimer
           type: CallFunction
           properties:
-            function: K2_CommitAbilityCooldown
+            function: K2_ClearAndInvalidateTimerHandle
             target_self: true
-          position: [2100, 200]
-        - id: EndAbility
-          type: CallFunction
+        - id: ClearPlayerRef
+          type: VariableSet
           properties:
-            function: K2_EndAbility
-            target_self: true
-          position: [2400, 200]
+            variable_name: PlayerRef
+        - id: ClearFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+        - id: ClearFatherASC
+          type: VariableSet
+          properties:
+            variable_name: FatherASC
       connections:
-        # === ACTIVATION FLOW ===
-        # Exec flow (impure nodes only - pure functions have no exec pins)
+        # === ACTIVATION EXEC FLOW ===
         - from: [Event_Activate, Then]
-          to: [CastToFather, Exec]  # Direct - GetOwningActor is pure (no exec)
+          to: [CastToFather, Exec]
+        - from: [CastToFather, CastFailed]
+          to: [EndAbility_CastFailed, Exec]
         - from: [CastToFather, Exec]
+          to: [SetFatherRef, Exec]
+        - from: [SetFatherRef, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
-          to: [SphereOverlap, Exec]
-        - from: [SphereOverlap, Exec]
-          to: [ForEachActor, Exec]
-        # v7.2: Direct exec - ActorHasTag is pure (no exec pins)
-        - from: [ForEachActor, LoopBody]
-          to: [Branch_Enemy, Exec]
-        - from: [Branch_Enemy, then]
-          to: [MakeGESpec, Exec]
-        - from: [MakeGESpec, Exec]
-          to: [SetByCaller, Exec]
-        - from: [SetByCaller, Exec]
-          to: [ApplyGE, Exec]
-        - from: [ForEachActor, Completed]
-          to: [CommitCooldown, Exec]
-        - from: [CommitCooldown, Exec]
-          to: [EndAbility, Exec]
-        # Data flow
-        - from: [GetOwningActor, ReturnValue]
+          to: [Branch_PlayerValid, Exec]
+        - from: [Branch_PlayerValid, False]
+          to: [EndAbility_PlayerInvalid, Exec]
+        - from: [Branch_PlayerValid, True]
+          to: [SetFatherASC, Exec]
+        - from: [SetFatherASC, Exec]
+          to: [SetIsActive_True, Exec]
+        - from: [SetIsActive_True, Exec]
+          to: [SetTimerByFunctionName, Exec]
+        - from: [SetTimerByFunctionName, Exec]
+          to: [SetDamageTimerHandle, Exec]
+        # === ACTIVATION DATA FLOW ===
+        - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
-        - from: [CastToFather, AsBP Father Companion]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetOwnerPlayer, Target]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [GetFatherASC, Target]
         - from: [GetOwnerPlayer, OwnerPlayer]
           to: [SetPlayerRef, PlayerRef]
         - from: [SetPlayerRef, PlayerRef]
+          to: [IsValid_Player, Object]
+        - from: [IsValid_Player, ReturnValue]
+          to: [Branch_PlayerValid, Condition]
+        - from: [GetFatherASC, ReturnValue]
+          to: [SetFatherASC, FatherASC]
+        - from: [MakeLiteral_True, ReturnValue]
+          to: [SetIsActive_True, IsActive]
+        - from: [GetSelf, self]
+          to: [SetTimerByFunctionName, Object]
+        - from: [MakeLiteral_FunctionName, ReturnValue]
+          to: [SetTimerByFunctionName, FunctionName]
+        - from: [GetTickRate, TickRate]
+          to: [SetTimerByFunctionName, Time]
+        - from: [MakeLiteral_Looping, ReturnValue]
+          to: [SetTimerByFunctionName, bLooping]
+        - from: [SetTimerByFunctionName, ReturnValue]
+          to: [SetDamageTimerHandle, DamageTimerHandle]
+        # === DEAL DAMAGE EXEC FLOW ===
+        - from: [Event_DealProximityDamage, Then]
+          to: [Branch_IsActive, Exec]
+        - from: [Branch_IsActive, True]
+          to: [Branch_PlayerRefValid, Exec]
+        - from: [Branch_PlayerRefValid, True]
+          to: [SphereOverlap, Exec]
+        - from: [SphereOverlap, Exec]
+          to: [ForEachActor, Exec]
+        - from: [ForEachActor, LoopBody]
+          to: [Branch_EnemyASCValid, Exec]
+        - from: [Branch_EnemyASCValid, True]
+          to: [MakeGESpec, Exec]
+        - from: [MakeGESpec, Exec]
+          to: [ApplyGE, Exec]
+        # === DEAL DAMAGE DATA FLOW ===
+        - from: [GetIsActive, IsActive]
+          to: [Branch_IsActive, Condition]
+        - from: [GetPlayerRef, PlayerRef]
+          to: [IsValid_PlayerRef, Object]
+        - from: [IsValid_PlayerRef, ReturnValue]
+          to: [Branch_PlayerRefValid, Condition]
+        - from: [GetPlayerRef, PlayerRef]
           to: [GetPlayerLocation, Target]
         - from: [GetPlayerLocation, ReturnValue]
           to: [SphereOverlap, SpherePos]
         - from: [GetRadius, ProximityRadius]
           to: [SphereOverlap, SphereRadius]
+        - from: [GetSelf_Overlap, self]
+          to: [SphereOverlap, WorldContextObject]
         - from: [MakeObjectTypes, Array]
           to: [SphereOverlap, ObjectTypes]
-        - from: [MakeActorsToIgnore, Array]
+        - from: [GetPlayerRef_Ignore, PlayerRef]
+          to: [MakeIgnoreArray, 0]
+        - from: [GetFatherRef_Ignore, FatherRef]
+          to: [MakeIgnoreArray, 1]
+        - from: [MakeIgnoreArray, Array]
           to: [SphereOverlap, ActorsToIgnore]
         - from: [SphereOverlap, OutActors]
           to: [ForEachActor, Array]
         - from: [ForEachActor, ArrayElement]
-          to: [HasTag, Target]
-        - from: [HasTag, ReturnValue]
-          to: [Branch_Enemy, Condition]
-        - from: [ForEachActor, ArrayElement]
-          to: [GetEnemyASC, Actor]
-        - from: [GetOwnASC, ReturnValue]
-          to: [ApplyGE, self]
+          to: [GetEnemyASC, Target]
+        - from: [GetEnemyASC, ReturnValue]
+          to: [IsValid_EnemyASC, Object]
+        - from: [IsValid_EnemyASC, ReturnValue]
+          to: [Branch_EnemyASCValid, Condition]
+        - from: [GetFatherASC_ForSpec, FatherASC]
+          to: [MakeGESpec, Target]
+        - from: [MakeGESpec, ReturnValue]
+          to: [ApplyGE, Spec]
         - from: [GetEnemyASC, ReturnValue]
           to: [ApplyGE, Target]
-        - from: [MakeGESpec, ReturnValue]
-          to: [SetByCaller, SpecHandle]
-        - from: [GetDamage, ProximityDamage]
-          to: [SetByCaller, Magnitude]
-        - from: [SetByCaller, ReturnValue]
-          to: [ApplyGE, Spec]
+        # === END ABILITY EXEC FLOW ===
+        - from: [Event_EndAbility, Then]
+          to: [SetIsActive_False, Exec]
+        - from: [SetIsActive_False, Exec]
+          to: [ClearTimer, Exec]
+        - from: [ClearTimer, Exec]
+          to: [ClearPlayerRef, Exec]
+        - from: [ClearPlayerRef, Exec]
+          to: [ClearFatherRef, Exec]
+        - from: [ClearFatherRef, Exec]
+          to: [ClearFatherASC, Exec]
+        # === END ABILITY DATA FLOW ===
+        - from: [MakeLiteral_False, ReturnValue]
+          to: [SetIsActive_False, IsActive]
+        - from: [GetTimerHandle, DamageTimerHandle]
+          to: [ClearTimer, Handle]
 
   # GA_FatherMark - Mark Enemy for Bonus Damage
   # NOTE: Runs on Father ASC, only in Crawler and Engineer forms
@@ -7246,11 +7604,12 @@ gameplay_abilities:
           to: [ApplyGE, self]
 
   # GA_FatherSacrifice - Emergency Save with Dormant Period
+  # v7.8.50: ServerInitiated for visual feedback (sacrifice VFX) per Tech Ref §36.5
   - name: GA_FatherSacrifice
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
     instancing_policy: InstancedPerActor
-    net_execution_policy: ServerOnly
+    net_execution_policy: ServerInitiated
     tags:
       ability_tags:
         - Ability.Father.Sacrifice
@@ -9036,6 +9395,23 @@ actor_blueprints:
         type: Object
         class: Actor
         replicated: false
+      # v7.8.51: Mark tracking system variables
+      - name: MarkedEnemies
+        type: Array
+        element_type: Actor
+        replicated: true
+        comment: "Array of currently marked enemies (max 3)"
+      - name: MaxMarks
+        type: Integer
+        default: 3
+        replicated: false
+        comment: "Maximum concurrent marks allowed"
+      - name: MarkWidgetMap
+        type: Map
+        key_type: Actor
+        value_type: WidgetComponent
+        replicated: false
+        comment: "Maps marked enemies to their visual indicator widgets"
     # v7.8.48 P1-BP.X: MarkEnemy function for centralized Mark integration
     # Called by attack abilities (GA_FatherLaserShot, GA_TurretShoot, GA_FatherElectricTrap)
     # Sets PendingMarkTarget then activates GA_FatherMark
@@ -9086,12 +9462,14 @@ actor_blueprints:
               function: GetAbilitySystemComponent
               class: AbilitySystemBlueprintLibrary
             position: [1000, 0]
+          # [MANIFEST] Line 7017: TSubclassOf can use asset name (generator resolves path)
           - id: TryActivateMark
             type: CallFunction
             properties:
               function: TryActivateAbilityByClass
               class: AbilitySystemComponent
               param.InAbilityToActivate: GA_FatherMark
+              param.bAllowRemoteActivation: false
             position: [1200, 0]
           # Step 4: Set literal bool for output
           - id: MakeLiteralTrue
@@ -9196,9 +9574,26 @@ actor_blueprints:
         - from: [Event_EndPlay, Then]
           to: [PrintCleanup, Exec]
 
+  # v7.8.51: Laser projectile with homing support
+  # Homing target acquired from Father's AI Blackboard (TargetEnemy key)
   - name: BP_LaserProjectile
     folder: Projectiles
     parent_class: NarrativeProjectile
+    components:
+      - name: ProjectileMovement
+        type: ProjectileMovementComponent
+        properties:
+          InitialSpeed: 5000.0
+          MaxSpeed: 5000.0
+          bRotationFollowsVelocity: true
+          bShouldBounce: false
+          ProjectileGravityScale: 0.0
+          bIsHomingProjectile: true
+          HomingAccelerationMagnitude: 10000.0
+      - name: DamageCollision
+        type: SphereComponent
+        radius: 30.0
+        collision_profile: OverlapAllDynamic
     variables:
       - name: Damage
         type: Float
@@ -9206,6 +9601,133 @@ actor_blueprints:
       - name: Speed
         type: Float
         default: 5000.0
+    # v7.8.51: BeginPlay gets homing target from Instigator's AI blackboard
+    # Flow: GetInstigator → GetController → CastToAIController → GetBlackboard → GetValueAsObject(TargetEnemy)
+    event_graph:
+      nodes:
+        - id: Event_BeginPlay
+          type: Event
+          properties:
+            event_name: ReceiveBeginPlay
+          position: [0, 0]
+        # Get target from Instigator (Father's) AI blackboard
+        - id: GetInstigator
+          type: CallFunction
+          properties:
+            function: GetInstigator
+            target_self: true
+          position: [200, 0]
+        - id: CastToPawn
+          type: DynamicCast
+          properties:
+            target_class: Pawn
+          position: [400, 0]
+        - id: GetController
+          type: CallFunction
+          properties:
+            function: GetController
+            class: Pawn
+          position: [600, 0]
+        - id: CastToAIController
+          type: DynamicCast
+          properties:
+            target_class: AIController
+          position: [800, 0]
+        # v7.8.51: [MANIFEST] Line 11693 - Use PropertyGet (GetBlackboardComponent is C++ inline)
+        - id: GetBlackboard
+          type: PropertyGet
+          properties:
+            property_name: Blackboard
+            target_class: AIController
+          position: [1000, 0]
+        # v7.8.51: MakeLiteralName for blackboard key lookup
+        - id: MakeTargetKeyName
+          type: CallFunction
+          properties:
+            function: MakeLiteralName
+            class: KismetSystemLibrary
+            param.Value: TargetEnemy
+          position: [1100, 50]
+        - id: GetTargetFromBB
+          type: CallFunction
+          properties:
+            function: GetValueAsObject
+            class: BlackboardComponent
+          position: [1200, 0]
+        - id: CastToActor
+          type: DynamicCast
+          properties:
+            target_class: Actor
+          position: [1400, 0]
+        - id: IsValidTarget
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [1600, 0]
+        - id: Branch_ValidTarget
+          type: Branch
+          position: [1800, 0]
+        # Get root component from target for homing
+        - id: GetRootComponent
+          type: CallFunction
+          properties:
+            function: K2_GetRootComponent
+            class: Actor
+          position: [2000, 0]
+        # v7.8.51: Get ProjectileMovement via component variable
+        # Generator creates variable with same name as component from components: section
+        - id: GetProjectileMovementVar
+          type: VariableGet
+          properties:
+            variable_name: ProjectileMovement
+          position: [2000, 100]
+        # Set HomingTargetComponent on ProjectileMovement
+        - id: SetHomingTarget
+          type: PropertySet
+          properties:
+            property_name: HomingTargetComponent
+            target_class: ProjectileMovementComponent
+          position: [2200, 0]
+      connections:
+        # Chain: GetInstigator → CastToPawn → GetController → CastToAI → GetBlackboard → GetTarget
+        - from: [Event_BeginPlay, Then]
+          to: [CastToPawn, Exec]
+        - from: [GetInstigator, ReturnValue]
+          to: [CastToPawn, Object]
+        - from: [CastToPawn, Exec]
+          to: [CastToAIController, Exec]
+        - from: [CastToPawn, AsPawn]
+          to: [GetController, Target]
+        - from: [GetController, ReturnValue]
+          to: [CastToAIController, Object]
+        - from: [CastToAIController, Exec]
+          to: [CastToActor, Exec]
+        - from: [CastToAIController, AsAIController]
+          to: [GetBlackboard, Target]
+        # PropertyGet output is property name
+        - from: [GetBlackboard, Blackboard]
+          to: [GetTargetFromBB, Target]
+        # Connect MakeLiteralName to KeyName pin
+        - from: [MakeTargetKeyName, ReturnValue]
+          to: [GetTargetFromBB, KeyName]
+        - from: [GetTargetFromBB, ReturnValue]
+          to: [CastToActor, Object]
+        - from: [CastToActor, Exec]
+          to: [Branch_ValidTarget, Exec]
+        - from: [CastToActor, AsActor]
+          to: [IsValidTarget, Object]
+        - from: [IsValidTarget, ReturnValue]
+          to: [Branch_ValidTarget, Condition]
+        # If valid, set homing target
+        - from: [Branch_ValidTarget, True]
+          to: [SetHomingTarget, Exec]
+        - from: [CastToActor, AsActor]
+          to: [GetRootComponent, Target]
+        - from: [GetRootComponent, ReturnValue]
+          to: [SetHomingTarget, HomingTargetComponent]
+        # Use component variable for ProjectileMovement reference
+        - from: [GetProjectileMovementVar, ProjectileMovement]
+          to: [SetHomingTarget, Target]
 
   - name: BP_TurretProjectile
     folder: Projectiles

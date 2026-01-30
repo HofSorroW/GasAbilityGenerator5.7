@@ -112,7 +112,7 @@
 | Ability.Father.Sacrifice | Father emergency sacrifice passive ability |
 | Father.State.Offline | Father is in dormant/offline state after sacrifice |
 | Father.State.Sacrificing | Father is currently performing sacrifice sequence |
-| Cooldown.Father.Sacrifice | Sacrifice ability on cooldown - father dormant |
+| Cooldown.Father.Symbiote.Sacrifice | Sacrifice ability on cooldown - father dormant (Contract 27 hierarchical) |
 
 ### **Verify Existing Tags**
 
@@ -186,7 +186,7 @@
 | Ability Tags | Ability.Father.Sacrifice |
 | Activation Owned Tags | Father.State.Sacrificing |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Cooldown.Father.Sacrifice, Father.State.Offline, Narrative.State.IsDead |
+| Activation Blocked Tags | Cooldown.Father.Symbiote.Sacrifice, Father.State.Offline, Narrative.State.IsDead |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Symbiote, Ability.Father.Engineer |
 
 #### 10.3) Configure Instancing Policy
@@ -864,7 +864,7 @@
    - 47.3.6) Click **+** to add element
    - 47.3.7) Select tag: `Father.State.Offline`
    - 47.3.8) Click **+** to add second element
-   - 47.3.9) Select tag: `Cooldown.Father.Sacrifice`
+   - 47.3.9) Select tag: `Cooldown.Father.Symbiote.Sacrifice`
 
 #### 47.4) Compile and Save
    - 47.4.1) Click **Compile**
@@ -913,7 +913,7 @@
 | Ability Tags | Ability.Father.Sacrifice |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Owned Tags | Father.State.Sacrificing |
-| Activation Blocked Tags | Cooldown.Father.Sacrifice, Father.State.Offline, Narrative.State.IsDead |
+| Activation Blocked Tags | Cooldown.Father.Symbiote.Sacrifice, Father.State.Offline, Narrative.State.IsDead |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Armor, Exoskeleton, Symbiote, Engineer |
 
 ### Variable Summary Table
@@ -948,7 +948,7 @@
 | Father.State.Recruited | Required for activation |
 | Father.State.Offline | Father is dormant after sacrifice |
 | Father.State.Sacrificing | Sacrifice sequence in progress |
-| Cooldown.Father.Sacrifice | Prevents re-triggering during dormant |
+| Cooldown.Father.Symbiote.Sacrifice | Prevents re-triggering during dormant (Contract 27) |
 | State.Invulnerable | Player immune to all damage |
 
 ### Gameplay Effects Summary
@@ -1000,6 +1000,6 @@
 
 ---
 
-## END OF GA_FATHERSACRIFICE IMPLEMENTATION GUIDE VERSION 2.5
+## END OF GA_FATHERSACRIFICE IMPLEMENTATION GUIDE VERSION 2.6
 
 Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.2

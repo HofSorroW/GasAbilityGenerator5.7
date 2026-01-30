@@ -545,8 +545,9 @@ GA_Backstab is a Player Default Ability, not granted by the father. Backstab is 
 
 | Aspect | Description |
 |--------|-------------|
-| Type | Passive (always active) |
-| Trigger | Player attacks enemy who is not targeting them |
+| Type | Active (Input-Triggered) - v2.1 change |
+| Input | Narrative.Input.Ability3 (F key) |
+| Trigger | Player presses input, checks if behind enemy who is not targeting them |
 | Detection | **Goal_Attack Query** (v5.1) - queries enemy's Goal_Attack.TargetToAttack |
 | Grant Location | Player Default Abilities array |
 | Father Relationship | Father can distract enemies (enemy's Goal_Attack targets Father) |
@@ -1012,8 +1013,8 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 
 | Rule | Abilities | Pattern |
 |------|-----------|---------|
-| Rule 1: Instant | GA_FatherAttack, GA_DomeBurst, GA_ProximityStrike, GA_TurretShoot, GA_FatherLaserShot, GA_FatherElectricTrap | Event_Activate → Logic → K2_EndAbility |
-| Rule 2: Delay/Timer | Form abilities, GA_FatherExoskeletonDash, GA_StealthField | MUST have Event_EndAbility + guards |
+| Rule 1: Instant | GA_FatherAttack, GA_DomeBurst, GA_TurretShoot, GA_FatherLaserShot, GA_FatherElectricTrap | Event_Activate → Logic → K2_EndAbility |
+| Rule 2: Delay/Timer | Form abilities, GA_FatherExoskeletonDash, GA_StealthField, GA_ProximityStrike | MUST have Event_EndAbility + guards |
 | Rule 3: Toggle | GA_ProtectiveDome, GA_FatherExoskeletonSprint, GA_FatherRifle, GA_FatherSword | Stay active until cancelled, Event_EndAbility for cleanup |
 | Rule 4: First Activation | Form abilities | True path MUST merge into same setup chain as False path |
 

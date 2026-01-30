@@ -879,6 +879,8 @@ This section provides an alternative implementation where backstab logic is inte
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | January 2026 | **Active Input-Triggered:** Changed from Passive to Active (Input-Triggered). Added input_tag (Narrative.Input.Ability3 / F key). Added TargetEnemy variable requirement. Event graph now calls CheckBackstabCondition → Apply GE_BackstabBonus. |
+| 2.0 | January 2026 | **Goal_Attack Query (v5.1):** Replaced ViewedCharacter detection with Goal_Attack query. REMOVED Phase 3 (no NPC controller changes needed). Full automation via Narrative Pro goal system. |
 | 1.9 | January 2026 | **v5.1 Goal_Attack Approach:** Replaced ViewedCharacter detection with Goal_Attack query. REMOVED Phase 3 (no NPC controller changes needed). CheckBackstabCondition now queries NPCActivityComponent → GetCurrentActivityGoal → Cast to Goal_Attack → TargetToAttack. Full automation - no manual perception binding required. **Added detailed step-by-step manual creation instructions** for all phases. Updated all tables and flow diagrams. |
 | 1.8 | January 2026 | AUTOMATION VS MANUAL Table Added: Clarified what is auto-generated vs manual. |
 | 1.7 | January 2026 | Locked Decisions Reference: Decision 4 (GA_Backstab is UNIVERSAL player ability). |
@@ -892,9 +894,9 @@ This section provides an alternative implementation where backstab logic is inte
 
 ---
 
-**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v1.9**
+**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v2.1**
 
-**Passive Damage Bonus - Goal_Attack Query Approach**
+**Active Input-Triggered Damage Bonus - Goal_Attack Query Approach**
 
 **Unreal Engine 5.7 + Narrative Pro v2.2**
 
