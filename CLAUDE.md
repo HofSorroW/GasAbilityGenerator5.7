@@ -819,6 +819,36 @@ equippable_items:
     mainhand_abilities:                             # Granted when wielded in mainhand
       - GA_LaserShot
     offhand_abilities: []                           # No offhand abilities
+    # v7.8.52: Stats array (FNarrativeItemStat - uses GetStringVariable binding)
+    stats:
+      - stat_display_name: Base Damage              # FText shown in UI
+        string_variable: Damage                     # Calls GetStringVariable("Damage") at runtime
+        stat_tooltip: "The base damage this weapon deals."
+      - stat_display_name: Fire Rate
+        string_variable: FireRate
+        stat_tooltip: "Rounds per second."
+    # v7.8.52: TMap-style holster attachment configs (preferred over legacy parallel arrays)
+    # Maps FGameplayTag -> FWeaponAttachmentConfig { SocketName, Offset(FTransform) }
+    holster_attachment_configs:
+      Narrative.Equipment.Slot.Weapon.BackA:        # Slot tag (key)
+        socket_name: Socket_BackA                   # FName - socket on mesh
+        location: [-0.82, -9.97, 28.73]             # FVector - translation offset
+        rotation: [179.96, 0.0, 179.99]             # FRotator - pitch, yaw, roll
+        scale: [1.0, 1.0, 1.0]                      # FVector - scale (default: 1,1,1)
+      Narrative.Equipment.Slot.Weapon.BackB:
+        socket_name: Socket_BackB
+        location: [-2.85, 0.03, 22.69]
+        rotation: [179.94, 0.91, 179.97]
+    # v7.8.52: TMap-style wield attachment configs
+    wield_attachment_configs:
+      Narrative.Equipment.WieldSlot.Mainhand:
+        socket_name: weapon_r
+        location: [0, 0, 0]
+        rotation: [-90, 0, 0]
+      Narrative.Equipment.WieldSlot.Offhand:
+        socket_name: weapon_l
+        location: [0, 0, 0]
+        rotation: [-90, 0, 0]
 
 # v3.9: ActivitySchedule for NPC daily routines
 # Uses UScheduledBehavior_AddNPCGoalByClass - concrete helper for goal-based scheduling
