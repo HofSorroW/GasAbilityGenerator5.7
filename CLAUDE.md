@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v7.8.48) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.8.54) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -358,7 +358,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ## GasAbilityGenerator Plugin
 
-Location: `Plugins/GasAbilityGenerator/` | Current version: v7.8.48 | Version history: [CHANGELOG.md](CHANGELOG.md)
+Location: `Plugins/GasAbilityGenerator/` | Current version: v7.8.54 | Version history: [CHANGELOG.md](CHANGELOG.md)
 
 **LOCKED: Contract 24 (D-DAMAGE-ATTR-1)** - NarrativeDamageExecCalc captures AttackDamage/Armor attributes. SetByCaller is FORBIDDEN for damage values with this exec calc - use attribute-based damage instead.
 
@@ -558,9 +558,25 @@ gameplay_abilities:
     parent_class: NarrativeGameplayAbility
     folder: Abilities/Crawler
     instancing_policy: InstancedPerActor
+    net_execution_policy: ServerOnly
+    cooldown_gameplay_effect_class: GE_AttackCooldown
+    # v7.8.55: CDO Audit - new properties
+    cost_gameplay_effect: GE_StaminaCost         # Resource cost for ability
+    net_security_policy: ServerOnlyExecution     # Network security policy
     tags:
       ability_tags:
         - Ability.Father.Attack
+      # v7.8.55: 5 new tag containers
+      block_abilities_with_tag:                  # Tags that block this ability
+        - Ability.Exclusive
+      source_required_tags:                      # Source must have these tags
+        - State.Alive
+      source_blocked_tags:                       # Source must NOT have these tags
+        - State.Stunned
+      target_required_tags:                      # Target must have these tags
+        - State.Alive
+      target_blocked_tags:                       # Target must NOT have these tags
+        - State.Invulnerable
     variables:
       - name: DamageAmount
         type: Float

@@ -1,5 +1,5 @@
 # Father Companion - GA_ProximityStrike Implementation Guide
-## VERSION 2.11 - Contract 24/27 Compliant, Knockback Removed
+## VERSION 2.12 - Variable Naming Alignment, Defense-in-Depth Tags
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -13,7 +13,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Form | Symbiote (Full Body Merge) |
 | Input | Passive (activated by GA_FatherSymbiote) |
-| Version | 2.11 |
+| Version | 2.12 |
 | Granting Method | EquippableItem (BP_FatherSymbioteForm) |
 | Activation Method | Player Q input (INV-INPUT-1 compliant) |
 
@@ -340,9 +340,9 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 #### 1.1) Open Event Graph
    - 1.1.1) In GA_ProximityStrike Blueprint, click **Event Graph** tab
 
-#### 1.2) Create DamagePerTick Variable (Documentation Only)
+#### 1.2) Create ProximityDamage Variable (Documentation Only)
    - 1.2.1) In **My Blueprint** panel, click **+ (Plus)** next to Variables
-   - 1.2.2) Name: `DamagePerTick`
+   - 1.2.2) Name: `ProximityDamage`
    - 1.2.3) Press **Enter**
    - 1.2.4) In Details panel:
       - 1.2.4.1) **Variable Type**: `Float`
@@ -362,9 +362,9 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 1.3.6) Set **Default Value**: `0.5`
    - 1.3.7) Set **Category**: `Proximity Config`
 
-#### 1.4) Create DamageRadius Variable
+#### 1.4) Create ProximityRadius Variable
    - 1.4.1) Click **+ (Plus)** next to Variables
-   - 1.4.2) Name: `DamageRadius`
+   - 1.4.2) Name: `ProximityRadius`
    - 1.4.3) **Variable Type**: `Float`
    - 1.4.4) **Instance Editable**: Check
    - 1.4.5) Click **Compile**
@@ -385,13 +385,15 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 1.6.4) Click **Compile**
    - 1.6.5) Set **Category**: `Runtime`
 
-#### 1.7) Create PlayerASC Variable
+#### 1.7) Create FatherASC Variable
    - 1.7.1) Click **+ (Plus)** next to Variables
-   - 1.7.2) Name: `PlayerASC`
-   - 1.7.3) **Variable Type**: Search `NarrativeAbilitySystemComponent`
-      - 1.7.3.1) Select: `NarrativeAbilitySystemComponent` -> `Object Reference`
+   - 1.7.2) Name: `FatherASC`
+   - 1.7.3) **Variable Type**: Search `AbilitySystemComponent`
+      - 1.7.3.1) Select: `AbilitySystemComponent` -> `Object Reference`
    - 1.7.4) Click **Compile**
    - 1.7.5) Set **Category**: `Runtime`
+
+   **Contract 24 Note:** Father's ASC is used as the damage source for MakeOutgoingSpec - NarrativeDamageExecCalc captures AttackDamage from Father.
 
 #### 1.8) Create DamageTimerHandle Variable
    - 1.8.1) Click **+ (Plus)** next to Variables
@@ -488,15 +490,17 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
       - 2.11.1.1) Add **End Ability** node
       - 2.11.1.2) **Was Cancelled**: Checked (true)
 
-#### 2.12) Store PlayerASC
+#### 2.12) Store FatherASC
    - 2.12.1) From Cast success execution:
-      - 2.12.1.1) Drag outward and search: `Set PlayerASC`
-      - 2.12.1.2) Add **Set PlayerASC** node
-   - 2.12.2) Connect **As Narrative Ability System Component** to PlayerASC value
+      - 2.12.1.1) Drag outward and search: `Set FatherASC`
+      - 2.12.1.2) Add **Set FatherASC** node
+   - 2.12.2) Connect **GetAbilitySystemComponent** Return Value to FatherASC value
 
-#### 2.13) Validate PlayerASC
-   - 2.13.1) From Set PlayerASC execution:
-      - 2.13.1.1) Drag **PlayerASC** variable getter into graph
+   **Contract 24 Note:** Father's ASC is stored as the damage source for MakeOutgoingSpec.
+
+#### 2.13) Validate FatherASC
+   - 2.13.1) From Set FatherASC execution:
+      - 2.13.1.1) Drag **FatherASC** variable getter into graph
       - 2.13.1.2) Add **Is Valid** node
       - 2.13.1.3) Add **Branch** node
       - 2.13.1.4) Connect Is Valid Return Value to Branch Condition
@@ -587,7 +591,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 5.1.3) Configure Sphere Overlap:
       - 5.1.3.1) **World Context Object**: Right-click on pin, select **Get a Reference to Self**
       - 5.1.3.2) **Sphere Pos**: Connect Get Actor Location **Return Value**
-      - 5.1.3.3) **Sphere Radius**: Connect **DamageRadius** getter
+      - 5.1.3.3) **Sphere Radius**: Connect **ProximityRadius** getter
       - 5.1.3.4) **Object Types**: Click to add:
          - 5.1.3.4.1) Add `Pawn`
       - 5.1.3.5) **Actor Class Filter**: Select `Character`
@@ -704,10 +708,10 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
    - 5.2.2) Connect execution
    - 5.2.3) Leave value as **None** (default null)
 
-#### 5.3) Clear PlayerASC
+#### 5.3) Clear FatherASC
    - 5.3.1) From Set FatherRef execution:
-      - 5.3.1.1) Drag outward and search: `Set PlayerASC`
-      - 5.3.1.2) Add **Set PlayerASC** node
+      - 5.3.1.1) Drag outward and search: `Set FatherASC`
+      - 5.3.1.2) Add **Set FatherASC** node
    - 5.3.2) Connect execution
    - 5.3.3) Leave value as **None** (default null)
 
@@ -799,6 +803,21 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 ## **CHANGELOG**
 
+### **VERSION 2.12 - Variable Naming Alignment**
+
+**Release Date:** January 2026
+
+| Change Type | Description |
+|-------------|-------------|
+| DamagePerTick → ProximityDamage | Aligned guide variable name with manifest (more descriptive) |
+| DamageRadius → ProximityRadius | Aligned guide variable name with manifest (consistent Proximity prefix) |
+| PlayerASC → FatherASC | Corrected ASC reference - Father is damage source per Contract 24 |
+| activation_required_tags | Added to manifest per defense-in-depth (3 tags: Symbiote, Merged, Recruited) |
+| Variable Summary | Updated all variable names to match manifest |
+| EndAbility Cleanup Flow | Updated FatherASC reference |
+
+---
+
 ### **VERSION 2.11 - Knockback Removal**
 
 **Release Date:** January 2026
@@ -821,8 +840,8 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 |-------------|-------------|
 | Contract 24 | Removed SetByCaller damage pattern - FORBIDDEN with NarrativeDamageExecCalc |
 | Damage Source | Changed from SetByCaller (Data.Damage.ProximityStrike) to captured AttackDamage attribute |
-| DamagePerTick | Variable now documentation-only; actual damage from Father's AttackDamage (50) |
-| DamageRadius | Updated default from 350.0 to 400.0 (matching tech spec) |
+| ProximityDamage | Variable now documentation-only; actual damage from Father's AttackDamage (50) |
+| ProximityRadius | Updated default from 350.0 to 400.0 (matching tech spec) |
 | Contract 27 | Added Cooldown.Father.Symbiote.ProximityStrike hierarchical cooldown tag |
 | Tag Removal | Removed Data.Damage.ProximityStrike tag (SetByCaller forbidden) |
 | GE_ProximityDamage | Simplified - no Calculation Modifiers, uses default attribute capture |
@@ -869,10 +888,10 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | Change Type | Description |
 |-------------|-------------|
 | Father.State.Recruited | Added to Activation Required Tags (3 elements total: Symbiote, Merged, Recruited) |
-| PlayerASC Variable | Added NarrativeAbilitySystemComponent reference for validation (PHASE 4, Section 1.8) |
+| FatherASC Variable | Added AbilitySystemComponent reference for Contract 24 damage source (PHASE 4, Section 1.7) |
 | PlayerRef Validation | Added Branch node with early exit pattern after storing reference (PHASE 4, Section 2.8) |
-| PlayerASC Validation | Added Get ASC -> Cast to NarrativeASC -> Store -> Validate pattern (PHASE 4, Sections 2.9-2.13) |
-| Reference Clearing | Added Set PlayerRef/FatherRef/PlayerASC to None in OnEndAbility (PHASE 6, Section 5) |
+| FatherASC Validation | Added Get ASC -> Store -> Validate pattern (PHASE 4, Sections 2.9-2.13) |
+| Reference Clearing | Added Set PlayerRef/FatherRef/FatherASC to None in OnEndAbility (PHASE 6, Section 5) |
 | Event OnEndAbility | Replaced Event On Ability Ended with Event OnEndAbility for consistency (PHASE 6, Section 2) |
 | Form Duration | Updated from 15 to 30 seconds per system design document |
 | Quick Reference | Updated with Handle Variables table, EndAbility Cleanup Flow, Related Documents |
@@ -944,12 +963,12 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 | Variable | Type | Category | Instance Editable | Default | Purpose |
 |----------|------|----------|-------------------|---------|---------|
-| DamagePerTick | Float | Proximity Config | Yes | 50.0 | Documentation only (Contract 24: actual damage from AttackDamage) |
+| ProximityDamage | Float | Proximity Config | Yes | 50.0 | Documentation only (Contract 24: actual damage from AttackDamage) |
 | TickRate | Float | Proximity Config | Yes | 0.5 | Seconds between damage ticks |
-| DamageRadius | Float | Proximity Config | Yes | 400.0 | AOE radius in units |
+| ProximityRadius | Float | Proximity Config | Yes | 400.0 | AOE radius in units |
 | PlayerRef | Actor Ref | Runtime | No | None | Merged player reference |
 | FatherRef | Actor Ref | Runtime | No | None | Father companion reference |
-| PlayerASC | NarrativeAbilitySystemComponent Ref | Runtime | No | None | Player ASC for validation |
+| FatherASC | AbilitySystemComponent Ref | Runtime | No | None | Father ASC for damage source (Contract 24) |
 | DamageTimerHandle | Timer Handle | Runtime | No | None | Looping timer reference |
 | IsActive | Boolean | Runtime | No | false | Ability active state |
 
@@ -1003,7 +1022,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | 3 | Clear and Invalidate Timer by Handle (DamageTimerHandle) |
 | 4 | Set PlayerRef to None |
 | 5 | Set FatherRef to None |
-| 6 | Set PlayerASC to None |
+| 6 | Set FatherASC to None |
 
 ### **Related Documents**
 
@@ -1016,7 +1035,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 ---
 
-**END OF GA_PROXIMITYSTRIKE IMPLEMENTATION GUIDE v2.11**
+**END OF GA_PROXIMITYSTRIKE IMPLEMENTATION GUIDE v2.12**
 
 **Symbiote Form - Berserker AOE Damage Aura**
 

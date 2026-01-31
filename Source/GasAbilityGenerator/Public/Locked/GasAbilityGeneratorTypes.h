@@ -1181,15 +1181,28 @@ struct FManifestAbilityTagsDefinition
 	TArray<FString> ActivationRequiredTags;
 	TArray<FString> ActivationBlockedTags;
 
+	// v7.8.55: CDO Audit - 5 missing tag containers from GameplayAbility.h
+	TArray<FString> BlockAbilitiesWithTag;    // Tags that block this ability from activating
+	TArray<FString> SourceRequiredTags;       // Source (instigator) must have these tags
+	TArray<FString> SourceBlockedTags;        // Source must NOT have these tags
+	TArray<FString> TargetRequiredTags;       // Target must have these tags
+	TArray<FString> TargetBlockedTags;        // Target must NOT have these tags
+
 	/** v3.0: Compute hash for change detection */
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = 0;
-		for (const FString& Tag : AbilityTags) Hash ^= GetTypeHash(Tag);
-		for (const FString& Tag : CancelAbilitiesWithTag) Hash ^= GetTypeHash(Tag) << 4;
-		for (const FString& Tag : ActivationOwnedTags) Hash ^= GetTypeHash(Tag) << 8;
-		for (const FString& Tag : ActivationRequiredTags) Hash ^= GetTypeHash(Tag) << 12;
-		for (const FString& Tag : ActivationBlockedTags) Hash ^= GetTypeHash(Tag) << 16;
+		for (const FString& Tag : AbilityTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag));
+		for (const FString& Tag : CancelAbilitiesWithTag) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 4;
+		for (const FString& Tag : ActivationOwnedTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 8;
+		for (const FString& Tag : ActivationRequiredTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 12;
+		for (const FString& Tag : ActivationBlockedTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 16;
+		// v7.8.55: Include new tag containers in hash
+		for (const FString& Tag : BlockAbilitiesWithTag) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 20;
+		for (const FString& Tag : SourceRequiredTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 24;
+		for (const FString& Tag : SourceBlockedTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 28;
+		for (const FString& Tag : TargetRequiredTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 32;
+		for (const FString& Tag : TargetBlockedTags) Hash ^= static_cast<uint64>(GetTypeHash(Tag)) << 36;
 		return Hash;
 	}
 };
@@ -1453,6 +1466,9 @@ struct FManifestGameplayAbilityDefinition
 	FString InstancingPolicy = TEXT("InstancedPerActor");
 	FString NetExecutionPolicy = TEXT("ServerOnly");
 	FString CooldownGameplayEffectClass;
+	// v7.8.55: CDO Audit - 2 missing properties from GameplayAbility.h
+	FString CostGameplayEffectClass;         // Ability resource cost GE (mana, stamina, etc.)
+	FString NetSecurityPolicy;               // Network security policy (ServerOnlyExecution, etc.)
 	FManifestAbilityTagsDefinition Tags;
 
 	// v4.8: NarrativeGameplayAbility properties
@@ -1525,6 +1541,9 @@ struct FManifestGameplayAbilityDefinition
 		Hash ^= GetTypeHash(InstancingPolicy) << 8;
 		Hash ^= GetTypeHash(NetExecutionPolicy) << 12;
 		Hash ^= GetTypeHash(CooldownGameplayEffectClass) << 16;
+		// v7.8.55: CDO Audit - include new properties in hash
+		Hash ^= GetTypeHash(CostGameplayEffectClass) << 18;
+		Hash ^= GetTypeHash(NetSecurityPolicy) << 19;
 		Hash ^= Tags.ComputeHash() << 20;
 
 		// v4.8: Include new NarrativeGameplayAbility properties

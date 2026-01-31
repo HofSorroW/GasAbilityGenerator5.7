@@ -1602,7 +1602,8 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	FManifestAbilityTriggerDefinition CurrentAbilityTrigger;  // v7.8.52: Ability triggers
 
 	// Track which tag array we're currently parsing
-	enum class ECurrentTagArray { None, AbilityTags, CancelAbilitiesWithTag, ActivationOwnedTags, ActivationRequiredTags, ActivationBlockedTags };
+	// v7.8.55: CDO Audit - added 5 new tag arrays
+	enum class ECurrentTagArray { None, AbilityTags, CancelAbilitiesWithTag, ActivationOwnedTags, ActivationRequiredTags, ActivationBlockedTags, BlockAbilitiesWithTag, SourceRequiredTags, SourceBlockedTags, TargetRequiredTags, TargetBlockedTags };
 	ECurrentTagArray CurrentTagArray = ECurrentTagArray::None;
 
 	while (LineIndex < Lines.Num())
@@ -1776,6 +1777,23 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			else if (TrimmedLine.StartsWith(TEXT("cooldown_gameplay_effect_class:")))
 			{
 				CurrentDef.CooldownGameplayEffectClass = GetLineValue(TrimmedLine);
+				bInTags = false;
+				bInVariables = false;
+				bInEventGraph = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			// v7.8.55: CDO Audit - CostGameplayEffectClass and NetSecurityPolicy
+			else if (TrimmedLine.StartsWith(TEXT("cost_gameplay_effect:")) || TrimmedLine.StartsWith(TEXT("cost_gameplay_effect_class:")))
+			{
+				CurrentDef.CostGameplayEffectClass = GetLineValue(TrimmedLine);
+				bInTags = false;
+				bInVariables = false;
+				bInEventGraph = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("net_security_policy:")))
+			{
+				CurrentDef.NetSecurityPolicy = GetLineValue(TrimmedLine);
 				bInTags = false;
 				bInVariables = false;
 				bInEventGraph = false;
@@ -2471,6 +2489,32 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 					CurrentTagArray = ECurrentTagArray::ActivationBlockedTags;
 					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to ActivationBlockedTags"), *CurrentDef.Name);
 				}
+				// v7.8.55: CDO Audit - 5 new tag arrays
+				else if (TrimmedLine.Equals(TEXT("block_abilities_with_tag:")) || TrimmedLine.StartsWith(TEXT("block_abilities_with_tag:")))
+				{
+					CurrentTagArray = ECurrentTagArray::BlockAbilitiesWithTag;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to BlockAbilitiesWithTag"), *CurrentDef.Name);
+				}
+				else if (TrimmedLine.Equals(TEXT("source_required_tags:")) || TrimmedLine.StartsWith(TEXT("source_required_tags:")))
+				{
+					CurrentTagArray = ECurrentTagArray::SourceRequiredTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to SourceRequiredTags"), *CurrentDef.Name);
+				}
+				else if (TrimmedLine.Equals(TEXT("source_blocked_tags:")) || TrimmedLine.StartsWith(TEXT("source_blocked_tags:")))
+				{
+					CurrentTagArray = ECurrentTagArray::SourceBlockedTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to SourceBlockedTags"), *CurrentDef.Name);
+				}
+				else if (TrimmedLine.Equals(TEXT("target_required_tags:")) || TrimmedLine.StartsWith(TEXT("target_required_tags:")))
+				{
+					CurrentTagArray = ECurrentTagArray::TargetRequiredTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to TargetRequiredTags"), *CurrentDef.Name);
+				}
+				else if (TrimmedLine.Equals(TEXT("target_blocked_tags:")) || TrimmedLine.StartsWith(TEXT("target_blocked_tags:")))
+				{
+					CurrentTagArray = ECurrentTagArray::TargetBlockedTags;
+					UE_LOG(LogTemp, Warning, TEXT("[Parser] GA %s: Set CurrentTagArray to TargetBlockedTags"), *CurrentDef.Name);
+				}
 				else if (TrimmedLine.StartsWith(TEXT("-")) && CurrentTagArray != ECurrentTagArray::None)
 				{
 					// Parse tag value
@@ -2505,6 +2549,22 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 							break;
 						case ECurrentTagArray::ActivationBlockedTags:
 							CurrentDef.Tags.ActivationBlockedTags.Add(TagValue);
+							break;
+						// v7.8.55: CDO Audit - 5 new tag arrays
+						case ECurrentTagArray::BlockAbilitiesWithTag:
+							CurrentDef.Tags.BlockAbilitiesWithTag.Add(TagValue);
+							break;
+						case ECurrentTagArray::SourceRequiredTags:
+							CurrentDef.Tags.SourceRequiredTags.Add(TagValue);
+							break;
+						case ECurrentTagArray::SourceBlockedTags:
+							CurrentDef.Tags.SourceBlockedTags.Add(TagValue);
+							break;
+						case ECurrentTagArray::TargetRequiredTags:
+							CurrentDef.Tags.TargetRequiredTags.Add(TagValue);
+							break;
+						case ECurrentTagArray::TargetBlockedTags:
+							CurrentDef.Tags.TargetBlockedTags.Add(TagValue);
 							break;
 						default:
 							break;

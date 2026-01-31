@@ -1,4 +1,4 @@
-# GA_Backstab Implementation Guide v2.1
+# GA_Backstab Implementation Guide v2.2
 
 ## Active Damage Bonus Ability - Input-Triggered with Goal_Attack Query
 
@@ -14,12 +14,12 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 2.1 |
+| Document Version | 2.2 |
 | Ability Name | GA_Backstab |
 | Ability Type | Active (Input-Triggered) |
 | Parent Class | NarrativeGameplayAbility |
 | Form Availability | All Forms (Crawler, Armor, Exoskeleton, Symbiote, Engineer) |
-| Input Required | Yes (Input Tag TBD) |
+| Input Required | Yes (Narrative.Input.Ability3 / F key) |
 | Grant Location | Player Default Abilities array |
 | Detection Method | **Goal_Attack Query** (v5.1) |
 
@@ -30,7 +30,7 @@
 | Change | Details |
 |--------|---------|
 | **Ability Type** | Changed from Passive to Active (Input-Triggered) |
-| **Input Tag** | TBD - will use Narrative.Input.* per INV-INPUT-1 |
+| **Input Tag** | Narrative.Input.Ability3 (F key) per INV-INPUT-1 |
 | **Damage Bonus** | +25 AttackRating (Contract 24 compliant - captured by NarrativeDamageExecCalc) |
 | **Event Graph** | Now calls CheckBackstabCondition → Apply GE_BackstabBonus |
 | **TargetEnemy Variable** | Added - must be set before activation |
@@ -119,7 +119,7 @@ If NO Goal_Attack OR target != player → BACKSTAB VALID
 | Effect Tag | Effect.Backstab |
 | Event Tag | Event.Combat.Backstab |
 | Activation Required | Backstab conditions (Goal_Attack query) |
-| InputTag | TBD (will use Narrative.Input.* per INV-INPUT-1) |
+| InputTag | Narrative.Input.Ability3 |
 
 ### Gameplay Effect Summary
 
@@ -879,6 +879,7 @@ This section provides an alternative implementation where backstab logic is inte
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2 | January 2026 | **Input Tag Alignment:** Updated all TBD input_tag references to Narrative.Input.Ability3 (F key) per manifest and INV-INPUT-1. |
 | 2.1 | January 2026 | **Active Input-Triggered:** Changed from Passive to Active (Input-Triggered). Added input_tag (Narrative.Input.Ability3 / F key). Added TargetEnemy variable requirement. Event graph now calls CheckBackstabCondition → Apply GE_BackstabBonus. |
 | 2.0 | January 2026 | **Goal_Attack Query (v5.1):** Replaced ViewedCharacter detection with Goal_Attack query. REMOVED Phase 3 (no NPC controller changes needed). Full automation via Narrative Pro goal system. |
 | 1.9 | January 2026 | **v5.1 Goal_Attack Approach:** Replaced ViewedCharacter detection with Goal_Attack query. REMOVED Phase 3 (no NPC controller changes needed). CheckBackstabCondition now queries NPCActivityComponent → GetCurrentActivityGoal → Cast to Goal_Attack → TargetToAttack. Full automation - no manual perception binding required. **Added detailed step-by-step manual creation instructions** for all phases. Updated all tables and flow diagrams. |
@@ -894,7 +895,7 @@ This section provides an alternative implementation where backstab logic is inte
 
 ---
 
-**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v2.1**
+**END OF GA_BACKSTAB IMPLEMENTATION GUIDE v2.2**
 
 **Active Input-Triggered Damage Bonus - Goal_Attack Query Approach**
 

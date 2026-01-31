@@ -6715,11 +6715,11 @@ gameplay_abilities:
         - from: [CommitCooldown_Break, Exec]
           to: [EndAbility_Break, Exec]
 
-  # GA_Backstab - Universal Player Passive Backstab Damage
+  # GA_Backstab - Universal Player Active Backstab Damage (Input-Triggered)
   # v4.26 (Decision 4): Universal ability - add to player's Default Abilities array, NOT granted via equipment
   # NOTE: Runs on Player ASC - no cross-ASC gates needed
-  # PASSIVE ABILITY: Contains CheckBackstabCondition and ApplyBackstabBonus FUNCTIONS
-  # These functions are CALLED BY attack abilities - GA_Backstab itself does not activate
+  # ACTIVE ABILITY (v2.1): Player presses F key (Narrative.Input.Ability3) → CheckBackstabCondition → Apply GE_BackstabBonus
+  # Contains CheckBackstabCondition function for Goal_Attack query validation
   #
   # AUTOMATION STATUS (v5.1 - Goal_Attack Query Approach):
   # - custom_functions: ✅ FULLY AUTOMATED
@@ -7041,6 +7041,10 @@ gameplay_abilities:
     tags:
       ability_tags:
         - Ability.Father.Symbiote.ProximityStrike  # v7.8.51: Removed redundant flat tag per guide
+      activation_required_tags:  # v7.8.55: Added per guide v2.11 - defense-in-depth
+        - Effect.Father.FormState.Symbiote
+        - Father.State.Merged
+        - Father.State.Recruited
       activation_owned_tags:
         - Father.State.ProximityActive
       activation_blocked_tags:

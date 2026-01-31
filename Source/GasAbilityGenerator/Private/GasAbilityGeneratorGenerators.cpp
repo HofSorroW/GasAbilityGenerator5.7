@@ -1585,6 +1585,127 @@ void FGeneratorBase::ConfigureGameplayAbilityTags(
 		}
 	}
 
+	// v7.8.55: CDO Audit - 5 new tag containers from GameplayAbility.h
+	// Set BlockAbilitiesWithTag using reflection
+	if (Definition.Tags.BlockAbilitiesWithTag.Num() > 0)
+	{
+		FStructProperty* BlockAbilitiesProperty = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("BlockAbilitiesWithTag")));
+		if (BlockAbilitiesProperty)
+		{
+			FGameplayTagContainer* Container = BlockAbilitiesProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(AbilityCDO);
+			if (Container)
+			{
+				Container->Reset();
+				for (const FString& TagString : Definition.Tags.BlockAbilitiesWithTag)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+					if (Tag.IsValid())
+					{
+						Container->AddTag(Tag);
+					}
+				}
+				LogGeneration(FString::Printf(TEXT("  Configured %d BlockAbilitiesWithTag"), Definition.Tags.BlockAbilitiesWithTag.Num()));
+				bTagsModified = true;
+			}
+		}
+	}
+
+	// Set SourceRequiredTags using reflection
+	if (Definition.Tags.SourceRequiredTags.Num() > 0)
+	{
+		FStructProperty* SourceRequiredProperty = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("SourceRequiredTags")));
+		if (SourceRequiredProperty)
+		{
+			FGameplayTagContainer* Container = SourceRequiredProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(AbilityCDO);
+			if (Container)
+			{
+				Container->Reset();
+				for (const FString& TagString : Definition.Tags.SourceRequiredTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+					if (Tag.IsValid())
+					{
+						Container->AddTag(Tag);
+					}
+				}
+				LogGeneration(FString::Printf(TEXT("  Configured %d SourceRequiredTags"), Definition.Tags.SourceRequiredTags.Num()));
+				bTagsModified = true;
+			}
+		}
+	}
+
+	// Set SourceBlockedTags using reflection
+	if (Definition.Tags.SourceBlockedTags.Num() > 0)
+	{
+		FStructProperty* SourceBlockedProperty = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("SourceBlockedTags")));
+		if (SourceBlockedProperty)
+		{
+			FGameplayTagContainer* Container = SourceBlockedProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(AbilityCDO);
+			if (Container)
+			{
+				Container->Reset();
+				for (const FString& TagString : Definition.Tags.SourceBlockedTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+					if (Tag.IsValid())
+					{
+						Container->AddTag(Tag);
+					}
+				}
+				LogGeneration(FString::Printf(TEXT("  Configured %d SourceBlockedTags"), Definition.Tags.SourceBlockedTags.Num()));
+				bTagsModified = true;
+			}
+		}
+	}
+
+	// Set TargetRequiredTags using reflection
+	if (Definition.Tags.TargetRequiredTags.Num() > 0)
+	{
+		FStructProperty* TargetRequiredProperty = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("TargetRequiredTags")));
+		if (TargetRequiredProperty)
+		{
+			FGameplayTagContainer* Container = TargetRequiredProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(AbilityCDO);
+			if (Container)
+			{
+				Container->Reset();
+				for (const FString& TagString : Definition.Tags.TargetRequiredTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+					if (Tag.IsValid())
+					{
+						Container->AddTag(Tag);
+					}
+				}
+				LogGeneration(FString::Printf(TEXT("  Configured %d TargetRequiredTags"), Definition.Tags.TargetRequiredTags.Num()));
+				bTagsModified = true;
+			}
+		}
+	}
+
+	// Set TargetBlockedTags using reflection
+	if (Definition.Tags.TargetBlockedTags.Num() > 0)
+	{
+		FStructProperty* TargetBlockedProperty = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("TargetBlockedTags")));
+		if (TargetBlockedProperty)
+		{
+			FGameplayTagContainer* Container = TargetBlockedProperty->ContainerPtrToValuePtr<FGameplayTagContainer>(AbilityCDO);
+			if (Container)
+			{
+				Container->Reset();
+				for (const FString& TagString : Definition.Tags.TargetBlockedTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagString), false);
+					if (Tag.IsValid())
+					{
+						Container->AddTag(Tag);
+					}
+				}
+				LogGeneration(FString::Printf(TEXT("  Configured %d TargetBlockedTags"), Definition.Tags.TargetBlockedTags.Num()));
+				bTagsModified = true;
+			}
+		}
+	}
+
 	// Save CDO changes without recompiling (avoids triggering event graph errors on existing assets)
 	if (bTagsModified)
 	{
@@ -1710,6 +1831,85 @@ void FGeneratorBase::ConfigureGameplayAbilityPolicies(
 			// v4.23 FAIL-FAST: S29 - Manifest references CooldownGE that cannot be resolved
 			// Note: This is a void helper function, so we log the error - caller will see it in generation log
 			LogGeneration(FString::Printf(TEXT("[E_COOLDOWNGE_NOT_FOUND] %s | CooldownGE not found: %s"), *Definition.Name, *Definition.CooldownGameplayEffectClass));
+		}
+	}
+
+	// v7.8.55: CDO Audit - Set CostGameplayEffectClass via reflection (similar to CooldownGE)
+	if (!Definition.CostGameplayEffectClass.IsEmpty())
+	{
+		UClass* CostEffectClass = nullptr;
+		FString CostEffectPath = Definition.CostGameplayEffectClass;
+
+		// Check session cache FIRST for effects created in this generation session
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(Definition.CostGameplayEffectClass))
+		{
+			CostEffectClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found CostGE in session cache: %s"), *Definition.CostGameplayEffectClass));
+		}
+
+		// If not in cache, try LoadClass with multiple search paths
+		if (!CostEffectClass && !CostEffectPath.Contains(TEXT("/")))
+		{
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("%s/Effects/Costs/%s.%s_C"), *GCurrentProjectRoot, *Definition.CostGameplayEffectClass, *Definition.CostGameplayEffectClass),
+				FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GCurrentProjectRoot, *Definition.CostGameplayEffectClass, *Definition.CostGameplayEffectClass),
+				FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GCurrentProjectRoot, *Definition.CostGameplayEffectClass, *Definition.CostGameplayEffectClass),
+				FString::Printf(TEXT("%s/GE/%s.%s_C"), *GCurrentProjectRoot, *Definition.CostGameplayEffectClass, *Definition.CostGameplayEffectClass)
+			};
+
+			for (const FString& Path : SearchPaths)
+			{
+				CostEffectClass = LoadClass<UGameplayEffect>(nullptr, *Path);
+				if (CostEffectClass)
+				{
+					CostEffectPath = Path;
+					break;
+				}
+			}
+		}
+		else if (!CostEffectClass)
+		{
+			CostEffectClass = LoadClass<UGameplayEffect>(nullptr, *CostEffectPath);
+		}
+
+		if (CostEffectClass)
+		{
+			FClassProperty* CostProperty = CastField<FClassProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("CostGameplayEffectClass")));
+			if (CostProperty)
+			{
+				CostProperty->SetPropertyValue_InContainer(AbilityCDO, CostEffectClass);
+				LogGeneration(FString::Printf(TEXT("  Set CostGameplayEffectClass: %s"), *Definition.CostGameplayEffectClass));
+				bPoliciesModified = true;
+			}
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("[E_COSTGE_NOT_FOUND] %s | CostGE not found: %s"), *Definition.Name, *Definition.CostGameplayEffectClass));
+		}
+	}
+
+	// v7.8.55: CDO Audit - Set NetSecurityPolicy via reflection
+	if (!Definition.NetSecurityPolicy.IsEmpty())
+	{
+		FEnumProperty* NetSecurityEnumProperty = CastField<FEnumProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("NetSecurityPolicy")));
+		if (NetSecurityEnumProperty)
+		{
+			UEnum* EnumClass = NetSecurityEnumProperty->GetEnum();
+			if (EnumClass)
+			{
+				int64 EnumValue = EnumClass->GetValueByNameString(Definition.NetSecurityPolicy);
+				if (EnumValue != INDEX_NONE)
+				{
+					void* ValuePtr = NetSecurityEnumProperty->ContainerPtrToValuePtr<void>(AbilityCDO);
+					NetSecurityEnumProperty->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumValue);
+					LogGeneration(FString::Printf(TEXT("  Set NetSecurityPolicy: %s"), *Definition.NetSecurityPolicy));
+					bPoliciesModified = true;
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  Warning: Invalid NetSecurityPolicy value: %s"), *Definition.NetSecurityPolicy));
+				}
+			}
 		}
 	}
 
