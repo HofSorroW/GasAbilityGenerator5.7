@@ -988,9 +988,58 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 
 	// v7.8.36: Goal Items BEFORE Actor Blueprints (activities reference goals via DynamicCast)
 	// Activities like BPA_FormationFollow need Goal_FormationFollow to exist first
+	// v7.8.52: Pass ManifestData for EventGraph lookup
 	for (const auto& Definition : ManifestData.GoalItems)
 	{
-		FGenerationResult Result = FGoalItemGenerator::Generate(Definition);
+		FGenerationResult Result = FGoalItemGenerator::Generate(Definition, &ManifestData);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v7.8.52: Goal Generators - dynamic goal creation classes
+	for (const auto& Definition : ManifestData.GoalGenerators)
+	{
+		FGenerationResult Result = FGoalGeneratorGenerator::Generate(Definition, &ManifestData);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v7.8.52: Gameplay Cues - GC_ Blueprint assets for VFX/SFX feedback
+	for (const auto& Definition : ManifestData.GameplayCues)
+	{
+		FGenerationResult Result = FGameplayCueGenerator::Generate(Definition, &ManifestData);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v7.8.52: BT Services - BTS_ Blueprint assets for behavior tree services
+	for (const auto& Definition : ManifestData.BTServices)
+	{
+		FGenerationResult Result = FBTServiceGenerator::Generate(Definition, &ManifestData);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v7.8.52: BT Tasks - BTTask_ Blueprint assets for behavior tree tasks
+	for (const auto& Definition : ManifestData.BTTasks)
+	{
+		FGenerationResult Result = FBTTaskGenerator::Generate(Definition, &ManifestData);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
@@ -1426,6 +1475,18 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 		}
 	}
 
+	// v7.8.52: Blueprint Triggers (BPT_ quest task types)
+	for (const auto& Definition : ManifestData.BlueprintTriggers)
+	{
+		FGenerationResult Result = FBlueprintTriggerGenerator::Generate(Definition, &ManifestData);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	// v2.6.0: Ability Configurations
 	for (const auto& Definition : ManifestData.AbilityConfigurations)
 	{
@@ -1463,9 +1524,10 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 	}
 
 	// v2.6.0: Narrative Events
+	// v7.8.52: Pass ManifestData for EventGraph lookup
 	for (const auto& Definition : ManifestData.NarrativeEvents)
 	{
-		FGenerationResult Result = FNarrativeEventGenerator::Generate(Definition);
+		FGenerationResult Result = FNarrativeEventGenerator::Generate(Definition, &ManifestData);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),
@@ -1474,10 +1536,22 @@ void UGasAbilityGeneratorCommandlet::GenerateAssets(const FManifestData& Manifes
 			*Result.AssetName));
 	}
 
-	// v4.0: Gameplay Cues
-	for (const auto& Definition : ManifestData.GameplayCues)
+	// v7.8.52: BT Services
+	for (const auto& Definition : ManifestData.BTServices)
 	{
-		FGenerationResult Result = FGameplayCueGenerator::Generate(Definition);
+		FGenerationResult Result = FBTServiceGenerator::Generate(Definition);
+		Summary.AddResult(Result);
+		TrackProcessedAsset(Result.AssetName);
+		LogMessage(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
+	// v7.8.52: BT Tasks
+	for (const auto& Definition : ManifestData.BTTasks)
+	{
+		FGenerationResult Result = FBTTaskGenerator::Generate(Definition);
 		Summary.AddResult(Result);
 		TrackProcessedAsset(Result.AssetName);
 		LogMessage(FString::Printf(TEXT("[%s] %s"),

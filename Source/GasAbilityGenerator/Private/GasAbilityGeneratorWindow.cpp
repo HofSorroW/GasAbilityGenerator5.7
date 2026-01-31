@@ -891,6 +891,18 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 			*Result.AssetName));
 	}
 
+	// v7.8.52: Blueprint Triggers (BPT_ quest task types)
+	for (const auto& Definition : ManifestData.BlueprintTriggers)
+	{
+		UpdateStatus(FString::Printf(TEXT("Generating: %s"), *Definition.Name));
+		FGenerationResult Result = FBlueprintTriggerGenerator::Generate(Definition, &ManifestData);
+		Summary.AddResult(Result);
+		AppendLog(FString::Printf(TEXT("[%s] %s"),
+			Result.Status == EGenerationStatus::New ? TEXT("NEW") :
+			Result.Status == EGenerationStatus::Skipped ? TEXT("SKIP") : TEXT("FAIL"),
+			*Result.AssetName));
+	}
+
 	for (const auto& Definition : ManifestData.AbilityConfigurations)
 	{
 		UpdateStatus(FString::Printf(TEXT("Generating: %s"), *Definition.Name));
@@ -902,10 +914,11 @@ void SGasAbilityGeneratorWindow::GenerateAssets()
 			*Result.AssetName));
 	}
 
+	// v7.8.52: Pass ManifestData for EventGraph lookup
 	for (const auto& Definition : ManifestData.NarrativeEvents)
 	{
 		UpdateStatus(FString::Printf(TEXT("Generating: %s"), *Definition.Name));
-		FGenerationResult Result = FNarrativeEventGenerator::Generate(Definition);
+		FGenerationResult Result = FNarrativeEventGenerator::Generate(Definition, &ManifestData);
 		Summary.AddResult(Result);
 		AppendLog(FString::Printf(TEXT("[%s] %s"),
 			Result.Status == EGenerationStatus::New ? TEXT("NEW") :

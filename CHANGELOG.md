@@ -80,6 +80,43 @@ wield_attachment_configs:
 - New TMap-style configs take precedence if both are specified
 - Stats struct change is NOT backward compatible - existing stats definitions need updating
 
+### Goal System Enhancement
+
+**Goal Items (goal_items)** now support:
+- `variables:` - Blueprint variables (matching Goal_Attack, Goal_FollowCharacter patterns)
+- `event_graph:` - Reference to named event graph for custom logic
+
+**Goal Generators (goal_generators)** - NEW section:
+- Creates UNPCGoalGenerator Blueprint assets for dynamic goal generation
+- Properties: `parent_class`, `save_goal_generator`, `variables`, `event_graph`
+- Default parent: NPCGoalGenerator
+
+**New YAML syntax:**
+```yaml
+goal_items:
+  - name: Goal_Attack
+    variables:
+      - name: TargetActor
+        type: Object
+        class: Actor
+    event_graph: EventGraph_AttackGoal
+
+goal_generators:
+  - name: GoalGenerator_Attack
+    folder: AI/GoalGenerators
+    variables:
+      - name: QueryTemplate
+        type: Object
+        class: EnvQuery
+    event_graph: EventGraph_AttackGenerator
+```
+
+**Files Changed:**
+- `GasAbilityGeneratorTypes.h`: Added Variables/EventGraph to FManifestGoalItemDefinition, created FManifestGoalGeneratorDefinition struct
+- `GasAbilityGeneratorParser.h/cpp`: Added ParseGoalGenerators function, updated ParseGoalItems for variables/event_graph
+- `GasAbilityGeneratorGenerators.h/cpp`: Updated FGoalItemGenerator, created FGoalGeneratorGenerator class
+- `GasAbilityGeneratorCommandlet.cpp`: Added GoalGenerators generation loop
+
 ---
 
 ## v7.8.52 - Contract 25 Compliance: Array Operation Node Types

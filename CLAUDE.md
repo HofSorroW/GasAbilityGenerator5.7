@@ -461,6 +461,8 @@ The plugin includes Excel-like table editors for bulk content authoring:
 | NS_ | Niagara Systems | `niagara_systems` | FNiagaraSystemGenerator |
 | Schedule_ | Activity Schedules | `activity_schedules` | FActivityScheduleGenerator |
 | Goal_ | Goal Items | `goal_items` / `goals` | FGoalItemGenerator |
+| GoalGenerator_ | Goal Generators | `goal_generators` | FGoalGeneratorGenerator |
+| GC_ | Gameplay Cues | `gameplay_cues` | FGameplayCueGenerator |
 | Quest_ | Quests | `quests` | FQuestGenerator |
 | - | Gameplay Tags | `tags` | FTagGenerator |
 | - | Tagged Dialogue Sets | `tagged_dialogue_sets` | FTaggedDialogueSetGenerator |
@@ -500,23 +502,33 @@ The plugin includes Excel-like table editors for bulk content authoring:
 | Blackboard Keys | BB_ | Blackboard data |
 | Material Parameters | M_ | Texture/scalar params |
 
-#### Gameplay Cues (GC_)
+#### Gameplay Cues (GC_) - Now Generated (v7.8.52)
 
-Gameplay Cues use `GameplayCue.*` tags in manifest `tags` section:
+Gameplay Cues are now fully supported in the `gameplay_cues:` manifest section with full GCN Effects support:
 
+**Parent classes by duration:**
+| Parent Class | Duration | Use Case |
+|--------------|----------|----------|
+| `GameplayCueNotify_Burst` | Instant | One-shot VFX (hit impacts) |
+| `GameplayCueNotify_BurstLatent` | Timed | Duration VFX (DOTs, buffs) |
+| `AGameplayCueNotify_Actor` | Looping | Persistent VFX (auras) |
+
+**GCN Effects supported:**
+- `burst_particles:` - Niagara particle effects
+- `burst_sounds:` - Sound effects
+- `burst_camera_shake:` - Camera shake
+- `burst_camera_lens_effect:` - Lens effects (blood splatter, etc.)
+- `burst_force_feedback:` - Controller rumble
+- `burst_decal:` - Decals (blood pools, scorch marks)
+
+**Example tags:**
 | Tag | Cue Type | Purpose |
 |-----|----------|---------|
 | GameplayCue.Father.FormTransition | Burst | Form change VFX |
 | GameplayCue.Father.Attack | Burst | Melee hit impact |
-| GameplayCue.Father.LaserShot | Burst | Laser projectile |
-| GameplayCue.Father.Mark | Burst | Enemy marked |
 | GameplayCue.Father.ProximityStrike | BurstLatent | AOE damage pulse |
-| GameplayCue.Father.Sacrifice | BurstLatent | Sacrifice sequence |
 
-Cue assets (GC_*) are created in-editor referencing these tags. Parent class determined by effect duration:
-- **Burst effects:** `GameplayCueNotify_Burst` (instant VFX)
-- **Latent effects:** `GameplayCueNotify_BurstLatent` (duration VFX)
-- **Persistent effects:** `AGameplayCueNotify_Actor` (looping VFX)
+See `gameplay_cues:` section in Manifest Structure for full YAML syntax.
 
 ### Automatic Project Detection
 
@@ -879,6 +891,7 @@ activity_schedules:
         goal_class: Goal_Sleep
 
 # v3.9: GoalItem for AI objectives
+# v7.8.52: Added variables and event_graph support
 goal_items:
   - name: Goal_DefendForge
     folder: AI/Goals
@@ -893,6 +906,126 @@ goal_items:
       - State.Fleeing
     require_tags:                                   # Tags required to pursue goal
       - State.Alive
+    # v7.8.52: Variables and event graph (optional)
+    variables:
+      - name: TargetActor
+        type: Object
+        class: Actor
+      - name: MaxDistance
+        type: Float
+        default_value: "500.0"
+        instance_editable: true
+    event_graph: EventGraph_DefendForge             # Reference to named event_graph
+
+# v7.8.52: GoalGenerator for dynamic goal creation
+# Creates UNPCGoalGenerator Blueprint assets
+goal_generators:
+  - name: GoalGenerator_Attack
+    folder: AI/GoalGenerators
+    parent_class: NPCGoalGenerator                  # Default parent class
+    save_goal_generator: false                      # Persist generator across saves
+    variables:
+      - name: QueryTemplate
+        type: Object
+        class: EnvQuery
+      - name: RunMode
+        type: Byte
+        default_value: "0"
+      - name: AttackGoalClass
+        type: Class
+        class: NPCGoalItem
+      - name: AttackAffiliationMap
+        type: Map
+        container: Map
+    event_graph: EventGraph_AttackGenerator         # Reference to named event_graph
+
+# v7.8.52: Gameplay Cue with full GCN Effects support
+# Parent classes: GameplayCueNotify_Burst (instant), GameplayCueNotify_BurstLatent (timed), AGameplayCueNotify_Actor (looping)
+gameplay_cues:
+  - name: GC_TakeDamage
+    folder: VFX/GameplayCues
+    parent_class: GameplayCueNotify_BurstLatent     # Supports full GCN Effects
+    gameplay_cue_tag: GameplayCue.TakeDamage        # Tag that triggers this cue
+    auto_attach_to_owner: true                      # Auto-attach effects to owner
+    is_override: false                              # Override parent cue
+    num_preallocated_instances: 0                   # Pre-allocation count
+
+    # Blueprint variables
+    variables:
+      - name: DamageType
+        type: Byte
+        default_value: "0"
+      - name: ParticleScale
+        type: Float
+        default_value: "1.0"
+
+    # GCN Defaults (BurstLatent/Actor parent classes)
+    gcn_defaults:
+      default_spawn_condition:
+        locally_controlled_source: true             # Play on local player
+        chance_to_play: 1.0                         # 100% chance
+      default_placement_info:
+        socket_name: FX_Hit                         # Attach socket
+        attach_policy: AttachToTarget               # AttachToTarget or DoNotAttach
+
+    # GCN Effects arrays
+    gcn_effects:
+      burst_particles:                              # Niagara effects
+        - niagara_system: /Game/VFX/NS_BloodSplat
+          cast_shadow: false
+          spawn_condition:
+            locally_controlled_source: true
+          placement:
+            socket_name: FX_Hit
+            attach_policy: AttachToTarget
+            attachment_rule: SnapToTarget           # SnapToTarget, KeepRelative, KeepWorld
+
+      burst_sounds:                                 # Sound effects
+        - sound: /Game/Audio/SFX_FleshHit
+          volume_multiplier: 1.0
+          pitch_multiplier: 1.0
+          spawn_condition:
+            locally_controlled_source: true
+
+      burst_camera_shake:                           # Camera shake
+        camera_shake_class: /Game/VFX/CS_LightHit
+        shake_scale: 0.5
+        play_space: CameraLocal                     # CameraLocal or World
+        play_in_world: false
+        world_inner_radius: 500.0
+        world_outer_radius: 1000.0
+
+      burst_camera_lens_effect:                     # Lens effects (blood splatter)
+        lens_effect_class: /Game/VFX/LE_BloodSplatter
+        play_in_world: false
+        world_inner_radius: 200.0
+        world_outer_radius: 800.0
+
+      burst_force_feedback:                         # Controller rumble
+        force_feedback_effect: /Game/Feedback/FF_Hit
+        force_feedback_tag: Feedback.Hit
+        is_looping: false
+        play_in_world: false
+        world_intensity: 1.0
+
+      burst_decal:                                  # Ground decals
+        decal_material: /Game/Materials/M_Blood
+        decal_size: [50, 50, 50]                    # X, Y, Z
+        override_fade_out: true
+        fade_out_start_delay: 10.0
+        fade_out_duration: 5.0
+
+    # Custom functions with replication
+    functions:
+      - name: ApplyVisualDamage
+        replicates: Multicast                       # None, Server, Client, Multicast
+        reliable: true
+        inputs:
+          - name: DamageAmount
+            type: Float
+
+    # Event graph for custom logic
+    event_graph: EventGraph_TakeDamageCue
 
 # v3.9.3: Quest blueprint with state machine definition
 # NOTE: Questgiver Pattern in Narrative Pro:

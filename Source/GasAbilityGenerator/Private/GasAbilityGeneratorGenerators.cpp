@@ -116,6 +116,9 @@
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "AttributeSet.h"
 #include "ScalableFloat.h"
+// v7.8.52: GE Execution calculation and magnitude calculation classes
+#include "GameplayEffectExecutionCalculation.h"
+#include "GameplayModMagnitudeCalculation.h"
 #include "Abilities/GameplayAbility.h"
 #include "GameplayTagContainer.h"
 #include "GameplayTagsManager.h"
@@ -1745,6 +1748,318 @@ void FGeneratorBase::ConfigureGameplayAbilityPolicies(
 		}
 	}
 
+	// v7.8.52: Set bRequiresAmmo
+	if (Definition.bRequiresAmmo)
+	{
+		FBoolProperty* RequiresAmmoProp = CastField<FBoolProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("bRequiresAmmo")));
+		if (RequiresAmmoProp)
+		{
+			RequiresAmmoProp->SetPropertyValue_InContainer(AbilityCDO, true);
+			LogGeneration(TEXT("  Set bRequiresAmmo: true"));
+			bPoliciesModified = true;
+		}
+	}
+
+	// v7.8.52: Set bDrawDebugTraces
+	if (Definition.bDrawDebugTraces)
+	{
+		FBoolProperty* DrawDebugProp = CastField<FBoolProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("bDrawDebugTraces")));
+		if (DrawDebugProp)
+		{
+			DrawDebugProp->SetPropertyValue_InContainer(AbilityCDO, true);
+			LogGeneration(TEXT("  Set bDrawDebugTraces: true"));
+			bPoliciesModified = true;
+		}
+	}
+
+	// v7.8.52: Set FireCueTag (Cues section)
+	if (!Definition.FireCueTag.IsEmpty())
+	{
+		FStructProperty* FireCueProp = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("FireCueTag")));
+		if (FireCueProp && FireCueProp->Struct && FireCueProp->Struct->GetName() == TEXT("GameplayTag"))
+		{
+			FGameplayTag* TagPtr = FireCueProp->ContainerPtrToValuePtr<FGameplayTag>(AbilityCDO);
+			if (TagPtr)
+			{
+				*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.FireCueTag), false);
+				if (TagPtr->IsValid())
+				{
+					LogGeneration(FString::Printf(TEXT("  Set FireCueTag: %s"), *Definition.FireCueTag));
+					bPoliciesModified = true;
+				}
+			}
+		}
+	}
+
+	// v7.8.52: Set FireCueTagNoImpact
+	if (!Definition.FireCueTagNoImpact.IsEmpty())
+	{
+		FStructProperty* FireCueNoImpactProp = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("FireCueTagNoImpact")));
+		if (FireCueNoImpactProp && FireCueNoImpactProp->Struct && FireCueNoImpactProp->Struct->GetName() == TEXT("GameplayTag"))
+		{
+			FGameplayTag* TagPtr = FireCueNoImpactProp->ContainerPtrToValuePtr<FGameplayTag>(AbilityCDO);
+			if (TagPtr)
+			{
+				*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.FireCueTagNoImpact), false);
+				if (TagPtr->IsValid())
+				{
+					LogGeneration(FString::Printf(TEXT("  Set FireCueTagNoImpact: %s"), *Definition.FireCueTagNoImpact));
+					bPoliciesModified = true;
+				}
+			}
+		}
+	}
+
+	// v7.8.52: Set DamageEffectClass (TSubclassOf<UGameplayEffect>)
+	if (!Definition.DamageEffectClass.IsEmpty())
+	{
+		UClass* DamageGEClass = nullptr;
+
+		// Check session cache first
+		if (UClass** CachedClass = GSessionBlueprintClassCache.Find(Definition.DamageEffectClass))
+		{
+			DamageGEClass = *CachedClass;
+			LogGeneration(FString::Printf(TEXT("  Found DamageEffectClass in session cache: %s"), *Definition.DamageEffectClass));
+		}
+
+		// Try loading if not in cache
+		if (!DamageGEClass)
+		{
+			TArray<FString> SearchPaths = {
+				FString::Printf(TEXT("%s/Effects/%s.%s_C"), *GCurrentProjectRoot, *Definition.DamageEffectClass, *Definition.DamageEffectClass),
+				FString::Printf(TEXT("%s/GameplayEffects/%s.%s_C"), *GCurrentProjectRoot, *Definition.DamageEffectClass, *Definition.DamageEffectClass),
+				FString::Printf(TEXT("%s/GE/%s.%s_C"), *GCurrentProjectRoot, *Definition.DamageEffectClass, *Definition.DamageEffectClass)
+			};
+			for (const FString& Path : SearchPaths)
+			{
+				DamageGEClass = LoadClass<UGameplayEffect>(nullptr, *Path);
+				if (DamageGEClass) break;
+			}
+		}
+
+		if (DamageGEClass)
+		{
+			FClassProperty* DamageEffectProp = CastField<FClassProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("DamageEffectClass")));
+			if (DamageEffectProp)
+			{
+				DamageEffectProp->SetPropertyValue_InContainer(AbilityCDO, DamageGEClass);
+				LogGeneration(FString::Printf(TEXT("  Set DamageEffectClass: %s"), *Definition.DamageEffectClass));
+				bPoliciesModified = true;
+			}
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Warning: DamageEffectClass not found: %s"), *Definition.DamageEffectClass));
+		}
+	}
+
+	// v7.8.52: Set DefaultAttackDamage
+	if (Definition.DefaultAttackDamage > 0.0f)
+	{
+		FFloatProperty* AttackDamageProp = CastField<FFloatProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("DefaultAttackDamage")));
+		if (AttackDamageProp)
+		{
+			AttackDamageProp->SetPropertyValue_InContainer(AbilityCDO, Definition.DefaultAttackDamage);
+			LogGeneration(FString::Printf(TEXT("  Set DefaultAttackDamage: %.2f"), Definition.DefaultAttackDamage));
+			bPoliciesModified = true;
+		}
+	}
+
+	// v7.8.52: Set AbilityTriggers (TArray<FAbilityTriggerData>)
+	if (Definition.AbilityTriggers.Num() > 0)
+	{
+		FArrayProperty* TriggersProp = CastField<FArrayProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("AbilityTriggers")));
+		if (TriggersProp)
+		{
+			FScriptArrayHelper ArrayHelper(TriggersProp, TriggersProp->ContainerPtrToValuePtr<void>(AbilityCDO));
+			ArrayHelper.EmptyValues();
+
+			for (const FManifestAbilityTriggerDefinition& TriggerDef : Definition.AbilityTriggers)
+			{
+				int32 NewIndex = ArrayHelper.AddValue();
+				uint8* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+
+				FStructProperty* InnerProp = CastField<FStructProperty>(TriggersProp->Inner);
+				if (InnerProp && ElementPtr)
+				{
+					UScriptStruct* TriggerStruct = InnerProp->Struct;
+
+					// Set TriggerTag (FGameplayTag)
+					if (FStructProperty* TriggerTagProp = CastField<FStructProperty>(TriggerStruct->FindPropertyByName(TEXT("TriggerTag"))))
+					{
+						if (TriggerTagProp->Struct && TriggerTagProp->Struct->GetName() == TEXT("GameplayTag"))
+						{
+							FGameplayTag* TagPtr = TriggerTagProp->ContainerPtrToValuePtr<FGameplayTag>(ElementPtr);
+							if (TagPtr)
+							{
+								*TagPtr = FGameplayTag::RequestGameplayTag(FName(*TriggerDef.TriggerTag), false);
+							}
+						}
+					}
+
+					// Set TriggerSource (EGameplayAbilityTriggerSource enum)
+					if (FEnumProperty* TriggerSourceProp = CastField<FEnumProperty>(TriggerStruct->FindPropertyByName(TEXT("TriggerSource"))))
+					{
+						UEnum* SourceEnum = TriggerSourceProp->GetEnum();
+						if (SourceEnum)
+						{
+							int64 EnumValue = SourceEnum->GetValueByNameString(TriggerDef.TriggerSource);
+							if (EnumValue != INDEX_NONE)
+							{
+								void* ValuePtr = TriggerSourceProp->ContainerPtrToValuePtr<void>(ElementPtr);
+								TriggerSourceProp->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumValue);
+							}
+						}
+					}
+				}
+			}
+			LogGeneration(FString::Printf(TEXT("  Set AbilityTriggers: %d entries"), Definition.AbilityTriggers.Num()));
+			bPoliciesModified = true;
+		}
+	}
+
+	// v7.8.52: Firearm Ability Config
+	if (Definition.bIsAutomatic)
+	{
+		FBoolProperty* AutomaticProp = CastField<FBoolProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("bIsAutomatic")));
+		if (AutomaticProp)
+		{
+			AutomaticProp->SetPropertyValue_InContainer(AbilityCDO, true);
+			LogGeneration(TEXT("  Set bIsAutomatic: true"));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.RateOfFire != 0.2f) // Non-default value
+	{
+		FFloatProperty* RateOfFireProp = CastField<FFloatProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("RateOfFire")));
+		if (RateOfFireProp)
+		{
+			RateOfFireProp->SetPropertyValue_InContainer(AbilityCDO, Definition.RateOfFire);
+			LogGeneration(FString::Printf(TEXT("  Set RateOfFire: %.3f"), Definition.RateOfFire));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.BurstAmount >= 0) // -1 is default (not burst mode)
+	{
+		FIntProperty* BurstProp = CastField<FIntProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("BurstAmount")));
+		if (BurstProp)
+		{
+			BurstProp->SetPropertyValue_InContainer(AbilityCDO, Definition.BurstAmount);
+			LogGeneration(FString::Printf(TEXT("  Set BurstAmount: %d"), Definition.BurstAmount));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.TraceDistance != 10000.0f) // Non-default value
+	{
+		FFloatProperty* TraceDistProp = CastField<FFloatProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("TraceDistance")));
+		if (TraceDistProp)
+		{
+			TraceDistProp->SetPropertyValue_InContainer(AbilityCDO, Definition.TraceDistance);
+			LogGeneration(FString::Printf(TEXT("  Set TraceDistance: %.1f"), Definition.TraceDistance));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.TraceRadius > 0.0f)
+	{
+		FFloatProperty* TraceRadiusProp = CastField<FFloatProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("TraceRadius")));
+		if (TraceRadiusProp)
+		{
+			TraceRadiusProp->SetPropertyValue_InContainer(AbilityCDO, Definition.TraceRadius);
+			LogGeneration(FString::Printf(TEXT("  Set TraceRadius: %.1f"), Definition.TraceRadius));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.bTraceMulti)
+	{
+		FBoolProperty* TraceMultiProp = CastField<FBoolProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("bTraceMulti")));
+		if (TraceMultiProp)
+		{
+			TraceMultiProp->SetPropertyValue_InContainer(AbilityCDO, true);
+			LogGeneration(TEXT("  Set bTraceMulti: true"));
+			bPoliciesModified = true;
+		}
+	}
+
+	// v7.8.52: Motion Warping Config
+	if (Definition.bShouldWarp)
+	{
+		FBoolProperty* ShouldWarpProp = CastField<FBoolProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("bShouldWarp")));
+		if (ShouldWarpProp)
+		{
+			ShouldWarpProp->SetPropertyValue_InContainer(AbilityCDO, true);
+			LogGeneration(TEXT("  Set bShouldWarp: true"));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.WarpMaintainDist != 100.0f) // Non-default
+	{
+		FFloatProperty* WarpMaintainProp = CastField<FFloatProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("WarpMaintainDist")));
+		if (WarpMaintainProp)
+		{
+			WarpMaintainProp->SetPropertyValue_InContainer(AbilityCDO, Definition.WarpMaintainDist);
+			LogGeneration(FString::Printf(TEXT("  Set WarpMaintainDist: %.1f"), Definition.WarpMaintainDist));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.MinWarpDist != 20.0f) // Non-default
+	{
+		FFloatProperty* MinWarpProp = CastField<FFloatProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("MinWarpDist")));
+		if (MinWarpProp)
+		{
+			MinWarpProp->SetPropertyValue_InContainer(AbilityCDO, Definition.MinWarpDist);
+			LogGeneration(FString::Printf(TEXT("  Set MinWarpDist: %.1f"), Definition.MinWarpDist));
+			bPoliciesModified = true;
+		}
+	}
+
+	if (Definition.MaxWarpDist != 250.0f) // Non-default
+	{
+		FFloatProperty* MaxWarpProp = CastField<FFloatProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("MaxWarpDist")));
+		if (MaxWarpProp)
+		{
+			MaxWarpProp->SetPropertyValue_InContainer(AbilityCDO, Definition.MaxWarpDist);
+			LogGeneration(FString::Printf(TEXT("  Set MaxWarpDist: %.1f"), Definition.MaxWarpDist));
+			bPoliciesModified = true;
+		}
+	}
+
+	// v7.8.52: Execution Config
+	if (!Definition.ExecutionGameplayTag.IsEmpty())
+	{
+		FStructProperty* ExecTagProp = CastField<FStructProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("ExecutionGameplayTag")));
+		if (ExecTagProp && ExecTagProp->Struct && ExecTagProp->Struct->GetName() == TEXT("GameplayTag"))
+		{
+			FGameplayTag* TagPtr = ExecTagProp->ContainerPtrToValuePtr<FGameplayTag>(AbilityCDO);
+			if (TagPtr)
+			{
+				*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.ExecutionGameplayTag), false);
+				if (TagPtr->IsValid())
+				{
+					LogGeneration(FString::Printf(TEXT("  Set ExecutionGameplayTag: %s"), *Definition.ExecutionGameplayTag));
+					bPoliciesModified = true;
+				}
+			}
+		}
+	}
+
+	if (Definition.bExecutionInvulnerability)
+	{
+		FBoolProperty* ExecInvulnProp = CastField<FBoolProperty>(AbilityCDO->GetClass()->FindPropertyByName(TEXT("bExecutionInvulnerability")));
+		if (ExecInvulnProp)
+		{
+			ExecInvulnProp->SetPropertyValue_InContainer(AbilityCDO, true);
+			LogGeneration(TEXT("  Set bExecutionInvulnerability: true"));
+			bPoliciesModified = true;
+		}
+	}
+
 	// Save CDO changes without recompiling (avoids triggering event graph errors on existing assets)
 	if (bPoliciesModified)
 	{
@@ -2718,6 +3033,7 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 			}
 
 			// v2.4.0: Set magnitude based on MagnitudeType
+			// v7.8.52: Enhanced to support AttributeBased and CustomCalculationClass
 			if (ModDef.MagnitudeType.Equals(TEXT("SetByCaller"), ESearchCase::IgnoreCase))
 			{
 				// Use SetByCaller magnitude with gameplay tag
@@ -2734,21 +3050,349 @@ FGenerationResult FGameplayEffectGenerator::Generate(const FManifestGameplayEffe
 					}
 				}
 				ModInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(SetByCallerMagnitude);
-
-				Effect->Modifiers.Add(ModInfo);
 				LogGeneration(FString::Printf(TEXT("  Added modifier: %s %s SetByCaller[%s]"),
 					*ModDef.Attribute, *ModDef.Operation, *ModDef.SetByCallerTag));
+			}
+			else if (ModDef.MagnitudeType.Equals(TEXT("AttributeBased"), ESearchCase::IgnoreCase))
+			{
+				// v7.8.52: Attribute-based magnitude
+				FAttributeBasedFloat AttrBased;
+
+				// Set coefficient and additive values
+				AttrBased.Coefficient = FScalableFloat(ModDef.AttributeBased.Coefficient);
+				AttrBased.PreMultiplyAdditiveValue = FScalableFloat(ModDef.AttributeBased.PreMultiplyAdditiveValue);
+				AttrBased.PostMultiplyAdditiveValue = FScalableFloat(ModDef.AttributeBased.PostMultiplyAdditiveValue);
+
+				// Set the backing attribute to capture
+				if (!ModDef.AttributeBased.AttributeToCapture.IsEmpty())
+				{
+					FString AttrClassName, AttrPropertyName;
+					if (ModDef.AttributeBased.AttributeToCapture.Split(TEXT("."), &AttrClassName, &AttrPropertyName))
+					{
+						FString FullAttrClassName = FString::Printf(TEXT("U%s"), *AttrClassName);
+						UClass* AttrSetClass = FindFirstObject<UClass>(*FullAttrClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+						if (!AttrSetClass)
+						{
+							AttrSetClass = FindFirstObject<UClass>(*AttrClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+						}
+						if (AttrSetClass)
+						{
+							FProperty* AttrProp = AttrSetClass->FindPropertyByName(FName(*AttrPropertyName));
+							if (AttrProp)
+							{
+								AttrBased.BackingAttribute = FGameplayEffectAttributeCaptureDefinition(
+									FGameplayAttribute(AttrProp),
+									ModDef.AttributeBased.AttributeSource.Equals(TEXT("Target"), ESearchCase::IgnoreCase)
+										? EGameplayEffectAttributeCaptureSource::Target
+										: EGameplayEffectAttributeCaptureSource::Source,
+									ModDef.AttributeBased.bSnapshot);
+								LogGeneration(FString::Printf(TEXT("  Configured AttributeBased with backing attribute: %s"), *ModDef.AttributeBased.AttributeToCapture));
+							}
+						}
+					}
+				}
+
+				// Set calculation type
+				if (ModDef.AttributeBased.AttributeCalculationType.Equals(TEXT("AttributeBaseValue"), ESearchCase::IgnoreCase))
+				{
+					AttrBased.AttributeCalculationType = EAttributeBasedFloatCalculationType::AttributeBaseValue;
+				}
+				else if (ModDef.AttributeBased.AttributeCalculationType.Equals(TEXT("AttributeBonusMagnitude"), ESearchCase::IgnoreCase))
+				{
+					AttrBased.AttributeCalculationType = EAttributeBasedFloatCalculationType::AttributeBonusMagnitude;
+				}
+				else
+				{
+					AttrBased.AttributeCalculationType = EAttributeBasedFloatCalculationType::AttributeMagnitude; // Default
+				}
+
+				ModInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(AttrBased);
+				LogGeneration(FString::Printf(TEXT("  Added modifier: %s %s AttributeBased[%s, coef=%.2f]"),
+					*ModDef.Attribute, *ModDef.Operation, *ModDef.AttributeBased.AttributeToCapture, ModDef.AttributeBased.Coefficient));
+			}
+			else if (ModDef.MagnitudeType.Equals(TEXT("CustomCalculationClass"), ESearchCase::IgnoreCase))
+			{
+				// v7.8.52: Custom calculation class magnitude
+				if (!ModDef.CustomCalculationClass.IsEmpty())
+				{
+					UClass* CalcClass = FindFirstObject<UClass>(*ModDef.CustomCalculationClass, EFindFirstObjectOptions::EnsureIfAmbiguous);
+					if (!CalcClass)
+					{
+						FString FullClassName = FString::Printf(TEXT("U%s"), *ModDef.CustomCalculationClass);
+						CalcClass = FindFirstObject<UClass>(*FullClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+					}
+					if (CalcClass && CalcClass->IsChildOf(UGameplayModMagnitudeCalculation::StaticClass()))
+					{
+						FCustomCalculationBasedFloat CustomCalc;
+						CustomCalc.CalculationClassMagnitude = CalcClass;
+						ModInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(CustomCalc);
+						LogGeneration(FString::Printf(TEXT("  Added modifier: %s %s CustomCalculation[%s]"),
+							*ModDef.Attribute, *ModDef.Operation, *ModDef.CustomCalculationClass));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  WARNING: Custom calculation class '%s' not found or invalid"), *ModDef.CustomCalculationClass));
+					}
+				}
 			}
 			else
 			{
 				// Default: Use ScalableFloat magnitude
 				ModInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(ModDef.ScalableFloatValue));
-
-				Effect->Modifiers.Add(ModInfo);
 				LogGeneration(FString::Printf(TEXT("  Added modifier: %s %s %.2f"),
 					*ModDef.Attribute, *ModDef.Operation, ModDef.ScalableFloatValue));
 			}
+
+			// v7.8.52: Apply per-modifier source/target tag requirements
+			if (!ModDef.SourceTags.IsEmpty())
+			{
+				for (const FString& TagName : ModDef.SourceTags.MustHaveTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagName), false);
+					if (Tag.IsValid())
+					{
+						ModInfo.SourceTags.RequireTags.AddTag(Tag);
+					}
+				}
+				for (const FString& TagName : ModDef.SourceTags.MustNotHaveTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagName), false);
+					if (Tag.IsValid())
+					{
+						ModInfo.SourceTags.IgnoreTags.AddTag(Tag);
+					}
+				}
+			}
+			if (!ModDef.TargetTags.IsEmpty())
+			{
+				for (const FString& TagName : ModDef.TargetTags.MustHaveTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagName), false);
+					if (Tag.IsValid())
+					{
+						ModInfo.TargetTags.RequireTags.AddTag(Tag);
+					}
+				}
+				for (const FString& TagName : ModDef.TargetTags.MustNotHaveTags)
+				{
+					FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagName), false);
+					if (Tag.IsValid())
+					{
+						ModInfo.TargetTags.IgnoreTags.AddTag(Tag);
+					}
+				}
+			}
+
+			Effect->Modifiers.Add(ModInfo);
 		}
+	}
+
+	// v7.8.52: Add executions with modifiers and conditional effects
+	if (Definition.Executions.Num() > 0)
+	{
+		for (const FManifestGEExecution& ExecDef : Definition.Executions)
+		{
+			FGameplayEffectExecutionDefinition ExecDefStruct;
+
+			// Find the calculation class
+			if (!ExecDef.CalculationClass.IsEmpty())
+			{
+				UClass* CalcClass = FindFirstObject<UClass>(*ExecDef.CalculationClass, EFindFirstObjectOptions::EnsureIfAmbiguous);
+				if (!CalcClass)
+				{
+					FString FullClassName = FString::Printf(TEXT("U%s"), *ExecDef.CalculationClass);
+					CalcClass = FindFirstObject<UClass>(*FullClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+				}
+				if (CalcClass && CalcClass->IsChildOf(UGameplayEffectExecutionCalculation::StaticClass()))
+				{
+					ExecDefStruct.CalculationClass = CalcClass;
+					LogGeneration(FString::Printf(TEXT("  Added execution calculation: %s"), *ExecDef.CalculationClass));
+
+					// Add execution modifiers
+					for (const FManifestGEExecutionModifier& ExecModDef : ExecDef.Modifiers)
+					{
+						FGameplayEffectExecutionScopedModifierInfo ScopedMod;
+
+						// Set captured attribute
+						if (!ExecModDef.CapturedAttribute.IsEmpty())
+						{
+							FString AttrClassName, AttrPropertyName;
+							if (ExecModDef.CapturedAttribute.Split(TEXT("."), &AttrClassName, &AttrPropertyName))
+							{
+								FString FullAttrClassName = FString::Printf(TEXT("U%s"), *AttrClassName);
+								UClass* AttrSetClass = FindFirstObject<UClass>(*FullAttrClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+								if (!AttrSetClass)
+								{
+									AttrSetClass = FindFirstObject<UClass>(*AttrClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+								}
+								if (AttrSetClass)
+								{
+									FProperty* AttrProp = AttrSetClass->FindPropertyByName(FName(*AttrPropertyName));
+									if (AttrProp)
+									{
+										ScopedMod.CapturedAttribute = FGameplayEffectAttributeCaptureDefinition(
+											FGameplayAttribute(AttrProp),
+											ExecModDef.CapturedSource.Equals(TEXT("Target"), ESearchCase::IgnoreCase)
+												? EGameplayEffectAttributeCaptureSource::Target
+												: EGameplayEffectAttributeCaptureSource::Source,
+											ExecModDef.CapturedStatus.Equals(TEXT("Snapshotted"), ESearchCase::IgnoreCase));
+									}
+								}
+							}
+						}
+
+						// Set modifier op
+						if (ExecModDef.ModifierOp.Equals(TEXT("Additive"), ESearchCase::IgnoreCase) ||
+						    ExecModDef.ModifierOp.Equals(TEXT("Add"), ESearchCase::IgnoreCase))
+						{
+							ScopedMod.ModifierOp = EGameplayModOp::Additive;
+						}
+						else if (ExecModDef.ModifierOp.Equals(TEXT("Multiplicative"), ESearchCase::IgnoreCase) ||
+						         ExecModDef.ModifierOp.Equals(TEXT("Multiply"), ESearchCase::IgnoreCase))
+						{
+							ScopedMod.ModifierOp = EGameplayModOp::Multiplicitive;
+						}
+						else if (ExecModDef.ModifierOp.Equals(TEXT("Override"), ESearchCase::IgnoreCase))
+						{
+							ScopedMod.ModifierOp = EGameplayModOp::Override;
+						}
+
+						// Set magnitude
+						if (ExecModDef.MagnitudeType.Equals(TEXT("SetByCaller"), ESearchCase::IgnoreCase))
+						{
+							FSetByCallerFloat SetByCaller;
+							if (!ExecModDef.SetByCallerTag.IsEmpty())
+							{
+								SetByCaller.DataTag = FGameplayTag::RequestGameplayTag(FName(*ExecModDef.SetByCallerTag), false);
+							}
+							ScopedMod.ModifierMagnitude = FGameplayEffectModifierMagnitude(SetByCaller);
+						}
+						else if (ExecModDef.MagnitudeType.Equals(TEXT("AttributeBased"), ESearchCase::IgnoreCase))
+						{
+							FAttributeBasedFloat AttrBased;
+							AttrBased.Coefficient = FScalableFloat(ExecModDef.AttributeBased.Coefficient);
+							// Configure attribute capture for attribute-based if specified
+							if (!ExecModDef.AttributeBased.AttributeToCapture.IsEmpty())
+							{
+								FString ABClassName, ABPropName;
+								if (ExecModDef.AttributeBased.AttributeToCapture.Split(TEXT("."), &ABClassName, &ABPropName))
+								{
+									FString FullABClassName = FString::Printf(TEXT("U%s"), *ABClassName);
+									UClass* ABSetClass = FindFirstObject<UClass>(*FullABClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+									if (!ABSetClass)
+									{
+										ABSetClass = FindFirstObject<UClass>(*ABClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+									}
+									if (ABSetClass)
+									{
+										FProperty* ABProp = ABSetClass->FindPropertyByName(FName(*ABPropName));
+										if (ABProp)
+										{
+											AttrBased.BackingAttribute = FGameplayEffectAttributeCaptureDefinition(
+												FGameplayAttribute(ABProp),
+												ExecModDef.AttributeBased.AttributeSource.Equals(TEXT("Target"), ESearchCase::IgnoreCase)
+													? EGameplayEffectAttributeCaptureSource::Target
+													: EGameplayEffectAttributeCaptureSource::Source,
+												ExecModDef.AttributeBased.bSnapshot);
+										}
+									}
+								}
+							}
+							ScopedMod.ModifierMagnitude = FGameplayEffectModifierMagnitude(AttrBased);
+						}
+						else
+						{
+							ScopedMod.ModifierMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(ExecModDef.ScalableFloatValue));
+						}
+
+						ExecDefStruct.CalculationModifiers.Add(ScopedMod);
+						LogGeneration(FString::Printf(TEXT("    Added execution modifier: %s"), *ExecModDef.CapturedAttribute));
+					}
+
+					// Add conditional effects
+					for (const FManifestConditionalGameplayEffect& CondEffDef : ExecDef.ConditionalEffects)
+					{
+						FConditionalGameplayEffect CondEff;
+
+						// Find effect class
+						if (!CondEffDef.EffectClass.IsEmpty())
+						{
+							UClass* EffClass = nullptr;
+							// Try session cache first
+							if (GSessionBlueprintClassCache.Contains(CondEffDef.EffectClass))
+							{
+								EffClass = GSessionBlueprintClassCache[CondEffDef.EffectClass];
+							}
+							else
+							{
+								EffClass = FindFirstObject<UClass>(*CondEffDef.EffectClass, EFindFirstObjectOptions::EnsureIfAmbiguous);
+							}
+							if (EffClass && EffClass->IsChildOf(UGameplayEffect::StaticClass()))
+							{
+								CondEff.EffectClass = EffClass;
+
+								// Add required source tags
+								for (const FString& TagName : CondEffDef.RequiredSourceTags)
+								{
+									FGameplayTag Tag = FGameplayTag::RequestGameplayTag(FName(*TagName), false);
+									if (Tag.IsValid())
+									{
+										CondEff.RequiredSourceTags.AddTag(Tag);
+									}
+								}
+
+								ExecDefStruct.ConditionalGameplayEffects.Add(CondEff);
+								LogGeneration(FString::Printf(TEXT("    Added conditional effect: %s"), *CondEffDef.EffectClass));
+							}
+						}
+					}
+
+					Effect->Executions.Add(ExecDefStruct);
+				}
+				else
+				{
+					LogGeneration(FString::Printf(TEXT("  WARNING: Execution calculation class '%s' not found"), *ExecDef.CalculationClass));
+				}
+			}
+		}
+	}
+	// Legacy: Add simple execution classes
+	else if (Definition.ExecutionClasses.Num() > 0)
+	{
+		for (const FString& ClassName : Definition.ExecutionClasses)
+		{
+			FGameplayEffectExecutionDefinition ExecDefStruct;
+			UClass* CalcClass = FindFirstObject<UClass>(*ClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+			if (!CalcClass)
+			{
+				FString FullClassName = FString::Printf(TEXT("U%s"), *ClassName);
+				CalcClass = FindFirstObject<UClass>(*FullClassName, EFindFirstObjectOptions::EnsureIfAmbiguous);
+			}
+			if (CalcClass && CalcClass->IsChildOf(UGameplayEffectExecutionCalculation::StaticClass()))
+			{
+				ExecDefStruct.CalculationClass = CalcClass;
+				Effect->Executions.Add(ExecDefStruct);
+				LogGeneration(FString::Printf(TEXT("  Added execution (legacy): %s"), *ClassName));
+			}
+		}
+	}
+
+	// v7.8.52: Set periodic inhibition policy
+	if (!Definition.PeriodicInhibitionPolicy.IsEmpty())
+	{
+		if (Definition.PeriodicInhibitionPolicy.Equals(TEXT("NeverReset"), ESearchCase::IgnoreCase))
+		{
+			Effect->PeriodicInhibitionPolicy = EGameplayEffectPeriodInhibitionRemovedPolicy::NeverReset;
+		}
+		else if (Definition.PeriodicInhibitionPolicy.Equals(TEXT("ResetPeriod"), ESearchCase::IgnoreCase))
+		{
+			Effect->PeriodicInhibitionPolicy = EGameplayEffectPeriodInhibitionRemovedPolicy::ResetPeriod;
+		}
+		else if (Definition.PeriodicInhibitionPolicy.Equals(TEXT("ExecuteAndResetPeriod"), ESearchCase::IgnoreCase))
+		{
+			Effect->PeriodicInhibitionPolicy = EGameplayEffectPeriodInhibitionRemovedPolicy::ExecuteAndResetPeriod;
+		}
+		LogGeneration(FString::Printf(TEXT("  Set periodic inhibition policy: %s"), *Definition.PeriodicInhibitionPolicy));
 	}
 
 	// v4.15: Add granted tags using UE5.7 component system (replaces deprecated InheritableOwnedTagsContainer)
@@ -23390,8 +24034,113 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 				}
 			}
 
+			// v7.8.52: Enhanced BPA properties
+			// AttackTaggedDialogue (FGameplayTag)
+			if (!Definition.AttackTaggedDialogue.IsEmpty())
+			{
+				FStructProperty* TagProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("AttackTaggedDialogue")));
+				if (TagProp)
+				{
+					FGameplayTag* TagPtr = TagProp->ContainerPtrToValuePtr<FGameplayTag>(CDO);
+					if (TagPtr)
+					{
+						*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.AttackTaggedDialogue), false);
+						if (TagPtr->IsValid())
+						{
+							LogGeneration(FString::Printf(TEXT("  Set AttackTaggedDialogue: %s"), *Definition.AttackTaggedDialogue));
+						}
+					}
+				}
+			}
+			// FollowGoal (TSubclassOf<UNPCGoalItem>)
+			if (!Definition.FollowGoal.IsEmpty())
+			{
+				UClass* GoalClass = FindParentClass(Definition.FollowGoal);
+				if (GoalClass)
+				{
+					FClassProperty* GoalProp = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("FollowGoal")));
+					if (GoalProp)
+					{
+						GoalProp->SetObjectPropertyValue_InContainer(CDO, GoalClass);
+						LogGeneration(FString::Printf(TEXT("  Set FollowGoal: %s"), *Definition.FollowGoal));
+					}
+				}
+			}
+			// InteractSubGoal (TSubclassOf<UNPCGoalItem>)
+			if (!Definition.InteractSubGoal.IsEmpty())
+			{
+				UClass* GoalClass = FindParentClass(Definition.InteractSubGoal);
+				if (GoalClass)
+				{
+					FClassProperty* GoalProp = CastField<FClassProperty>(CDO->GetClass()->FindPropertyByName(TEXT("InteractSubGoal")));
+					if (GoalProp)
+					{
+						GoalProp->SetObjectPropertyValue_InContainer(CDO, GoalClass);
+						LogGeneration(FString::Printf(TEXT("  Set InteractSubGoal: %s"), *Definition.InteractSubGoal));
+					}
+				}
+			}
+			// BBKeyFollowDistance (FName - blackboard key)
+			if (!Definition.BBKeyFollowDistance.IsEmpty())
+			{
+				FNameProperty* KeyProp = CastField<FNameProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BBKey_FollowDistance")));
+				if (KeyProp)
+				{
+					KeyProp->SetPropertyValue_InContainer(CDO, FName(*Definition.BBKeyFollowDistance));
+					LogGeneration(FString::Printf(TEXT("  Set BBKey_FollowDistance: %s"), *Definition.BBKeyFollowDistance));
+				}
+			}
+
 			CDO->MarkPackageDirty();
 		}
+	}
+
+	// v7.8.52: Add variables if any
+	if (Definition.Variables.Num() > 0 && Blueprint)
+	{
+		for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+		{
+			FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+			// Handle Object/Class types
+			if (PinType.PinCategory == UEdGraphSchema_K2::PC_Object ||
+				PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
+			{
+				if (!VarDef.Class.IsEmpty())
+				{
+					UClass* ObjClass = FindParentClass(VarDef.Class);
+					if (ObjClass)
+					{
+						PinType.PinSubCategoryObject = ObjClass;
+					}
+				}
+			}
+
+			bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+			if (bSuccess)
+			{
+				LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+
+				int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+				if (VarIndex != INDEX_NONE)
+				{
+					// Set default value if specified
+					if (!VarDef.DefaultValue.IsEmpty())
+					{
+						Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+					}
+
+					// Set instance editable
+					if (VarDef.bInstanceEditable)
+					{
+						Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+					}
+				}
+			}
+		}
+
+		// Recompile after adding variables
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	}
 
 	// v4.14: Removed redundant recompile - would wipe CDO property changes
@@ -23420,6 +24169,492 @@ FGenerationResult FActivityGenerator::Generate(const FManifestActivityDefinition
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("Activity");
+	Result.DetermineCategory();
+	return Result;
+}
+
+// v7.8.52: Blueprint Trigger Generator (BPT_ quest task types)
+FGenerationResult FBlueprintTriggerGenerator::Generate(const FManifestBlueprintTriggerDefinition& Definition, const FManifestData* ManifestData)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Tales/Tasks") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Blueprint Trigger"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Blueprint Trigger"), Definition.ComputeHash(), Result))
+	{
+		return Result;
+	}
+
+	// Find parent class - default to finding in Narrative Pro
+	FString ParentClassName = Definition.ParentClass.IsEmpty() ? TEXT("NarrativeTrigger") : Definition.ParentClass;
+	UClass* ParentClass = FindParentClass(ParentClassName);
+
+	if (!ParentClass)
+	{
+		// Try common BPT_ parent classes from Narrative Pro
+		TArray<FString> FallbackClasses = {
+			TEXT("BPT_Always"),
+			TEXT("BPT_TimeOfDayRange"),
+			TEXT("BPT_GoToLocation"),
+			TEXT("BPT_FinishDialogue"),
+			TEXT("BPT_FindItem"),
+			TEXT("BPT_KillEnemy"),
+			TEXT("BPT_Wait"),
+			TEXT("NarrativeTrigger")
+		};
+
+		for (const FString& FallbackClass : FallbackClasses)
+		{
+			if (ParentClassName.Contains(FallbackClass.Mid(4)) || ParentClassName == FallbackClass)
+			{
+				ParentClass = FindParentClass(FallbackClass);
+				if (ParentClass) break;
+			}
+		}
+	}
+
+	if (!ParentClass)
+	{
+		LogGeneration(FString::Printf(TEXT("  WARNING: Parent class '%s' not found, creating with UObject base"), *ParentClassName));
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Parent class '%s' not found"), *ParentClassName));
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	// Create Blueprint factory
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = ParentClass;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(), Package, *Definition.Name,
+		RF_Public | RF_Standalone, nullptr, GWarn));
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Blueprint Trigger"));
+	}
+
+	// Add variables first (before compile)
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+		if (PinType.PinCategory == UEdGraphSchema_K2::PC_Object ||
+			PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
+		{
+			if (!VarDef.Class.IsEmpty())
+			{
+				UClass* ObjClass = FindParentClass(VarDef.Class);
+				if (ObjClass)
+				{
+					PinType.PinSubCategoryObject = ObjClass;
+				}
+			}
+		}
+
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+		if (bSuccess)
+		{
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE)
+			{
+				if (!VarDef.DefaultValue.IsEmpty())
+				{
+					Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+				}
+
+				if (VarDef.bInstanceEditable)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+				}
+			}
+		}
+	}
+
+	// Compile
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Blueprint Trigger compilation failed: %s"),
+			*Definition.Name, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	// Set CDO properties
+	if (Blueprint->GeneratedClass)
+	{
+		UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
+		if (CDO)
+		{
+			// bIsActive
+			if (Definition.bIsActive)
+			{
+				FBoolProperty* ActiveProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bIsActive")));
+				if (ActiveProp)
+				{
+					ActiveProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bIsActive: true"));
+				}
+			}
+
+			// Task properties
+			if (Definition.RequiredQuantity != 1)
+			{
+				FIntProperty* QuantityProp = CastField<FIntProperty>(CDO->GetClass()->FindPropertyByName(TEXT("RequiredQuantity")));
+				if (QuantityProp)
+				{
+					QuantityProp->SetPropertyValue_InContainer(CDO, Definition.RequiredQuantity);
+					LogGeneration(FString::Printf(TEXT("  Set RequiredQuantity: %d"), Definition.RequiredQuantity));
+				}
+			}
+
+			if (!Definition.DescriptionOverride.IsEmpty())
+			{
+				FTextProperty* DescProp = CastField<FTextProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DescriptionOverride")));
+				if (DescProp)
+				{
+					DescProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.DescriptionOverride));
+					LogGeneration(FString::Printf(TEXT("  Set DescriptionOverride: %s"), *Definition.DescriptionOverride));
+				}
+			}
+
+			if (Definition.bOptional)
+			{
+				FBoolProperty* OptProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bOptional")));
+				if (OptProp)
+				{
+					OptProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bOptional: true"));
+				}
+			}
+
+			if (Definition.bHidden)
+			{
+				FBoolProperty* HiddenProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bHidden")));
+				if (HiddenProp)
+				{
+					HiddenProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bHidden: true"));
+				}
+			}
+
+			if (Definition.TickInterval != 0.2f)
+			{
+				FFloatProperty* TickProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("TickInterval")));
+				if (TickProp)
+				{
+					TickProp->SetPropertyValue_InContainer(CDO, Definition.TickInterval);
+					LogGeneration(FString::Printf(TEXT("  Set TickInterval: %.2f"), Definition.TickInterval));
+				}
+			}
+
+			// Navigation Marker properties - in FTaskNavigationMarker struct MarkerSettings
+			FStructProperty* MarkerSettingsProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("MarkerSettings")));
+			if (MarkerSettingsProp)
+			{
+				void* MarkerPtr = MarkerSettingsProp->ContainerPtrToValuePtr<void>(CDO);
+				UScriptStruct* MarkerStruct = MarkerSettingsProp->Struct;
+
+				if (MarkerPtr && MarkerStruct)
+				{
+					// bAddNavigationMarker
+					if (Definition.bAddNavigationMarker)
+					{
+						if (FBoolProperty* AddMarkerProp = CastField<FBoolProperty>(MarkerStruct->FindPropertyByName(TEXT("bAddNavigationMarker"))))
+						{
+							AddMarkerProp->SetPropertyValue_InContainer(MarkerPtr, true);
+							LogGeneration(TEXT("  Set MarkerSettings.bAddNavigationMarker: true"));
+						}
+					}
+
+					// bDrawBreadcrumbs
+					if (Definition.bDrawBreadcrumbs)
+					{
+						if (FBoolProperty* BreadcrumbProp = CastField<FBoolProperty>(MarkerStruct->FindPropertyByName(TEXT("bDrawBreadcrumbs"))))
+						{
+							BreadcrumbProp->SetPropertyValue_InContainer(MarkerPtr, true);
+							LogGeneration(TEXT("  Set MarkerSettings.bDrawBreadcrumbs: true"));
+						}
+					}
+
+					// MarkerClass (TSubclassOf<UMapMarker>)
+					if (!Definition.MarkerClass.IsEmpty())
+					{
+						if (FClassProperty* ClassProp = CastField<FClassProperty>(MarkerStruct->FindPropertyByName(TEXT("MarkerClass"))))
+						{
+							UClass* MarkerClass = FindParentClass(Definition.MarkerClass);
+							if (MarkerClass)
+							{
+								ClassProp->SetPropertyValue_InContainer(MarkerPtr, MarkerClass);
+								LogGeneration(FString::Printf(TEXT("  Set MarkerSettings.MarkerClass: %s"), *Definition.MarkerClass));
+							}
+						}
+					}
+
+					// NavigationMarkerIcon (UTexture2D*)
+					if (!Definition.NavigationMarkerIcon.IsEmpty())
+					{
+						if (FObjectProperty* IconProp = CastField<FObjectProperty>(MarkerStruct->FindPropertyByName(TEXT("NavigationMarkerIcon"))))
+						{
+							UTexture2D* Icon = LoadObject<UTexture2D>(nullptr, *Definition.NavigationMarkerIcon);
+							if (Icon)
+							{
+								IconProp->SetObjectPropertyValue_InContainer(MarkerPtr, Icon);
+								LogGeneration(FString::Printf(TEXT("  Set MarkerSettings.NavigationMarkerIcon: %s"), *Definition.NavigationMarkerIcon));
+							}
+						}
+					}
+
+					// MarkerColor (FLinearColor)
+					if (!Definition.MarkerColor.IsEmpty())
+					{
+						if (FStructProperty* ColorProp = CastField<FStructProperty>(MarkerStruct->FindPropertyByName(TEXT("MarkerColor"))))
+						{
+							FLinearColor* ColorPtr = ColorProp->ContainerPtrToValuePtr<FLinearColor>(MarkerPtr);
+							if (ColorPtr)
+							{
+								// Parse color from string format "R,G,B,A" or "(R=x,G=x,B=x,A=x)"
+								FLinearColor ParsedColor = FLinearColor::Yellow;
+								if (Definition.MarkerColor.Contains(TEXT(",")))
+								{
+									TArray<FString> Parts;
+									Definition.MarkerColor.ParseIntoArray(Parts, TEXT(","));
+									if (Parts.Num() >= 3)
+									{
+										ParsedColor.R = FCString::Atof(*Parts[0]);
+										ParsedColor.G = FCString::Atof(*Parts[1]);
+										ParsedColor.B = FCString::Atof(*Parts[2]);
+										ParsedColor.A = Parts.Num() >= 4 ? FCString::Atof(*Parts[3]) : 1.0f;
+									}
+								}
+								*ColorPtr = ParsedColor;
+								LogGeneration(FString::Printf(TEXT("  Set MarkerSettings.MarkerColor: %s"), *Definition.MarkerColor));
+							}
+						}
+					}
+
+					// MarkerDisplayText (FText)
+					if (!Definition.MarkerDisplayText.IsEmpty())
+					{
+						if (FTextProperty* TextProp = CastField<FTextProperty>(MarkerStruct->FindPropertyByName(TEXT("MarkerDisplayText"))))
+						{
+							TextProp->SetPropertyValue_InContainer(MarkerPtr, FText::FromString(Definition.MarkerDisplayText));
+							LogGeneration(FString::Printf(TEXT("  Set MarkerSettings.MarkerDisplayText: %s"), *Definition.MarkerDisplayText));
+						}
+					}
+
+					// MarkerSubtitleText (FText)
+					if (!Definition.MarkerSubtitleText.IsEmpty())
+					{
+						if (FTextProperty* SubtitleProp = CastField<FTextProperty>(MarkerStruct->FindPropertyByName(TEXT("MarkerSubtitleText"))))
+						{
+							SubtitleProp->SetPropertyValue_InContainer(MarkerPtr, FText::FromString(Definition.MarkerSubtitleText));
+							LogGeneration(FString::Printf(TEXT("  Set MarkerSettings.MarkerSubtitleText: %s"), *Definition.MarkerSubtitleText));
+						}
+					}
+
+					// MarkerLocation (FVector)
+					if (!Definition.MarkerLocation.IsZero())
+					{
+						if (FStructProperty* LocProp = CastField<FStructProperty>(MarkerStruct->FindPropertyByName(TEXT("MarkerLocation"))))
+						{
+							FVector* LocPtr = LocProp->ContainerPtrToValuePtr<FVector>(MarkerPtr);
+							if (LocPtr)
+							{
+								*LocPtr = Definition.MarkerLocation;
+								LogGeneration(FString::Printf(TEXT("  Set MarkerSettings.MarkerLocation: %.1f, %.1f, %.1f"),
+									Definition.MarkerLocation.X, Definition.MarkerLocation.Y, Definition.MarkerLocation.Z));
+							}
+						}
+					}
+				}
+			}
+
+			// Goal Location properties (BPT_GotoLocation)
+			if (Definition.DistanceTolerance != 500.0f)
+			{
+				FFloatProperty* DistProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("DistanceTolerance")));
+				if (DistProp)
+				{
+					DistProp->SetPropertyValue_InContainer(CDO, Definition.DistanceTolerance);
+					LogGeneration(FString::Printf(TEXT("  Set DistanceTolerance: %.1f"), Definition.DistanceTolerance));
+				}
+			}
+
+			if (!Definition.FriendlyLocationName.IsEmpty())
+			{
+				FTextProperty* NameProp = CastField<FTextProperty>(CDO->GetClass()->FindPropertyByName(TEXT("FriendlyLocationName")));
+				if (NameProp)
+				{
+					NameProp->SetPropertyValue_InContainer(CDO, FText::FromString(Definition.FriendlyLocationName));
+					LogGeneration(FString::Printf(TEXT("  Set FriendlyLocationName: %s"), *Definition.FriendlyLocationName));
+				}
+			}
+
+			// Time Range properties (BPT_TimeOfDayRange)
+			if (Definition.TimeStart != 0.0f)
+			{
+				FFloatProperty* StartProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("TimeStart")));
+				if (StartProp)
+				{
+					StartProp->SetPropertyValue_InContainer(CDO, Definition.TimeStart);
+					LogGeneration(FString::Printf(TEXT("  Set TimeStart: %.1f"), Definition.TimeStart));
+				}
+			}
+
+			if (Definition.TimeEnd != 2400.0f)
+			{
+				FFloatProperty* EndProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("TimeEnd")));
+				if (EndProp)
+				{
+					EndProp->SetPropertyValue_InContainer(CDO, Definition.TimeEnd);
+					LogGeneration(FString::Printf(TEXT("  Set TimeEnd: %.1f"), Definition.TimeEnd));
+				}
+			}
+
+			// GoalLoc (FVector) - BPT_GoToLocation
+			if (!Definition.GoalLoc.IsZero())
+			{
+				FStructProperty* GoalLocProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("GoalLoc")));
+				if (GoalLocProp)
+				{
+					FVector* LocPtr = GoalLocProp->ContainerPtrToValuePtr<FVector>(CDO);
+					if (LocPtr)
+					{
+						*LocPtr = Definition.GoalLoc;
+						LogGeneration(FString::Printf(TEXT("  Set GoalLoc: %.1f, %.1f, %.1f"),
+							Definition.GoalLoc.X, Definition.GoalLoc.Y, Definition.GoalLoc.Z));
+					}
+				}
+			}
+
+			// bInvert - BPT_GoToLocation (invert condition)
+			if (Definition.bInvert)
+			{
+				FBoolProperty* InvertProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bInvert")));
+				if (InvertProp)
+				{
+					InvertProp->SetPropertyValue_InContainer(CDO, true);
+					LogGeneration(TEXT("  Set bInvert: true"));
+				}
+			}
+
+			// GoalRotation (FRotator) - BPT_FollowNPCToLocation
+			if (!Definition.GoalRotation.IsZero())
+			{
+				FStructProperty* RotProp = CastField<FStructProperty>(CDO->GetClass()->FindPropertyByName(TEXT("GoalRotation")));
+				if (RotProp)
+				{
+					FRotator* RotPtr = RotProp->ContainerPtrToValuePtr<FRotator>(CDO);
+					if (RotPtr)
+					{
+						*RotPtr = Definition.GoalRotation;
+						LogGeneration(FString::Printf(TEXT("  Set GoalRotation: P=%.1f, Y=%.1f, R=%.1f"),
+							Definition.GoalRotation.Pitch, Definition.GoalRotation.Yaw, Definition.GoalRotation.Roll));
+					}
+				}
+			}
+
+			// NPCsToFollow (TArray<UNPCDefinition*>) - BPT_FollowNPCToLocation
+			if (Definition.NPCsToFollow.Num() > 0)
+			{
+				FArrayProperty* NPCsProp = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("NPCsToFollow")));
+				if (NPCsProp)
+				{
+					FScriptArrayHelper ArrayHelper(NPCsProp, NPCsProp->ContainerPtrToValuePtr<void>(CDO));
+					ArrayHelper.EmptyValues();
+
+					for (const FString& NPCName : Definition.NPCsToFollow)
+					{
+						// Try to find the NPC Definition asset
+						FString NPCPath = FString::Printf(TEXT("%s/NPCs/%s"), *GetProjectRoot(), *NPCName);
+						UObject* NPCDef = StaticLoadObject(UObject::StaticClass(), nullptr, *NPCPath);
+
+						if (NPCDef)
+						{
+							int32 NewIndex = ArrayHelper.AddValue();
+							FObjectProperty* InnerProp = CastField<FObjectProperty>(NPCsProp->Inner);
+							if (InnerProp)
+							{
+								uint8* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+								InnerProp->SetObjectPropertyValue(ElementPtr, NPCDef);
+							}
+							LogGeneration(FString::Printf(TEXT("  Added NPCsToFollow: %s"), *NPCName));
+						}
+					}
+				}
+			}
+
+			CDO->MarkPackageDirty();
+		}
+	}
+
+	// Generate event graph if referenced
+	if (!Definition.EventGraph.IsEmpty() && ManifestData)
+	{
+		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraph);
+		if (GraphDef)
+		{
+			bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, GetProjectRoot());
+			if (!bEventGraphSuccess)
+			{
+				LogGeneration(FString::Printf(TEXT("  WARNING: Event graph '%s' generation had issues"), *Definition.EventGraph));
+			}
+		}
+	}
+
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	LogGeneration(FString::Printf(TEXT("Created Blueprint Trigger: %s"), *Definition.Name));
+
+	// Cache for same-session resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+	}
+
+	// Store metadata
+	StoreBlueprintMetadata(Blueprint, TEXT("BlueprintTrigger"), Definition.Name, Definition.ComputeHash());
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("BlueprintTrigger");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -24066,7 +25301,8 @@ FGenerationResult FItemCollectionGenerator::Generate(const FManifestItemCollecti
 }
 
 // v2.3.0: Narrative Event Generator - creates UNarrativeEvent Blueprint assets
-FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEventDefinition& Definition)
+// v7.8.52: Added ManifestData parameter for EventGraph lookup
+FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEventDefinition& Definition, const FManifestData* ManifestData)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Events") : Definition.Folder;
 	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
@@ -24108,6 +25344,55 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	if (!Blueprint)
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Narrative Event Blueprint"));
+	}
+
+	// v7.8.52: Add variables from definition BEFORE first compile
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+		// Handle object types with class references
+		if (VarDef.Type.Contains(TEXT(":")))
+		{
+			// Type format: "Object:ClassName" or "Class:ClassName"
+			FString BaseType, ClassName;
+			VarDef.Type.Split(TEXT(":"), &BaseType, &ClassName);
+			UClass* VarClass = FindParentClass(ClassName);
+			if (VarClass)
+			{
+				PinType.PinSubCategoryObject = VarClass;
+			}
+		}
+
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+
+		if (bSuccess)
+		{
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE)
+			{
+				if (VarDef.bInstanceEditable)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+				}
+
+				if (VarDef.bReplicated)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Net;
+				}
+
+				if (!VarDef.DefaultValue.IsEmpty())
+				{
+					Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  FAILED to add variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
 	}
 
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
@@ -24205,6 +25490,55 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	if (!Definition.Description.IsEmpty())
 	{
 		LogGeneration(FString::Printf(TEXT("  Event '%s' Description: %s"), *Definition.Name, *Definition.Description));
+	}
+
+	// v7.8.52: Generate event graph if referenced (for ExecuteEvent, OnActivate, OnDeactivate overrides)
+	if (!Definition.EventGraph.IsEmpty())
+	{
+		FEventGraphGenerator::ClearMissingDependencies();
+
+		const FManifestEventGraphDefinition* GraphDef = ManifestData ? ManifestData->FindEventGraphByName(Definition.EventGraph) : nullptr;
+		if (GraphDef)
+		{
+			bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, GetProjectRoot());
+
+			if (FEventGraphGenerator::HasMissingDependencies())
+			{
+				const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+				const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+				LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
+					*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+					FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+				Result.MissingDependency = FirstMissing.DependencyName;
+				Result.MissingDependencyType = FirstMissing.DependencyType;
+				Result.DetermineCategory();
+
+				FEventGraphGenerator::ClearMissingDependencies();
+				return Result;
+			}
+
+			if (!bEventGraphSuccess)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+				LogGeneration(FString::Printf(TEXT("  FAILED: Event graph '%s' generation failed"), *Definition.EventGraph));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					TEXT("Event graph generation failed"));
+				Result.AssetPath = AssetPath;
+				Result.GeneratorId = TEXT("NarrativeEvent");
+				Result.DetermineCategory();
+				return Result;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraph));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Event graph not found: %s"), *Definition.EventGraph));
+		}
 	}
 
 	// v4.0: Populate NPC target arrays via reflection (previously just logged)
@@ -24495,8 +25829,8 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		}
 	}
 
-	// v4.16: Recompile with validation after setting target arrays, properties, and conditions (Contract 10)
-	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0 || Definition.Properties.Num() > 0 || Definition.Conditions.Num() > 0))
+	// v4.16: Recompile with validation after setting target arrays, properties, conditions, variables, and event graph (Contract 10)
+	if (CDO && (Definition.NPCTargets.Num() > 0 || Definition.CharacterTargets.Num() > 0 || Definition.Properties.Num() > 0 || Definition.Conditions.Num() > 0 || Definition.Variables.Num() > 0 || !Definition.EventGraph.IsEmpty()))
 	{
 		FCompilerResultsLog FinalCompileLog;
 		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &FinalCompileLog);
@@ -24546,316 +25880,6 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("NarrativeEvent");
-	Result.DetermineCategory();
-	return Result;
-}
-
-// ============================================================================
-// v4.0: FGameplayCueGenerator Implementation - NEW
-// ============================================================================
-
-FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefinition& Definition)
-{
-	FString Folder = Definition.Folder.IsEmpty() ? TEXT("FX/GameplayCues") : Definition.Folder;
-	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
-	FGenerationResult Result;
-
-	// Validate prefix
-	if (!Definition.Name.StartsWith(TEXT("GC_")))
-	{
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			TEXT("Gameplay Cue name must start with GC_ prefix"));
-	}
-
-	if (ValidateAgainstManifest(Definition.Name, TEXT("Gameplay Cue"), Result))
-	{
-		return Result;
-	}
-
-	// v3.0: Check existence with metadata-aware logic
-	uint64 InputHash = Definition.ComputeHash();
-	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Gameplay Cue"), InputHash, Result))
-	{
-		return Result;
-	}
-
-	// Determine parent class based on CueType
-	UClass* ParentClass = nullptr;
-	if (Definition.CueType.Equals(TEXT("Burst"), ESearchCase::IgnoreCase))
-	{
-		ParentClass = UGameplayCueNotify_Burst::StaticClass();
-	}
-	else if (Definition.CueType.Equals(TEXT("BurstLatent"), ESearchCase::IgnoreCase))
-	{
-		// BurstLatent is a UObject-based cue with duration support
-		ParentClass = UGameplayCueNotify_Burst::StaticClass();  // Same base, different usage
-	}
-	else if (Definition.CueType.Equals(TEXT("Actor"), ESearchCase::IgnoreCase))
-	{
-		ParentClass = AGameplayCueNotify_Actor::StaticClass();
-	}
-	else
-	{
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			FString::Printf(TEXT("Unknown CueType: %s. Use Burst, BurstLatent, or Actor"), *Definition.CueType));
-	}
-
-	if (!ParentClass)
-	{
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			TEXT("Gameplay Cue parent class not found - ensure GameplayAbilities plugin is enabled"));
-	}
-
-	UPackage* Package = CreatePackage(*AssetPath);
-	if (!Package)
-	{
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
-	}
-
-	// Create Blueprint
-	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
-		ParentClass,
-		Package,
-		*Definition.Name,
-		BPTYPE_Normal,
-		UBlueprint::StaticClass(),
-		UBlueprintGeneratedClass::StaticClass()
-	);
-
-	if (!Blueprint)
-	{
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			TEXT("Failed to create Gameplay Cue Blueprint"));
-	}
-
-	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
-	FCompilerResultsLog CompileLog;
-	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
-
-	if (CompileLog.NumErrors > 0)
-	{
-		TArray<FString> ErrorMessages;
-		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
-		{
-			if (Msg->GetSeverity() == EMessageSeverity::Error)
-			{
-				ErrorMessages.Add(Msg->ToText().ToString());
-			}
-		}
-
-		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Gameplay Cue Blueprint compilation failed with %d errors: %s"),
-			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
-
-		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
-		Result.AssetPath = AssetPath;
-		Result.GeneratorId = TEXT("GameplayCue");
-		Result.DetermineCategory();
-		return Result;
-	}
-
-	// Get CDO to set properties
-	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
-	if (CDO)
-	{
-		// Set GameplayCueTag
-		if (!Definition.GameplayCueTag.IsEmpty())
-		{
-			FStructProperty* TagProp = CastField<FStructProperty>(
-				CDO->GetClass()->FindPropertyByName(TEXT("GameplayCueTag")));
-			if (TagProp)
-			{
-				FGameplayTag* TagPtr = TagProp->ContainerPtrToValuePtr<FGameplayTag>(CDO);
-				if (TagPtr)
-				{
-					*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.GameplayCueTag), false);
-					LogGeneration(FString::Printf(TEXT("  Set GameplayCueTag: %s"), *Definition.GameplayCueTag));
-				}
-			}
-		}
-
-		// v4.0.1: Set BurstEffects properties via reflection
-		FStructProperty* BurstEffectsProp = CastField<FStructProperty>(
-			CDO->GetClass()->FindPropertyByName(TEXT("BurstEffects")));
-		if (BurstEffectsProp)
-		{
-			void* BurstEffectsPtr = BurstEffectsProp->ContainerPtrToValuePtr<void>(CDO);
-			UScriptStruct* BurstEffectsStruct = BurstEffectsProp->Struct;
-
-			// Set ParticleSystem (add to BurstParticles array)
-			if (!Definition.BurstEffects.ParticleSystem.IsEmpty())
-			{
-				// Load the Niagara system
-				UNiagaraSystem* NiagaraSys = LoadObject<UNiagaraSystem>(nullptr, *Definition.BurstEffects.ParticleSystem);
-				if (!NiagaraSys)
-				{
-					// Try with project root prefix
-					FString FullPath = FString::Printf(TEXT("%s/FX/%s.%s"),
-						*GetProjectRoot(), *Definition.BurstEffects.ParticleSystem, *Definition.BurstEffects.ParticleSystem);
-					NiagaraSys = LoadObject<UNiagaraSystem>(nullptr, *FullPath);
-				}
-
-				if (NiagaraSys)
-				{
-					FArrayProperty* ParticlesProp = CastField<FArrayProperty>(
-						BurstEffectsStruct->FindPropertyByName(TEXT("BurstParticles")));
-					if (ParticlesProp)
-					{
-						FScriptArrayHelper ArrayHelper(ParticlesProp, ParticlesProp->ContainerPtrToValuePtr<void>(BurstEffectsPtr));
-						int32 NewIdx = ArrayHelper.AddValue();
-						void* ParticleInfoPtr = ArrayHelper.GetRawPtr(NewIdx);
-
-						// Set NiagaraSystem on the ParticleInfo struct
-						FStructProperty* InnerStruct = CastField<FStructProperty>(ParticlesProp->Inner);
-						if (InnerStruct)
-						{
-							FObjectProperty* NiagaraProp = CastField<FObjectProperty>(
-								InnerStruct->Struct->FindPropertyByName(TEXT("NiagaraSystem")));
-							if (NiagaraProp)
-							{
-								NiagaraProp->SetObjectPropertyValue(
-									NiagaraProp->ContainerPtrToValuePtr<void>(ParticleInfoPtr), NiagaraSys);
-								LogGeneration(FString::Printf(TEXT("  Set BurstEffects.ParticleSystem: %s"), *Definition.BurstEffects.ParticleSystem));
-							}
-						}
-					}
-				}
-				else
-				{
-					// v4.23 FAIL-FAST: Manifest references particle system that cannot be loaded
-					LogGeneration(FString::Printf(TEXT("[E_GAMEPLAYCUE_PARTICLE_NOT_FOUND] %s | Could not load ParticleSystem: %s"),
-						*Definition.Name, *Definition.BurstEffects.ParticleSystem));
-					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-						FString::Printf(TEXT("GameplayCue ParticleSystem '%s' not found"), *Definition.BurstEffects.ParticleSystem));
-				}
-			}
-
-			// Set Sound (add to BurstSounds array)
-			if (!Definition.BurstEffects.Sound.IsEmpty())
-			{
-				USoundBase* SoundAsset = LoadObject<USoundBase>(nullptr, *Definition.BurstEffects.Sound);
-				if (!SoundAsset)
-				{
-					FString FullPath = FString::Printf(TEXT("%s/Audio/%s.%s"),
-						*GetProjectRoot(), *Definition.BurstEffects.Sound, *Definition.BurstEffects.Sound);
-					SoundAsset = LoadObject<USoundBase>(nullptr, *FullPath);
-				}
-
-				if (SoundAsset)
-				{
-					FArrayProperty* SoundsProp = CastField<FArrayProperty>(
-						BurstEffectsStruct->FindPropertyByName(TEXT("BurstSounds")));
-					if (SoundsProp)
-					{
-						FScriptArrayHelper ArrayHelper(SoundsProp, SoundsProp->ContainerPtrToValuePtr<void>(BurstEffectsPtr));
-						int32 NewIdx = ArrayHelper.AddValue();
-						void* SoundInfoPtr = ArrayHelper.GetRawPtr(NewIdx);
-
-						FStructProperty* InnerStruct = CastField<FStructProperty>(SoundsProp->Inner);
-						if (InnerStruct)
-						{
-							FObjectProperty* SoundProp = CastField<FObjectProperty>(
-								InnerStruct->Struct->FindPropertyByName(TEXT("Sound")));
-							if (SoundProp)
-							{
-								SoundProp->SetObjectPropertyValue(
-									SoundProp->ContainerPtrToValuePtr<void>(SoundInfoPtr), SoundAsset);
-								LogGeneration(FString::Printf(TEXT("  Set BurstEffects.Sound: %s"), *Definition.BurstEffects.Sound));
-							}
-						}
-					}
-				}
-				else
-				{
-					// v4.23 FAIL-FAST: Manifest references sound that cannot be loaded
-					LogGeneration(FString::Printf(TEXT("[E_GAMEPLAYCUE_SOUND_NOT_FOUND] %s | Could not load Sound: %s"),
-						*Definition.Name, *Definition.BurstEffects.Sound));
-					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-						FString::Printf(TEXT("GameplayCue Sound '%s' not found"), *Definition.BurstEffects.Sound));
-				}
-			}
-
-			// Set CameraShake (on BurstCameraShake struct)
-			if (!Definition.BurstEffects.CameraShake.IsEmpty())
-			{
-				UClass* ShakeClass = LoadClass<UCameraShakeBase>(nullptr, *Definition.BurstEffects.CameraShake);
-				if (!ShakeClass)
-				{
-					FString FullPath = FString::Printf(TEXT("/Script/Engine.%s"), *Definition.BurstEffects.CameraShake);
-					ShakeClass = LoadClass<UCameraShakeBase>(nullptr, *FullPath);
-				}
-
-				if (ShakeClass)
-				{
-					FStructProperty* CameraShakeProp = CastField<FStructProperty>(
-						BurstEffectsStruct->FindPropertyByName(TEXT("BurstCameraShake")));
-					if (CameraShakeProp)
-					{
-						void* CameraShakePtr = CameraShakeProp->ContainerPtrToValuePtr<void>(BurstEffectsPtr);
-						FClassProperty* ShakeClassProp = CastField<FClassProperty>(
-							CameraShakeProp->Struct->FindPropertyByName(TEXT("CameraShake")));
-						if (ShakeClassProp)
-						{
-							ShakeClassProp->SetPropertyValue_InContainer(CameraShakePtr, ShakeClass);
-							LogGeneration(FString::Printf(TEXT("  Set BurstEffects.CameraShake: %s"), *Definition.BurstEffects.CameraShake));
-						}
-					}
-				}
-				else
-				{
-					// v4.23 FAIL-FAST: Manifest references camera shake that cannot be loaded
-					LogGeneration(FString::Printf(TEXT("[E_GAMEPLAYCUE_CAMERASHAKE_NOT_FOUND] %s | Could not load CameraShake class: %s"),
-						*Definition.Name, *Definition.BurstEffects.CameraShake));
-					return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-						FString::Printf(TEXT("GameplayCue CameraShake '%s' not found"), *Definition.BurstEffects.CameraShake));
-				}
-			}
-		}
-
-		// Log spawn condition if set
-		if (Definition.SpawnCondition.SpawnProbability < 1.0f)
-		{
-			LogGeneration(FString::Printf(TEXT("  SpawnCondition.SpawnProbability: %.2f"),
-				Definition.SpawnCondition.SpawnProbability));
-		}
-		if (!Definition.SpawnCondition.AttachSocket.IsEmpty())
-		{
-			LogGeneration(FString::Printf(TEXT("  SpawnCondition.AttachSocket: %s"),
-				*Definition.SpawnCondition.AttachSocket));
-		}
-
-		// Mark CDO dirty
-		CDO->MarkPackageDirty();
-	}
-
-	// v4.14: Removed recompile - would wipe CDO property changes
-	// Initial compile at line 15281 is sufficient; CDO changes persist without recompile
-
-	// Save asset
-	FAssetRegistryModule::AssetCreated(Blueprint);
-	Package->MarkPackageDirty();
-	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
-	FSavePackageArgs SaveArgs;
-	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
-
-	LogGeneration(FString::Printf(TEXT("Created Gameplay Cue: %s (Type: %s, Tag: %s)"),
-		*Definition.Name, *Definition.CueType, *Definition.GameplayCueTag));
-
-	// v3.0: Store metadata for regeneration tracking
-	StoreBlueprintMetadata(Blueprint, TEXT("GC"), Definition.Name, InputHash);
-
-	// v4.31: Cache the Blueprint class for same-session TSubclassOf resolution
-	if (Blueprint->GeneratedClass)
-	{
-		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
-		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
-	}
-
-	Result = FGenerationResult(Definition.Name, EGenerationStatus::New,
-		FString::Printf(TEXT("Created at %s"), *AssetPath));
-	Result.AssetPath = AssetPath;
-	Result.GeneratorId = TEXT("GameplayCue");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -27586,7 +28610,8 @@ FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivitySc
 }
 
 // v3.9: Goal Item Generator - Creates UNPCGoalItem Blueprint assets
-FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition& Definition)
+// v7.8.52: Added Variables and EventGraph support
+FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition& Definition, const FManifestData* ManifestData)
 {
 	FString Folder = Definition.Folder.IsEmpty() ? TEXT("AI/Goals") : Definition.Folder;
 	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
@@ -27631,12 +28656,6 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 			FString::Printf(TEXT("GoalItem parent class '%s' not found"), *ParentClassName));
 	}
 
-	if (!ParentClass)
-	{
-		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
-			FString::Printf(TEXT("Could not resolve parent class: %s"), *ParentClassName));
-	}
-
 	// Create Blueprint
 	UPackage* Package = CreatePackage(*AssetPath);
 	if (!Package)
@@ -27660,6 +28679,62 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 	{
 		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Goal Blueprint"));
 	}
+
+	// v7.8.52: Add variables from definition BEFORE first compile
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+		// Set container type for array variables
+		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Array;
+		}
+
+		// Handle object types with class references
+		if (!VarDef.Class.IsEmpty())
+		{
+			UClass* VarClass = FindParentClass(VarDef.Class);
+			if (VarClass)
+			{
+				PinType.PinSubCategoryObject = VarClass;
+			}
+		}
+
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+
+		if (bSuccess)
+		{
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE)
+			{
+				if (VarDef.bInstanceEditable)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+				}
+
+				if (VarDef.bReplicated)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Net;
+				}
+
+				if (!VarDef.DefaultValue.IsEmpty())
+				{
+					Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s%s)"), *VarDef.Name, *VarDef.Type,
+				!VarDef.Container.IsEmpty() ? *FString::Printf(TEXT(" [%s]"), *VarDef.Container) : TEXT("")));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  FAILED to add variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	// Compile blueprint after variables are added
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
 	// Set default property values via CDO
 	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
@@ -27716,6 +28791,55 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 		SetTagContainer(TEXT("RequireTags"), Definition.RequireTags);
 	}
 
+	// v7.8.52: Generate event graph if referenced
+	if (!Definition.EventGraph.IsEmpty() && ManifestData)
+	{
+		FEventGraphGenerator::ClearMissingDependencies();
+
+		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraph);
+		if (GraphDef)
+		{
+			bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, GetProjectRoot());
+
+			if (FEventGraphGenerator::HasMissingDependencies())
+			{
+				const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+				const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+				LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
+					*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+					FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+				Result.MissingDependency = FirstMissing.DependencyName;
+				Result.MissingDependencyType = FirstMissing.DependencyType;
+				Result.DetermineCategory();
+
+				FEventGraphGenerator::ClearMissingDependencies();
+				return Result;
+			}
+
+			if (!bEventGraphSuccess)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+				LogGeneration(FString::Printf(TEXT("  FAILED: Event graph '%s' generation failed"), *Definition.EventGraph));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					TEXT("Event graph generation failed"));
+				Result.AssetPath = AssetPath;
+				Result.GeneratorId = TEXT("GoalItem");
+				Result.DetermineCategory();
+				return Result;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraph));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Event graph not found: %s"), *Definition.EventGraph));
+		}
+	}
+
 	// v4.16: Compile with validation (Contract 10 - Blueprint Compile Gate)
 	FCompilerResultsLog CompileLog;
 	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
@@ -27760,10 +28884,960 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
 	}
 
-	LogGeneration(FString::Printf(TEXT("Created Goal Item: %s (DefaultScore: %.1f)"), *Definition.Name, Definition.DefaultScore));
+	LogGeneration(FString::Printf(TEXT("Created Goal Item: %s (DefaultScore: %.1f, Variables: %d)"),
+		*Definition.Name, Definition.DefaultScore, Definition.Variables.Num()));
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("GoalItem");
+	Result.DetermineCategory();
+	return Result;
+}
+
+// v7.8.52: Goal Generator Generator - Creates UNPCGoalGenerator Blueprint assets
+FGenerationResult FGoalGeneratorGenerator::Generate(const FManifestGoalGeneratorDefinition& Definition, const FManifestData* ManifestData)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("AI/GoalGenerators") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Goal Generator"), Result))
+	{
+		return Result;
+	}
+
+	// Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Goal Generator"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	// Find parent class
+	FString ParentClassName = Definition.ParentClass.IsEmpty() ? TEXT("NPCGoalGenerator") : Definition.ParentClass;
+	UClass* ParentClass = FindParentClass(ParentClassName);
+
+	if (!ParentClass)
+	{
+		// Try loading from Narrative Pro
+		TArray<FString> SearchPaths;
+		SearchPaths.Add(TEXT("/Script/NarrativeArsenal.NPCGoalGenerator"));
+		SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ParentClassName));
+
+		for (const FString& Path : SearchPaths)
+		{
+			ParentClass = LoadClass<UObject>(nullptr, *Path);
+			if (ParentClass) break;
+		}
+	}
+
+	if (!ParentClass)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_GOALGENERATOR_PARENTCLASS_NOT_FOUND] %s | Could not find parent class: %s"),
+			*Definition.Name, *ParentClassName));
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("GoalGenerator parent class '%s' not found"), *ParentClassName));
+	}
+
+	// Create Blueprint
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = ParentClass;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(),
+		Package,
+		*Definition.Name,
+		RF_Public | RF_Standalone,
+		nullptr,
+		GWarn
+	));
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Goal Generator Blueprint"));
+	}
+
+	// Add variables from definition BEFORE first compile
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+		// Set container type for array variables
+		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Array;
+		}
+
+		// Handle object types with class references
+		if (!VarDef.Class.IsEmpty())
+		{
+			UClass* VarClass = FindParentClass(VarDef.Class);
+			if (VarClass)
+			{
+				PinType.PinSubCategoryObject = VarClass;
+			}
+		}
+
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+
+		if (bSuccess)
+		{
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE)
+			{
+				if (VarDef.bInstanceEditable)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+				}
+
+				if (VarDef.bReplicated)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Net;
+				}
+
+				if (!VarDef.DefaultValue.IsEmpty())
+				{
+					Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+				}
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s%s)"), *VarDef.Name, *VarDef.Type,
+				!VarDef.Container.IsEmpty() ? *FString::Printf(TEXT(" [%s]"), *VarDef.Container) : TEXT("")));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  FAILED to add variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	// Compile blueprint after variables are added
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	// Set default property values via CDO
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// bSaveGoalGenerator
+		if (FBoolProperty* SaveProp = FindFProperty<FBoolProperty>(CDO->GetClass(), TEXT("bSaveGoalGenerator")))
+		{
+			SaveProp->SetPropertyValue_InContainer(CDO, Definition.bSaveGoalGenerator);
+		}
+	}
+
+	// Generate event graph if referenced
+	if (!Definition.EventGraph.IsEmpty() && ManifestData)
+	{
+		FEventGraphGenerator::ClearMissingDependencies();
+
+		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraph);
+		if (GraphDef)
+		{
+			bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, GetProjectRoot());
+
+			if (FEventGraphGenerator::HasMissingDependencies())
+			{
+				const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+				const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+				LogGeneration(FString::Printf(TEXT("  Deferring due to missing dependency: %s (%s) - %s"),
+					*FirstMissing.DependencyName, *FirstMissing.DependencyType, *FirstMissing.Context));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+					FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+				Result.MissingDependency = FirstMissing.DependencyName;
+				Result.MissingDependencyType = FirstMissing.DependencyType;
+				Result.DetermineCategory();
+
+				FEventGraphGenerator::ClearMissingDependencies();
+				return Result;
+			}
+
+			if (!bEventGraphSuccess)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Event graph generation failed"), *Definition.Name);
+				LogGeneration(FString::Printf(TEXT("  FAILED: Event graph '%s' generation failed"), *Definition.EventGraph));
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+					TEXT("Event graph generation failed"));
+				Result.AssetPath = AssetPath;
+				Result.GeneratorId = TEXT("GoalGenerator");
+				Result.DetermineCategory();
+				return Result;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraph));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Event graph not found: %s"), *Definition.EventGraph));
+		}
+	}
+
+	// Compile with validation (Contract 10 - Blueprint Compile Gate)
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Goal Generator Blueprint compilation failed with %d errors: %s"),
+			*Definition.Name, CompileLog.NumErrors, *FString::Join(ErrorMessages, TEXT("; ")));
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("GoalGenerator");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	// Store metadata
+	StoreBlueprintMetadata(Blueprint, TEXT("GoalGenerator"), Definition.Name, InputHash);
+
+	// Cache the Blueprint class for same-session TSubclassOf resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+		LogGeneration(FString::Printf(TEXT("  Cached Blueprint class for same-session resolution: %s"), *Definition.Name));
+	}
+
+	LogGeneration(FString::Printf(TEXT("Created Goal Generator: %s (Variables: %d)"),
+		*Definition.Name, Definition.Variables.Num()));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("GoalGenerator");
+	Result.DetermineCategory();
+	return Result;
+}
+
+// v7.8.52: Gameplay Cue Generator - Creates GC_ Blueprint assets
+FGenerationResult FGameplayCueGenerator::Generate(const FManifestGameplayCueDefinition& Definition, const FManifestData* ManifestData)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Effects/Cues") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Gameplay Cue"), Result))
+	{
+		return Result;
+	}
+
+	// Use metadata-aware existence check
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Gameplay Cue"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	// Determine parent class based on cue type
+	// GCN_BurstLatent = complex cues with effects, GameplayCueNotify_Burst = simple burst
+	FString ParentClassName = Definition.ParentClass;
+	if (ParentClassName.IsEmpty())
+	{
+		// Default to BurstLatent for full feature support
+		ParentClassName = TEXT("GameplayCueNotify_BurstLatent");
+	}
+
+	// Find parent class
+	UClass* ParentClass = nullptr;
+	TArray<FString> SearchPaths;
+	SearchPaths.Add(FString::Printf(TEXT("/Script/GameplayAbilities.%s"), *ParentClassName));
+	SearchPaths.Add(FString::Printf(TEXT("/Script/GameplayAbilities.A%s"), *ParentClassName));  // Actor prefix
+	SearchPaths.Add(TEXT("/Script/GameplayAbilities.AGameplayCueNotify_BurstLatent"));
+	SearchPaths.Add(TEXT("/Script/GameplayAbilities.AGameplayCueNotify_Burst"));
+	SearchPaths.Add(TEXT("/Script/GameplayAbilities.AGameplayCueNotify_Actor"));
+
+	for (const FString& Path : SearchPaths)
+	{
+		ParentClass = LoadClass<UObject>(nullptr, *Path);
+		if (ParentClass)
+		{
+			LogGeneration(FString::Printf(TEXT("  Found parent class: %s"), *Path));
+			break;
+		}
+	}
+
+	if (!ParentClass)
+	{
+		// Try with UE module search
+		ParentClass = FindParentClass(ParentClassName);
+	}
+
+	if (!ParentClass)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_GC_PARENTCLASS_NOT_FOUND] %s | Could not find parent class: %s"),
+			*Definition.Name, *ParentClassName));
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Gameplay Cue parent class '%s' not found"), *ParentClassName));
+	}
+
+	// Create Blueprint
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = ParentClass;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(),
+		Package,
+		*Definition.Name,
+		RF_Public | RF_Standalone,
+		nullptr,
+		GWarn
+	));
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Gameplay Cue Blueprint"));
+	}
+
+	// Add variables
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+		if (!VarDef.Class.IsEmpty())
+		{
+			UClass* VarClass = FindParentClass(VarDef.Class);
+			if (VarClass)
+			{
+				PinType.PinSubCategoryObject = VarClass;
+			}
+		}
+
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+
+		if (bSuccess)
+		{
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE)
+			{
+				if (VarDef.bInstanceEditable)
+				{
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+				}
+				if (!VarDef.DefaultValue.IsEmpty())
+				{
+					Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+				}
+			}
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	// Compile after variables added
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	// Configure CDO
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// Set Gameplay Cue Tag
+		if (!Definition.GameplayCueTag.IsEmpty())
+		{
+			if (FStructProperty* TagProp = FindFProperty<FStructProperty>(CDO->GetClass(), TEXT("GameplayCueTag")))
+			{
+				if (TagProp->Struct == FGameplayTag::StaticStruct())
+				{
+					FGameplayTag* TagPtr = TagProp->ContainerPtrToValuePtr<FGameplayTag>(CDO);
+					if (TagPtr)
+					{
+						*TagPtr = FGameplayTag::RequestGameplayTag(FName(*Definition.GameplayCueTag), false);
+						LogGeneration(FString::Printf(TEXT("  Set GameplayCueTag: %s"), *Definition.GameplayCueTag));
+					}
+				}
+			}
+		}
+
+		// Set bool properties
+		auto SetBoolProp = [&CDO](const TCHAR* PropName, bool Value) {
+			if (FBoolProperty* Prop = FindFProperty<FBoolProperty>(CDO->GetClass(), PropName))
+			{
+				Prop->SetPropertyValue_InContainer(CDO, Value);
+			}
+		};
+
+		SetBoolProp(TEXT("bAutoAttachToOwner"), Definition.bAutoAttachToOwner);
+		SetBoolProp(TEXT("bIsOverride"), Definition.bIsOverride);
+		SetBoolProp(TEXT("bUniqueInstancePerInstigator"), Definition.bUniqueInstancePerInstigator);
+		SetBoolProp(TEXT("bUniqueInstancePerSourceObject"), Definition.bUniqueInstancePerSourceObject);
+		SetBoolProp(TEXT("bAllowMultipleOnBurstEvents"), Definition.bAllowMultipleOnBurstEvents);
+		SetBoolProp(TEXT("bAllowMultipleOnBecomeRelevantEvents"), Definition.bAllowMultipleOnBecomeRelevantEvents);
+		SetBoolProp(TEXT("bAutoDestroyOnRemove"), Definition.bAutoDestroyOnRemove);
+		SetBoolProp(TEXT("bHidden"), Definition.bActorHiddenInGame);
+
+		// Set numeric properties
+		if (FIntProperty* NumProp = FindFProperty<FIntProperty>(CDO->GetClass(), TEXT("NumPreallocatedInstances")))
+		{
+			NumProp->SetPropertyValue_InContainer(CDO, Definition.NumPreallocatedInstances);
+		}
+
+		if (FFloatProperty* DelayProp = FindFProperty<FFloatProperty>(CDO->GetClass(), TEXT("AutoDestroyDelay")))
+		{
+			DelayProp->SetPropertyValue_InContainer(CDO, Definition.AutoDestroyDelay);
+		}
+
+		if (FFloatProperty* LifeSpanProp = FindFProperty<FFloatProperty>(CDO->GetClass(), TEXT("InitialLifeSpan")))
+		{
+			LifeSpanProp->SetPropertyValue_InContainer(CDO, Definition.InitialLifeSpan);
+		}
+
+		// Configure GCN Effects (particles, sounds, etc.)
+		ConfigureGCNEffects(CDO, Definition.GCNEffects);
+	}
+
+	// Generate event graph if specified
+	if (!Definition.EventGraph.IsEmpty() && ManifestData)
+	{
+		FEventGraphGenerator::ClearMissingDependencies();
+
+		const FManifestEventGraphDefinition* GraphDef = ManifestData->FindEventGraphByName(Definition.EventGraph);
+		if (GraphDef)
+		{
+			bool bEventGraphSuccess = FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, GetProjectRoot());
+
+			if (FEventGraphGenerator::HasMissingDependencies())
+			{
+				const TArray<FMissingDependencyInfo>& MissingDeps = FEventGraphGenerator::GetMissingDependencies();
+				const FMissingDependencyInfo& FirstMissing = MissingDeps[0];
+
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Deferred,
+					FString::Printf(TEXT("Missing dependency: %s"), *FirstMissing.DependencyName));
+				Result.MissingDependency = FirstMissing.DependencyName;
+				Result.MissingDependencyType = FirstMissing.DependencyType;
+				Result.DetermineCategory();
+
+				FEventGraphGenerator::ClearMissingDependencies();
+				return Result;
+			}
+
+			if (!bEventGraphSuccess)
+			{
+				LogGeneration(FString::Printf(TEXT("  FAILED: Event graph '%s' generation failed"), *Definition.EventGraph));
+				Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Event graph generation failed"));
+				Result.AssetPath = AssetPath;
+				Result.GeneratorId = TEXT("GameplayCue");
+				Result.DetermineCategory();
+				return Result;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Applied event graph: %s"), *Definition.EventGraph));
+		}
+	}
+
+	// Final compile
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		TArray<FString> ErrorMessages;
+		for (const TSharedRef<FTokenizedMessage>& Msg : CompileLog.Messages)
+		{
+			if (Msg->GetSeverity() == EMessageSeverity::Error)
+			{
+				ErrorMessages.Add(Msg->ToText().ToString());
+			}
+		}
+
+		UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] [FAIL] %s: Gameplay Cue Blueprint compilation failed with %d errors"),
+			*Definition.Name, CompileLog.NumErrors);
+
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("Compile failed: %s"), *FString::Join(ErrorMessages, TEXT("; "))));
+		Result.AssetPath = AssetPath;
+		Result.GeneratorId = TEXT("GameplayCue");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	// Save
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	// Store metadata
+	StoreBlueprintMetadata(Blueprint, TEXT("GameplayCue"), Definition.Name, InputHash);
+
+	// Cache class
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+	}
+
+	LogGeneration(FString::Printf(TEXT("Created Gameplay Cue: %s (Tag: %s, Variables: %d)"),
+		*Definition.Name, *Definition.GameplayCueTag, Definition.Variables.Num()));
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("GameplayCue");
+	Result.DetermineCategory();
+	return Result;
+}
+
+void FGameplayCueGenerator::ConfigureGCNEffects(UObject* CDO, const FManifestGCNEffects& Effects)
+{
+	if (!CDO) return;
+
+	// Configure Burst Particles array
+	if (Effects.BurstParticles.Num() > 0)
+	{
+		FArrayProperty* ParticlesProp = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BurstEffects")));
+		if (!ParticlesProp)
+		{
+			ParticlesProp = CastField<FArrayProperty>(CDO->GetClass()->FindPropertyByName(TEXT("BurstParticles")));
+		}
+
+		if (ParticlesProp)
+		{
+			// Note: Full particle effect configuration requires reflection into FGameplayCueNotify_SpawnCondition
+			// and FGameplayCueNotify_PlacementInfo structs. For now, log what we found.
+			LogGeneration(FString::Printf(TEXT("  Found %d burst particle effects to configure"), Effects.BurstParticles.Num()));
+
+			for (const FManifestBurstParticleEffect& Particle : Effects.BurstParticles)
+			{
+				LogGeneration(FString::Printf(TEXT("    - Niagara: %s"), *Particle.NiagaraSystem));
+			}
+		}
+	}
+
+	// Configure Burst Sounds array
+	if (Effects.BurstSounds.Num() > 0)
+	{
+		LogGeneration(FString::Printf(TEXT("  Found %d burst sound effects to configure"), Effects.BurstSounds.Num()));
+		for (const FManifestBurstSoundEffect& Sound : Effects.BurstSounds)
+		{
+			LogGeneration(FString::Printf(TEXT("    - Sound: %s"), *Sound.Sound));
+		}
+	}
+
+	// Configure Camera Shake
+	if (!Effects.BurstCameraShake.CameraShakeClass.IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("  Camera shake: %s (scale: %.1f)"),
+			*Effects.BurstCameraShake.CameraShakeClass, Effects.BurstCameraShake.ShakeScale));
+	}
+
+	// Configure Decal
+	if (!Effects.BurstDecal.DecalMaterial.IsEmpty())
+	{
+		LogGeneration(FString::Printf(TEXT("  Decal material: %s"), *Effects.BurstDecal.DecalMaterial));
+	}
+}
+
+void FGameplayCueGenerator::ConfigureSpawnCondition(void* ConditionPtr, UScriptStruct* ConditionStruct, const FManifestSpawnConditionOverride& Override)
+{
+	// Placeholder for full spawn condition configuration via reflection
+	// This would set LocallyControlledSource, LocallyControlledPolicy, ChanceToPlay, etc.
+}
+
+void FGameplayCueGenerator::ConfigurePlacementInfo(void* PlacementPtr, UScriptStruct* PlacementStruct, const FManifestPlacementInfoOverride& Override)
+{
+	// Placeholder for full placement info configuration via reflection
+	// This would set SocketName, AttachPolicy, AttachmentRule, etc.
+}
+
+// ============================================================================
+// v7.8.52: BT Service Generator - Creates BTS_ Blueprint assets
+// ============================================================================
+FGenerationResult FBTServiceGenerator::Generate(const FManifestBTServiceBPDefinition& Definition, const FManifestData* ManifestData)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("AI/Services") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	// Validate prefix
+	if (!Definition.Name.StartsWith(TEXT("BTS_")))
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("BT Service name must start with BTS_ prefix"));
+	}
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("BT Service"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Check existence with metadata-aware logic
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("BT Service"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	// Find parent class - BTService_BlueprintBase
+	UClass* ParentClass = nullptr;
+	if (!Definition.ParentClass.IsEmpty())
+	{
+		ParentClass = FindObject<UClass>(nullptr, *Definition.ParentClass);
+		if (!ParentClass)
+		{
+			ParentClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("/Script/AIModule.%s"), *Definition.ParentClass));
+		}
+	}
+	if (!ParentClass)
+	{
+		ParentClass = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTService_BlueprintBase"));
+	}
+
+	if (!ParentClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("BTService_BlueprintBase class not found - ensure AIModule is enabled"));
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	// Create Blueprint
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+		ParentClass,
+		Package,
+		*Definition.Name,
+		BPTYPE_Normal,
+		UBlueprint::StaticClass(),
+		UBlueprintGeneratedClass::StaticClass()
+	);
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("Failed to create BT Service Blueprint"));
+	}
+
+	// Add variables
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+		// Handle container types
+		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Array;
+		}
+
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+		if (bSuccess)
+		{
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	// Initial compile
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, nullptr);
+
+	// Get CDO and set properties
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// Set Interval
+		if (FFloatProperty* IntervalProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("Interval"))))
+		{
+			IntervalProp->SetPropertyValue_InContainer(CDO, Definition.Interval);
+			LogGeneration(FString::Printf(TEXT("  Set Interval: %.2f"), Definition.Interval));
+		}
+
+		// Set RandomDeviation
+		if (FFloatProperty* DeviationProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("RandomDeviation"))))
+		{
+			DeviationProp->SetPropertyValue_InContainer(CDO, Definition.RandomDeviation);
+			LogGeneration(FString::Printf(TEXT("  Set RandomDeviation: %.2f"), Definition.RandomDeviation));
+		}
+
+		// Set bCallTickOnSearchStart
+		if (FBoolProperty* TickOnSearchProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bCallTickOnSearchStart"))))
+		{
+			TickOnSearchProp->SetPropertyValue_InContainer(CDO, Definition.bCallTickOnSearchStart);
+		}
+
+		// Set bRestartTimerOnEachActivation
+		if (FBoolProperty* RestartTimerProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bRestartTimerOnEachActivation"))))
+		{
+			RestartTimerProp->SetPropertyValue_InContainer(CDO, Definition.bRestartTimerOnEachActivation);
+		}
+
+		// Set NodeName (display name in BT)
+		if (!Definition.NodeName.IsEmpty())
+		{
+			if (FStrProperty* NodeNameProp = CastField<FStrProperty>(CDO->GetClass()->FindPropertyByName(TEXT("NodeName"))))
+			{
+				NodeNameProp->SetPropertyValue_InContainer(CDO, Definition.NodeName);
+			}
+		}
+
+		// Set CustomDescription
+		if (!Definition.CustomDescription.IsEmpty())
+		{
+			if (FStrProperty* DescProp = CastField<FStrProperty>(CDO->GetClass()->FindPropertyByName(TEXT("CustomDescription"))))
+			{
+				DescProp->SetPropertyValue_InContainer(CDO, Definition.CustomDescription);
+			}
+		}
+
+		CDO->MarkPackageDirty();
+	}
+
+	// Generate event graph if specified
+	if (!Definition.EventGraph.IsEmpty() && ManifestData)
+	{
+		// Find the event graph definition in manifest
+		const FManifestEventGraphDefinition* GraphDef = nullptr;
+		for (const FManifestEventGraphDefinition& Graph : ManifestData->EventGraphs)
+		{
+			if (Graph.Name == Definition.EventGraph)
+			{
+				GraphDef = &Graph;
+				break;
+			}
+		}
+
+		if (GraphDef)
+		{
+			FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, GetProjectRoot());
+			LogGeneration(FString::Printf(TEXT("  Generated event graph: %s"), *Definition.EventGraph));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Warning: Event graph '%s' not found in manifest"), *Definition.EventGraph));
+		}
+	}
+
+	// Save asset
+	FAssetRegistryModule::AssetCreated(Blueprint);
+	Package->MarkPackageDirty();
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	// Store metadata
+	StoreBlueprintMetadata(Blueprint, TEXT("BTS"), Definition.Name, InputHash);
+
+	// Cache for same-session resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+	}
+
+	LogGeneration(FString::Printf(TEXT("Created BT Service: %s (Interval: %.2f)"), *Definition.Name, Definition.Interval));
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("BTService");
+	Result.DetermineCategory();
+	return Result;
+}
+
+// ============================================================================
+// v7.8.52: BT Task Generator - Creates BTTask_ Blueprint assets
+// ============================================================================
+FGenerationResult FBTTaskGenerator::Generate(const FManifestBTTaskBPDefinition& Definition, const FManifestData* ManifestData)
+{
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("AI/Tasks") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	// Validate prefix
+	if (!Definition.Name.StartsWith(TEXT("BTTask_")))
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("BT Task name must start with BTTask_ prefix"));
+	}
+
+	if (ValidateAgainstManifest(Definition.Name, TEXT("BT Task"), Result))
+	{
+		return Result;
+	}
+
+	// v3.0: Check existence with metadata-aware logic
+	uint64 InputHash = Definition.ComputeHash();
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("BT Task"), InputHash, Result))
+	{
+		return Result;
+	}
+
+	// Find parent class - BTTask_BlueprintBase
+	UClass* ParentClass = nullptr;
+	if (!Definition.ParentClass.IsEmpty())
+	{
+		ParentClass = FindObject<UClass>(nullptr, *Definition.ParentClass);
+		if (!ParentClass)
+		{
+			ParentClass = LoadClass<UObject>(nullptr, *FString::Printf(TEXT("/Script/AIModule.%s"), *Definition.ParentClass));
+		}
+	}
+	if (!ParentClass)
+	{
+		ParentClass = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTTask_BlueprintBase"));
+	}
+
+	if (!ParentClass)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("BTTask_BlueprintBase class not found - ensure AIModule is enabled"));
+	}
+
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	// Create Blueprint
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+		ParentClass,
+		Package,
+		*Definition.Name,
+		BPTYPE_Normal,
+		UBlueprint::StaticClass(),
+		UBlueprintGeneratedClass::StaticClass()
+	);
+
+	if (!Blueprint)
+	{
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			TEXT("Failed to create BT Task Blueprint"));
+	}
+
+	// Add variables
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+
+		// Handle container types
+		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Array;
+		}
+
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+		if (bSuccess)
+		{
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	// Initial compile
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, nullptr);
+
+	// Get CDO and set properties
+	UObject* CDO = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+	if (CDO)
+	{
+		// Set TickInterval (stored in different property name)
+		// Note: BTTask_BlueprintBase stores this as bNotifyTick + tick interval logic
+		// For simplicity, we set the internal interval if property exists
+		if (FFloatProperty* TickProp = CastField<FFloatProperty>(CDO->GetClass()->FindPropertyByName(TEXT("TickInterval"))))
+		{
+			TickProp->SetPropertyValue_InContainer(CDO, Definition.TickInterval);
+			LogGeneration(FString::Printf(TEXT("  Set TickInterval: %.2f"), Definition.TickInterval));
+		}
+
+		// Set bIgnoreRestartSelf
+		if (FBoolProperty* IgnoreRestartProp = CastField<FBoolProperty>(CDO->GetClass()->FindPropertyByName(TEXT("bIgnoreRestartSelf"))))
+		{
+			IgnoreRestartProp->SetPropertyValue_InContainer(CDO, Definition.bIgnoreRestartSelf);
+		}
+
+		// Set NodeName (display name in BT)
+		if (!Definition.NodeName.IsEmpty())
+		{
+			if (FStrProperty* NodeNameProp = CastField<FStrProperty>(CDO->GetClass()->FindPropertyByName(TEXT("NodeName"))))
+			{
+				NodeNameProp->SetPropertyValue_InContainer(CDO, Definition.NodeName);
+			}
+		}
+
+		// Set CustomDescription
+		if (!Definition.CustomDescription.IsEmpty())
+		{
+			if (FStrProperty* DescProp = CastField<FStrProperty>(CDO->GetClass()->FindPropertyByName(TEXT("CustomDescription"))))
+			{
+				DescProp->SetPropertyValue_InContainer(CDO, Definition.CustomDescription);
+			}
+		}
+
+		CDO->MarkPackageDirty();
+	}
+
+	// Generate event graph if specified
+	if (!Definition.EventGraph.IsEmpty() && ManifestData)
+	{
+		// Find the event graph definition in manifest
+		const FManifestEventGraphDefinition* GraphDef = nullptr;
+		for (const FManifestEventGraphDefinition& Graph : ManifestData->EventGraphs)
+		{
+			if (Graph.Name == Definition.EventGraph)
+			{
+				GraphDef = &Graph;
+				break;
+			}
+		}
+
+		if (GraphDef)
+		{
+			FEventGraphGenerator::GenerateEventGraph(Blueprint, *GraphDef, GetProjectRoot());
+			LogGeneration(FString::Printf(TEXT("  Generated event graph: %s"), *Definition.EventGraph));
+		}
+		else
+		{
+			LogGeneration(FString::Printf(TEXT("  Warning: Event graph '%s' not found in manifest"), *Definition.EventGraph));
+		}
+	}
+
+	// Save asset
+	FAssetRegistryModule::AssetCreated(Blueprint);
+	Package->MarkPackageDirty();
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	// Store metadata
+	StoreBlueprintMetadata(Blueprint, TEXT("BTTask"), Definition.Name, InputHash);
+
+	// Cache for same-session resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+	}
+
+	LogGeneration(FString::Printf(TEXT("Created BT Task: %s"), *Definition.Name));
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New);
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("BTTask");
 	Result.DetermineCategory();
 	return Result;
 }

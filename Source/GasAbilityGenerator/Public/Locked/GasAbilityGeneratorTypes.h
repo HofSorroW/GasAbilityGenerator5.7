@@ -786,15 +786,150 @@ struct FManifestInputMappingContextDefinition
 };
 
 /**
+ * v7.8.52: Tag requirement for source/target tag filtering on modifiers
+ */
+struct FManifestTagRequirement
+{
+	TArray<FString> MustHaveTags;
+	TArray<FString> MustNotHaveTags;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = 0;
+		for (const FString& Tag : MustHaveTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 2) | (Hash >> 62); }
+		for (const FString& Tag : MustNotHaveTags) { Hash ^= GetTypeHash(Tag) << 4; Hash = (Hash << 2) | (Hash >> 62); }
+		return Hash;
+	}
+
+	bool IsEmpty() const { return MustHaveTags.Num() == 0 && MustNotHaveTags.Num() == 0; }
+};
+
+/**
+ * v7.8.52: Attribute-based magnitude calculation
+ * Used for magnitudes that scale based on captured attributes (e.g., regen based on StaminaRegenRate)
+ */
+struct FManifestAttributeBasedMagnitude
+{
+	float Coefficient = 1.0f;
+	float PreMultiplyAdditiveValue = 0.0f;
+	float PostMultiplyAdditiveValue = 0.0f;
+
+	// Backing attribute to capture
+	FString AttributeToCapture;                          // e.g., "StaminaRegenRate"
+	FString AttributeSource = TEXT("Source");            // "Source" or "Target"
+	bool bSnapshot = false;                              // Snapshot at application time
+
+	// Curve table (optional)
+	FString CurveTable;                                  // Asset path to UCurveTable
+	FString CurveRowName;
+
+	// Calculation type
+	FString AttributeCalculationType = TEXT("AttributeMagnitude");  // AttributeMagnitude, AttributeBaseValue, AttributeBonusMagnitude
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(FMath::RoundToInt(Coefficient * 1000.f));
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(PreMultiplyAdditiveValue * 1000.f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(PostMultiplyAdditiveValue * 1000.f)) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(AttributeToCapture)) << 24;
+		Hash ^= static_cast<uint64>(GetTypeHash(AttributeSource)) << 28;
+		Hash ^= (bSnapshot ? 1ULL : 0ULL) << 32;
+		Hash ^= static_cast<uint64>(GetTypeHash(CurveTable)) << 36;
+		Hash ^= static_cast<uint64>(GetTypeHash(CurveRowName)) << 40;
+		Hash ^= static_cast<uint64>(GetTypeHash(AttributeCalculationType)) << 44;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Execution calculation modifier (for NarrativeHealExecution, NarrativeDamageExecCalc)
+ * Defines how to capture and modify attributes within an execution calculation
+ */
+struct FManifestGEExecutionModifier
+{
+	// Backing data - which attribute to capture
+	FString CapturedAttribute;                           // e.g., "Heal", "Damage", "AttackDamage"
+	FString CapturedSource = TEXT("Source");             // "Source" or "Target"
+	FString CapturedStatus = TEXT("Snapshotted");        // "Snapshotted" or "NotSnapshotted"
+
+	// Modifier operation
+	FString ModifierOp = TEXT("Additive");               // Additive, Multiply, Override
+
+	// Magnitude (same options as regular modifiers)
+	FString MagnitudeType = TEXT("ScalableFloat");       // ScalableFloat, SetByCaller, AttributeBased
+	float ScalableFloatValue = 0.0f;
+	FString SetByCallerTag;
+	FManifestAttributeBasedMagnitude AttributeBased;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(CapturedAttribute);
+		Hash ^= GetTypeHash(CapturedSource) << 4;
+		Hash ^= GetTypeHash(CapturedStatus) << 8;
+		Hash ^= GetTypeHash(ModifierOp) << 12;
+		Hash ^= GetTypeHash(MagnitudeType) << 16;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(ScalableFloatValue * 1000.f)) << 20;
+		Hash ^= GetTypeHash(SetByCallerTag) << 28;
+		Hash ^= AttributeBased.ComputeHash() << 4;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Conditional gameplay effect within an execution
+ * Applied when certain source tags are present
+ */
+struct FManifestConditionalGameplayEffect
+{
+	FString EffectClass;                                 // GE class to apply conditionally
+	TArray<FString> RequiredSourceTags;                  // Tags required on source for effect to apply
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(EffectClass);
+		for (const FString& Tag : RequiredSourceTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 3) | (Hash >> 61); }
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Full execution definition for gameplay effects
+ * Supports NarrativeDamageExecCalc, NarrativeHealExecution, custom execution classes
+ */
+struct FManifestGEExecution
+{
+	FString CalculationClass;                            // "NarrativeDamageExecCalc", "NarrativeHealExecution", or custom
+	TArray<FManifestGEExecutionModifier> Modifiers;      // Calculation modifiers
+	TArray<FManifestConditionalGameplayEffect> ConditionalEffects;  // Conditional effects
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(CalculationClass);
+		for (const auto& Mod : Modifiers) { Hash ^= Mod.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		for (const auto& Cond : ConditionalEffects) { Hash ^= Cond.ComputeHash(); Hash = (Hash << 5) | (Hash >> 59); }
+		return Hash;
+	}
+};
+
+/**
  * Modifier definition for gameplay effects
+ * v7.8.52: Enhanced with source/target tags, attribute-based magnitude, custom calculation class
  */
 struct FManifestModifierDefinition
 {
 	FString Attribute;
 	FString Operation = TEXT("Additive");  // Additive, Multiply, Override
-	FString MagnitudeType = TEXT("ScalableFloat");  // ScalableFloat, SetByCaller
+
+	// Magnitude calculation - one of these is used based on MagnitudeType
+	FString MagnitudeType = TEXT("ScalableFloat");  // ScalableFloat, SetByCaller, AttributeBased, CustomCalculationClass
 	float ScalableFloatValue = 0.0f;
 	FString SetByCallerTag;
+	FManifestAttributeBasedMagnitude AttributeBased;     // v7.8.52: For AttributeBased magnitude type
+	FString CustomCalculationClass;                      // v7.8.52: For CustomCalculationClass magnitude type
+
+	// v7.8.52: Per-modifier tag requirements
+	FManifestTagRequirement SourceTags;
+	FManifestTagRequirement TargetTags;
 
 	/** v3.0: Compute hash for change detection */
 	uint64 ComputeHash() const
@@ -804,6 +939,10 @@ struct FManifestModifierDefinition
 		Hash ^= GetTypeHash(MagnitudeType) << 8;
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(ScalableFloatValue * 1000.f)) << 12;
 		Hash ^= GetTypeHash(SetByCallerTag) << 20;
+		Hash ^= AttributeBased.ComputeHash() << 4;
+		Hash ^= GetTypeHash(CustomCalculationClass) << 28;
+		Hash ^= SourceTags.ComputeHash() << 32;
+		Hash ^= TargetTags.ComputeHash() << 36;
 		return Hash;
 	}
 };
@@ -831,6 +970,7 @@ struct FManifestGEComponentDefinition
 
 /**
  * Gameplay effect definition
+ * v7.8.52: Enhanced with full execution definitions, periodic inhibition policy
  */
 struct FManifestGameplayEffectDefinition
 {
@@ -840,13 +980,19 @@ struct FManifestGameplayEffectDefinition
 	float DurationMagnitude = 0.0f;
 	float Period = 0.0f;
 	bool bExecutePeriodicOnApplication = false;
+	FString PeriodicInhibitionPolicy = TEXT("NeverReset");  // v7.8.52: NeverReset, ResetOnSuccessfulApplication
 	TArray<FString> GrantedTags;
 	TArray<FString> RemoveGameplayEffectsWithTags;
 	TArray<FManifestModifierDefinition> Modifiers;
 	TArray<FManifestGEComponentDefinition> Components;
 	int32 StackLimitCount = 0;
 	FString StackingType;
+
+	// Executions - v7.8.52: Full execution definitions with modifiers and conditionals
+	TArray<FManifestGEExecution> Executions;
+	// Legacy: Simple execution class names (backwards compatible)
 	TArray<FString> ExecutionClasses;
+
 	TArray<FString> SetByCallerTags;
 
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
@@ -858,6 +1004,7 @@ struct FManifestGameplayEffectDefinition
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(DurationMagnitude * 1000.f)) << 8;
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(Period * 1000.f)) << 16;
 		Hash ^= (bExecutePeriodicOnApplication ? 1ULL : 0ULL) << 24;
+		Hash ^= GetTypeHash(PeriodicInhibitionPolicy) << 25;
 		Hash ^= static_cast<uint64>(StackLimitCount) << 28;
 		Hash ^= static_cast<uint64>(GetTypeHash(StackingType)) << 32;
 
@@ -866,6 +1013,9 @@ struct FManifestGameplayEffectDefinition
 		for (const FString& Tag : RemoveGameplayEffectsWithTags) Hash ^= GetTypeHash(Tag) << 2;
 		for (const FString& Tag : SetByCallerTags) Hash ^= GetTypeHash(Tag) << 4;
 		for (const FString& Exec : ExecutionClasses) Hash ^= GetTypeHash(Exec) << 6;
+
+		// v7.8.52: Full executions
+		for (const auto& Exec : Executions) { Hash ^= Exec.ComputeHash(); Hash = (Hash << 7) | (Hash >> 57); }
 
 		// Modifiers and Components
 		for (const auto& Mod : Modifiers)
@@ -1273,7 +1423,25 @@ struct FManifestCustomFunctionDefinition
 // ============================================================================
 
 /**
+ * v7.8.52: Ability trigger definition for event-based activation
+ * Maps to FAbilityTriggerData in GAS
+ */
+struct FManifestAbilityTriggerDefinition
+{
+	FString TriggerTag;                    // GameplayTag that triggers the ability (e.g., "GameplayEvent.Death")
+	FString TriggerSource = TEXT("GameplayEvent");  // OwnedTagAdded, OwnedTagPresent, GameplayEvent
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(TriggerTag);
+		Hash ^= GetTypeHash(TriggerSource) << 8;
+		return Hash;
+	}
+};
+
+/**
  * Gameplay ability definition
+ * v7.8.52: Added NarrativeGameplayAbility CDO properties (Cues, Damage, Triggers, Config)
  * v4.14: Added CustomFunctions for creating new Blueprint functions
  * v4.8: Added InputTag and bActivateAbilityOnGranted for input binding automation
  */
@@ -1290,6 +1458,41 @@ struct FManifestGameplayAbilityDefinition
 	// v4.8: NarrativeGameplayAbility properties
 	FString InputTag;                    // Maps ability to input action (Narrative.Input.*)
 	bool bActivateAbilityOnGranted = false;  // Auto-activate when ability is granted
+
+	// v7.8.52: Additional NarrativeGameplayAbility properties
+	bool bRequiresAmmo = false;          // Requires ammo to activate (ranged weapons)
+	bool bDrawDebugTraces = false;       // Show debug traces for development
+
+	// v7.8.52: Cues section (GA_CombatAbilityBase properties)
+	FString FireCueTag;                  // Cue when hitting target (e.g., "GameplayCue.Weapon.Fire")
+	FString FireCueTagNoImpact;          // Cue when not hitting (e.g., "GameplayCue.Weapon.Fire.NoImpact")
+
+	// v7.8.52: Target Data Handling
+	FString DamageEffectClass;           // GE applied on hit (e.g., "GE_WeaponDamage")
+
+	// v7.8.52: Damage section
+	float DefaultAttackDamage = 0.0f;    // Base damage value
+
+	// v7.8.52: Ability Triggers (event-based activation)
+	TArray<FManifestAbilityTriggerDefinition> AbilityTriggers;
+
+	// v7.8.52: Config - Firearm Ability (ranged weapon properties)
+	bool bIsAutomatic = false;           // Full-auto fire
+	float RateOfFire = 0.2f;             // Seconds between shots
+	int32 BurstAmount = -1;              // Shots per burst (-1 = unlimited)
+	float TraceDistance = 10000.0f;      // Max trace range
+	float TraceRadius = 0.0f;            // Sphere trace radius (0 = line trace)
+	bool bTraceMulti = false;            // Multi-hit trace
+
+	// v7.8.52: Warping section (melee motion warping)
+	bool bShouldWarp = false;            // Enable motion warping
+	float WarpMaintainDist = 100.0f;     // Distance to maintain from target
+	float MinWarpDist = 20.0f;           // Minimum warp distance
+	float MaxWarpDist = 250.0f;          // Maximum warp distance
+
+	// v7.8.52: Execution section (melee finishers)
+	FString ExecutionGameplayTag;        // Cue for execution animations
+	bool bExecutionInvulnerability = false;  // Invulnerable during execution
 
 	// Variables defined on the ability Blueprint
 	TArray<FManifestActorVariableDefinition> Variables;
@@ -1327,6 +1530,39 @@ struct FManifestGameplayAbilityDefinition
 		// v4.8: Include new NarrativeGameplayAbility properties
 		Hash ^= static_cast<uint64>(GetTypeHash(InputTag)) << 32;
 		Hash ^= (bActivateAbilityOnGranted ? 1ULL : 0ULL) << 40;
+
+		// v7.8.52: Additional NarrativeGameplayAbility properties
+		Hash ^= (bRequiresAmmo ? 1ULL : 0ULL) << 41;
+		Hash ^= (bDrawDebugTraces ? 1ULL : 0ULL) << 42;
+		Hash ^= static_cast<uint64>(GetTypeHash(FireCueTag)) << 43;
+		Hash ^= static_cast<uint64>(GetTypeHash(FireCueTagNoImpact)) << 44;
+		Hash ^= static_cast<uint64>(GetTypeHash(DamageEffectClass)) << 45;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(DefaultAttackDamage * 100.f)) << 46;
+
+		// v7.8.52: Ability triggers
+		for (const auto& Trigger : AbilityTriggers)
+		{
+			Hash ^= Trigger.ComputeHash();
+			Hash = (Hash << 2) | (Hash >> 62);
+		}
+
+		// v7.8.52: Firearm config
+		Hash ^= (bIsAutomatic ? 1ULL : 0ULL) << 47;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(RateOfFire * 1000.f)) << 48;
+		Hash ^= static_cast<uint64>(BurstAmount + 1000) << 49;  // +1000 to handle -1
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TraceDistance)) << 50;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TraceRadius * 10.f)) << 51;
+		Hash ^= (bTraceMulti ? 1ULL : 0ULL) << 52;
+
+		// v7.8.52: Warping config
+		Hash ^= (bShouldWarp ? 1ULL : 0ULL) << 53;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(WarpMaintainDist)) << 54;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(MinWarpDist)) << 55;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(MaxWarpDist)) << 56;
+
+		// v7.8.52: Execution config
+		Hash ^= static_cast<uint64>(GetTypeHash(ExecutionGameplayTag)) << 57;
+		Hash ^= (bExecutionInvulnerability ? 1ULL : 0ULL) << 58;
 
 		// Variables
 		for (const auto& Var : Variables)
@@ -3691,6 +3927,7 @@ struct FManifestEquippableItemDefinition
 /**
  * Activity definition
  * v3.3: Added NarrativeActivityBase and NPCActivity properties
+ * v7.8.52: Added enhanced BPA properties, Variables, and EventGraph support
  */
 struct FManifestActivityDefinition
 {
@@ -3710,6 +3947,17 @@ struct FManifestActivityDefinition
 	FString SupportedGoalType;           // TSubclassOf<UNPCGoalItem> - Goal class this activity supports
 	bool bIsInterruptable = true;        // Whether activity can be interrupted
 	bool bSaveActivity = false;          // Whether activity should be saved to disk
+
+	// v7.8.52: Enhanced BPA properties
+	FString AttackTaggedDialogue;        // FGameplayTag for tagged dialogue (e.g., Narrative.TaggedDialogue.BeginAttacking)
+	TArray<FString> WeaponTypes;         // TArray<TSubclassOf<UWeaponItem>> - allowed weapon types
+	FString FollowGoal;                  // TSubclassOf<UNPCGoalItem> - follow goal class
+	FString InteractSubGoal;             // TSubclassOf<UNPCGoalItem> - interact sub-goal class
+	FString BBKeyFollowDistance;         // FName - blackboard key for follow distance
+
+	// v7.8.52: Variables and EventGraph support (same as Goals)
+	TArray<FManifestActorVariableDefinition> Variables;
+	FString EventGraph;
 
 	/** v3.3: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
@@ -3740,6 +3988,104 @@ struct FManifestActivityDefinition
 			Hash ^= GetTypeHash(Tag);
 			Hash = (Hash << 7) | (Hash >> 57);
 		}
+		// v7.8.52: Hash enhanced properties
+		Hash ^= GetTypeHash(AttackTaggedDialogue) << 26;
+		for (const FString& WeaponType : WeaponTypes)
+		{
+			Hash ^= GetTypeHash(WeaponType);
+			Hash = (Hash << 2) | (Hash >> 62);
+		}
+		Hash ^= GetTypeHash(FollowGoal) << 28;
+		Hash ^= GetTypeHash(InteractSubGoal) << 30;
+		Hash ^= static_cast<uint64>(GetTypeHash(BBKeyFollowDistance)) << 32;
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+		Hash ^= static_cast<uint64>(GetTypeHash(EventGraph)) << 36;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Blueprint Trigger definition (BPT_ assets)
+ * Used for quest tasks and schedule triggers in Narrative Pro
+ */
+struct FManifestBlueprintTriggerDefinition
+{
+	FString Name;
+	FString Folder;
+	FString ParentClass;                 // NarrativeTrigger, BPT_TimeOfDayRange, etc.
+
+	// Base Trigger Properties
+	bool bIsActive = false;              // Whether trigger starts active
+
+	// Task Properties (for quest task triggers)
+	int32 RequiredQuantity = 1;          // How many times to complete
+	FString DescriptionOverride;         // FText - Custom task description
+	bool bOptional = false;              // Optional task flag
+	bool bHidden = false;                // Hidden from player
+	float TickInterval = 0.2f;           // Update frequency
+
+	// Navigation Marker Properties
+	bool bAddNavigationMarker = false;   // Show marker on map
+	bool bDrawBreadcrumbs = false;       // Show path breadcrumbs
+	FString MarkerClass;                 // TSubclassOf<AActor> - marker BP class
+	FString NavigationMarkerIcon;        // Texture2D path
+	FString MarkerColor;                 // FLinearColor as "R,G,B,A" or color name
+	FString MarkerDisplayText;           // FText
+	FString MarkerSubtitleText;          // FText
+	FVector MarkerLocation = FVector::ZeroVector;
+
+	// Goal Location Properties (BPT_GotoLocation)
+	FVector GoalLoc = FVector::ZeroVector;
+	FString GoalLocationProvider;        // Instanced Transform Provider type
+	float DistanceTolerance = 500.0f;
+	FString FriendlyLocationName;        // FText
+	bool bInvert = false;
+
+	// Time Range Properties (BPT_TimeOfDayRange)
+	float TimeStart = 0.0f;              // 0-2400 range
+	float TimeEnd = 2400.0f;
+
+	// Follow NPC Properties (BPT_FollowNPCToLocation)
+	TArray<FString> NPCsToFollow;        // TArray<UNPCDefinition*>
+	FRotator GoalRotation = FRotator::ZeroRotator;
+
+	// Variables and EventGraph
+	TArray<FManifestActorVariableDefinition> Variables;
+	FString EventGraph;
+
+	/** Compute hash for change detection */
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		Hash ^= (bIsActive ? 1ULL : 0ULL) << 8;
+		Hash ^= static_cast<uint64>(RequiredQuantity) << 9;
+		Hash ^= GetTypeHash(DescriptionOverride) << 12;
+		Hash ^= (bOptional ? 1ULL : 0ULL) << 16;
+		Hash ^= (bHidden ? 1ULL : 0ULL) << 17;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TickInterval * 100.f)) << 18;
+		Hash ^= (bAddNavigationMarker ? 1ULL : 0ULL) << 22;
+		Hash ^= (bDrawBreadcrumbs ? 1ULL : 0ULL) << 23;
+		Hash ^= GetTypeHash(MarkerClass) << 24;
+		Hash ^= GetTypeHash(GoalLocationProvider) << 28;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(DistanceTolerance)) << 32;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TimeStart)) << 36;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TimeEnd)) << 40;
+		for (const FString& NPC : NPCsToFollow)
+		{
+			Hash ^= GetTypeHash(NPC);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+		Hash ^= static_cast<uint64>(GetTypeHash(EventGraph)) << 44;
 		return Hash;
 	}
 };
@@ -3889,6 +4235,12 @@ struct FManifestNarrativeEventDefinition
 	// Reuses dialogue condition format: Type, bNot, Properties
 	TArray<FManifestDialogueConditionDefinition> Conditions;
 
+	// v7.8.52: Blueprint variables for custom event logic
+	TArray<FManifestActorVariableDefinition> Variables;
+
+	// v7.8.52: Event graph for override functions (ExecuteEvent, OnActivate, OnDeactivate, etc.)
+	FString EventGraph;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -3931,103 +4283,13 @@ struct FManifestNarrativeEventDefinition
 			Hash ^= Condition.ComputeHash();
 			Hash = (Hash << 4) | (Hash >> 60);
 		}
-		return Hash;
-	}
-};
-
-// ============================================================================
-// v4.0: GAMEPLAY CUE DEFINITIONS (NEW)
-// ============================================================================
-
-/**
- * v4.0: Gameplay Cue spawn condition configuration
- */
-struct FManifestGameplayCueSpawnCondition
-{
-	FString AttachPolicy = TEXT("AttachToTarget");  // AttachToTarget, DoNotAttach
-	FString AttachSocket = TEXT("");
-	float SpawnProbability = 1.0f;
-
-	uint64 ComputeHash() const
-	{
-		uint64 Hash = GetTypeHash(AttachPolicy);
-		Hash ^= GetTypeHash(AttachSocket) << 8;
-		Hash ^= static_cast<uint64>(FMath::RoundToInt(SpawnProbability * 1000.f)) << 16;
-		return Hash;
-	}
-};
-
-/**
- * v4.0: Gameplay Cue placement configuration
- */
-struct FManifestGameplayCuePlacement
-{
-	FString SocketName = TEXT("");
-	bool bAttachToOwner = true;
-	FVector RelativeOffset = FVector::ZeroVector;
-	FRotator RelativeRotation = FRotator::ZeroRotator;
-
-	uint64 ComputeHash() const
-	{
-		uint64 Hash = GetTypeHash(SocketName);
-		Hash ^= (bAttachToOwner ? 1ULL : 0ULL) << 8;
-		Hash ^= GetTypeHash(RelativeOffset.ToString()) << 16;
-		Hash ^= static_cast<uint64>(GetTypeHash(RelativeRotation.ToString())) << 32;
-		return Hash;
-	}
-};
-
-/**
- * v4.0: Gameplay Cue burst effects configuration
- */
-struct FManifestGameplayCueBurstEffects
-{
-	FString ParticleSystem = TEXT("");   // NS_ asset reference
-	FString Sound = TEXT("");             // Sound asset reference
-	FString CameraShake = TEXT("");       // Camera shake class
-
-	uint64 ComputeHash() const
-	{
-		uint64 Hash = GetTypeHash(ParticleSystem);
-		Hash ^= GetTypeHash(Sound) << 16;
-		Hash ^= static_cast<uint64>(GetTypeHash(CameraShake)) << 32;
-		return Hash;
-	}
-};
-
-/**
- * v4.0: Gameplay Cue definition
- * Generates GC_ prefixed Blueprints inheriting from GameplayCueNotify_Burst/BurstLatent/Actor
- */
-struct FManifestGameplayCueDefinition
-{
-	FString Name;
-	FString Folder = TEXT("FX/GameplayCues");
-
-	// Cue type determines parent class:
-	// - "Burst" -> UGameplayCueNotify_Burst (one-off, instant)
-	// - "BurstLatent" -> UGameplayCueNotify_BurstLatent (one-off with duration)
-	// - "Actor" -> AGameplayCueNotify_Actor (persistent, looping)
-	FString CueType = TEXT("Burst");
-
-	// The gameplay cue tag this responds to (e.g., GameplayCue.Father.Attack)
-	FString GameplayCueTag;
-
-	// Optional configuration
-	FManifestGameplayCueSpawnCondition SpawnCondition;
-	FManifestGameplayCuePlacement Placement;
-	FManifestGameplayCueBurstEffects BurstEffects;
-
-	/** v4.0: Compute hash for change detection */
-	uint64 ComputeHash() const
-	{
-		uint64 Hash = GetTypeHash(Name);
-		// NOTE: Folder excluded - presentational only
-		Hash ^= GetTypeHash(CueType) << 4;
-		Hash ^= GetTypeHash(GameplayCueTag) << 8;
-		Hash ^= SpawnCondition.ComputeHash() << 16;
-		Hash ^= Placement.ComputeHash() << 24;
-		Hash ^= BurstEffects.ComputeHash() << 32;
+		// v7.8.52: Include variables and event graph in hash
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		Hash ^= static_cast<uint64>(GetTypeHash(EventGraph)) << 36;
 		return Hash;
 	}
 };
@@ -5152,6 +5414,7 @@ struct FManifestActivityScheduleDefinition
 /**
  * v3.9: Goal item definition for NPC AI objectives
  * Generates UNPCGoalItem Blueprint assets
+ * v7.8.52: Added Variables and EventGraph support for complex goals like Goal_Attack
  */
 struct FManifestGoalItemDefinition
 {
@@ -5166,6 +5429,12 @@ struct FManifestGoalItemDefinition
 	TArray<FString> BlockTags;           // Tags that block this goal
 	TArray<FString> RequireTags;         // Tags required to act on goal
 
+	// v7.8.52: Blueprint variables (for config variables like TargetToFollowAsset, FollowDistance, etc.)
+	TArray<FManifestActorVariableDefinition> Variables;
+
+	// v7.8.52: Event graph reference (for Initialize, PrepareForSave, custom logic)
+	FString EventGraph;
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -5178,9 +5447,366 @@ struct FManifestGoalItemDefinition
 		for (const auto& Tag : OwnedTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 3) | (Hash >> 61); }
 		for (const auto& Tag : BlockTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 4) | (Hash >> 60); }
 		for (const auto& Tag : RequireTags) { Hash ^= GetTypeHash(Tag); Hash = (Hash << 5) | (Hash >> 59); }
+		// v7.8.52: Hash variables and event graph
+		for (const auto& Var : Variables) { Hash ^= Var.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		Hash ^= GetTypeHash(EventGraph) << 26;
 		return Hash;
 	}
 };
+
+/**
+ * v7.8.52: Goal generator definition for NPC goal generation
+ * Generates UNPCGoalGenerator Blueprint assets (e.g., GoalGenerator_Attack)
+ * GoalGenerators monitor events (perception, factions) and create goals dynamically
+ */
+struct FManifestGoalGeneratorDefinition
+{
+	FString Name;                        // Asset name (e.g., "GoalGenerator_Attack")
+	FString Folder;                      // Output folder
+	FString ParentClass;                 // Parent class (default: "NPCGoalGenerator")
+	bool bSaveGoalGenerator = false;     // Persist across saves
+
+	// Blueprint variables (for config like QueryTemplate, AttackGoalClass, etc.)
+	TArray<FManifestActorVariableDefinition> Variables;
+
+	// Event graph reference (for InitializeGoalGenerator, perception handling, etc.)
+	FString EventGraph;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		// NOTE: Folder excluded - presentational only
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		Hash ^= (bSaveGoalGenerator ? 1ULL : 0ULL) << 8;
+		for (const auto& Var : Variables) { Hash ^= Var.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		Hash ^= GetTypeHash(EventGraph) << 12;
+		return Hash;
+	}
+};
+
+// ============================================================================
+// v7.8.52: GAMEPLAY CUE DEFINITIONS
+// Full support for GCN Burst, GCN Burst Latent, and Actor cues
+// ============================================================================
+
+/**
+ * v7.8.52: Spawn condition override for GCN effects
+ * Controls when/where effects spawn based on network and surface conditions
+ */
+struct FManifestSpawnConditionOverride
+{
+	FString LocallyControlledSource = TEXT("InstigatorActor");  // InstigatorActor, TargetActor
+	FString LocallyControlledPolicy = TEXT("Always");            // Always, LocalOnly, SkipLocal
+	float ChanceToPlay = 1.0f;
+	TArray<FString> AllowedSurfaceTypes;                         // Physical surface types
+	TArray<FString> RejectedSurfaceTypes;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(LocallyControlledSource);
+		Hash ^= GetTypeHash(LocallyControlledPolicy) << 4;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(ChanceToPlay)) << 8;
+		for (const auto& S : AllowedSurfaceTypes) { Hash ^= GetTypeHash(S); }
+		for (const auto& S : RejectedSurfaceTypes) { Hash ^= GetTypeHash(S); }
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Placement info override for GCN effects
+ * Controls attachment and transform of spawned effects
+ */
+struct FManifestPlacementInfoOverride
+{
+	FString SocketName;                                          // Socket to attach to
+	FString AttachPolicy = TEXT("DoNotAttach");                  // DoNotAttach, AttachToTarget
+	FString AttachmentRule = TEXT("KeepWorld");                  // KeepWorld, KeepRelative, SnapToTarget
+	FVector RotationOverride = FVector::ZeroVector;              // Rotation (as euler angles)
+	FVector ScaleOverride = FVector::OneVector;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(SocketName);
+		Hash ^= GetTypeHash(AttachPolicy) << 4;
+		Hash ^= GetTypeHash(AttachmentRule) << 8;
+		Hash ^= GetTypeHash(RotationOverride.ToString()) << 12;
+		Hash ^= GetTypeHash(ScaleOverride.ToString()) << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Burst particle effect entry
+ */
+struct FManifestBurstParticleEffect
+{
+	FString NiagaraSystem;                                       // Path to Niagara system asset
+	bool bCastShadow = false;
+	FManifestSpawnConditionOverride SpawnCondition;
+	FManifestPlacementInfoOverride Placement;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(NiagaraSystem);
+		Hash ^= (bCastShadow ? 1ULL : 0ULL) << 4;
+		Hash ^= SpawnCondition.ComputeHash() << 8;
+		Hash ^= Placement.ComputeHash() << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Burst sound effect entry
+ */
+struct FManifestBurstSoundEffect
+{
+	FString Sound;                                               // Path to sound asset
+	float VolumeMultiplier = 1.0f;
+	float PitchMultiplier = 1.0f;
+	FManifestSpawnConditionOverride SpawnCondition;
+	FManifestPlacementInfoOverride Placement;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Sound);
+		Hash ^= GetTypeHash(FString::SanitizeFloat(VolumeMultiplier)) << 4;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(PitchMultiplier)) << 8;
+		Hash ^= SpawnCondition.ComputeHash() << 12;
+		Hash ^= Placement.ComputeHash() << 20;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Burst camera shake settings
+ */
+struct FManifestBurstCameraShake
+{
+	FString CameraShakeClass;                                    // Path to camera shake asset
+	float ShakeScale = 1.0f;
+	FString PlaySpace = TEXT("CameraSpace");                     // CameraSpace, World
+	bool bPlayInWorld = false;
+	float WorldInnerRadius = 0.0f;
+	float WorldOuterRadius = 0.0f;
+	float WorldFalloffExponent = 1.0f;
+	FManifestSpawnConditionOverride SpawnCondition;
+	FManifestPlacementInfoOverride Placement;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(CameraShakeClass);
+		Hash ^= GetTypeHash(FString::SanitizeFloat(ShakeScale)) << 4;
+		Hash ^= GetTypeHash(PlaySpace) << 8;
+		Hash ^= (bPlayInWorld ? 1ULL : 0ULL) << 12;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(WorldInnerRadius)) << 16;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(WorldOuterRadius)) << 20;
+		Hash ^= SpawnCondition.ComputeHash() << 24;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Burst camera lens effect settings
+ */
+struct FManifestBurstCameraLensEffect
+{
+	FString CameraLensEffectClass;                               // Path to lens effect asset
+	bool bPlayInWorld = false;
+	float WorldInnerRadius = 0.0f;
+	float WorldOuterRadius = 0.0f;
+	FManifestSpawnConditionOverride SpawnCondition;
+	FManifestPlacementInfoOverride Placement;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(CameraLensEffectClass);
+		Hash ^= (bPlayInWorld ? 1ULL : 0ULL) << 4;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(WorldInnerRadius)) << 8;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(WorldOuterRadius)) << 12;
+		Hash ^= SpawnCondition.ComputeHash() << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Burst force feedback settings
+ */
+struct FManifestBurstForceFeedback
+{
+	FString ForceFeedbackEffect;                                 // Path to force feedback asset
+	FString ForceFeedbackTag;                                    // Gameplay tag for feedback
+	bool bIsLooping = false;
+	bool bPlayInWorld = false;
+	float WorldIntensity = 1.0f;
+	FString WorldAttenuation;                                    // Attenuation settings
+	FManifestSpawnConditionOverride SpawnCondition;
+	FManifestPlacementInfoOverride Placement;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(ForceFeedbackEffect);
+		Hash ^= GetTypeHash(ForceFeedbackTag) << 4;
+		Hash ^= (bIsLooping ? 1ULL : 0ULL) << 8;
+		Hash ^= (bPlayInWorld ? 1ULL : 0ULL) << 9;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(WorldIntensity)) << 12;
+		Hash ^= SpawnCondition.ComputeHash() << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Burst decal settings
+ */
+struct FManifestBurstDecal
+{
+	FString DecalMaterial;                                       // Path to decal material
+	FVector DecalSize = FVector(128.0f, 256.0f, 256.0f);
+	bool bOverrideFadeOut = false;
+	float FadeOutStartDelay = 0.0f;
+	float FadeOutDuration = 0.0f;
+	FManifestSpawnConditionOverride SpawnCondition;
+	FManifestPlacementInfoOverride Placement;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(DecalMaterial);
+		Hash ^= GetTypeHash(DecalSize.ToString()) << 4;
+		Hash ^= (bOverrideFadeOut ? 1ULL : 0ULL) << 8;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(FadeOutStartDelay)) << 12;
+		Hash ^= GetTypeHash(FString::SanitizeFloat(FadeOutDuration)) << 16;
+		Hash ^= SpawnCondition.ComputeHash() << 20;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: GCN Effects container - all burst effects for a gameplay cue
+ */
+struct FManifestGCNEffects
+{
+	TArray<FManifestBurstParticleEffect> BurstParticles;
+	TArray<FManifestBurstSoundEffect> BurstSounds;
+	FManifestBurstCameraShake BurstCameraShake;
+	FManifestBurstCameraLensEffect BurstCameraLensEffect;
+	FManifestBurstForceFeedback BurstForceFeedback;
+	FManifestBurstDecal BurstDecal;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = 0;
+		for (const auto& P : BurstParticles) { Hash ^= P.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		for (const auto& S : BurstSounds) { Hash ^= S.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		Hash ^= BurstCameraShake.ComputeHash() << 4;
+		Hash ^= BurstCameraLensEffect.ComputeHash() << 8;
+		Hash ^= BurstForceFeedback.ComputeHash() << 12;
+		Hash ^= BurstDecal.ComputeHash() << 16;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: GCN Defaults - spawn and placement defaults
+ */
+struct FManifestGCNDefaults
+{
+	FManifestSpawnConditionOverride DefaultSpawnCondition;
+	FManifestPlacementInfoOverride DefaultPlacementInfo;
+
+	uint64 ComputeHash() const
+	{
+		return DefaultSpawnCondition.ComputeHash() ^ (DefaultPlacementInfo.ComputeHash() << 16);
+	}
+};
+
+/**
+ * v7.8.52: Custom function definition for Gameplay Cues
+ * Used for multicast RPCs like Play Anim Montage
+ */
+struct FManifestCueFunctionDefinition
+{
+	FString FunctionName;
+	FString Replicates = TEXT("NotReplicated");                  // NotReplicated, Multicast, Server, Client
+	bool bReliable = false;
+	TArray<FManifestFunctionParameterDefinition> Inputs;
+	TArray<FManifestFunctionParameterDefinition> Outputs;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(FunctionName);
+		Hash ^= GetTypeHash(Replicates) << 4;
+		Hash ^= (bReliable ? 1ULL : 0ULL) << 8;
+		for (const auto& I : Inputs) { Hash ^= I.ComputeHash(); }
+		for (const auto& O : Outputs) { Hash ^= O.ComputeHash(); }
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Gameplay Cue definition
+ * Creates GC_ Blueprint assets (GameplayCueNotify_Burst, _BurstLatent, or Actor)
+ */
+struct FManifestGameplayCueDefinition
+{
+	// Basic info
+	FString Name;                                                // Asset name (e.g., "GC_TakeDamage")
+	FString Folder;                                              // Output folder (default: "Effects/Cues")
+	FString ParentClass;                                         // GCN_BurstLatent, GameplayCueNotify_Burst, AGameplayCueNotify_Actor
+
+	// Gameplay Cue Tag (CRITICAL - identifies the cue)
+	FString GameplayCueTag;                                      // e.g., "GameplayCue.TakeDamage"
+
+	// Gameplay Cue settings
+	bool bAutoAttachToOwner = false;
+	bool bIsOverride = true;
+	bool bUniqueInstancePerInstigator = false;
+	bool bUniqueInstancePerSourceObject = false;
+	bool bAllowMultipleOnBurstEvents = true;
+	bool bAllowMultipleOnBecomeRelevantEvents = true;
+	int32 NumPreallocatedInstances = 3;
+
+	// Cleanup settings
+	bool bAutoDestroyOnRemove = true;
+	float AutoDestroyDelay = 0.0f;
+
+	// Actor settings (for Actor-based cues)
+	bool bActorHiddenInGame = true;
+	float InitialLifeSpan = 0.0f;
+
+	// GCN Defaults (spawn/placement)
+	FManifestGCNDefaults GCNDefaults;
+
+	// GCN Effects (particles, sounds, camera, etc.)
+	FManifestGCNEffects GCNEffects;
+
+	// Blueprint content
+	TArray<FManifestActorVariableDefinition> Variables;          // Custom variables
+	TArray<FManifestCueFunctionDefinition> Functions;            // Custom functions (e.g., Play Anim Montage)
+	FString EventGraph;                                          // Event graph reference
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(GetTypeHash(Name));
+		Hash ^= static_cast<uint64>(GetTypeHash(ParentClass)) << 4;
+		Hash ^= static_cast<uint64>(GetTypeHash(GameplayCueTag)) << 8;
+		Hash ^= (bAutoAttachToOwner ? 1ULL : 0ULL) << 12;
+		Hash ^= (bIsOverride ? 1ULL : 0ULL) << 13;
+		Hash ^= (bUniqueInstancePerInstigator ? 1ULL : 0ULL) << 14;
+		Hash ^= (bUniqueInstancePerSourceObject ? 1ULL : 0ULL) << 15;
+		Hash ^= (bAllowMultipleOnBurstEvents ? 1ULL : 0ULL) << 16;
+		Hash ^= static_cast<uint64>(NumPreallocatedInstances) << 20;
+		Hash ^= (bAutoDestroyOnRemove ? 1ULL : 0ULL) << 24;
+		Hash ^= GCNDefaults.ComputeHash() << 28;
+		Hash ^= GCNEffects.ComputeHash() << 32;
+		for (const auto& V : Variables) { Hash ^= V.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		for (const auto& F : Functions) { Hash ^= F.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		Hash ^= static_cast<uint64>(GetTypeHash(EventGraph)) << 40;
+		return Hash;
+	}
+};
+
+// ============================================================================
+// v7.8.52: BEHAVIOR TREE SERVICE/TASK DEFINITIONS
+// ============================================================================
 
 /**
  * v4.3: Quest requirement definition - dynamic constraints on quests
@@ -5729,6 +6355,85 @@ struct FManifestTriggerSetDefinition
 };
 
 /**
+ * v7.8.52: BT Service Blueprint definition (standalone BTS_ assets)
+ * Creates BTS_ Blueprint assets inheriting from BTService_BlueprintBase
+ * Services run on intervals while their parent node is active
+ * NOTE: Different from FManifestBTServiceDefinition which is for inline services in BT nodes
+ */
+struct FManifestBTServiceBPDefinition
+{
+	// Basic info
+	FString Name;                                                // Asset name (e.g., "BTS_AdjustFollowSpeed")
+	FString Folder;                                              // Output folder (default: "AI/Services")
+	FString ParentClass;                                         // Parent class (default: BTService_BlueprintBase)
+
+	// Service properties
+	float Interval = 0.5f;                                       // Tick interval in seconds
+	float RandomDeviation = 0.1f;                                // Random variance on interval
+	bool bCallTickOnSearchStart = true;                          // Execute on search start
+	bool bRestartTimerOnEachActivation = false;                  // Reset timer on reactivation
+
+	// Description
+	FString CustomDescription;                                   // Node description in BT editor
+	FString NodeName;                                            // Display name in BT
+
+	// Blueprint content
+	TArray<FManifestActorVariableDefinition> Variables;          // Custom variables (e.g., blackboard key selectors)
+	FString EventGraph;                                          // Event graph reference
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(GetTypeHash(Name));
+		Hash ^= static_cast<uint64>(GetTypeHash(ParentClass)) << 4;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(Interval * 1000.0f)) << 8;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(RandomDeviation * 1000.0f)) << 16;
+		Hash ^= (bCallTickOnSearchStart ? 1ULL : 0ULL) << 24;
+		Hash ^= (bRestartTimerOnEachActivation ? 1ULL : 0ULL) << 25;
+		Hash ^= static_cast<uint64>(GetTypeHash(CustomDescription)) << 28;
+		for (const auto& V : Variables) { Hash ^= V.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		Hash ^= static_cast<uint64>(GetTypeHash(EventGraph)) << 40;
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: BT Task Blueprint definition (standalone BTTask_ assets)
+ * Creates BTTask_ Blueprint assets inheriting from BTTask_BlueprintBase
+ * Tasks execute once and must call FinishExecute with success/failure
+ */
+struct FManifestBTTaskBPDefinition
+{
+	// Basic info
+	FString Name;                                                // Asset name (e.g., "BTTask_ActivateAbility")
+	FString Folder;                                              // Output folder (default: "AI/Tasks")
+	FString ParentClass;                                         // Parent class (default: BTTask_BlueprintBase)
+
+	// Task properties
+	float TickInterval = -1.0f;                                  // -1.0 = no tick, otherwise tick interval
+	bool bIgnoreRestartSelf = false;                             // Ignore restart requests
+
+	// Description
+	FString CustomDescription;                                   // Node description in BT editor
+	FString NodeName;                                            // Display name in BT
+
+	// Blueprint content
+	TArray<FManifestActorVariableDefinition> Variables;          // Custom variables (e.g., ability class)
+	FString EventGraph;                                          // Event graph reference
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = static_cast<uint64>(GetTypeHash(Name));
+		Hash ^= static_cast<uint64>(GetTypeHash(ParentClass)) << 4;
+		Hash ^= static_cast<uint64>(FMath::RoundToInt(TickInterval * 1000.0f)) << 8;
+		Hash ^= (bIgnoreRestartSelf ? 1ULL : 0ULL) << 16;
+		Hash ^= static_cast<uint64>(GetTypeHash(CustomDescription)) << 20;
+		for (const auto& V : Variables) { Hash ^= V.ComputeHash(); Hash = (Hash << 3) | (Hash >> 61); }
+		Hash ^= static_cast<uint64>(GetTypeHash(EventGraph)) << 32;
+		return Hash;
+	}
+};
+
+/**
  * Parsed manifest data
  */
 struct FManifestData
@@ -5761,11 +6466,11 @@ struct FManifestData
 	TArray<FManifestEquippableItemDefinition> AmmoItems;            // ammo_items: (UAmmoItem)
 	TArray<FManifestEquippableItemDefinition> WeaponAttachments;    // weapon_attachments: (UWeaponAttachmentItem)
 	TArray<FManifestActivityDefinition> Activities;
+	TArray<FManifestBlueprintTriggerDefinition> BlueprintTriggers;  // v7.8.52: BPT_ quest/schedule triggers
 	TArray<FManifestAbilityConfigurationDefinition> AbilityConfigurations;
 	TArray<FManifestActivityConfigurationDefinition> ActivityConfigurations;
 	TArray<FManifestItemCollectionDefinition> ItemCollections;
 	TArray<FManifestNarrativeEventDefinition> NarrativeEvents;
-	TArray<FManifestGameplayCueDefinition> GameplayCues;  // v4.0: Gameplay Cues
 	TArray<FManifestNPCDefinitionDefinition> NPCDefinitions;
 	TArray<FManifestCharacterDefinitionDefinition> CharacterDefinitions;
 	TArray<FManifestTaggedDialogueSetDefinition> TaggedDialogueSets;
@@ -5776,7 +6481,15 @@ struct FManifestData
 	// v3.9: NPC Pipeline - Schedules, Goals, Quests
 	TArray<FManifestActivityScheduleDefinition> ActivitySchedules;
 	TArray<FManifestGoalItemDefinition> GoalItems;
+	TArray<FManifestGoalGeneratorDefinition> GoalGenerators;  // v7.8.52: GoalGenerator_ Blueprints
 	TArray<FManifestQuestDefinition> Quests;
+
+	// v7.8.52: Gameplay Cues (GC_ Blueprints)
+	TArray<FManifestGameplayCueDefinition> GameplayCues;
+
+	// v7.8.52: BT Services and Tasks (BTS_, BTTask_ Blueprints)
+	TArray<FManifestBTServiceBPDefinition> BTServices;
+	TArray<FManifestBTTaskBPDefinition> BTTasks;
 
 	// v4.8.3: Character Appearances
 	TArray<FManifestCharacterAppearanceDefinition> CharacterAppearances;
@@ -5847,6 +6560,10 @@ struct FManifestData
 		// v3.9: NPC Pipeline
 		for (const auto& Def : ActivitySchedules) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : GoalItems) AssetWhitelist.Add(Def.Name);
+		for (const auto& Def : GoalGenerators) AssetWhitelist.Add(Def.Name);  // v7.8.52
+		for (const auto& Def : GameplayCues) AssetWhitelist.Add(Def.Name);  // v7.8.52
+		for (const auto& Def : BTServices) AssetWhitelist.Add(Def.Name);  // v7.8.52
+		for (const auto& Def : BTTasks) AssetWhitelist.Add(Def.Name);  // v7.8.52
 		for (const auto& Def : Quests) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : CharacterAppearances) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TriggerSets) AssetWhitelist.Add(Def.Name);  // v4.9
@@ -5999,6 +6716,8 @@ struct FManifestData
 		// v3.9: NPC Pipeline
 		for (const auto& Def : ActivitySchedules) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : GoalItems) AddWithDupeCheck(Def.Name);
+		for (const auto& Def : GoalGenerators) AddWithDupeCheck(Def.Name);  // v7.8.52
+		for (const auto& Def : GameplayCues) AddWithDupeCheck(Def.Name);  // v7.8.52
 		for (const auto& Def : Quests) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : CharacterAppearances) AddWithDupeCheck(Def.Name);
 		// v4.9: TriggerSets

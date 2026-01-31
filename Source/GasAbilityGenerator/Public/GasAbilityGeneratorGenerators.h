@@ -1042,6 +1042,13 @@ public:
 	static FGenerationResult Generate(const FManifestActivityDefinition& Definition);
 };
 
+// v7.8.52: Blueprint Trigger Generator (BPT_ quest task types)
+class GASABILITYGENERATOR_API FBlueprintTriggerGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestBlueprintTriggerDefinition& Definition, const FManifestData* ManifestData = nullptr);
+};
+
 class GASABILITYGENERATOR_API FAbilityConfigurationGenerator : public FGeneratorBase
 {
 public:
@@ -1072,14 +1079,8 @@ public:
 class GASABILITYGENERATOR_API FNarrativeEventGenerator : public FGeneratorBase
 {
 public:
-	static FGenerationResult Generate(const FManifestNarrativeEventDefinition& Definition);
-};
-
-// v4.0: Gameplay Cue Generator - creates GC_ prefixed Blueprints
-class GASABILITYGENERATOR_API FGameplayCueGenerator : public FGeneratorBase
-{
-public:
-	static FGenerationResult Generate(const FManifestGameplayCueDefinition& Definition);
+	// v7.8.52: Added ManifestData parameter for EventGraph lookup
+	static FGenerationResult Generate(const FManifestNarrativeEventDefinition& Definition, const FManifestData* ManifestData = nullptr);
 };
 
 class GASABILITYGENERATOR_API FNPCDefinitionGenerator : public FGeneratorBase
@@ -1200,11 +1201,63 @@ public:
 /**
  * v3.9: Goal Item Generator
  * Creates UNPCGoalItem Blueprint assets for NPC AI objectives
+ * v7.8.52: Added Variables and EventGraph support
  */
 class GASABILITYGENERATOR_API FGoalItemGenerator : public FGeneratorBase
 {
 public:
-	static FGenerationResult Generate(const FManifestGoalItemDefinition& Definition);
+	static FGenerationResult Generate(const FManifestGoalItemDefinition& Definition, const FManifestData* ManifestData = nullptr);
+};
+
+/**
+ * v7.8.52: Goal Generator Generator
+ * Creates UNPCGoalGenerator Blueprint assets for dynamic goal generation
+ */
+class GASABILITYGENERATOR_API FGoalGeneratorGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestGoalGeneratorDefinition& Definition, const FManifestData* ManifestData = nullptr);
+};
+
+/**
+ * v7.8.52: Gameplay Cue Generator
+ * Creates GC_ Blueprint assets (GameplayCueNotify_Burst, _BurstLatent, AGameplayCueNotify_Actor)
+ * Full support for GCN Effects (particles, sounds, camera shake, decals, etc.)
+ */
+class GASABILITYGENERATOR_API FGameplayCueGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestGameplayCueDefinition& Definition, const FManifestData* ManifestData = nullptr);
+
+private:
+	// Helper to configure GCN Effects on the CDO
+	static void ConfigureGCNEffects(UObject* CDO, const FManifestGCNEffects& Effects);
+	// Helper to configure spawn condition
+	static void ConfigureSpawnCondition(void* ConditionPtr, UScriptStruct* ConditionStruct, const FManifestSpawnConditionOverride& Override);
+	// Helper to configure placement info
+	static void ConfigurePlacementInfo(void* PlacementPtr, UScriptStruct* PlacementStruct, const FManifestPlacementInfoOverride& Override);
+};
+
+/**
+ * v7.8.52: BT Service Generator
+ * Creates BTS_ Blueprint assets inheriting from BTService_BlueprintBase
+ * Services tick on intervals while their parent BT node is active
+ */
+class GASABILITYGENERATOR_API FBTServiceGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestBTServiceBPDefinition& Definition, const FManifestData* ManifestData = nullptr);
+};
+
+/**
+ * v7.8.52: BT Task Generator
+ * Creates BTTask_ Blueprint assets inheriting from BTTask_BlueprintBase
+ * Tasks execute once and must call FinishExecute with success/failure
+ */
+class GASABILITYGENERATOR_API FBTTaskGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(const FManifestBTTaskBPDefinition& Definition, const FManifestData* ManifestData = nullptr);
 };
 
 /**

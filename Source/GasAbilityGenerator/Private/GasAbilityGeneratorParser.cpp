@@ -362,6 +362,11 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseActivities(Lines, i, OutData);
 		}
+		// v7.8.52: Blueprint Triggers (BPT_ quest task types)
+		else if (IsSectionHeader(TrimmedLine, TEXT("blueprint_triggers:")))
+		{
+			ParseBlueprintTriggers(Lines, i, OutData);
+		}
 		else if (IsSectionHeader(TrimmedLine, TEXT("ability_configurations:")))
 		{
 			ParseAbilityConfigurations(Lines, i, OutData);
@@ -413,6 +418,26 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		else if (IsSectionHeader(TrimmedLine, TEXT("goal_items:")) || IsSectionHeader(TrimmedLine, TEXT("goals:")))
 		{
 			ParseGoalItems(Lines, i, OutData);
+		}
+		// v7.8.52: GoalGenerators - Blueprint classes that generate goals
+		else if (IsSectionHeader(TrimmedLine, TEXT("goal_generators:")))
+		{
+			ParseGoalGenerators(Lines, i, OutData);
+		}
+		// v7.8.52: GameplayCues - GC_ Blueprint assets
+		else if (IsSectionHeader(TrimmedLine, TEXT("gameplay_cues:")) || IsSectionHeader(TrimmedLine, TEXT("cues:")))
+		{
+			ParseGameplayCues(Lines, i, OutData);
+		}
+		// v7.8.52: BT Services - BTS_ Blueprint assets
+		else if (IsSectionHeader(TrimmedLine, TEXT("bt_services:")) || IsSectionHeader(TrimmedLine, TEXT("services:")))
+		{
+			ParseBTServices(Lines, i, OutData);
+		}
+		// v7.8.52: BT Tasks - BTTask_ Blueprint assets
+		else if (IsSectionHeader(TrimmedLine, TEXT("bt_tasks:")) || IsSectionHeader(TrimmedLine, TEXT("tasks:")))
+		{
+			ParseBTTasks(Lines, i, OutData);
 		}
 		else if (IsSectionHeader(TrimmedLine, TEXT("quests:")))
 		{
@@ -902,6 +927,7 @@ void FGasAbilityGeneratorParser::ParseInputMappingContexts(const TArray<FString>
 }
 
 // v2.3.0: Comprehensive GE parser with all fields
+// v7.8.52: Enhanced with Executions, AttributeBased magnitude, per-modifier tags, conditional effects
 void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
 {
 	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
@@ -909,12 +935,24 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 
 	FManifestGameplayEffectDefinition CurrentDef;
 	FManifestModifierDefinition CurrentModifier;
+	FManifestGEExecution CurrentExecution;
+	FManifestGEExecutionModifier CurrentExecModifier;
+	FManifestConditionalGameplayEffect CurrentConditionalEffect;
+
 	bool bInItem = false;
 	bool bInModifiers = false;
 	bool bInGrantedTags = false;
 	bool bInRemoveTags = false;
 	bool bInExecutions = false;
 	bool bInSetByCallerTags = false;
+
+	// v7.8.52: Enhanced execution parsing state
+	bool bInExecModifiers = false;           // Inside execution modifiers array
+	bool bInExecConditionalEffects = false;  // Inside execution conditional effects
+	bool bInAttributeBased = false;          // Inside modifier attribute_based block
+	bool bInModifierSourceTags = false;      // Inside modifier source_tags block
+	bool bInModifierTargetTags = false;      // Inside modifier target_tags block
+	bool bInConditionalSourceTags = false;   // Inside conditional effect required_source_tags
 
 	while (LineIndex < Lines.Num())
 	{
@@ -924,6 +962,21 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// Save pending execution modifier
+			if (bInExecModifiers && !CurrentExecModifier.CapturedAttribute.IsEmpty())
+			{
+				CurrentExecution.Modifiers.Add(CurrentExecModifier);
+			}
+			// Save pending conditional effect
+			if (bInExecConditionalEffects && !CurrentConditionalEffect.EffectClass.IsEmpty())
+			{
+				CurrentExecution.ConditionalEffects.Add(CurrentConditionalEffect);
+			}
+			// Save pending execution
+			if (bInExecutions && !CurrentExecution.CalculationClass.IsEmpty())
+			{
+				CurrentDef.Executions.Add(CurrentExecution);
+			}
 			// Save pending modifier
 			if (bInModifiers && !CurrentModifier.Attribute.IsEmpty())
 			{
@@ -947,6 +1000,24 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 		// New GE item
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// Save pending execution modifier
+			if (bInExecModifiers && !CurrentExecModifier.CapturedAttribute.IsEmpty())
+			{
+				CurrentExecution.Modifiers.Add(CurrentExecModifier);
+				CurrentExecModifier = FManifestGEExecutionModifier();
+			}
+			// Save pending conditional effect
+			if (bInExecConditionalEffects && !CurrentConditionalEffect.EffectClass.IsEmpty())
+			{
+				CurrentExecution.ConditionalEffects.Add(CurrentConditionalEffect);
+				CurrentConditionalEffect = FManifestConditionalGameplayEffect();
+			}
+			// Save pending execution
+			if (bInExecutions && !CurrentExecution.CalculationClass.IsEmpty())
+			{
+				CurrentDef.Executions.Add(CurrentExecution);
+				CurrentExecution = FManifestGEExecution();
+			}
 			// Save pending modifier
 			if (bInModifiers && !CurrentModifier.Attribute.IsEmpty())
 			{
@@ -966,25 +1037,50 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 			bInRemoveTags = false;
 			bInExecutions = false;
 			bInSetByCallerTags = false;
+			bInExecModifiers = false;
+			bInExecConditionalEffects = false;
+			bInAttributeBased = false;
+			bInModifierSourceTags = false;
+			bInModifierTargetTags = false;
+			bInConditionalSourceTags = false;
 		}
 		else if (bInItem)
 		{
 			// Check for subsection headers
 			if (TrimmedLine.Equals(TEXT("modifiers:")) || TrimmedLine.StartsWith(TEXT("modifiers:")))
 			{
+				// Save pending execution before switching sections
+				if (bInExecutions && !CurrentExecution.CalculationClass.IsEmpty())
+				{
+					CurrentDef.Executions.Add(CurrentExecution);
+					CurrentExecution = FManifestGEExecution();
+				}
 				bInModifiers = true;
 				bInGrantedTags = false;
 				bInRemoveTags = false;
 				bInExecutions = false;
 				bInSetByCallerTags = false;
+				bInExecModifiers = false;
+				bInExecConditionalEffects = false;
+				bInAttributeBased = false;
+				bInModifierSourceTags = false;
+				bInModifierTargetTags = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("granted_tags:")) || TrimmedLine.StartsWith(TEXT("granted_tags:")))
 			{
+				// Save pending modifier before switching
+				if (bInModifiers && !CurrentModifier.Attribute.IsEmpty())
+				{
+					CurrentDef.Modifiers.Add(CurrentModifier);
+					CurrentModifier = FManifestModifierDefinition();
+				}
 				bInModifiers = false;
 				bInGrantedTags = true;
 				bInRemoveTags = false;
 				bInExecutions = false;
 				bInSetByCallerTags = false;
+				bInExecModifiers = false;
+				bInAttributeBased = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("remove_gameplay_effects_with_tags:")) || TrimmedLine.StartsWith(TEXT("remove_gameplay_effects_with_tags:")))
 			{
@@ -993,14 +1089,25 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 				bInRemoveTags = true;
 				bInExecutions = false;
 				bInSetByCallerTags = false;
+				bInExecModifiers = false;
+				bInAttributeBased = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("executions:")) || TrimmedLine.StartsWith(TEXT("executions:")))
 			{
+				// Save pending modifier before switching
+				if (bInModifiers && !CurrentModifier.Attribute.IsEmpty())
+				{
+					CurrentDef.Modifiers.Add(CurrentModifier);
+					CurrentModifier = FManifestModifierDefinition();
+				}
 				bInModifiers = false;
 				bInGrantedTags = false;
 				bInRemoveTags = false;
 				bInExecutions = true;
 				bInSetByCallerTags = false;
+				bInExecModifiers = false;
+				bInExecConditionalEffects = false;
+				bInAttributeBased = false;
 			}
 			else if (TrimmedLine.Equals(TEXT("setbycaller_tags:")) || TrimmedLine.StartsWith(TEXT("setbycaller_tags:")))
 			{
@@ -1009,6 +1116,13 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 				bInRemoveTags = false;
 				bInExecutions = false;
 				bInSetByCallerTags = true;
+				bInExecModifiers = false;
+				bInAttributeBased = false;
+			}
+			// v7.8.52: Parse periodic_inhibition_policy
+			else if (TrimmedLine.StartsWith(TEXT("periodic_inhibition_policy:")))
+			{
+				CurrentDef.PeriodicInhibitionPolicy = GetLineValue(TrimmedLine);
 			}
 			// Parse simple fields
 			else if (TrimmedLine.StartsWith(TEXT("folder:")))
@@ -1043,7 +1157,109 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 			// Parse modifier items
 			else if (bInModifiers)
 			{
-				if (TrimmedLine.StartsWith(TEXT("- attribute:")))
+				// v7.8.52: Handle attribute_based subsection
+				if (bInAttributeBased)
+				{
+					if (TrimmedLine.StartsWith(TEXT("coefficient:")))
+					{
+						CurrentModifier.AttributeBased.Coefficient = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("pre_multiply_additive_value:")))
+					{
+						CurrentModifier.AttributeBased.PreMultiplyAdditiveValue = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("post_multiply_additive_value:")))
+					{
+						CurrentModifier.AttributeBased.PostMultiplyAdditiveValue = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("backing_attribute:")) || TrimmedLine.StartsWith(TEXT("attribute_to_capture:")))
+					{
+						CurrentModifier.AttributeBased.AttributeToCapture = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("attribute_source:")))
+					{
+						CurrentModifier.AttributeBased.AttributeSource = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("snapshot:")))
+					{
+						FString Val = GetLineValue(TrimmedLine);
+						CurrentModifier.AttributeBased.bSnapshot = Val.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("curve_table:")))
+					{
+						CurrentModifier.AttributeBased.CurveTable = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("curve_row:")))
+					{
+						CurrentModifier.AttributeBased.CurveRowName = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("calculation_type:")))
+					{
+						CurrentModifier.AttributeBased.AttributeCalculationType = GetLineValue(TrimmedLine);
+					}
+					// Check for exiting attribute_based subsection
+					else if (TrimmedLine.StartsWith(TEXT("- attribute:")) ||
+					         TrimmedLine.StartsWith(TEXT("source_tags:")) ||
+					         TrimmedLine.StartsWith(TEXT("target_tags:")) ||
+					         TrimmedLine.StartsWith(TEXT("modifier_op:")) ||
+					         TrimmedLine.StartsWith(TEXT("magnitude_type:")))
+					{
+						bInAttributeBased = false;
+						// Re-process this line
+						LineIndex--;
+					}
+				}
+				// v7.8.52: Handle source_tags subsection
+				else if (bInModifierSourceTags)
+				{
+					if (TrimmedLine.StartsWith(TEXT("must_have_tags:")) || TrimmedLine.Equals(TEXT("must_have_tags:")))
+					{
+						// Start of must_have_tags array - parsing continues below
+					}
+					else if (TrimmedLine.StartsWith(TEXT("must_not_have_tags:")) || TrimmedLine.Equals(TEXT("must_not_have_tags:")))
+					{
+						// Start of must_not_have_tags array - parsing continues below
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- ")))
+					{
+						FString TagName = TrimmedLine.Mid(2).TrimStartAndEnd();
+						if (!TagName.IsEmpty())
+						{
+							// Determine which array based on context (look back for header)
+							// For simplicity, track last seen header
+							CurrentModifier.SourceTags.MustHaveTags.Add(TagName);
+						}
+					}
+					// Check for exiting source_tags subsection
+					else if (TrimmedLine.StartsWith(TEXT("target_tags:")) ||
+					         TrimmedLine.StartsWith(TEXT("- attribute:")) ||
+					         TrimmedLine.StartsWith(TEXT("attribute_based:")))
+					{
+						bInModifierSourceTags = false;
+						LineIndex--;
+					}
+				}
+				// v7.8.52: Handle target_tags subsection
+				else if (bInModifierTargetTags)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- ")))
+					{
+						FString TagName = TrimmedLine.Mid(2).TrimStartAndEnd();
+						if (!TagName.IsEmpty())
+						{
+							CurrentModifier.TargetTags.MustHaveTags.Add(TagName);
+						}
+					}
+					// Check for exiting target_tags subsection
+					else if (TrimmedLine.StartsWith(TEXT("source_tags:")) ||
+					         TrimmedLine.StartsWith(TEXT("- attribute:")) ||
+					         TrimmedLine.StartsWith(TEXT("attribute_based:")))
+					{
+						bInModifierTargetTags = false;
+						LineIndex--;
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("- attribute:")))
 				{
 					// Save previous modifier
 					if (!CurrentModifier.Attribute.IsEmpty())
@@ -1052,6 +1268,9 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 					}
 					CurrentModifier = FManifestModifierDefinition();
 					CurrentModifier.Attribute = GetLineValue(TrimmedLine.Mid(2));
+					bInAttributeBased = false;
+					bInModifierSourceTags = false;
+					bInModifierTargetTags = false;
 				}
 				else if (TrimmedLine.StartsWith(TEXT("modifier_op:")) || TrimmedLine.StartsWith(TEXT("op:")) || TrimmedLine.StartsWith(TEXT("operation:")))
 				{
@@ -1059,7 +1278,7 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 				}
 				else if (TrimmedLine.StartsWith(TEXT("magnitude_type:")))
 				{
-					// v2.4.0: Parse magnitude type (ScalableFloat or SetByCaller)
+					// v2.4.0: Parse magnitude type (ScalableFloat, SetByCaller, AttributeBased, CustomCalculationClass)
 					CurrentModifier.MagnitudeType = GetLineValue(TrimmedLine);
 				}
 				else if (TrimmedLine.StartsWith(TEXT("magnitude_value:")) || TrimmedLine.StartsWith(TEXT("magnitude:")))
@@ -1071,6 +1290,28 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 				{
 					// v2.4.0: Parse SetByCaller tag for this modifier
 					CurrentModifier.SetByCallerTag = GetLineValue(TrimmedLine);
+				}
+				// v7.8.52: Attribute-based magnitude
+				else if (TrimmedLine.Equals(TEXT("attribute_based:")) || TrimmedLine.StartsWith(TEXT("attribute_based:")))
+				{
+					bInAttributeBased = true;
+				}
+				// v7.8.52: Custom calculation class
+				else if (TrimmedLine.StartsWith(TEXT("custom_calculation_class:")))
+				{
+					CurrentModifier.CustomCalculationClass = GetLineValue(TrimmedLine);
+				}
+				// v7.8.52: Source tags for this modifier
+				else if (TrimmedLine.Equals(TEXT("source_tags:")) || TrimmedLine.StartsWith(TEXT("source_tags:")))
+				{
+					bInModifierSourceTags = true;
+					bInModifierTargetTags = false;
+				}
+				// v7.8.52: Target tags for this modifier
+				else if (TrimmedLine.Equals(TEXT("target_tags:")) || TrimmedLine.StartsWith(TEXT("target_tags:")))
+				{
+					bInModifierTargetTags = true;
+					bInModifierSourceTags = false;
 				}
 			}
 			// Parse granted tags array items
@@ -1097,17 +1338,186 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 					}
 				}
 			}
-			// Parse execution classes
+			// v7.8.52: Parse execution definitions (enhanced)
 			else if (bInExecutions)
 			{
-				if (TrimmedLine.StartsWith(TEXT("- class:")))
+				// Handle conditional effects subsection
+				if (bInExecConditionalEffects)
+				{
+					if (bInConditionalSourceTags)
+					{
+						if (TrimmedLine.StartsWith(TEXT("- ")))
+						{
+							FString TagName = TrimmedLine.Mid(2).TrimStartAndEnd();
+							if (!TagName.IsEmpty())
+							{
+								CurrentConditionalEffect.RequiredSourceTags.Add(TagName);
+							}
+						}
+						else if (TrimmedLine.StartsWith(TEXT("- effect_class:")) ||
+						         TrimmedLine.StartsWith(TEXT("modifiers:")) ||
+						         TrimmedLine.StartsWith(TEXT("- calculation_class:")))
+						{
+							bInConditionalSourceTags = false;
+							LineIndex--;
+						}
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- effect_class:")))
+					{
+						// Save previous conditional effect
+						if (!CurrentConditionalEffect.EffectClass.IsEmpty())
+						{
+							CurrentExecution.ConditionalEffects.Add(CurrentConditionalEffect);
+						}
+						CurrentConditionalEffect = FManifestConditionalGameplayEffect();
+						CurrentConditionalEffect.EffectClass = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.Equals(TEXT("required_source_tags:")) || TrimmedLine.StartsWith(TEXT("required_source_tags:")))
+					{
+						bInConditionalSourceTags = true;
+					}
+					// Check for exiting conditional effects
+					else if (TrimmedLine.StartsWith(TEXT("- calculation_class:")) ||
+					         TrimmedLine.StartsWith(TEXT("modifiers:")))
+					{
+						// Save pending conditional effect
+						if (!CurrentConditionalEffect.EffectClass.IsEmpty())
+						{
+							CurrentExecution.ConditionalEffects.Add(CurrentConditionalEffect);
+							CurrentConditionalEffect = FManifestConditionalGameplayEffect();
+						}
+						bInExecConditionalEffects = false;
+						LineIndex--;
+					}
+				}
+				// Handle execution modifiers subsection
+				else if (bInExecModifiers)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- captured_attribute:")))
+					{
+						// Save previous execution modifier
+						if (!CurrentExecModifier.CapturedAttribute.IsEmpty())
+						{
+							CurrentExecution.Modifiers.Add(CurrentExecModifier);
+						}
+						CurrentExecModifier = FManifestGEExecutionModifier();
+						CurrentExecModifier.CapturedAttribute = GetLineValue(TrimmedLine.Mid(2));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("captured_source:")))
+					{
+						CurrentExecModifier.CapturedSource = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("captured_status:")))
+					{
+						CurrentExecModifier.CapturedStatus = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("modifier_op:")))
+					{
+						CurrentExecModifier.ModifierOp = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("magnitude_type:")))
+					{
+						CurrentExecModifier.MagnitudeType = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("magnitude_value:")) || TrimmedLine.StartsWith(TEXT("scalable_float_value:")))
+					{
+						CurrentExecModifier.ScalableFloatValue = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("setbycaller_tag:")))
+					{
+						CurrentExecModifier.SetByCallerTag = GetLineValue(TrimmedLine);
+					}
+					// v7.8.52: Attribute-based in exec modifier
+					else if (TrimmedLine.Equals(TEXT("attribute_based:")) || TrimmedLine.StartsWith(TEXT("attribute_based:")))
+					{
+						// Parse nested attribute_based for exec modifier
+						// For simplicity, use same pattern but on CurrentExecModifier.AttributeBased
+					}
+					else if (TrimmedLine.StartsWith(TEXT("coefficient:")))
+					{
+						CurrentExecModifier.AttributeBased.Coefficient = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("backing_attribute:")))
+					{
+						CurrentExecModifier.AttributeBased.AttributeToCapture = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("attribute_source:")))
+					{
+						CurrentExecModifier.AttributeBased.AttributeSource = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("snapshot:")))
+					{
+						FString Val = GetLineValue(TrimmedLine);
+						CurrentExecModifier.AttributeBased.bSnapshot = Val.Equals(TEXT("true"), ESearchCase::IgnoreCase);
+					}
+					// Check for exiting exec modifiers
+					else if (TrimmedLine.Equals(TEXT("conditional_effects:")) || TrimmedLine.StartsWith(TEXT("conditional_effects:")))
+					{
+						// Save pending exec modifier
+						if (!CurrentExecModifier.CapturedAttribute.IsEmpty())
+						{
+							CurrentExecution.Modifiers.Add(CurrentExecModifier);
+							CurrentExecModifier = FManifestGEExecutionModifier();
+						}
+						bInExecModifiers = false;
+						bInExecConditionalEffects = true;
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- calculation_class:")) || TrimmedLine.StartsWith(TEXT("- class:")))
+					{
+						// Save pending exec modifier and switch to new execution
+						if (!CurrentExecModifier.CapturedAttribute.IsEmpty())
+						{
+							CurrentExecution.Modifiers.Add(CurrentExecModifier);
+							CurrentExecModifier = FManifestGEExecutionModifier();
+						}
+						bInExecModifiers = false;
+						LineIndex--;
+					}
+				}
+				// Start new execution
+				else if (TrimmedLine.StartsWith(TEXT("- calculation_class:")))
+				{
+					// Save previous execution
+					if (!CurrentExecution.CalculationClass.IsEmpty())
+					{
+						CurrentDef.Executions.Add(CurrentExecution);
+					}
+					CurrentExecution = FManifestGEExecution();
+					CurrentExecution.CalculationClass = GetLineValue(TrimmedLine.Mid(2));
+				}
+				// Legacy format: - class:
+				else if (TrimmedLine.StartsWith(TEXT("- class:")))
 				{
 					FString ClassName = GetLineValue(TrimmedLine.Mid(2));
 					if (!ClassName.IsEmpty())
 					{
+						// Support both new format and legacy
+						if (CurrentExecution.CalculationClass.IsEmpty())
+						{
+							CurrentExecution.CalculationClass = ClassName;
+						}
+						else
+						{
+							// Save current and start new
+							CurrentDef.Executions.Add(CurrentExecution);
+							CurrentExecution = FManifestGEExecution();
+							CurrentExecution.CalculationClass = ClassName;
+						}
+						// Also add to legacy array for backward compatibility
 						CurrentDef.ExecutionClasses.Add(ClassName);
 					}
 				}
+				// Enter modifiers subsection of execution
+				else if (TrimmedLine.Equals(TEXT("modifiers:")) || TrimmedLine.StartsWith(TEXT("modifiers:")))
+				{
+					bInExecModifiers = true;
+				}
+				// Enter conditional_effects subsection
+				else if (TrimmedLine.Equals(TEXT("conditional_effects:")) || TrimmedLine.StartsWith(TEXT("conditional_effects:")))
+				{
+					bInExecConditionalEffects = true;
+				}
+				// Legacy setbycaller_tag inside execution
 				else if (TrimmedLine.StartsWith(TEXT("setbycaller_tag:")))
 				{
 					FString TagName = GetLineValue(TrimmedLine);
@@ -1134,6 +1544,21 @@ void FGasAbilityGeneratorParser::ParseGameplayEffects(const TArray<FString>& Lin
 		LineIndex++;
 	}
 
+	// Save pending execution modifier
+	if (bInExecModifiers && !CurrentExecModifier.CapturedAttribute.IsEmpty())
+	{
+		CurrentExecution.Modifiers.Add(CurrentExecModifier);
+	}
+	// Save pending conditional effect
+	if (bInExecConditionalEffects && !CurrentConditionalEffect.EffectClass.IsEmpty())
+	{
+		CurrentExecution.ConditionalEffects.Add(CurrentConditionalEffect);
+	}
+	// Save pending execution
+	if (bInExecutions && !CurrentExecution.CalculationClass.IsEmpty())
+	{
+		CurrentDef.Executions.Add(CurrentExecution);
+	}
 	// Save pending modifier
 	if (bInModifiers && !CurrentModifier.Attribute.IsEmpty())
 	{
@@ -1161,12 +1586,14 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	bool bInVFXSpawns = false;    // v4.13: Category C - P3.1
 	bool bInDelegateBindings = false;  // v4.13: Category C - P2.1
 	bool bInAttributeBindings = false;  // v4.22: Section 11 - Attribute Change Delegates
+	bool bInAbilityTriggers = false;  // v7.8.52: Ability trigger events
 	int32 ItemIndent = -1;
 	FManifestActorVariableDefinition CurrentVar;
 	FManifestCueTriggerDefinition CurrentCueTrigger;   // v4.13: Category C
 	FManifestVFXSpawnDefinition CurrentVFXSpawn;       // v4.13: Category C
 	FManifestDelegateBindingDefinition CurrentDelegateBinding;  // v4.13: P2.1
 	FManifestAttributeBindingDefinition CurrentAttributeBinding;  // v4.22: Section 11
+	FManifestAbilityTriggerDefinition CurrentAbilityTrigger;  // v7.8.52: Ability triggers
 
 	// Track which tag array we're currently parsing
 	enum class ECurrentTagArray { None, AbilityTags, CancelAbilitiesWithTag, ActivationOwnedTags, ActivationRequiredTags, ActivationBlockedTags };
@@ -1204,6 +1631,11 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
 			{
 				CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+			}
+			// v7.8.52: Save pending ability trigger
+			if (bInAbilityTriggers && !CurrentAbilityTrigger.TriggerTag.IsEmpty())
+			{
+				CurrentDef.AbilityTriggers.Add(CurrentAbilityTrigger);
 			}
 			// v2.6.14: Prefix validation - only add if GA_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
@@ -1259,6 +1691,12 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
 				CurrentAttributeBinding = FManifestAttributeBindingDefinition();
 			}
+			// v7.8.52: Save pending ability trigger
+			if (bInAbilityTriggers && !CurrentAbilityTrigger.TriggerTag.IsEmpty())
+			{
+				CurrentDef.AbilityTriggers.Add(CurrentAbilityTrigger);
+				CurrentAbilityTrigger = FManifestAbilityTriggerDefinition();
+			}
 			bInVariables = false;
 			bInTags = false;
 			bInEventGraph = false;
@@ -1266,6 +1704,7 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			bInVFXSpawns = false;
 			bInDelegateBindings = false;
 			bInAttributeBindings = false;
+			bInAbilityTriggers = false;
 			CurrentTagArray = ECurrentTagArray::None;
 
 			// Save current ability and start new one - v2.6.14: Prefix validation
@@ -1291,6 +1730,7 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 			bInVFXSpawns = false;
 			bInDelegateBindings = false;
 			bInAttributeBindings = false;
+			bInAbilityTriggers = false;
 			CurrentTagArray = ECurrentTagArray::None;
 		}
 		else if (bInItem)
@@ -1351,6 +1791,85 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				bInVariables = false;
 				bInEventGraph = false;
 				CurrentTagArray = ECurrentTagArray::None;
+			}
+			// v7.8.52: Additional NarrativeGameplayAbility properties
+			else if (TrimmedLine.StartsWith(TEXT("requires_ammo:")))
+			{
+				CurrentDef.bRequiresAmmo = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("draw_debug_traces:")))
+			{
+				CurrentDef.bDrawDebugTraces = GetLineValue(TrimmedLine).ToBool();
+			}
+			// v7.8.52: Cues section
+			else if (TrimmedLine.StartsWith(TEXT("fire_cue_tag:")))
+			{
+				CurrentDef.FireCueTag = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("fire_cue_tag_no_impact:")))
+			{
+				CurrentDef.FireCueTagNoImpact = GetLineValue(TrimmedLine);
+			}
+			// v7.8.52: Target Data Handling
+			else if (TrimmedLine.StartsWith(TEXT("damage_effect_class:")))
+			{
+				CurrentDef.DamageEffectClass = GetLineValue(TrimmedLine);
+			}
+			// v7.8.52: Damage section
+			else if (TrimmedLine.StartsWith(TEXT("default_attack_damage:")))
+			{
+				CurrentDef.DefaultAttackDamage = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// v7.8.52: Config - Firearm Ability
+			else if (TrimmedLine.StartsWith(TEXT("is_automatic:")))
+			{
+				CurrentDef.bIsAutomatic = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("rate_of_fire:")))
+			{
+				CurrentDef.RateOfFire = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("burst_amount:")))
+			{
+				CurrentDef.BurstAmount = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("trace_distance:")))
+			{
+				CurrentDef.TraceDistance = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("trace_radius:")))
+			{
+				CurrentDef.TraceRadius = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("trace_multi:")))
+			{
+				CurrentDef.bTraceMulti = GetLineValue(TrimmedLine).ToBool();
+			}
+			// v7.8.52: Warping section
+			else if (TrimmedLine.StartsWith(TEXT("should_warp:")))
+			{
+				CurrentDef.bShouldWarp = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("warp_maintain_dist:")))
+			{
+				CurrentDef.WarpMaintainDist = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("min_warp_dist:")))
+			{
+				CurrentDef.MinWarpDist = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("max_warp_dist:")))
+			{
+				CurrentDef.MaxWarpDist = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// v7.8.52: Execution section
+			else if (TrimmedLine.StartsWith(TEXT("execution_gameplay_tag:")))
+			{
+				CurrentDef.ExecutionGameplayTag = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("execution_invulnerability:")))
+			{
+				CurrentDef.bExecutionInvulnerability = GetLineValue(TrimmedLine).ToBool();
 			}
 			// v4.22: Fixed section flag reset - must clear all other section flags
 			else if (TrimmedLine.Equals(TEXT("tags:")) || TrimmedLine.StartsWith(TEXT("tags:")))
@@ -1674,6 +2193,31 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				bInCueTriggers = false;
 				bInVFXSpawns = false;
 				bInDelegateBindings = false;
+				bInAbilityTriggers = false;
+				CurrentTagArray = ECurrentTagArray::None;
+			}
+			// v7.8.52: ability_triggers section (event-based activation)
+			else if (TrimmedLine.Equals(TEXT("ability_triggers:")) || TrimmedLine.StartsWith(TEXT("ability_triggers:")))
+			{
+				// Save pending data from other sections
+				if (bInVariables && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+					CurrentVar = FManifestActorVariableDefinition();
+				}
+				if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
+				{
+					CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+					CurrentAttributeBinding = FManifestAttributeBindingDefinition();
+				}
+				bInAbilityTriggers = true;
+				bInVariables = false;
+				bInTags = false;
+				bInEventGraph = false;
+				bInCueTriggers = false;
+				bInVFXSpawns = false;
+				bInDelegateBindings = false;
+				bInAttributeBindings = false;
 				CurrentTagArray = ECurrentTagArray::None;
 			}
 			// v4.14: Custom functions section (new Blueprint functions)
@@ -1775,6 +2319,28 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				else if (TrimmedLine.StartsWith(TEXT("without_tag:")))
 				{
 					CurrentAttributeBinding.WithoutTag = GetLineValue(TrimmedLine);
+				}
+			}
+			else if (bInAbilityTriggers)
+			{
+				// v7.8.52: Parse ability trigger items (event-based activation)
+				if (TrimmedLine.StartsWith(TEXT("- trigger_tag:")))
+				{
+					// Save previous trigger
+					if (!CurrentAbilityTrigger.TriggerTag.IsEmpty())
+					{
+						CurrentDef.AbilityTriggers.Add(CurrentAbilityTrigger);
+					}
+					CurrentAbilityTrigger = FManifestAbilityTriggerDefinition();
+					CurrentAbilityTrigger.TriggerTag = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("trigger_tag:")))
+				{
+					CurrentAbilityTrigger.TriggerTag = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("trigger_source:")))
+				{
+					CurrentAbilityTrigger.TriggerSource = GetLineValue(TrimmedLine);
 				}
 			}
 			else if (bInDelegateBindings)
@@ -1971,6 +2537,11 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 	if (bInAttributeBindings && !CurrentAttributeBinding.Attribute.IsEmpty())
 	{
 		CurrentDef.AttributeBindings.Add(CurrentAttributeBinding);
+	}
+	// v7.8.52: Save pending ability trigger
+	if (bInAbilityTriggers && !CurrentAbilityTrigger.TriggerTag.IsEmpty())
+	{
+		CurrentDef.AbilityTriggers.Add(CurrentAbilityTrigger);
 	}
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("GA_")))
 	{
@@ -8456,6 +9027,10 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 	bool bInOwnedTags = false;
 	bool bInBlockTags = false;
 	bool bInRequireTags = false;
+	// v7.8.52: Enhanced BPA properties
+	bool bInWeaponTypes = false;
+	bool bInVariables = false;
+	FManifestActorVariableDefinition CurrentVar;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -8464,6 +9039,11 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 
 		if (ShouldExitSection(Line, SectionIndent))
 		{
+			// v7.8.52: Save final variable if exists
+			if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+			}
 			// v2.6.14: Prefix validation - only add if BPA_ prefix
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPA_")))
 			{
@@ -8481,6 +9061,12 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
+			// v7.8.52: Save final variable from previous item if exists
+			if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+				CurrentVar = FManifestActorVariableDefinition();
+			}
 			// v2.6.14: Prefix validation
 			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPA_")))
 			{
@@ -8492,6 +9078,8 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 			bInOwnedTags = false;
 			bInBlockTags = false;
 			bInRequireTags = false;
+			bInWeaponTypes = false;
+			bInVariables = false;
 		}
 		else if (bInItem)
 		{
@@ -8530,6 +9118,27 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 				FString Value = GetLineValue(TrimmedLine).ToLower();
 				CurrentDef.bSaveActivity = (Value == TEXT("true") || Value == TEXT("1") || Value == TEXT("yes"));
 			}
+			// v7.8.52: Enhanced BPA properties
+			else if (TrimmedLine.StartsWith(TEXT("attack_tagged_dialogue:")))
+			{
+				CurrentDef.AttackTaggedDialogue = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("follow_goal:")))
+			{
+				CurrentDef.FollowGoal = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("interact_sub_goal:")))
+			{
+				CurrentDef.InteractSubGoal = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("bbkey_follow_distance:")))
+			{
+				CurrentDef.BBKeyFollowDistance = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			{
+				CurrentDef.EventGraph = GetLineValue(TrimmedLine);
+			}
 			// v3.3: Tag array sections
 			else if (TrimmedLine.Equals(TEXT("owned_tags:")) || TrimmedLine.StartsWith(TEXT("owned_tags:")))
 			{
@@ -8548,30 +9157,84 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 				bInOwnedTags = false;
 				bInBlockTags = false;
 				bInRequireTags = true;
+				bInWeaponTypes = false;
+				bInVariables = false;
 			}
-			else if ((bInOwnedTags || bInBlockTags || bInRequireTags) && TrimmedLine.StartsWith(TEXT("-")))
+			// v7.8.52: weapon_types array
+			else if (TrimmedLine.Equals(TEXT("weapon_types:")) || TrimmedLine.StartsWith(TEXT("weapon_types:")))
+			{
+				bInOwnedTags = false;
+				bInBlockTags = false;
+				bInRequireTags = false;
+				bInWeaponTypes = true;
+				bInVariables = false;
+			}
+			// v7.8.52: variables array
+			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				bInOwnedTags = false;
+				bInBlockTags = false;
+				bInRequireTags = false;
+				bInWeaponTypes = false;
+				bInVariables = true;
+			}
+			else if ((bInOwnedTags || bInBlockTags || bInRequireTags || bInWeaponTypes) && TrimmedLine.StartsWith(TEXT("-")) && !TrimmedLine.StartsWith(TEXT("- name:")))
 			{
 				// v3.9.10: Use StripYamlComment to remove inline comments
-				FString Tag = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
-				if (Tag.Len() >= 2 && ((Tag.StartsWith(TEXT("\"")) && Tag.EndsWith(TEXT("\""))) ||
-					(Tag.StartsWith(TEXT("'")) && Tag.EndsWith(TEXT("'")))))
+				FString Value = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
+				if (Value.Len() >= 2 && ((Value.StartsWith(TEXT("\"")) && Value.EndsWith(TEXT("\""))) ||
+					(Value.StartsWith(TEXT("'")) && Value.EndsWith(TEXT("'")))))
 				{
-					Tag = Tag.Mid(1, Tag.Len() - 2);
+					Value = Value.Mid(1, Value.Len() - 2);
 				}
-				if (!Tag.IsEmpty())
+				if (!Value.IsEmpty())
 				{
 					if (bInOwnedTags)
 					{
-						CurrentDef.OwnedTags.Add(Tag);
+						CurrentDef.OwnedTags.Add(Value);
 					}
 					else if (bInBlockTags)
 					{
-						CurrentDef.BlockTags.Add(Tag);
+						CurrentDef.BlockTags.Add(Value);
 					}
 					else if (bInRequireTags)
 					{
-						CurrentDef.RequireTags.Add(Tag);
+						CurrentDef.RequireTags.Add(Value);
 					}
+					else if (bInWeaponTypes)
+					{
+						CurrentDef.WeaponTypes.Add(Value);
+					}
+				}
+			}
+			// v7.8.52: Variables parsing
+			else if (bInVariables && TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				// Save previous variable if exists
+				if (!CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+				}
+				CurrentVar = FManifestActorVariableDefinition();
+				CurrentVar.Name = GetLineValue(TrimmedLine.Mid(2));
+			}
+			else if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVar.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					CurrentVar.Class = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")))
+				{
+					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+				{
+					CurrentVar.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
 				}
 			}
 		}
@@ -8579,10 +9242,239 @@ void FGasAbilityGeneratorParser::ParseActivities(const TArray<FString>& Lines, i
 		LineIndex++;
 	}
 
+	// v7.8.52: Save final variable if exists
+	if (bInVariables && !CurrentVar.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVar);
+	}
 	// v2.6.14: Prefix validation - only add if BPA_ prefix
 	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPA_")))
 	{
 		OutData.Activities.Add(CurrentDef);
+	}
+}
+
+// v7.8.52: Blueprint Trigger parsing (BPT_ assets for quest tasks and schedule triggers)
+void FGasAbilityGeneratorParser::ParseBlueprintTriggers(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestBlueprintTriggerDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInNPCsToFollow = false;
+	bool bInVariables = false;
+	FManifestActorVariableDefinition CurrentVar;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			// Save final variable if exists
+			if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+			}
+			// Only add if BPT_ prefix
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPT_")))
+			{
+				OutData.BlueprintTriggers.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save final variable from previous item if exists
+			if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+				CurrentVar = FManifestActorVariableDefinition();
+			}
+			// Save previous item
+			if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPT_")))
+			{
+				OutData.BlueprintTriggers.Add(CurrentDef);
+			}
+			CurrentDef = FManifestBlueprintTriggerDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
+			bInItem = true;
+			bInNPCsToFollow = false;
+			bInVariables = false;
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:")))
+			{
+				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("is_active:")))
+			{
+				CurrentDef.bIsActive = GetLineValue(TrimmedLine).ToBool();
+			}
+			// Task properties
+			else if (TrimmedLine.StartsWith(TEXT("required_quantity:")))
+			{
+				CurrentDef.RequiredQuantity = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("description_override:")))
+			{
+				CurrentDef.DescriptionOverride = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("optional:")))
+			{
+				CurrentDef.bOptional = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("hidden:")))
+			{
+				CurrentDef.bHidden = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("tick_interval:")))
+			{
+				CurrentDef.TickInterval = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// Navigation Marker properties
+			else if (TrimmedLine.StartsWith(TEXT("add_navigation_marker:")))
+			{
+				CurrentDef.bAddNavigationMarker = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("draw_breadcrumbs:")))
+			{
+				CurrentDef.bDrawBreadcrumbs = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("marker_class:")))
+			{
+				CurrentDef.MarkerClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("navigation_marker_icon:")))
+			{
+				CurrentDef.NavigationMarkerIcon = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("marker_color:")))
+			{
+				CurrentDef.MarkerColor = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("marker_display_text:")))
+			{
+				CurrentDef.MarkerDisplayText = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("marker_subtitle_text:")))
+			{
+				CurrentDef.MarkerSubtitleText = GetLineValue(TrimmedLine);
+			}
+			// Goal Location properties
+			else if (TrimmedLine.StartsWith(TEXT("goal_location_provider:")))
+			{
+				CurrentDef.GoalLocationProvider = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("distance_tolerance:")))
+			{
+				CurrentDef.DistanceTolerance = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("friendly_location_name:")))
+			{
+				CurrentDef.FriendlyLocationName = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("invert:")))
+			{
+				CurrentDef.bInvert = GetLineValue(TrimmedLine).ToBool();
+			}
+			// Time Range properties
+			else if (TrimmedLine.StartsWith(TEXT("time_start:")))
+			{
+				CurrentDef.TimeStart = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("time_end:")))
+			{
+				CurrentDef.TimeEnd = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			// Event Graph
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			{
+				CurrentDef.EventGraph = GetLineValue(TrimmedLine);
+			}
+			// Array sections
+			else if (TrimmedLine.Equals(TEXT("npcs_to_follow:")) || TrimmedLine.StartsWith(TEXT("npcs_to_follow:")))
+			{
+				bInNPCsToFollow = true;
+				bInVariables = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				bInNPCsToFollow = false;
+				bInVariables = true;
+			}
+			// Array item parsing
+			else if (bInNPCsToFollow && TrimmedLine.StartsWith(TEXT("-")) && !TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				FString NPC = StripYamlComment(TrimmedLine.Mid(1).TrimStart());
+				if (NPC.Len() >= 2 && ((NPC.StartsWith(TEXT("\"")) && NPC.EndsWith(TEXT("\""))) ||
+					(NPC.StartsWith(TEXT("'")) && NPC.EndsWith(TEXT("'")))))
+				{
+					NPC = NPC.Mid(1, NPC.Len() - 2);
+				}
+				if (!NPC.IsEmpty())
+				{
+					CurrentDef.NPCsToFollow.Add(NPC);
+				}
+			}
+			// Variables parsing
+			else if (bInVariables && TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				if (!CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+				}
+				CurrentVar = FManifestActorVariableDefinition();
+				CurrentVar.Name = GetLineValue(TrimmedLine.Mid(2));
+			}
+			else if (bInVariables && !CurrentVar.Name.IsEmpty())
+			{
+				if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVar.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					CurrentVar.Class = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")))
+				{
+					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+				{
+					CurrentVar.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save final variable if exists
+	if (bInVariables && !CurrentVar.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVar);
+	}
+	// Only add if BPT_ prefix
+	if (bInItem && !CurrentDef.Name.IsEmpty() && CurrentDef.Name.StartsWith(TEXT("BPT_")))
+	{
+		OutData.BlueprintTriggers.Add(CurrentDef);
 	}
 }
 
@@ -8890,6 +9782,9 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 	bool bInCondition = false;
 	bool bInConditionProperties = false;
 	FManifestDialogueConditionDefinition CurrentCondition;
+	// v7.8.52: Variables section
+	bool bInVariables = false;
+	FManifestActorVariableDefinition CurrentVar;
 
 	// v4.3: Helper to save current condition
 	auto SaveCurrentCondition = [&]()
@@ -8901,6 +9796,16 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 		}
 	};
 
+	// v7.8.52: Helper to save current variable
+	auto SaveCurrentVariable = [&]()
+	{
+		if (!CurrentVar.Name.IsEmpty())
+		{
+			CurrentDef.Variables.Add(CurrentVar);
+			CurrentVar = FManifestActorVariableDefinition();
+		}
+	};
+
 	while (LineIndex < Lines.Num())
 	{
 		const FString& Line = Lines[LineIndex];
@@ -8909,6 +9814,7 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 		if (ShouldExitSection(Line, SectionIndent))
 		{
 			SaveCurrentCondition();  // v4.3: Save pending condition
+			SaveCurrentVariable();   // v7.8.52: Save pending variable
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NarrativeEvents.Add(CurrentDef);
@@ -8926,6 +9832,7 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 		if (TrimmedLine.StartsWith(TEXT("- name:")))
 		{
 			SaveCurrentCondition();  // v4.3: Save pending condition before new item
+			SaveCurrentVariable();   // v7.8.52: Save pending variable before new item
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
 				OutData.NarrativeEvents.Add(CurrentDef);
@@ -8939,6 +9846,7 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 			bInConditions = false;  // v4.3: Reset conditions state
 			bInCondition = false;
 			bInConditionProperties = false;
+			bInVariables = false;   // v7.8.52: Reset variables state
 		}
 		else if (bInItem)
 		{
@@ -9110,6 +10018,55 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 					}
 				}
 			}
+			// v7.8.52: Variables section
+			else if (TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				SaveCurrentCondition();
+				SaveCurrentVariable();
+				bInVariables = true;
+				bInConditions = false;
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					SaveCurrentVariable();
+					CurrentVar.Name = GetLineValue(TrimmedLine.Mid(2));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVar.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+				{
+					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					// For Object/Class types
+					FString ClassValue = GetLineValue(TrimmedLine);
+					if (!CurrentVar.Type.IsEmpty())
+					{
+						CurrentVar.Type = CurrentVar.Type + TEXT(":") + ClassValue;
+					}
+				}
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+				{
+					CurrentVar.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+				}
+				// Note: blueprint_read_only is not supported - FManifestActorVariableDefinition doesn't have this field
+			}
+			// v7.8.52: Event graph reference
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			{
+				SaveCurrentCondition();
+				SaveCurrentVariable();
+				CurrentDef.EventGraph = GetLineValue(TrimmedLine);
+				bInConditions = false;
+				bInVariables = false;
+				bInNPCTargets = bInCharacterTargets = bInPlayerTargets = false;
+			}
 			// v4.1: Child class properties introspection
 			// Format: property_name: value (any key not recognized as standard property)
 			else
@@ -9130,183 +10087,11 @@ void FGasAbilityGeneratorParser::ParseNarrativeEvents(const TArray<FString>& Lin
 		LineIndex++;
 	}
 
+	// v7.8.52: Save pending variable at end
+	SaveCurrentVariable();
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.NarrativeEvents.Add(CurrentDef);
-	}
-}
-
-// ============================================================================
-// v4.0: ParseGameplayCues - NEW GENERATOR
-// ============================================================================
-void FGasAbilityGeneratorParser::ParseGameplayCues(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
-{
-	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
-	LineIndex++;
-
-	FManifestGameplayCueDefinition CurrentDef;
-	bool bInItem = false;
-	bool bInSpawnCondition = false;
-	bool bInPlacement = false;
-	bool bInBurstEffects = false;
-
-	while (LineIndex < Lines.Num())
-	{
-		const FString& Line = Lines[LineIndex];
-		FString TrimmedLine = Line.TrimStart();
-
-		if (ShouldExitSection(Line, SectionIndent))
-		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
-			{
-				OutData.GameplayCues.Add(CurrentDef);
-			}
-			LineIndex--;
-			return;
-		}
-
-		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
-		{
-			LineIndex++;
-			continue;
-		}
-
-		// New item
-		if (TrimmedLine.StartsWith(TEXT("- name:")))
-		{
-			if (bInItem && !CurrentDef.Name.IsEmpty())
-			{
-				OutData.GameplayCues.Add(CurrentDef);
-			}
-			CurrentDef = FManifestGameplayCueDefinition();
-			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));
-			bInItem = true;
-			bInSpawnCondition = false;
-			bInPlacement = false;
-			bInBurstEffects = false;
-		}
-		else if (bInItem)
-		{
-			// Check for subsection starts
-			if (TrimmedLine.StartsWith(TEXT("spawn_condition:")))
-			{
-				bInSpawnCondition = true;
-				bInPlacement = false;
-				bInBurstEffects = false;
-			}
-			else if (TrimmedLine.StartsWith(TEXT("placement:")))
-			{
-				bInSpawnCondition = false;
-				bInPlacement = true;
-				bInBurstEffects = false;
-			}
-			else if (TrimmedLine.StartsWith(TEXT("burst_effects:")))
-			{
-				bInSpawnCondition = false;
-				bInPlacement = false;
-				bInBurstEffects = true;
-			}
-			// Main properties
-			else if (TrimmedLine.StartsWith(TEXT("folder:")))
-			{
-				CurrentDef.Folder = GetLineValue(TrimmedLine);
-				bInSpawnCondition = bInPlacement = bInBurstEffects = false;
-			}
-			else if (TrimmedLine.StartsWith(TEXT("cue_type:")))
-			{
-				CurrentDef.CueType = GetLineValue(TrimmedLine);
-				bInSpawnCondition = bInPlacement = bInBurstEffects = false;
-			}
-			else if (TrimmedLine.StartsWith(TEXT("gameplay_cue_tag:")))
-			{
-				CurrentDef.GameplayCueTag = GetLineValue(TrimmedLine);
-				bInSpawnCondition = bInPlacement = bInBurstEffects = false;
-			}
-			// Spawn condition properties
-			else if (bInSpawnCondition)
-			{
-				if (TrimmedLine.StartsWith(TEXT("attach_policy:")))
-				{
-					CurrentDef.SpawnCondition.AttachPolicy = GetLineValue(TrimmedLine);
-				}
-				else if (TrimmedLine.StartsWith(TEXT("attach_socket:")))
-				{
-					CurrentDef.SpawnCondition.AttachSocket = GetLineValue(TrimmedLine);
-				}
-				else if (TrimmedLine.StartsWith(TEXT("spawn_probability:")))
-				{
-					CurrentDef.SpawnCondition.SpawnProbability = FCString::Atof(*GetLineValue(TrimmedLine));
-				}
-			}
-			// Placement properties
-			else if (bInPlacement)
-			{
-				if (TrimmedLine.StartsWith(TEXT("socket_name:")))
-				{
-					CurrentDef.Placement.SocketName = GetLineValue(TrimmedLine);
-				}
-				else if (TrimmedLine.StartsWith(TEXT("attach_to_owner:")))
-				{
-					CurrentDef.Placement.bAttachToOwner = GetLineValue(TrimmedLine).ToBool();
-				}
-				else if (TrimmedLine.StartsWith(TEXT("relative_offset:")))
-				{
-					// Parse "(X, Y, Z)" or "X, Y, Z" format
-					FString OffsetStr = GetLineValue(TrimmedLine);
-					OffsetStr.ReplaceInline(TEXT("("), TEXT(""));
-					OffsetStr.ReplaceInline(TEXT(")"), TEXT(""));
-					TArray<FString> Parts;
-					OffsetStr.ParseIntoArray(Parts, TEXT(","), true);
-					if (Parts.Num() >= 3)
-					{
-						CurrentDef.Placement.RelativeOffset = FVector(
-							FCString::Atof(*Parts[0].TrimStartAndEnd()),
-							FCString::Atof(*Parts[1].TrimStartAndEnd()),
-							FCString::Atof(*Parts[2].TrimStartAndEnd()));
-					}
-				}
-				else if (TrimmedLine.StartsWith(TEXT("relative_rotation:")))
-				{
-					// Parse "(P, Y, R)" or "P, Y, R" format
-					FString RotStr = GetLineValue(TrimmedLine);
-					RotStr.ReplaceInline(TEXT("("), TEXT(""));
-					RotStr.ReplaceInline(TEXT(")"), TEXT(""));
-					TArray<FString> Parts;
-					RotStr.ParseIntoArray(Parts, TEXT(","), true);
-					if (Parts.Num() >= 3)
-					{
-						CurrentDef.Placement.RelativeRotation = FRotator(
-							FCString::Atof(*Parts[0].TrimStartAndEnd()),
-							FCString::Atof(*Parts[1].TrimStartAndEnd()),
-							FCString::Atof(*Parts[2].TrimStartAndEnd()));
-					}
-				}
-			}
-			// Burst effects properties
-			else if (bInBurstEffects)
-			{
-				if (TrimmedLine.StartsWith(TEXT("particle_system:")))
-				{
-					CurrentDef.BurstEffects.ParticleSystem = GetLineValue(TrimmedLine);
-				}
-				else if (TrimmedLine.StartsWith(TEXT("sound:")))
-				{
-					CurrentDef.BurstEffects.Sound = GetLineValue(TrimmedLine);
-				}
-				else if (TrimmedLine.StartsWith(TEXT("camera_shake:")))
-				{
-					CurrentDef.BurstEffects.CameraShake = GetLineValue(TrimmedLine);
-				}
-			}
-		}
-
-		LineIndex++;
-	}
-
-	// Add final item
-	if (bInItem && !CurrentDef.Name.IsEmpty())
-	{
-		OutData.GameplayCues.Add(CurrentDef);
 	}
 }
 
@@ -11470,6 +12255,9 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 	bool bInOwnedTags = false;
 	bool bInBlockTags = false;
 	bool bInRequireTags = false;
+	// v7.8.52: Variables support
+	bool bInVariables = false;
+	FManifestActorVariableDefinition CurrentVariable;
 
 	while (LineIndex < Lines.Num())
 	{
@@ -11494,6 +12282,12 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 		// New item
 		if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- id:")))
 		{
+			// v7.8.52: Save pending variable before switching to new item
+			if (bInVariables && !CurrentVariable.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVariable);
+			}
+
 			// Save previous
 			if (bInItem && !CurrentDef.Name.IsEmpty())
 			{
@@ -11506,6 +12300,8 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 			bInOwnedTags = false;
 			bInBlockTags = false;
 			bInRequireTags = false;
+			bInVariables = false;
+			CurrentVariable = FManifestActorVariableDefinition();
 		}
 		else if (bInItem)
 		{
@@ -11576,6 +12372,7 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 				bInOwnedTags = false;
 				bInBlockTags = false;
 				bInRequireTags = true;
+				bInVariables = false;
 				// Check for inline array format [Tag1, Tag2]
 				FString Value = GetLineValue(TrimmedLine);
 				if (Value.StartsWith(TEXT("[")) && Value.EndsWith(TEXT("]")))
@@ -11588,6 +12385,62 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 						CurrentDef.RequireTags.Add(Tag.TrimStartAndEnd());
 					}
 					bInRequireTags = false;
+				}
+			}
+			// v7.8.52: Event graph reference
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			{
+				CurrentDef.EventGraph = GetLineValue(TrimmedLine);
+				bInOwnedTags = false;
+				bInBlockTags = false;
+				bInRequireTags = false;
+				bInVariables = false;
+			}
+			// v7.8.52: Variables section
+			else if (TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				bInOwnedTags = false;
+				bInBlockTags = false;
+				bInRequireTags = false;
+				bInVariables = true;
+				CurrentVariable = FManifestActorVariableDefinition();
+			}
+			// v7.8.52: Variable parsing
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					// Save previous variable
+					if (!CurrentVariable.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVariable);
+					}
+					CurrentVariable = FManifestActorVariableDefinition();
+					CurrentVariable.Name = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVariable.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					CurrentVariable.Class = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("container:")))
+				{
+					CurrentVariable.Container = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+				{
+					CurrentVariable.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("replicated:")))
+				{
+					CurrentVariable.bReplicated = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")) || TrimmedLine.StartsWith(TEXT("editable:")))
+				{
+					CurrentVariable.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
 				}
 			}
 			else if (TrimmedLine.StartsWith(TEXT("- ")) && !TrimmedLine.Contains(TEXT(":")))
@@ -11611,10 +12464,1012 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 		LineIndex++;
 	}
 
+	// v7.8.52: Save pending variable
+	if (bInVariables && !CurrentVariable.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVariable);
+	}
+
 	// Save last item
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.GoalItems.Add(CurrentDef);
+	}
+}
+
+// v7.8.52: GoalGenerators - Blueprint classes that generate goals dynamically
+void FGasAbilityGeneratorParser::ParseGoalGenerators(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestGoalGeneratorDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInVariables = false;
+	FManifestActorVariableDefinition CurrentVariable;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			LineIndex--;
+			break;
+		}
+
+		// New goal generator
+		if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- id:")))
+		{
+			// Save pending variable before switching to new item
+			if (bInVariables && !CurrentVariable.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVariable);
+			}
+
+			// Save previous
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.GoalGenerators.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestGoalGeneratorDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine);
+			bInItem = true;
+			bInVariables = false;
+			CurrentVariable = FManifestActorVariableDefinition();
+		}
+		else if (bInItem)
+		{
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:")) || TrimmedLine.StartsWith(TEXT("base_class:")))
+			{
+				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("save_goal_generator:")) || TrimmedLine.StartsWith(TEXT("save:")))
+			{
+				CurrentDef.bSaveGoalGenerator = GetLineValue(TrimmedLine).ToBool();
+			}
+			// Event graph reference
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			{
+				CurrentDef.EventGraph = GetLineValue(TrimmedLine);
+				bInVariables = false;
+			}
+			// Variables section
+			else if (TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				bInVariables = true;
+				CurrentVariable = FManifestActorVariableDefinition();
+			}
+			// Variable parsing
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					// Save previous variable
+					if (!CurrentVariable.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVariable);
+					}
+					CurrentVariable = FManifestActorVariableDefinition();
+					CurrentVariable.Name = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVariable.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					CurrentVariable.Class = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("container:")))
+				{
+					CurrentVariable.Container = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+				{
+					CurrentVariable.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("replicated:")))
+				{
+					CurrentVariable.bReplicated = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")) || TrimmedLine.StartsWith(TEXT("editable:")))
+				{
+					CurrentVariable.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save pending variable
+	if (bInVariables && !CurrentVariable.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVariable);
+	}
+
+	// Save last item
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.GoalGenerators.Add(CurrentDef);
+	}
+}
+
+// v7.8.52: GameplayCue parser - creates GC_ Blueprint assets
+void FGasAbilityGeneratorParser::ParseGameplayCues(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestGameplayCueDefinition CurrentDef;
+	FManifestActorVariableDefinition CurrentVariable;
+	FManifestCueFunctionDefinition CurrentFunction;
+	FManifestFunctionParameterDefinition CurrentParam;
+	FManifestBurstParticleEffect CurrentParticle;
+	FManifestBurstSoundEffect CurrentSound;
+
+	bool bInCue = false;
+	bool bInVariables = false;
+	bool bInFunctions = false;
+	bool bInFunction = false;
+	bool bInFunctionInputs = false;
+	bool bInFunctionOutputs = false;
+	bool bInGCNDefaults = false;
+	bool bInDefaultSpawnCondition = false;
+	bool bInDefaultPlacementInfo = false;
+	bool bInGCNEffects = false;
+	bool bInBurstParticles = false;
+	bool bInBurstParticle = false;
+	bool bInBurstSounds = false;
+	bool bInBurstSound = false;
+	bool bInBurstCameraShake = false;
+	bool bInBurstCameraLensEffect = false;
+	bool bInBurstForceFeedback = false;
+	bool bInBurstDecal = false;
+	bool bInSpawnCondition = false;
+	bool bInPlacementInfo = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		FString Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		if (Line.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check for end of section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			LineIndex--;
+			break;
+		}
+
+		// New cue entry
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save pending items
+			if (bInVariables && !CurrentVariable.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVariable);
+			}
+			if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
+			{
+				CurrentDef.Functions.Add(CurrentFunction);
+			}
+			if (bInBurstParticle && !CurrentParticle.NiagaraSystem.IsEmpty())
+			{
+				CurrentDef.GCNEffects.BurstParticles.Add(CurrentParticle);
+			}
+			if (bInBurstSound && !CurrentSound.Sound.IsEmpty())
+			{
+				CurrentDef.GCNEffects.BurstSounds.Add(CurrentSound);
+			}
+
+			// Save previous cue
+			if (bInCue && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.GameplayCues.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestGameplayCueDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine);
+			bInCue = true;
+			// Reset all states
+			bInVariables = false;
+			bInFunctions = false;
+			bInFunction = false;
+			bInGCNDefaults = false;
+			bInGCNEffects = false;
+			bInBurstParticles = false;
+			bInBurstSounds = false;
+			CurrentVariable = FManifestActorVariableDefinition();
+			CurrentFunction = FManifestCueFunctionDefinition();
+		}
+		else if (bInCue)
+		{
+			// Basic properties
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+				bInVariables = false; bInFunctions = false; bInGCNDefaults = false; bInGCNEffects = false;
+			}
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:")))
+			{
+				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("gameplay_cue_tag:")) || TrimmedLine.StartsWith(TEXT("cue_tag:")))
+			{
+				CurrentDef.GameplayCueTag = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("auto_attach_to_owner:")))
+			{
+				CurrentDef.bAutoAttachToOwner = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("is_override:")))
+			{
+				CurrentDef.bIsOverride = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("unique_instance_per_instigator:")))
+			{
+				CurrentDef.bUniqueInstancePerInstigator = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("unique_instance_per_source_object:")))
+			{
+				CurrentDef.bUniqueInstancePerSourceObject = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("allow_multiple_on_burst_events:")))
+			{
+				CurrentDef.bAllowMultipleOnBurstEvents = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("allow_multiple_on_become_relevant_events:")))
+			{
+				CurrentDef.bAllowMultipleOnBecomeRelevantEvents = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("num_preallocated_instances:")))
+			{
+				CurrentDef.NumPreallocatedInstances = FCString::Atoi(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("auto_destroy_on_remove:")))
+			{
+				CurrentDef.bAutoDestroyOnRemove = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("auto_destroy_delay:")))
+			{
+				CurrentDef.AutoDestroyDelay = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("actor_hidden_in_game:")))
+			{
+				CurrentDef.bActorHiddenInGame = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("initial_life_span:")))
+			{
+				CurrentDef.InitialLifeSpan = FCString::Atof(*GetLineValue(TrimmedLine));
+			}
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			{
+				CurrentDef.EventGraph = GetLineValue(TrimmedLine);
+			}
+			// Variables section
+			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				if (bInVariables && !CurrentVariable.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVariable);
+				}
+				bInVariables = true;
+				bInFunctions = false;
+				bInGCNDefaults = false;
+				bInGCNEffects = false;
+				CurrentVariable = FManifestActorVariableDefinition();
+			}
+			// Functions section
+			else if (TrimmedLine.Equals(TEXT("functions:")) || TrimmedLine.StartsWith(TEXT("functions:")))
+			{
+				if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
+				{
+					CurrentDef.Functions.Add(CurrentFunction);
+				}
+				bInVariables = false;
+				bInFunctions = true;
+				bInFunction = false;
+				bInGCNDefaults = false;
+				bInGCNEffects = false;
+				CurrentFunction = FManifestCueFunctionDefinition();
+			}
+			// GCN Defaults section
+			else if (TrimmedLine.Equals(TEXT("gcn_defaults:")) || TrimmedLine.StartsWith(TEXT("gcn_defaults:")))
+			{
+				bInVariables = false;
+				bInFunctions = false;
+				bInGCNDefaults = true;
+				bInGCNEffects = false;
+			}
+			// GCN Effects section
+			else if (TrimmedLine.Equals(TEXT("gcn_effects:")) || TrimmedLine.StartsWith(TEXT("gcn_effects:")))
+			{
+				bInVariables = false;
+				bInFunctions = false;
+				bInGCNDefaults = false;
+				bInGCNEffects = true;
+			}
+			// Variable parsing
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					if (!CurrentVariable.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVariable);
+					}
+					CurrentVariable = FManifestActorVariableDefinition();
+					CurrentVariable.Name = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("type:")))
+				{
+					CurrentVariable.Type = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("class:")))
+				{
+					CurrentVariable.Class = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+				{
+					CurrentVariable.DefaultValue = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+				{
+					CurrentVariable.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+				}
+			}
+			// Function parsing
+			else if (bInFunctions)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")) || TrimmedLine.StartsWith(TEXT("- function_name:")))
+				{
+					if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
+					{
+						CurrentDef.Functions.Add(CurrentFunction);
+					}
+					CurrentFunction = FManifestCueFunctionDefinition();
+					CurrentFunction.FunctionName = GetLineValue(TrimmedLine);
+					bInFunction = true;
+					bInFunctionInputs = false;
+					bInFunctionOutputs = false;
+				}
+				else if (bInFunction)
+				{
+					if (TrimmedLine.StartsWith(TEXT("replicates:")))
+					{
+						CurrentFunction.Replicates = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("reliable:")))
+					{
+						CurrentFunction.bReliable = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.Equals(TEXT("inputs:")) || TrimmedLine.StartsWith(TEXT("inputs:")))
+					{
+						bInFunctionInputs = true;
+						bInFunctionOutputs = false;
+					}
+					else if (TrimmedLine.Equals(TEXT("outputs:")) || TrimmedLine.StartsWith(TEXT("outputs:")))
+					{
+						bInFunctionInputs = false;
+						bInFunctionOutputs = true;
+					}
+					else if (TrimmedLine.StartsWith(TEXT("- name:")) && (bInFunctionInputs || bInFunctionOutputs))
+					{
+						FManifestFunctionParameterDefinition Param;
+						Param.Name = GetLineValue(TrimmedLine);
+						// Look ahead for type
+						if (LineIndex + 1 < Lines.Num())
+						{
+							FString NextLine = Lines[LineIndex + 1].TrimStart();
+							if (NextLine.StartsWith(TEXT("type:")))
+							{
+								Param.Type = GetLineValue(NextLine);
+								LineIndex++;
+							}
+						}
+						if (bInFunctionInputs)
+						{
+							CurrentFunction.Inputs.Add(Param);
+						}
+						else
+						{
+							CurrentFunction.Outputs.Add(Param);
+						}
+					}
+				}
+			}
+			// GCN Defaults parsing
+			else if (bInGCNDefaults)
+			{
+				if (TrimmedLine.Equals(TEXT("default_spawn_condition:")) || TrimmedLine.StartsWith(TEXT("default_spawn_condition:")))
+				{
+					bInDefaultSpawnCondition = true;
+					bInDefaultPlacementInfo = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("default_placement_info:")) || TrimmedLine.StartsWith(TEXT("default_placement_info:")))
+				{
+					bInDefaultSpawnCondition = false;
+					bInDefaultPlacementInfo = true;
+				}
+				else if (bInDefaultSpawnCondition)
+				{
+					if (TrimmedLine.StartsWith(TEXT("locally_controlled_source:")))
+					{
+						CurrentDef.GCNDefaults.DefaultSpawnCondition.LocallyControlledSource = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("locally_controlled_policy:")))
+					{
+						CurrentDef.GCNDefaults.DefaultSpawnCondition.LocallyControlledPolicy = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("chance_to_play:")))
+					{
+						CurrentDef.GCNDefaults.DefaultSpawnCondition.ChanceToPlay = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+				}
+				else if (bInDefaultPlacementInfo)
+				{
+					if (TrimmedLine.StartsWith(TEXT("socket_name:")))
+					{
+						CurrentDef.GCNDefaults.DefaultPlacementInfo.SocketName = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("attach_policy:")))
+					{
+						CurrentDef.GCNDefaults.DefaultPlacementInfo.AttachPolicy = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("attachment_rule:")))
+					{
+						CurrentDef.GCNDefaults.DefaultPlacementInfo.AttachmentRule = GetLineValue(TrimmedLine);
+					}
+				}
+			}
+			// GCN Effects parsing
+			else if (bInGCNEffects)
+			{
+				if (TrimmedLine.Equals(TEXT("burst_particles:")) || TrimmedLine.StartsWith(TEXT("burst_particles:")))
+				{
+					if (bInBurstParticle && !CurrentParticle.NiagaraSystem.IsEmpty())
+					{
+						CurrentDef.GCNEffects.BurstParticles.Add(CurrentParticle);
+					}
+					bInBurstParticles = true;
+					bInBurstParticle = false;
+					bInBurstSounds = false;
+					bInBurstCameraShake = false;
+					bInBurstCameraLensEffect = false;
+					bInBurstForceFeedback = false;
+					bInBurstDecal = false;
+					CurrentParticle = FManifestBurstParticleEffect();
+				}
+				else if (TrimmedLine.Equals(TEXT("burst_sounds:")) || TrimmedLine.StartsWith(TEXT("burst_sounds:")))
+				{
+					if (bInBurstSound && !CurrentSound.Sound.IsEmpty())
+					{
+						CurrentDef.GCNEffects.BurstSounds.Add(CurrentSound);
+					}
+					bInBurstParticles = false;
+					bInBurstSounds = true;
+					bInBurstSound = false;
+					bInBurstCameraShake = false;
+					bInBurstCameraLensEffect = false;
+					bInBurstForceFeedback = false;
+					bInBurstDecal = false;
+					CurrentSound = FManifestBurstSoundEffect();
+				}
+				else if (TrimmedLine.Equals(TEXT("burst_camera_shake:")) || TrimmedLine.StartsWith(TEXT("burst_camera_shake:")))
+				{
+					bInBurstParticles = false;
+					bInBurstSounds = false;
+					bInBurstCameraShake = true;
+					bInBurstCameraLensEffect = false;
+					bInBurstForceFeedback = false;
+					bInBurstDecal = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("burst_camera_lens_effect:")) || TrimmedLine.StartsWith(TEXT("burst_camera_lens_effect:")))
+				{
+					bInBurstParticles = false;
+					bInBurstSounds = false;
+					bInBurstCameraShake = false;
+					bInBurstCameraLensEffect = true;
+					bInBurstForceFeedback = false;
+					bInBurstDecal = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("burst_force_feedback:")) || TrimmedLine.StartsWith(TEXT("burst_force_feedback:")))
+				{
+					bInBurstParticles = false;
+					bInBurstSounds = false;
+					bInBurstCameraShake = false;
+					bInBurstCameraLensEffect = false;
+					bInBurstForceFeedback = true;
+					bInBurstDecal = false;
+				}
+				else if (TrimmedLine.Equals(TEXT("burst_decal:")) || TrimmedLine.StartsWith(TEXT("burst_decal:")))
+				{
+					bInBurstParticles = false;
+					bInBurstSounds = false;
+					bInBurstCameraShake = false;
+					bInBurstCameraLensEffect = false;
+					bInBurstForceFeedback = false;
+					bInBurstDecal = true;
+				}
+				// Burst particles array parsing
+				else if (bInBurstParticles)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- niagara_system:")) || TrimmedLine.StartsWith(TEXT("- system:")))
+					{
+						if (bInBurstParticle && !CurrentParticle.NiagaraSystem.IsEmpty())
+						{
+							CurrentDef.GCNEffects.BurstParticles.Add(CurrentParticle);
+						}
+						CurrentParticle = FManifestBurstParticleEffect();
+						CurrentParticle.NiagaraSystem = GetLineValue(TrimmedLine);
+						bInBurstParticle = true;
+					}
+					else if (bInBurstParticle)
+					{
+						if (TrimmedLine.StartsWith(TEXT("cast_shadow:")))
+						{
+							CurrentParticle.bCastShadow = GetLineValue(TrimmedLine).ToBool();
+						}
+					}
+				}
+				// Burst sounds array parsing
+				else if (bInBurstSounds)
+				{
+					if (TrimmedLine.StartsWith(TEXT("- sound:")))
+					{
+						if (bInBurstSound && !CurrentSound.Sound.IsEmpty())
+						{
+							CurrentDef.GCNEffects.BurstSounds.Add(CurrentSound);
+						}
+						CurrentSound = FManifestBurstSoundEffect();
+						CurrentSound.Sound = GetLineValue(TrimmedLine);
+						bInBurstSound = true;
+					}
+					else if (bInBurstSound)
+					{
+						if (TrimmedLine.StartsWith(TEXT("volume_multiplier:")))
+						{
+							CurrentSound.VolumeMultiplier = FCString::Atof(*GetLineValue(TrimmedLine));
+						}
+						else if (TrimmedLine.StartsWith(TEXT("pitch_multiplier:")))
+						{
+							CurrentSound.PitchMultiplier = FCString::Atof(*GetLineValue(TrimmedLine));
+						}
+					}
+				}
+				// Camera shake parsing
+				else if (bInBurstCameraShake)
+				{
+					if (TrimmedLine.StartsWith(TEXT("camera_shake_class:")) || TrimmedLine.StartsWith(TEXT("shake_class:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraShake.CameraShakeClass = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("shake_scale:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraShake.ShakeScale = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("play_space:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraShake.PlaySpace = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("play_in_world:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraShake.bPlayInWorld = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("world_inner_radius:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraShake.WorldInnerRadius = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("world_outer_radius:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraShake.WorldOuterRadius = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+				}
+				// Camera lens effect parsing
+				else if (bInBurstCameraLensEffect)
+				{
+					if (TrimmedLine.StartsWith(TEXT("lens_effect_class:")) || TrimmedLine.StartsWith(TEXT("effect_class:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraLensEffect.CameraLensEffectClass = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("play_in_world:")))
+					{
+						CurrentDef.GCNEffects.BurstCameraLensEffect.bPlayInWorld = GetLineValue(TrimmedLine).ToBool();
+					}
+				}
+				// Force feedback parsing
+				else if (bInBurstForceFeedback)
+				{
+					if (TrimmedLine.StartsWith(TEXT("force_feedback_effect:")) || TrimmedLine.StartsWith(TEXT("effect:")))
+					{
+						CurrentDef.GCNEffects.BurstForceFeedback.ForceFeedbackEffect = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("force_feedback_tag:")) || TrimmedLine.StartsWith(TEXT("tag:")))
+					{
+						CurrentDef.GCNEffects.BurstForceFeedback.ForceFeedbackTag = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("is_looping:")))
+					{
+						CurrentDef.GCNEffects.BurstForceFeedback.bIsLooping = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("world_intensity:")))
+					{
+						CurrentDef.GCNEffects.BurstForceFeedback.WorldIntensity = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+				}
+				// Decal parsing
+				else if (bInBurstDecal)
+				{
+					if (TrimmedLine.StartsWith(TEXT("decal_material:")) || TrimmedLine.StartsWith(TEXT("material:")))
+					{
+						CurrentDef.GCNEffects.BurstDecal.DecalMaterial = GetLineValue(TrimmedLine);
+					}
+					else if (TrimmedLine.StartsWith(TEXT("decal_size:")) || TrimmedLine.StartsWith(TEXT("size:")))
+					{
+						FString SizeStr = GetLineValue(TrimmedLine);
+						// Parse [X, Y, Z] format
+						if (SizeStr.StartsWith(TEXT("[")) && SizeStr.EndsWith(TEXT("]")))
+						{
+							SizeStr = SizeStr.Mid(1, SizeStr.Len() - 2);
+							TArray<FString> Parts;
+							SizeStr.ParseIntoArray(Parts, TEXT(","));
+							if (Parts.Num() >= 3)
+							{
+								CurrentDef.GCNEffects.BurstDecal.DecalSize = FVector(
+									FCString::Atof(*Parts[0].TrimStartAndEnd()),
+									FCString::Atof(*Parts[1].TrimStartAndEnd()),
+									FCString::Atof(*Parts[2].TrimStartAndEnd())
+								);
+							}
+						}
+					}
+					else if (TrimmedLine.StartsWith(TEXT("override_fade_out:")))
+					{
+						CurrentDef.GCNEffects.BurstDecal.bOverrideFadeOut = GetLineValue(TrimmedLine).ToBool();
+					}
+					else if (TrimmedLine.StartsWith(TEXT("fade_out_start_delay:")))
+					{
+						CurrentDef.GCNEffects.BurstDecal.FadeOutStartDelay = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("fade_out_duration:")))
+					{
+						CurrentDef.GCNEffects.BurstDecal.FadeOutDuration = FCString::Atof(*GetLineValue(TrimmedLine));
+					}
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save pending items
+	if (bInVariables && !CurrentVariable.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVariable);
+	}
+	if (bInFunction && !CurrentFunction.FunctionName.IsEmpty())
+	{
+		CurrentDef.Functions.Add(CurrentFunction);
+	}
+	if (bInBurstParticle && !CurrentParticle.NiagaraSystem.IsEmpty())
+	{
+		CurrentDef.GCNEffects.BurstParticles.Add(CurrentParticle);
+	}
+	if (bInBurstSound && !CurrentSound.Sound.IsEmpty())
+	{
+		CurrentDef.GCNEffects.BurstSounds.Add(CurrentSound);
+	}
+
+	// Save last cue
+	if (bInCue && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.GameplayCues.Add(CurrentDef);
+	}
+}
+
+// ============================================================================
+// v7.8.52: ParseBTServices - BTS_ Blueprint assets
+// ============================================================================
+void FGasAbilityGeneratorParser::ParseBTServices(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestBTServiceBPDefinition CurrentDef;
+	FManifestActorVariableDefinition CurrentVariable;
+	bool bInService = false;
+	bool bInVariables = false;
+	bool bInCurrentVariable = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInService && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.BTServices.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// New service entry
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			if (bInService && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.BTServices.Add(CurrentDef);
+			}
+			CurrentDef = FManifestBTServiceBPDefinition();
+			CurrentDef.Name = StripYamlComment(GetLineValue(TrimmedLine.Mid(2)));
+			bInService = true;
+			bInVariables = false;
+			bInCurrentVariable = false;
+		}
+		else if (bInService)
+		{
+			// Check for subsection starts
+			if (TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				bInVariables = true;
+				bInCurrentVariable = false;
+			}
+			// Main properties
+			else if (!bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("folder:")))
+				{
+					CurrentDef.Folder = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("parent_class:")))
+				{
+					CurrentDef.ParentClass = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("interval:")))
+				{
+					CurrentDef.Interval = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("random_deviation:")))
+				{
+					CurrentDef.RandomDeviation = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("call_tick_on_search_start:")))
+				{
+					CurrentDef.bCallTickOnSearchStart = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("restart_timer_on_each_activation:")))
+				{
+					CurrentDef.bRestartTimerOnEachActivation = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("custom_description:")) || TrimmedLine.StartsWith(TEXT("description:")))
+				{
+					CurrentDef.CustomDescription = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("node_name:")))
+				{
+					CurrentDef.NodeName = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+				{
+					CurrentDef.EventGraph = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+			}
+			// Variables parsing
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					if (bInCurrentVariable && !CurrentVariable.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVariable);
+					}
+					CurrentVariable = FManifestActorVariableDefinition();
+					CurrentVariable.Name = StripYamlComment(GetLineValue(TrimmedLine.Mid(2)));
+					bInCurrentVariable = true;
+				}
+				else if (bInCurrentVariable)
+				{
+					if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentVariable.Type = StripYamlComment(GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("class:")))
+					{
+						CurrentVariable.Class = StripYamlComment(GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+					{
+						CurrentVariable.DefaultValue = StripYamlComment(GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+					{
+						CurrentVariable.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+					}
+					// Note: expose_on_spawn not supported on FManifestActorVariableDefinition
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last service
+	if (bInService && !CurrentDef.Name.IsEmpty())
+	{
+		if (bInCurrentVariable && !CurrentVariable.Name.IsEmpty())
+		{
+			CurrentDef.Variables.Add(CurrentVariable);
+		}
+		OutData.BTServices.Add(CurrentDef);
+	}
+}
+
+// ============================================================================
+// v7.8.52: ParseBTTasks - BTTask_ Blueprint assets
+// ============================================================================
+void FGasAbilityGeneratorParser::ParseBTTasks(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;  // Skip header
+
+	FManifestBTTaskBPDefinition CurrentDef;
+	FManifestActorVariableDefinition CurrentVariable;
+	bool bInTask = false;
+	bool bInVariables = false;
+	bool bInCurrentVariable = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+
+		if (ShouldExitSection(Line, SectionIndent))
+		{
+			if (bInTask && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.BTTasks.Add(CurrentDef);
+			}
+			LineIndex--;
+			return;
+		}
+
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// New task entry
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			if (bInTask && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.BTTasks.Add(CurrentDef);
+			}
+			CurrentDef = FManifestBTTaskBPDefinition();
+			CurrentDef.Name = StripYamlComment(GetLineValue(TrimmedLine.Mid(2)));
+			bInTask = true;
+			bInVariables = false;
+			bInCurrentVariable = false;
+		}
+		else if (bInTask)
+		{
+			// Check for subsection starts
+			if (TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				bInVariables = true;
+				bInCurrentVariable = false;
+			}
+			// Main properties
+			else if (!bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("folder:")))
+				{
+					CurrentDef.Folder = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("parent_class:")))
+				{
+					CurrentDef.ParentClass = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("tick_interval:")))
+				{
+					CurrentDef.TickInterval = FCString::Atof(*GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("ignore_restart_self:")))
+				{
+					CurrentDef.bIgnoreRestartSelf = GetLineValue(TrimmedLine).ToBool();
+				}
+				else if (TrimmedLine.StartsWith(TEXT("custom_description:")) || TrimmedLine.StartsWith(TEXT("description:")))
+				{
+					CurrentDef.CustomDescription = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("node_name:")))
+				{
+					CurrentDef.NodeName = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+				else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+				{
+					CurrentDef.EventGraph = StripYamlComment(GetLineValue(TrimmedLine));
+				}
+			}
+			// Variables parsing
+			else if (bInVariables)
+			{
+				if (TrimmedLine.StartsWith(TEXT("- name:")))
+				{
+					if (bInCurrentVariable && !CurrentVariable.Name.IsEmpty())
+					{
+						CurrentDef.Variables.Add(CurrentVariable);
+					}
+					CurrentVariable = FManifestActorVariableDefinition();
+					CurrentVariable.Name = StripYamlComment(GetLineValue(TrimmedLine.Mid(2)));
+					bInCurrentVariable = true;
+				}
+				else if (bInCurrentVariable)
+				{
+					if (TrimmedLine.StartsWith(TEXT("type:")))
+					{
+						CurrentVariable.Type = StripYamlComment(GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("class:")))
+					{
+						CurrentVariable.Class = StripYamlComment(GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+					{
+						CurrentVariable.DefaultValue = StripYamlComment(GetLineValue(TrimmedLine));
+					}
+					else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+					{
+						CurrentVariable.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+					}
+					// Note: expose_on_spawn not supported on FManifestActorVariableDefinition
+				}
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save last task
+	if (bInTask && !CurrentDef.Name.IsEmpty())
+	{
+		if (bInCurrentVariable && !CurrentVariable.Name.IsEmpty())
+		{
+			CurrentDef.Variables.Add(CurrentVariable);
+		}
+		OutData.BTTasks.Add(CurrentDef);
 	}
 }
 

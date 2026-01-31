@@ -70,11 +70,11 @@ private:
 	static void ParseAmmoItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseWeaponAttachments(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseActivities(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseBlueprintTriggers(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v7.8.52
 	static void ParseAbilityConfigurations(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseActivityConfigurations(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseItemCollections(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseNarrativeEvents(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
-	static void ParseGameplayCues(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.0
 	static void ParseNPCDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseCharacterDefinitions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseCharacterAppearances(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.8.3
@@ -85,6 +85,10 @@ private:
 	// v3.9: NPC Pipeline parsers
 	static void ParseActivitySchedules(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseGoalItems(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
+	static void ParseGoalGenerators(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v7.8.52
+	static void ParseGameplayCues(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v7.8.52
+	static void ParseBTServices(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v7.8.52
+	static void ParseBTTasks(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v7.8.52
 	static void ParseQuests(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 
 	// v4.9: TriggerSet parser
