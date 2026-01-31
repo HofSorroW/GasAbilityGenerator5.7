@@ -1265,6 +1265,25 @@ bool FGeneratorBase::CheckExistsWithMetadata(
 
 	if (!ExistingAsset)
 	{
+		// v7.8.56: If asset can't be loaded but doesn't exist on disk,
+		// it's a stale memory reference - proceed with creation
+		if (!bExistsOnDisk)
+		{
+			LogGeneration(FString::Printf(TEXT("[CREATE] %s - Asset in memory but not on disk (deleted), creating fresh"), *AssetName));
+			if (OutDryRunStatus)
+			{
+				*OutDryRunStatus = EDryRunStatus::WillCreate;
+			}
+			return false; // Proceed with generation
+		}
+
+		// v7.8.56: Force mode bypasses the "can't verify" skip
+		if (IsForceMode())
+		{
+			LogGeneration(FString::Printf(TEXT("[FORCE] %s - Regenerating despite unloadable asset"), *AssetName));
+			return false; // Proceed with generation
+		}
+
 		// Can't load asset to check metadata - use legacy behavior (skip)
 		if (OutDryRunStatus)
 		{
@@ -3807,6 +3826,45 @@ FGenerationResult FGameplayAbilityGenerator::Generate(
 			PinType.ContainerType = EPinContainerType::Array;
 			LogGeneration(FString::Printf(TEXT("  Variable '%s' is array of %s"), *VarDef.Name, *VarDef.Type));
 		}
+		// v7.8.57g: Set container type for Map variables
+		// CORRECTED: UE5 Map pin type convention:
+		// - PinCategory/PinSubCategoryObject = KEY type (main pin fields store K)
+		// - PinValueType = VALUE type (terminal type stores V)
+		// This is the opposite of the confusing variable names!
+		else if (VarDef.Container.Equals(TEXT("Map"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Map;
+
+			// Set key type from VarDef.KeyType (e.g., "Actor") → main pin fields
+			if (!VarDef.KeyType.IsEmpty())
+			{
+				FEdGraphPinType KeyPinType = GetPinTypeFromString(VarDef.KeyType);
+				PinType.PinCategory = KeyPinType.PinCategory;
+				PinType.PinSubCategory = KeyPinType.PinSubCategory;
+				PinType.PinSubCategoryObject = KeyPinType.PinSubCategoryObject;
+				LogGeneration(FString::Printf(TEXT("    [Map Debug] GetPinTypeFromString('%s') returned SubCategoryObject='%s'"),
+					*VarDef.KeyType,
+					KeyPinType.PinSubCategoryObject.IsValid() ? *KeyPinType.PinSubCategoryObject->GetName() : TEXT("null")));
+			}
+
+			// Set value type from VarDef.ValueType (e.g., "WidgetComponent") → PinValueType
+			if (!VarDef.ValueType.IsEmpty())
+			{
+				FEdGraphPinType ValuePinType = GetPinTypeFromString(VarDef.ValueType);
+				PinType.PinValueType = FEdGraphTerminalType::FromPinType(ValuePinType);
+				LogGeneration(FString::Printf(TEXT("    [Map Debug] GetPinTypeFromString('%s') returned SubCategoryObject='%s'"),
+					*VarDef.ValueType,
+					ValuePinType.PinSubCategoryObject.IsValid() ? *ValuePinType.PinSubCategoryObject->GetName() : TEXT("null")));
+			}
+
+			// v7.8.57g: Diagnostic logging to verify Map type construction
+			FString KeyTypeName = PinType.PinSubCategoryObject.IsValid() ? PinType.PinSubCategoryObject->GetName() : TEXT("?");
+			FString ValueTypeName = PinType.PinValueType.TerminalSubCategoryObject.IsValid()
+				? PinType.PinValueType.TerminalSubCategoryObject->GetName() : TEXT("?");
+			LogGeneration(FString::Printf(TEXT("  Variable '%s' Map type construction:"), *VarDef.Name));
+			LogGeneration(FString::Printf(TEXT("    VarDef: KeyType='%s', ValueType='%s'"), *VarDef.KeyType, *VarDef.ValueType));
+			LogGeneration(FString::Printf(TEXT("    Final PinType: Key='%s', Value='%s'"), *KeyTypeName, *ValueTypeName));
+		}
 
 		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
 
@@ -4300,6 +4358,33 @@ FGenerationResult FActorBlueprintGenerator::Generate(
 		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
 		{
 			PinType.ContainerType = EPinContainerType::Array;
+		}
+		// v7.8.57g: Set container type for Map variables
+		// CORRECTED: UE5 Map pin type convention:
+		// - PinCategory/PinSubCategoryObject = KEY type
+		// - PinValueType = VALUE type
+		else if (VarDef.Container.Equals(TEXT("Map"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Map;
+
+			// Set key type from VarDef.KeyType → main pin fields
+			if (!VarDef.KeyType.IsEmpty())
+			{
+				FEdGraphPinType KeyPinType = GetPinTypeFromString(VarDef.KeyType);
+				PinType.PinCategory = KeyPinType.PinCategory;
+				PinType.PinSubCategory = KeyPinType.PinSubCategory;
+				PinType.PinSubCategoryObject = KeyPinType.PinSubCategoryObject;
+			}
+
+			// Set value type from VarDef.ValueType → PinValueType
+			if (!VarDef.ValueType.IsEmpty())
+			{
+				FEdGraphPinType ValuePinType = GetPinTypeFromString(VarDef.ValueType);
+				PinType.PinValueType = FEdGraphTerminalType::FromPinType(ValuePinType);
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Variable '%s' is Map<%s, %s>"),
+				*VarDef.Name, *VarDef.KeyType, *VarDef.ValueType));
 		}
 
 		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
@@ -11716,6 +11801,26 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else
 		{
 			NodesFailed++;
+
+			// v7.8.56: Check if node creation failed due to pending manifest dependency
+			// If so, record the missing dependency and return false immediately
+			// The caller will check HasMissingDependencies() and defer appropriately
+			if (IsDeferralNeeded())
+			{
+				FString DeferredDep = GetDeferredDependency();
+				LogGeneration(FString::Printf(TEXT("  [DEFER] Event graph waiting for: %s (node '%s' needs it)"),
+					*DeferredDep, *NodeDef.Id));
+
+				// Use existing missing dependency system
+				AddMissingDependency(DeferredDep, TEXT("ActorBlueprint"),
+					FString::Printf(TEXT("Node '%s' needs function from '%s'"), *NodeDef.Id, *DeferredDep));
+
+				// Clear deferral state for next node (but dependency is recorded)
+				ClearDeferralState();
+
+				// Return false early - caller will check HasMissingDependencies()
+				return false;
+			}
 		}
 	}
 
@@ -11836,9 +11941,36 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		}
 	}
 
+	// v7.8.57g: Reorder connections for Map_Find/Map_Remove nodes
+	// Connect Key FIRST, then TargetMap to avoid UE5 wildcard resolution bug
+	TArray<FManifestGraphConnectionDefinition> ReorderedConnections =
+		ReorderConnectionsForMapNodes(GraphDefinition.Connections, GraphDefinition.Nodes);
+
+	// v7.8.57j: Build set of Array node IDs for targeted finalization
+	TSet<FString> ArrayNodeIds;
+	for (const FManifestGraphNodeDefinition& NodeDef : GraphDefinition.Nodes)
+	{
+		if (NodeDef.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+		{
+			const FString* FunctionNamePtr = NodeDef.Properties.Find(TEXT("function"));
+			if (FunctionNamePtr)
+			{
+				const FString& FuncName = *FunctionNamePtr;
+				if (FuncName.Equals(TEXT("Array_AddUnique"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_RemoveItem"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_Add"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_Remove"), ESearchCase::IgnoreCase))
+				{
+					ArrayNodeIds.Add(NodeDef.Id);
+				}
+			}
+		}
+	}
+	TSet<FString> FinalizedArrayNodes;
+
 	// v7.8.31: Create all connections with accurate logging for Connected vs SkippedPure vs Failed
 	int32 ConnectionsSkippedPure = 0;
-	for (const FManifestGraphConnectionDefinition& Connection : GraphDefinition.Connections)
+	for (const FManifestGraphConnectionDefinition& Connection : ReorderedConnections)
 	{
 		EConnectResult Result = ConnectPins(NodeMap, Connection);
 		switch (Result)
@@ -11848,6 +11980,28 @@ bool FEventGraphGenerator::GenerateEventGraph(
 			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
+
+			// v7.8.57j: After connecting P2 (Item/NewItem) for an Array node, finalize typing
+			if (ArrayNodeIds.Contains(Connection.To.NodeId) &&
+				!FinalizedArrayNodes.Contains(Connection.To.NodeId))
+			{
+				FString ToPinName = Connection.To.PinName;
+				if (ToPinName.Equals(TEXT("Item"), ESearchCase::IgnoreCase) ||
+					ToPinName.Equals(TEXT("NewItem"), ESearchCase::IgnoreCase))
+				{
+					// P2 was just connected - finalize immediately
+					UK2Node* const* NodePtr = NodeMap.Find(Connection.To.NodeId);
+					if (NodePtr && *NodePtr)
+					{
+						UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(*NodePtr);
+						if (CallNode)
+						{
+							FinalizeArrayWildcardNodeTyping(CallNode, Connection.To.NodeId, NodeMap, ReorderedConnections);
+							FinalizedArrayNodes.Add(Connection.To.NodeId);
+						}
+					}
+				}
+			}
 			break;
 		case EConnectResult::SkippedPure:
 			ConnectionsSkippedPure++;
@@ -12782,12 +12936,39 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
 	AutoLayoutNodes(NodeMap, OverrideDefinition.Nodes, OverrideDefinition.Connections);
 
+	// v7.8.57g: Reorder connections for Map_Find/Map_Remove nodes
+	// Connect Key FIRST, then TargetMap to avoid UE5 wildcard resolution bug
+	TArray<FManifestGraphConnectionDefinition> ReorderedOverrideConnections =
+		ReorderConnectionsForMapNodes(OverrideDefinition.Connections, OverrideDefinition.Nodes);
+
+	// v7.8.57j: Build set of Array node IDs for targeted finalization
+	TSet<FString> ArrayNodeIds;
+	for (const FManifestGraphNodeDefinition& NodeDef : OverrideDefinition.Nodes)
+	{
+		if (NodeDef.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+		{
+			const FString* FunctionNamePtr = NodeDef.Properties.Find(TEXT("function"));
+			if (FunctionNamePtr)
+			{
+				const FString& FuncName = *FunctionNamePtr;
+				if (FuncName.Equals(TEXT("Array_AddUnique"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_RemoveItem"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_Add"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_Remove"), ESearchCase::IgnoreCase))
+				{
+					ArrayNodeIds.Add(NodeDef.Id);
+				}
+			}
+		}
+	}
+	TSet<FString> FinalizedArrayNodes;
+
 	// v7.8.31: Create connections with accurate logging
 	int32 ConnectionsCreated = 0;
 	int32 ConnectionsFailed = 0;
 	int32 ConnectionsSkippedPure = 0;
 
-	for (const FManifestGraphConnectionDefinition& Connection : OverrideDefinition.Connections)
+	for (const FManifestGraphConnectionDefinition& Connection : ReorderedOverrideConnections)
 	{
 		EConnectResult Result = ConnectPins(NodeMap, Connection);
 		switch (Result)
@@ -12797,6 +12978,28 @@ bool FEventGraphGenerator::GenerateFunctionOverride(
 			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
+
+			// v7.8.57j: After connecting P2 (Item/NewItem) for an Array node, finalize typing
+			if (ArrayNodeIds.Contains(Connection.To.NodeId) &&
+				!FinalizedArrayNodes.Contains(Connection.To.NodeId))
+			{
+				FString ToPinName = Connection.To.PinName;
+				if (ToPinName.Equals(TEXT("Item"), ESearchCase::IgnoreCase) ||
+					ToPinName.Equals(TEXT("NewItem"), ESearchCase::IgnoreCase))
+				{
+					// P2 was just connected - finalize immediately
+					UK2Node* const* NodePtr = NodeMap.Find(Connection.To.NodeId);
+					if (NodePtr && *NodePtr)
+					{
+						UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(*NodePtr);
+						if (CallNode)
+						{
+							FinalizeArrayWildcardNodeTyping(CallNode, Connection.To.NodeId, NodeMap, ReorderedOverrideConnections);
+							FinalizedArrayNodes.Add(Connection.To.NodeId);
+						}
+					}
+				}
+			}
 			break;
 		case EConnectResult::SkippedPure:
 			ConnectionsSkippedPure++;
@@ -13094,12 +13297,41 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 	// v4.20: Compute layered layout for ALL nodes (overwrites manifest positions)
 	AutoLayoutNodes(NodeMap, FunctionDefinition.Nodes, FunctionDefinition.Connections);
 
+	// v7.8.57g: Reorder connections for Map_Find/Map_Remove nodes
+	// Connect Key FIRST, then TargetMap to avoid UE5 wildcard resolution bug
+	TArray<FManifestGraphConnectionDefinition> ReorderedFunctionConnections =
+		ReorderConnectionsForMapNodes(FunctionDefinition.Connections, FunctionDefinition.Nodes);
+
+	// v7.8.57j: Build set of Array node IDs for targeted finalization
+	TSet<FString> ArrayNodeIds;
+	for (const FManifestGraphNodeDefinition& NodeDef : FunctionDefinition.Nodes)
+	{
+		if (NodeDef.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+		{
+			const FString* FunctionNamePtr = NodeDef.Properties.Find(TEXT("function"));
+			if (FunctionNamePtr)
+			{
+				const FString& FuncName = *FunctionNamePtr;
+				if (FuncName.Equals(TEXT("Array_AddUnique"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_RemoveItem"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_Add"), ESearchCase::IgnoreCase) ||
+					FuncName.Equals(TEXT("Array_Remove"), ESearchCase::IgnoreCase))
+				{
+					ArrayNodeIds.Add(NodeDef.Id);
+					LogGeneration(FString::Printf(TEXT("  [Array Identify] Found array node: %s (%s)"), *NodeDef.Id, *FuncName));
+				}
+			}
+		}
+	}
+	TSet<FString> FinalizedArrayNodes;
+	LogGeneration(FString::Printf(TEXT("  [Array Identify] Total array nodes: %d"), ArrayNodeIds.Num()));
+
 	// v7.8.31: Create connections with accurate logging
 	int32 ConnectionsCreated = 0;
 	int32 ConnectionsFailed = 0;
 	int32 ConnectionsSkippedPure = 0;
 
-	for (const FManifestGraphConnectionDefinition& Connection : FunctionDefinition.Connections)
+	for (const FManifestGraphConnectionDefinition& Connection : ReorderedFunctionConnections)
 	{
 		EConnectResult Result = ConnectPins(NodeMap, Connection);
 		switch (Result)
@@ -13109,6 +13341,40 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 			LogGeneration(FString::Printf(TEXT("  Connected: %s.%s -> %s.%s"),
 				*Connection.From.NodeId, *Connection.From.PinName,
 				*Connection.To.NodeId, *Connection.To.PinName));
+
+			// v7.8.57j: After connecting P2 (Item/NewItem) for an Array node, finalize typing
+			// Debug: Log check conditions
+			{
+				bool bInArrayNodeIds = ArrayNodeIds.Contains(Connection.To.NodeId);
+				bool bNotFinalized = !FinalizedArrayNodes.Contains(Connection.To.NodeId);
+				bool bIsP2Pin = Connection.To.PinName.Equals(TEXT("Item"), ESearchCase::IgnoreCase) ||
+				                Connection.To.PinName.Equals(TEXT("NewItem"), ESearchCase::IgnoreCase);
+				if (bInArrayNodeIds)
+				{
+					LogGeneration(FString::Printf(TEXT("    [Array Check] %s: InArrayIds=%d, NotFinalized=%d, IsP2Pin=%d (pin: %s)"),
+						*Connection.To.NodeId, bInArrayNodeIds, bNotFinalized, bIsP2Pin, *Connection.To.PinName));
+				}
+			}
+			if (ArrayNodeIds.Contains(Connection.To.NodeId) &&
+				!FinalizedArrayNodes.Contains(Connection.To.NodeId))
+			{
+				FString ToPinName = Connection.To.PinName;
+				if (ToPinName.Equals(TEXT("Item"), ESearchCase::IgnoreCase) ||
+					ToPinName.Equals(TEXT("NewItem"), ESearchCase::IgnoreCase))
+				{
+					// P2 was just connected - finalize immediately
+					UK2Node* const* NodePtr = NodeMap.Find(Connection.To.NodeId);
+					if (NodePtr && *NodePtr)
+					{
+						UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(*NodePtr);
+						if (CallNode)
+						{
+							FinalizeArrayWildcardNodeTyping(CallNode, Connection.To.NodeId, NodeMap, ReorderedFunctionConnections);
+							FinalizedArrayNodes.Add(Connection.To.NodeId);
+						}
+					}
+				}
+			}
 			break;
 		case EConnectResult::SkippedPure:
 			ConnectionsSkippedPure++;
@@ -13124,6 +13390,9 @@ bool FEventGraphGenerator::GenerateCustomFunction(
 
 	LogGeneration(FString::Printf(TEXT("Custom function '%s': %d nodes created, %d failed, %d connections, %d skipped pure, %d failed"),
 		*FunctionDefinition.FunctionName, NodesCreated, NodesFailed, ConnectionsCreated, ConnectionsSkippedPure, ConnectionsFailed));
+
+	// v7.8.57j: Array wildcard finalization is now done immediately after P2 connection
+	// (see connection loop above), not as a global post-pass.
 
 	// v4.14: Mark blueprint as STRUCTURALLY modified (required for function graph changes)
 	// This tells the Blueprint system that the class structure has changed (new function added)
@@ -13813,6 +14082,24 @@ UK2Node* FEventGraphGenerator::CreateCallFunctionNode(
 			Resolved.bFound ? TEXT("true") : TEXT("false"),
 			Blueprint ? *Blueprint->GetName() : TEXT("null"),
 			Blueprint ? Blueprint->FunctionGraphs.Num() : -1));
+
+		// v7.8.56: Check if the target class is a manifest-defined Blueprint that might not be generated yet
+		// If so, defer this asset instead of failing, breaking circular dependencies
+		if (ClassNamePtr && !ClassNamePtr->IsEmpty())
+		{
+			FString TargetClassName = *ClassNamePtr;
+			const FManifestData* ManifestData = FGeneratorBase::GetActiveManifest();
+			if (ManifestData && ManifestData->IsAssetInManifest(TargetClassName))
+			{
+				// The target class is defined in the manifest - it might have the custom function
+				// once it's generated. Defer this asset to allow circular dependency resolution.
+				LogGeneration(FString::Printf(TEXT("[DEFER] Function '%s' not found on manifest-defined class '%s' - deferring"),
+					*FunctionName.ToString(), *TargetClassName));
+				SetDeferralNeeded(TargetClassName);
+				return nullptr; // Signal deferral to caller
+			}
+		}
+
 		LogGeneration(FString::Printf(TEXT("[E_FUNCTION_NOT_FOUND] Node '%s' | Could not find function '%s'"),
 			*NodeDef.Id, *FunctionName.ToString()));
 		return nullptr; // Signal failure to caller
@@ -14377,7 +14664,10 @@ UK2Node* FEventGraphGenerator::CreatePropertyGetNode(
 	FProperty* Property = TargetClass->FindPropertyByName(PropertyName);
 
 	// v7.8.51: If native property not found, check for Blueprint variable
+	// v7.8.56: Enhanced to capture VarType for proper array pin typing
 	bool bIsBlueprintVariable = false;
+	FEdGraphPinType BlueprintVarType;
+	UBlueprint* FoundTargetBlueprint = nullptr;
 	if (!Property)
 	{
 		// Check if target class is a Blueprint-generated class
@@ -14406,14 +14696,19 @@ UK2Node* FEventGraphGenerator::CreatePropertyGetNode(
 
 			if (TargetBlueprint)
 			{
+				FoundTargetBlueprint = TargetBlueprint;
 				// Check Blueprint's NewVariables for the property
 				for (const FBPVariableDescription& VarDesc : TargetBlueprint->NewVariables)
 				{
 					if (VarDesc.VarName == PropertyName)
 					{
 						bIsBlueprintVariable = true;
-						LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Found Blueprint variable '%s' on '%s'"),
-							*NodeDef.Id, **PropertyNamePtr, *ClassName));
+						// v7.8.56: Capture the variable type for proper pin configuration
+						BlueprintVarType = VarDesc.VarType;
+						LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Found Blueprint variable '%s' on '%s' (ContainerType: %d, IsArray: %s)"),
+							*NodeDef.Id, **PropertyNamePtr, *ClassName,
+							(int32)VarDesc.VarType.ContainerType,
+							VarDesc.VarType.IsArray() ? TEXT("true") : TEXT("false")));
 						break;
 					}
 				}
@@ -14439,6 +14734,51 @@ UK2Node* FEventGraphGenerator::CreatePropertyGetNode(
 	GetNode->CreateNewGuid();
 	GetNode->PostPlacedNewNode();
 	GetNode->AllocateDefaultPins();
+
+	// v7.8.56: For Blueprint variables, verify and fix the output pin type
+	// This is critical for array properties which may not have correct type after AllocateDefaultPins
+	if (bIsBlueprintVariable && BlueprintVarType.PinCategory != NAME_None)
+	{
+		// Find the value output pin (should be named after the property)
+		UEdGraphPin* ValuePin = GetNode->FindPin(PropertyName, EGPD_Output);
+		if (ValuePin)
+		{
+			// Check if the pin type is incorrect (e.g., bool instead of array)
+			bool bNeedsTypeCorrection = false;
+			if (BlueprintVarType.IsArray() && !ValuePin->PinType.IsArray())
+			{
+				bNeedsTypeCorrection = true;
+				LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Pin type mismatch detected - expected array, got non-array. Correcting."), *NodeDef.Id));
+			}
+			else if (BlueprintVarType.PinCategory != ValuePin->PinType.PinCategory)
+			{
+				bNeedsTypeCorrection = true;
+				LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Pin category mismatch - expected '%s', got '%s'. Correcting."),
+					*NodeDef.Id, *BlueprintVarType.PinCategory.ToString(), *ValuePin->PinType.PinCategory.ToString()));
+			}
+
+			if (bNeedsTypeCorrection)
+			{
+				// Apply the correct type from the Blueprint variable definition
+				ValuePin->PinType = BlueprintVarType;
+				LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Applied correct pin type from Blueprint variable definition"),
+					*NodeDef.Id));
+			}
+		}
+		else
+		{
+			// Output pin not found - create it with correct type
+			LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Output pin '%s' not found, creating with correct type"),
+				*NodeDef.Id, *PropertyName.ToString()));
+			UEdGraphPin* NewValuePin = GetNode->CreatePin(EGPD_Output, BlueprintVarType, PropertyName);
+			if (NewValuePin)
+			{
+				LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Created output pin with type category '%s' (IsArray: %s)"),
+					*NodeDef.Id, *BlueprintVarType.PinCategory.ToString(),
+					BlueprintVarType.IsArray() ? TEXT("true") : TEXT("false")));
+			}
+		}
+	}
 
 	LogGeneration(FString::Printf(TEXT("PropertyGet node '%s': Created getter for '%s' on '%s'"),
 		*NodeDef.Id, **PropertyNamePtr, *TargetClass->GetName()));
@@ -16521,6 +16861,641 @@ UK2Node* FEventGraphGenerator::CreateFindCharacterFromSubsystemNode(
 	return FindCharacterNode;
 }
 
+// v7.8.57i: Reorder connections for Map and Array wildcard nodes
+// The UE5 wildcard propagation can mistype pins if connections happen in wrong order.
+//
+// Map nodes (Map_Find/Map_Remove): Key → TargetMap → Other
+// Array nodes (Array_AddUnique/Array_RemoveItem/etc.): TargetArray → Item/NewItem → Other
+//
+// This is per-node stable reordering - connections to other nodes are not affected.
+TArray<FManifestGraphConnectionDefinition> FEventGraphGenerator::ReorderConnectionsForMapNodes(
+	const TArray<FManifestGraphConnectionDefinition>& Connections,
+	const TArray<FManifestGraphNodeDefinition>& NodeDefs)
+{
+	// Enum for node type
+	enum class EWildcardNodeType { Map, Array };
+
+	// Build sets of node IDs that need reordering
+	TSet<FString> MapNodeIds;
+	TSet<FString> ArrayNodeIds;
+	TArray<FString> AllWildcardNodeOrder; // Stable order based on NodeDefs order
+
+	for (const FManifestGraphNodeDefinition& NodeDef : NodeDefs)
+	{
+		if (NodeDef.Type.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+		{
+			FString FunctionName;
+			if (NodeDef.Properties.Contains(TEXT("function")))
+			{
+				FunctionName = NodeDef.Properties[TEXT("function")];
+			}
+
+			// Map functions
+			if (FunctionName.Equals(TEXT("Map_Find"), ESearchCase::IgnoreCase) ||
+				FunctionName.Equals(TEXT("Map_Remove"), ESearchCase::IgnoreCase))
+			{
+				MapNodeIds.Add(NodeDef.Id);
+				AllWildcardNodeOrder.Add(NodeDef.Id);
+				LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] Identified Map node: %s (%s)"), *NodeDef.Id, *FunctionName));
+			}
+			// Array functions
+			else if (FunctionName.Contains(TEXT("Array_AddUnique"), ESearchCase::IgnoreCase) ||
+				FunctionName.Contains(TEXT("Array_RemoveItem"), ESearchCase::IgnoreCase) ||
+				FunctionName.Contains(TEXT("Array_Add"), ESearchCase::IgnoreCase) ||
+				FunctionName.Contains(TEXT("Array_Remove"), ESearchCase::IgnoreCase))
+			{
+				ArrayNodeIds.Add(NodeDef.Id);
+				AllWildcardNodeOrder.Add(NodeDef.Id);
+				LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] Identified Array node: %s (%s)"), *NodeDef.Id, *FunctionName));
+			}
+		}
+	}
+
+	if (MapNodeIds.Num() == 0 && ArrayNodeIds.Num() == 0)
+	{
+		// No wildcard nodes, return original connections
+		return Connections;
+	}
+
+	// Per-node connection categorization
+	// Priority 1: Key (Map) or TargetArray/Array (Array)
+	// Priority 2: TargetMap (Map) or Item/NewItem (Array)
+	// Priority 3: Everything else (outputs, exec, etc.)
+	struct FWildcardNodeConnections
+	{
+		TArray<FManifestGraphConnectionDefinition> Priority1; // Key or TargetArray
+		TArray<FManifestGraphConnectionDefinition> Priority2; // TargetMap or Item
+		TArray<FManifestGraphConnectionDefinition> Priority3; // Other (outputs, exec)
+	};
+	TMap<FString, FWildcardNodeConnections> NodeConnectionsMap;
+
+	// Initialize entries for all wildcard nodes
+	for (const FString& NodeId : AllWildcardNodeOrder)
+	{
+		NodeConnectionsMap.Add(NodeId);
+	}
+
+	// Output list for non-wildcard connections
+	TArray<FManifestGraphConnectionDefinition> NonWildcardConnections;
+
+	// Categorize each connection
+	for (const FManifestGraphConnectionDefinition& Conn : Connections)
+	{
+		bool bInvolvesMapNode = MapNodeIds.Contains(Conn.To.NodeId) || MapNodeIds.Contains(Conn.From.NodeId);
+		bool bInvolvesArrayNode = ArrayNodeIds.Contains(Conn.To.NodeId) || ArrayNodeIds.Contains(Conn.From.NodeId);
+
+		if (!bInvolvesMapNode && !bInvolvesArrayNode)
+		{
+			// Connection doesn't involve any wildcard node - keep in original order
+			NonWildcardConnections.Add(Conn);
+			continue;
+		}
+
+		// Determine which wildcard node this connection belongs to (prefer To node for input pins)
+		FString WildcardNodeId;
+		bool bIsMapNode = false;
+		if (MapNodeIds.Contains(Conn.To.NodeId))
+		{
+			WildcardNodeId = Conn.To.NodeId;
+			bIsMapNode = true;
+		}
+		else if (ArrayNodeIds.Contains(Conn.To.NodeId))
+		{
+			WildcardNodeId = Conn.To.NodeId;
+			bIsMapNode = false;
+		}
+		else if (MapNodeIds.Contains(Conn.From.NodeId))
+		{
+			WildcardNodeId = Conn.From.NodeId;
+			bIsMapNode = true;
+		}
+		else
+		{
+			WildcardNodeId = Conn.From.NodeId;
+			bIsMapNode = false;
+		}
+
+		FWildcardNodeConnections& NodeConns = NodeConnectionsMap.FindOrAdd(WildcardNodeId);
+
+		// Categorize by pin name based on node type
+		if (bIsMapNode)
+		{
+			// Map node: Key (P1) → TargetMap (P2) → Other (P3)
+			if (Conn.To.NodeId == WildcardNodeId && Conn.To.PinName.Equals(TEXT("Key"), ESearchCase::IgnoreCase))
+			{
+				NodeConns.Priority1.Add(Conn);
+				LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] %s Key: %s.%s -> %s.%s (P1)"),
+					*WildcardNodeId, *Conn.From.NodeId, *Conn.From.PinName, *Conn.To.NodeId, *Conn.To.PinName));
+			}
+			else if (Conn.To.NodeId == WildcardNodeId &&
+				(Conn.To.PinName.Equals(TEXT("TargetMap"), ESearchCase::IgnoreCase) ||
+				 Conn.To.PinName.Equals(TEXT("Map"), ESearchCase::IgnoreCase)))
+		{
+			NodeConns.Priority2.Add(Conn);
+			LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] %s TargetMap: %s.%s -> %s.%s (P2)"),
+				*WildcardNodeId, *Conn.From.NodeId, *Conn.From.PinName, *Conn.To.NodeId, *Conn.To.PinName));
+		}
+		else
+		{
+			NodeConns.Priority3.Add(Conn);
+			LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] %s other: %s.%s -> %s.%s (P3)"),
+				*WildcardNodeId, *Conn.From.NodeId, *Conn.From.PinName, *Conn.To.NodeId, *Conn.To.PinName));
+		}
+		}
+		else
+		{
+			// Array node: TargetArray (P1) → Item/NewItem (P2) → Other (P3)
+			if (Conn.To.NodeId == WildcardNodeId &&
+				(Conn.To.PinName.Equals(TEXT("TargetArray"), ESearchCase::IgnoreCase) ||
+				 Conn.To.PinName.Equals(TEXT("Array"), ESearchCase::IgnoreCase)))
+			{
+				NodeConns.Priority1.Add(Conn);
+				LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] %s TargetArray: %s.%s -> %s.%s (P1)"),
+					*WildcardNodeId, *Conn.From.NodeId, *Conn.From.PinName, *Conn.To.NodeId, *Conn.To.PinName));
+			}
+			else if (Conn.To.NodeId == WildcardNodeId &&
+				(Conn.To.PinName.Equals(TEXT("Item"), ESearchCase::IgnoreCase) ||
+				 Conn.To.PinName.Equals(TEXT("NewItem"), ESearchCase::IgnoreCase)))
+			{
+				NodeConns.Priority2.Add(Conn);
+				LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] %s Item: %s.%s -> %s.%s (P2)"),
+					*WildcardNodeId, *Conn.From.NodeId, *Conn.From.PinName, *Conn.To.NodeId, *Conn.To.PinName));
+			}
+			else
+			{
+				NodeConns.Priority3.Add(Conn);
+				LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] %s other: %s.%s -> %s.%s (P3)"),
+					*WildcardNodeId, *Conn.From.NodeId, *Conn.From.PinName, *Conn.To.NodeId, *Conn.To.PinName));
+			}
+		}
+	}
+
+	// Build final output: non-wildcard connections first, then wildcard node connections in correct order
+	// Use stable order (AllWildcardNodeOrder) instead of non-deterministic TMap iteration
+	TArray<FManifestGraphConnectionDefinition> ReorderedConnections;
+	ReorderedConnections.Append(NonWildcardConnections);
+
+	// For each wildcard node in stable order, append: P1 → P2 → P3
+	for (const FString& NodeId : AllWildcardNodeOrder)
+	{
+		const FWildcardNodeConnections* NodeConns = NodeConnectionsMap.Find(NodeId);
+		if (!NodeConns) continue;
+
+		ReorderedConnections.Append(NodeConns->Priority1);
+		ReorderedConnections.Append(NodeConns->Priority2);
+		ReorderedConnections.Append(NodeConns->Priority3);
+
+		if (NodeConns->Priority1.Num() > 0 || NodeConns->Priority2.Num() > 0)
+		{
+			LogGeneration(FString::Printf(TEXT("    [Wildcard Reorder] %s: %d P1 + %d P2 + %d P3 connections"),
+				*NodeId, NodeConns->Priority1.Num(), NodeConns->Priority2.Num(), NodeConns->Priority3.Num()));
+		}
+	}
+
+	return ReorderedConnections;
+}
+
+// v7.8.57: Resolve Map wildcard pin types for Map_Find/Map_Remove
+// UE5 Bug: When a Map<K,V> connects to Map_Find/Map_Remove, the Key wildcard pin
+// incorrectly resolves to V (value type) instead of K (key type).
+// Root cause: Wildcard resolution uses PinCategory/PinSubCategoryObject (which hold V for Maps)
+// instead of PinValueType (which holds K for Maps).
+//
+// v7.8.57f: Fix approach - late correction with minimal notification (FALLBACK).
+// Primary fix is connection ordering (Key before TargetMap) via ReorderConnectionsForMapNodes.
+// This function provides a secondary fallback if ordering isn't sufficient.
+// Returns the corrected Key pin pointer, or nullptr if no correction needed/failed.
+UEdGraphPin* FEventGraphGenerator::ResolveMapWildcardPinType(
+	UK2Node* ToNode,
+	UEdGraphPin* ToPin,
+	UEdGraphPin* FromPin)
+{
+	if (!ToNode || !ToPin || !FromPin)
+	{
+		return nullptr;
+	}
+
+	// Check if target pin is "Key" on a Map operation
+	FString ToPinName = ToPin->PinName.ToString();
+	if (!ToPinName.Equals(TEXT("Key"), ESearchCase::IgnoreCase))
+	{
+		return nullptr;
+	}
+
+	// Check if target node is a CallFunction for Map_Find or Map_Remove
+	UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(ToNode);
+	if (!CallNode)
+	{
+		return nullptr;
+	}
+
+	UFunction* Function = CallNode->GetTargetFunction();
+	if (!Function)
+	{
+		return nullptr;
+	}
+
+	FString FunctionName = Function->GetName();
+	if (!FunctionName.Equals(TEXT("Map_Find")) && !FunctionName.Equals(TEXT("Map_Remove")))
+	{
+		return nullptr;
+	}
+
+	LogGeneration(FString::Printf(TEXT("      Map wildcard resolution: Detected %s Key pin"), *FunctionName));
+
+	// Find the TargetMap pin on the same node
+	UEdGraphPin* TargetMapPin = nullptr;
+	for (UEdGraphPin* Pin : ToNode->Pins)
+	{
+		if (Pin && Pin->Direction == EGPD_Input &&
+			Pin->PinName.ToString().Equals(TEXT("TargetMap"), ESearchCase::IgnoreCase))
+		{
+			TargetMapPin = Pin;
+			break;
+		}
+	}
+
+	if (!TargetMapPin)
+	{
+		LogGeneration(TEXT("      Map wildcard resolution: TargetMap pin not found"));
+		return nullptr;
+	}
+
+	// Check if TargetMap is connected
+	if (TargetMapPin->LinkedTo.Num() == 0)
+	{
+		LogGeneration(TEXT("      Map wildcard resolution: TargetMap not yet connected"));
+		return nullptr;
+	}
+
+	// Get the connected Map pin
+	UEdGraphPin* MapSourcePin = TargetMapPin->LinkedTo[0];
+	if (!MapSourcePin)
+	{
+		LogGeneration(TEXT("      Map wildcard resolution: MapSourcePin is null"));
+		return nullptr;
+	}
+
+	// Verify it's actually a Map container type
+	if (MapSourcePin->PinType.ContainerType != EPinContainerType::Map)
+	{
+		LogGeneration(FString::Printf(TEXT("      Map wildcard resolution: Source is not a Map (ContainerType=%d)"),
+			(int32)MapSourcePin->PinType.ContainerType));
+		return nullptr;
+	}
+
+	// v7.8.57h: CORRECTED UE5 Map pin type convention:
+	// - PinCategory/PinSubCategoryObject = KEY type (K in Map<K,V>)
+	// - PinValueType = VALUE type (V in Map<K,V>)
+	// Construct KeyTerminalType from the Map's main fields (which hold the Key type)
+	FEdGraphTerminalType KeyTerminalType;
+	KeyTerminalType.TerminalCategory = MapSourcePin->PinType.PinCategory;
+	KeyTerminalType.TerminalSubCategory = MapSourcePin->PinType.PinSubCategory;
+	KeyTerminalType.TerminalSubCategoryObject = MapSourcePin->PinType.PinSubCategoryObject;
+
+	UObject* KeyTypeObj = MapSourcePin->PinType.PinSubCategoryObject.Get();
+	FEdGraphTerminalType ValueTerminalType = MapSourcePin->PinType.PinValueType;
+	UObject* ValueTypeObj = ValueTerminalType.TerminalSubCategoryObject.Get();
+
+	LogGeneration(FString::Printf(TEXT("      Map wildcard resolution: Map<%s, %s>"),
+		KeyTypeObj ? *KeyTypeObj->GetName() : TEXT("?"),
+		ValueTypeObj ? *ValueTypeObj->GetName() : TEXT("?")));
+
+	// Check if the current Key pin type matches the VALUE type (wrong) and needs correction
+	UObject* CurrentKeyTypeObj = ToPin->PinType.PinSubCategoryObject.Get();
+
+	LogGeneration(FString::Printf(TEXT("      Map wildcard resolution: Current Key pin type: %s, Expected: %s"),
+		CurrentKeyTypeObj ? *CurrentKeyTypeObj->GetName() : TEXT("?"),
+		KeyTypeObj ? *KeyTypeObj->GetName() : TEXT("?")));
+
+	// Check if the Key pin was incorrectly resolved to the VALUE type
+	bool bKeyTypeMatchesKey = (CurrentKeyTypeObj == KeyTypeObj);
+
+	if (bKeyTypeMatchesKey)
+	{
+		LogGeneration(TEXT("      Map wildcard resolution: Key pin already has correct type"));
+		return nullptr;
+	}
+
+	// v7.8.57f: Late correction + no further propagation approach
+	// Fix the pin type directly without ReconstructNode or disconnect/reconnect tricks.
+	// The key insight: we set the correct type, mark it dirty, notify - but don't trigger
+	// any mechanism that would re-propagate wildcards from TargetMap.
+
+	// Step 1: Correct the Key pin type (both main fields AND PinValueType)
+	// For container pins, the schema can read either PinSubCategoryObject or PinValueType
+	ToPin->PinType.PinCategory = KeyTerminalType.TerminalCategory;
+	ToPin->PinType.PinSubCategory = KeyTerminalType.TerminalSubCategory;
+	ToPin->PinType.PinSubCategoryObject = KeyTerminalType.TerminalSubCategoryObject;
+	// Also mirror into PinValueType (schema may read this for wildcard/container typing)
+	ToPin->PinType.PinValueType.TerminalCategory = KeyTerminalType.TerminalCategory;
+	ToPin->PinType.PinValueType.TerminalSubCategory = KeyTerminalType.TerminalSubCategory;
+	ToPin->PinType.PinValueType.TerminalSubCategoryObject = KeyTerminalType.TerminalSubCategoryObject;
+	// Note: Keep bIsReference as-is (Key is by-ref for Map operations)
+
+	LogGeneration(FString::Printf(TEXT("      Map wildcard resolution: Setting Key pin type to %s<%s>"),
+		*KeyTerminalType.TerminalCategory.ToString(),
+		KeyTypeObj ? *KeyTypeObj->GetName() : TEXT("?")));
+
+	// Step 2: Mark pin and node as modified (dirty)
+	ToPin->Modify();
+	ToNode->Modify();
+
+	// Step 3: Notify about the pin type change (triggers schema updates without full rebuild)
+	// NotifyPinConnectionListChanged is a UEdGraphNode method, not UEdGraphPin
+	ToNode->PinConnectionListChanged(ToPin);
+	ToNode->NotifyPinConnectionListChanged(ToPin);
+
+	// Step 4: Also notify via schema (some typing updates flow through schema's notification path)
+	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+	if (K2Schema)
+	{
+		// This is "tell the schema this pin changed" - still not reconstruct
+		// Note: PinConnectionListChanged on schema may not exist in all UE5 versions,
+		// so we use the node's notify which is sufficient
+	}
+
+	// Step 5: Mark node to prevent later refresh passes from undoing the fix
+	// Append a marker to NodeComment that later passes can check
+	if (!ToNode->NodeComment.Contains(TEXT("[GA_GEN_FIX_MAPKEY]")))
+	{
+		ToNode->NodeComment = ToNode->NodeComment.IsEmpty()
+			? TEXT("[GA_GEN_FIX_MAPKEY]")
+			: ToNode->NodeComment + TEXT(" [GA_GEN_FIX_MAPKEY]");
+	}
+
+	// DO NOT call ReconstructNode() - it re-triggers the UE5 wildcard bug
+
+	// Verify the Key pin still has correct type
+	if (ToPin->PinType.PinSubCategoryObject.Get() == KeyTypeObj)
+	{
+		LogGeneration(FString::Printf(TEXT("      Map wildcard resolution: SUCCESS - Key pin type corrected to %s<%s>"),
+			*ToPin->PinType.PinCategory.ToString(),
+			KeyTypeObj ? *KeyTypeObj->GetName() : TEXT("?")));
+		return ToPin;
+	}
+	else
+	{
+		// Type reverted - this shouldn't happen with the notify-only approach
+		UObject* RevertedTypeObj = ToPin->PinType.PinSubCategoryObject.Get();
+		LogGeneration(FString::Printf(TEXT("      Map wildcard resolution: WARNING - Key pin type reverted to %s (expected %s)"),
+			RevertedTypeObj ? *RevertedTypeObj->GetName() : TEXT("?"),
+			KeyTypeObj ? *KeyTypeObj->GetName() : TEXT("?")));
+		return nullptr;
+	}
+}
+
+// ============================================================================
+// v7.8.57j: FinalizeArrayWildcardNodeTyping - Targeted reconstruction for Array nodes
+// This function is called IMMEDIATELY after connecting both P1 (TargetArray) and P2 (Item)
+// to ensure the wildcard template specialization happens at the right time.
+// ============================================================================
+bool FEventGraphGenerator::FinalizeArrayWildcardNodeTyping(
+	UK2Node_CallFunction* CallNode,
+	const FString& NodeId,
+	const TMap<FString, UK2Node*>& NodeMap,
+	const TArray<FManifestGraphConnectionDefinition>& Connections)
+{
+	if (!CallNode)
+	{
+		return false;
+	}
+
+	UFunction* TargetFunction = CallNode->GetTargetFunction();
+	if (!TargetFunction)
+	{
+		return false;
+	}
+
+	FString FunctionName = TargetFunction->GetName();
+
+	// Only process Array functions that need template specialization
+	bool bIsArrayAddUnique = FunctionName.Equals(TEXT("Array_AddUnique"));
+	bool bIsArrayRemoveItem = FunctionName.Equals(TEXT("Array_RemoveItem"));
+	bool bIsArrayAdd = FunctionName.Equals(TEXT("Array_Add"));
+	bool bIsArrayRemove = FunctionName.Equals(TEXT("Array_Remove"));
+
+	if (!bIsArrayAddUnique && !bIsArrayRemoveItem && !bIsArrayAdd && !bIsArrayRemove)
+	{
+		return false;
+	}
+
+	LogGeneration(FString::Printf(TEXT("    [Array Finalize] Processing %s (%s)"), *NodeId, *FunctionName));
+
+	// Find TargetArray and Item pins
+	UEdGraphPin* TargetArrayPin = nullptr;
+	UEdGraphPin* ItemPin = nullptr;
+
+	for (UEdGraphPin* Pin : CallNode->Pins)
+	{
+		if (!Pin || Pin->Direction != EGPD_Input) continue;
+
+		FString PinName = Pin->PinName.ToString();
+		if (PinName.Equals(TEXT("TargetArray"), ESearchCase::IgnoreCase) ||
+			PinName.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
+		{
+			TargetArrayPin = Pin;
+		}
+		else if (PinName.Equals(TEXT("Item"), ESearchCase::IgnoreCase) ||
+				 PinName.Equals(TEXT("NewItem"), ESearchCase::IgnoreCase))
+		{
+			ItemPin = Pin;
+		}
+	}
+
+	// Log pin search results
+	if (!TargetArrayPin)
+	{
+		LogGeneration(FString::Printf(TEXT("    [Array Finalize] TargetArray pin not found on %s"), *NodeId));
+		return false;
+	}
+	if (!ItemPin)
+	{
+		LogGeneration(FString::Printf(TEXT("    [Array Finalize] Item pin not found on %s"), *NodeId));
+		return false;
+	}
+
+	// Check if both pins are connected
+	bool bTargetArrayConnected = TargetArrayPin->LinkedTo.Num() > 0;
+	bool bItemConnected = ItemPin->LinkedTo.Num() > 0;
+
+	LogGeneration(FString::Printf(TEXT("    [Array Finalize] TargetArray connected: %s, Item connected: %s"),
+		bTargetArrayConnected ? TEXT("YES") : TEXT("NO"),
+		bItemConnected ? TEXT("YES") : TEXT("NO")));
+
+	if (!bTargetArrayConnected || !bItemConnected)
+	{
+		// Not both connected yet - don't finalize
+		return false;
+	}
+
+	// Get source pin info before reconstruction
+	UEdGraphPin* TargetArraySource = TargetArrayPin->LinkedTo[0];
+	UEdGraphPin* ItemSource = ItemPin->LinkedTo[0];
+
+	// Log types before reconstruction
+	auto GetElementTypeName = [](UEdGraphPin* Pin) -> FString
+	{
+		if (!Pin) return TEXT("null");
+		if (Pin->PinType.IsArray())
+		{
+			if (Pin->PinType.PinSubCategoryObject.IsValid())
+			{
+				return Pin->PinType.PinSubCategoryObject->GetName();
+			}
+			return Pin->PinType.PinSubCategory.ToString();
+		}
+		// For non-array (Item), just get the type
+		if (Pin->PinType.PinSubCategoryObject.IsValid())
+		{
+			return Pin->PinType.PinSubCategoryObject->GetName();
+		}
+		return Pin->PinType.PinCategory.ToString();
+	};
+
+	FString TargetArrayElementType = GetElementTypeName(TargetArraySource);
+	FString ItemType = GetElementTypeName(ItemSource);
+
+	LogGeneration(FString::Printf(TEXT("    [Array Finalize] TargetArray element type: %s, Item type: %s"),
+		*TargetArrayElementType, *ItemType));
+
+	// v7.8.57l: Helper lambda to check if a pin type needs fixing
+	// Handles: wildcard, generic object with null SubCategoryObject, container mismatch
+	auto NeedsTypeFix = [](const FEdGraphPinType& T, bool bShouldBeArray) -> bool
+	{
+		// Wildcard is always unresolved
+		if (T.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+		{
+			return true;
+		}
+		// Generic Object with no specific class
+		if (T.PinCategory == UEdGraphSchema_K2::PC_Object && T.PinSubCategoryObject == nullptr)
+		{
+			return true;
+		}
+		// Container type mismatch
+		if (bShouldBeArray && T.ContainerType != EPinContainerType::Array)
+		{
+			return true;
+		}
+		if (!bShouldBeArray && T.ContainerType == EPinContainerType::Array)
+		{
+			return true;
+		}
+		return false;
+	};
+
+	// Check if pins need fixing
+	bool bTargetArrayNeedsFix = NeedsTypeFix(TargetArrayPin->PinType, true);
+	bool bItemNeedsFix = NeedsTypeFix(ItemPin->PinType, false);
+
+	if (!bTargetArrayNeedsFix && !bItemNeedsFix)
+	{
+		// Both pins already have proper types
+		LogGeneration(FString::Printf(TEXT("    [Array Finalize] %s already specialized (no fixes needed)"), *NodeId));
+		return true;
+	}
+
+	LogGeneration(FString::Printf(TEXT("    [Array Finalize] Needs fix - TargetArray: %s, Item: %s"),
+		bTargetArrayNeedsFix ? TEXT("YES") : TEXT("NO"),
+		bItemNeedsFix ? TEXT("YES") : TEXT("NO")));
+
+	// v7.8.57l: Manual type propagation approach (improved)
+	// Copy full type then clear container - preserves all extra fields (PinValueType, bIsWeakPointer, etc.)
+
+	// Get array type from TargetArray source
+	FEdGraphPinType ArrayType = TargetArraySource->PinType;
+
+	// Derive element type by copying and clearing container
+	FEdGraphPinType ElemType = ArrayType;
+	ElemType.ContainerType = EPinContainerType::None;
+	ElemType.bIsReference = false;
+	ElemType.bIsConst = false;
+	// Clear PinValueType for non-map pins (arrays don't use it for element typing)
+	ElemType.PinValueType = FEdGraphTerminalType();
+
+	LogGeneration(FString::Printf(TEXT("    [Array Finalize] Derived types - Array: %s<%s>[], Element: %s<%s>"),
+		*ArrayType.PinCategory.ToString(),
+		ArrayType.PinSubCategoryObject.IsValid() ? *ArrayType.PinSubCategoryObject->GetName() : TEXT("?"),
+		*ElemType.PinCategory.ToString(),
+		ElemType.PinSubCategoryObject.IsValid() ? *ElemType.PinSubCategoryObject->GetName() : TEXT("?")));
+
+	// Step 1: Set TargetArray pin type (full array type)
+	if (bTargetArrayNeedsFix)
+	{
+		// Preserve bIsReference from original (TargetArray is by reference)
+		bool bWasReference = TargetArrayPin->PinType.bIsReference;
+		TargetArrayPin->PinType = ArrayType;
+		TargetArrayPin->PinType.bIsReference = bWasReference;
+		// Clear PinValueType for arrays
+		TargetArrayPin->PinType.PinValueType = FEdGraphTerminalType();
+		TargetArrayPin->Modify();
+		LogGeneration(FString::Printf(TEXT("    [Array Finalize] Set TargetArray type to %s<%s>[]"),
+			*TargetArrayPin->PinType.PinCategory.ToString(),
+			TargetArrayPin->PinType.PinSubCategoryObject.IsValid() ? *TargetArrayPin->PinType.PinSubCategoryObject->GetName() : TEXT("?")));
+	}
+
+	// Step 2: Set Item pin type (element type)
+	if (bItemNeedsFix)
+	{
+		// Preserve bIsReference from original
+		bool bWasReference = ItemPin->PinType.bIsReference;
+		ItemPin->PinType = ElemType;
+		ItemPin->PinType.bIsReference = bWasReference;
+		ItemPin->Modify();
+		LogGeneration(FString::Printf(TEXT("    [Array Finalize] Set Item type to %s<%s>"),
+			*ItemPin->PinType.PinCategory.ToString(),
+			ItemPin->PinType.PinSubCategoryObject.IsValid() ? *ItemPin->PinType.PinSubCategoryObject->GetName() : TEXT("?")));
+	}
+
+	// Step 3: Mark node as modified and notify
+	CallNode->Modify();
+	CallNode->PinConnectionListChanged(TargetArrayPin);
+	CallNode->PinConnectionListChanged(ItemPin);
+	CallNode->NotifyPinConnectionListChanged(TargetArrayPin);
+	CallNode->NotifyPinConnectionListChanged(ItemPin);
+
+	// Step 4: Verify connections are still valid via schema
+	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+	if (K2Schema)
+	{
+		FPinConnectionResponse ArrayResponse = K2Schema->CanCreateConnection(TargetArraySource, TargetArrayPin);
+		FPinConnectionResponse ItemResponse = K2Schema->CanCreateConnection(ItemSource, ItemPin);
+
+		if (ArrayResponse.Response == CONNECT_RESPONSE_DISALLOW)
+		{
+			LogGeneration(FString::Printf(TEXT("    [Array Finalize] WARNING: TargetArray connection invalid after type set: %s"),
+				*ArrayResponse.Message.ToString()));
+		}
+		if (ItemResponse.Response == CONNECT_RESPONSE_DISALLOW)
+		{
+			LogGeneration(FString::Printf(TEXT("    [Array Finalize] WARNING: Item connection invalid after type set: %s"),
+				*ItemResponse.Message.ToString()));
+		}
+	}
+
+	// Step 5: Check for remaining unresolved pins
+	bool bHasUnresolvedAfter = false;
+	for (UEdGraphPin* Pin : CallNode->Pins)
+	{
+		if (Pin && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+		{
+			bHasUnresolvedAfter = true;
+			LogGeneration(FString::Printf(TEXT("    [Array Finalize] WARNING: Wildcard pin still exists: %s"),
+				*Pin->PinName.ToString()));
+		}
+	}
+
+	if (bHasUnresolvedAfter)
+	{
+		LogGeneration(FString::Printf(TEXT("    [Array Finalize] WARNING: %s still has wildcard pins after manual type set"), *NodeId));
+		return false;
+	}
+
+	LogGeneration(FString::Printf(TEXT("    [Array Finalize] SUCCESS: %s specialized via manual type propagation"), *NodeId));
+	return true;
+}
+
 EConnectResult FEventGraphGenerator::ConnectPins(
 	const TMap<FString, UK2Node*>& NodeMap,
 	const FManifestGraphConnectionDefinition& Connection)
@@ -16663,20 +17638,52 @@ EConnectResult FEventGraphGenerator::ConnectPins(
 		// v2.7.3: Detailed handling based on response type
 		if (Response.Response == CONNECT_RESPONSE_DISALLOW)
 		{
-			// This is a hard error - types are incompatible
-			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] PIN TYPE ERROR: %s.%s -> %s.%s"),
-				*Connection.From.NodeId, *Connection.From.PinName,
-				*Connection.To.NodeId, *Connection.To.PinName);
-			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   From: %s [%s]"),
-				*FromPin->PinName.ToString(), *FromTypeDesc);
-			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   To: %s [%s]"),
-				*ToPin->PinName.ToString(), *ToTypeDesc);
-			UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   Reason: %s"),
-				*Response.Message.ToString());
+			// v7.8.57c: Check if this is a Map Key pin that was incorrectly resolved
+			// If so, correct it via node reconstruction and retry
+			UEdGraphPin* CorrectedPin = ResolveMapWildcardPinType(ToNode, ToPin, FromPin);
+			if (CorrectedPin)
+			{
+				// Retry with the corrected pin
+				ToPin = CorrectedPin;
+				ToTypeDesc = GetPinTypeDescription(ToPin);
 
-			LogGeneration(FString::Printf(TEXT("      ERROR: Can't connect pins - %s"), *Response.Message.ToString()));
-			LogGeneration(FString::Printf(TEXT("        '%s' is not compatible with '%s'"), *FromTypeDesc, *ToTypeDesc));
-			return EConnectResult::Failed;
+				LogGeneration(FString::Printf(TEXT("    Retrying connection with corrected pin: %s.%s [%s] -> %s.%s [%s]"),
+					*Connection.From.NodeId, *FromPin->PinName.ToString(), *FromTypeDesc,
+					*Connection.To.NodeId, *ToPin->PinName.ToString(), *ToTypeDesc));
+
+				// Retry the schema check
+				Response = K2Schema->CanCreateConnection(FromPin, ToPin);
+				if (Response.Response == CONNECT_RESPONSE_DISALLOW ||
+					Response.Response == CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE)
+				{
+					// Still failing after correction
+					UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] PIN TYPE ERROR (after Map Key correction): %s.%s -> %s.%s"),
+						*Connection.From.NodeId, *Connection.From.PinName,
+						*Connection.To.NodeId, *Connection.To.PinName);
+					UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   Reason: %s"), *Response.Message.ToString());
+					LogGeneration(FString::Printf(TEXT("      ERROR: Still can't connect after Map Key correction - %s"),
+						*Response.Message.ToString()));
+					return EConnectResult::Failed;
+				}
+				// If we get here, the corrected connection is allowed - continue to MakeLinkTo
+			}
+			else
+			{
+				// Not a Map Key issue, original error stands
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator] PIN TYPE ERROR: %s.%s -> %s.%s"),
+					*Connection.From.NodeId, *Connection.From.PinName,
+					*Connection.To.NodeId, *Connection.To.PinName);
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   From: %s [%s]"),
+					*FromPin->PinName.ToString(), *FromTypeDesc);
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   To: %s [%s]"),
+					*ToPin->PinName.ToString(), *ToTypeDesc);
+				UE_LOG(LogTemp, Error, TEXT("[GasAbilityGenerator]   Reason: %s"),
+					*Response.Message.ToString());
+
+				LogGeneration(FString::Printf(TEXT("      ERROR: Can't connect pins - %s"), *Response.Message.ToString()));
+				LogGeneration(FString::Printf(TEXT("        '%s' is not compatible with '%s'"), *FromTypeDesc, *ToTypeDesc));
+				return EConnectResult::Failed;
+			}
 		}
 		else if (Response.Response == CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE)
 		{
@@ -29352,6 +30359,28 @@ FGenerationResult FGoalItemGenerator::Generate(const FManifestGoalItemDefinition
 		{
 			PinType.ContainerType = EPinContainerType::Array;
 		}
+		// v7.8.56: Set container type for Map variables
+		else if (VarDef.Container.Equals(TEXT("Map"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Map;
+
+			if (!VarDef.KeyType.IsEmpty())
+			{
+				FEdGraphPinType KeyPinType = GetPinTypeFromString(VarDef.KeyType);
+				PinType.PinValueType = FEdGraphTerminalType::FromPinType(KeyPinType);
+			}
+
+			if (!VarDef.ValueType.IsEmpty())
+			{
+				FEdGraphPinType ValuePinType = GetPinTypeFromString(VarDef.ValueType);
+				PinType.PinCategory = ValuePinType.PinCategory;
+				PinType.PinSubCategory = ValuePinType.PinSubCategory;
+				PinType.PinSubCategoryObject = ValuePinType.PinSubCategoryObject;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Variable '%s' is Map<%s, %s>"),
+				*VarDef.Name, *VarDef.KeyType, *VarDef.ValueType));
+		}
 
 		// Handle object types with class references
 		if (!VarDef.Class.IsEmpty())
@@ -29633,6 +30662,28 @@ FGenerationResult FGoalGeneratorGenerator::Generate(const FManifestGoalGenerator
 		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
 		{
 			PinType.ContainerType = EPinContainerType::Array;
+		}
+		// v7.8.56: Set container type for Map variables
+		else if (VarDef.Container.Equals(TEXT("Map"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Map;
+
+			if (!VarDef.KeyType.IsEmpty())
+			{
+				FEdGraphPinType KeyPinType = GetPinTypeFromString(VarDef.KeyType);
+				PinType.PinValueType = FEdGraphTerminalType::FromPinType(KeyPinType);
+			}
+
+			if (!VarDef.ValueType.IsEmpty())
+			{
+				FEdGraphPinType ValuePinType = GetPinTypeFromString(VarDef.ValueType);
+				PinType.PinCategory = ValuePinType.PinCategory;
+				PinType.PinSubCategory = ValuePinType.PinSubCategory;
+				PinType.PinSubCategoryObject = ValuePinType.PinSubCategoryObject;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Variable '%s' is Map<%s, %s>"),
+				*VarDef.Name, *VarDef.KeyType, *VarDef.ValueType));
 		}
 
 		// Handle object types with class references
@@ -30208,6 +31259,28 @@ FGenerationResult FBTServiceGenerator::Generate(const FManifestBTServiceBPDefini
 		{
 			PinType.ContainerType = EPinContainerType::Array;
 		}
+		// v7.8.56: Set container type for Map variables
+		else if (VarDef.Container.Equals(TEXT("Map"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Map;
+
+			if (!VarDef.KeyType.IsEmpty())
+			{
+				FEdGraphPinType KeyPinType = GetPinTypeFromString(VarDef.KeyType);
+				PinType.PinValueType = FEdGraphTerminalType::FromPinType(KeyPinType);
+			}
+
+			if (!VarDef.ValueType.IsEmpty())
+			{
+				FEdGraphPinType ValuePinType = GetPinTypeFromString(VarDef.ValueType);
+				PinType.PinCategory = ValuePinType.PinCategory;
+				PinType.PinSubCategory = ValuePinType.PinSubCategory;
+				PinType.PinSubCategoryObject = ValuePinType.PinSubCategoryObject;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Variable '%s' is Map<%s, %s>"),
+				*VarDef.Name, *VarDef.KeyType, *VarDef.ValueType));
+		}
 
 		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
 		if (bSuccess)
@@ -30401,6 +31474,28 @@ FGenerationResult FBTTaskGenerator::Generate(const FManifestBTTaskBPDefinition& 
 		if (VarDef.Container.Equals(TEXT("Array"), ESearchCase::IgnoreCase))
 		{
 			PinType.ContainerType = EPinContainerType::Array;
+		}
+		// v7.8.56: Set container type for Map variables
+		else if (VarDef.Container.Equals(TEXT("Map"), ESearchCase::IgnoreCase))
+		{
+			PinType.ContainerType = EPinContainerType::Map;
+
+			if (!VarDef.KeyType.IsEmpty())
+			{
+				FEdGraphPinType KeyPinType = GetPinTypeFromString(VarDef.KeyType);
+				PinType.PinValueType = FEdGraphTerminalType::FromPinType(KeyPinType);
+			}
+
+			if (!VarDef.ValueType.IsEmpty())
+			{
+				FEdGraphPinType ValuePinType = GetPinTypeFromString(VarDef.ValueType);
+				PinType.PinCategory = ValuePinType.PinCategory;
+				PinType.PinSubCategory = ValuePinType.PinSubCategory;
+				PinType.PinSubCategoryObject = ValuePinType.PinSubCategoryObject;
+			}
+
+			LogGeneration(FString::Printf(TEXT("  Variable '%s' is Map<%s, %s>"),
+				*VarDef.Name, *VarDef.KeyType, *VarDef.ValueType));
 		}
 
 		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);

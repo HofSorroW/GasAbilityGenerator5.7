@@ -2446,6 +2446,15 @@ void FGasAbilityGeneratorParser::ParseGameplayAbilities(const TArray<FString>& L
 				{
 					CurrentVar.Container = GetLineValue(TrimmedLine);
 				}
+				// v7.8.56: Parse key_type and value_type for Map container support
+				else if (TrimmedLine.StartsWith(TEXT("key_type:")))
+				{
+					CurrentVar.KeyType = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("value_type:")))
+				{
+					CurrentVar.ValueType = GetLineValue(TrimmedLine);
+				}
 				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
 				{
 					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
@@ -3212,6 +3221,15 @@ void FGasAbilityGeneratorParser::ParseActorBlueprints(const TArray<FString>& Lin
 				else if (TrimmedLine.StartsWith(TEXT("container:")))
 				{
 					CurrentVar.Container = GetLineValue(TrimmedLine);
+				}
+				// v7.8.56: Parse key_type and value_type for Map container support
+				else if (TrimmedLine.StartsWith(TEXT("key_type:")))
+				{
+					CurrentVar.KeyType = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("value_type:")))
+				{
+					CurrentVar.ValueType = GetLineValue(TrimmedLine);
 				}
 				else if (TrimmedLine.StartsWith(TEXT("default:")))
 				{
@@ -12694,6 +12712,15 @@ void FGasAbilityGeneratorParser::ParseGoalItems(const TArray<FString>& Lines, in
 				{
 					CurrentVariable.Container = GetLineValue(TrimmedLine);
 				}
+				// v7.8.56: Parse key_type and value_type for Map container support
+				else if (TrimmedLine.StartsWith(TEXT("key_type:")))
+				{
+					CurrentVariable.KeyType = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("value_type:")))
+				{
+					CurrentVariable.ValueType = GetLineValue(TrimmedLine);
+				}
 				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
 				{
 					CurrentVariable.DefaultValue = GetLineValue(TrimmedLine);
@@ -12842,6 +12869,15 @@ void FGasAbilityGeneratorParser::ParseGoalGenerators(const TArray<FString>& Line
 				else if (TrimmedLine.StartsWith(TEXT("container:")))
 				{
 					CurrentVariable.Container = GetLineValue(TrimmedLine);
+				}
+				// v7.8.56: Parse key_type and value_type for Map container support
+				else if (TrimmedLine.StartsWith(TEXT("key_type:")))
+				{
+					CurrentVariable.KeyType = GetLineValue(TrimmedLine);
+				}
+				else if (TrimmedLine.StartsWith(TEXT("value_type:")))
+				{
+					CurrentVariable.ValueType = GetLineValue(TrimmedLine);
 				}
 				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
 				{

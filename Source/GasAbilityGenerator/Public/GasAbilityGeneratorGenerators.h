@@ -36,6 +36,7 @@ class UWidgetBlueprint;
 class UWidgetBlueprintFactory;
 class UUserDefinedEnum;
 class UK2Node;
+class UK2Node_CallFunction;
 class UEdGraph;
 class UEdGraphPin;
 
@@ -1001,6 +1002,49 @@ private:
 	static EConnectResult ConnectPins(
 		const TMap<FString, UK2Node*>& NodeMap,
 		const FManifestGraphConnectionDefinition& Connection);
+
+	/** v7.8.57g: Reorder connections for Map_Find/Map_Remove nodes
+	 * The UE5 Map wildcard bug is triggered when TargetMap is connected first.
+	 * Fix: Connect Key FIRST, then TargetMap. When Key is already connected,
+	 * its type is locked and wildcard propagation won't override it.
+	 * @param Connections Original connection list
+	 * @param NodeDefs Node definitions to identify Map operation nodes
+	 * @return Reordered connections with Key before TargetMap for Map nodes
+	 */
+	static TArray<FManifestGraphConnectionDefinition> ReorderConnectionsForMapNodes(
+		const TArray<FManifestGraphConnectionDefinition>& Connections,
+		const TArray<FManifestGraphNodeDefinition>& NodeDefs);
+
+	/** v7.8.57: Resolve Map wildcard pin types for Map_Find/Map_Remove (FALLBACK)
+	 * UE5 incorrectly resolves Key pin wildcards when connecting to Map<K,V>.
+	 * The Key wildcard resolves to V (value type) instead of K (key type).
+	 * This helper corrects the pin type and reconstructs the node to propagate changes.
+	 * @param ToNode The target node (Map_Find or Map_Remove)
+	 * @param ToPin The target pin (Key)
+	 * @param FromPin The source pin being connected
+	 * @return The corrected Key pin pointer (reconstruction replaces pin objects), or nullptr if no correction needed
+	 */
+	static UEdGraphPin* ResolveMapWildcardPinType(
+		UK2Node* ToNode,
+		UEdGraphPin* ToPin,
+		UEdGraphPin* FromPin);
+
+	/** v7.8.57j: Finalize Array wildcard node typing after P1+P2 connections
+	 * Array functions (Array_AddUnique, Array_RemoveItem) have wildcard pins.
+	 * UE5's template specialization only happens when the node is reconstructed
+	 * at the right time - immediately after connecting both TargetArray and Item pins.
+	 * This helper performs the reconstruction and verifies links survive.
+	 * @param CallNode The Array function call node
+	 * @param NodeId The node ID for logging
+	 * @param NodeMap Reference to node map for re-linking if needed
+	 * @param Connections Reference to all connections for this node (for re-linking)
+	 * @return true if typing was finalized successfully
+	 */
+	static bool FinalizeArrayWildcardNodeTyping(
+		UK2Node_CallFunction* CallNode,
+		const FString& NodeId,
+		const TMap<FString, UK2Node*>& NodeMap,
+		const TArray<FManifestGraphConnectionDefinition>& Connections);
 
 	/** v7.2: C1 - LOCKED CONTRACT 22 - Validated pin connection for direct pin-to-pin wiring
 	 * Implements 3-step gate: pin existence, schema approval, link integrity

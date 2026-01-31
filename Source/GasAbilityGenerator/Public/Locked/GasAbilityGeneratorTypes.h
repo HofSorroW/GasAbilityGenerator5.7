@@ -1217,6 +1217,9 @@ struct FManifestActorVariableDefinition
 	FString Type;
 	FString Class;  // Class name for Object/Class types
 	FString Container;  // v7.8.51: "Array", "Set", "Map" or empty for single value
+	// v7.8.56: Map support - key_type and value_type for TMap variables
+	FString KeyType;    // Key type for Map containers (e.g., "Actor")
+	FString ValueType;  // Value type for Map containers (e.g., "WidgetComponent")
 	FString DefaultValue;
 	bool bReplicated = false;
 	bool bInstanceEditable = false;
@@ -1228,9 +1231,11 @@ struct FManifestActorVariableDefinition
 		Hash ^= GetTypeHash(Type) << 4;
 		Hash ^= GetTypeHash(Class) << 8;
 		Hash ^= GetTypeHash(Container) << 10;  // v7.8.51: Include container in hash
-		Hash ^= GetTypeHash(DefaultValue) << 12;
-		Hash ^= (bReplicated ? 1ULL : 0ULL) << 16;
-		Hash ^= (bInstanceEditable ? 1ULL : 0ULL) << 17;
+		Hash ^= GetTypeHash(KeyType) << 13;    // v7.8.56: Include Map key type
+		Hash ^= GetTypeHash(ValueType) << 15;  // v7.8.56: Include Map value type
+		Hash ^= GetTypeHash(DefaultValue) << 18;
+		Hash ^= (bReplicated ? 1ULL : 0ULL) << 22;
+		Hash ^= (bInstanceEditable ? 1ULL : 0ULL) << 23;
 		return Hash;
 	}
 };
@@ -6848,7 +6853,7 @@ struct FManifestData
 		for (const auto& Def : ActivitySchedules) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : GoalItems) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : GoalGenerators) AddWithDupeCheck(Def.Name);  // v7.8.52
-		for (const auto& Def : GameplayCues) AddWithDupeCheck(Def.Name);  // v7.8.52
+		// Note: GameplayCues already added at line 6844, not duplicating here
 		for (const auto& Def : Quests) AddWithDupeCheck(Def.Name);
 		for (const auto& Def : CharacterAppearances) AddWithDupeCheck(Def.Name);
 		// v4.9: TriggerSets

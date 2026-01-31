@@ -83,6 +83,10 @@ void FGasAbilityGeneratorFunctionResolver::EnsureWellKnownFunctionsInitialized()
 
 	// ActorComponent functions
 	WellKnownFunctions.Add(TEXT("GetOwner"), UActorComponent::StaticClass());
+	// v7.8.57: DestroyComponent - Blueprint-callable version is K2_DestroyComponent
+	// UE5 UFUNCTION has ScriptName="DestroyComponent" but C++ FindFunction needs K2_DestroyComponent
+	WellKnownFunctions.Add(TEXT("K2_DestroyComponent"), UActorComponent::StaticClass());
+	WellKnownFunctions.Add(TEXT("DestroyComponent"), UActorComponent::StaticClass());  // Alias
 
 	// SceneComponent functions
 	WellKnownFunctions.Add(TEXT("GetSocketLocation"), USceneComponent::StaticClass());
@@ -368,6 +372,7 @@ FResolvedFunction FGasAbilityGeneratorFunctionResolver::ResolveViaLibraryFallbac
 		AActor::StaticClass(),
 		APawn::StaticClass(),
 		UCharacterMovementComponent::StaticClass(),
+		UActorComponent::StaticClass(),  // v7.8.56: DestroyComponent support
 		USceneComponent::StaticClass(),
 		USkeletalMeshComponent::StaticClass(),
 		UPrimitiveComponent::StaticClass()
