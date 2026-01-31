@@ -2893,12 +2893,17 @@ Engineer form father becomes turret:
 |------|--------|
 | 1 | GA_FatherEngineer activates |
 | 2 | Father detaches from player |
-| 3 | Father moves to deployment location |
-| 4 | Father enters turret mode (stationary) |
-| 5 | Player selects new form from wheel |
-| 6 | GA_FatherEngineer EndAbility fires |
-| 7 | Father teleports to player (200 units behind) |
-| 8 | New form ability activates |
+| 3 | Father moves to deployment location (400 units forward of player, facing forward) |
+| 4 | GE_TurretHealth applied (500 HP for defensive hold-ground role) |
+| 5 | Father enters turret mode (stationary) |
+| 6 | Player selects new form from wheel |
+| 7 | GA_FatherEngineer EndAbility fires |
+| 8 | Father teleports to player (200 units behind) |
+| 9 | New form ability activates |
+
+**Deployment Location (v6.9):** PlayerLocation + (PlayerForwardVector * 400), facing same direction as player.
+
+**Turret Health (v6.10):** GE_TurretHealth sets MaxHealth and Health to 500 HP, supporting the defensive hold-ground gameplay.
 
 No separate recall ability needed - Cancel Abilities With Tag triggers EndAbility cleanup.
 
@@ -8205,7 +8210,7 @@ Father can alert player about enemies using Report Noise Event:
 | Armor | Father.Form.Armor | Father.State.Attached | GE_ArmorBoost (+50 Armor, -15% Speed) |
 | Exoskeleton | Father.Form.Exoskeleton | Father.State.Attached | GE_ExoskeletonSpeed (+25% Speed, +30% Jump, +10 Attack) |
 | Symbiote | Father.Form.Symbiote | Father.State.Attached | GE_SymbioteBoost (+50% Speed, +30% Jump, +100 Attack, Infinite Stamina) |
-| Engineer | Father.Form.Engineer | Father.State.Deployed | None (turret mode) |
+| Engineer | Father.Form.Engineer | Father.State.Deployed | GE_TurretHealth (500 HP) |
 
 ### D.2) NPC Configuration Architecture
 

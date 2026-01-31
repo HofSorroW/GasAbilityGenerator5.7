@@ -383,8 +383,7 @@ tags:
     comment: Form changes locked during symbiote
   - tag: Father.State.Transitioning
     comment: Father is in form transition
-  - tag: Father.State.TurretActive
-    comment: Turret mode is active
+  # v5.1: Father.State.TurretActive removed (orphan - never used by any ability)
   - tag: Father.State.TurretDeployed
     comment: Father deployed as turret (manifest alias for Deployed)
   - tag: Father.State.Wielded
@@ -634,6 +633,20 @@ gameplay_effects:
     granted_tags:
       - Effect.Father.FormState.Engineer
     # INV-1: Father is vulnerable in all forms
+
+  # v5.1: Engineer turret health - 500 HP for defensive hold-ground role
+  - name: GE_TurretHealth
+    folder: Effects/Engineer
+    duration_policy: Instant
+    modifiers:
+      - attribute: NarrativeAttributeSetBase.MaxHealth
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        scalable_float_value: 500.0
+      - attribute: NarrativeAttributeSetBase.Health
+        modifier_op: Override
+        magnitude_type: ScalableFloat
+        scalable_float_value: 500.0
 
   # Weapon Form States (Rifle/Sword modes per guides v1.7)
   - name: GE_RifleState
@@ -3362,11 +3375,19 @@ gameplay_abilities:
             target_self: true
             param.GameplayEffectClass: GE_EngineerState
           position: [1800, -200]
+        # v5.1: Apply turret health (500 HP for defensive role)
+        - id: ApplyTurretHealth_First
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToOwner
+            target_self: true
+            param.GameplayEffectClass: GE_TurretHealth
+          position: [1900, -200]
         - id: SetFirstFalse
           type: VariableSet
           properties:
             variable_name: bIsFirstActivation
-          position: [2000, -200]
+          position: [2100, -200]
         - id: EndAbility_First
           type: CallFunction
           properties:
@@ -3504,6 +3525,14 @@ gameplay_abilities:
             target_self: true
             param.GameplayEffectClass: GE_EngineerState
           position: [2400, 200]
+        # v5.1: Apply turret health (500 HP for defensive role)
+        - id: ApplyTurretHealth
+          type: CallFunction
+          properties:
+            function: BP_ApplyGameplayEffectToOwner
+            target_self: true
+            param.GameplayEffectClass: GE_TurretHealth
+          position: [2500, 200]
         # Step 6: Remove Transitioning tag (v4.13.5: replaces GE removal)
         - id: RemoveTransitioningTag
           type: CallFunction
@@ -3525,16 +3554,50 @@ gameplay_abilities:
             literal_value: Father.State.Transitioning
           position: [2500, 350]
         # Continue form switch flow after transition
-        - id: GetFatherLocation
+        # v5.1: Deploy 400 units forward of PLAYER position (not Father location)
+        - id: GetOwnerPlayer
+          type: PropertyGet
+          properties:
+            property_name: OwnerPlayer
+            target_class: BP_FatherCompanion
+          position: [1200, 0]
+        - id: GetPlayerLocation
           type: CallFunction
           properties:
             function: K2_GetActorLocation
-          position: [1200, 0]
+          position: [1350, 0]
+        - id: GetPlayerForward
+          type: CallFunction
+          properties:
+            function: GetActorForwardVector
+          position: [1350, 100]
+        - id: MultiplyForwardOffset
+          type: CallFunction
+          properties:
+            function: Multiply_VectorFloat
+            class: KismetMathLibrary
+          position: [1500, 100]
+        - id: MakeOffsetDistance
+          type: MakeLiteralFloat
+          properties:
+            value: 400.0
+          position: [1400, 150]
+        - id: AddOffsetToLocation
+          type: CallFunction
+          properties:
+            function: Add_VectorVector
+            class: KismetMathLibrary
+          position: [1650, 0]
         - id: SetDeployLocation
           type: VariableSet
           properties:
             variable_name: DeployLocation
-          position: [1500, 0]
+          position: [1800, 0]
+        - id: GetPlayerRotation
+          type: CallFunction
+          properties:
+            function: K2_GetActorRotation
+          position: [1350, 200]
         - id: SetCurrentForm
           type: PropertySet
           properties:
@@ -3623,6 +3686,29 @@ gameplay_abilities:
             property_name: IsDeployed
             target_class: BP_FatherCompanion
           position: [900, 500]
+        # v7.8.56: Contract 12 R-AI-1 - Activity restoration on EndAbility
+        - id: GetActivityComponent_End
+          type: CallFunction
+          properties:
+            function: GetActivityComponent
+          position: [1100, 500]
+        - id: StopCurrentActivity_End
+          type: CallFunction
+          properties:
+            function: StopCurrentActivity
+            class: NPCActivityComponent
+          position: [1300, 500]
+        - id: PerformActivitySelection_End
+          type: CallFunction
+          properties:
+            function: PerformActivitySelection
+            class: NPCActivityComponent
+          position: [1500, 500]
+        - id: MakeLiteralBool_CheckNew
+          type: MakeLiteralBool
+          properties:
+            value: true
+          position: [1400, 650]
       connections:
         # === ACTIVATION FLOW ===
         # Exec flow (GetAvatarActor is pure - no exec pins)
@@ -3639,9 +3725,13 @@ gameplay_abilities:
         - from: [RemovePriorFormState_First, Exec]
           to: [ApplyEngineerState_First, Exec]
         - from: [ApplyEngineerState_First, Exec]
+          to: [ApplyTurretHealth_First, Exec]
+        # v5.1: Apply 500 HP turret health
+        - from: [ApplyTurretHealth_First, Exec]
           to: [SetFirstFalse, Exec]
+        # v5.1: Pure nodes have no exec - go directly to SetDeployLocation
         - from: [SetFirstFalse, Exec]
-          to: [GetFatherLocation, Exec]
+          to: [SetDeployLocation, Exec]
         # === FORM SWITCH PATH (False branch) - Full transition with VFX/delay ===
         # v4.13.5: NO invulnerability - uses AddLooseGameplayTag/RemoveLooseGameplayTag
         - from: [Branch_First, False]
@@ -3663,10 +3753,12 @@ gameplay_abilities:
         - from: [RemovePriorFormState, Exec]
           to: [ApplyEngineerState, Exec]
         - from: [ApplyEngineerState, Exec]
+          to: [ApplyTurretHealth, Exec]
+        # v5.1: Apply 500 HP turret health
+        - from: [ApplyTurretHealth, Exec]
           to: [RemoveTransitioningTag, Exec]
+        # v5.1: Pure nodes (GetOwnerPlayer, GetPlayerLocation, etc.) have no exec pins
         - from: [RemoveTransitioningTag, Exec]
-          to: [GetFatherLocation, Exec]
-        - from: [GetFatherLocation, Exec]
           to: [SetDeployLocation, Exec]
         - from: [SetDeployLocation, Exec]
           to: [SetCurrentForm, Exec]
@@ -3692,11 +3784,28 @@ gameplay_abilities:
         - from: [CastToFather, AsBP Father Companion]
           to: [SetFatherRef, FatherRef]
         - from: [CastToFather, AsBP Father Companion]
-          to: [GetFatherLocation, Target]
+          to: [GetOwnerPlayer, Target]
         - from: [CastToFather, AsBP Father Companion]
           to: [SetCurrentForm, Target]
         - from: [CastToFather, AsBP Father Companion]
           to: [SetIsAttached, Target]
+        # v5.1: Player-based deployment (400 units forward)
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetPlayerLocation, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetPlayerForward, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [GetPlayerRotation, Target]
+        - from: [GetPlayerForward, ReturnValue]
+          to: [MultiplyForwardOffset, A]
+        - from: [MakeOffsetDistance, ReturnValue]
+          to: [MultiplyForwardOffset, B]
+        - from: [GetPlayerLocation, ReturnValue]
+          to: [AddOffsetToLocation, A]
+        - from: [MultiplyForwardOffset, ReturnValue]
+          to: [AddOffsetToLocation, B]
+        - from: [AddOffsetToLocation, ReturnValue]
+          to: [SetDeployLocation, DeployLocation]
         # Data flow - R-AI-1 turret AI (v4.30)
         - from: [CastToFather, AsBP Father Companion]
           to: [GetFatherController, Target]
@@ -3763,9 +3872,7 @@ gameplay_abilities:
           to: [GetFatherMesh, Target]
         - from: [GetFatherMesh, Mesh]
           to: [SpawnTransitionVFX, AttachToComponent]
-        # Data flow - Location
-        - from: [GetFatherLocation, ReturnValue]
-          to: [SetDeployLocation, DeployLocation]
+        # Data flow - Location (v5.1: now handled by player-based deployment nodes above)
         # === END ABILITY FLOW ===
         # v2.5.5: First check bWasCancelled - only cleanup when cancelled by form switch
         - from: [Event_EndAbility, Then]
@@ -3788,6 +3895,20 @@ gameplay_abilities:
         # Data flow - FatherRef to SetIsDeployed target
         - from: [GetFatherRef_End, FatherRef]
           to: [SetIsDeployed_End, Target]
+        # v7.8.56: Contract 12 R-AI-1 - Activity restoration exec flow
+        - from: [SetIsDeployed_End, Exec]
+          to: [StopCurrentActivity_End, Exec]
+        - from: [StopCurrentActivity_End, Exec]
+          to: [PerformActivitySelection_End, Exec]
+        # v7.8.56: Contract 12 R-AI-1 - Activity restoration data flow
+        - from: [GetFatherRef_End, FatherRef]
+          to: [GetActivityComponent_End, Target]
+        - from: [GetActivityComponent_End, ReturnValue]
+          to: [StopCurrentActivity_End, Target]
+        - from: [GetActivityComponent_End, ReturnValue]
+          to: [PerformActivitySelection_End, Target]
+        - from: [MakeLiteralBool_CheckNew, ReturnValue]
+          to: [PerformActivitySelection_End, bCheckNew]
 
   # ---------------------------------------------------------------------------
   # COMBAT ABILITIES (4)

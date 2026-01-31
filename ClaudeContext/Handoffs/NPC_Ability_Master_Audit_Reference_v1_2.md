@@ -380,6 +380,87 @@ All conditions must be true:
 | AbilityTask_SpawnProjectile | Requires generator enhancement |
 | OnTargetData/OnDestroyed delegates | Requires generator enhancement |
 
+### GA_FatherEngineer Contract 12 Audit (v7.8.56)
+
+**Audit Type:** Claude-GPT Dual Audit (Cross-Examination)
+**Status:** COMPLETE - Contract 12 R-AI-1 Activity System Compatibility
+
+#### Audit Findings
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| AUD-ENG-01 | Guide v5.0 changelog claimed "activity resumes naturally" | **FIXED:** Updated to explicit reselection language per Contract 12 Option B |
+| AUD-ENG-02 | EndAbility missing StopBehaviorTree + Activity reselection | **FIXED:** Added GetActivityComponent → StopCurrentActivity → PerformActivitySelection(true) |
+
+#### Contract 12 Option B Compliance Verification
+
+| Requirement | ActivateAbility | EndAbility |
+|-------------|-----------------|------------|
+| Stop activity before RunBehaviorTree | ✅ StopCurrentActivity() | N/A |
+| Trigger activity reselection on EndAbility | N/A | ✅ PerformActivitySelection(true) |
+| BT cleanup on form switch | N/A | ✅ StopCurrentActivity() internally stops BT |
+
+#### Manifest Changes (v7.8.56)
+
+**New EndAbility Nodes:**
+- `GetActivityComponent_End` - Get activity component from FatherRef
+- `StopCurrentActivity_End` - Stop turret activity/BT
+- `PerformActivitySelection_End` - Trigger activity reselection
+- `MakeLiteralBool_CheckNew` - bCheckNew = true parameter
+
+**New EndAbility Connections:**
+```yaml
+- from: [SetIsDeployed_End, Exec]
+  to: [StopCurrentActivity_End, Exec]
+- from: [StopCurrentActivity_End, Exec]
+  to: [PerformActivitySelection_End, Exec]
+- from: [GetFatherRef_End, FatherRef]
+  to: [GetActivityComponent_End, Target]
+- from: [GetActivityComponent_End, ReturnValue]
+  to: [StopCurrentActivity_End, Target]
+- from: [GetActivityComponent_End, ReturnValue]
+  to: [PerformActivitySelection_End, Target]
+- from: [MakeLiteralBool_CheckNew, ReturnValue]
+  to: [PerformActivitySelection_End, bCheckNew]
+```
+
+#### Key Technical Insight
+
+`StopCurrentActivity()` internally calls `StopBehaviorTree()` via `StopActivity_Internal(Activity, bCleanupBT=true)`. This eliminates the need for separate BT stop call - single function handles both activity cleanup and BT termination.
+
+**Reference:** NPCActivityComponent.cpp lines 625-629, 780-792
+
+#### Epic Validation (v7.8.56b - LOCKED)
+
+**Claude-GPT dual audit validated against Epic official sources:**
+
+| Epic Finding | Source | Status |
+|--------------|--------|--------|
+| `RunBehaviorTree()` does NOT auto-stop previous trees | Epic Forum, Dev Mieszko Z | ✅ PROVEN |
+| `BrainComponent::StopLogic()` is canonical stop method | Epic Docs | ✅ PROVEN |
+| Multiple BTs can run concurrently if not stopped | Epic Forum | ✅ PROVEN |
+| Null BrainComponent crashes on StopLogic | Epic Forum reports | ✅ PROVEN |
+| EndAbility restoration pattern | No Epic docs (GAS gap) | ⚠️ INFERRED |
+
+**Epic Sources:**
+- [Behavior Trees in UE](https://dev.epicgames.com/documentation/en-us/unreal-engine/behavior-trees-in-unreal-engine)
+- [StopLogic API](https://dev.epicgames.com/documentation/en-us/unreal-engine/BlueprintAPI/AI/Logic/StopLogic)
+- [Epic Forum - BT switching issues](https://forums.unrealengine.com/t/behavior-tree-still-running-after-switching-to-new-one/292558)
+
+#### AI Driver Handoff Checklist (LOCKED v7.8.56b)
+
+**Pattern A — Activity-First (Default, Safe)**
+- Never call `RunBehaviorTree()` directly from abilities
+- Phase changes use goal add/remove via `AddGoal()`
+- `bTriggerReselect: true` when phase meaningfully changes
+
+**Pattern B — Ability-Overrides-AI (Rare, Explicit)**
+- `StopCurrentActivity()` before `RunBehaviorTree()`
+- Ability owns BT lifecycle completely
+- EndAbility calls `StopCurrentActivity()` + `PerformActivitySelection(true)`
+
+**Scope:** Only GA_FatherEngineer uses Pattern B. All 7 NPC systems (Biomech, Warden, Exploder, Guard, Stalker, Support, Gatherer) verified safe - they use Activity-layer goal coordination (Pattern A).
+
 ### GA_FatherMark Comprehensive Audit (v7.8.57l)
 
 **Audit Type:** Claude-GPT Dual Audit (Joint Cross-Examination)
@@ -589,6 +670,7 @@ auto NeedsTypeFix = [](const FEdGraphPinType& T, bool bShouldBeArray) -> bool
 | Father_Combat_Abilities_Dual_Audit_v1_0A.md | ClaudeContext/Handoffs/ | Extended combat audit |
 | GA_FatherSacrifice_Audit_v7_8_55.md | ClaudeContext/Handoffs/ | Sacrifice 15% threshold, dormant state (CONSOLIDATED) |
 | GA_FatherMark audit documents (6) | (CONSOLIDATED) | Joint audit, contract research, wildcard resolution |
+| GA_FatherEngineer Contract 12 Audit | (CONSOLIDATED) | AUD-ENG-01 doc fix, AUD-ENG-02 implementation fix |
 
 ### Related Reference Documents
 
@@ -605,7 +687,8 @@ auto NeedsTypeFix = [](const FEdGraphPinType& T, bool bShouldBeArray) -> bool
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.2 | 2026-01-31 | Consolidated GA_FatherMark audit (6 docs), added v7.8.56-57l generator enhancements |
+| 1.2b | 2026-01-31 | **LOCKED: AI Driver Handoff Checklist** - Epic validation complete (RunBehaviorTree, StopLogic, BrainComponent). Added Pattern A/B checklists. Verified 7 NPC systems safe (Activity-layer). Only GA_FatherEngineer uses Pattern B. |
+| 1.2 | 2026-01-31 | Consolidated GA_FatherMark audit (6 docs), GA_FatherEngineer Contract 12 audit (AUD-ENG-01, AUD-ENG-02), added v7.8.56-57l generator enhancements |
 | 1.1 | 2026-01-31 | Consolidated GA_FatherSacrifice_Audit_v7_8_55.md, added Contracts 28-29 |
 | 1.0 | 2026-01-31 | Initial compilation from 11 audit documents |
 

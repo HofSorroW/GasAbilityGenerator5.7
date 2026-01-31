@@ -351,14 +351,63 @@ NPCs using Narrative Pro's Activity system (via `activity_configuration` in NPCD
     class: NPCActivityComponent
 
 # Then RunBehaviorTree as before
+
+# On EndAbility (v7.8.56 - AUD-ENG-02):
+- id: GetActivityComponent_End
+  type: CallFunction
+  properties:
+    function: GetActivityComponent
+  # Returns NPCActivityComponent from NarrativeNPCCharacter
+
+- id: StopCurrentActivity_End
+  type: CallFunction
+  properties:
+    function: StopCurrentActivity
+    class: NPCActivityComponent
+  # Internally stops BT via StopActivity_Internal(Activity, bCleanupBT=true)
+
+- id: PerformActivitySelection_End
+  type: CallFunction
+  properties:
+    function: PerformActivitySelection
+    class: NPCActivityComponent
+  # bCheckNew = true to select new activity
 ```
 
 ### Reference
 
 - Manifest: `manifest.yaml` — GA_FatherEngineer event_graph, NPC_FatherCompanion definition
+- Narrative Pro: `NPCActivityComponent.h:84` — `PerformActivitySelection()` is BlueprintCallable
 - Narrative Pro: `NPCActivityComponent.h:131` — `StopCurrentActivity()` is BlueprintCallable
-- Audit: Claude–GPT dual audit session (2026-01-24)
-- Implementation: v4.30
+- Narrative Pro: `NPCActivityComponent.cpp:780` — `StopActivity_Internal` internally calls `StopBehaviorTree()`
+- Audit: Claude–GPT dual audit session (2026-01-24 v4.30, 2026-01-31 v7.8.56)
+- Implementation: v4.30 (ActivateAbility), v7.8.56 (EndAbility - AUD-ENG-02)
+
+### AI Driver Handoff Checklist (v7.8.56 - LOCKED)
+
+**Pattern A — Activity-First (Default, Safe)**
+- [ ] Never call `RunBehaviorTree()` directly from abilities
+- [ ] Phase changes use goal add/remove via `AddGoal()`
+- [ ] `bTriggerReselect: true` when phase meaningfully changes
+
+**Pattern B — Ability-Overrides-AI (Rare, Explicit)**
+- [ ] `StopCurrentActivity()` before `RunBehaviorTree()`
+- [ ] Ability owns BT lifecycle completely
+- [ ] EndAbility calls `StopCurrentActivity()` + `PerformActivitySelection(true)`
+
+> **Epic Alignment Note (v7.8.56):** This contract extends Epic's documented requirement
+> to explicitly stop brain logic before starting new logic (`BrainComponent::StopLogic()`),
+> applying it to GAS-driven AI overrides where Epic documentation is silent.
+>
+> **Epic Sources Validated:**
+> - `RunBehaviorTree()` does NOT auto-stop previous trees (Epic Forum, Mieszko Z)
+> - `BrainComponent::StopLogic()` is canonical stop method (Epic Docs)
+> - Multiple BTs can run concurrently if not explicitly stopped (Epic Forum)
+> - Null BrainComponent crashes on StopLogic (Epic Forum reports)
+>
+> **Scope:** Only applies to abilities that directly call `RunBehaviorTree()` on NPCs
+> with `ActivityConfiguration`. Currently affects only `GA_FatherEngineer`.
+> NPC systems using Activity-layer goal coordination are inherently safe.
 
 ---
 
@@ -1620,3 +1669,5 @@ Any change that touches a LOCKED implementation must:
 | v7.8.45 | 2026-01-30 | Added Contract 26 — C_COMPOSITE_NODE_CONNECTIONS: All internal composite node connections MUST use `Schema->TryCreateConnection()`, never `MakeLinkTo()`. MakeLinkTo skips NotifyPinConnectionListChanged callbacks required for DynamicCast wildcard pin type resolution. |
 | v7.8.48 | 2026-01-30 | Added Contract 24 Addendum A — D-DAMAGE-ATTR-1A SetByCaller Restrictions (Claude–GPT dual audit): Formalizes that SetByCaller for damage with NarrativeDamageExecCalc is FORBIDDEN; allowed for duration/secondary modifiers. Pre-validation error: `E_PREVAL_SETBYCALLER_DAMAGE_FORBIDDEN`. Also implemented v1.0C Patch Plan (RF-1 remediation): P1-BP.X (BP_FatherCompanion.MarkEnemy function), P1-MK.X (GA_FatherMark reads PendingMarkTarget from owner), P1-LS.X (GA_FatherLaserShot Mark integration restored). |
 | v7.8.49 | 2026-01-30 | Added Contract 27 — C_COOLDOWN_TAG_HIERARCHY (Claude–GPT dual audit): All Father cooldown tags MUST use hierarchical format `Cooldown.Father.{Form}.{Ability}`. Enables blanket parent tag queries via UE5 `HasAny()` checking `ParentTags`. Exception: `Cooldown.Father.FormChange` (shared). Excluded: GA_FatherExoskeletonSprint (toggle, no cooldown). |
+| v7.8.56 | 2026-01-31 | Updated Contract 12 — R-AI-1 EndAbility implementation (Claude–GPT dual audit AUD-ENG-02): GA_FatherEngineer EndAbility now includes `StopCurrentActivity` + `PerformActivitySelection(true)` to properly restore Activity system when form switch occurs. Documentation fix: removed incorrect "resumes naturally" claim from guide (AUD-ENG-01). |
+| v7.8.56b | 2026-01-31 | **LOCKED: AI Driver Handoff Checklist** (Claude–GPT dual audit + Epic validation): Added Pattern A (Activity-First) and Pattern B (Ability-Overrides-AI) checklists to Contract 12. Validated against Epic official sources: RunBehaviorTree doesn't auto-stop (Mieszko Z), BrainComponent::StopLogic is canonical, multiple BTs can run concurrently. Scope: Only GA_FatherEngineer currently uses Pattern B. All 7 NPC systems verified safe (use Activity-layer coordination). |

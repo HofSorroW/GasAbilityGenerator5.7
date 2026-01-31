@@ -1,8 +1,8 @@
 # Father Companion - GA_FatherEngineer Implementation Guide
-## VERSION 5.0 - R-AI-1 Activity System Compatibility (v4.30)
+## VERSION 5.1 - Contract 12 End-Side Audit (v5.1)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
-**Version:** 5.0
+**Version:** 5.1
 **Date:** January 2026
 **Engine:** Unreal Engine 5.7
 **Plugin:** Narrative Pro v2.2
@@ -21,7 +21,7 @@
 | GA_FatherEngineer blueprint | ✅ Auto-generated | manifest.yaml gameplay_abilities section |
 | Activation tags config | ✅ Auto-generated | Required/Blocked tags in manifest |
 | Transition prelude nodes | ✅ Auto-generated | RemovePriorFormState + ApplyEngineerState in event_graph |
-| Deployment logic | ✅ Auto-generated | LineTrace, SetActorLocation in event_graph |
+| Deployment logic | ✅ Auto-generated | PlayerLocation + Forward*400, SetActorLocation in event_graph |
 | R-AI-1 AI coordination | ✅ Auto-generated | StopCurrentActivity + RunBehaviorTree (v5.0) |
 | VFX spawning | ✅ Auto-generated | SpawnSystemAttached nodes in event_graph |
 | 3-Layer Guards | ✅ Auto-generated | NL-GUARD-IDENTITY L1 pattern (v5.0) |
@@ -66,13 +66,13 @@
 
 ### **Ability Overview**
 
-GA_FatherEngineer is the form activation ability that transforms the father companion into a stationary turret. When activated, the father deploys at the player's aimed location and becomes a fixed defensive platform with autonomous targeting capabilities.
+GA_FatherEngineer is the form activation ability that transforms the father companion into a stationary turret. When activated, the father deploys 400 units forward of the player's position (facing forward) and becomes a fixed defensive platform with autonomous targeting capabilities.
 
 ### **Key Features**
 
-- Deployment System: Father teleports/moves to aimed location
+- Deployment System: Father teleports 400 units forward of player position
 - Stationary Mode: Father becomes fixed position turret
-- 270 Degree Coverage: Turret can rotate within limited arc
+- Forward Facing: Turret faces same direction as player at deployment
 - Health Pool: Turret can be damaged and destroyed
 - AI Autonomous: Turret shoots and deploys traps automatically
 - Form Transition: Switch to other forms via T wheel (with 5s animation)
@@ -80,7 +80,7 @@ GA_FatherEngineer is the form activation ability that transforms the father comp
 
 ### **Engineer Form Context**
 
-The Engineer form transforms the father into a tactical asset. Player aims at deployment location, father deploys and becomes stationary, turret automatically engages enemies, player is free to focus on other combat, and turret remains until player switches to another form or turret is destroyed.
+The Engineer form transforms the father into a tactical asset. When activated, father deploys 400 units forward of the player (facing forward), becomes stationary, turret automatically engages enemies, player is free to focus on other combat, and turret remains until player switches to another form or turret is destroyed.
 
 ### **Form Comparison**
 
@@ -96,12 +96,11 @@ The Engineer form transforms the father into a tactical asset. Player aims at de
 
 | Parameter | Value |
 |-----------|-------|
-| Deployment Range | 1500 units max |
-| Min Deploy Range | 200 units |
+| Deploy Offset | 400 units forward of player |
+| Deploy Facing | Forward (same as player direction) |
 | Detection Range | 1500 units |
 | Shoot Range | 500-1500 units |
 | Trap Range | Less than 500 units |
-| Rotation Arc | 270 degrees |
 | Turret Health | 500 HP |
 | Form Input | T (Wheel Selection) |
 
@@ -125,9 +124,10 @@ The Engineer form transforms the father into a tactical asset. Player aims at de
    - 1.1.3) Has NarrativeAbilitySystemComponent
 
 #### 1.2) Required Effects
-   - 1.2.1) GE_TurretMode (stat modifications)
-   - 1.2.2) Father.State.Transitioning tag (transition state - **NO invulnerability** per INV-1)
-   - 1.2.3) GE_FormChangeCooldown (15s cooldown)
+   - 1.2.1) GE_EngineerState (form identity - Effect.Father.FormState.Engineer)
+   - 1.2.2) GE_TurretHealth (sets MaxHealth/Health to 500 for defensive role)
+   - 1.2.3) Father.State.Transitioning tag (transition state - **NO invulnerability** per INV-1)
+   - 1.2.4) GE_FormChangeCooldown (15s cooldown)
 
 #### 1.3) Form System Foundation
    - 1.3.1) GA_FatherCrawler implemented (default form)
@@ -136,7 +136,7 @@ The Engineer form transforms the father into a tactical asset. Player aims at de
    - 1.3.4) BP_FatherEngineerForm EquippableItem created per Father_Companion_Forms_Implementation_Guide_v4_0 PHASE 7
 
 #### 1.4) Player Character
-   - 1.4.1) Player character with camera for aiming
+   - 1.4.1) Player character exists
    - 1.4.2) FatherCompanionRef variable exists
 
 #### 1.5) Narrative Pro v2.2
@@ -447,14 +447,10 @@ This effect grants the Engineer form identity tag. Applied in the transition pre
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
 | bIsFirstActivation | Boolean | True | No |
-| MaxDeployRange | Float | 1500.0 | Yes |
-| MinDeployRange | Float | 200.0 | Yes |
+| DeployOffsetDistance | Float | 400.0 | Yes |
 | TurretMaxHealth | Float | 500.0 | Yes |
-| RotationArc | Float | 270.0 | Yes |
-| PlayerRef | Actor (Object Reference) | None | No |
 | FatherRef | BP_FatherCompanion (Object Reference) | None | No |
 | DeployLocation | Vector | (0,0,0) | No |
-| DeployRotation | Rotator | (0,0,0) | No |
 
 ### **2) Implement ActivateAbility Event**
 
@@ -533,110 +529,57 @@ This effect grants the Engineer form identity tag. Applied in the transition pre
       - 3.1.1.2) Add **Set bIsFirstActivation** node
    - 3.1.2) Set **bIsFirstActivation**: `False` (unchecked)
 
-### **4) Calculate Deployment Position**
+### **4) Calculate Deployment Position (v5.1 - Player Offset)**
 
-#### 4.1) Distance Pre-Check (Performance Optimization)
-   - 4.1.1) From Set bIsFirstActivation execution:
-      - 4.1.1.1) From FatherRef getter, drag outward
-      - 4.1.1.2) Search: `Get Distance To`
-      - 4.1.1.3) Add **Get Distance To** node
-   - 4.1.2) Configure:
-      - 4.1.2.1) **Target**: Connect FatherRef
-      - 4.1.2.2) **Other Actor**: Connect PlayerRef
-   - 4.1.3) Add **Float < Float** (Less Than) node
-   - 4.1.4) Connect:
-      - 4.1.4.1) Get Distance To **Return Value** to first input
-      - 4.1.4.2) **MinDeployRange** getter to second input
-   - 4.1.5) Add **Branch** node
-   - 4.1.6) Connect Less Than result to Condition
-   - 4.1.7) From Branch **True** (too close):
-      - 4.1.7.1) Add **End Ability** node
-      - 4.1.7.2) **Was Cancelled**: Check (true)
+> **v5.1 Change:** Deploy location is now 400 units forward of player position, facing forward.
+> No line trace or aiming required.
 
-#### 4.2) Get Player Controller
-   - 3.2.1) From Branch **False** execution (distance OK):
-      - 3.2.1.1) Drag outward and search: `Get Player Controller`
-      - 3.2.1.2) Add **Get Player Controller** node
-   - 3.2.2) Set **Player Index**: `0`
+#### 4.1) Get Owner Player from Father
+   - 4.1.1) From Set bIsFirstActivation execution (or Branch False path for form switch):
+      - 4.1.1.1) From **FatherRef**, drag outward
+      - 4.1.1.2) Search: `Get Owner Player`
+      - 4.1.1.3) Add **Get Owner Player** node
+   - 4.1.2) This returns the player character that owns Father
 
-#### 3.3) Get Camera Location and Rotation
-   - 3.3.1) From Player Controller Return Value:
-      - 3.3.1.1) Drag outward and search: `Get Player View Point`
-      - 3.3.1.2) Add **Get Player View Point** node
+#### 4.2) Get Player Location
+   - 4.2.1) From Get Owner Player **Return Value**:
+      - 4.2.1.1) Drag outward and search: `Get Actor Location`
+      - 4.2.1.2) Add **Get Actor Location** node
+   - 4.2.2) This is the base position for deployment
 
-#### 3.4) Calculate Trace End Point
-   - 3.4.1) From Get Player View Point **Rotation** output:
-      - 3.4.1.1) Drag outward and search: `Get Forward Vector`
-      - 3.4.1.2) Add **Get Forward Vector** node
-   - 3.4.2) Add **Vector * Float** (Multiply) node
-   - 3.4.3) Connect:
-      - 3.4.3.1) Forward Vector to first input
-      - 3.4.3.2) **MaxDeployRange** getter to float input
-   - 3.4.4) Add **Vector + Vector** (Add) node
-   - 3.4.5) Connect:
-      - 3.4.5.1) View Point **Location** to first input
-      - 3.4.5.2) Multiply result to second input
+#### 4.3) Get Player Forward Vector
+   - 4.3.1) From Get Owner Player **Return Value**:
+      - 4.3.1.1) Drag outward and search: `Get Actor Forward Vector`
+      - 4.3.1.2) Add **Get Actor Forward Vector** node
+   - 4.3.2) This determines deployment direction
 
-#### 3.5) Perform Line Trace
-   - 3.5.1) From Get Player Controller execution (continue chain):
-      - 3.5.1.1) Drag outward and search: `Line Trace By Channel`
-      - 3.5.1.2) Add **Line Trace By Channel** node
-   - 3.5.2) Connect execution
-   - 3.5.3) Configure Line Trace:
-      - 3.5.3.1) **Start**: Connect View Point **Location**
-      - 3.5.3.2) **End**: Connect calculated Trace End Location (Add result)
-      - 3.5.3.3) **Trace Channel**: `Visibility`
-      - 3.5.3.4) **Trace Complex**: Uncheck
-      - 3.5.3.5) **Actors to Ignore**: Create array with PlayerRef and FatherRef
-      - 3.5.3.6) **Draw Debug Type**: `None`
+#### 4.4) Calculate Offset Vector
+   - 4.4.1) Add **Vector * Float** (Multiply) node
+   - 4.4.2) Connect:
+      - 4.4.2.1) **Get Actor Forward Vector** Return Value to first input
+      - 4.4.2.2) Literal Float `400.0` to second input (or **DeployOffsetDistance** variable)
+   - 4.4.3) Result: Forward direction × 400 units
 
-#### 3.6) Check Trace Hit
-   - 3.6.1) From Line Trace **Return Value** (boolean):
-      - 3.5.1.1) Drag outward and add **Branch** node
-   - 3.5.2) Connect Line Trace execution to Branch
+#### 4.5) Calculate Final Deploy Location
+   - 4.5.1) Add **Vector + Vector** (Add) node
+   - 4.5.2) Connect:
+      - 4.5.2.1) **Get Actor Location** Return Value to first input
+      - 4.5.2.2) Multiply result (offset vector) to second input
+   - 4.5.3) Result: PlayerLocation + ForwardOffset = DeployLocation
 
-### **4) Handle Trace Result**
+#### 4.6) Set Deploy Location
+   - 4.6.1) Add **Set DeployLocation** node
+   - 4.6.2) Connect Add result to DeployLocation value
 
-#### 4.1) Extract Hit Location (Hit Success)
-   - 4.1.1) From Line Trace **Out Hit** pin:
-      - 4.1.1.1) Drag outward and search: `Break Hit Result`
-      - 4.1.1.2) Add **Break Hit Result** node
+### **5) Get Deploy Rotation (Forward Facing)**
 
-#### 4.2) Set Deploy Location (Hit)
-   - 4.2.1) From Branch **True** execution:
-      - 4.2.1.1) Drag outward and search: `Set DeployLocation`
-      - 4.2.1.2) Add **Set DeployLocation** node
-   - 4.2.2) Connect execution
-   - 4.2.3) Connect Break Hit Result **Location** to DeployLocation value
+#### 5.1) Get Player Rotation
+   - 5.1.1) From Get Owner Player **Return Value**:
+      - 5.1.1.1) Drag outward and search: `Get Actor Rotation`
+      - 5.1.1.2) Add **Get Actor Rotation** node
+   - 5.1.2) Father faces same direction as player at deployment time
 
-#### 4.3) Set Deploy Location (No Hit - Use Max Range)
-   - 4.3.1) From Branch **False** execution:
-      - 4.3.1.1) Drag outward and search: `Set DeployLocation`
-      - 4.3.1.2) Add **Set DeployLocation** node
-   - 4.3.2) Connect execution
-   - 4.3.3) Connect calculated Trace End Location (Add result) to DeployLocation value
-
-#### 4.4) Merge Execution Paths
-   - 4.4.1) Add **Sequence** node after both Set DeployLocation nodes
-   - 4.4.2) Connect True path Set DeployLocation execution to Sequence input
-   - 4.4.3) Connect False path Set DeployLocation execution to Sequence input
-   - 4.4.4) Continue from Sequence **Then 0** pin
-
-### **5) Calculate Deploy Rotation**
-
-#### 5.1) Calculate Rotation Facing Player
-   - 5.1.1) From Sequence **Then 0** execution:
-      - 5.1.1.1) Drag outward and search: `Find Look at Rotation`
-      - 5.1.1.2) Add **Find Look at Rotation** node
-   - 5.1.2) Configure:
-      - 5.1.2.1) **Start**: Connect **DeployLocation** getter
-      - 5.1.2.2) **Target**: Connect **PlayerRef** -> Get Actor Location
-
-#### 5.2) Store Deploy Rotation
-   - 5.2.1) From Find Look at Rotation execution:
-      - 5.2.1.1) Add **Set DeployRotation** node
-   - 5.2.2) Connect execution
-   - 5.2.3) Connect Find Look at Rotation **Return Value** to DeployRotation value
+**Note (v5.1):** Father faces forward (same direction as player), NOT facing back at player.
 
 ### **6) Compile and Save**
 
@@ -1009,31 +952,8 @@ This phase handles switching TO Engineer form from another form via the T wheel.
 
 ##### 6.3.5) Continue to State Operations
    - 6.3.5.1) From **Branch** -> **True** execution pin
-   - 6.3.5.2) Continue to Section 7 (Detach Father From Player)
+   - 6.3.5.2) Continue to Section 7 (Detach Father From Previous Form)
    - 6.3.5.3) **All guards passed - safe to modify state**
-
-##### 6.3.3) Configure Tag to Check
-   - 6.3.3.1) On **Has Matching Gameplay Tag** node, find **Tag to Check** parameter
-   - 6.3.3.2) Click dropdown and navigate to: `Father > State > TurretDeployed`
-   - 6.3.3.3) Select **Father.State.TurretDeployed** tag
-   - 6.3.3.4) **Rationale:** This is the Activation Owned Tag - if present, ability is still active
-
-##### 6.3.4) Add Branch Node
-   - 6.3.4.1) From **Get Ability System Component** execution pin
-   - 6.3.4.2) Drag wire to right and release
-   - 6.3.4.3) Search: `Branch`
-   - 6.3.4.4) Select **Branch** node
-   - 6.3.4.5) Connect **Has Matching Gameplay Tag** -> **Return Value** to **Branch** -> **Condition**
-
-##### 6.3.5) Handle Ability No Longer Active
-   - 6.3.5.1) From **Branch** -> **False** execution pin
-   - 6.3.5.2) Leave unconnected or optionally add **Return Node**
-   - 6.3.5.3) **Purpose:** Ability was cancelled during transition - abort remaining setup
-
-##### 6.3.6) Continue to State Operations
-   - 6.3.6.1) From **Branch** -> **True** execution pin
-   - 6.3.6.2) Continue to Section 7 (Detach Father From Previous Form)
-   - 6.3.6.3) **All guards passed - safe to modify state**
 
 ### **7) Detach Father From Previous Form**
 
@@ -1189,7 +1109,48 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 | 9 | Branch | Only proceed if valid |
 | 10 | Remove Active Gameplay Effect | Remove GE_TurretMode using handle |
 | 11 | Set Is Deployed (false) | Reset deployment state |
-| 12 | Form Tags Auto-Removed | Activation Owned Tags cleanup (automatic) |
+| 12 | StopCurrentActivity | **Contract 12 R-AI-1:** Stop turret activity/BT |
+| 13 | PerformActivitySelection(true) | **Contract 12 R-AI-1:** Trigger activity reselection |
+| 14 | Form Tags Auto-Removed | Activation Owned Tags cleanup (automatic) |
+
+### **6) Contract 12 R-AI-1: Activity System Restoration (v5.1)**
+
+**CRITICAL:** This section implements the EndAbility-side of Contract 12 compliance. When GA_FatherEngineer ends (form switch), we must restore the Activity System.
+
+**Why this is necessary:**
+- ActivateAbility calls `StopCurrentActivity()` then `RunBehaviorTree(BT_FatherEngineer)` to run turret AI
+- When ability ends, the turret BT is still running but Activity system is stopped
+- Contract 12 Option B requires explicit activity reselection on EndAbility
+
+#### 6.1) Get Activity Component
+   - 6.1.1) From **As BP Father Companion** (from Section 2.2)
+   - 6.1.2) Search: `Get Activity Component`
+   - 6.1.3) Add **Get Activity Component** node
+   - 6.1.4) Returns `UNPCActivityComponent*`
+
+#### 6.2) Stop Current Activity (Stops Turret BT)
+   - 6.2.1) From **Set Is Deployed** execution pin
+   - 6.2.2) Drag to empty space
+   - 6.2.3) Search: `Stop Current Activity`
+   - 6.2.4) Add **Stop Current Activity** node
+   - 6.2.5) Connect **Get Activity Component** → **Return Value** to **Target**
+   - 6.2.6) **Note:** This internally calls `StopBehaviorTree()` on the turret BT
+
+#### 6.3) Perform Activity Selection (Restore Normal Behavior)
+   - 6.3.1) From **Stop Current Activity** execution pin
+   - 6.3.2) Search: `Perform Activity Selection`
+   - 6.3.3) Add **Perform Activity Selection** node
+   - 6.3.4) Connect **Get Activity Component** → **Return Value** to **Target**
+   - 6.3.5) **bCheckNew**: `true` (check box) - ensures new activity is selected
+   - 6.3.6) This triggers the NPC to reselect its best activity based on current goals
+
+#### 6.4) Contract 12 Compliance Verification
+
+| Requirement | Implementation |
+|-------------|----------------|
+| Stop activity before RunBehaviorTree | ✅ ActivateAbility calls StopCurrentActivity() |
+| Trigger activity reselection on EndAbility | ✅ EndAbility calls PerformActivitySelection(true) |
+| BT cleanup on form switch | ✅ StopCurrentActivity() internally stops BT |
 
 ### **7) Compile and Save**
 
@@ -1326,7 +1287,8 @@ Cleanup should ONLY run when bWasCancelled = true (form switch in progress).
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 5.0 | January 2026 | **R-AI-1 Activity System Compatibility (Claude-GPT Audit v6.0 - 2026-01-24):** Added LOCKED CONTRACT 12 compliance. PHASE 5 Section 7 now includes `StopCurrentActivity()` call before `RunBehaviorTree()`. NPC_FatherCompanion uses ActivityConfiguration, so direct BT calls must coordinate with Activity system. Option B: Stop activity, run turret BT, activity resumes naturally when ability ends. See `LOCKED_CONTRACTS.md` Contract 12. |
+| 5.0 | January 2026 | **R-AI-1 Activity System Compatibility (Claude-GPT Audit v6.0 - 2026-01-24):** Added LOCKED CONTRACT 12 compliance. PHASE 5 Section 7 now includes `StopCurrentActivity()` call before `RunBehaviorTree()`. NPC_FatherCompanion uses ActivityConfiguration, so direct BT calls must coordinate with Activity system. Option B: Stop activity, run turret BT. **NOTE:** Contract 12 requires explicit activity reselection trigger on EndAbility - see AUD-ENG-02 for implementation status. See `LOCKED_CONTRACTS.md` Contract 12. |
+| 5.1 | January 2026 | **Contract 12 End-Side Audit (Claude-GPT Audit v7.0 - 2026-01-31):** Documentation correction - removed incorrect "resumes naturally" claim. Contract 12 Option B requires explicit activity reselection on EndAbility, not passive auto-resume. **AUD-ENG-02 RESOLVED:** Added PHASE 5B Section 6 (Contract 12 R-AI-1: Activity System Restoration) with `GetActivityComponent` → `StopCurrentActivity` → `PerformActivitySelection(true)` flow. Manifest updated with corresponding nodes and connections. |
 | 4.9 | January 2026 | **NL-GUARD-IDENTITY L1 (Claude-GPT Audit v5.0 - 2026-01-24):** Updated 3-layer guards to use LOCKED L1 pattern: (1) IsValid(FatherRef), (2) HasMatchingGameplayTag(Father.State.Transitioning) - phase check, (3) HasMatchingGameplayTag(Effect.Father.FormState) - identity check with PARENT tag. Removed enum-based Guard 2, now uses tag-based phase/identity checks per GAS truth source principle. |
 | 4.8 | January 2026 | **3-Layer Guards (Claude-GPT Audit - 2026-01-24):** Added PHASE 5A Section 6 (POST-DELAY 3-LAYER GUARDS) implementing gold standard pattern from GA_FatherSymbiote. Guards execute after Delay callback: (1) IsValid(FatherRef), (2) CurrentForm == Engineer, (3) HasMatchingGameplayTag(Father.State.TurretDeployed). Resolves MEDIUM severity audit finding "No post-delay guards". Renumbered subsequent sections 7-11. |
 | 4.7 | January 2026 | **C_SYMBIOTE_STRICT_CANCEL Contract (Claude-GPT Audit - 2026-01-23):** Removed `Ability.Father.Symbiote` from cancel_abilities_with_tag. Symbiote is an ultimate ability (30s duration) that cannot be cancelled by player-initiated form changes. Defense-in-depth: Layer 1 blocks via `Father.State.SymbioteLocked` in activation_blocked_tags, Layer 2 ensures no cancel path exists. See LOCKED_CONTRACTS.md Contract 11. |

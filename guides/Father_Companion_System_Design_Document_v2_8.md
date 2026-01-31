@@ -479,10 +479,10 @@ When switching forms via T wheel while dome is fully charged:
 
 | Aspect | Description |
 |--------|-------------|
-| Activation | T (Wheel) -> Father deploys at aimed location |
+| Activation | T (Wheel) -> Father deploys 400 units forward of player |
 | Position | Fixed until form change |
-| Rotation | 270 degrees coverage arc |
-| Health | Father has health pool as turret |
+| Rotation | Forward-facing (same direction as player at deployment) |
+| Health | 500 HP (GE_TurretHealth) - defensive hold-ground role |
 
 #### 2.5.3) AI Behavior
 
