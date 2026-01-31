@@ -1,6 +1,6 @@
 # GA_FatherLaserShot - Implementation Guide
 
-## VERSION 3.8 - Form State Tag Update (INV-1 Compliant) | Unreal Engine 5.6 | Narrative Pro Plugin v2.2
+## VERSION 3.8 - Form State Tag Update (INV-1 Compliant) | Unreal Engine 5.7 | Narrative Pro Plugin v2.2
 
 ---
 
@@ -15,7 +15,7 @@
 | Projectile Parent | NarrativeProjectile |
 | Input | None (AI-controlled) |
 | Damage System | NarrativeDamageExecCalc |
-| Version | 3.7 |
+| Version | 3.8 |
 
 ---
 
@@ -62,7 +62,7 @@ GA_FatherLaserShot is an autonomous AI-controlled ranged attack that allows the 
 | Projectile Speed | 5000 units/second |
 | Damage Source | Father AttackDamage attribute (via NarrativeDamageExecCalc) |
 | Effective Range | 1500 units |
-| Cooldown Duration | 2 seconds |
+| Cooldown Duration | 3 seconds |
 | Projectile Lifespan | 3 seconds |
 
 ### System Flow
@@ -325,7 +325,7 @@ GA_FatherLaserShot is an autonomous AI-controlled ranged attack that allows the 
 | Property | Value |
 |----------|-------|
 | Duration Policy | Has Duration |
-| Duration Magnitude -> Scalable Float Magnitude | 2.0 |
+| Duration Magnitude -> Scalable Float Magnitude | 3.0 |
 | Components | Granted Tags |
 | Granted Tags -> Add to Inherited [0] | Cooldown.Father.Crawler.LaserShot |
 
@@ -746,7 +746,7 @@ Narrative Pro provides BTTask_ActivateAbilityByClass - a built-in reusable task 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
 | GE_LaserDamage | Instant | Applies damage via NarrativeDamageExecCalc |
-| GE_LaserCooldown | 2.0 seconds | Grants Cooldown.Father.Crawler.LaserShot tag |
+| GE_LaserCooldown | 3.0 seconds | Grants Cooldown.Father.Crawler.LaserShot tag |
 
 ### Projectile Configuration
 

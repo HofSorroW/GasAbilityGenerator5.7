@@ -103,8 +103,8 @@ tags:
     comment: Hierarchical child - sprint ability
   - tag: Ability.Father.Exoskeleton.StealthField
     comment: Hierarchical child - stealth field ability (v7.8.50)
-  - tag: Ability.Father.LaserShot
-    comment: Crawler ranged laser attack
+  - tag: Ability.Father.Crawler.LaserShot
+    comment: Hierarchical child - Crawler ranged laser attack (Contract 27)
   - tag: Ability.Father.Mark
     comment: Enemy marking passive
   - tag: Ability.Father.ProtectiveDome
@@ -4018,7 +4018,7 @@ gameplay_abilities:
     cooldown_gameplay_effect_class: GE_LaserCooldown
     tags:
       ability_tags:
-        - Ability.Father.LaserShot
+        - Ability.Father.Crawler.LaserShot
       activation_owned_tags:
         - Father.State.ShootingLaser
       activation_required_tags:

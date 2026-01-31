@@ -721,7 +721,7 @@ Ability.Father.Exoskeleton
 Ability.Father.Symbiote
 Ability.Father.Engineer
 Ability.Father.Attack
-Ability.Father.LaserShot
+Ability.Father.Crawler.LaserShot
 Ability.Father.Mark
 Ability.Father.ProtectiveDome
 Ability.Father.DomeBurst
