@@ -1,6 +1,15 @@
 # Father Companion - Protective Dome Ability Implementation Guide
 ## VERSION 3.0 - Variable-Based Architecture (Manifest Automated)
 
+> **DEPRECATED (January 2026):** This guide is OUTDATED. Use **GA_DomeBurst_Implementation_Guide_v2_12.md** instead.
+>
+> **Key Changes:**
+> - Contract 24/24A: SetByCaller damage is FORBIDDEN with NarrativeDamageExecCalc
+> - Damage now comes from player's AttackDamage attribute (not flat 75)
+> - BurstDamage variable REMOVED
+> - Data.Dome.Damage tag REMOVED
+> - Cooldown tag changed to hierarchical: `Cooldown.Father.Armor.DomeBurst`
+
 **Document Purpose**: Complete reference for the Protective Dome ability for the Father companion in Armor form. This version documents the manifest-automated architecture using BP_FatherCompanion Blueprint variables instead of custom AttributeSets.
 
 **System Overview**: When the father is in Armor form, the player accumulates Dome Energy from incoming damage using an **Energy-Only model** - the player takes full incoming damage (no reduction), while 30% of post-mitigation damage is converted to Dome Energy stored on BP_FatherCompanion. When the dome reaches maximum energy (500), the `Father.Dome.FullyCharged` tag is granted on the Player ASC, enabling the Q key to trigger a burst dealing 75 flat damage to all enemies within 500 units. The burst can also trigger automatically on form exit (T wheel) when fully charged. After bursting, the ability enters a 12-second cooldown.

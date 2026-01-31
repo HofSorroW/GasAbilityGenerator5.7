@@ -1451,7 +1451,7 @@ GA_FatherArmor EndAbility only handles movement restoration and state reset.
 | GA_DomeBurst | Active ability (Q key) or auto-trigger when dome fully charged |
 | AS_DomeAttributes | DomeEnergy and MaxDomeEnergy attributes on player |
 | GE_DomeAbsorption | 30% damage absorption effect |
-| GE_DomeBurstDamage | AOE damage effect (150-300 based on energy) |
+| GE_DomeBurstDamage | AOE damage (AttackDamage-based via NarrativeDamageExecCalc) |
 
 ---
 

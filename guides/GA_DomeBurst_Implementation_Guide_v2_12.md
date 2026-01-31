@@ -23,7 +23,7 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 | Parent Class | NarrativeGameplayAbility |
 | Form | Armor |
 | Input | Q Key (Manual) or Form Exit (T Wheel) |
-| Version | 2.11 |
+| Version | 2.12 |
 | Last Updated | January 2026 |
 
 ---
@@ -34,7 +34,7 @@ This guide follows values defined in **manifest.yaml** (single source of truth).
 |-------|-------|
 | Last Audit Date | 2026-01-24 |
 | Audit Type | Claude-GPT Dual Audit |
-| Manifest Alignment | Verified (v6.5: input_tag added, SetByCaller tag fixed) |
+| Manifest Alignment | Verified (v2.12: Contract 24/24A + Contract 27 compliant) |
 | Auto-burst | REMOVED - Design Doc v2.7 Section 2.2.6 locks as DISABLED |
 | Input System | Narrative Pro input_tag system (Narrative.Input.Ability1) |
 
@@ -67,7 +67,7 @@ GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dom
 | Feature | Description |
 |---------|-------------|
 | Dual Activation | Manual (Q key) or Form Exit (T wheel) |
-| Flat Damage | 75 damage to all enemies in radius |
+| Scaled Damage | AttackDamage-based via NarrativeDamageExecCalc |
 | AOE Explosion | 500 unit radius centered on player |
 | Knockback Effect | Pushes enemies away from player |
 | Cooldown System | 12 seconds after burst before recharge |
@@ -98,7 +98,7 @@ GA_DomeBurst is the explosive payoff ability for the Armor form's Protective Dom
 
 | Parameter | Value |
 |-----------|-------|
-| Burst Damage | 75 (flat) |
+| Burst Damage | AttackDamage attribute (via NarrativeDamageExecCalc) |
 | Burst Radius | 500 units |
 | Knockback Force | 1000 units |
 | Cooldown | 12 seconds |
@@ -158,8 +158,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | Father.State.Attacking | Burst ability executing (owned tag during activation) |
 | Effect.Father.DomeBurst | Damage from dome burst explosion |
 | Effect.Father.DomeBurstKnockback | Knockback from dome burst |
-| Cooldown.Father.DomeBurst | Cooldown after dome burst |
-| Data.Dome.Damage | SetByCaller tag for dome burst damage |
+| Cooldown.Father.Armor.DomeBurst | Cooldown after dome burst (hierarchical per Contract 27) |
 
 ---
 
@@ -186,13 +185,9 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | Duration Policy | Instant |
 | Components | Executions |
 | Calculation Class | NarrativeDamageExecCalc |
-| Calculation Modifiers [0] | |
-| - Backing Capture Definition -> Attribute to Capture | AttackDamage |
-| - Backing Capture Definition -> Attribute Source | Source |
-| - Modifier Op | Override |
-| - Modifier Magnitude -> Magnitude Calculation Type | Set By Caller |
-| - Set By Caller Magnitude -> Data Tag | Data.Dome.Damage |
 | Asset Tags -> Add to Inherited [0] | Effect.Father.DomeBurst |
+
+**Note:** NarrativeDamageExecCalc automatically captures the source's AttackDamage attribute. Per Contract 24/24A, SetByCaller is forbidden for damage values with this exec calc.
 
 #### 2.3) Compile and Save
 
@@ -212,8 +207,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | Duration Magnitude -> Magnitude Calculation Type | Scalable Float |
 | Duration Magnitude -> Scalable Float Magnitude -> Value | 12.0 |
 | Components | Grant Tags to Target Actor |
-| Add Tags -> Add to Inherited [0] | Cooldown.Father.DomeBurst |
-| Add Tags -> Add to Inherited [1] | Father.Dome.OnCooldown |
+| Add Tags -> Add to Inherited [0] | Cooldown.Father.Armor.DomeBurst |
 
 #### 3.3) Compile and Save
 
@@ -273,7 +267,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 | Ability Tags | Ability.Father.DomeBurst |
 | Activation Required Tags | Father.Dome.Active, Father.Dome.FullyCharged |
 | Activation Owned Tags | Father.State.Attacking |
-| Activation Blocked Tags | Cooldown.Father.DomeBurst |
+| Activation Blocked Tags | Cooldown.Father.Armor.DomeBurst |
 
 ### **5) Configure Replication Settings**
 
@@ -318,7 +312,6 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 
 | Variable | Type | Default | Instance Editable |
 |----------|------|---------|-------------------|
-| BurstDamage | Float | 75.0 | Yes |
 | BurstRadius | Float | 500.0 | Yes |
 | KnockbackForce | Float | 1000.0 | Yes |
 | PlayerRef | Actor (Object Reference) | None | No |
@@ -461,22 +454,16 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
       - 7.4.2.1) Gameplay Effect Class: `GE_DomeBurstDamage`
       - 7.4.2.2) Level: `1.0`
 
-#### 7.5) Assign Set By Caller Magnitude
-   - 7.5.1) From Make Outgoing Spec Return Value pin:
-      - 7.5.1.1) Drag outward and search: `Assign Tag Set By Caller Magnitude`
-      - 7.5.1.2) Add Assign Tag Set By Caller Magnitude node
-   - 7.5.2) Configure:
-      - 7.5.2.1) Data Tag: `Data.Dome.Damage`
-      - 7.5.2.2) Magnitude: Connect BurstDamage getter (flat 75)
+#### 7.5) Apply Effect to Enemy
+   - 7.5.1) From Make Outgoing Spec execution pin:
+      - 7.5.1.1) Drag outward and search: `Apply Gameplay Effect Spec to Target`
+      - 7.5.1.2) Add Apply Gameplay Effect Spec to Target node
+   - 7.5.2) Connect:
+      - 7.5.2.1) Execution from Make Outgoing Spec node
+      - 7.5.2.2) **Target** pin: Connect enemy ASC (from Get Ability System Component in step 7.2.1)
+      - 7.5.2.3) **Spec Handle** pin: Connect Make Outgoing Spec Return Value
 
-#### 7.6) Apply Effect to Enemy
-   - 7.6.1) From Assign Tag Set By Caller Magnitude execution pin:
-      - 7.6.1.1) Drag outward and search: `Apply Gameplay Effect Spec to Target`
-      - 7.6.1.2) Add Apply Gameplay Effect Spec to Target node
-   - 7.6.2) Connect:
-      - 7.6.2.1) Execution from Assign Tag node
-      - 7.6.2.2) **Target** pin: Connect enemy ASC (from Get Ability System Component in step 7.2.1)
-      - 7.6.2.3) **Spec Handle** pin: Connect Assign Tag Return Value
+**Note:** Per Contract 24/24A, damage comes from the player's AttackDamage attribute (captured by NarrativeDamageExecCalc). No SetByCaller magnitude assignment is needed or allowed.
 
 ### **8) Apply Knockback**
 
@@ -717,8 +704,11 @@ If creating assets manually without the generator:
 | Change Type | Description |
 |-------------|-------------|
 | Contract 24/24A | **BREAKING:** Removed SetByCaller damage mechanism - NarrativeDamageExecCalc ignores it |
+| Contract 27 | Fixed cooldown tag to hierarchical format: `Cooldown.Father.Armor.DomeBurst` |
 | Damage Source | Damage now comes from player's AttackDamage attribute (captured by exec calc) |
 | BurstDamage Variable | **REMOVED** - was misleading since exec calc ignores SetByCaller |
+| Data.Dome.Damage Tag | **REMOVED** - SetByCaller tag no longer needed |
+| Father.Dome.OnCooldown Tag | **REMOVED** - redundant with cooldown tag |
 | FatherRef Variable | **ADDED** - needed for energy reset |
 | INC-DOME-4 | Knockback (1000 units) now properly implemented in manifest |
 | INC-DOME-5 | VFX spawn (NS_DomeBurst) now properly implemented in manifest |

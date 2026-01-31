@@ -2300,8 +2300,8 @@ Configures AI Perception components with sense configurations using FAISenseConf
 | GE_DomeAbsorption | Infinite | 30% damage absorption | FULL |
 | GE_DomeEnergyIncrease | Instant | SetByCaller energy add | FULL |
 | GE_DomeInitialize | Instant | Initial attribute values | FULL |
-| GE_DomeBurstDamage | Instant | SetByCaller AOE damage | FULL |
-| GE_DomeBurstCooldown | 20 seconds | Cooldown tag | FULL |
+| GE_DomeBurstDamage | Instant | NarrativeDamageExecCalc damage | FULL |
+| GE_DomeBurstCooldown | 12 seconds | Cooldown tag | FULL |
 | GE_DomeEnergyReset | Instant | Reset energy to 0 | FULL |
 | Subtotal | 6 | | |
 
