@@ -112,7 +112,7 @@ GA_DomeBurst uses NarrativeDamageExecCalc for proper damage application:
 |---------|----------|
 | AttackRating | Player's AttackRating multiplies burst damage |
 | Armor | Enemy armor reduces damage received |
-| State.Invulnerable | Automatically blocks damage to invulnerable targets |
+| Narrative.State.Invulnerable | Automatically blocks damage to invulnerable targets |
 | Friendly Fire | Respects combat settings for friendly fire |
 
 ---

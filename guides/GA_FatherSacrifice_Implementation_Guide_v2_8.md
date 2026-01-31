@@ -1,5 +1,5 @@
 # GA_FatherSacrifice Implementation Guide
-## VERSION 2.6 - GAS Audit Compliant (ONLY Ability With Invulnerability)
+## VERSION 2.10 - v7.8.55c Generation Fix (GetHealth/GetMaxHealth, ASC Type, Delegate Name)
 ## Emergency Save Passive Ability
 ## Unreal Engine 5.7 + Narrative Pro v2.2
 ## Blueprint-Only Implementation
@@ -10,7 +10,7 @@
 
 | Property | Value |
 |----------|-------|
-| Document Version | 2.6 |
+| Document Version | 2.8 |
 | Ability Name | GA_FatherSacrifice |
 | Ability Type | Passive (Automatic Trigger) |
 | Parent Class | NarrativeGameplayAbility |
@@ -56,9 +56,9 @@
 
 | Aspect | Implementation |
 |--------|----------------|
-| Protection Method | State.Invulnerable tag via GE_SacrificeInvulnerability |
+| Protection Method | Narrative.State.Invulnerable tag via GE_SacrificeInvulnerability |
 | Duration | 10 seconds (Has Duration effect) |
-| Damage Blocking | NarrativeDamageExecCalc checks for State.Invulnerable tag |
+| Damage Blocking | NarrativeDamageExecCalc checks for Narrative.State.Invulnerable tag |
 | No Absorption Math | All damage blocked completely - no heal-back needed |
 | Blueprint Compatible | Tag-based system works entirely in Blueprint |
 
@@ -69,8 +69,8 @@
 | Phase | Description |
 |-------|-------------|
 | Phase 1: Trigger | Player Health < 15%, health monitoring delegate fires |
-| Phase 2: Sacrifice | Cancel all forms, attach to chest, apply 8s invulnerability, father enters DORMANT |
-| Phase 3: Dormant | Father dark/lifeless on chest, Father.State.Offline tag active, 180 seconds |
+| Phase 2: Sacrifice | Cancel all forms, attach to chest, apply 10s invulnerability, father enters DORMANT |
+| Phase 3: Dormant | Father dark/lifeless on chest, Father.State.Dormant tag active, 180 seconds |
 | Phase 4: Reactivation | Father awakens, Armor form activates |
 
 ---
@@ -92,12 +92,16 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.10 | January 2026 | **v7.8.55c Generation Fix:** (1) Changed `PlayerASC` variable type from `NarrativeAbilitySystemComponent` to base `AbilitySystemComponent` (no cast needed). (2) Replaced `GetFloatAttributeFromAbilitySystemComponent` + `MakeAttribute` with simpler `NarrativeCharacter.GetHealth()` and `GetMaxHealth()` calls. (3) Fixed `WaitHealthChange` delegate name from `OnChanged` to `Changed`. (4) Fixed `TryActivateAbilityByClass` parameter name to `InAbilityToActivate`. |
+| 2.9 | January 2026 | **v7.8.55 Audit Implementation:** (1) Removed `Father.State.Offline` tag - use `Father.State.Dormant` ONLY. (2) Renamed `GE_FatherOffline` → `GE_FatherDormant`. (3) Fixed invulnerability target: `BP_ApplyGameplayEffectToTarget` with Player ASC instead of Owner. (4) Added `GameplayCue.Father.Sacrifice.Dormant` VFX cue trigger before hide. (5) Added `GA_FatherArmor` activation in timer callback. (6) Alternative: Manifest uses `AbilityAsyncWaitAttributeChanged` pattern (same as GA_ProtectiveDome) for health monitoring. |
+| 2.8 | January 2026 | **Contract C_SACRIFICE_DEAD_GUARD_C (Maximum Safety):** Added `Father.State.Alive` to activation_required_tags and `Narrative.State.IsDead` to activation_blocked_tags per Claude-GPT dual audit. Defense-in-depth: blocks dead Father from sacrificing. Fixed invulnerability tag namespace: `State.Invulnerable` → `Narrative.State.Invulnerable` (9 occurrences). |
+| 2.7 | January 2026 | **Manifest Tag Alignment:** (Historical) Changed Offline to Dormant tag. GE_FatherDormant grants Dormant tag per manifest. |
 | 2.6 | January 2026 | **Locked Decisions Reference:** Added Father_Companion_GAS_Abilities_Audit.md reference. This guide is the ONLY ability with invulnerability per INV-1 decision. GE_SacrificeInvulnerability (8s to PLAYER) is the only kept invulnerability effect. Updated UE version to 5.7. Updated Technical Reference to v6.2. |
 | 2.5 | January 2026 | Updated Narrative Pro version reference from v2.1 to v2.2. |
 | 2.4 | January 2026 | Simplified documentation: Tag configuration (PHASE 4 Section 10) converted to single Property/Tags table. |
 | 2.3 | January 2026 | Simplified PHASE 1: Replaced 6 detailed subsections with consolidated tag tables. Removed step-by-step Project Settings navigation. Tags now listed in Create Required Tags and Verify Existing Tags tables. Reduced PHASE 1 from 56 lines to 18 lines. |
 | 2.2 | December 2025 | Technical Reference v4.5 compliance: Added Father.State.Recruited to Activation Required Tags (new section 10.3A). Added OwnerPlayer validation in ExecuteSacrifice function before accessing player ASC. Added PHASE 10: Implement EndAbility Event with timer cleanup, effect removal using OfflineEffectHandle, health delegate unbinding. Updated Prerequisites to reference Setup Guide v1_3. Updated Related Documents to v4.5/v3.5/v1.3. |
-| 2.1 | December 2025 | Replaced shield system with 8-second invulnerability. Removed PHASE 3 (BP_FatherCompanion Shield System), PHASE 10 (Shield Decay), PHASE 11 (Shield Absorption). State.Invulnerable tag blocks all damage via NarrativeDamageExecCalc. Simplified from 13 phases to 11 phases. Attack tokens noted as future C++ enhancement. |
+| 2.1 | December 2025 | Replaced shield system with 8-second invulnerability. Removed PHASE 3 (BP_FatherCompanion Shield System), PHASE 10 (Shield Decay), PHASE 11 (Shield Absorption). Narrative.State.Invulnerable tag blocks all damage via NarrativeDamageExecCalc. Simplified from 13 phases to 11 phases. Attack tokens noted as future C++ enhancement. |
 | 2.0 | November 2025 | Replaced Shield attribute with Blueprint Shield variable system. Added shield decay and OnDamagedBy heal-back pattern. |
 | 1.0 | November 2025 | Initial implementation with Shield attribute (non-existent) |
 
@@ -110,7 +114,7 @@
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Sacrifice | Father emergency sacrifice passive ability |
-| Father.State.Offline | Father is in dormant/offline state after sacrifice |
+| Father.State.Dormant | Father is in dormant/offline state after sacrifice |
 | Father.State.Sacrificing | Father is currently performing sacrifice sequence |
 | Cooldown.Father.Symbiote.Sacrifice | Sacrifice ability on cooldown - father dormant (Contract 27 hierarchical) |
 
@@ -118,9 +122,11 @@
 
 | Tag Name | Purpose |
 |----------|---------|
-| State.Invulnerable | Target is invulnerable to all damage (Narrative Pro built-in) |
+| Narrative.State.Invulnerable | Target is invulnerable to all damage (Narrative Pro built-in) |
+| Narrative.State.IsDead | Block when dead (Activation Blocked) - NP built-in |
+| Father.State.Alive | Must be alive (Activation Required) |
 | Father.State.Recruited | Must be recruited (Activation Required) |
-| Narrative.State.IsDead | Block when dead (Activation Blocked) |
+| Father.State.Dormant | Block when dormant (Activation Blocked) |
 
 ---
 
@@ -186,7 +192,7 @@
 | Ability Tags | Ability.Father.Sacrifice |
 | Activation Owned Tags | Father.State.Sacrificing |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
-| Activation Blocked Tags | Cooldown.Father.Symbiote.Sacrifice, Father.State.Offline, Narrative.State.IsDead |
+| Activation Blocked Tags | Cooldown.Father.Symbiote.Sacrifice, Father.State.Dormant, Narrative.State.IsDead |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Ability.Father.Armor, Ability.Father.Exoskeleton, Ability.Father.Symbiote, Ability.Father.Engineer |
 
 #### 10.3) Configure Instancing Policy
@@ -239,8 +245,8 @@
 #### 11.3) Create PlayerASC Variable
    - 11.3.1) Click **+** next to Variables
    - 11.3.2) Name: `PlayerASC`
-   - 11.3.3) Set **Variable Type**: Search `Narrative Ability System Component`
-   - 11.3.4) Select: `Narrative Ability System Component` -> `Object Reference`
+   - 11.3.3) Set **Variable Type**: Search `Ability System Component`
+   - 11.3.4) Select: `Ability System Component` -> `Object Reference`
    - 11.3.5) Click **Compile**
    - 11.3.6) Set **Instance Editable**: Unchecked
    - 11.3.7) Set **Category**: `Runtime`
@@ -313,7 +319,7 @@
 |----------|------|-------------------|---------|----------|
 | PlayerRef | Actor Ref | Unchecked | None | Runtime |
 | FatherRef | BP_FatherCompanion Ref | Unchecked | None | Runtime |
-| PlayerASC | NarrativeAbilitySystemComponent Ref | Unchecked | None | Runtime |
+| PlayerASC | AbilitySystemComponent Ref | Unchecked | None | Runtime |
 | HealthThreshold | Float | Checked | 0.15 | Configuration |
 | InvulnerabilityDuration | Float | Checked | 10.0 | Configuration |
 | DormantDuration | Float | Checked | 180.0 | Configuration |
@@ -415,10 +421,10 @@
    - 19.2.2) Connect Return Value from Get ASC to **Object** input
 
 #### 19.3) Store PlayerASC Reference
-   - 19.3.1) From Cast success execution pin:
+   - 19.3.1) From Get Ability System Component:
       - 19.3.1.1) Drag outward and search: `Set PlayerASC`
       - 19.3.1.2) Add **Set PlayerASC** node
-   - 19.3.2) Connect **As Narrative Ability System Component** to value input
+   - 19.3.2) Connect **Return Value** (Ability System Component) to value input
 
 ### **20) Bind Health Change Delegate**
 
@@ -474,13 +480,13 @@
 
 #### 22.3) Get Current Health Values
    - 22.3.1) From Branch **True** pin:
-      - 22.3.1.1) Drag **PlayerASC** variable getter into graph
-   - 22.3.2) From PlayerASC:
-      - 22.3.2.1) Drag outward and search: `Get Numeric Attribute`
-      - 22.3.2.2) Add **Get Numeric Attribute** node
-      - 22.3.2.3) Set Attribute: `Health`
-   - 22.3.3) Add another **Get Numeric Attribute** node
-      - 22.3.3.1) Set Attribute: `MaxHealth`
+      - 22.3.1.1) Drag **PlayerRef** variable getter into graph
+   - 22.3.2) From PlayerRef (NarrativeCharacter):
+      - 22.3.2.1) Drag outward and search: `Get Health`
+      - 22.3.2.2) Add **Get Health** node (NarrativeCharacter function)
+   - 22.3.3) Drag another **PlayerRef** getter:
+      - 22.3.3.1) Drag outward and search: `Get Max Health`
+      - 22.3.3.2) Add **Get Max Health** node (NarrativeCharacter function)
 
 #### 22.4) Calculate Health Percentage
    - 22.4.1) Add **Float / Float** node
@@ -608,12 +614,23 @@
       - 30.1.1.3) Add **Branch** node
       - 30.1.1.4) Connect Is Valid to Branch Condition
 
-#### 30.2) Apply Invulnerability Effect
+#### 30.2) Apply Invulnerability Effect to PLAYER (v7.8.55 CRITICAL FIX)
    - 30.2.1) From Branch **True** execution pin:
-      - 30.2.1.1) From PlayerASC:
-      - 30.2.1.2) Drag outward and search: `Apply Gameplay Effect to Self`
-      - 30.2.1.3) Add **Apply Gameplay Effect to Self** node
+      - 30.2.1.1) Drag outward and search: `Apply Gameplay Effect To Target`
+      - 30.2.1.2) Add **BP_ApplyGameplayEffectToTarget** node (AbilitySystemBlueprintLibrary)
    - 30.2.2) Set **Gameplay Effect Class**: `GE_SacrificeInvulnerability`
+   - 30.2.3) Connect **PlayerASC** to **Target** pin (NOT Owner - Father is Owner, Player needs invulnerability)
+
+### **30A) Play Dormant VFX Cue (v7.8.55)**
+
+#### 30A.1) Execute Gameplay Cue
+   - 30A.1.1) From **Apply GE** execution pin:
+      - 30A.1.1.1) Drag outward and search: `Execute Gameplay Cue With Params`
+      - 30A.1.1.2) Add **BP_ExecuteGameplayCueWithParams** node
+   - 30A.1.2) Connect **FatherRef** to Target input
+   - 30A.1.3) For **Gameplay Cue Tag**:
+      - 30A.1.3.1) Make Literal Gameplay Tag: `GameplayCue.Father.Sacrifice.Dormant`
+   - 30A.1.4) This triggers `GC_FatherSacrificeDormant` placeholder cue for dormant state VFX
 
 ### **31) Apply Offline Effect to Father**
 
@@ -627,7 +644,7 @@
    - 31.2.1) From Father ASC:
       - 31.2.1.1) Drag outward and search: `Apply Gameplay Effect to Self`
       - 31.2.1.2) Add **Apply Gameplay Effect to Self** node
-   - 31.2.2) Set **Gameplay Effect Class**: `GE_FatherOffline`
+   - 31.2.2) Set **Gameplay Effect Class**: `GE_FatherDormant`
 
 #### 31.3) Store Effect Handle
    - 31.3.1) From Apply GE **Return Value**:
@@ -666,8 +683,8 @@
 | Target | Player ASC |
 | Duration Policy | Has Duration |
 | Duration | 10 seconds (InvulnerabilityDuration) |
-| Tag Granted | State.Invulnerable |
-| Damage Blocking | NarrativeDamageExecCalc checks for State.Invulnerable tag |
+| Tag Granted | Narrative.State.Invulnerable |
+| Damage Blocking | NarrativeDamageExecCalc checks for Narrative.State.Invulnerable tag |
 
 ---
 
@@ -764,7 +781,7 @@
       - 42.1.1.2) Add **Is Valid** node
       - 42.1.1.3) Add **Branch** node
 
-### **43) Remove GE_FatherOffline if Not Already Removed**
+### **43) Remove GE_FatherDormant if Not Already Removed**
 
 #### 43.1) Validate OfflineEffectHandle
    - 43.1.1) From Branch **True** execution pin:
@@ -805,7 +822,7 @@
 | 2 | Clear Timer by Handle (DormantTimerHandle) |
 | 3 | Validate FatherRef |
 | 4 | Validate OfflineEffectHandle |
-| 5 | Remove GE_FatherOffline using OfflineEffectHandle |
+| 5 | Remove GE_FatherDormant using OfflineEffectHandle |
 | 6 | Validate PlayerASC |
 | 7 | Unbind Health Change Delegate using HealthChangeDelegateHandle |
 
@@ -836,19 +853,19 @@
    - 46.3.4) Expand component
    - 46.3.5) Find **Add to Inherited** array
    - 46.3.6) Click **+** to add element
-   - 46.3.7) Select tag: `State.Invulnerable`
+   - 46.3.7) Select tag: `Narrative.State.Invulnerable`
 
 #### 46.4) Compile and Save
    - 46.4.1) Click **Compile**
    - 46.4.2) Click **Save**
 
-### **47) Create GE_FatherOffline**
+### **47) Create GE_FatherDormant**
 
 #### 47.1) Create Gameplay Effect Asset
    - 47.1.1) In Content Browser, navigate to: `/Content/FatherCompanion/Effects/`
    - 47.1.2) Right-click in empty space
    - 47.1.3) Select **Gameplay** -> **Gameplay Effect**
-   - 47.1.4) Name: `GE_FatherOffline`
+   - 47.1.4) Name: `GE_FatherDormant`
    - 47.1.5) Double-click to open
 
 #### 47.2) Configure Duration Policy
@@ -862,9 +879,9 @@
    - 47.3.4) Expand component
    - 47.3.5) Find **Add to Inherited** array
    - 47.3.6) Click **+** to add element
-   - 47.3.7) Select tag: `Father.State.Offline`
+   - 47.3.7) Select tag: `Father.State.Dormant`
    - 47.3.8) Click **+** to add second element
-   - 47.3.9) Select tag: `Cooldown.Father.Symbiote.Sacrifice`
+   - 47.3.9) Select tag: `Father.State.Dormant`
 
 #### 47.4) Compile and Save
    - 47.4.1) Click **Compile**
@@ -913,7 +930,7 @@
 | Ability Tags | Ability.Father.Sacrifice |
 | Activation Required Tags | Father.State.Alive, Father.State.Recruited |
 | Activation Owned Tags | Father.State.Sacrificing |
-| Activation Blocked Tags | Cooldown.Father.Symbiote.Sacrifice, Father.State.Offline, Narrative.State.IsDead |
+| Activation Blocked Tags | Cooldown.Father.Symbiote.Sacrifice, Father.State.Dormant, Narrative.State.IsDead |
 | Cancel Abilities with Tag | Ability.Father.Crawler, Armor, Exoskeleton, Symbiote, Engineer |
 
 ### Variable Summary Table
@@ -922,7 +939,7 @@
 |----------|------|-------------------|---------|----------|
 | PlayerRef | Actor Ref | Unchecked | None | Runtime |
 | FatherRef | BP_FatherCompanion Ref | Unchecked | None | Runtime |
-| PlayerASC | NarrativeASC Ref | Unchecked | None | Runtime |
+| PlayerASC | AbilitySystemComponent Ref | Unchecked | None | Runtime |
 | HealthThreshold | Float | Checked | 0.15 | Configuration |
 | InvulnerabilityDuration | Float | Checked | 10.0 | Configuration |
 | DormantDuration | Float | Checked | 180.0 | Configuration |
@@ -935,7 +952,7 @@
 
 | Variable | Type | Purpose |
 |----------|------|---------|
-| OfflineEffectHandle | ActiveGameplayEffectHandle | GE_FatherOffline removal on father |
+| OfflineEffectHandle | ActiveGameplayEffectHandle | GE_FatherDormant removal on father |
 | DormantTimerHandle | TimerHandle | Dormant timer cleanup |
 | HealthChangeDelegateHandle | FDelegateHandle | Health delegate unbinding |
 
@@ -944,27 +961,29 @@
 | Tag | Purpose |
 |-----|---------|
 | Ability.Father.Sacrifice | Ability identification tag |
-| Father.State.Alive | Required for activation |
+| Father.State.Alive | Required for activation (Contract C_SACRIFICE_DEAD_GUARD_C) |
 | Father.State.Recruited | Required for activation |
-| Father.State.Offline | Father is dormant after sacrifice |
+| Father.State.Dormant | Blocks activation during dormant period |
+| Father.State.Dormant | Father is dormant after sacrifice (granted by GE) |
 | Father.State.Sacrificing | Sacrifice sequence in progress |
 | Cooldown.Father.Symbiote.Sacrifice | Prevents re-triggering during dormant (Contract 27) |
-| State.Invulnerable | Player immune to all damage |
+| Narrative.State.IsDead | Blocks activation when dead (Contract C_SACRIFICE_DEAD_GUARD_C) |
+| Narrative.State.Invulnerable | Player immune to all damage |
 
 ### Gameplay Effects Summary
 
 | Effect | Target | Duration | Purpose |
 |--------|--------|----------|---------|
-| GE_SacrificeInvulnerability | Player | 10 seconds | Grants State.Invulnerable for damage immunity |
-| GE_FatherOffline | Father | Infinite | Grants Father.State.Offline and Cooldown tags |
+| GE_SacrificeInvulnerability | Player | 10 seconds | Grants Narrative.State.Invulnerable for damage immunity |
+| GE_FatherDormant | Father | SetByCaller (180s) | Grants Father.State.Dormant and Father.State.Dormant |
 
 ### Required Assets Summary
 
 | Asset | Type | Purpose |
 |-------|------|---------|
 | GA_FatherSacrifice | Blueprint (NarrativeGameplayAbility) | Main ability blueprint |
-| GE_SacrificeInvulnerability | Gameplay Effect | 8-second invulnerability |
-| GE_FatherOffline | Gameplay Effect | Father dormant state tags |
+| GE_SacrificeInvulnerability | Gameplay Effect | 10-second invulnerability |
+| GE_FatherDormant | Gameplay Effect | Father dormant state tags |
 | AM_FatherSacrifice | Animation Montage | Sacrifice animation (placeholder) |
 | AM_FatherReactivate | Animation Montage | Reactivation animation (placeholder) |
 | EFatherForm | Enumeration | Must include Offline value |
@@ -978,7 +997,7 @@
 | 2 | Clear Timer by Handle (DormantTimerHandle) |
 | 3 | Validate FatherRef |
 | 4 | Validate OfflineEffectHandle |
-| 5 | Remove GE_FatherOffline using OfflineEffectHandle |
+| 5 | Remove GE_FatherDormant using OfflineEffectHandle |
 | 6 | Validate PlayerASC |
 | 7 | Unbind Health Change Delegate |
 
@@ -1000,6 +1019,6 @@
 
 ---
 
-## END OF GA_FATHERSACRIFICE IMPLEMENTATION GUIDE VERSION 2.6
+## END OF GA_FATHERSACRIFICE IMPLEMENTATION GUIDE VERSION 2.8
 
-Blueprint-Only Implementation for Unreal Engine 5.6 + Narrative Pro Plugin v2.2
+Blueprint-Only Implementation for Unreal Engine 5.7 + Narrative Pro Plugin v2.2

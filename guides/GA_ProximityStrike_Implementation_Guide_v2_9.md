@@ -85,7 +85,7 @@ In Symbiote form, the father fully merges with the player body, creating a berse
 | 6 | NarrativeDamageExecCalc | Captures AttackDamage from Father (source) |
 | 7 | ExecCalc | Applies AttackRating multiplier |
 | 8 | ExecCalc | Applies target Armor reduction |
-| 9 | ExecCalc | Checks State.Invulnerable |
+| 9 | ExecCalc | Checks Narrative.State.Invulnerable |
 | 10 | Attribute System | Modifies target Health |
 
 **Contract 24 Note:** Damage comes from Father's captured AttackDamage attribute, NOT SetByCaller. Father's AttackDamage should be set to 50 via GE_FatherSymbioteStats initialization effect.

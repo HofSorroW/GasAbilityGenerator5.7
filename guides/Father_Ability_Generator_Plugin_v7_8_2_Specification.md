@@ -2201,7 +2201,7 @@ Configures AI Perception components with sense configurations using FAISenseConf
 | Father.Dome.* | 4 | Father.Dome.Active, Father.Dome.Charging |
 | Father.Form.* | 6 | Father.Form.Crawler, Father.Form.Armor |
 | Father.State.* | 19 | Father.State.Attached, Father.State.Recruited |
-| State.* | 3 | State.Invulnerable, State.Father.Transitioning |
+| Narrative.State.* | 3 | Narrative.State.Invulnerable, Narrative.State.IsDead |
 | Status.Immune.* | 2 | Status.Immune.Damage, Status.Immune.Knockback |
 | Symbiote.Charge.Ready | 1 | Symbiote.Charge.Ready |
 | TOTAL | 174 | |
@@ -2354,7 +2354,7 @@ Configures AI Perception components with sense configurations using FAISenseConf
 | Asset | Duration | Purpose | Auto-Gen |
 |-------|----------|---------|----------|
 | GE_SacrificeInvulnerability | 8 seconds | Player invulnerability | FULL |
-| GE_FatherOffline | Infinite | Father dormant state tags | FULL |
+| GE_FatherDormant | Infinite | Father dormant state tags | FULL |
 | Subtotal | 2 | | |
 
 | GE_ TOTAL | 34 custom | | |
@@ -3480,7 +3480,7 @@ Results Dialog Format Change:
 | Added CD_FatherCompanion | CharacterDefinition for save/load persistence |
 | Added DBP_FatherCompanion | DialogueBlueprint for recruitment |
 | Added 5 cooldown GEs | GE_LaserCooldown, GE_TurretShootCooldown, GE_StealthCooldown, GE_ElectricTrapCooldown, moved GE_ExoskeletonDashCooldown |
-| Added 2 sacrifice GEs | GE_SacrificeInvulnerability, GE_FatherOffline |
+| Added 2 sacrifice GEs | GE_SacrificeInvulnerability, GE_FatherDormant |
 | Added BB_FatherEngineer | Blackboard for engineer turret AI |
 | Added BT_FatherEngineer | Behavior tree for engineer combat |
 | Added 6 animation assets | NAS_FatherAttack, AM_FatherAttack, AM_FatherThrowWeb, AM_FatherSacrifice, AM_FatherReactivate, AM_FatherDetach |

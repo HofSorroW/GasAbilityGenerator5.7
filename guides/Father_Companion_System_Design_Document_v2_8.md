@@ -587,7 +587,7 @@ Uses Narrative Pro's built-in GoalGenerator_Attack system. No custom perception 
 | Phase | Description |
 |-------|-------------|
 | **PHASE 1: TRIGGER** | Triggered when player HP drops below 15%. Current form breaks immediately, father moves to chest (Armor position), energy surge begins. |
-| **PHASE 2: SACRIFICE** | Father channels all remaining energy to grant player 10 seconds of invulnerability. State.Invulnerable tag blocks all damage. Father enters DORMANT state. Attack tokens increase from 3 to 6. |
+| **PHASE 2: SACRIFICE** | Father channels all remaining energy to grant player 10 seconds of invulnerability. Narrative.State.Invulnerable tag blocks all damage. Father enters DORMANT state. Attack tokens increase from 3 to 6. |
 | **PHASE 3: DORMANT STATE** | Father remains attached to chest appearing dark and lifeless. All lights OFF, energy lines DARK, eyes UNLIT. HUD completely HIDDEN. Duration: 180 seconds (fixed). Player fights alone without father abilities. |
 | **PHASE 4: REACTIVATION** | Subtle eye flicker signals reactivation. Energy lines power up with wave effect, eyes illuminate. Full Armor form activates, HUD reappears. Attack tokens normalize from 6 back to 3. Reactivation sound effect plays. |
 
@@ -707,7 +707,6 @@ Father.State.Detached
 Father.State.Following
 Father.State.Deployed
 Father.State.Merged
-Father.State.Offline
 Father.State.Stealthed
 Father.State.Alive
 Father.State.Transitioning
@@ -1061,7 +1060,7 @@ The following decisions were locked during Claude-GPT dual-agent audit (January 
 | 2.4 | January 2026 | Dome System Decisions 22-24: Form exit burst via EI_FatherArmorForm.HandleUnequip override calling TryActivateAbilityByClass(GA_DomeBurst). Father.Dome.FullyCharged tag gates burst activation (FULL only, no partial release). Energy-Only damage model documented. Added section 2.2.10 Form Exit Burst Implementation. |
 | 1.6 | December 2025 | Major architecture change: Removed F key detach system entirely. GA_FatherDetach and GA_TurretRecall abilities removed (21->18 abilities). Form switching now direct via T wheel only. Added Form Transition System with 5s Niagara VFX, father invulnerability during transition, 15s shared cooldown. Updated Symbiote duration from 15s to 30s, locked during duration, auto-returns to Armor form. Added new state tags (Alive, Transitioning, SymbioteLocked). |
 | 1.5 | 2025 | Removed Shield +200 from Symbiote form stat boosts. AS_SymbioteAttributes not needed - shield system removed due to Blueprint limitation. Symbiote form now focuses purely on offensive stat boosts. |
-| 1.4 | 2025 | Changed GA_FatherSacrifice from shield-based protection to 8-second invulnerability. Removed shield system due to Blueprint architectural limitations. State.Invulnerable tag now blocks all damage during sacrifice. |
+| 1.4 | 2025 | Changed GA_FatherSacrifice from shield-based protection to 8-second invulnerability. Removed shield system due to Blueprint architectural limitations. Narrative.State.Invulnerable tag now blocks all damage during sacrifice. |
 | 1.3 | 2025 | Applied user-confirmed decisions from implementation guides. Changed Symbiote Duration 22s to 15s. Changed ProximityStrike damage 50 to 40, radius 400 to 350, removed knockback. Changed Backstab detection to AIPerception ViewedCharacter Query. Changed Backstab damage to AttackRating modifiers (+25/+50/+75). Changed Exoskeleton stat from 10% damage reduction to +10 AttackRating. Changed ElectricTrap effect to root (Movement.Lock). Added GA_FatherAttack parameters. Added Implementation Architecture section. |
 | 1.2 | 2025 | Removed cancelled Symbiote abilities (GA_TendrilLash, GA_Consume, GA_SymbioteLifesteal). Simplified Symbiote form to 2 abilities. Updated total ability count from 23 to 21. |
 | 1.1 | 2025 | Corrected ability names (kept original names: GA_StealthField, GA_FatherElectricTrap) |

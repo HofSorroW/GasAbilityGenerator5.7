@@ -303,6 +303,8 @@ tags:
     comment: Reactivation VFX/SFX cue
   - tag: GameplayCue.Father.Sacrifice
     comment: Sacrifice VFX/SFX cue
+  - tag: GameplayCue.Father.Sacrifice.Dormant
+    comment: Dormant state VFX - father dark/lifeless during 180s dormant period
   - tag: GameplayCue.Father.Sprint
     comment: VFX and SFX for Exoskeleton sprint ability
   - tag: GameplayCue.Father.Stealth
@@ -369,8 +371,6 @@ tags:
     comment: Father is marking enemy
   - tag: Father.State.Merged
     comment: Father merged with player (Symbiote form)
-  - tag: Father.State.Offline
-    comment: Father is offline
   - tag: Father.State.ProximityActive
     comment: Proximity strike is active
   - tag: Father.State.Recruited
@@ -845,13 +845,12 @@ gameplay_effects:
     granted_tags:
       - Narrative.State.Invulnerable
 
-  - name: GE_FatherOffline
+  - name: GE_FatherDormant
     folder: Effects/Utility
     duration_policy: HasDuration
     duration_setbycaller: Data.Sacrifice.DormantDuration
     granted_tags:
       - Father.State.Dormant
-      - Father.State.Offline
 
   - name: GE_GrantRecruitedTag
     folder: Effects/Utility
@@ -7612,7 +7611,8 @@ gameplay_abilities:
           to: [ApplyGE, self]
 
   # GA_FatherSacrifice - Emergency Save with Dormant Period
-  # v7.8.50: ServerInitiated for visual feedback (sacrifice VFX) per Tech Ref §36.5
+  # v7.8.55: Audit fixes - health monitoring, target invulnerability, cue trigger, Armor activation
+  # Pattern: [MANIFEST] GA_ProtectiveDome AbilityAsyncWaitAttributeChanged for health monitoring
   - name: GA_FatherSacrifice
     folder: Abilities/Actions
     parent_class: NarrativeGameplayAbility
@@ -7630,10 +7630,12 @@ gameplay_abilities:
       activation_owned_tags:
         - Father.State.Sacrificing
       activation_required_tags:
+        - Father.State.Alive
         - Father.State.Recruited
       activation_blocked_tags:
         - Cooldown.Father.Symbiote.Sacrifice  # v7.8.49: Contract 27 hierarchical
         - Father.State.Dormant
+        - Narrative.State.IsDead  # v7.8.55: Contract C_SACRIFICE_DEAD_GUARD_C - defense-in-depth
     variables:
       - name: FatherRef
         type: Object
@@ -7641,21 +7643,30 @@ gameplay_abilities:
       - name: PlayerRef
         type: Object
         class: NarrativePlayerCharacter
+      - name: PlayerASC
+        type: Object
+        class: AbilitySystemComponent
       - name: IsMonitoring
         type: Bool
         default_value: false
+      - name: HealthThreshold
+        type: Float
+        default_value: 0.15
+        instance_editable: true
+        comment: Health percentage (0.15 = 15%) to trigger sacrifice
       - name: InvulnerabilityDuration
         type: Float
         default_value: 10.0
         instance_editable: true
       - name: DormantDuration
         type: Float
-        default_value: 180.0  # v7.8.49: Fixed 180s per Erdem (was 60s, design doc said 150-210s random)
+        default_value: 180.0  # v7.8.49: Fixed 180s per Erdem
         instance_editable: true
       - name: DormantTimerHandle
         type: TimerHandle
     event_graph:
       nodes:
+        # === ACTIVATION FLOW (Setup references + start health monitoring) ===
         - id: Event_Activate
           type: Event
           properties:
@@ -7688,81 +7699,189 @@ gameplay_abilities:
           properties:
             variable_name: PlayerRef
           position: [1500, 0]
-        - id: SetIsMonitoring
-          type: VariableSet
-          properties:
-            variable_name: IsMonitoring
-          position: [1800, 0]
-        # === FULL SACRIFICE LOGIC (GAS Audit CRIT-3) ===
-        # Step 1: Apply GE_SacrificeInvulnerability to PLAYER (8 seconds)
+        # Get and store Player ASC
         - id: GetPlayerASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
+          position: [1800, 0]
+        - id: SetPlayerASC
+          type: VariableSet
+          properties:
+            variable_name: PlayerASC
           position: [2100, 0]
+        # Validate PlayerASC before monitoring
+        - id: IsValid_PlayerASC
+          type: CallFunction
+          properties:
+            function: IsValid
+            class: KismetSystemLibrary
+          position: [2400, 50]
+        - id: Branch_PlayerASC_Valid
+          type: Branch
+          position: [2550, 0]
+        # === HEALTH MONITORING (AbilityAsyncWaitAttributeChanged) ===
+        # [MANIFEST] Pattern from GA_ProtectiveDome lines 5168-5174
+        - id: WaitHealthChange
+          type: AbilityAsyncWaitAttributeChanged
+          properties:
+            attribute_set: NarrativeAttributeSetBase
+            attribute: Health
+            trigger_once: false
+          position: [2700, 0]
+        - id: SetIsMonitoring
+          type: VariableSet
+          properties:
+            variable_name: IsMonitoring
+          position: [3000, 0]
+        # === ON HEALTH CHANGED - Check threshold ===
+        # [ENGINE] NarrativeCharacter.h:472-475 - GetHealth() and GetMaxHealth() are BlueprintCallable
+        - id: GetPlayerRef_Check
+          type: VariableGet
+          properties:
+            variable_name: PlayerRef
+          position: [3200, 100]
+        - id: GetHealth
+          type: CallFunction
+          properties:
+            function: GetHealth
+            class: NarrativeCharacter
+          position: [3400, 0]
+        - id: GetMaxHealth
+          type: CallFunction
+          properties:
+            function: GetMaxHealth
+            class: NarrativeCharacter
+          position: [3600, 0]
+        - id: DivideHealth
+          type: CallFunction
+          properties:
+            function: Divide_DoubleDouble
+            class: KismetMathLibrary
+          position: [3900, 0]
+        - id: GetHealthThreshold
+          type: VariableGet
+          properties:
+            variable_name: HealthThreshold
+          position: [4100, 100]
+        - id: LessThanThreshold
+          type: CallFunction
+          properties:
+            function: Less_DoubleDouble
+            class: KismetMathLibrary
+          position: [4200, 0]
+        - id: GetIsMonitoring
+          type: VariableGet
+          properties:
+            variable_name: IsMonitoring
+          position: [4350, 100]
+        - id: And_MonitoringAndThreshold
+          type: CallFunction
+          properties:
+            function: BooleanAND
+            class: KismetMathLibrary
+          position: [4500, 0]
+        - id: Branch_ThresholdCheck
+          type: Branch
+          position: [4650, 0]
+        # === EXECUTE SACRIFICE (Threshold breached) ===
+        # Stop monitoring
+        - id: SetIsMonitoring_False
+          type: VariableSet
+          properties:
+            variable_name: IsMonitoring
+          position: [4800, 0]
+        # v7.8.55 Phase 3 FIX: Apply invulnerability to PLAYER (not Father)
+        # Uses BP_ApplyGameplayEffectToTarget with PlayerASC
+        - id: GetPlayerASC_Apply
+          type: VariableGet
+          properties:
+            variable_name: PlayerASC
+          position: [5000, 100]
         - id: ApplySacrificeInvuln
           type: CallFunction
           properties:
-            function: BP_ApplyGameplayEffectToOwner
-            target_self: true
+            function: BP_ApplyGameplayEffectToSelf
+            class: AbilitySystemComponent
             param.GameplayEffectClass: GE_SacrificeInvulnerability
-          position: [2400, 0]
-        # Step 2: Hide Father actor
+          position: [5100, 0]
+        # v7.8.55 Phase 5: Play dormant cue before hide
+        - id: GetFatherRef_Cue
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [5300, 100]
+        - id: ExecuteGameplayCueDormant
+          type: CallFunction
+          properties:
+            function: K2_ExecuteGameplayCueWithParams
+            target_self: true
+          position: [5400, 0]
+        - id: MakeLiteralTag_DormantCue
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: GameplayCue.Father.Sacrifice.Dormant
+          position: [5300, 200]
+        # Hide Father actor
+        - id: GetFatherRef_Hide
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [5600, 100]
         - id: HideFather
           type: CallFunction
           properties:
             function: SetActorHiddenInGame
-          position: [2700, 0]
-        # Step 3: Disable Father collision
+          position: [5700, 0]
+        # Disable Father collision
         - id: DisableCollision
           type: CallFunction
           properties:
             function: SetActorEnableCollision
-          position: [3000, 0]
-        # Step 4: Add Father.State.Dormant tag
+          position: [6000, 0]
+        # Add Father.State.Dormant tag
         - id: GetFatherASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
             class: AbilitySystemBlueprintLibrary
-          position: [3300, 100]
+          position: [6200, 100]
         - id: AddDormantTag
           type: CallFunction
           properties:
             function: AddLooseGameplayTags
             class: AbilitySystemBlueprintLibrary
-          position: [3300, 0]
+          position: [6300, 0]
         - id: MakeTagContainer_Dormant
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
-          position: [3200, 150]
+          position: [6200, 200]
         - id: MakeLiteralTag_Dormant
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
-          position: [3100, 200]
-        # Step 5: Start dormant timer
+          position: [6100, 250]
+        # Start dormant timer
         - id: GetDormantDuration
           type: VariableGet
           properties:
             variable_name: DormantDuration
-          position: [3600, 100]
+          position: [6500, 100]
         - id: SetDormantTimer
           type: CallFunction
           properties:
             function: K2_SetTimerDelegate
-          position: [3600, 0]
+          position: [6600, 0]
         - id: SetTimerHandle
           type: VariableSet
           properties:
             variable_name: DormantTimerHandle
-          position: [3900, 0]
-        # === TIMER CALLBACK (with guards) ===
+          position: [6900, 0]
+        # === TIMER CALLBACK (Dormant expired - reactivate) ===
         - id: CustomEvent_DormantExpired
           type: CustomEvent
           properties:
@@ -7800,13 +7919,12 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
           position: [500, 800]
         - id: Branch_DormantTag_Timer
           type: Branch
           position: [800, 600]
-        # Guarded timer callback logic
+        # Show Father
         - id: ShowFather_Timer
           type: CallFunction
           properties:
@@ -7817,6 +7935,7 @@ gameplay_abilities:
           properties:
             function: SetActorEnableCollision
           position: [1200, 600]
+        # Remove dormant tag
         - id: RemoveDormantTag_Timer
           type: CallFunction
           properties:
@@ -7827,21 +7946,28 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1350, 750]
         - id: MakeLiteralTag_RemoveDormant
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
           position: [1250, 800]
+        # v7.8.55 Phase 5: Activate GA_FatherArmor on reactivation
+        - id: TryActivateArmor
+          type: CallFunction
+          properties:
+            function: TryActivateAbilityByClass
+            class: AbilitySystemComponent
+            param.InAbilityToActivate: GA_FatherArmor
+          position: [1700, 600]
+        # End ability
         - id: EndAbility_Timer
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [1700, 600]
+          position: [1950, 600]
         # === EVENT_ENDABILITY ===
         - id: Event_EndAbility
           type: Event
@@ -7903,17 +8029,15 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: MakeGameplayTagContainerFromTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
           position: [1400, 1150]
         - id: MakeLiteralTag_End
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
-            # class: BlueprintGameplayTagLibrary  # Commented out - let resolver find
             literal_value: Father.State.Dormant
           position: [1300, 1200]
       connections:
-        # === ACTIVATION FLOW (GAS Audit CRIT-3 - full sacrifice logic) ===
+        # === ACTIVATION FLOW (Setup + start health monitoring) ===
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [CastToFather, Exec]
@@ -7921,10 +8045,63 @@ gameplay_abilities:
         - from: [SetFatherRef, Exec]
           to: [SetPlayerRef, Exec]
         - from: [SetPlayerRef, Exec]
+          to: [SetPlayerASC, Exec]
+        - from: [SetPlayerASC, Exec]
+          to: [Branch_PlayerASC_Valid, Exec]
+        - from: [Branch_PlayerASC_Valid, True]
           to: [SetIsMonitoring, Exec]
-        - from: [SetIsMonitoring, Exec]
+        # Data flow - Activation
+        - from: [GetAvatarActor, ReturnValue]
+          to: [CastToFather, Object]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [SetFatherRef, FatherRef]
+        - from: [SetFatherRef, FatherRef]
+          to: [GetOwnerPlayer, Target]
+        - from: [GetOwnerPlayer, OwnerPlayer]
+          to: [SetPlayerRef, PlayerRef]
+        - from: [SetPlayerRef, PlayerRef]
+          to: [GetPlayerASC, Actor]
+        - from: [GetPlayerASC, ReturnValue]
+          to: [SetPlayerASC, PlayerASC]
+        - from: [SetPlayerASC, PlayerASC]
+          to: [IsValid_PlayerASC, Object]
+        - from: [IsValid_PlayerASC, ReturnValue]
+          to: [Branch_PlayerASC_Valid, Condition]
+        # TargetActor connection for WaitHealthChange async task
+        # [MANIFEST] Pattern from GA_ProtectiveDome line 5472
+        - from: [SetPlayerRef, PlayerRef]
+          to: [WaitHealthChange, TargetActor]
+        # === HEALTH MONITORING FLOW (Changed delegate) ===
+        # [MANIFEST] Pattern from GA_ProtectiveDome lines 5474 - delegate is 'Changed' not 'OnChanged'
+        - from: [WaitHealthChange, Changed]
+          to: [Branch_ThresholdCheck, Exec]
+        # Data flow - Health check using NarrativeCharacter GetHealth/GetMaxHealth
+        - from: [GetPlayerRef_Check, PlayerRef]
+          to: [GetHealth, Target]
+        - from: [GetPlayerRef_Check, PlayerRef]
+          to: [GetMaxHealth, Target]
+        - from: [GetHealth, ReturnValue]
+          to: [DivideHealth, A]
+        - from: [GetMaxHealth, ReturnValue]
+          to: [DivideHealth, B]
+        - from: [DivideHealth, ReturnValue]
+          to: [LessThanThreshold, A]
+        - from: [GetHealthThreshold, HealthThreshold]
+          to: [LessThanThreshold, B]
+        - from: [LessThanThreshold, ReturnValue]
+          to: [And_MonitoringAndThreshold, A]
+        - from: [GetIsMonitoring, IsMonitoring]
+          to: [And_MonitoringAndThreshold, B]
+        - from: [And_MonitoringAndThreshold, ReturnValue]
+          to: [Branch_ThresholdCheck, Condition]
+        # === SACRIFICE EXECUTION FLOW ===
+        - from: [Branch_ThresholdCheck, True]
+          to: [SetIsMonitoring_False, Exec]
+        - from: [SetIsMonitoring_False, Exec]
           to: [ApplySacrificeInvuln, Exec]
         - from: [ApplySacrificeInvuln, Exec]
+          to: [ExecuteGameplayCueDormant, Exec]
+        - from: [ExecuteGameplayCueDormant, Exec]
           to: [HideFather, Exec]
         - from: [HideFather, Exec]
           to: [DisableCollision, Exec]
@@ -7934,24 +8111,19 @@ gameplay_abilities:
           to: [SetDormantTimer, Exec]
         - from: [SetDormantTimer, Exec]
           to: [SetTimerHandle, Exec]
-        # Data flow - Activation
-        - from: [GetAvatarActor, ReturnValue]
-          to: [CastToFather, Object]
-        - from: [CastToFather, AsBP Father Companion]
-          to: [SetFatherRef, FatherRef]
-        - from: [SetFatherRef, FatherRef]
-          to: [GetOwnerPlayer, Target]
-        - from: [GetOwnerPlayer, OwnerPlayer]
-          to: [SetPlayerRef, PlayerRef]
-        - from: [SetPlayerRef, PlayerRef]
-          to: [GetPlayerASC, Actor]
-        - from: [SetFatherRef, FatherRef]
+        # Data flow - Sacrifice execution
+        - from: [GetPlayerASC_Apply, PlayerASC]
+          to: [ApplySacrificeInvuln, Target]
+        # K2_ExecuteGameplayCueWithParams with target_self: true uses ability self, no Target connection needed
+        - from: [MakeLiteralTag_DormantCue, ReturnValue]
+          to: [ExecuteGameplayCueDormant, GameplayCueTag]
+        - from: [GetFatherRef_Hide, FatherRef]
           to: [HideFather, Target]
-        - from: [SetFatherRef, FatherRef]
+        - from: [GetFatherRef_Hide, FatherRef]
           to: [DisableCollision, Target]
-        - from: [SetFatherRef, FatherRef]
+        - from: [GetFatherRef_Hide, FatherRef]
           to: [GetFatherASC, Actor]
-        - from: [SetFatherRef, FatherRef]
+        - from: [GetFatherRef_Hide, FatherRef]
           to: [AddDormantTag, Actor]
         - from: [MakeLiteralTag_Dormant, ReturnValue]
           to: [MakeTagContainer_Dormant, Tag]
@@ -7985,6 +8157,8 @@ gameplay_abilities:
         - from: [EnableCollision_Timer, Exec]
           to: [RemoveDormantTag_Timer, Exec]
         - from: [RemoveDormantTag_Timer, Exec]
+          to: [TryActivateArmor, Exec]
+        - from: [TryActivateArmor, Exec]
           to: [EndAbility_Timer, Exec]
         # Data flow - Timer callback
         - from: [GetFatherRef_Timer, FatherRef]
@@ -7997,6 +8171,8 @@ gameplay_abilities:
           to: [MakeTagContainer_RemoveDormant, Tag]
         - from: [MakeTagContainer_RemoveDormant, ReturnValue]
           to: [RemoveDormantTag_Timer, GameplayTags]
+        - from: [GetFatherASC_Timer, ReturnValue]
+          to: [TryActivateArmor, Target]
         # === EVENT_ENDABILITY FLOW ===
         - from: [Event_EndAbility, Then]
           to: [Branch_WasCancelled, Exec]
@@ -10293,6 +10469,13 @@ gameplay_cues:
     folder: FX/GameplayCues
     cue_type: Burst
     gameplay_cue_tag: GameplayCue.Father.DomeBurst
+
+  # v7.8.55: Sacrifice dormant state VFX (father dark/lifeless during 180s dormant period)
+  # Placeholder cue - link VFX manually in editor for dormant visual state
+  - name: GC_FatherSacrificeDormant
+    folder: FX/GameplayCues
+    cue_type: BurstLatent
+    gameplay_cue_tag: GameplayCue.Father.Sacrifice.Dormant
 
 # ============================================================================
 # MATERIAL FUNCTIONS (3) - v2.6.12 VFX helper functions
