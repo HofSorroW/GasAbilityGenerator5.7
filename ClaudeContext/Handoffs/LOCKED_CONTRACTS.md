@@ -1524,7 +1524,6 @@ Father Companion abilities use cooldown tags for GAS cooldown mechanics. Prior t
    | GA_DomeBurst | `Cooldown.Father.Armor.DomeBurst` |
    | GA_FatherExoskeletonDash | `Cooldown.Father.Exoskeleton.Dash` |
    | GA_StealthField | `Cooldown.Father.Exoskeleton.StealthField` |
-   | GA_ProximityStrike | `Cooldown.Father.Symbiote.ProximityStrike` |
    | GA_Sacrifice | `Cooldown.Father.Symbiote.Sacrifice` |
    | GA_FatherElectricTrap | `Cooldown.Father.Engineer.ElectricTrap` |
    | GA_TurretShoot | `Cooldown.Father.Engineer.TurretShoot` |
@@ -1532,8 +1531,9 @@ Father Companion abilities use cooldown tags for GAS cooldown mechanics. Prior t
 3. **Exception:** Shared cooldowns may remain flat:
    - `Cooldown.Father.FormChange` (intentionally shared across all forms)
 
-4. **Excluded:** Toggle abilities without cooldowns:
+4. **Excluded:** Abilities without cooldowns:
    - GA_FatherExoskeletonSprint (hold-to-activate, no cooldown)
+   - GA_ProximityStrike (passive, runs for form duration)
 
 ### Technical Evidence
 

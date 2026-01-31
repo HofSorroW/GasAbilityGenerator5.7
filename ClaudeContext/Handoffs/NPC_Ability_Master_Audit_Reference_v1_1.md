@@ -1,7 +1,7 @@
 # NPC & Ability Master Audit Reference
-## Version 1.0
+## Version 1.1
 ## Date: January 2026
-## Compiled from: 11 Audit Documents
+## Compiled from: 12 Audit Documents
 
 ---
 
@@ -25,7 +25,7 @@
 
 | Category | Count | Status |
 |----------|-------|--------|
-| LOCKED Contracts | 27 | ALL ENFORCED |
+| LOCKED Contracts | 29 | ALL ENFORCED |
 | Validated Technical Findings (VTF) | 10 | ALL LOCKED |
 | EndAbility Lifecycle Rules | 4 | ALL LOCKED |
 | DOC-ONLY Patterns | 5 | ALL DOCUMENTED |
@@ -126,6 +126,8 @@
 | 14 | INV-INPUT-1 | Input architecture invariants |
 | 24 | D-DAMAGE-ATTR-1 | Attribute-based damage system (no SetByCaller with ExecCalc) |
 | 27 | C_COOLDOWN_TAG_HIERARCHY | Cooldown tag format: `Cooldown.Father.{Form}.{Ability}` |
+| 28 | C_SACRIFICE_THRESHOLD_MONITOR | Health < 15% auto-triggers sacrifice via AbilityAsyncWaitAttributeChanged |
+| 29 | C_SACRIFICE_DEAD_GUARD_C | Sacrifice requires NOT Dead, Dormant, Cooldown + Recruited + Alive |
 
 ### Implementation Constraints (LC-1 to LC-4)
 
@@ -317,13 +319,59 @@ For form abilities using `bIsFirstActivation`, True path must merge into same st
 | StealthField ability tag | Changed to hierarchical |
 | ProximityStrike knockback | Removed per design decision |
 
-### GA_FatherSacrifice & GA_Backstab (v7.8.49)
+### GA_FatherSacrifice & GA_Backstab (v7.8.49 → v7.8.55c)
 
 | Issue | Resolution |
 |-------|------------|
 | Sacrifice Net Policy | ServerInitiated (visual feedback) |
 | Sacrifice Cooldown Tag | Hierarchical `Cooldown.Father.Symbiote.Sacrifice` |
 | Backstab Type | Active (Input-Triggered) via Narrative.Input.Ability3 |
+
+### GA_FatherSacrifice Comprehensive Audit (v7.8.55c)
+
+**Audit Type:** Claude-GPT Dual Audit
+
+#### Locked Decisions
+
+| Decision | Issue | Resolution |
+|----------|-------|------------|
+| D-SACRIFICE-TARGET-1 | Invulnerability GE applied to Father instead of Player | Changed `BP_ApplyGameplayEffectToOwner` → `BP_ApplyGameplayEffectToTarget` with Player ASC |
+| D-SAC-1/2/3 | Manifest triggers immediately; guide specifies 15% threshold | Implement `AbilityAsyncWaitAttributeChanged` monitoring (same as GA_ProtectiveDome) |
+| D-SAC-5 | `Father.State.Offline` vs `Father.State.Dormant` inconsistent | Use `Father.State.Dormant` ONLY. Renamed `GE_FatherOffline` → `GE_FatherDormant` |
+| D-SAC-7 | Guide says chest socket; manifest hides actor | VFX + Hide with placeholder `GC_FatherSacrificeDormant` cue |
+| D-SAC-8 | Guide says Armor on reactivation; manifest just shows/ends | Activate `GA_FatherArmor` when dormant timer expires |
+| D-SAC-9 | Guide says infinite; manifest uses SetByCaller | Keep SetByCaller 180s (self-cleaning) |
+
+#### Protection Architecture (LOCKED)
+
+**Layer A: 15% Threshold Monitoring (Blueprint)**
+- Mechanism: `AbilityAsyncWaitAttributeChanged` monitors Player Health
+- Trigger: When `Health / MaxHealth < 0.15`
+- Protection: Gradual damage, burst chains, multi-hit scenarios
+- Limitation: Cannot prevent true one-shot kills that skip threshold
+
+**Layer B: NOT IMPLEMENTED (User Decision)**
+- User explicitly rejected C++ pre-damage interception
+- User explicitly rejected resurrection approach
+- Accept partial protection per Layer A only
+
+#### CanTriggerSacrifice() Invariant
+
+All conditions must be true:
+- `NOT Cooldown.Father.Symbiote.Sacrifice`
+- `NOT Father.State.Dormant`
+- `NOT Narrative.State.IsDead` (Player)
+- `Father.State.Recruited = true`
+- `Father.State.Alive = true`
+
+#### Implementation Completed (All 6 Phases)
+
+1. **Tag Cleanup:** Removed `Father.State.Offline`, renamed GE
+2. **New Assets:** Added `GameplayCue.Father.Sacrifice.Dormant` tag and cue
+3. **Critical Bug Fix:** Changed Owner → Target for invulnerability
+4. **Health Monitoring:** Added threshold check with 15% branch
+5. **Event Graph Complete:** Added dormant cue, `GA_FatherArmor` activation
+6. **Documentation:** Updated guides and INI files
 
 ### Combat Abilities (GA_FatherLaserShot, GA_FatherElectricTrap, GA_FatherMark)
 
@@ -456,6 +504,7 @@ For form abilities using `bIsFirstActivation`, True path must merge into same st
 | GA_Sacrifice_Backstab_Audit_v1_0.md | ClaudeContext/Handoffs/ | Special abilities |
 | Father_Combat_Abilities_Dual_Audit_v1_0.md | ClaudeContext/Handoffs/ | Combat abilities |
 | Father_Combat_Abilities_Dual_Audit_v1_0A.md | ClaudeContext/Handoffs/ | Extended combat audit |
+| GA_FatherSacrifice_Audit_v7_8_55.md | ClaudeContext/Handoffs/ | Sacrifice 15% threshold, dormant state (CONSOLIDATED) |
 
 ### Related Reference Documents
 
@@ -472,6 +521,7 @@ For form abilities using `bIsFirstActivation`, True path must merge into same st
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2026-01-31 | Consolidated GA_FatherSacrifice_Audit_v7_8_55.md, added Contracts 28-29 |
 | 1.0 | 2026-01-31 | Initial compilation from 11 audit documents |
 
 ---

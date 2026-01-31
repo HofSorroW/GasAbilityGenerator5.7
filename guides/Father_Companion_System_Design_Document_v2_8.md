@@ -750,7 +750,6 @@ Cooldown.Father.Engineer.ElectricTrap
 Cooldown.Father.Engineer.TurretShoot
 Cooldown.Father.Crawler.Attack
 Cooldown.Father.Crawler.LaserShot
-Cooldown.Father.Symbiote.ProximityStrike
 Cooldown.Father.Symbiote.Sacrifice
 Cooldown.Father.FormChange (flat exception - shared across forms)
 

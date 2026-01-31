@@ -50,7 +50,6 @@ GA_ProximityStrike is a passive AOE damage ability that automatically damages al
 - Form Restriction: Only active during Symbiote form
 - Contract 24 Compliant: Uses NarrativeDamageExecCalc with captured AttackDamage attribute (NOT SetByCaller)
 - Hierarchical Tag: Uses Ability.Father.Symbiote.ProximityStrike for blanket cancel support
-- Hierarchical Cooldown: Uses Cooldown.Father.Symbiote.ProximityStrike (Contract 27)
 - Recruited Gate: Requires Father.State.Recruited for activation
 
 ### **Symbiote Form Context**
@@ -141,7 +140,6 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 | Tag Name | Purpose |
 |----------|---------|
 | Ability.Father.Symbiote.ProximityStrike | Father proximity AOE damage - Symbiote form passive |
-| Cooldown.Father.Symbiote.ProximityStrike | Hierarchical cooldown tag (Contract 27) |
 | Father.State.ProximityActive | Proximity strike aura is active |
 | Effect.Father.ProximityDamage | Target is being damaged by proximity aura |
 
@@ -340,76 +338,63 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 #### 1.1) Open Event Graph
    - 1.1.1) In GA_ProximityStrike Blueprint, click **Event Graph** tab
 
-#### 1.2) Create ProximityDamage Variable (Documentation Only)
-   - 1.2.1) In **My Blueprint** panel, click **+ (Plus)** next to Variables
-   - 1.2.2) Name: `ProximityDamage`
-   - 1.2.3) Press **Enter**
-   - 1.2.4) In Details panel:
-      - 1.2.4.1) **Variable Type**: `Float`
-      - 1.2.4.2) **Instance Editable**: Check
+#### 1.2) Create TickRate Variable
+   - 1.2.1) Click **+ (Plus)** next to Variables
+   - 1.2.2) Name: `TickRate`
+   - 1.2.3) **Variable Type**: `Float`
+   - 1.2.4) **Instance Editable**: Check
    - 1.2.5) Click **Compile**
-   - 1.2.6) Set **Default Value**: `50.0`
+   - 1.2.6) Set **Default Value**: `0.5`
    - 1.2.7) Set **Category**: `Proximity Config`
 
-   **Contract 24 Note:** This variable is for documentation/reference only. Actual damage comes from Father's AttackDamage attribute captured by NarrativeDamageExecCalc.
-
-#### 1.3) Create TickRate Variable
+#### 1.3) Create ProximityRadius Variable
    - 1.3.1) Click **+ (Plus)** next to Variables
-   - 1.3.2) Name: `TickRate`
+   - 1.3.2) Name: `ProximityRadius`
    - 1.3.3) **Variable Type**: `Float`
    - 1.3.4) **Instance Editable**: Check
    - 1.3.5) Click **Compile**
-   - 1.3.6) Set **Default Value**: `0.5`
+   - 1.3.6) Set **Default Value**: `400.0`
    - 1.3.7) Set **Category**: `Proximity Config`
 
-#### 1.4) Create ProximityRadius Variable
+#### 1.4) Create PlayerRef Variable
    - 1.4.1) Click **+ (Plus)** next to Variables
-   - 1.4.2) Name: `ProximityRadius`
-   - 1.4.3) **Variable Type**: `Float`
-   - 1.4.4) **Instance Editable**: Check
-   - 1.4.5) Click **Compile**
-   - 1.4.6) Set **Default Value**: `400.0`
-   - 1.4.7) Set **Category**: `Proximity Config`
+   - 1.4.2) Name: `PlayerRef`
+   - 1.4.3) **Variable Type**: `Actor` -> `Object Reference`
+   - 1.4.4) Click **Compile**
+   - 1.4.5) Set **Category**: `Runtime`
 
-#### 1.5) Create PlayerRef Variable
+#### 1.5) Create FatherRef Variable
    - 1.5.1) Click **+ (Plus)** next to Variables
-   - 1.5.2) Name: `PlayerRef`
+   - 1.5.2) Name: `FatherRef`
    - 1.5.3) **Variable Type**: `Actor` -> `Object Reference`
    - 1.5.4) Click **Compile**
    - 1.5.5) Set **Category**: `Runtime`
 
-#### 1.6) Create FatherRef Variable
+#### 1.6) Create FatherASC Variable
    - 1.6.1) Click **+ (Plus)** next to Variables
-   - 1.6.2) Name: `FatherRef`
-   - 1.6.3) **Variable Type**: `Actor` -> `Object Reference`
+   - 1.6.2) Name: `FatherASC`
+   - 1.6.3) **Variable Type**: Search `AbilitySystemComponent`
+      - 1.6.3.1) Select: `AbilitySystemComponent` -> `Object Reference`
    - 1.6.4) Click **Compile**
    - 1.6.5) Set **Category**: `Runtime`
 
-#### 1.7) Create FatherASC Variable
+   **Contract 24 Note:** Father's ASC is used as the damage source for MakeOutgoingSpec - NarrativeDamageExecCalc captures AttackDamage from Father.
+
+#### 1.7) Create DamageTimerHandle Variable
    - 1.7.1) Click **+ (Plus)** next to Variables
-   - 1.7.2) Name: `FatherASC`
-   - 1.7.3) **Variable Type**: Search `AbilitySystemComponent`
-      - 1.7.3.1) Select: `AbilitySystemComponent` -> `Object Reference`
+   - 1.7.2) Name: `DamageTimerHandle`
+   - 1.7.3) **Variable Type**: Search `Timer Handle`
+      - 1.7.3.1) Select: `Timer Handle` (structure type)
    - 1.7.4) Click **Compile**
    - 1.7.5) Set **Category**: `Runtime`
 
-   **Contract 24 Note:** Father's ASC is used as the damage source for MakeOutgoingSpec - NarrativeDamageExecCalc captures AttackDamage from Father.
-
-#### 1.8) Create DamageTimerHandle Variable
+#### 1.8) Create IsActive Variable
    - 1.8.1) Click **+ (Plus)** next to Variables
-   - 1.8.2) Name: `DamageTimerHandle`
-   - 1.8.3) **Variable Type**: Search `Timer Handle`
-      - 1.8.3.1) Select: `Timer Handle` (structure type)
+   - 1.8.2) Name: `IsActive`
+   - 1.8.3) **Variable Type**: `Boolean`
    - 1.8.4) Click **Compile**
-   - 1.8.5) Set **Category**: `Runtime`
-
-#### 1.9) Create IsActive Variable
-   - 1.9.1) Click **+ (Plus)** next to Variables
-   - 1.9.2) Name: `IsActive`
-   - 1.9.3) **Variable Type**: `Boolean`
-   - 1.9.4) Click **Compile**
-   - 1.9.5) Set **Default Value**: Unchecked (false)
-   - 1.9.6) Set **Category**: `Runtime`
+   - 1.8.5) Set **Default Value**: Unchecked (false)
+   - 1.8.6) Set **Category**: `Runtime`
 
 ### **2) Implement ActivateAbility Event**
 
@@ -840,9 +825,7 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 |-------------|-------------|
 | Contract 24 | Removed SetByCaller damage pattern - FORBIDDEN with NarrativeDamageExecCalc |
 | Damage Source | Changed from SetByCaller (Data.Damage.ProximityStrike) to captured AttackDamage attribute |
-| ProximityDamage | Variable now documentation-only; actual damage from Father's AttackDamage (50) |
 | ProximityRadius | Updated default from 350.0 to 400.0 (matching tech spec) |
-| Contract 27 | Added Cooldown.Father.Symbiote.ProximityStrike hierarchical cooldown tag |
 | Tag Removal | Removed Data.Damage.ProximityStrike tag (SetByCaller forbidden) |
 | GE_ProximityDamage | Simplified - no Calculation Modifiers, uses default attribute capture |
 | PHASE 5 | Removed Section 8.4 (Assign SetByCaller) - no longer needed |
@@ -963,7 +946,6 @@ BP_FatherSymbioteForm (EquippableItem) must be created following Father_Companio
 
 | Variable | Type | Category | Instance Editable | Default | Purpose |
 |----------|------|----------|-------------------|---------|---------|
-| ProximityDamage | Float | Proximity Config | Yes | 50.0 | Documentation only (Contract 24: actual damage from AttackDamage) |
 | TickRate | Float | Proximity Config | Yes | 0.5 | Seconds between damage ticks |
 | ProximityRadius | Float | Proximity Config | Yes | 400.0 | AOE radius in units |
 | PlayerRef | Actor Ref | Runtime | No | None | Merged player reference |

@@ -191,8 +191,6 @@ tags:
     comment: Stealth field cooldown - hierarchical
   - tag: Cooldown.Father.FormChange
     comment: Shared 15s form transition cooldown - flat exception
-  - tag: Cooldown.Father.Symbiote.ProximityStrike
-    comment: Proximity strike cooldown - hierarchical
   - tag: Cooldown.Father.Symbiote.Sacrifice
     comment: Sacrifice ability cooldown - hierarchical
 
@@ -7071,11 +7069,6 @@ gameplay_abilities:
         type: Float
         default_value: 0.5
         instance_editable: true
-      - name: ProximityDamage
-        type: Float
-        default_value: 50.0
-        instance_editable: true
-        # Contract 24: Documentation only - actual damage from Father's AttackDamage attribute
     event_graph:
       nodes:
         # === EVENT: ACTIVATE ABILITY ===
