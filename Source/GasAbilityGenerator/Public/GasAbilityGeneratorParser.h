@@ -52,6 +52,7 @@ private:
 	static void ParseActorBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseWidgetBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseComponentBlueprints(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v4.19
+	static void ParseBlueprintConditions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);  // v7.8.52
 	static void ParseBlackboards(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseBehaviorTrees(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);
 	static void ParseMaterials(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData);

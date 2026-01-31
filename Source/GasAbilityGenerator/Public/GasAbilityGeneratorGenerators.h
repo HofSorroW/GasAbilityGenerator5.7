@@ -457,6 +457,19 @@ public:
 };
 
 /**
+ * v7.8.52: Blueprint Condition Generator
+ * Generates UNarrativeCondition-derived blueprints for dialogue/quest conditions
+ */
+class GASABILITYGENERATOR_API FBlueprintConditionGenerator : public FGeneratorBase
+{
+public:
+	static FGenerationResult Generate(
+		const FManifestBlueprintConditionDefinition& Definition,
+		const FString& ProjectRoot = TEXT(""),
+		const FManifestData* ManifestData = nullptr);
+};
+
+/**
  * Blackboard Generator
  * v4.14: Added session cache for BT generator to find same-session blackboards
  */

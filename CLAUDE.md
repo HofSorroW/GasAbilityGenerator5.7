@@ -439,7 +439,8 @@ The plugin includes Excel-like table editors for bulk content authoring:
 | GE_ | Gameplay Effects | `gameplay_effects` | FGameplayEffectGenerator |
 | GA_ | Gameplay Abilities | `gameplay_abilities` | FGameplayAbilityGenerator |
 | BP_ | Actor Blueprints | `actor_blueprints` | FActorBlueprintGenerator |
-| BPC_ | Component Blueprints | `component_blueprints` | FActorComponentBlueprintGenerator |
+| BPC_ | Blueprint Conditions | `blueprint_conditions` | FBlueprintConditionGenerator |
+| - | Component Blueprints | `component_blueprints` | FComponentBlueprintGenerator |
 | WBP_ | Widget Blueprints | `widget_blueprints` | FWidgetBlueprintGenerator |
 | DBP_ | Dialogue Blueprints | `dialogue_blueprints` | FDialogueBlueprintGenerator |
 | BB_ | Blackboards | `blackboards` | FBlackboardGenerator |

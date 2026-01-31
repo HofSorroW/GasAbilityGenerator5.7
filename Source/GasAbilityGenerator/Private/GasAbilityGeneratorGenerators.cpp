@@ -6334,14 +6334,18 @@ FGenerationResult FComponentBlueprintGenerator::Generate(
 		ComponentCDO->PrimaryComponentTick.bCanEverTick = false;
 	}
 
+	// v7.8.52: Configure auto-activation
+	ComponentCDO->bAutoActivate = Definition.bAutoActivate;
+
 	// Mark dirty
 	ComponentCDO->MarkPackageDirty();
 
-	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH6 CDO Tick CanEver=%s StartEnabled=%s Interval=%.2f OK"),
+	UE_LOG(LogTemp, Log, TEXT("COMP_BP[%s] PH6 CDO Tick CanEver=%s StartEnabled=%s Interval=%.2f AutoActivate=%s OK"),
 		*Definition.Name,
 		Definition.bCanEverTick ? TEXT("true") : TEXT("false"),
 		Definition.bStartWithTickEnabled ? TEXT("true") : TEXT("false"),
-		Definition.TickInterval);
+		Definition.TickInterval,
+		Definition.bAutoActivate ? TEXT("true") : TEXT("false"));
 
 	// ========== PHASE 7: Save Asset ==========
 	Package->MarkPackageDirty();
@@ -6369,6 +6373,290 @@ FGenerationResult FComponentBlueprintGenerator::Generate(
 	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
 	Result.AssetPath = AssetPath;
 	Result.GeneratorId = TEXT("ComponentBlueprint");
+	Result.DetermineCategory();
+	return Result;
+}
+
+// ============================================================================
+// FBlueprintConditionGenerator Implementation
+// v7.8.52: Generates UNarrativeCondition-derived blueprints for dialogue/quest conditions
+// ============================================================================
+
+FGenerationResult FBlueprintConditionGenerator::Generate(
+	const FManifestBlueprintConditionDefinition& Definition,
+	const FString& ProjectRoot,
+	const FManifestData* ManifestData)
+{
+	// v7.8.52: Set global project root for lookups
+	if (!ProjectRoot.IsEmpty())
+	{
+		GCurrentProjectRoot = ProjectRoot;
+	}
+
+	FString Folder = Definition.Folder.IsEmpty() ? TEXT("Conditions") : Definition.Folder;
+	FString AssetPath = FString::Printf(TEXT("%s/%s/%s"), *GetProjectRoot(), *Folder, *Definition.Name);
+	FGenerationResult Result;
+
+	// Validate against manifest whitelist
+	if (ValidateAgainstManifest(Definition.Name, TEXT("Blueprint Condition"), Result))
+	{
+		return Result;
+	}
+
+	// Check existence with metadata-aware logic
+	if (CheckExistsWithMetadata(AssetPath, Definition.Name, TEXT("Blueprint Condition"), Definition.ComputeHash(), Result))
+	{
+		return Result;
+	}
+
+	// ========== PHASE 1: Find Parent Class ==========
+	UClass* ParentClass = nullptr;
+
+	// Try to find NarrativeCondition in Narrative Pro
+	FString ParentClassName = Definition.ParentClass.IsEmpty() ? TEXT("NarrativeCondition") : Definition.ParentClass;
+
+	// Search paths for condition classes
+	TArray<FString> SearchPaths;
+	SearchPaths.Add(FString::Printf(TEXT("/Script/NarrativeArsenal.%s"), *ParentClassName));
+	SearchPaths.Add(FString::Printf(TEXT("/NarrativePro/Pro/Core/Tales/Conditions/%s.%s_C"), *ParentClassName, *ParentClassName));
+	SearchPaths.Add(FString::Printf(TEXT("%s/Conditions/%s.%s_C"), *GetProjectRoot(), *ParentClassName, *ParentClassName));
+
+	for (const FString& Path : SearchPaths)
+	{
+		ParentClass = LoadClass<UObject>(nullptr, *Path);
+		if (ParentClass)
+		{
+			LogGeneration(FString::Printf(TEXT("  [INFO] Resolved condition parent class: %s -> %s"), *ParentClassName, *Path));
+			break;
+		}
+	}
+
+	if (!ParentClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BPC[%s] PH1 FAIL - [E_PARENT_CLASS_RESOLVE] %s"), *Definition.Name, *ParentClassName);
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed,
+			FString::Printf(TEXT("[E_PARENT_CLASS_RESOLVE] %s"), *ParentClassName));
+		Result.GeneratorId = TEXT("BlueprintCondition");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	// ========== PHASE 2: Create Blueprint ==========
+	UPackage* Package = CreatePackage(*AssetPath);
+	if (!Package)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BPC[%s] PH2 FAIL - Package creation failed"), *Definition.Name);
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create package"));
+	}
+
+	UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
+	Factory->ParentClass = ParentClass;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(Factory->FactoryCreateNew(
+		UBlueprint::StaticClass(),
+		Package,
+		FName(*Definition.Name),
+		RF_Public | RF_Standalone,
+		nullptr,
+		GWarn
+	));
+
+	if (!Blueprint)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BPC[%s] PH2 FAIL - Blueprint creation failed"), *Definition.Name);
+		return FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Failed to create Blueprint Condition"));
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("BPC[%s] PH2 CreateBlueprint OK"), *Definition.Name);
+	LogGeneration(FString::Printf(TEXT("Creating Blueprint Condition: %s (parent: %s)"), *Definition.Name, *ParentClassName));
+
+	// ========== PHASE 3: Add Variables ==========
+	for (const FManifestActorVariableDefinition& VarDef : Definition.Variables)
+	{
+		FEdGraphPinType PinType = GetPinTypeFromString(VarDef.Type);
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*VarDef.Name), PinType);
+
+		if (bSuccess)
+		{
+			int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*VarDef.Name));
+			if (VarIndex != INDEX_NONE)
+			{
+				if (VarDef.bInstanceEditable)
+					Blueprint->NewVariables[VarIndex].PropertyFlags |= CPF_Edit;
+				if (!VarDef.DefaultValue.IsEmpty())
+					Blueprint->NewVariables[VarIndex].DefaultValue = VarDef.DefaultValue;
+			}
+			LogGeneration(FString::Printf(TEXT("  Added variable: %s (%s)"), *VarDef.Name, *VarDef.Type));
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("BPC[%s] PH3 Variables Added=%d OK"), *Definition.Name, Definition.Variables.Num());
+
+	// ========== PHASE 4: Compile (MUST happen before CDO access) ==========
+	FCompilerResultsLog CompileLog;
+	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &CompileLog);
+
+	if (CompileLog.NumErrors > 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BPC[%s] PH4 Compile FAIL Errors=%d"), *Definition.Name, CompileLog.NumErrors);
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Compile failed"));
+		Result.GeneratorId = TEXT("BlueprintCondition");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	if (!Blueprint->GeneratedClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BPC[%s] PH4 Compile FAIL - no GeneratedClass"), *Definition.Name);
+		Result = FGenerationResult(Definition.Name, EGenerationStatus::Failed, TEXT("Compile failed - no GeneratedClass"));
+		Result.GeneratorId = TEXT("BlueprintCondition");
+		Result.DetermineCategory();
+		return Result;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("BPC[%s] PH4 Compile OK"), *Definition.Name);
+
+	// ========== PHASE 5: Configure CDO Properties ==========
+	UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
+	if (CDO)
+	{
+		// bNot property
+		if (FBoolProperty* NotProp = FindFProperty<FBoolProperty>(CDO->GetClass(), TEXT("bNot")))
+		{
+			NotProp->SetPropertyValue_InContainer(CDO, Definition.bNot);
+		}
+
+		// ConditionFilter enum
+		if (FByteProperty* FilterProp = FindFProperty<FByteProperty>(CDO->GetClass(), TEXT("ConditionFilter")))
+		{
+			int32 FilterValue = 1;  // Default: AnyCharacter
+			if (Definition.ConditionFilter.Equals(TEXT("DontTarget"), ESearchCase::IgnoreCase) ||
+			    Definition.ConditionFilter.Equals(TEXT("NoTarget"), ESearchCase::IgnoreCase))
+				FilterValue = 0;
+			else if (Definition.ConditionFilter.Equals(TEXT("AnyCharacter"), ESearchCase::IgnoreCase) ||
+			         Definition.ConditionFilter.Equals(TEXT("Anyone"), ESearchCase::IgnoreCase))
+				FilterValue = 1;
+			else if (Definition.ConditionFilter.Equals(TEXT("OnlyNPCs"), ESearchCase::IgnoreCase))
+				FilterValue = 2;
+			else if (Definition.ConditionFilter.Equals(TEXT("OnlyPlayers"), ESearchCase::IgnoreCase))
+				FilterValue = 3;
+
+			FilterProp->SetPropertyValue_InContainer(CDO, FilterValue);
+		}
+		// Also try as FEnumProperty (UE5 style)
+		else if (FEnumProperty* EnumFilterProp = FindFProperty<FEnumProperty>(CDO->GetClass(), TEXT("ConditionFilter")))
+		{
+			int64 FilterValue = 1;
+			if (Definition.ConditionFilter.Equals(TEXT("DontTarget"), ESearchCase::IgnoreCase) ||
+			    Definition.ConditionFilter.Equals(TEXT("NoTarget"), ESearchCase::IgnoreCase))
+				FilterValue = 0;
+			else if (Definition.ConditionFilter.Equals(TEXT("AnyCharacter"), ESearchCase::IgnoreCase) ||
+			         Definition.ConditionFilter.Equals(TEXT("Anyone"), ESearchCase::IgnoreCase))
+				FilterValue = 1;
+			else if (Definition.ConditionFilter.Equals(TEXT("OnlyNPCs"), ESearchCase::IgnoreCase))
+				FilterValue = 2;
+			else if (Definition.ConditionFilter.Equals(TEXT("OnlyPlayers"), ESearchCase::IgnoreCase))
+				FilterValue = 3;
+
+			FNumericProperty* UnderlyingProp = EnumFilterProp->GetUnderlyingProperty();
+			if (UnderlyingProp)
+			{
+				UnderlyingProp->SetIntPropertyValue(EnumFilterProp->ContainerPtrToValuePtr<void>(CDO), FilterValue);
+			}
+		}
+
+		// PartyConditionPolicy enum
+		if (FByteProperty* PolicyProp = FindFProperty<FByteProperty>(CDO->GetClass(), TEXT("PartyConditionPolicy")))
+		{
+			int32 PolicyValue = 0;  // Default: AnyPlayerPasses
+			if (Definition.PartyConditionPolicy.Equals(TEXT("AnyPlayerPasses"), ESearchCase::IgnoreCase))
+				PolicyValue = 0;
+			else if (Definition.PartyConditionPolicy.Equals(TEXT("PartyPasses"), ESearchCase::IgnoreCase))
+				PolicyValue = 1;
+			else if (Definition.PartyConditionPolicy.Equals(TEXT("AllPlayersPass"), ESearchCase::IgnoreCase))
+				PolicyValue = 2;
+			else if (Definition.PartyConditionPolicy.Equals(TEXT("PartyLeaderPasses"), ESearchCase::IgnoreCase))
+				PolicyValue = 3;
+
+			PolicyProp->SetPropertyValue_InContainer(CDO, PolicyValue);
+		}
+		else if (FEnumProperty* EnumPolicyProp = FindFProperty<FEnumProperty>(CDO->GetClass(), TEXT("PartyConditionPolicy")))
+		{
+			int64 PolicyValue = 0;
+			if (Definition.PartyConditionPolicy.Equals(TEXT("AnyPlayerPasses"), ESearchCase::IgnoreCase))
+				PolicyValue = 0;
+			else if (Definition.PartyConditionPolicy.Equals(TEXT("PartyPasses"), ESearchCase::IgnoreCase))
+				PolicyValue = 1;
+			else if (Definition.PartyConditionPolicy.Equals(TEXT("AllPlayersPass"), ESearchCase::IgnoreCase))
+				PolicyValue = 2;
+			else if (Definition.PartyConditionPolicy.Equals(TEXT("PartyLeaderPasses"), ESearchCase::IgnoreCase))
+				PolicyValue = 3;
+
+			FNumericProperty* UnderlyingProp = EnumPolicyProp->GetUnderlyingProperty();
+			if (UnderlyingProp)
+			{
+				UnderlyingProp->SetIntPropertyValue(EnumPolicyProp->ContainerPtrToValuePtr<void>(CDO), PolicyValue);
+			}
+		}
+
+		// Custom properties (set via reflection)
+		for (const auto& PropPair : Definition.Properties)
+		{
+			if (FProperty* Prop = CDO->GetClass()->FindPropertyByName(FName(*PropPair.Key)))
+			{
+				if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Prop))
+				{
+					BoolProp->SetPropertyValue_InContainer(CDO, PropPair.Value.ToBool());
+				}
+				else if (FIntProperty* IntProp = CastField<FIntProperty>(Prop))
+				{
+					IntProp->SetPropertyValue_InContainer(CDO, FCString::Atoi(*PropPair.Value));
+				}
+				else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Prop))
+				{
+					FloatProp->SetPropertyValue_InContainer(CDO, FCString::Atof(*PropPair.Value));
+				}
+				else if (FStrProperty* StrProp = CastField<FStrProperty>(Prop))
+				{
+					StrProp->SetPropertyValue_InContainer(CDO, PropPair.Value);
+				}
+				else if (FNameProperty* NameProp = CastField<FNameProperty>(Prop))
+				{
+					NameProp->SetPropertyValue_InContainer(CDO, FName(*PropPair.Value));
+				}
+				LogGeneration(FString::Printf(TEXT("  Set property: %s = %s"), *PropPair.Key, *PropPair.Value));
+			}
+		}
+
+		CDO->MarkPackageDirty();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("BPC[%s] PH5 CDO Properties OK"), *Definition.Name);
+
+	// ========== PHASE 6: Save Asset ==========
+	Package->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(Blueprint);
+
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(AssetPath, FPackageName::GetAssetPackageExtension());
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	UPackage::SavePackage(Package, Blueprint, *PackageFileName, SaveArgs);
+
+	UE_LOG(LogTemp, Log, TEXT("BPC[%s] PH6 Save OK"), *Definition.Name);
+	LogGeneration(FString::Printf(TEXT("Created Blueprint Condition: %s"), *Definition.Name));
+
+	// Store metadata for regeneration tracking
+	StoreBlueprintMetadata(Blueprint, TEXT("BlueprintCondition"), Definition.Name, Definition.ComputeHash());
+
+	// Cache the Blueprint class for same-session resolution
+	if (Blueprint->GeneratedClass)
+	{
+		GSessionBlueprintClassCache.Add(Definition.Name, Blueprint->GeneratedClass);
+	}
+
+	Result = FGenerationResult(Definition.Name, EGenerationStatus::New, TEXT("Created successfully"));
+	Result.AssetPath = AssetPath;
+	Result.GeneratorId = TEXT("BlueprintCondition");
 	Result.DetermineCategory();
 	return Result;
 }
@@ -25682,10 +25970,55 @@ FGenerationResult FNarrativeEventGenerator::Generate(const FManifestNarrativeEve
 		}
 	}
 
-	// PlayerTargets - these are typically runtime determined, just log for reference
-	if (Definition.PlayerTargets.Num() > 0)
+	// v7.8.53: Populate PlayerTargets array (pattern matches CharacterTargets)
+	if (Definition.PlayerTargets.Num() > 0 && CDO)
 	{
-		LogGeneration(FString::Printf(TEXT("  Event '%s' PlayerTargets (%d): %s"), *Definition.Name, Definition.PlayerTargets.Num(), *FString::Join(Definition.PlayerTargets, TEXT(", "))));
+		FArrayProperty* PlayerTargetsProp = CastField<FArrayProperty>(
+			CDO->GetClass()->FindPropertyByName(TEXT("PlayerTargets")));
+
+		if (PlayerTargetsProp)
+		{
+			FSoftObjectProperty* InnerProp = CastField<FSoftObjectProperty>(PlayerTargetsProp->Inner);
+			if (InnerProp)
+			{
+				FScriptArrayHelper ArrayHelper(PlayerTargetsProp, PlayerTargetsProp->ContainerPtrToValuePtr<void>(CDO));
+				ArrayHelper.EmptyValues();
+
+				for (const FString& TargetName : Definition.PlayerTargets)
+				{
+					TArray<FString> SearchPaths = {
+						FString::Printf(TEXT("%s/Players/Definitions/%s.%s"), *GetProjectRoot(), *TargetName, *TargetName),
+						FString::Printf(TEXT("%s/Players/%s.%s"), *GetProjectRoot(), *TargetName, *TargetName),
+						FString::Printf(TEXT("/Game/Players/%s.%s"), *TargetName, *TargetName),
+					};
+
+					UObject* PlayerDef = nullptr;
+					for (const FString& SearchPath : SearchPaths)
+					{
+						PlayerDef = LoadObject<UObject>(nullptr, *SearchPath);
+						if (PlayerDef) break;
+					}
+
+					if (PlayerDef)
+					{
+						int32 NewIndex = ArrayHelper.AddValue();
+						void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+						FSoftObjectPtr SoftPtr(PlayerDef);
+						InnerProp->SetPropertyValue(ElementPtr, SoftPtr);
+						LogGeneration(FString::Printf(TEXT("  Added PlayerTarget: %s"), *TargetName));
+					}
+					else
+					{
+						LogGeneration(FString::Printf(TEXT("  WARNING: Could not find PlayerDefinition: %s"), *TargetName));
+					}
+				}
+			}
+		}
+		else
+		{
+			// PlayerTargets property not found - log warning but don't fail (less common than NPC/Character)
+			LogGeneration(FString::Printf(TEXT("  WARNING: PlayerTargets property not found on %s"), *CDO->GetClass()->GetName()));
+		}
 	}
 
 	// v4.1: Set child class-specific properties via reflection introspection
@@ -26744,6 +27077,20 @@ FGenerationResult FCharacterDefinitionGenerator::Generate(const FManifestCharact
 				ConfigProp->SetObjectPropertyValue_InContainer(CharDef, AbilityConfig);
 				LogGeneration(FString::Printf(TEXT("  Set AbilityConfiguration: %s"), *AbilityConfig->GetName()));
 			}
+		}
+	}
+
+	// v7.8.53: Populate DefaultItemLoadout array (TArray<FLootTableRoll>)
+	if (Definition.DefaultItemLoadout.Num() > 0)
+	{
+		FArrayProperty* LoadoutArrayProp = CastField<FArrayProperty>(CharDef->GetClass()->FindPropertyByName(TEXT("DefaultItemLoadout")));
+		if (LoadoutArrayProp)
+		{
+			PopulateLootTableRollArray(CharDef, LoadoutArrayProp, Definition.DefaultItemLoadout, TEXT("DefaultItemLoadout"));
+		}
+		else
+		{
+			LogGeneration(TEXT("  [v7.8.53 WARNING] DefaultItemLoadout array property not found on UCharacterDefinition"));
 		}
 	}
 
@@ -28570,6 +28917,12 @@ FGenerationResult FActivityScheduleGenerator::Generate(const FManifestActivitySc
 			if (FFloatProperty* ScoreProp = FindFProperty<FFloatProperty>(UScheduledBehavior_AddNPCGoal::StaticClass(), TEXT("ScoreOverride")))
 			{
 				ScoreProp->SetPropertyValue_InContainer(BehaviorInstance, Behavior.ScoreOverride);
+			}
+
+			// v7.8.52: Set bReselect via reflection (triggers activity reselection when behavior starts)
+			if (FBoolProperty* ReselectProp = FindFProperty<FBoolProperty>(UScheduledBehavior_AddNPCGoal::StaticClass(), TEXT("bReselect")))
+			{
+				ReselectProp->SetPropertyValue_InContainer(BehaviorInstance, Behavior.bReselect);
 			}
 
 			// Add to schedule's Activities array

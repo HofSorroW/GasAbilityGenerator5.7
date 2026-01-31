@@ -2161,6 +2161,9 @@ struct FManifestComponentBlueprintDefinition
 	bool bStartWithTickEnabled = false;
 	float TickInterval = 0.0f;
 
+	// v7.8.52: Activation configuration
+	bool bAutoActivate = false;  // Whether component activates at creation
+
 	uint64 ComputeHash() const
 	{
 		uint64 Hash = GetTypeHash(Name);
@@ -2192,6 +2195,100 @@ struct FManifestComponentBlueprintDefinition
 		Hash ^= (bCanEverTick ? 1ULL : 0ULL) << 8;
 		Hash ^= (bStartWithTickEnabled ? 1ULL : 0ULL) << 9;
 		Hash ^= static_cast<uint64>(FMath::RoundToInt(TickInterval * 1000.f)) << 10;
+
+		// v7.8.52: Activation
+		Hash ^= (bAutoActivate ? 1ULL : 0ULL) << 11;
+
+		return Hash;
+	}
+};
+
+/**
+ * v7.8.52: Blueprint Condition definition (BPC_)
+ * Creates UNarrativeCondition subclass Blueprints for dialogue/quest conditions
+ */
+struct FManifestBlueprintConditionDefinition
+{
+	FString Name;
+	FString Folder;
+	FString ParentClass = TEXT("NarrativeCondition");  // Default parent
+
+	// UNarrativeCondition properties
+	bool bNot = false;                      // Invert condition result
+	FString ConditionFilter = TEXT("AnyCharacter");  // DontTarget, AnyCharacter, OnlyNPCs, OnlyPlayers
+	FString PartyConditionPolicy = TEXT("AnyPlayerPasses");  // AnyPlayerPasses, PartyPasses, AllPlayersPass, PartyLeaderPasses
+
+	// Target arrays (depends on ConditionFilter)
+	TArray<FString> CharacterTargets;       // For AnyCharacter filter
+	TArray<FString> NPCTargets;             // For OnlyNPCs filter
+	TArray<FString> PlayerTargets;          // For OnlyPlayers filter
+
+	// Custom properties for specific condition types (key-value pairs)
+	TMap<FString, FString> Properties;
+
+	// Variables for custom Blueprint logic
+	TArray<FManifestActorVariableDefinition> Variables;
+
+	// Event graph for CheckCondition implementation
+	FString EventGraphName;
+	bool bHasInlineEventGraph = false;
+	TArray<FManifestGraphNodeDefinition> EventGraphNodes;
+	TArray<FManifestGraphConnectionDefinition> EventGraphConnections;
+
+	uint64 ComputeHash() const
+	{
+		uint64 Hash = GetTypeHash(Name);
+		Hash ^= GetTypeHash(ParentClass) << 4;
+		// NOTE: Folder excluded - presentational only
+		Hash ^= (bNot ? 1ULL : 0ULL) << 8;
+		Hash ^= GetTypeHash(ConditionFilter) << 12;
+		Hash ^= GetTypeHash(PartyConditionPolicy) << 16;
+
+		// Targets
+		for (const auto& Target : CharacterTargets)
+		{
+			Hash ^= GetTypeHash(Target);
+			Hash = (Hash << 2) | (Hash >> 62);
+		}
+		for (const auto& Target : NPCTargets)
+		{
+			Hash ^= GetTypeHash(Target);
+			Hash = (Hash << 3) | (Hash >> 61);
+		}
+		for (const auto& Target : PlayerTargets)
+		{
+			Hash ^= GetTypeHash(Target);
+			Hash = (Hash << 4) | (Hash >> 60);
+		}
+
+		// Properties
+		for (const auto& Prop : Properties)
+		{
+			Hash ^= GetTypeHash(Prop.Key);
+			Hash ^= GetTypeHash(Prop.Value);
+			Hash = (Hash << 5) | (Hash >> 59);
+		}
+
+		// Variables
+		for (const auto& Var : Variables)
+		{
+			Hash ^= Var.ComputeHash();
+			Hash = (Hash << 6) | (Hash >> 58);
+		}
+
+		// Event graph
+		Hash ^= GetTypeHash(EventGraphName) << 20;
+		Hash ^= (bHasInlineEventGraph ? 1ULL : 0ULL) << 24;
+		for (const auto& Node : EventGraphNodes)
+		{
+			Hash ^= Node.ComputeHash();
+			Hash = (Hash << 7) | (Hash >> 57);
+		}
+		for (const auto& Conn : EventGraphConnections)
+		{
+			Hash ^= Conn.ComputeHash();
+			Hash = (Hash << 8) | (Hash >> 56);
+		}
 
 		return Hash;
 	}
@@ -4504,6 +4601,9 @@ struct FManifestCharacterDefinitionDefinition
 	TArray<FString> TriggerSets;         // TArray<TSoftObjectPtr<UTriggerSet>>
 	FString AbilityConfiguration;        // TObjectPtr<UAbilityConfiguration>
 
+	// v7.8.53: DefaultItemLoadout support (TArray<FLootTableRoll>)
+	TArray<FManifestLootTableRollDefinition> DefaultItemLoadout;
+
 	/** v3.0: Compute hash for change detection (excludes Folder - presentational only) */
 	uint64 ComputeHash() const
 	{
@@ -4528,6 +4628,12 @@ struct FManifestCharacterDefinitionDefinition
 			Hash = (Hash << 7) | (Hash >> 57);
 		}
 		Hash ^= GetTypeHash(AbilityConfiguration) << 8;
+		// v7.8.53: Include DefaultItemLoadout in hash
+		for (const auto& LootRoll : DefaultItemLoadout)
+		{
+			Hash ^= LootRoll.ComputeHash();
+			Hash = (Hash << 9) | (Hash >> 55);
+		}
 		return Hash;
 	}
 };
@@ -6500,6 +6606,9 @@ struct FManifestData
 	// v4.19: Component Blueprints (ActorComponent-derived)
 	TArray<FManifestComponentBlueprintDefinition> ComponentBlueprints;
 
+	// v7.8.52: Blueprint Conditions (UNarrativeCondition-derived)
+	TArray<FManifestBlueprintConditionDefinition> BlueprintConditions;
+
 	// v4.13: Category C Feature Presets
 	TArray<FManifestFormStateEffectDefinition> FormStateEffects;  // P1.1: Form state effect presets
 
@@ -6568,6 +6677,7 @@ struct FManifestData
 		for (const auto& Def : CharacterAppearances) AssetWhitelist.Add(Def.Name);
 		for (const auto& Def : TriggerSets) AssetWhitelist.Add(Def.Name);  // v4.9
 		for (const auto& Def : ComponentBlueprints) AssetWhitelist.Add(Def.Name);  // v4.19
+		for (const auto& Def : BlueprintConditions) AssetWhitelist.Add(Def.Name);  // v7.8.52
 		// v4.13: FormStateEffects expand to GE_*State assets
 		for (const auto& Def : FormStateEffects) AssetWhitelist.Add(FString::Printf(TEXT("GE_%sState"), *Def.Form));
 		// v4.12: Pipeline items
@@ -6662,6 +6772,8 @@ struct FManifestData
 			+ TriggerSets.Num()
 			// v4.19: Component Blueprints
 			+ ComponentBlueprints.Num()
+			// v7.8.52: Blueprint Conditions
+			+ BlueprintConditions.Num()
 			// v4.12: Pipeline items
 			+ PipelineItems.Num();
 	}
@@ -6724,6 +6836,8 @@ struct FManifestData
 		for (const auto& Def : TriggerSets) AddWithDupeCheck(Def.Name);
 		// v4.19: Component Blueprints
 		for (const auto& Def : ComponentBlueprints) AddWithDupeCheck(Def.Name);
+		// v7.8.52: Blueprint Conditions
+		for (const auto& Def : BlueprintConditions) AddWithDupeCheck(Def.Name);
 		// v4.12: Pipeline items
 		for (const auto& Def : PipelineItems)
 		{
@@ -6785,6 +6899,8 @@ struct FManifestData
 		Total += TriggerSets.Num();
 		// v4.19: Component Blueprints
 		Total += ComponentBlueprints.Num();
+		// v7.8.52: Blueprint Conditions
+		Total += BlueprintConditions.Num();
 
 		return Total;
 	}

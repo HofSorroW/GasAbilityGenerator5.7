@@ -294,6 +294,12 @@ bool FGasAbilityGeneratorParser::ParseManifest(const FString& ManifestContent, F
 		{
 			ParseComponentBlueprints(Lines, i, OutData);
 		}
+		// v7.8.52: Parse blueprint_conditions section
+		else if (IsSectionHeader(TrimmedLine, TEXT("blueprint_conditions:")) ||
+		         IsSectionHeader(TrimmedLine, TEXT("conditions:")))
+		{
+			ParseBlueprintConditions(Lines, i, OutData);
+		}
 		// Parse blackboards section
 		else if (IsSectionHeader(TrimmedLine, TEXT("blackboards:")))
 		{
@@ -3731,6 +3737,11 @@ void FGasAbilityGeneratorParser::ParseComponentBlueprints(const TArray<FString>&
 			{
 				CurrentDef.TickInterval = FCString::Atof(*GetLineValue(TrimmedLine));
 			}
+			// v7.8.52: Activation configuration
+			else if (TrimmedLine.StartsWith(TEXT("auto_activate:")))
+			{
+				CurrentDef.bAutoActivate = GetLineValue(TrimmedLine).ToBool();
+			}
 			// Variables subsection
 			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
 			{
@@ -4012,6 +4023,199 @@ void FGasAbilityGeneratorParser::ParseComponentBlueprints(const TArray<FString>&
 	if (bInItem && !CurrentDef.Name.IsEmpty())
 	{
 		OutData.ComponentBlueprints.Add(CurrentDef);
+	}
+}
+
+// v7.8.52: Parse blueprint_conditions section for UNarrativeCondition blueprints
+void FGasAbilityGeneratorParser::ParseBlueprintConditions(const TArray<FString>& Lines, int32& LineIndex, FManifestData& OutData)
+{
+	int32 SectionIndent = GetIndentLevel(Lines[LineIndex]);
+	LineIndex++;
+
+	FManifestBlueprintConditionDefinition CurrentDef;
+	bool bInItem = false;
+	bool bInVariables = false;
+	bool bInProperties = false;
+	bool bInTargets = false;
+	FString CurrentTargetType;  // character_targets, npc_targets, player_targets
+	FManifestActorVariableDefinition CurrentVar;
+	bool bInVarDef = false;
+
+	while (LineIndex < Lines.Num())
+	{
+		const FString& Line = Lines[LineIndex];
+		FString TrimmedLine = Line.TrimStart();
+		int32 CurrentIndent = GetIndentLevel(Line);
+
+		// Skip empty lines and comments
+		if (TrimmedLine.IsEmpty() || TrimmedLine.StartsWith(TEXT("#")))
+		{
+			LineIndex++;
+			continue;
+		}
+
+		// Check if we've exited the section
+		if (CurrentIndent <= SectionIndent && !TrimmedLine.StartsWith(TEXT("-")))
+		{
+			// Save pending variable
+			if (bInVarDef && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+			}
+			// Save pending item
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.BlueprintConditions.Add(CurrentDef);
+			}
+			return;
+		}
+
+		// New item entry
+		if (TrimmedLine.StartsWith(TEXT("- name:")))
+		{
+			// Save previous
+			if (bInVarDef && !CurrentVar.Name.IsEmpty())
+			{
+				CurrentDef.Variables.Add(CurrentVar);
+			}
+			if (bInItem && !CurrentDef.Name.IsEmpty())
+			{
+				OutData.BlueprintConditions.Add(CurrentDef);
+			}
+
+			CurrentDef = FManifestBlueprintConditionDefinition();
+			CurrentDef.Name = GetLineValue(TrimmedLine.Mid(2));  // Skip "- "
+			bInItem = true;
+			bInVariables = false;
+			bInProperties = false;
+			bInTargets = false;
+			bInVarDef = false;
+			LineIndex++;
+			continue;
+		}
+
+		if (bInItem)
+		{
+			// Core fields
+			if (TrimmedLine.StartsWith(TEXT("folder:")))
+			{
+				CurrentDef.Folder = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("parent_class:")))
+			{
+				CurrentDef.ParentClass = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("not:")) || TrimmedLine.StartsWith(TEXT("invert:")))
+			{
+				CurrentDef.bNot = GetLineValue(TrimmedLine).ToBool();
+			}
+			else if (TrimmedLine.StartsWith(TEXT("condition_filter:")) || TrimmedLine.StartsWith(TEXT("filter:")))
+			{
+				CurrentDef.ConditionFilter = GetLineValue(TrimmedLine);
+			}
+			else if (TrimmedLine.StartsWith(TEXT("party_condition_policy:")) || TrimmedLine.StartsWith(TEXT("party_policy:")))
+			{
+				CurrentDef.PartyConditionPolicy = GetLineValue(TrimmedLine);
+			}
+			// Target arrays
+			else if (TrimmedLine.Equals(TEXT("character_targets:")) || TrimmedLine.StartsWith(TEXT("character_targets:")))
+			{
+				bInTargets = true;
+				CurrentTargetType = TEXT("character");
+				bInVariables = false;
+				bInProperties = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("npc_targets:")) || TrimmedLine.StartsWith(TEXT("npc_targets:")))
+			{
+				bInTargets = true;
+				CurrentTargetType = TEXT("npc");
+				bInVariables = false;
+				bInProperties = false;
+			}
+			else if (TrimmedLine.Equals(TEXT("player_targets:")) || TrimmedLine.StartsWith(TEXT("player_targets:")))
+			{
+				bInTargets = true;
+				CurrentTargetType = TEXT("player");
+				bInVariables = false;
+				bInProperties = false;
+			}
+			else if (bInTargets && TrimmedLine.StartsWith(TEXT("- ")))
+			{
+				FString Target = TrimmedLine.Mid(2).TrimStartAndEnd();
+				if (CurrentTargetType == TEXT("character"))
+					CurrentDef.CharacterTargets.Add(Target);
+				else if (CurrentTargetType == TEXT("npc"))
+					CurrentDef.NPCTargets.Add(Target);
+				else if (CurrentTargetType == TEXT("player"))
+					CurrentDef.PlayerTargets.Add(Target);
+			}
+			// Properties section (key-value pairs)
+			else if (TrimmedLine.Equals(TEXT("properties:")) || TrimmedLine.StartsWith(TEXT("properties:")))
+			{
+				bInProperties = true;
+				bInVariables = false;
+				bInTargets = false;
+			}
+			else if (bInProperties && TrimmedLine.Contains(TEXT(":")))
+			{
+				int32 ColonPos;
+				if (TrimmedLine.FindChar(TEXT(':'), ColonPos))
+				{
+					FString Key = TrimmedLine.Left(ColonPos).TrimStartAndEnd();
+					FString Value = TrimmedLine.Mid(ColonPos + 1).TrimStartAndEnd();
+					CurrentDef.Properties.Add(Key, Value);
+				}
+			}
+			// Variables section
+			else if (TrimmedLine.Equals(TEXT("variables:")) || TrimmedLine.StartsWith(TEXT("variables:")))
+			{
+				if (bInVarDef && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+				}
+				bInVariables = true;
+				bInProperties = false;
+				bInTargets = false;
+				bInVarDef = false;
+				CurrentVar = FManifestActorVariableDefinition();
+			}
+			else if (bInVariables && TrimmedLine.StartsWith(TEXT("- name:")))
+			{
+				if (bInVarDef && !CurrentVar.Name.IsEmpty())
+				{
+					CurrentDef.Variables.Add(CurrentVar);
+				}
+				CurrentVar = FManifestActorVariableDefinition();
+				CurrentVar.Name = GetLineValue(TrimmedLine.Mid(2));
+				bInVarDef = true;
+			}
+			else if (bInVarDef)
+			{
+				if (TrimmedLine.StartsWith(TEXT("type:")))
+					CurrentVar.Type = GetLineValue(TrimmedLine);
+				else if (TrimmedLine.StartsWith(TEXT("default_value:")) || TrimmedLine.StartsWith(TEXT("default:")))
+					CurrentVar.DefaultValue = GetLineValue(TrimmedLine);
+				else if (TrimmedLine.StartsWith(TEXT("instance_editable:")))
+					CurrentVar.bInstanceEditable = GetLineValue(TrimmedLine).ToBool();
+			}
+			// Event graph reference
+			else if (TrimmedLine.StartsWith(TEXT("event_graph:")))
+			{
+				CurrentDef.EventGraphName = GetLineValue(TrimmedLine);
+			}
+		}
+
+		LineIndex++;
+	}
+
+	// Save final pending items
+	if (bInVarDef && !CurrentVar.Name.IsEmpty())
+	{
+		CurrentDef.Variables.Add(CurrentVar);
+	}
+	if (bInItem && !CurrentDef.Name.IsEmpty())
+	{
+		OutData.BlueprintConditions.Add(CurrentDef);
 	}
 }
 
