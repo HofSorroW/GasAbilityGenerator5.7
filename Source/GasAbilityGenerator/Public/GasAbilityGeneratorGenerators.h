@@ -1,5 +1,6 @@
-// GasAbilityGenerator v3.0
+// GasAbilityGenerator v7.8.56
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v7.8.56: GA_FatherMark - ArrayLength, ArrayRemove, ArrayRemoveIndex for mark limit/rotation
 // v3.0: Regen/Diff Safety System - metadata tracking, dry run mode, hash-based change detection
 // v2.8.3: Function override support for parent class functions (HandleDeath, etc.)
 // v2.8.2: CallFunction parameter defaults - applies "param.*" properties to function input pins
@@ -946,6 +947,24 @@ private:
 	// v7.8.52: ArrayClear - clear all items from array
 	// Pins: execute, TargetArray, then
 	static UK2Node* CreateArrayClearNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// v7.8.56: ArrayLength - get number of items in array (pure function)
+	// Pins: TargetArray (input), ReturnValue (int32)
+	static UK2Node* CreateArrayLengthNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// v7.8.56: ArrayRemove - remove item from array (by item)
+	// Pins: execute, TargetArray (ref), ItemToFind, then, ReturnValue (bool - removed)
+	static UK2Node* CreateArrayRemoveNode(
+		UEdGraph* Graph,
+		const FManifestGraphNodeDefinition& NodeDef);
+
+	// v7.8.56: ArrayRemoveIndex - remove item from array by index
+	// Pins: execute, TargetArray (ref), IndexToRemove (int32), then
+	static UK2Node* CreateArrayRemoveIndexNode(
 		UEdGraph* Graph,
 		const FManifestGraphNodeDefinition& NodeDef);
 

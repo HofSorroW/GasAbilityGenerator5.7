@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File "C:\Unreal Projects\NP22B57\Plugins\Gas
 
 NP22B57 is an Unreal Engine 5.7 project using Narrative Pro Plugin v2.2 Beta. The project includes the Father Companion system - a transformable spider companion with 5 forms and 19 abilities implemented using the Gameplay Ability System (GAS).
 
-GasAbilityGenerator is an Editor plugin (v7.8.54) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
+GasAbilityGenerator is an Editor plugin (v7.8.56) that generates UE5 assets from YAML manifest definitions and CSV dialogue data.
 
 ## Project Paths
 
@@ -358,7 +358,7 @@ Both patterns produce identical Blueprints. The bypass ensures backwards compati
 
 ## GasAbilityGenerator Plugin
 
-Location: `Plugins/GasAbilityGenerator/` | Current version: v7.8.54 | Version history: [CHANGELOG.md](CHANGELOG.md)
+Location: `Plugins/GasAbilityGenerator/` | Current version: v7.8.56 | Version history: [CHANGELOG.md](CHANGELOG.md)
 
 **LOCKED: Contract 24 (D-DAMAGE-ATTR-1)** - NarrativeDamageExecCalc captures AttackDamage/Armor attributes. SetByCaller is FORBIDDEN for damage values with this exec calc - use attribute-based damage instead.
 
@@ -1236,6 +1236,12 @@ actor_blueprints:
 | BreakStruct | struct_type | Break struct into member pins |
 | MakeArray | element_type, num_elements | Create array from elements |
 | GetArrayItem | - | Access array element by index |
+| ArrayContains | - | Check if array contains item (pure) |
+| ArrayAdd | - | Add item to array |
+| ArrayClear | - | Clear all items from array |
+| ArrayLength | - | Get number of items in array (pure) |
+| ArrayRemove | - | Remove item from array by item |
+| ArrayRemoveIndex | - | Remove item from array by index |
 | Self | - | Reference to blueprint self |
 
 ### Parser Field Aliases

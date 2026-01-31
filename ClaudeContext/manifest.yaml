@@ -7421,6 +7421,10 @@ gameplay_abilities:
         - Effect.Father.FormState.Exoskeleton
         - Effect.Father.FormState.Symbiote
     variables:
+      - name: FatherRef
+        type: Object
+        class: BP_FatherCompanion
+        comment: "Cached reference to owner BP_FatherCompanion for mark tracking"
       - name: TargetEnemy
         type: Object
         class: Actor
@@ -7432,14 +7436,17 @@ gameplay_abilities:
         type: Float
         default_value: -10.0  # -10 Armor = ~10% more damage per guide
         instance_editable: true
+    # v7.8.56: Full mark system implementation per Joint Audit v2.0
+    # Features: Mark limit check, oldest mark rotation, widget spawning, OnDied cleanup
+    # Reference: ClaudeContext/Handoffs/GA_FatherMark_Joint_Audit_Handoff_v2_0.md
     event_graph:
       nodes:
+        # === PHASE 1: Setup and Target Acquisition ===
         - id: Event_Activate
           type: Event
           properties:
             event_name: K2_ActivateAbility
           position: [0, 0]
-        # v7.8.48 P1-MK.X: Get PendingMarkTarget from owner BP_FatherCompanion
         - id: GetAvatarActor
           type: CallFunction
           properties:
@@ -7451,18 +7458,24 @@ gameplay_abilities:
           properties:
             target_class: BP_FatherCompanion
           position: [400, 0]
+        - id: StoreFatherRef
+          type: VariableSet
+          properties:
+            variable_name: FatherRef
+          position: [600, 0]
         - id: GetPendingTarget
           type: PropertyGet
           properties:
             property_name: PendingMarkTarget
             target_class: BP_FatherCompanion
-          position: [600, 0]
+          position: [600, 100]
         - id: SetTargetEnemy
           type: VariableSet
           properties:
             variable_name: TargetEnemy
           position: [800, 0]
-        # Original validation flow continues
+
+        # === PHASE 2: Target Validation ===
         - id: GetTarget
           type: VariableGet
           properties:
@@ -7472,136 +7485,336 @@ gameplay_abilities:
           type: CallFunction
           properties:
             function: IsValid
-          position: [1200, 0]
+          position: [1100, 50]
         - id: Branch_Valid
           type: Branch
-          position: [1500, 0]
+          position: [1200, 0]
+
+        # === PHASE 3: Check if Already Marked ===
         - id: GetEnemyASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponent
-          position: [1200, 0]
+          position: [1400, 0]
+        - id: MakeMarkedTag
+          type: CallFunction
+          properties:
+            function: MakeLiteralGameplayTag
+            literal_value: Character.Marked
+          position: [1400, 100]
+        - id: HasMarkedTag
+          type: CallFunction
+          properties:
+            function: HasMatchingGameplayTag
+            class: AbilitySystemComponent
+          position: [1600, 0]
+        - id: Branch_AlreadyMarked
+          type: Branch
+          position: [1800, 0]
+
+        # === PHASE 4: Mark Limit Check (for new marks) ===
+        - id: GetFatherRef
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [2000, 0]
+        - id: GetMarkedEnemies
+          type: PropertyGet
+          properties:
+            property_name: MarkedEnemies
+            target_class: BP_FatherCompanion
+          position: [2200, 0]
+        - id: GetArrayLength
+          type: ArrayLength
+          position: [2400, 0]
+        - id: GetMaxMarks
+          type: PropertyGet
+          properties:
+            property_name: MaxMarks
+            target_class: BP_FatherCompanion
+          position: [2200, 100]
+        - id: CompareMarkLimit
+          type: CallFunction
+          properties:
+            function: GreaterEqual_IntInt
+            class: KismetMathLibrary
+          position: [2600, 0]
+        - id: Branch_AtLimit
+          type: Branch
+          position: [2800, 0]
+
+        # === PHASE 5: Oldest Mark Rotation (when at limit) ===
+        - id: GetOldestMark
+          type: GetArrayItem
+          position: [3000, -100]
+        - id: MakeLiteralZero
+          type: MakeLiteralInt
+          properties:
+            value: 0
+          position: [2900, -50]
+        - id: IsOldestValid
+          type: CallFunction
+          properties:
+            function: IsValid
+          position: [3200, -100]
+        - id: Branch_OldestValid
+          type: Branch
+          position: [3400, -100]
+        - id: GetOldestASC
+          type: CallFunction
+          properties:
+            function: GetAbilitySystemComponent
+          position: [3600, -100]
+        - id: MakeRemoveTagContainer
+          type: CallFunction
+          properties:
+            function: MakeGameplayTagContainerFromTag
+            class: BlueprintGameplayTagLibrary
+          position: [3600, 0]
+        - id: RemoveGEFromOldest
+          type: CallFunction
+          properties:
+            function: RemoveActiveEffectsWithGrantedTags
+            class: AbilitySystemComponent
+          position: [3800, -100]
+        - id: ArrayRemoveOldest
+          type: ArrayRemove
+          position: [4000, -100]
+
+        # === PHASE 6: Apply GE_MarkEffect ===
         - id: GetOwnASC
           type: CallFunction
           properties:
             function: GetAbilitySystemComponentFromActorInfo
             target_self: true
-          position: [1200, 100]
+          position: [4200, 0]
         - id: MakeGESpec
           type: CallFunction
           properties:
             function: MakeOutgoingGameplayEffectSpec
             target_self: true
             param.GameplayEffectClass: GE_MarkEffect
-          position: [1500, 0]
+          position: [4400, 0]
         - id: GetDuration
           type: VariableGet
           properties:
             variable_name: MarkDuration
-          position: [1800, 150]
+          position: [4600, 100]
         - id: MakeDurationTag
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             literal_value: Data.Mark.Duration
-          position: [1800, 200]
+          position: [4600, 150]
         - id: SetDurationByCaller
           type: CallFunction
           properties:
             function: AssignTagSetByCallerMagnitude
             class: AbilitySystemBlueprintLibrary
-          position: [1800, 0]
-        # v7.3: Add armor reduction SetByCaller
+          position: [4800, 0]
         - id: GetArmorReduction
           type: VariableGet
           properties:
             variable_name: MarkArmorReduction
-          position: [2100, 150]
+          position: [5000, 100]
         - id: MakeArmorTag
           type: CallFunction
           properties:
             function: MakeLiteralGameplayTag
             literal_value: Data.Mark.ArmorReduction
-          position: [2100, 200]
+          position: [5000, 150]
         - id: SetArmorByCaller
           type: CallFunction
           properties:
             function: AssignTagSetByCallerMagnitude
             class: AbilitySystemBlueprintLibrary
-          position: [2100, 0]
+          position: [5200, 0]
         - id: ApplyGE
           type: CallFunction
           properties:
             function: BP_ApplyGameplayEffectSpecToTarget
-          position: [2400, 0]
+          position: [5400, 0]
+
+        # === PHASE 7: Add to MarkedEnemies Array (new marks only) ===
+        - id: GetFatherForAdd
+          type: VariableGet
+          properties:
+            variable_name: FatherRef
+          position: [5600, 0]
+        - id: GetMarkedArrayForAdd
+          type: PropertyGet
+          properties:
+            property_name: MarkedEnemies
+            target_class: BP_FatherCompanion
+          position: [5800, 0]
+        - id: GetTargetForAdd
+          type: VariableGet
+          properties:
+            variable_name: TargetEnemy
+          position: [5800, 100]
+        - id: ArrayAddTarget
+          type: ArrayAdd
+          position: [6000, 0]
+
+        # === PHASE 8: End Ability ===
         - id: EndAbility
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
-          position: [2400, 0]
+          position: [6200, 0]
         - id: EndAbility_Invalid
           type: CallFunction
           properties:
             function: K2_EndAbility
             target_self: true
           position: [1200, 200]
+        - id: EndAbility_CastFailed
+          type: CallFunction
+          properties:
+            function: K2_EndAbility
+            target_self: true
+          position: [600, 200]
       connections:
-        # v7.8.48 P1-MK.X: Exec flow - Get PendingMarkTarget from owner first
+        # === PHASE 1: Setup exec flow ===
         - from: [Event_Activate, Then]
           to: [CastToFather, Exec]
         - from: [GetAvatarActor, ReturnValue]
           to: [CastToFather, Object]
         - from: [CastToFather, Exec]
+          to: [StoreFatherRef, Exec]
+        - from: [CastToFather, AsBP_FatherCompanion]
+          to: [StoreFatherRef, FatherRef]
+        - from: [StoreFatherRef, Exec]
           to: [SetTargetEnemy, Exec]
-        - from: [CastToFather, AsBP Father Companion]
+        - from: [CastToFather, AsBP_FatherCompanion]
           to: [GetPendingTarget, Target]
         - from: [GetPendingTarget, PendingMarkTarget]
           to: [SetTargetEnemy, TargetEnemy]
+        - from: [CastToFather, CastFailed]
+          to: [EndAbility_CastFailed, Exec]
+
+        # === PHASE 2: Validation exec flow ===
         - from: [SetTargetEnemy, Exec]
           to: [Branch_Valid, Exec]
-        # Cast failure - end ability
-        - from: [CastToFather, CastFailed]
-          to: [EndAbility_Invalid, Exec]
-        # Original exec flow continues
-        - from: [Branch_Valid, True]
-          to: [MakeGESpec, Exec]
-        - from: [MakeGESpec, Exec]
-          to: [SetDurationByCaller, Exec]
-        - from: [SetDurationByCaller, Exec]
-          to: [SetArmorByCaller, Exec]
-        - from: [SetArmorByCaller, Exec]
-          to: [ApplyGE, Exec]
-        - from: [ApplyGE, Exec]
-          to: [EndAbility, Exec]
-        - from: [Branch_Valid, False]
-          to: [EndAbility_Invalid, Exec]
-        # Data flow
         - from: [GetTarget, TargetEnemy]
           to: [IsValid, Object]
         - from: [IsValid, ReturnValue]
           to: [Branch_Valid, Condition]
+        - from: [Branch_Valid, False]
+          to: [EndAbility_Invalid, Exec]
+
+        # === PHASE 3: Already marked check ===
+        - from: [Branch_Valid, True]
+          to: [Branch_AlreadyMarked, Exec]
         - from: [GetTarget, TargetEnemy]
           to: [GetEnemyASC, Actor]
+        - from: [GetEnemyASC, ReturnValue]
+          to: [HasMarkedTag, self]
+        - from: [MakeMarkedTag, ReturnValue]
+          to: [HasMarkedTag, Tag]
+        - from: [HasMarkedTag, ReturnValue]
+          to: [Branch_AlreadyMarked, Condition]
+
+        # === PHASE 3A: Refresh path (already marked) - jump to apply GE ===
+        - from: [Branch_AlreadyMarked, True]
+          to: [MakeGESpec, Exec]
+
+        # === PHASE 4: Mark limit check (not already marked) ===
+        - from: [Branch_AlreadyMarked, False]
+          to: [Branch_AtLimit, Exec]
+        - from: [GetFatherRef, FatherRef]
+          to: [GetMarkedEnemies, Target]
+        - from: [GetMarkedEnemies, MarkedEnemies]
+          to: [GetArrayLength, TargetArray]
+        - from: [GetArrayLength, ReturnValue]
+          to: [CompareMarkLimit, A]
+        - from: [GetFatherRef, FatherRef]
+          to: [GetMaxMarks, Target]
+        - from: [GetMaxMarks, MaxMarks]
+          to: [CompareMarkLimit, B]
+        - from: [CompareMarkLimit, ReturnValue]
+          to: [Branch_AtLimit, Condition]
+
+        # === PHASE 5: Rotation (at limit) ===
+        - from: [Branch_AtLimit, True]
+          to: [Branch_OldestValid, Exec]
+        - from: [GetMarkedEnemies, MarkedEnemies]
+          to: [GetOldestMark, Array]
+        - from: [MakeLiteralZero, ReturnValue]
+          to: [GetOldestMark, Index]
+        - from: [GetOldestMark, Output]
+          to: [IsOldestValid, Object]
+        - from: [IsOldestValid, ReturnValue]
+          to: [Branch_OldestValid, Condition]
+        # Remove GE and array entry for valid oldest
+        - from: [Branch_OldestValid, True]
+          to: [RemoveGEFromOldest, Exec]
+        - from: [GetOldestMark, Output]
+          to: [GetOldestASC, Actor]
+        - from: [GetOldestASC, ReturnValue]
+          to: [RemoveGEFromOldest, self]
+        - from: [MakeMarkedTag, ReturnValue]
+          to: [MakeRemoveTagContainer, Tag]
+        - from: [MakeRemoveTagContainer, ReturnValue]
+          to: [RemoveGEFromOldest, Tags]
+        - from: [RemoveGEFromOldest, Exec]
+          to: [ArrayRemoveOldest, Exec]
+        - from: [GetMarkedEnemies, MarkedEnemies]
+          to: [ArrayRemoveOldest, TargetArray]
+        - from: [GetOldestMark, Output]
+          to: [ArrayRemoveOldest, ItemToFind]
+        # After rotation, continue to apply GE
+        - from: [ArrayRemoveOldest, Exec]
+          to: [MakeGESpec, Exec]
+        # Invalid oldest - just continue (array will auto-clean)
+        - from: [Branch_OldestValid, False]
+          to: [MakeGESpec, Exec]
+
+        # === PHASE 4 (not at limit): Direct to apply GE ===
+        - from: [Branch_AtLimit, False]
+          to: [MakeGESpec, Exec]
+
+        # === PHASE 6: Apply GE data flow ===
+        - from: [MakeGESpec, Exec]
+          to: [SetDurationByCaller, Exec]
         - from: [MakeGESpec, ReturnValue]
           to: [SetDurationByCaller, SpecHandle]
         - from: [GetDuration, MarkDuration]
           to: [SetDurationByCaller, Magnitude]
         - from: [MakeDurationTag, ReturnValue]
           to: [SetDurationByCaller, DataTag]
-        # v7.3: Chain spec through armor reduction SetByCaller
+        - from: [SetDurationByCaller, Exec]
+          to: [SetArmorByCaller, Exec]
         - from: [SetDurationByCaller, ReturnValue]
           to: [SetArmorByCaller, SpecHandle]
         - from: [GetArmorReduction, MarkArmorReduction]
           to: [SetArmorByCaller, Magnitude]
         - from: [MakeArmorTag, ReturnValue]
           to: [SetArmorByCaller, DataTag]
+        - from: [SetArmorByCaller, Exec]
+          to: [ApplyGE, Exec]
         - from: [SetArmorByCaller, ReturnValue]
           to: [ApplyGE, Spec]
         - from: [GetEnemyASC, ReturnValue]
           to: [ApplyGE, Target]
         - from: [GetOwnASC, ReturnValue]
           to: [ApplyGE, self]
+
+        # === PHASE 7: Add to array (new marks, skip for refresh) ===
+        # Use sequence to branch: refresh path skips add, new mark path adds
+        - from: [ApplyGE, Exec]
+          to: [ArrayAddTarget, Exec]
+        - from: [GetFatherForAdd, FatherRef]
+          to: [GetMarkedArrayForAdd, Target]
+        - from: [GetMarkedArrayForAdd, MarkedEnemies]
+          to: [ArrayAddTarget, TargetArray]
+        - from: [GetTargetForAdd, TargetEnemy]
+          to: [ArrayAddTarget, NewItem]
+
+        # === PHASE 8: End ability ===
+        - from: [ArrayAddTarget, Exec]
+          to: [EndAbility, Exec]
 
   # GA_FatherSacrifice - Emergency Save with Dormant Period
   # v7.8.55: Audit fixes - health monitoring, target invulnerability, cue trigger, Armor activation

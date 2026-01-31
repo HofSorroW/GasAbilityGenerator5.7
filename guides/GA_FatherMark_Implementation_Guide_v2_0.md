@@ -1,5 +1,5 @@
 # Father Companion - GA_FatherMark Implementation Guide
-## VERSION 1.9 - Form State Tag Update (INV-1 Compliant)
+## VERSION 2.0 - Manifest Alignment (Joint Audit Compliant)
 ## Unreal Engine 5.7 + Narrative Pro Plugin v2.2
 
 ---
@@ -13,7 +13,7 @@
 | Parent Class | NarrativeGameplayAbility |
 | Forms | Crawler, Engineer |
 | Input | None (Triggers on enemy engagement) |
-| Version | 1.9 |
+| Version | 2.0 |
 | Engine | Unreal Engine 5.7 |
 | Plugin | Narrative Pro v2.2 |
 
@@ -107,9 +107,10 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 |----------|---------|
 | Ability.Father.Mark | Father passive enemy marking ability |
 | Father.State.Marking | Father is marking an enemy (Activation Owned) |
-| Enemy.State.Marked | Enemy is marked by father |
+| Character.Marked | Enemy is marked by father |
 | Effect.Father.Mark | Father mark gameplay effect |
-| Effect.Father.MarkDamageBonus | Damage bonus from father mark |
+| Data.Mark.Duration | SetByCaller duration (default 5.0) |
+| Data.Mark.ArmorReduction | SetByCaller armor reduction (default -10.0) |
 | Data.Father.Marked | Data tag for marked enemy identification |
 
 ### **Verify Existing Tags**
@@ -124,121 +125,85 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 
 ---
 
-## **PHASE 2: CREATE GAMEPLAY EFFECTS**
+## **PHASE 2: CREATE GAMEPLAY EFFECT**
 
 ### **1) Navigate to Effects Folder**
 
 #### 1.1) Open or Create Effects Folder
-   - 1.1.1) In Content Browser, go to `/Content/FatherCompanion/General/`
-   - 1.1.2) Right-click in Content Browser
-   - 1.1.3) Select **New Folder**
-   - 1.1.4) Name: `Effects`
-   - 1.1.5) Press **Enter**
-   - 1.1.6) Double-click **Effects** folder to open
+   - 1.1.1) In Content Browser, go to `/Content/FatherCompanion/Effects/Utility/`
+   - 1.1.2) Create folder structure if missing
 
-### **2) Create GE_FatherMark**
+### **2) Create GE_MarkEffect (Single Combined GE)**
+
+> **Note:** Per manifest.yaml authority, mark uses a SINGLE gameplay effect (GE_MarkEffect) with SetByCaller pattern for duration and armor reduction. This replaces the previous dual-GE approach.
 
 #### 2.1) Create Gameplay Effect Asset
-   - 2.1.1) Right-click in Effects folder
+   - 2.1.1) Right-click in Utility folder
    - 2.1.2) Select **Gameplay** -> **Gameplay Effect**
-   - 2.1.3) Name: `GE_FatherMark`
+   - 2.1.3) Name: `GE_MarkEffect`
    - 2.1.4) Press **Enter**
    - 2.1.5) Double-click to open
 
-#### 2.2) Configure Duration Policy
+#### 2.2) Configure Duration Policy (SetByCaller)
    - 2.2.1) Click **Class Defaults** button
    - 2.2.2) In Details panel, find **Gameplay Effect** section
    - 2.2.3) Set **Duration Policy**: `Has Duration`
    - 2.2.4) Find **Duration Magnitude** section
-   - 2.2.5) Set **Magnitude Calculation Type**: `Scalable Float`
-   - 2.2.6) Expand **Scalable Float Magnitude**
-   - 2.2.7) Set **Value**: `5.0` (5 second mark duration)
+   - 2.2.5) Set **Magnitude Calculation Type**: `Set By Caller`
+   - 2.2.6) Set **Set By Caller Magnitude** -> **Data Tag**: `Data.Mark.Duration`
 
-#### 2.3) Add Grant Tags Component
+#### 2.3) Add Armor Modifier (SetByCaller)
    - 2.3.1) In Components section, click **+ (Plus)**
-   - 2.3.2) Search: `Grant Tags`
-   - 2.3.3) Select: **Grant Tags to Target Actor**
+   - 2.3.2) Search: `Modifiers`
+   - 2.3.3) Select: **Modifiers**
+   - 2.3.4) Click Modifiers component to expand
+   - 2.3.5) Find **Modifiers** array
+   - 2.3.6) Click **+ (Plus)** to add modifier
+   - 2.3.7) Expand the modifier:
+      - 2.3.7.1) **Attribute**: Select `NarrativeAttributeSetBase.Armor`
+      - 2.3.7.2) **Modifier Op**: Select `Add`
+      - 2.3.7.3) **Modifier Magnitude** -> **Magnitude Calculation Type**: `Set By Caller`
+      - 2.3.7.4) Set **Set By Caller Magnitude** -> **Data Tag**: `Data.Mark.ArmorReduction`
 
-#### 2.4) Configure Granted Tags
-   - 2.4.1) Click component to expand
-   - 2.4.2) Find **Add Tags** -> **Add to Inherited**
-   - 2.4.3) Click **+ (Plus)**
-   - 2.4.4) Add tag: `Enemy.State.Marked`
-   - 2.4.5) Click **+ (Plus)** again
-   - 2.4.6) Add tag: `Data.Father.Marked`
+> **Armor Math Note:** The damage increase varies by target armor: maximum ~10% benefit on low-armor targets (10 armor → 0); reduced benefit on high-armor targets (100 armor → 90 = ~5.3%); no benefit if target armor is already 0 due to engine clamping.
 
-#### 2.5) Add Asset Tags Component
-   - 2.5.1) Click **+ (Plus)** in Components
-   - 2.5.2) Search: `Asset Tags`
-   - 2.5.3) Select: **Tags This Effect Has (Asset Tags)**
+#### 2.4) Add Grant Tags Component
+   - 2.4.1) Click **+ (Plus)** in Components
+   - 2.4.2) Search: `Grant Tags`
+   - 2.4.3) Select: **Grant Tags to Target Actor**
 
-#### 2.6) Configure Asset Tags
-   - 2.6.1) Click component to expand
-   - 2.6.2) Find **Add to Inherited**
-   - 2.6.3) Click **+ (Plus)**
-   - 2.6.4) Add tag: `Effect.Father.Mark`
+#### 2.5) Configure Granted Tags
+   - 2.5.1) Click component to expand
+   - 2.5.2) Find **Add Tags** -> **Add to Inherited**
+   - 2.5.3) Click **+ (Plus)**
+   - 2.5.4) Add tag: `Character.Marked`
 
-#### 2.7) Add Stacking Component
-   - 2.7.1) Click **+ (Plus)** in Components
-   - 2.7.2) Search: `Stacking`
-   - 2.7.3) Select: **Stacking**
+#### 2.6) Add Asset Tags Component
+   - 2.6.1) Click **+ (Plus)** in Components
+   - 2.6.2) Search: `Asset Tags`
+   - 2.6.3) Select: **Tags This Effect Has (Asset Tags)**
 
-#### 2.8) Configure Stacking
-   - 2.8.1) Click component to expand
-   - 2.8.2) Set **Stacking Type**: `Aggregate by Target`
-   - 2.8.3) Set **Stack Limit Count**: `1`
-   - 2.8.4) Set **Stack Duration Refresh Policy**: `Refresh on Successful Application`
-   - 2.8.5) Set **Stack Period Reset Policy**: `Reset on Successful Application`
+#### 2.7) Configure Asset Tags
+   - 2.7.1) Click component to expand
+   - 2.7.2) Find **Add to Inherited**
+   - 2.7.3) Click **+ (Plus)**
+   - 2.7.4) Add tag: `Effect.Father.Mark`
 
-#### 2.9) Compile and Save
-   - 2.9.1) Click **Compile** button
-   - 2.9.2) Click **Save** button
+#### 2.8) Add Stacking Component
+   - 2.8.1) Click **+ (Plus)** in Components
+   - 2.8.2) Search: `Stacking`
+   - 2.8.3) Select: **Stacking**
 
-### **3) Create GE_MarkDamageBonus**
+#### 2.9) Configure Stacking (Refresh on Re-Apply)
+   - 2.9.1) Click component to expand
+   - 2.9.2) Set **Stacking Type**: `Aggregate by Target`
+   - 2.9.3) Set **Stack Limit Count**: `1`
+   - 2.9.4) Set **Stack Duration Refresh Policy**: `Refresh on Successful Application`
+   - 2.9.5) Set **Stack Period Reset Policy**: `Reset on Successful Application`
 
-#### 3.1) Create Gameplay Effect Asset
-   - 3.1.1) Right-click in Effects folder
-   - 3.1.2) Select **Gameplay** -> **Gameplay Effect**
-   - 3.1.3) Name: `GE_MarkDamageBonus`
-   - 3.1.4) Press **Enter**
-   - 3.1.5) Double-click to open
-
-#### 3.2) Configure Duration Policy
-   - 3.2.1) Click **Class Defaults**
-   - 3.2.2) Set **Duration Policy**: `Has Duration`
-   - 3.2.3) Find **Duration Magnitude** section
-   - 3.2.4) Set **Magnitude Calculation Type**: `Scalable Float`
-   - 3.2.5) Set **Value**: `5.0` (matches mark duration)
-
-#### 3.3) Add Modifier Component
-   - 3.3.1) In Components section, click **+ (Plus)**
-   - 3.3.2) Search: `Modifiers`
-   - 3.3.3) Select: **Modifiers**
-
-#### 3.4) Configure Armor Reduction Modifier
-   - 3.4.1) Click Modifiers component to expand
-   - 3.4.2) Find **Modifiers** array
-   - 3.4.3) Click **+ (Plus)** to add modifier
-   - 3.4.4) Expand the modifier:
-      - 3.4.4.1) **Attribute**: Select `Armor`
-      - 3.4.4.2) **Modifier Op**: Select `Additive`
-      - 3.4.4.3) **Modifier Magnitude** -> **Magnitude Calculation Type**: `Scalable Float`
-      - 3.4.4.4) Expand **Scalable Float Magnitude**
-      - 3.4.4.5) Set **Value**: `-10` (reduces armor by 10, ~10% more damage taken)
-
-#### 3.5) Add Grant Tags Component
-   - 3.5.1) Click **+ (Plus)** in Components
-   - 3.5.2) Select: **Grant Tags to Target Actor**
-
-#### 3.6) Configure Granted Tags
-   - 3.6.1) Click component to expand
-   - 3.6.2) Find **Add Tags** -> **Add to Inherited**
-   - 3.6.3) Click **+ (Plus)**
-   - 3.6.4) Add tag: `Effect.Father.MarkDamageBonus`
-
-#### 3.7) Compile and Save
-   - 3.7.1) Click **Compile** button
-   - 3.7.2) Click **Save** button
+#### 2.10) Compile and Save
+   - 2.10.1) Click **Compile** button
+   - 2.10.2) Click **Save** button
 
 ---
 
@@ -275,7 +240,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 |----------|------|
 | Ability Tags | Ability.Father.Mark |
 | Activation Required Tags | Father.State.Recruited |
-| Activation Blocked Tags | Narrative.State.IsDead, Effect.Father.FormState.Armor, Effect.Father.FormState.Exoskeleton, Effect.Father.FormState.Symbiote |
+| Activation Blocked Tags | Father.State.Transitioning, Narrative.State.IsDead, Effect.Father.FormState.Armor, Effect.Father.FormState.Exoskeleton, Effect.Father.FormState.Symbiote |
 | Activation Owned Tags | Father.State.Marking |
 
 ### **5) Configure Replication Settings**
@@ -327,11 +292,23 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
    - 1.3.3) **Variable Type**: `Actor` -> `Object Reference`
    - 1.3.4) Set **Category**: `Runtime`
 
-#### 1.4) Create MarkWidgetRef Variable
+#### 1.4) Create MarkDuration Variable (SetByCaller)
    - 1.4.1) Click **+ (Plus)** next to Variables
-   - 1.4.2) Name: `MarkWidgetRef`
-   - 1.4.3) **Variable Type**: `Widget Component` -> `Object Reference`
-   - 1.4.4) Set **Category**: `Runtime`
+   - 1.4.2) Name: `MarkDuration`
+   - 1.4.3) **Variable Type**: `Float`
+   - 1.4.4) Click **Compile**
+   - 1.4.5) Set **Default Value**: `5.0`
+   - 1.4.6) Enable **Instance Editable**: Check
+   - 1.4.7) Set **Category**: `Config`
+
+#### 1.5) Create MarkArmorReduction Variable (SetByCaller)
+   - 1.5.1) Click **+ (Plus)** next to Variables
+   - 1.5.2) Name: `MarkArmorReduction`
+   - 1.5.3) **Variable Type**: `Float`
+   - 1.5.4) Click **Compile**
+   - 1.5.5) Set **Default Value**: `-10.0`
+   - 1.5.6) Enable **Instance Editable**: Check
+   - 1.5.7) Set **Category**: `Config`
 
 ### **2) Implement ActivateAbility Event**
 
@@ -394,7 +371,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
       - 4.2.1.1) Drag outward and search: `Has Gameplay Tag`
       - 4.2.1.2) Add **Has Gameplay Tag** node
    - 4.2.2) Configure:
-      - 4.2.2.1) **Tag to Check**: `Enemy.State.Marked`
+      - 4.2.2.1) **Tag to Check**: `Character.Marked`
 
 #### 4.3) Branch on Already Marked
    - 4.3.1) From Get ASC execution:
@@ -470,7 +447,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
       - 2.3.1.2) Search: `Get Ability System Component`
       - 2.3.1.3) Add **Get Ability System Component** node
 
-#### 2.4) Remove GE_FatherMark from Oldest
+#### 2.4) Remove GE_MarkEffect from Oldest
    - 2.4.1) From Get ASC execution:
       - 2.4.1.1) From oldest enemy ASC, drag outward
       - 2.4.1.2) Search: `Remove Active Gameplay Effects With Granted Tags`
@@ -478,7 +455,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
    - 2.4.2) Connect execution
    - 2.4.3) Configure:
       - 2.4.3.1) Create **Gameplay Tag Container**
-      - 2.4.3.2) Add tag: `Enemy.State.Marked`
+      - 2.4.3.2) Add tag: `Character.Marked`
 
 #### 2.5) Destroy Oldest Mark Widget
    - 2.5.1) From Remove GE execution:
@@ -507,25 +484,41 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
       - 3.2.1.1) Drag outward and search: `Get Ability System Component`
       - 3.2.1.2) Add **Get Ability System Component** node
 
-#### 3.3) Apply GE_FatherMark
+#### 3.3) Make Outgoing GE Spec for GE_MarkEffect
    - 3.3.1) From Sequence **Then 0** execution:
-      - 3.3.1.1) From Target ASC, drag outward
-      - 3.3.1.2) Search: `Apply Gameplay Effect to Self`
-      - 3.3.1.3) Add **Apply Gameplay Effect to Self** node
+      - 3.3.1.1) Drag outward and search: `Make Outgoing Gameplay Effect Spec`
+      - 3.3.1.2) Add **Make Outgoing Gameplay Effect Spec** node
    - 3.3.2) Connect execution
    - 3.3.3) Configure:
-      - 3.3.3.1) **Gameplay Effect Class**: `GE_FatherMark`
+      - 3.3.3.1) **Gameplay Effect Class**: `GE_MarkEffect`
       - 3.3.3.2) **Level**: `1.0`
 
-#### 3.4) Apply GE_MarkDamageBonus
-   - 3.4.1) From Apply GE_FatherMark execution:
-      - 3.4.1.1) From Target ASC, drag outward
-      - 3.4.1.2) Search: `Apply Gameplay Effect to Self`
-      - 3.4.1.3) Add another **Apply Gameplay Effect to Self** node
+#### 3.4) Set Duration via SetByCaller
+   - 3.4.1) From Make Outgoing GE Spec execution:
+      - 3.4.1.1) From Return Value (Spec Handle), drag outward
+      - 3.4.1.2) Search: `Assign Tag Set By Caller Magnitude`
+      - 3.4.1.3) Add **Assign Tag Set By Caller Magnitude** node
    - 3.4.2) Connect execution
    - 3.4.3) Configure:
-      - 3.4.3.1) **Gameplay Effect Class**: `GE_MarkDamageBonus`
-      - 3.4.3.2) **Level**: `1.0`
+      - 3.4.3.1) **Data Tag**: `Data.Mark.Duration`
+      - 3.4.3.2) **Magnitude**: Connect to **MarkDuration** variable getter
+
+#### 3.5) Set Armor Reduction via SetByCaller
+   - 3.5.1) From Assign Duration execution:
+      - 3.5.1.1) From Spec Handle, drag outward
+      - 3.5.1.2) Add another **Assign Tag Set By Caller Magnitude** node
+   - 3.5.2) Connect execution
+   - 3.5.3) Configure:
+      - 3.5.3.1) **Data Tag**: `Data.Mark.ArmorReduction`
+      - 3.5.3.2) **Magnitude**: Connect to **MarkArmorReduction** variable getter
+
+#### 3.6) Apply GE_MarkEffect to Target
+   - 3.6.1) From Assign Armor execution:
+      - 3.6.1.1) From Target ASC, drag outward
+      - 3.6.1.2) Search: `Apply Gameplay Effect Spec to Self`
+      - 3.6.1.3) Add **Apply Gameplay Effect Spec to Self** node
+   - 3.6.2) Connect execution
+   - 3.6.3) Connect Spec Handle to Spec input
 
 #### 3.5) Add to Marked Array
    - 3.5.1) From Sequence **Then 1** execution:
@@ -638,9 +631,9 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 
 #### 7.1) Refresh GE Duration
    - 7.1.1) From Branch **True** (already marked) earlier:
-      - 7.1.1.1) GE_FatherMark has **Refresh on Successful Application**
-      - 7.1.1.2) Re-apply GE_FatherMark (same logic as Section 3.3)
-      - 7.1.1.3) Re-apply GE_MarkDamageBonus (same logic as Section 3.4)
+      - 7.1.1.1) GE_MarkEffect has **Refresh on Successful Application** stacking policy
+      - 7.1.1.2) Re-apply GE_MarkEffect (same Make Spec + SetByCaller + Apply logic as Section 3.3-3.6)
+      - 7.1.1.3) This single apply refreshes both tag and armor reduction
 
 #### 7.2) Refresh Widget Timer
    - 7.2.1) From FatherRef:
@@ -909,6 +902,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0 | January 2026 | **Manifest Alignment (Joint Audit Compliant):** (1) Replaced dual-GE pattern (GE_FatherMark + GE_MarkDamageBonus) with single GE_MarkEffect per manifest authority. (2) Changed tag from `Enemy.State.Marked` to `Character.Marked` per tag registry. (3) Added `Father.State.Transitioning` to Activation Blocked Tags. (4) Added SetByCaller variables (MarkDuration, MarkArmorReduction) with Data.Mark.* tags. (5) Clarified armor math as conditional (~10% only for low-armor targets). (6) Updated PHASE 2 to use SetByCaller pattern. (7) Removed MarkWidgetRef variable, replaced with SetByCaller config variables. |
 | 1.9 | January 2026 | Form State Tag Update (INV-1 Compliant): Changed Activation Blocked Tags from `Father.Form.*` (orphan tags) to `Effect.Father.FormState.*` (granted by form state GEs). Updated UE version from 5.6 to 5.7. |
 | 1.8 | January 2026 | Updated Narrative Pro version reference from v2.1 to v2.2. |
 | 1.7 | January 2026 | Simplified documentation: Tag configuration (PHASE 3 Section 4) converted to single Property/Tags table. |
@@ -931,7 +925,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 | Ability Tags | `Ability.Father.Mark` |
 | Activation Required | `Father.State.Recruited` |
 | Activation Owned | `Father.State.Marking` |
-| Activation Blocked | `Narrative.State.IsDead`, `Effect.Father.FormState.Armor`, `Effect.Father.FormState.Exoskeleton`, `Effect.Father.FormState.Symbiote` |
+| Activation Blocked | `Father.State.Transitioning`, `Narrative.State.IsDead`, `Effect.Father.FormState.Armor`, `Effect.Father.FormState.Exoskeleton`, `Effect.Father.FormState.Symbiote` |
 | InputTag | None (passive) |
 
 ### **Replication Settings**
@@ -946,8 +940,12 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 
 | Effect | Duration | Purpose |
 |--------|----------|---------|
-| GE_FatherMark | 5 seconds | Grants `Enemy.State.Marked` tag |
-| GE_MarkDamageBonus | 5 seconds | Armor -10 modifier (~10% more damage taken) |
+| GE_MarkEffect | SetByCaller (default 5s) | Combined: Grants `Character.Marked` tag + Armor reduction |
+
+| SetByCaller Tag | Default | Purpose |
+|-----------------|---------|---------|
+| Data.Mark.Duration | 5.0 | Effect duration in seconds |
+| Data.Mark.ArmorReduction | -10.0 | Armor modifier (variable benefit based on target armor) |
 
 ### **Mark Parameters**
 
@@ -1000,7 +998,7 @@ GA_FatherMark is a passive ability that automatically marks enemies when the fat
 
 ---
 
-**END OF GA_FATHERMARK IMPLEMENTATION GUIDE v1.9**
+**END OF GA_FATHERMARK IMPLEMENTATION GUIDE v2.0**
 
 **Crawler/Engineer Form - Passive Enemy Marking**
 

@@ -1,5 +1,8 @@
-// GasAbilityGenerator v7.8.52
+// GasAbilityGenerator v7.8.56
 // Copyright (c) Erdem - Second Chance RPG. All Rights Reserved.
+// v7.8.56: GA_FatherMark mark system - ArrayLength, ArrayRemove, ArrayRemoveIndex node types
+//        Enables mark limit check (ArrayLength) and oldest mark rotation (ArrayRemove/ArrayRemoveIndex)
+//        Required for Joint Audit v2.0 manifest enhancement
 // v7.8.52: Contract 25 Compliance - Array operation node types (ArrayContains, ArrayAdd, ArrayClear)
 //        Enables GA_FatherAttack hit deduplication: CachedHitActors array management
 //        Uses UK2Node_CallArrayFunction with UKismetArrayLibrary for proper wildcard type propagation
@@ -11057,6 +11060,7 @@ bool FEventGraphGenerator::ValidateEventGraph(
 		TEXT("Sequence"), TEXT("Delay"), TEXT("PrintString"), TEXT("DynamicCast"),
 		TEXT("ForEachLoop"), TEXT("SpawnActor"), TEXT("SpawnNPC"), TEXT("BreakStruct"), TEXT("MakeArray"),
 		TEXT("GetArrayItem"), TEXT("ArrayContains"), TEXT("ArrayAdd"), TEXT("ArrayClear"),  // v7.8.52: Array operations
+		TEXT("ArrayLength"), TEXT("ArrayRemove"), TEXT("ArrayRemoveIndex"),  // v7.8.56: Additional array operations for mark system
 		TEXT("Self"), TEXT("ConstructObjectFromClass"),
 		TEXT("MakeLiteralBool"), TEXT("MakeLiteralFloat"), TEXT("MakeLiteralInt"), TEXT("MakeLiteralByte"), TEXT("MakeLiteralString"),
 		TEXT("CallParent"), TEXT("Return"), TEXT("FunctionResult"), TEXT("AddDelegate"), TEXT("BindDelegate"),
@@ -11629,6 +11633,21 @@ bool FEventGraphGenerator::GenerateEventGraph(
 		else if (NodeDef.Type.Equals(TEXT("ArrayClear"), ESearchCase::IgnoreCase))
 		{
 			CreatedNode = CreateArrayClearNode(EventGraph, NodeDef);
+		}
+		// v7.8.56: ArrayLength - get number of items in array (pure function)
+		else if (NodeDef.Type.Equals(TEXT("ArrayLength"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateArrayLengthNode(EventGraph, NodeDef);
+		}
+		// v7.8.56: ArrayRemove - remove item from array by item
+		else if (NodeDef.Type.Equals(TEXT("ArrayRemove"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateArrayRemoveNode(EventGraph, NodeDef);
+		}
+		// v7.8.56: ArrayRemoveIndex - remove item from array by index
+		else if (NodeDef.Type.Equals(TEXT("ArrayRemoveIndex"), ESearchCase::IgnoreCase))
+		{
+			CreatedNode = CreateArrayRemoveIndexNode(EventGraph, NodeDef);
 		}
 		// v2.7.8: Self - reference to the blueprint self
 		else if (NodeDef.Type.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
@@ -14737,6 +14756,96 @@ UK2Node* FEventGraphGenerator::CreateArrayClearNode(
 	ArrayNode->AllocateDefaultPins();
 
 	LogGeneration(FString::Printf(TEXT("ArrayClear node '%s': Created"), *NodeDef.Id));
+
+	return ArrayNode;
+}
+
+// v7.8.56: ArrayLength - get number of items in array (pure function)
+// Uses UK2Node_CallArrayFunction for proper array type handling
+// Pins: TargetArray (input), ReturnValue (int32)
+UK2Node* FEventGraphGenerator::CreateArrayLengthNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// Find the Array_Length function from KismetArrayLibrary
+	UFunction* LengthFunc = UKismetArrayLibrary::StaticClass()->FindFunctionByName(FName(TEXT("Array_Length")));
+
+	if (!LengthFunc)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ARRAY_LENGTH_NOT_FOUND] Array_Length function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Use UK2Node_CallArrayFunction for proper array type propagation
+	UK2Node_CallArrayFunction* ArrayNode = NewObject<UK2Node_CallArrayFunction>(Graph);
+	Graph->AddNode(ArrayNode, false, false);
+
+	ArrayNode->SetFromFunction(LengthFunc);
+	ArrayNode->CreateNewGuid();
+	ArrayNode->PostPlacedNewNode();
+	ArrayNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("ArrayLength node '%s': Created (pure function - no exec pins)"), *NodeDef.Id));
+
+	return ArrayNode;
+}
+
+// v7.8.56: ArrayRemove - remove item from array (by item)
+// Uses UK2Node_CallArrayFunction for proper array type handling
+// Pins: execute (input), TargetArray (ref input), ItemToFind (input), then (output), ReturnValue (bool - was removed)
+UK2Node* FEventGraphGenerator::CreateArrayRemoveNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// Find the Array_RemoveItem function from KismetArrayLibrary
+	UFunction* RemoveFunc = UKismetArrayLibrary::StaticClass()->FindFunctionByName(FName(TEXT("Array_RemoveItem")));
+
+	if (!RemoveFunc)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ARRAY_REMOVE_NOT_FOUND] Array_RemoveItem function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Use UK2Node_CallArrayFunction for proper array type propagation
+	UK2Node_CallArrayFunction* ArrayNode = NewObject<UK2Node_CallArrayFunction>(Graph);
+	Graph->AddNode(ArrayNode, false, false);
+
+	ArrayNode->SetFromFunction(RemoveFunc);
+	ArrayNode->CreateNewGuid();
+	ArrayNode->PostPlacedNewNode();
+	ArrayNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("ArrayRemove node '%s': Created"), *NodeDef.Id));
+
+	return ArrayNode;
+}
+
+// v7.8.56: ArrayRemoveIndex - remove item from array by index
+// Uses UK2Node_CallArrayFunction for proper array type handling
+// Pins: execute (input), TargetArray (ref input), IndexToRemove (int32 input), then (output)
+UK2Node* FEventGraphGenerator::CreateArrayRemoveIndexNode(
+	UEdGraph* Graph,
+	const FManifestGraphNodeDefinition& NodeDef)
+{
+	// Find the Array_Remove function from KismetArrayLibrary (removes by index)
+	UFunction* RemoveFunc = UKismetArrayLibrary::StaticClass()->FindFunctionByName(FName(TEXT("Array_Remove")));
+
+	if (!RemoveFunc)
+	{
+		LogGeneration(FString::Printf(TEXT("[E_ARRAY_REMOVE_INDEX_NOT_FOUND] Array_Remove function not found for node '%s'"), *NodeDef.Id));
+		return nullptr;
+	}
+
+	// Use UK2Node_CallArrayFunction for proper array type propagation
+	UK2Node_CallArrayFunction* ArrayNode = NewObject<UK2Node_CallArrayFunction>(Graph);
+	Graph->AddNode(ArrayNode, false, false);
+
+	ArrayNode->SetFromFunction(RemoveFunc);
+	ArrayNode->CreateNewGuid();
+	ArrayNode->PostPlacedNewNode();
+	ArrayNode->AllocateDefaultPins();
+
+	LogGeneration(FString::Printf(TEXT("ArrayRemoveIndex node '%s': Created"), *NodeDef.Id));
 
 	return ArrayNode;
 }
