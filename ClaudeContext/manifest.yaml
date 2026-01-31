@@ -7229,11 +7229,12 @@ gameplay_abilities:
           properties:
             variable_name: FatherASC
         # Contract 24: MakeOutgoingSpec on Father ASC (source) - captures AttackDamage
-        # v7.8.51: MakeOutgoingGameplayEffectSpec requires ASC target connection
+        # v7.8.53: Use ASC's MakeOutgoingSpec function (not GA's version)
+        # Connect FatherASC to Object pin to call on ASC instance
         - id: MakeGESpec
           type: CallFunction
           properties:
-            function: MakeOutgoingGameplayEffectSpec
+            function: MakeOutgoingSpec
             param.GameplayEffectClass: GE_ProximityDamage
         - id: ApplyGE
           type: CallFunction
@@ -7372,7 +7373,8 @@ gameplay_abilities:
           to: [IsValid_EnemyASC, Object]
         - from: [IsValid_EnemyASC, ReturnValue]
           to: [Branch_EnemyASCValid, Condition]
-        # v7.8.51: Connect FatherASC to MakeGESpec Target (Contract 24 compliance)
+        # v7.8.53: Connect FatherASC to MakeGESpec Target pin (call on ASC instance)
+        # Contract 24 compliance - captures AttackDamage from Father's ASC
         - from: [GetFatherASC_ForSpec, FatherASC]
           to: [MakeGESpec, Target]
         - from: [MakeGESpec, ReturnValue]
