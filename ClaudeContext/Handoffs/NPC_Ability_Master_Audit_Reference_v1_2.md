@@ -1,7 +1,7 @@
 # NPC & Ability Master Audit Reference
-## Version 1.1
+## Version 1.2
 ## Date: January 2026
-## Compiled from: 12 Audit Documents
+## Compiled from: 18 Audit Documents
 
 ---
 
@@ -32,7 +32,7 @@
 | NPC Systems Audited | 7 | ALL COMPLETE |
 | Father Abilities Audited | 20 | ALL COMPLETE |
 | Decision Points Resolved | 40+ | ALL RESOLVED |
-| Generator Versions | v7.8.55 | CURRENT |
+| Generator Versions | v7.8.57l | CURRENT |
 
 ### NPC Systems Status
 
@@ -373,13 +373,63 @@ All conditions must be true:
 5. **Event Graph Complete:** Added dormant cue, `GA_FatherArmor` activation
 6. **Documentation:** Updated guides and INI files
 
-### Combat Abilities (GA_FatherLaserShot, GA_FatherElectricTrap, GA_FatherMark)
+### Combat Abilities (GA_FatherLaserShot, GA_FatherElectricTrap)
 
 | Issue | Status |
 |-------|--------|
 | AbilityTask_SpawnProjectile | Requires generator enhancement |
 | OnTargetData/OnDestroyed delegates | Requires generator enhancement |
-| Mark form gating | ERDEM DECISION: Crawler + Engineer ONLY |
+
+### GA_FatherMark Comprehensive Audit (v7.8.57l)
+
+**Audit Type:** Claude-GPT Dual Audit (Joint Cross-Examination)
+**Status:** COMPLETE - 61/61 nodes, 74/74 connections
+
+#### Audit Findings (6 Discrepancies - All Resolved)
+
+| # | Issue | Guide v1.9 | Manifest (Final) | Resolution |
+|---|-------|------------|------------------|------------|
+| 1 | GE Structure | 2 GEs | 1 GE (GE_MarkEffect) | Single GE with SetByCaller |
+| 2 | Tag Namespace | Enemy.State.Marked | Character.Marked | Guide updated |
+| 3 | Blocked Tag | Missing | Father.State.Transitioning | Added to guide |
+| 4 | Variables | FatherRef, MarkWidgetRef | TargetEnemy, MarkDuration, MarkArmorReduction | Aligned with SetByCaller |
+| 5 | Armor Math | "-10 = ~10%" | Conditional (varies by target) | Documentation clarified |
+| 6 | Implementation Gap | Variables unused | Full implementation | Added mark count, rotation, widgets |
+
+#### Contract Research - Proposals Not Locked
+
+| Proposal | Lockable? | Reason |
+|----------|-----------|--------|
+| C_MARK_MAILBOX_SAFETY | Not needed | Manifest already correct (copy-on-activate) |
+| C_MARK_MAX_CONCURRENCY_3 | No | Implemented after research |
+| C_MARK_REFRESH_SEMANTICS | No | Implemented after research |
+| C_MARK_UI_WALL_VISIBLE | No | Presentation-layer |
+
+**Mailbox Pattern Finding:** "Clearing after read is NOT required. Immediate copy to local is the correct invariant."
+
+#### Token System Reference (Implementation Model)
+
+Narrative Pro's Attack Token System (NarrativeAbilitySystemComponent.cpp:389-549):
+
+| Component | Token System | Mark System |
+|-----------|--------------|-------------|
+| Max limit | GetNumAttackTokens() | MaxMarks variable |
+| Tracking | GrantedAttackTokens | MarkedEnemies array |
+| Rotation | CanStealToken() | Remove oldest valid |
+| Cleanup | ReturnToken() | On enemy death |
+
+#### BP_FatherCompanion Custom Functions
+
+| Function | Status | Purpose |
+|----------|--------|---------|
+| AddToMarkedEnemies | COMPLETE | Array add operation |
+| RemoveFromMarkedEnemies | COMPLETE | Array_RemoveItem operation |
+| DestroyMarkWidgetForEnemy | COMPLETE | Map lookup + widget destruction |
+| MarkEnemy | COMPLETE | Entry point for marking |
+
+#### Form Gating
+
+**ERDEM DECISION:** GA_FatherMark available in Crawler + Engineer forms ONLY
 
 ### Special Rules
 
@@ -433,10 +483,43 @@ All conditions must be true:
 - Full GCN Effects support
 - Item TMap support (holster_attachment_configs)
 
-### v7.8.54 - Current
+### v7.8.54
 - BPC_ Blueprint Condition generator
 - Schedule bReselect
 - Component bAutoActivate
+
+### v7.8.56 - Map Variable Support
+- Added KeyType, ValueType fields to FManifestActorVariableDefinition
+- Parse key_type:, value_type: in manifest
+- EPinContainerType::Map support in generator
+- K2_DestroyComponent function resolution
+
+### v7.8.57l - Map/Array Wildcard Resolution (Current)
+
+**Problem:** UE5 Map wildcard pins resolve incorrectly (Key resolves to Value type). Array wildcards (Array_AddUnique, Array_RemoveItem) don't specialize in headless generation.
+
+**Solution:** Manual type propagation instead of ReconstructNode():
+
+```cpp
+auto NeedsTypeFix = [](const FEdGraphPinType& T, bool bShouldBeArray) -> bool
+{
+    if (T.PinCategory == UEdGraphSchema_K2::PC_Wildcard) return true;
+    if (T.PinCategory == UEdGraphSchema_K2::PC_Object && T.PinSubCategoryObject == nullptr) return true;
+    if (bShouldBeArray && T.ContainerType != EPinContainerType::Array) return true;
+    return false;
+};
+```
+
+**Key Implementation Details:**
+1. Connection ordering: Key pin before TargetMap for Maps
+2. Targeted finalization: Immediately after P2 (Item/NewItem) connection
+3. Schema validation: CanCreateConnection checks after type assignment
+4. No ReconstructNode: Manual propagation preserves specialized types
+
+**Files Modified:**
+- GasAbilityGeneratorGenerators.h - FinalizeArrayWildcardNodeTyping declaration
+- GasAbilityGeneratorGenerators.cpp - Manual type propagation implementation
+- GasAbilityGeneratorTypes.h - Duplicate GameplayCue detection fix
 
 ---
 
@@ -505,6 +588,7 @@ All conditions must be true:
 | Father_Combat_Abilities_Dual_Audit_v1_0.md | ClaudeContext/Handoffs/ | Combat abilities |
 | Father_Combat_Abilities_Dual_Audit_v1_0A.md | ClaudeContext/Handoffs/ | Extended combat audit |
 | GA_FatherSacrifice_Audit_v7_8_55.md | ClaudeContext/Handoffs/ | Sacrifice 15% threshold, dormant state (CONSOLIDATED) |
+| GA_FatherMark audit documents (6) | (CONSOLIDATED) | Joint audit, contract research, wildcard resolution |
 
 ### Related Reference Documents
 
@@ -521,6 +605,7 @@ All conditions must be true:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2026-01-31 | Consolidated GA_FatherMark audit (6 docs), added v7.8.56-57l generator enhancements |
 | 1.1 | 2026-01-31 | Consolidated GA_FatherSacrifice_Audit_v7_8_55.md, added Contracts 28-29 |
 | 1.0 | 2026-01-31 | Initial compilation from 11 audit documents |
 
